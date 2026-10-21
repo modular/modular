@@ -16,14 +16,14 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
 from std.complex import ComplexSIMD
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from std.memory.alloc import unsafe_alloc
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import assert_equal
 
-from std.sys import has_apple_gpu_accelerator
-from layout import TileTensor, Idx, row_major
+from layout import TileTensor, row_major
 
-comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+comptime float_type = DType.float32 if default_accelerator().is_apple_gpu() else DType.float64
 comptime int_type = DType.int
 
 
@@ -38,15 +38,15 @@ comptime min_y = -1.12
 comptime max_y = 1.12
 
 
-@always_inline
+@inline(.always)
 def mandelbrot_kernel[
-    simd_width: Int
+    simd_width: SIMDLength
 ](c: ComplexSIMD[float_type, simd_width]) -> SIMD[int_type, simd_width]:
     """A vectorized implementation of the inner mandelbrot computation."""
     var z = ComplexSIMD[float_type, simd_width](0, 0)
     var iters = SIMD[int_type, simd_width](0)
 
-    var in_set_mask = SIMD[DType.bool, simd_width](fill=True)
+    var in_set_mask = SIMD[.bool, simd_width](fill=True)
     for _ in range(MAX_ITERS):
         if not in_set_mask.reduce_or():
             break
@@ -57,19 +57,19 @@ def mandelbrot_kernel[
     return iters
 
 
-def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
+def mandelbrot(out_ptr: MutPointer[Scalar[int_type], MutAnyOrigin]):
     # Each task gets a row.
     var row = global_idx.x
     if row >= height:
         return
 
-    var out = TileTensor(out_ptr, row_major(Idx(height), Idx(width)))
+    var out = TileTensor(out_ptr, row_major(height, width))
 
     comptime scale_x = (max_x - min_x) / width
     comptime scale_y = (max_y - min_y) / height
 
-    @always_inline
-    def compute_vector[simd_width: Int](col: Int) unified {mut}:
+    @inline(.always)
+    def compute_vector[simd_width: Int](col: Int) {mut}:
         """Each time we operate on a `simd_width` vector of pixels."""
         if col >= width:
             return
@@ -82,9 +82,7 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
             float_type, simd_width
         ](scale_y)
         var c = ComplexSIMD[float_type, simd_width](cx, cy)
-        out.store[width=simd_width](
-            (Idx(row), Idx(col)), mandelbrot_kernel[simd_width](c)
-        )
+        out.store((row, col), mandelbrot_kernel[simd_width](c))
 
     # We vectorize the call to compute_vector where call gets a chunk of
     # pixels.
@@ -92,14 +90,13 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
 
 
 def run_mandelbrot(ctx: DeviceContext) raises:
-    var out_host = alloc[Scalar[int_type]](width * height)
+    var out_host = unsafe_alloc[Scalar[int_type]](width * height)
 
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
-    @always_inline
-    @parameter
-    def run_mandelbrot(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[mandelbrot](
+    @inline(.always)
+    def run_mandelbrot(ctx: DeviceContext) raises {imm}:
+        ctx.enqueue_function[mandelbrot](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
             block_dim=(BLOCK_SIZE,),
@@ -108,7 +105,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     run_mandelbrot(ctx)  # Warmup
     print(
         "Computation took:",
-        Float64(ctx.execution_time[run_mandelbrot](1)) / 1_000_000_000.0,
+        Float64(ctx.execution_time(run_mandelbrot, 1)) / 1_000_000_000.0,
     )
 
     ctx.enqueue_copy(out_host, out_device)

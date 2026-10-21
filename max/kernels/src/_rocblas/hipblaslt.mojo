@@ -16,14 +16,14 @@ from std.pathlib import Path
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
-
-from std.gpu.host._amdgpu_hip import hipStream_t
 from std.utils import StaticTuple
 
-comptime hipblasLtHandle_t = OpaquePointer[MutAnyOrigin]
-comptime hipblasLtMatmulDesc_t = OpaquePointer[MutAnyOrigin]
-comptime hipblasLtMatrixLayout_t = OpaquePointer[MutAnyOrigin]
-comptime hipblasLtMatmulPreference_t = OpaquePointer[MutAnyOrigin]
+from max.gpu.host._amdgpu_hip import hipStream_t
+
+comptime hipblasLtHandle_t = Optional[OpaquePointer[MutAnyOrigin]]
+comptime hipblasLtMatmulDesc_t = Optional[OpaquePointer[MutAnyOrigin]]
+comptime hipblasLtMatrixLayout_t = Optional[OpaquePointer[MutAnyOrigin]]
+comptime hipblasLtMatmulPreference_t = Optional[OpaquePointer[MutAnyOrigin]]
 
 
 @fieldwise_init
@@ -47,7 +47,7 @@ struct Status(Equatable, TrivialRegisterPassable, Writable):
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write_string("SUCCESS")
@@ -88,6 +88,7 @@ struct hipDataType_t(TrivialRegisterPassable):
     comptime R_16BF = Self(14)
     comptime R_8F_E4M3 = Self(28)
     comptime R_8F_E5M2 = Self(29)
+    comptime R_4F_E2M1 = Self(33)
     comptime R_8F_E4M3_FNUZ = Self(1000)
     comptime R_8F_E5M2_FNUZ = Self(1001)
 
@@ -157,10 +158,30 @@ struct hipblasLtOrder_t(TrivialRegisterPassable):
 
 
 @fieldwise_init
+struct hipblasLtMatmulMatrixScale_t(TrivialRegisterPassable):
+    var _value: Int32
+    comptime SCALAR_32F = Self(0)
+    comptime VEC32_UE8M0 = Self(2)
+
+    def __init__(out self, value: Int):
+        self._value = Int32(value)
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    def __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+
+@fieldwise_init
 struct hipblasLtMatmulDescAttributes_t(TrivialRegisterPassable):
     var _value: Int32
     comptime TRANSA = Self(0)
     comptime TRANSB = Self(1)
+    comptime A_SCALE_POINTER = Self(5)
+    comptime B_SCALE_POINTER = Self(6)
+    comptime A_SCALE_MODE = Self(31)
+    comptime B_SCALE_MODE = Self(32)
 
     def __init__(out self, value: Int):
         self._value = Int32(value)
@@ -235,7 +256,7 @@ def _init_dylib() -> OwnedDLHandle:
     return _find_dylib["HIP BLAS LT"](materialize[HIPBLASLT_LIBRARY_PATHS]())
 
 
-@always_inline
+@inline(.always)
 def _get_dylib_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -250,22 +271,22 @@ def _get_dylib_function[
 
 
 def hipblasLtCreate(
-    light_handle: UnsafePointer[hipblasLtHandle_t, _],
+    light_handle: Pointer[hipblasLtHandle_t, _],
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtCreate",
-        def(type_of(light_handle)) -> Status,
+        def(type_of(light_handle)) thin -> Status,
     ]()(light_handle)
 
 
 def hipblasLtDestroy(light_handle: hipblasLtHandle_t) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtDestroy", def(hipblasLtHandle_t) -> Status
+        "hipblasLtDestroy", def(hipblasLtHandle_t) thin -> Status
     ]()(light_handle)
 
 
 def hipblasLtMatmulDescCreate(
-    matmul_desc: UnsafePointer[hipblasLtMatmulDesc_t, _],
+    matmul_desc: Pointer[hipblasLtMatmulDesc_t, _],
     compute_type: hipblasComputeType_t,
     scale_type: hipDataType_t,
 ) raises -> Status:
@@ -275,7 +296,7 @@ def hipblasLtMatmulDescCreate(
             type_of(matmul_desc),
             hipblasComputeType_t,
             hipDataType_t,
-        ) -> Status,
+        ) thin -> Status,
     ]()(matmul_desc, compute_type, scale_type)
 
 
@@ -292,7 +313,7 @@ def hipblasLtMatmulDescSetAttribute(
             hipblasLtMatmulDescAttributes_t,
             type_of(buf),
             Int,
-        ) -> Status,
+        ) thin -> Status,
     ]()(matmul_desc, attr, buf, size_in_bytes)
 
 
@@ -300,12 +321,12 @@ def hipblasLtMatmulDescDestroy(
     matmul_desc: hipblasLtMatmulDesc_t,
 ) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtMatmulDescDestroy", def(hipblasLtMatmulDesc_t) -> Status
+        "hipblasLtMatmulDescDestroy", def(hipblasLtMatmulDesc_t) thin -> Status
     ]()(matmul_desc)
 
 
 def hipblasLtMatrixLayoutCreate(
-    mat_layout: UnsafePointer[hipblasLtMatrixLayout_t, _],
+    mat_layout: Pointer[hipblasLtMatrixLayout_t, _],
     type: hipDataType_t,
     rows: UInt64,
     cols: UInt64,
@@ -319,7 +340,7 @@ def hipblasLtMatrixLayoutCreate(
             UInt64,
             UInt64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(mat_layout, type, rows, cols, ld)
 
 
@@ -336,7 +357,7 @@ def hipblasLtMatrixLayoutSetAttribute(
             hipblasLtMatmulLayoutAttribute_t,
             type_of(buf),
             Int,
-        ) -> Status,
+        ) thin -> Status,
     ]()(mat_layout, attr, buf, size_in_bytes)
 
 
@@ -344,16 +365,17 @@ def hipblasLtMatrixLayoutDestroy(
     mat_layout: hipblasLtMatrixLayout_t,
 ) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtMatrixLayoutDestroy", def(hipblasLtMatrixLayout_t) -> Status
+        "hipblasLtMatrixLayoutDestroy",
+        def(hipblasLtMatrixLayout_t) thin -> Status,
     ]()(mat_layout)
 
 
 def hipblasLtMatmulPreferenceCreate(
-    pref: UnsafePointer[hipblasLtMatmulPreference_t, _],
+    pref: Pointer[hipblasLtMatmulPreference_t, _],
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulPreferenceCreate",
-        def(type_of(pref)) -> Status,
+        def(type_of(pref)) thin -> Status,
     ]()(pref)
 
 
@@ -366,8 +388,8 @@ def hipblasLtMatmulAlgoGetHeuristic(
     _ddesc: hipblasLtMatrixLayout_t,
     preference: hipblasLtMatmulPreference_t,
     requested_algo_count: Int,
-    heuristic_results_array: UnsafePointer[hipblasLtMatmulHeuristicResult_t, _],
-    return_algo_count: UnsafePointer[Int, _],
+    heuristic_results_array: Pointer[hipblasLtMatmulHeuristicResult_t, _],
+    return_algo_count: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulAlgoGetHeuristic",
@@ -382,7 +404,7 @@ def hipblasLtMatmulAlgoGetHeuristic(
             Int,
             type_of(heuristic_results_array),
             type_of(return_algo_count),
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         light_handle,
         operation_desc,
@@ -402,7 +424,7 @@ def hipblasLtMatmulPreferenceDestroy(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulPreferenceDestroy",
-        def(hipblasLtMatmulPreference_t) -> Status,
+        def(hipblasLtMatmulPreference_t) thin -> Status,
     ]()(pref)
 
 
@@ -415,11 +437,11 @@ def hipblasLtMatmul(
     _b: OpaquePointer[_],
     _bdesc: hipblasLtMatrixLayout_t,
     beta: OpaquePointer[_],
-    _c: OpaquePointer[_],
+    _c: OptionalPointer[NoneType, _],
     _cdesc: hipblasLtMatrixLayout_t,
-    _d: OpaquePointer[_],
+    _d: OptionalPointer[NoneType, _],
     _ddesc: hipblasLtMatrixLayout_t,
-    algo: UnsafePointer[hipblasLtMatmulAlgo_t, _],
+    algo: Pointer[hipblasLtMatmulAlgo_t, _],
     workspace: OpaquePointer[_],
     workspace_size_in_bytes: Int,
     stream: hipStream_t,
@@ -443,7 +465,7 @@ def hipblasLtMatmul(
             type_of(workspace),
             Int,
             hipStream_t,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         light_handle,
         compute_desc,
@@ -469,29 +491,35 @@ def hipblasLtMatmul(
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _check_hipblas_error(status: Status) raises:
     if status != Status.SUCCESS:
         raise Error(t"HIPBLASLT ERROR:{status}")
 
 
-@always_inline
+@inline(.always)
 def _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
-    comptime if dtype == DType.float32:
-        return hipDataType_t.R_32F
-    elif dtype == DType.float16:
-        return hipDataType_t.R_16F
-    elif dtype == DType.float8_e4m3fn:
-        return hipDataType_t.R_8F_E4M3
-    elif dtype == DType.float8_e5m2:
-        return hipDataType_t.R_8F_E5M2
-    elif dtype == DType.float8_e4m3fnuz:
-        return hipDataType_t.R_8F_E4M3_FNUZ
-    elif dtype == DType.float8_e5m2fnuz:
-        return hipDataType_t.R_8F_E5M2_FNUZ
-    else:
-        comptime assert dtype == DType.bfloat16, (
-            "Only support FP32, FP16, BF16, E4M3(FNUZ), and E5M2(FNUZ)."
-            " Please extend it if more dtypes are needed."
-        )
-        return hipDataType_t.R_16BF
+    comptime match dtype:
+        case .float32:
+            return hipDataType_t.R_32F
+        case .float16:
+            return hipDataType_t.R_16F
+        case .float8_e4m3fn:
+            return hipDataType_t.R_8F_E4M3
+        case .float8_e5m2:
+            return hipDataType_t.R_8F_E5M2
+        case .float8_e4m3fnuz:
+            return hipDataType_t.R_8F_E4M3_FNUZ
+        case .float8_e5m2fnuz:
+            return hipDataType_t.R_8F_E5M2_FNUZ
+        # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+        # Replace this with float4-e2m1fn when GENAI-337 is fixed.
+        case .uint8:
+            return hipDataType_t.R_4F_E2M1
+        case .bfloat16:
+            return hipDataType_t.R_16BF
+        case _:
+            comptime assert False, (
+                "Only support FP32, FP16, BF16, E4M3(FNUZ), E5M2(FNUZ), and"
+                " E2M1x2 (UInt8). Please extend it if more dtypes are needed."
+            )

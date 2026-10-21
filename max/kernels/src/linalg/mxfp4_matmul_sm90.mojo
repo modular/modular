@@ -16,9 +16,9 @@ Dequantizes MXFP4 weights to FP8, then uses the SM90 warp-specialized FP8 GEMM.
 Activations (BF16) are cast to FP8 on-the-fly.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys.info import _accelerator_arch
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from .mxfp4_dequant import dequant_mxfp4, _cast_bf16_to_fp8
 from .matmul.gpu import _matmul_gpu
@@ -49,11 +49,11 @@ def mxfp4_matmul_sm90(
     comptime b_type = b_packed.dtype
     comptime b_scales_type = b_scales.dtype
 
-    comptime assert c_type == DType.bfloat16, "output must be bfloat16"
-    comptime assert a_type == DType.bfloat16, "activations must be bfloat16"
-    comptime assert b_type == DType.uint8, "weights must be uint8 (packed FP4)"
+    comptime assert c_type == .bfloat16, "output must be bfloat16"
+    comptime assert a_type == .bfloat16, "activations must be bfloat16"
+    comptime assert b_type == .uint8, "weights must be uint8 (packed FP4)"
     comptime assert (
-        b_scales_type == DType.float8_e8m0fnu
+        b_scales_type == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
 
     var M = Int(c.dim[0]())
@@ -69,7 +69,7 @@ def mxfp4_matmul_sm90(
     # Step 1: Dequantize MXFP4 weights to FP8
     var b_fp8_buf = ctx.enqueue_create_buffer[fp8_type](static_N * static_K)
     var b_fp8_tt = TileTensor(
-        b_fp8_buf, row_major(Idx[static_N](), Idx[static_K]())
+        b_fp8_buf, row_major(Idx[static_N], Idx[static_K])
     )
 
     dequant_mxfp4(
@@ -83,7 +83,7 @@ def mxfp4_matmul_sm90(
 
     # Step 2: Cast BF16 activations to FP8
     var a_fp8_buf = ctx.enqueue_create_buffer[fp8_type](M * static_K)
-    var a_fp8_tt = TileTensor(a_fp8_buf, row_major(Idx(M), Idx[static_K]()))
+    var a_fp8_tt = TileTensor(a_fp8_buf, row_major(M, Idx[static_K]))
 
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, static_K)
 

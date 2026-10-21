@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 
+from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
@@ -25,13 +26,15 @@ from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.linear import Linear
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
+from max.graph import ops
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
+    KVCacheParams,
     PagedCacheValues,
-    unflatten_ragged_attention_inputs,
 )
 from max.nn.transformer import ReturnLogits
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import Olmo2Attention
 from .layers.rms_norm import Olmo2RMSNorm
@@ -40,7 +43,7 @@ from .model_config import Olmo2Config
 
 
 class Olmo2TextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[[Tensor, PagedCacheValues, Tensor, Tensor], ModuleV3Outputs]
 ):
     """The Olmo2 language model.
 
@@ -87,6 +90,9 @@ class Olmo2TextModel(
             eps=config.rms_norm_eps,
         )
 
+        kv_params = config.kv_params
+        assert isinstance(kv_params, KVCacheParams)
+
         layers = []
         for i in range(config.num_hidden_layers):
             layers.append(
@@ -96,7 +102,7 @@ class Olmo2TextModel(
                         num_attention_heads=config.num_attention_heads,
                         num_key_value_heads=config.num_key_value_heads,
                         hidden_size=config.hidden_size,
-                        kv_params=config.kv_params,
+                        kv_params=kv_params,
                         layer_idx=i,
                         scale=config.attention_multiplier,
                         has_bias=config.attention_bias,
@@ -133,13 +139,11 @@ class Olmo2TextModel(
         kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * F.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=h.device)
@@ -173,7 +177,7 @@ class Olmo2TextModel(
             logits = self._compute_logits(self.norm(last_tokens))
             offsets = ops.range(
                 0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 device=h.device,
@@ -183,15 +187,12 @@ class Olmo2TextModel(
             logits = self._compute_logits(self.norm(h))
             offsets = input_row_offsets
 
-        ret_val: tuple[Tensor, ...] = (last_logits,)
-        if offsets is not None:
-            assert logits is not None
-            ret_val += (logits, offsets)
-
-        return ret_val
+        return ModuleV3Outputs(
+            next_token_logits=last_logits, logits=logits, logit_offsets=offsets
+        )
 
 
-class Olmo2(Module[..., tuple[Tensor, ...]]):
+class Olmo2(Module[..., ModuleV3Outputs]):
     """The Olmo2 model."""
 
     def __init__(
@@ -210,9 +211,12 @@ class Olmo2(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args,
-    ) -> tuple[Tensor, ...]:
-        kv_collections = unflatten_ragged_attention_inputs(
-            variadic_args, n_devices=self.kv_params.n_devices
+    ) -> ModuleV3Outputs:
+        symbolic_inputs = self.kv_params.unflatten_kv_inputs(
+            iter(variadic_args)
+        )
+        kv_collections = tree.leaves(
+            symbolic_inputs, leaf=KVCacheInputsPerDevice
         )
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets

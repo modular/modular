@@ -11,12 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Idx, Coord, coord, row_major, col_major
+from layout import (
+    Idx,
+    coord,
+    row_major,
+    col_major,
+)
 from layout.tile_layout import (
     Layout,
     CoalesceLayout,
     blocked_product,
     coalesce,
+    _format_layout,
+    _print_layout,
     zipped_divide,
 )
 from std.testing import assert_equal, TestSuite
@@ -96,8 +103,8 @@ def test_coalesce_non_contiguous() raises:
     Shape (2, 2), stride (4, 1) -> 2*4=8 != 1, so no merge.
     """
     var layout = Layout(
-        shape=(Idx[2](), Idx[2]()),
-        stride=(Idx[4](), Idx[1]()),
+        shape=(Idx[2], Idx[2]),
+        stride=(Idx[4], Idx[1]),
     )
     var c = coalesce(layout)
     assert_equal(c.shape[0]().value(), 2)
@@ -112,8 +119,8 @@ def test_coalesce_with_shape_1_dims() raises:
     Shape (1, 4, 1), stride (8, 1, 2) -> skip shape-1 dims -> (4, 1).
     """
     var layout = Layout(
-        shape=(Idx[1](), Idx[4](), Idx[1]()),
-        stride=(Idx[8](), Idx[1](), Idx[2]()),
+        shape=(Idx[1], Idx[4], Idx[1]),
+        stride=(Idx[8], Idx[1], Idx[2]),
     )
     var c = coalesce(layout)
     assert_equal(c.shape[0]().value(), 4)
@@ -160,8 +167,8 @@ def test_coalesce_partial_merge() raises:
     (3, 4): 4*1=4 == 4, merge -> (2, 16), (12, 1)
     """
     var layout = Layout(
-        shape=(Idx[2](), Idx[4](), Idx[3]()),
-        stride=(Idx[16](), Idx[1](), Idx[4]()),
+        shape=(Idx[2], Idx[4], Idx[3]),
+        stride=(Idx[16], Idx[1], Idx[4]),
     )
     var c = coalesce(layout)
     assert_equal(c.shape[0]().value(), 2)
@@ -231,39 +238,39 @@ def test_idx2crd_flat_row_major() raises:
     """Test idx2crd on a flat row-major layout."""
     var layout = row_major[3, 4]()
     var c0 = layout.idx2crd(0)
-    assert_equal(Int(c0[0].value()), 0)
-    assert_equal(Int(c0[1].value()), 0)
+    assert_equal(Int(c0[0]), 0)
+    assert_equal(Int(c0[1]), 0)
     var c5 = layout.idx2crd(5)
-    assert_equal(Int(c5[0].value()), 1)
-    assert_equal(Int(c5[1].value()), 1)
+    assert_equal(Int(c5[0]), 1)
+    assert_equal(Int(c5[1]), 1)
     var c11 = layout.idx2crd(11)
-    assert_equal(Int(c11[0].value()), 2)
-    assert_equal(Int(c11[1].value()), 3)
+    assert_equal(Int(c11[0]), 2)
+    assert_equal(Int(c11[1]), 3)
 
 
 def test_idx2crd_nested_zipped_divide() raises:
     """Test idx2crd on a nested layout from zipped_divide."""
     var base = row_major[6, 8]()
-    var layout = zipped_divide[coord[2, 2]()](base)
+    var layout = zipped_divide[coord[2, 2]](base)
 
     # coord[1,1] maps to linear index 24
-    var linear_idx = Int(layout(coord[1, 1]()))
+    var linear_idx = Int(layout(coord[1, 1]))
     assert_equal(linear_idx, 24)
 
     # Inverse: idx2crd(24) should give nested coords ((1, 0), (1, 0))
     var coords = layout.idx2crd(linear_idx)
     var inner = coords[0].tuple()
     var outer = coords[1].tuple()
-    assert_equal(Int(inner[0].value()), 1)
-    assert_equal(Int(inner[1].value()), 0)
-    assert_equal(Int(outer[0].value()), 1)
-    assert_equal(Int(outer[1].value()), 0)
+    assert_equal(Int(inner[0]), 1)
+    assert_equal(Int(inner[1]), 0)
+    assert_equal(Int(outer[0]), 1)
+    assert_equal(Int(outer[1]), 0)
 
 
 def test_idx2crd_nested_roundtrip() raises:
     """Verify that crd2idx(idx2crd(i)) == i for all valid indices."""
     var base = row_major[4, 6]()
-    var layout = zipped_divide[coord[2, 3]()](base)
+    var layout = zipped_divide[coord[2, 3]](base)
 
     for i in range(24):
         var coords = layout.idx2crd(i)
@@ -271,12 +278,70 @@ def test_idx2crd_nested_roundtrip() raises:
         var outer = coords[1].tuple()
         # Reconstruct using the flat formula
         var reconstructed = (
-            Int(inner[0].value()) * 6
-            + Int(inner[1].value()) * 1
-            + Int(outer[0].value()) * 12
-            + Int(outer[1].value()) * 3
+            Int(inner[0]) * 6
+            + Int(inner[1]) * 1
+            + Int(outer[0]) * 12
+            + Int(outer[1]) * 3
         )
         assert_equal(reconstructed, i)
+
+
+# ===----------------------------------------------------------------------=== #
+# print_layout / format_layout tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_format_layout_grid() raises:
+    var expected = """\
+       0    1    2    3
+    +----+----+----+----+
+ 0  |  0 |  2 |  4 |  6 |
+    +----+----+----+----+
+ 1  |  1 |  3 |  5 |  7 |
+    +----+----+----+----+
+ 2  |  2 |  4 |  6 |  8 |
+    +----+----+----+----+
+ 3  |  3 |  5 |  7 |  9 |
+    +----+----+----+----+
+"""
+
+    var output = String()
+    _format_layout(
+        Layout(shape=(Idx[4], Idx[4]), stride=(Idx[1], Idx[2])),
+        output,
+    )
+    assert_equal(output, expected)
+
+
+def test_format_layout_blocked() raises:
+    var expected = """\
+       0    1    2    3
+    +----+----+----+----+
+ 0  |  0 |  1 |  4 |  5 |
+    +----+----+----+----+
+ 1  |  2 |  3 |  6 |  7 |
+    +----+----+----+----+
+ 2  |  8 |  9 | 12 | 13 |
+    +----+----+----+----+
+ 3  | 10 | 11 | 14 | 15 |
+    +----+----+----+----+
+"""
+
+    var output = String()
+    _format_layout(
+        blocked_product(row_major[2, 2](), row_major[2, 2]()),
+        output,
+    )
+    assert_equal(output, expected)
+
+
+def test_print_layout() raises:
+    # Flat 2×2 layout: shape (2,2), stride (1,2)
+    _print_layout(Layout(shape=(Idx[2], Idx[2]), stride=(Idx[1], Idx[2])))
+
+    # Nested 4×4 layout via blocked_product
+    var l1 = blocked_product(row_major[2, 2](), row_major[2, 2]())
+    _print_layout(l1)
 
 
 def main() raises:

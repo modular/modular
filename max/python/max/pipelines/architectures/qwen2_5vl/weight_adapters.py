@@ -24,6 +24,8 @@ QWEN2_5_VL_MODEL_MAPPING = {
     "merger.ln_q.": "merger.norm.",
     "merger.mlp.0.": "merger.linear1.",
     "merger.mlp.2.": "merger.linear2.",
+    # Remap stacked QKV in vision attention to StackedLinear namespace.
+    "attn.qkv.": "attn.qkv_proj.",
 }
 
 
@@ -37,6 +39,7 @@ def convert_qwen2_5vl_model_state_dict(
     naming without this prefix.
 
     This adapter:
+
     1. Filters to only include language model weights (those with
        `language_model.` prefix).
     2. Strips the `language_model.model.` prefix to match Qwen2.5VLLanguageModel
@@ -62,8 +65,8 @@ def convert_qwen2_5vl_model_state_dict(
         #   * All other floating-point tensors → BF16.
         if weight_data.dtype.is_float():
             is_scale = checkpoint_name.endswith(
-                ".weight_scale"
-            ) or checkpoint_name.endswith(".input_scale")
+                (".weight_scale", ".input_scale")
+            )
 
             if not weight_data.dtype.is_float8() and not is_scale:
                 weight_data = weight_data.astype(DType.bfloat16)

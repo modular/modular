@@ -20,7 +20,8 @@ from conftest import MAX_INT32, GraphBuilder, static_dims, tensor_types
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, Weight, ops
+from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+from max.graph.type import FilterLayout
 
 shared_dtypes = st.shared(st.from_type(DType))
 static_tensor_type = tensor_types(
@@ -64,6 +65,7 @@ def test_conv_valid(
                 graph.inputs[1].tensor,
                 stride=stride,
                 padding=padding,
+                filter_layout=FilterLayout.RSCF,
             )
         except ValueError:
             reject()
@@ -101,6 +103,7 @@ def test_conv_dtype_promote_np(graph_builder: GraphBuilder) -> None:
         out = ops.conv2d(
             graph.inputs[0].tensor,
             filter,
+            filter_layout=FilterLayout.RSCF,
         )
         # The numpy filter has a weak dtype. This all resolves happily.
         assert out.dtype == DType.bfloat16
@@ -122,6 +125,7 @@ def test_conv_dtype_promote_weight(graph_builder: GraphBuilder) -> None:
         out = ops.conv2d(
             graph.inputs[0].tensor,
             filter,
+            filter_layout=FilterLayout.RSCF,
         )
         # Both input and filter dtype exactly match.
         assert out.dtype == DType.bfloat16
@@ -144,6 +148,7 @@ def test_conv_dtype_promote_weight_success(graph_builder: GraphBuilder) -> None:
         out = ops.conv2d(
             graph.inputs[0].tensor,
             filter,
+            filter_layout=FilterLayout.RSCF,
         )
         assert out.dtype == DType.float32
 
@@ -166,9 +171,10 @@ def test_conv_dtype_promote_weight_failed(graph_builder: GraphBuilder) -> None:
                 r" Insert an explicit cast op if this conversion is wanted"
             ),
         ):
-            out = ops.conv2d(
+            ops.conv2d(
                 graph.inputs[0].tensor,
                 filter,
+                filter_layout=FilterLayout.RSCF,
             )
 
 
@@ -195,8 +201,32 @@ def test_conv_symbolic_shapes(graph_builder: GraphBuilder) -> None:
             dilations,
             paddings,
             num_groups,
+            filter_layout=FilterLayout.RSCF,
         )
 
+        graph.output(out)
+
+
+def test_conv_fcrs_layout(graph_builder: GraphBuilder) -> None:
+    """Test that conv2d with FCRS layout accepts FCRS-shaped filters."""
+    x_type = TensorType(DType.float32, [1, 8, 8, 3], device=DeviceRef.CPU())
+    # FCRS filter: [out_channels, in_channels, height, width]
+    filter_shape = [16, 3, 3, 3]
+    filter = Weight(
+        "filter",
+        dtype=DType.float32,
+        shape=filter_shape,
+        device=DeviceRef.CPU(),
+    )
+    with graph_builder(input_types=[x_type]) as graph:
+        out = ops.conv2d(
+            graph.inputs[0].tensor,
+            filter,
+            filter_layout=FilterLayout.FCRS,
+        )
+        # Output: [1, 6, 6, 16] (NHWC with 16 output channels from FCRS dim 0)
+        assert out.shape == [1, 6, 6, 16]
+        assert out.dtype == DType.float32
         graph.output(out)
 
 
@@ -211,3 +241,53 @@ def test_conv_mismatched_devices(
         tensor, filter = graph.inputs
         with pytest.raises(ValueError, match="same device"):
             ops.conv2d(tensor.tensor, filter.tensor)
+
+
+def test_mo_conv_non_rank1_stride_error() -> None:
+    """Constructing rmo.mo.conv directly with a rank-2 stride must raise a
+    Python exception (not abort). The op's MO_Rank1IndexTensor operand
+    constraint is enforced by the verifier; `_add_op_generated` surfaces
+    verifier failures as ValueError."""
+    from max._core.dialects import builtin, kgen
+    from max._core.dialects import rmo as _rmo
+
+    x_type = TensorType(DType.float32, [1, 8, 8, 4], device=DeviceRef.CPU())
+    filter_type = TensorType(
+        DType.float32, [3, 3, 4, 8], device=DeviceRef.CPU()
+    )
+    result_type = TensorType(
+        DType.float32, [1, 6, 6, 8], device=DeviceRef.CPU()
+    )
+    with Graph(
+        "mo_conv_bad_stride", input_types=[x_type, filter_type]
+    ) as graph:
+        bad_stride = ops.constant(
+            np.array([[1, 1], [1, 1]], dtype=np.int64),
+            DType.int64,
+            DeviceRef.CPU(),
+        )
+        dilations = ops.constant(
+            np.array([1, 1], dtype=np.int64), DType.int64, DeviceRef.CPU()
+        )
+        paddings = ops.constant(
+            np.array([0, 0, 0, 0], dtype=np.int64),
+            DType.int64,
+            DeviceRef.CPU(),
+        )
+        num_groups = ops.constant(
+            np.array(1, dtype=np.int64), DType.int64, DeviceRef.CPU()
+        )
+        with pytest.raises(ValueError, match="rank-1 tensor with indices"):
+            graph._add_op_generated(
+                _rmo.MoConvOp,
+                result_type,
+                graph.inputs[0].tensor,
+                graph.inputs[1].tensor,
+                bad_stride,
+                dilations,
+                paddings,
+                num_groups,
+                builtin.StringAttr("NHWC"),
+                builtin.StringAttr(""),
+                kgen.ParamDeclArrayAttr([]),
+            )

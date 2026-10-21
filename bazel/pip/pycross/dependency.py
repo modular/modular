@@ -18,8 +18,17 @@ from pip_platform import ALL_PLATFORMS, Platform
 from utils import assert_keys
 
 _EXTRA_PREFIX = "group-15-bazel-pyproject-"
-_CPU_EXTRA = _EXTRA_PREFIX + "cpu"
-_GPU_TYPES = ["amd", "nvidia"]
+# Groups that target no GPU, so they share the plain (cpu) constraint.
+_CPU_TYPES = ("cpu", "aiperf")
+# Maps dependency-group extra names to their GPU constraint suffix.
+# nvidia-sglang and nvidia-vllm are separate conflict groups but still
+# target nvidia hardware, so they share the "nvidia" constraint.
+_GPU_TYPES: dict[str, str] = {
+    "amd": "amd",
+    "nvidia": "nvidia",
+    "nvidia-sglang": "nvidia",
+    "nvidia-vllm": "nvidia",
+}
 
 
 def _system_environment(platform: Platform, extra: str) -> dict[str, str]:
@@ -64,9 +73,18 @@ class Dependency:
             return [""], []
 
         marker = Marker(self.marker_str)
+
+        def _matches(platform: Platform) -> bool:
+            return any(
+                marker.evaluate(
+                    _system_environment(platform, _EXTRA_PREFIX + group)
+                )
+                for group in _CPU_TYPES
+            )
+
         universal = True
         for platform in ALL_PLATFORMS:
-            if not marker.evaluate(_system_environment(platform, _CPU_EXTRA)):
+            if not _matches(platform):
                 universal = False
                 break
 
@@ -75,19 +93,18 @@ class Dependency:
 
         constraints = set()
         for platform in ALL_PLATFORMS:
-            if marker.evaluate(_system_environment(platform, _CPU_EXTRA)):
+            if _matches(platform):
                 constraints.add(platform.constraint)
-
-        if constraints:
-            return sorted(constraints), []
 
         gpu_constraints = set()
         for platform in ALL_PLATFORMS:
-            if not platform.supports_gpu:
+            if not platform.supports_gpu or _matches(platform):
                 continue
-            for gpu in _GPU_TYPES:
-                gpu_extra = _EXTRA_PREFIX + gpu
+            for gpu_extra_suffix, constraint_suffix in _GPU_TYPES.items():
+                gpu_extra = _EXTRA_PREFIX + gpu_extra_suffix
                 if marker.evaluate(_system_environment(platform, gpu_extra)):
-                    gpu_constraints.add(f"{platform.constraint}_{gpu}_gpu")
+                    gpu_constraints.add(
+                        f"{platform.constraint}_{constraint_suffix}_gpu"
+                    )
 
-        return [], sorted(gpu_constraints)
+        return sorted(constraints), sorted(gpu_constraints)

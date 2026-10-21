@@ -177,7 +177,7 @@ def test_conv_dtype_promote_weight_failed() -> None:
                 r" Insert an explicit cast op if this conversion is wanted"
             ),
         ):
-            out = ops.conv2d(
+            ops.conv2d(
                 graph.inputs[0].tensor,
                 filter,
             )

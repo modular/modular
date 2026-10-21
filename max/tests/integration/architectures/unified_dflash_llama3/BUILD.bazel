@@ -1,0 +1,29 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+[
+    modular_py_test(
+        name = file.replace(".py", ""),
+        size = "large",
+        srcs = [file],
+        deps = [
+            "//max/python/max/dtype",
+            "//max/python/max/graph",
+            "//max/python/max/pipelines/architectures/llama3",
+            "//max/python/max/pipelines/architectures/unified_dflash_llama3",
+            "//max/python/max/pipelines/lib",
+        ],
+    )
+    for file in glob(
+        ["*.py"],
+        allow_empty = True,
+    )
+]

@@ -13,38 +13,35 @@
 
 from std.math import exp, abs
 from std.random import rand
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
-from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from max.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 comptime BLOCK_SIZE = 256
 comptime WARP_SIZE = 32
 
 
-@always_inline
+@inline(.always)
 def max_op(a: Float32, b: Float32) -> Float32:
     if a > b:
         return a
     return b
 
 
-@always_inline
+@inline(.always)
 def sum_op(a: Float32, b: Float32) -> Float32:
     return a + b
 
 
 # Robust Block Reduce using Shared Memory (No Shuffle)
-@always_inline
+@inline(.always)
 def block_reduce[
-    op: def(Float32, Float32) -> Float32
+    op: def(Float32, Float32) thin -> Float32
 ](
     val: Float32,
-    shared_mem: UnsafePointer[
-        Scalar[DType.float32],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ],
+    shared_mem: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
 ) -> Float32:
     var tid = thread_idx.x
     var smem = shared_mem
@@ -67,32 +64,34 @@ def block_reduce[
 
 
 def softmax_kernel(
-    S: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    P: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    N: Int,
+    S: MutPointer[Float32, MutAnyOrigin],
+    D: MutPointer[Float32, MutAnyOrigin],
+    P: MutPointer[Float32, MutAnyOrigin],
+    N_dev: Int32,
 ):
+    # Int is not device-passable; widen the fixed-width arg.
+    var N = Int(N_dev)
     var D_ptr = D
     var P_ptr = P
 
-    var temp_store = stack_allocation[
+    var temp_store = unsafe_stack_allocation[
         BLOCK_SIZE,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
-    var broadcast_slot = stack_allocation[
+    var broadcast_slot = unsafe_stack_allocation[
         1,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     var row = block_idx.x
     var tid = thread_idx.x
 
-    var S_row = S + (row * N)
-    var P_row = P_ptr + (row * N)
+    var S_row = S.unsafe_offset(row * N)
+    var P_row = P_ptr.unsafe_offset(row * N)
 
-    var neg_inf = Float32(-3.40282e38)
+    comptime neg_inf = Float32(-3.40282e38)
     var max_val_thread = neg_inf
 
     var col = tid
@@ -105,7 +104,9 @@ def softmax_kernel(
 
     barrier()
 
-    var max_val_row = block_reduce[max_op](max_val_thread, temp_store)
+    var max_val_row = block_reduce[max_op](
+        max_val_thread, temp_store.as_unsafe_any_origin()
+    )
 
     if tid == 0:
         broadcast_slot[0] = max_val_row
@@ -121,7 +122,9 @@ def softmax_kernel(
 
     barrier()
 
-    var sum_row = block_reduce[sum_op](sum_thread, temp_store)
+    var sum_row = block_reduce[sum_op](
+        sum_thread, temp_store.as_unsafe_any_origin()
+    )
 
     if tid == 0:
         broadcast_slot[0] = sum_row
@@ -141,12 +144,12 @@ def softmax_kernel(
 
 
 def cpu_softmax(
-    h_S: UnsafePointer[Float32, MutAnyOrigin],
-    h_P: UnsafePointer[Float32, MutAnyOrigin],
+    h_S: ImmPointer[Float32, _],
+    h_P: MutPointer[Float32, _],
     N: Int,
 ):
     var P_ptr = h_P
-    var neg_inf = Float32(-3.40282e38)
+    comptime neg_inf = Float32(-3.40282e38)
     for i in range(N):
         var max_val = neg_inf
         for j in range(N):
@@ -180,10 +183,10 @@ def main() raises:
         var size_D = N
         var size_P = N * N
 
-        var h_S = alloc[Float32](size_S)
-        var h_D = alloc[Float32](size_D)
-        var h_P = alloc[Float32](size_P)
-        var h_P_ref = alloc[Float32](size_P)
+        var h_S = unsafe_alloc[Float32](size_S)
+        var h_D = unsafe_alloc[Float32](size_D)
+        var h_P = unsafe_alloc[Float32](size_P)
+        var h_P_ref = unsafe_alloc[Float32](size_P)
 
         rand(h_S, size_S)
         for k in range(size_S):
@@ -191,17 +194,17 @@ def main() raises:
 
         cpu_softmax(h_S, h_P_ref, N)
 
-        var d_S = device.enqueue_create_buffer[DType.float32](size_S)
-        var d_D = device.enqueue_create_buffer[DType.float32](size_D)
-        var d_P = device.enqueue_create_buffer[DType.float32](size_P)
+        var d_S = device.enqueue_create_buffer[.float32](size_S)
+        var d_D = device.enqueue_create_buffer[.float32](size_D)
+        var d_P = device.enqueue_create_buffer[.float32](size_P)
 
         device.enqueue_copy(d_S, h_S)
 
-        device.enqueue_function_experimental[softmax_kernel](
+        device.enqueue_function[softmax_kernel](
             d_S,
             d_D,
             d_P,
-            N,
+            Int32(N),
             grid_dim=(N, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),
         )
@@ -227,7 +230,7 @@ def main() raises:
         else:
             print("FAILED")
 
-        h_S.free()
-        h_D.free()
-        h_P.free()
-        h_P_ref.free()
+        h_S.unsafe_free()
+        h_D.unsafe_free()
+        h_P.unsafe_free()
+        h_P_ref.unsafe_free()

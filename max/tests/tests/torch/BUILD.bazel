@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -17,12 +16,14 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.9",
         "TORCH_COMPILE_FORCE_DISABLE_CACHES": "True",
     },
+    gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
-        "//max:MOGGPrimitives",
-        "//max:compiler_internal",
-        "//max:tensor",
+        "//max:builtin_primitives",
+        "//max:extensibility",
         "@mojo//:std",
     ],
+    precompile_mefs = True,
+    shard_count = 4,  # QUA-331
     tags = [
         "gpu",
     ],

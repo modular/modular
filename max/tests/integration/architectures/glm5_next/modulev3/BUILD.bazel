@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_weight_adapter",
+    srcs = ["test_weight_adapter.py"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+    ],
+)

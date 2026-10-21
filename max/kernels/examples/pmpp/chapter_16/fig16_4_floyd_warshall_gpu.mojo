@@ -15,11 +15,12 @@
 # GPU-accelerated all-pairs shortest path algorithm
 
 from std.math import ceildiv
-from std.gpu import barrier, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from max.gpu import block_dim, block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.itertools import product
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 comptime INF_DIST = Float32.MAX
 
@@ -27,9 +28,9 @@ comptime INF_DIST = Float32.MAX
 
 
 def floyd_warshall_kernel(
-    A: UnsafePointer[Float32, MutAnyOrigin],
-    num_vertices: Int,
-    curr_k: Int,
+    A: MutPointer[Float32, MutAnyOrigin],
+    num_vertices_dev: Int32,
+    curr_k_dev: Int32,
 ):
     """GPU kernel for Floyd-Warshall algorithm (Fig 16.4).
 
@@ -37,14 +38,17 @@ def floyd_warshall_kernel(
 
     Args:
         A: Distance matrix (num_vertices x num_vertices, flattened).
-        num_vertices: Number of vertices in the graph.
-        curr_k: Current intermediate vertex being considered.
+        num_vertices_dev: Number of vertices in the graph.
+        curr_k_dev: Current intermediate vertex being considered.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var num_vertices = Int(num_vertices_dev)
+    var curr_k = Int(curr_k_dev)
     # Allocate shared memory for row value - all threads in block share same i
-    var k_row_shared = stack_allocation[
+    var k_row_shared = unsafe_stack_allocation[
         1,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # blockIdx.y gives row i, blockIdx.x and threadIdx.x give column j
@@ -56,12 +60,12 @@ def floyd_warshall_kernel(
 
     # Thread 0 loads A[i][k] into shared memory once for the whole block
     if thread_idx.x == 0:
-        k_row_shared[0] = Scalar[DType.float32](A[i * num_vertices + curr_k])
+        k_row_shared[0] = A[i * num_vertices + curr_k]
 
     barrier()
 
     # Get k_row from shared memory
-    var k_row = Float32(k_row_shared[0])
+    var k_row = k_row_shared[0]
 
     # Early exit if no path through curr_k from row i
     if k_row == INF_DIST:
@@ -84,7 +88,7 @@ def floyd_warshall_kernel(
 # ========================== CPU REFERENCE ==========================
 
 
-def cpu_floyd_warshall(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
+def cpu_floyd_warshall(dist: MutPointer[Float32, _], V: Int):
     """CPU version of Floyd-Warshall algorithm for verification.
 
     Args:
@@ -104,7 +108,7 @@ def cpu_floyd_warshall(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
                 dist[idx_ij] = new_dist
 
 
-def initialize_dist(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
+def initialize_dist(dist: MutPointer[Float32, _], V: Int):
     """Initialize distance matrix with diagonal = 0, others = INF.
 
     Args:
@@ -118,7 +122,7 @@ def initialize_dist(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
             dist[i * V + j] = INF_DIST
 
 
-def print_dist(dist: UnsafePointer[Float32, _], V: Int, title: String):
+def print_dist(dist: Pointer[Float32, _], V: Int, title: String):
     """Print distance matrix (partial for large matrices).
 
     Args:
@@ -138,13 +142,7 @@ def print_dist(dist: UnsafePointer[Float32, _], V: Int, title: String):
                 row_str += String(d) + " "
         print(row_str)
     if V > 10:
-        print(
-            "... (showing first 10x10 of "
-            + String(V)
-            + "x"
-            + String(V)
-            + " matrix)"
-        )
+        print(t"... (showing first 10x10 of {V}x{V} matrix)")
     print("")
 
 
@@ -173,8 +171,8 @@ def main() raises:
     var matrix_size = num_vertices * num_vertices
 
     # Allocate host memory
-    var h_dist = alloc[Float32](matrix_size)
-    var h_ref = alloc[Float32](matrix_size)
+    var h_dist = unsafe_alloc[Float32](matrix_size)
+    var h_ref = unsafe_alloc[Float32](matrix_size)
 
     # Initialize distance matrix
     print("Initializing", num_vertices, "x", num_vertices, "distance matrix")
@@ -232,10 +230,10 @@ def main() raises:
 
         # Run Floyd-Warshall algorithm
         for k in range(num_vertices):
-            ctx.enqueue_function_experimental[floyd_warshall_kernel](
+            ctx.enqueue_function[floyd_warshall_kernel](
                 d_dist,
-                num_vertices,
-                k,
+                Int32(num_vertices),
+                Int32(k),
                 grid_dim=(blocks_per_row, num_vertices, 1),
                 block_dim=(threads_per_block, 1, 1),
             )
@@ -290,5 +288,5 @@ def main() raises:
         print("\n✗ ERROR: Found", errors, "mismatches between GPU and CPU")
 
     # Cleanup
-    h_dist.free()
-    h_ref.free()
+    h_dist.unsafe_free()
+    h_ref.unsafe_free()

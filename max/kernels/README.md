@@ -1,12 +1,12 @@
-# MAX AI kernels
+# MAX accelerator library
 
 This directory contains low-level, high-performance compute kernels written in
-[Mojo](https://www.modular.com/mojo), designed to serve as building blocks for
+[Mojo](https://mojolang.org/), designed to serve as building blocks for
 numerical, machine learning, and other performance-critical workloads.
 
 This library includes production-grade kernel implementations for various CPUs
 and GPUs, including NVIDIA GPUs (T4, A10G, L40, A100, H100, RTX 40 series, and
-more) and AMD GPUs (MI300X, MI325X, Radeon RX 9000, and more).
+more) and AMD GPUs (MI355X, MI325X, Radeon RX 9000, and more).
 
 These kernels demonstrate powerful Mojo programming features such as
 fine-grained control over memory layout, parallelism, and hardware mapping.
@@ -24,8 +24,9 @@ to build MAX graphs, see the [`python/max/nn/`](/max/python/max/nn) directory.
 
 ## Contributing
 
-We're accepting kernel contributions. See the [kernels contributing
-guide](./CONTRIBUTING.md) for details.
+We accept bug fixes to the library. See the [kernels contributing
+guide](./CONTRIBUTING.md) and the [MAX contributor
+handbook](/max/docs/contributing/README.md) for details.
 
 ## License
 

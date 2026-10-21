@@ -20,14 +20,14 @@ This module contains common components used by all SM100 matmul kernel variants:
 - _Batched3DLayout / _to_batched_3d: Reshape 2D TileTensor to 3D (batch=1)
 """
 
-from std.gpu import thread_idx_uint as thread_idx
-from std.gpu import warp_id_uint as get_warp_id
-from std.gpu import block_id_in_cluster
-from std.gpu.primitives.cluster import (
+from max.gpu import WARP_SIZE, lane_id, thread_idx
+from max.gpu import warp_id as get_warp_id
+from max.gpu import block_id_in_cluster
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync_with_mask,
 )
-from std.math.uutils import udivmod
+from std.math.uutils import udivmod, ufloordiv
 from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
@@ -74,44 +74,44 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Scheduler = Self(4)
     comptime Epilogue = Self(3)
 
-    @always_inline
-    def __eq__(self, other: UInt) -> Bool:
+    @inline(.always)
+    def __eq__(self, other: Int) -> Bool:
         return self._role == Int32(other)
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._role == other._role
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._role != other._role
 
-    @always_inline
-    def __ge__(self, other: UInt) -> Bool:
+    @inline(.always)
+    def __ge__(self, other: Int) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_main_load() -> Bool:
         return Self.MainLoad == get_warp_id()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_mma() -> Bool:
         return Self.Mma == get_warp_id()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_epilogue() -> Bool:
         return Self.Epilogue >= get_warp_id()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_scheduler() -> Bool:
         return Self.Scheduler == get_warp_id()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_epilogue_load() -> Bool:
         """Check if current warp is the epilogue load warp (loads source C)."""
         return Self.EpilogueLoad == get_warp_id()
@@ -122,50 +122,98 @@ struct WarpRole(TrivialRegisterPassable):
 # =============================================================================
 
 
-struct WarpRole1D1D(TrivialRegisterPassable):
+struct WarpRole1D1D[
+    has_sfb: Bool = False, num_epi_warps: Int = 4, num_send_warps: Int = 0
+](TrivialRegisterPassable):
     """Warp role for 1D-1D kernels with warp specialization.
 
-    Base thread layout (192 threads, MMA_N >= 64):
-    - Warps 0-3 (threads 0-127): Epilogue (4 warps)
+    Parameterized on `has_sfb` so the SFB TMA-load / TMEM-load warps (and the
+    scheduler's warp index) compile out cleanly on the MMA_N >= 64 path, and
+    on `num_epi_warps` so kernels with heavier consumer phases can grow the
+    pool without affecting other kernels.
+
+    Default layout (`has_sfb=False, num_epi_warps=4`: 224 threads with
+    scheduler, MMA_N >= 64):
+    - Warps 0-3 (threads 0-127): Epilogue
     - Warp 4 (threads 128-159): TMA Load
     - Warp 5 (threads 160-191): MMA
+    - Warp 6 (threads 192-223): Scheduler
 
-    Extended layout (352 threads, MMA_N < 64):
-    - Warps 0-3 (threads 0-127):  Epilogue (4 warps)
-    - Warp 4 (threads 128-159):   TMA Load (A, B, SFA)
-    - Warp 5 (threads 160-191):   MMA
-    - Warp 6 (threads 192-223):   SFB TMA Load (1 warp, 32 threads)
-    - Warps 7-10 (threads 224-351): SFB TMEM Load (4 warps, 128 threads)
+    Extended layout (`has_sfb=True, num_epi_warps=4`: 384 threads with
+    scheduler, MMA_N < 64):
+    - Warps 0-3 (threads 0-127):    Epilogue
+    - Warp 4 (threads 128-159):     TMA Load (A, B, SFA)
+    - Warp 5 (threads 160-191):     MMA
+    - Warp 6 (threads 192-223):     SFB TMA Load
+    - Warps 7-10 (threads 224-351): SFB TMEM Load
+    - Warp 11 (threads 352-383):    Scheduler
 
-    The epilogue warps being at 0-3 is important because TMAStoreCoords
-    uses `warp_id == 0` for election.
+    The epilogue warps being at 0..NUM_EPILOGUE_THREADS-1 is important
+    because TMAStoreCoords uses `warp_id == 0` for election.
 
-    No scheduler warp — work distribution uses linear grid traversal.
+    Parameters:
+        has_sfb: Whether SFB TMA-load and TMEM-load warps are present,
+            enabled on the MMA_N < 64 path (defaults to `False`).
+        num_epi_warps: Number of epilogue warps in the warp pool, grown
+            for kernels with heavier consumer phases (defaults to 4).
+        num_send_warps: Number of extra warps appended ABOVE the scheduler
+            for a second consumer of the epilogue's SMEM output tile
+            (defaults to 0, which leaves every other role's thread range
+            byte-identical).
     """
 
-    comptime EPILOGUE_WARP_START = 0
-    comptime LOAD_WARP_START = 128
-    comptime MMA_WARP_START = 160
-    comptime SFB_TMA_LOAD_WARP_START = 192
-    comptime SFB_LOAD_WARP_START = 224
-
-    comptime NUM_EPILOGUE_THREADS = 128  # 4 warps
+    comptime NUM_EPILOGUE_THREADS = Self.num_epi_warps * 32
     comptime NUM_LOAD_THREADS = 32
     comptime NUM_MMA_THREADS = 32
     comptime NUM_SFB_TMA_LOAD_THREADS = 32  # 1 warp
     comptime NUM_SFB_LOAD_THREADS = 128  # 4 warps
+    comptime NUM_SCHEDULER_THREADS = 32
+    comptime NUM_SEND_THREADS = Self.num_send_warps * 32
 
-    comptime TOTAL_THREADS = 192
-    comptime TOTAL_THREADS_WITH_SFB = 352
+    comptime EPILOGUE_WARP_START = 0
+    comptime LOAD_WARP_START = Self.NUM_EPILOGUE_THREADS
+    comptime MMA_WARP_START = (Self.LOAD_WARP_START + Self.NUM_LOAD_THREADS)
+    comptime SFB_TMA_LOAD_WARP_START = (
+        Self.MMA_WARP_START + Self.NUM_MMA_THREADS
+    )
+    comptime SFB_LOAD_WARP_START = (
+        Self.SFB_TMA_LOAD_WARP_START + Self.NUM_SFB_TMA_LOAD_THREADS
+    )
+
+    # Scheduler warp sits right after the SFB warps when they exist, otherwise
+    # directly after the MMA warp. Launching the SFB warps on MMA_N >= 64 would
+    # burn ~7.5K registers on idle threads, so we compile them out there.
+    comptime SCHEDULER_WARP_START = (
+        Self.SFB_LOAD_WARP_START
+        + Self.NUM_SFB_LOAD_THREADS if Self.has_sfb else Self.SFB_TMA_LOAD_WARP_START
+    )
+
+    comptime TOTAL_THREADS = (
+        Self.NUM_EPILOGUE_THREADS + Self.NUM_LOAD_THREADS + Self.NUM_MMA_THREADS
+    )
+    comptime TOTAL_THREADS_WITH_SFB = (
+        Self.TOTAL_THREADS
+        + Self.NUM_SFB_TMA_LOAD_THREADS
+        + Self.NUM_SFB_LOAD_THREADS
+    )
+    # Send warps sit at the TOP of the thread space so every role below keeps
+    # its exact thread range: at `num_send_warps == 0` this is a no-op and
+    # `TOTAL_THREADS_WITH_SCHED` is unchanged.
+    comptime SEND_WARP_START = (
+        Self.SCHEDULER_WARP_START + Self.NUM_SCHEDULER_THREADS
+    )
+    comptime TOTAL_THREADS_WITH_SCHED = (
+        Self.SEND_WARP_START + Self.NUM_SEND_THREADS
+    )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_epilogue() -> Bool:
         """Returns True if current thread is in an epilogue warp (warps 0-3)."""
         return thread_idx.x < Self.LOAD_WARP_START
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_load() -> Bool:
         """Returns True if current thread is in the TMA load warp (warp 4)."""
         return (
@@ -174,7 +222,7 @@ struct WarpRole1D1D(TrivialRegisterPassable):
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_mma() -> Bool:
         """Returns True if current thread is in the MMA warp (warp 5)."""
         return (
@@ -183,11 +231,13 @@ struct WarpRole1D1D(TrivialRegisterPassable):
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_sfb_tma_load() -> Bool:
         """Returns True if current thread is in the SFB TMA load warp (warp 6).
 
-        Only active when MMA_N < 64 (kernel launched with 352 threads).
+        Only meaningful when `has_sfb` (i.e. MMA_N < 64). Callers gate this
+        behind `comptime if Self.MMA_N < 64` so the check is unreachable on
+        the no-SFB path, where the same threads host the scheduler warp.
         """
         return (
             thread_idx.x >= Self.SFB_TMA_LOAD_WARP_START
@@ -195,13 +245,75 @@ struct WarpRole1D1D(TrivialRegisterPassable):
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def is_sfb_load() -> Bool:
         """Returns True if current thread is in an SFB TMEM load warp (warps 7-10).
 
-        Only active when MMA_N < 64 (kernel launched with 352 threads).
+        Only meaningful when `has_sfb` (i.e. MMA_N < 64); callers gate the
+        check with `comptime if Self.MMA_N < 64`.
         """
-        return thread_idx.x >= Self.SFB_LOAD_WARP_START
+        return (
+            thread_idx.x >= Self.SFB_LOAD_WARP_START
+            and thread_idx.x < Self.SCHEDULER_WARP_START
+        )
+
+    @staticmethod
+    @inline(.always)
+    def is_scheduler() -> Bool:
+        """Returns True if current thread is in the scheduler warp.
+
+        Scheduler = warp 6 when `has_sfb = False`, else warp 11. The scheduler
+        warp precomputes tile info into SMEM for consumer warps.
+        """
+        # This boundary is open-ended above by design (callers rely on it), so
+        # it has to be closed explicitly once send warps exist above it.
+        comptime if Self.num_send_warps > 0:
+            return (
+                thread_idx.x >= Self.SCHEDULER_WARP_START
+                and thread_idx.x < Self.SEND_WARP_START
+            )
+        else:
+            return thread_idx.x >= Self.SCHEDULER_WARP_START
+
+    @staticmethod
+    @inline(.always)
+    def is_send() -> Bool:
+        """Returns True if current thread is in a send warp.
+
+        Bounded above because a co-resident comm class, when present, is
+        partitioned above `TOTAL_THREADS_WITH_SCHED`.
+        """
+        return (
+            thread_idx.x >= Self.SEND_WARP_START
+            and thread_idx.x < Self.TOTAL_THREADS_WITH_SCHED
+        )
+
+    @staticmethod
+    @inline(.always)
+    def epilogue_role_index() -> Int:
+        """Returns this thread's warp index WITHIN the epilogue pool.
+
+        Role-relative (`0 .. num_epi_warps - 1`), so callers electing
+        "the first epilogue warp" no longer have to know where the pool
+        sits in the block. Only meaningful when `is_epilogue()`.
+        """
+        return ufloordiv(thread_idx.x - Self.EPILOGUE_WARP_START, WARP_SIZE)
+
+    @staticmethod
+    @inline(.always)
+    def is_epilogue_leader() -> Bool:
+        """Returns True for the single leader thread of the epilogue pool.
+
+        This is the election callers mean when they write
+        `thread_idx.x == 0`: lane 0 of the pool's first warp. Writing it
+        as a role predicate keeps the election correct if the pool ever
+        stops starting at thread 0.
+        """
+        return (
+            Self.is_epilogue()
+            and Self.epilogue_role_index() == 0
+            and lane_id() == 0
+        )
 
 
 # =============================================================================
@@ -216,6 +328,14 @@ struct KernelContext[
     CLUSTER_N: Int,
 ](Copyable, Movable):
     """Shared kernel state: election vars, CTA coords, multicast masks, pipeline states.
+
+    Parameters:
+        num_clc_pipeline_stages: Number of CLC pipeline stages managed by
+            the scheduler work iterator.
+        cta_group: Number of CTAs that cooperate as a single group, either
+            1 or 2 for dual-CTA (2SM) mode.
+        CLUSTER_M: Number of CTAs in the cluster along the M dimension.
+        CLUSTER_N: Number of CTAs in the cluster along the N dimension.
     """
 
     # ===== Election Variables =====
@@ -242,9 +362,14 @@ struct KernelContext[
     comptime TmemAddrArray = SMemArray[UInt32, 1]
     var ptr_tmem_addr: SMemPtr[UInt32]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, ptr_tmem_addr: SMemPtr[UInt32]):
-        """Initialize context from TMEM pointer; computes all derived state."""
+        """Initialize context from TMEM pointer; computes all derived state.
+
+        Args:
+            ptr_tmem_addr: Shared-memory pointer to the TMEM address used by
+                the epilogue warps.
+        """
         # Election variables
         self.warp_id = UInt32(get_warp_id())
         self.elect_one_warp = self.warp_id == 0
@@ -255,8 +380,8 @@ struct KernelContext[
         self.is_first_cta_in_cluster = block_rank_in_cluster() == 0
 
         # CTA coordinates
-        self.rank_m = Int(block_id_in_cluster.x)
-        self.rank_n = Int(block_id_in_cluster.y)
+        self.rank_m = block_id_in_cluster.x
+        self.rank_n = block_id_in_cluster.y
 
         # Peer CTA coordinate: (peer_id, mma_coord_m, mma_coord_n)
         var cta_quotient, cta_remainder = udivmod(self.rank_m, Self.cta_group)
@@ -293,9 +418,14 @@ struct KernelContext[
         # TMEM pointer
         self.ptr_tmem_addr = ptr_tmem_addr
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, tmem_addr: Self.TmemAddrArray):
-        """Initialize context from typed TMEM address array."""
+        """Initialize context from typed TMEM address array.
+
+        Args:
+            tmem_addr: Typed TMEM address array to initialize the context
+                from.
+        """
         self = Self(tmem_addr.ptr)
 
 
@@ -304,7 +434,7 @@ struct KernelContext[
 # =============================================================================
 
 
-@always_inline
+@inline(.always)
 def compute_tma_tile_dims[
     BM: Int,
     BN: Int,
@@ -317,6 +447,20 @@ def compute_tma_tile_dims[
 ]() -> StaticTuple[Int, 3]:
     """Compute TMA tile dimensions (a_tile_dim0, b_tile_dim0, c_tile_dim0).
 
+    Parameters:
+        BM: Block size along the M dimension of the matmul tile.
+        BN: Block size along the N dimension of the matmul tile.
+        MMA_M: M dimension of the MMA instruction shape, used to select
+            the output tile strategy.
+        OutputM: M dimension of the output tensor, used as the C tile
+            size when the MMA shape or CTA group allows it.
+        CLUSTER_M: Number of CTAs in the cluster along the M dimension.
+        CLUSTER_N: Number of CTAs in the cluster along the N dimension.
+        cta_group: Number of cooperating CTAs in a group, either 1 or 2
+            for dual-CTA mode.
+        AB_swapped: Whether the A and B operands are swapped, selecting
+            the full-output tile path (defaults to `False`).
+
     Returns:
         StaticTuple of (a_tile_dim0, b_tile_dim0, c_tile_dim0).
     """
@@ -328,7 +472,7 @@ def compute_tma_tile_dims[
     return StaticTuple[Int, 3](a_tile_dim0, b_tile_dim0, c_tile_dim0)
 
 
-@always_inline
+@inline(.always)
 def compute_clc_barrier_counts[
     SCHEDULER_THREADS: Int,
     TMA_LOAD_THREADS: Int,
@@ -338,6 +482,14 @@ def compute_clc_barrier_counts[
     cta_group: Int,
 ]() -> StaticTuple[Int, 4]:
     """Compute CLC barrier arrival counts.
+
+    Parameters:
+        SCHEDULER_THREADS: Number of scheduler threads.
+        TMA_LOAD_THREADS: Number of TMA load threads.
+        MMA_THREADS: Number of MMA threads.
+        EPILOGUE_THREADS: Number of epilogue threads.
+        CLUSTER_SIZE: Number of CTAs in the cluster.
+        cta_group: Number of cooperating CTAs in a group, either 1 or 2.
 
     Returns:
         StaticTuple of (producer, consumer, throttle_producer, throttle_consumer).
@@ -354,12 +506,16 @@ def compute_clc_barrier_counts[
     )
 
 
-@always_inline
+@inline(.always)
 def compute_accum_barrier_counts[
     EPILOGUE_THREADS: Int,
     cta_group: Int,
 ]() -> StaticTuple[Int, 2]:
     """Compute accumulator pipeline barrier arrival counts.
+
+    Parameters:
+        EPILOGUE_THREADS: Number of epilogue threads per CTA.
+        cta_group: Number of cooperating CTAs in a group, either 1 or 2.
 
     Returns:
         StaticTuple of (producer_arv_count, consumer_arv_count).
@@ -375,7 +531,7 @@ def compute_accum_barrier_counts[
 # =============================================================================
 
 
-@always_inline
+@inline(.always)
 def compute_input_consumer_count[
     CLUSTER_M: Int,
     CLUSTER_N: Int,
@@ -388,6 +544,14 @@ def compute_input_consumer_count[
     For standard kernels, consumers are the MMA warps across the cluster.
     For blockwise FP8 kernels, epilogue warps also consume input tiles
     (A-scales), so pass CLUSTER_SIZE and epilogue_threads to include them.
+
+    Parameters:
+        CLUSTER_M: Number of CTAs in the cluster along the M dimension.
+        CLUSTER_N: Number of CTAs in the cluster along the N dimension.
+        cta_group: Number of cooperating CTAs in a group, either 1 or 2.
+        CLUSTER_SIZE: Number of CTAs in the cluster (defaults to 0).
+        epilogue_threads: Number of epilogue threads that consume input
+            tiles, included when greater than 0 (defaults to 0).
     """
     comptime base = CLUSTER_M // cta_group + CLUSTER_N - 1
 
@@ -397,7 +561,7 @@ def compute_input_consumer_count[
         return base
 
 
-@always_inline
+@inline(.always)
 def init_core_barriers[
     num_input_stages: Int,
     num_accum_stages: Int,
@@ -414,6 +578,28 @@ def init_core_barriers[
 
     Called inside the elect_one_warp && elect_one_thread guard.
     Handles the three barrier init steps shared by all SM100 kernels.
+
+    Parameters:
+        num_input_stages: Number of input pipeline stages to initialize
+            barriers for.
+        num_accum_stages: Number of accumulator pipeline stages to
+            initialize barriers for.
+
+    Args:
+        input_barriers_ptr: Shared-memory pointer to the input pipeline
+            barriers.
+        input_consumer_count: Number of consumer arrivals on each input
+            barrier.
+        accum_barriers_ptr: Shared-memory pointer to the accumulator
+            pipeline barriers.
+        accum_producer_arv_count: Number of producer arrivals on each
+            accumulator barrier.
+        accum_consumer_arv_count: Number of consumer arrivals on each
+            accumulator barrier.
+        tmem_dealloc_ptr: Shared-memory pointer to the TMEM deallocation
+            barrier.
+        tmem_dealloc_thread_count: Number of threads that arrive on the
+            TMEM deallocation barrier.
     """
     ProducerConsumerPipeline[num_input_stages](input_barriers_ptr).init_mbars(
         Int32(1), input_consumer_count
@@ -424,7 +610,7 @@ def init_core_barriers[
     tmem_dealloc_ptr[].init(tmem_dealloc_thread_count)
 
 
-@always_inline
+@inline(.always)
 def init_clc_barriers[
     num_clc_stages: Int
 ](
@@ -437,6 +623,20 @@ def init_clc_barriers[
 
     Called inside the elect_one_warp && elect_one_thread guard for
     CLC-enabled kernels (default, block_scaled, blockwise_fp8, grouped_2sm).
+
+    Parameters:
+        num_clc_stages: Number of CLC pipeline stages to initialize
+            barriers for.
+
+    Args:
+        clc_full_ptr: Shared-memory pointer to the CLC full barriers,
+            one per pipeline stage.
+        clc_empty_ptr: Shared-memory pointer to the CLC empty barriers,
+            one per pipeline stage.
+        clc_producer_arv_count: Number of arrivals the producer makes on
+            each CLC full barrier.
+        clc_consumer_arv_count: Number of arrivals the consumer makes on
+            each CLC empty barrier.
     """
     comptime for i in range(num_clc_stages):
         clc_full_ptr[i].init(clc_producer_arv_count)
@@ -449,7 +649,7 @@ def init_clc_barriers[
 
 
 comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
-    ComptimeInt[1], L._shape_types[0], L._shape_types[1]
+    *Coord[ComptimeInt[1], L._shape_types[0], L._shape_types[1]].element_types,
 ]
 """3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
 
@@ -464,11 +664,5 @@ def _to_batched_3d(
     comptime L = type_of(tensor).LayoutType
     comptime assert L.rank == 2, "expected rank-2 TileTensor"
     return tensor.reshape(
-        row_major(
-            Coord(
-                Idx[1](),
-                tensor.layout.shape[0](),
-                tensor.layout.shape[1](),
-            )
-        )
+        row_major(Idx[1], tensor.layout.shape[0](), tensor.layout.shape[1]())
     )

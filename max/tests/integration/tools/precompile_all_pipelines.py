@@ -22,15 +22,17 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import pathlib
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from multiprocessing.sharedctypes import Synchronized
 
 import click
-from create_pipelines import PIPELINE_ORACLES
-from max.pipelines.lib.config.config_enums import SupportedEncoding
+from create_pipelines import PIPELINE_ORACLES, GenericOracle, PipelineOracle
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.tests.integration.accuracy.logit_verification.logit_verification_config import (
     LOGIT_VERIFICATION_CONFIG,
     DeviceKind,
@@ -43,10 +45,37 @@ from tag_filters import (
 logger = logging.getLogger(__name__)
 
 SKIP_MODELS: set[str] = {
-    "black-forest-labs/flux.1-dev",
     "black-forest-labs/flux.2-dev",
     "black-forest-labs/flux.2-klein-4b",
+    "liquidai/lfm2.5-1.2b-instruct",
+    "qwen/qwen3-embedding-0.6b",
+    "amd/minimax-m2.7-mxfp4",
+    "wan-ai/wan2.1-t2v-14b-diffusers",
+    "nvidia/kimi-k2.5-nvfp4",
+    "austinpowers/kimi-k2.5-nvfp4-deepseekv3",
+    "minimaxai/minimax-m2.7",
+    "lukealonso/minimax-m2.7-nvfp4",
+    "deepseek-ai/deepseek-v3.2-exp",
+    "modularai/llama-3.1-405b-instruct-autofp8",
+    "deepseek-ai/deepseek-r1",
+    "deepseek-ai/deepseek-v3.1-terminus",
+    "amd/kimi-k2.5-mxfp4",
+    "nvidia/kimi-k2.7-code-nvfp4",
 }
+
+
+def resolve_oracle(pipeline: str) -> PipelineOracle:
+    """Resolve a pipeline name to its oracle, defaulting to a generic one.
+
+    Mirrors the fallback in ``generate_llm_logits`` so a pipeline that only
+    needs plain ``GenericOracle`` behavior can live in the logit-verification
+    config without a ``PIPELINE_ORACLES`` entry. Resolving eagerly here would
+    otherwise abort collection -- and therefore the whole precompile step --
+    for every other selected pipeline too.
+    """
+    if pipeline in PIPELINE_ORACLES:
+        return PIPELINE_ORACLES[pipeline]
+    return GenericOracle(model_path=pipeline)
 
 
 @dataclass
@@ -125,7 +154,7 @@ def run_precompile_inprocess(job: PrecompileJob) -> tuple[bool, str, float]:
             normalize_device_specs_input(job.devices)
         )
 
-        oracle = PIPELINE_ORACLES[job.oracle_key]
+        oracle = resolve_oracle(job.oracle_key)
         oracle.create_max_pipeline(
             encoding=job.encoding,
             device_specs=device_specs,
@@ -171,7 +200,7 @@ def collect_precompile_jobs(
             continue
 
         encoding = pipeline_def.encoding
-        oracle = PIPELINE_ORACLES[pipeline_def.pipeline]
+        oracle = resolve_oracle(pipeline_def.pipeline)
         model_path = oracle.model_path
 
         if model_path.casefold() in SKIP_MODELS:
@@ -197,10 +226,53 @@ def collect_precompile_jobs(
     return jobs
 
 
+def _retry_individually(jobs: list[PrecompileJob]) -> list[PrecompileJob]:
+    """Re-run each job in its own isolated single-worker pool.
+
+    Returns only the jobs that genuinely fail, distinguishing them from
+    BrokenProcessPool cascade victims that would have passed on their own.
+    Also creates precompile artifacts for cascade victims so the verify step
+    can run for them normally.
+    """
+    failed: list[PrecompileJob] = []
+    ctx = multiprocessing.get_context("spawn")
+    for job in jobs:
+        with ProcessPoolExecutor(  # type: ignore[call-overload]
+            max_workers=1,
+            mp_context=ctx,
+            max_tasks_per_child=1,
+        ) as executor:
+            future = executor.submit(run_precompile_inprocess, job)
+            try:
+                success, output, elapsed = future.result(timeout=1200)
+            except Exception as exc:
+                success = False
+                output = (
+                    f"WORKER CRASH (retry): {exc}\n{traceback.format_exc()}"
+                )
+                elapsed = 0.0
+
+        label = "OK (cascade victim)" if success else "FAILED"
+        print(
+            f"::group::RETRY {label} {job.model_path} ({elapsed:.0f}s)",
+            flush=True,
+        )
+        if output.strip():
+            print(output, flush=True)
+        print("::endgroup::", flush=True)
+        if not success:
+            failed.append(job)
+    return failed
+
+
 def compile_models_in_parallel(
     jobs: list[PrecompileJob], num_concurrent: int
-) -> list[str]:
-    """Execute precompile jobs in parallel, returning failed model paths."""
+) -> list[PrecompileJob]:
+    """Execute precompile jobs in parallel, returning failed jobs.
+
+    Jobs that fail due to a BrokenProcessPool worker crash are retried
+    individually to separate the root-cause failure from cascade victims.
+    """
     total_cpus = os.cpu_count() or 1
     workers = min(num_concurrent, len(jobs)) if jobs else 1
     cpus_per_worker = max(1, total_cpus // workers)
@@ -216,7 +288,8 @@ def compile_models_in_parallel(
         total_cpus,
     )
 
-    failed_models: list[str] = []
+    failed_jobs: list[PrecompileJob] = []
+    pool_crash_jobs: list[PrecompileJob] = []
     # max_tasks_per_child is a valid Python 3.11+ parameter but typeshed
     # stubs don't model it in the overload that accepts initializer/initargs.
     with ProcessPoolExecutor(  # type: ignore[call-overload]
@@ -240,6 +313,15 @@ def compile_models_in_parallel(
                 success = False
                 output = f"TIMEOUT: job exceeded {per_job_timeout}s limit"
                 elapsed = float(per_job_timeout)
+            except BrokenProcessPool as exc:
+                print(f"::group::POOL CRASH {job.model_path}", flush=True)
+                print(
+                    f"Worker pool crashed (will retry individually): {exc}",
+                    flush=True,
+                )
+                print("::endgroup::", flush=True)
+                pool_crash_jobs.append(job)
+                continue
             except Exception as exc:
                 success = False
                 output = f"WORKER CRASH: {exc}\n{traceback.format_exc()}"
@@ -251,9 +333,16 @@ def compile_models_in_parallel(
                 print(output, flush=True)
             print("::endgroup::", flush=True)
             if not success:
-                failed_models.append(job.model_path)
+                failed_jobs.append(job)
 
-    return failed_models
+    if pool_crash_jobs:
+        logger.info(
+            "Pool crashed; retrying %d job(s) individually to identify root cause",
+            len(pool_crash_jobs),
+        )
+        failed_jobs.extend(_retry_individually(pool_crash_jobs))
+
+    return failed_jobs
 
 
 @click.command()
@@ -330,14 +419,27 @@ def main(
         return
 
     logger.info("Starting parallel compilation of %d models", len(jobs))
-    failed_models = compile_models_in_parallel(jobs, num_concurrent)
+    failed_jobs = compile_models_in_parallel(jobs, num_concurrent)
 
-    ok = len(jobs) - len(failed_models)
+    failed_names = [job.pipeline_name for job in failed_jobs]
+    output_path = pathlib.Path("precompile-models-failed.txt")
+    output_path.write_text(
+        "\n".join(failed_names) + ("\n" if failed_names else "")
+    )
+    if failed_names:
+        logger.info(
+            "Wrote %d failed pipeline(s) to %s: %s",
+            len(failed_names),
+            output_path,
+            failed_names,
+        )
+
+    ok = len(jobs) - len(failed_jobs)
     logger.info("=" * 44)
     logger.info("precompile: %d/%d succeeded", ok, len(jobs))
     logger.info("=" * 44)
 
-    if failed_models:
+    if failed_jobs:
         sys.exit(1)
 
 

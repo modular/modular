@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import random_float64, seed
-from std.collections import List
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 struct COOMatrix(DevicePassable, TrivialRegisterPassable):
@@ -21,12 +20,20 @@ struct COOMatrix(DevicePassable, TrivialRegisterPassable):
     var numNonzeros: Int
     var numRows: Int
     var numCols: Int
-    var rowIdx: UnsafePointer[UInt32, MutAnyOrigin]
-    var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
-    var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    @__allow_legacy_any_origin_fields
+    var rowIdx: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var colIdx: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var value: MutPointer[Float32, MutAnyOrigin]
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -37,9 +44,9 @@ struct COOMatrix(DevicePassable, TrivialRegisterPassable):
         nnz: Int,
         rows: Int,
         cols: Int,
-        r: UnsafePointer[UInt32, MutAnyOrigin],
-        c: UnsafePointer[UInt32, MutAnyOrigin],
-        v: UnsafePointer[Float32, MutAnyOrigin],
+        r: MutPointer[UInt32, MutAnyOrigin],
+        c: MutPointer[UInt32, MutAnyOrigin],
+        v: MutPointer[Float32, MutAnyOrigin],
     ):
         self.numNonzeros = nnz
         self.numRows = rows
@@ -54,12 +61,20 @@ struct CSRMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var numNonzeros: Int
-    var rowPtrs: UnsafePointer[UInt32, MutAnyOrigin]
-    var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
-    var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    @__allow_legacy_any_origin_fields
+    var rowPtrs: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var colIdx: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var value: MutPointer[Float32, MutAnyOrigin]
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -70,9 +85,9 @@ struct CSRMatrix(DevicePassable, TrivialRegisterPassable):
         rows: Int,
         cols: Int,
         nnz: Int,
-        r: UnsafePointer[UInt32, MutAnyOrigin],
-        c: UnsafePointer[UInt32, MutAnyOrigin],
-        v: UnsafePointer[Float32, MutAnyOrigin],
+        r: MutPointer[UInt32, MutAnyOrigin],
+        c: MutPointer[UInt32, MutAnyOrigin],
+        v: MutPointer[Float32, MutAnyOrigin],
     ):
         self.numRows = rows
         self.numCols = cols
@@ -87,11 +102,17 @@ struct ELLMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var nnzPerRow: Int
-    var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
-    var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    @__allow_legacy_any_origin_fields
+    var colIdx: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var value: MutPointer[Float32, MutAnyOrigin]
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -102,8 +123,8 @@ struct ELLMatrix(DevicePassable, TrivialRegisterPassable):
         rows: Int,
         cols: Int,
         nnz_per_row: Int,
-        c: UnsafePointer[UInt32, MutAnyOrigin],
-        v: UnsafePointer[Float32, MutAnyOrigin],
+        c: MutPointer[UInt32, MutAnyOrigin],
+        v: MutPointer[Float32, MutAnyOrigin],
     ):
         self.numRows = rows
         self.numCols = cols
@@ -117,12 +138,20 @@ struct CSCMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var numNonzeros: Int
-    var colPtrs: UnsafePointer[UInt32, MutAnyOrigin]
-    var rowIdxs: UnsafePointer[UInt32, MutAnyOrigin]
-    var values: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    @__allow_legacy_any_origin_fields
+    var colPtrs: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var rowIdxs: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var values: MutPointer[Float32, MutAnyOrigin]
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -133,9 +162,9 @@ struct CSCMatrix(DevicePassable, TrivialRegisterPassable):
         rows: Int,
         cols: Int,
         nnz: Int,
-        c: UnsafePointer[UInt32, MutAnyOrigin],
-        r: UnsafePointer[UInt32, MutAnyOrigin],
-        v: UnsafePointer[Float32, MutAnyOrigin],
+        c: MutPointer[UInt32, MutAnyOrigin],
+        r: MutPointer[UInt32, MutAnyOrigin],
+        v: MutPointer[Float32, MutAnyOrigin],
     ):
         self.numRows = rows
         self.numCols = cols
@@ -176,12 +205,12 @@ def generate_sparse_matrix(
             if random_float64() > Float64(sparsity):
                 row_idx.append(UInt32(r))
                 col_idx.append(UInt32(c))
-                values.append(random_float64().cast[DType.float32]())
+                values.append(random_float64().cast[.float32]())
 
 
 def verify(
     y_ref: List[Float32],
-    d_y: UnsafePointer[Float32, MutAnyOrigin],
+    d_y: ImmPointer[Float32, _],
     rows: Int,
 ) -> Bool:
     var correct = True

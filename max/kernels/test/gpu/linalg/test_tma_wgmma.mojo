@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier, warp_id, lane_id
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, thread_idx
-from layout import Layout, LayoutTensor
+from max.gpu import warp_id, lane_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu import block_idx, thread_idx
+from layout import Coord, Idx, TensorLayout, TileTensor, coord, row_major
+from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import product
-from layout.layout_tensor import copy_local_to_dram
+from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout.tile_io import copy_local_to_dram
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    tile_layout_k_major,
-    tile_layout_mn_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
     warpgroup_fence,
 )
 from layout.tma_async import (
@@ -35,80 +35,75 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 
-def _compute_reg_tile_layout(layout: Layout, frag_size: Int) -> Layout:
-    var local_size = layout.size() // 128
-    return Layout.row_major(local_size // frag_size, frag_size)
+comptime _ARegTile[dtype: DType, num_frags: Int, frag_size: Int] = TileTensor[
+    dtype,
+    type_of(row_major[num_frags, frag_size]()),
+    MutUntrackedOrigin,
+    address_space=.LOCAL,
+]
 
 
-@always_inline
+@inline(.always)
 def _load_a_reg_tile[
-    dtype: DType,
-    layout: Layout,
-    //,
-    wgmma_shape: IndexList[3],
-](
-    out ret: LayoutTensor[
-        dtype,
-        _compute_reg_tile_layout(layout, 16 // size_of[dtype]()),
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
-    ],
-    smem_tile: LayoutTensor[
-        dtype,
-        layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        ...,
-    ],
-):
-    comptime assert ret.layout[0].shape[0].value() > 0
-    ret = type_of(ret).stack_allocation()
+    dtype: DType, BM: Int, BK: Int, wgmma_shape: IndexList[3]
+](smem_tile: TileTensor[dtype, address_space=.SHARED, ...]) -> _ARegTile[
+    dtype,
+    (BM // wgmma_shape[0]) * (BK // wgmma_shape[2]),
+    wgmma_shape[0] * wgmma_shape[2] // 128,
+]:
+    """Loads the warp group's A fragments for every WGMMA from shared memory.
 
+    Row `m_mma + k_mma * num_m_mmas` of the result holds one fragment in the
+    register order the 16-bit `wgmma.m64nNk16` A operand expects: the lane's
+    pair at (row, col), then (row + 8, col), (row, col + 8), (row + 8, col + 8)
+    with row = 16 * warp + lane // 4 and col = 2 * (lane % 4).
+    """
     comptime WGMMA_M = wgmma_shape[0]
     comptime WGMMA_K = wgmma_shape[2]
+    comptime assert WGMMA_M == 64 and WGMMA_K == 16 and size_of[dtype]() == 2
+    comptime num_m_mmas = BM // WGMMA_M
+    comptime num_k_mmas = BK // WGMMA_K
+    comptime frag_size = WGMMA_M * WGMMA_K // 128
 
-    comptime rows = product(layout[0].shape)
-    comptime cols = product(layout[1].shape)
+    var ret = stack_allocation[dtype=dtype, address_space=.LOCAL, alignment=16](
+        row_major[num_m_mmas * num_k_mmas, frag_size]()
+    )
 
-    comptime num_wgmma_m = ceildiv(rows, WGMMA_M)
-    comptime num_wgmma_k = ceildiv(cols, WGMMA_K)
-    comptime assert num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()
+    var lane = Int(lane_id())
+    var row = Int(warp_id()) * (WGMMA_M // 4) + lane // 4
+    var col = (lane % 4) * 2
 
-    comptime simd_size = 4 // size_of[dtype]()
-    var vret = ret.vectorize[1, simd_size]()
-
-    comptime for m_mma in range(num_wgmma_m):
-        comptime for k_mma in range(num_wgmma_k):
-            comptime r_id = m_mma + k_mma * num_wgmma_m
-            var smem_wg = (
-                smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma)
-                .tile[WGMMA_M // 4, WGMMA_K](warp_id(), 0)
-                .vectorize[1, simd_size]()
-                .distribute[Layout.row_major(8, 4)](lane_id())
-            )
-            vret.tile[1, 4](r_id, 0).copy_from(smem_wg)
+    comptime for m_mma in range(num_m_mmas):
+        comptime for k_mma in range(num_k_mmas):
+            comptime r_id = m_mma + k_mma * num_m_mmas
+            comptime for i in range(4):
+                var r = m_mma * WGMMA_M + row + (i % 2) * 8
+                var c = k_mma * WGMMA_K + col + (i // 2) * 8
+                ret.store(
+                    (Idx[r_id], Idx[2 * i]),
+                    smem_tile.load[width=2]((r, c)),
+                )
+    return ret
 
 
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def tma_wgmma_kernel[
+    CLayout: TensorLayout,
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    c_layout: Layout,
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -116,44 +111,112 @@ def tma_wgmma_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: UInt,
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
+    c: TileTensor[c_type, CLayout, MutAnyOrigin],
+    num_iters_dev: Int32,
 ):
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime if transpose_b:
+        _tma_wgmma_body[
+            tile_layout_k_major_typed[b_type, BN, BK, b_swizzle],
+            a_type,
+            b_type,
+            c_type,
+            a_tile_shape,
+            a_desc_shape,
+            b_tile_shape,
+            b_desc_shape,
+            block_tile_shape,
+            wgmma_shape,
+            transpose_b=transpose_b,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            a_smem=a_smem,
+        ](a_tma_op, b_tma_op, c, num_iters_dev)
+    else:
+        _tma_wgmma_body[
+            tile_layout_mn_major_typed[b_type, BN, BK, b_swizzle],
+            a_type,
+            b_type,
+            c_type,
+            a_tile_shape,
+            a_desc_shape,
+            b_tile_shape,
+            b_desc_shape,
+            block_tile_shape,
+            wgmma_shape,
+            transpose_b=transpose_b,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            a_smem=a_smem,
+        ](a_tma_op, b_tma_op, c, num_iters_dev)
+
+
+@inline(.always)
+def _tma_wgmma_body[
+    CLayout: TensorLayout,
+    BSmemLayout: TensorLayout,
+    //,
+    b_smem_layout: BSmemLayout,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    block_tile_shape: IndexList[3],
+    wgmma_shape: IndexList[3],
+    transpose_b: Bool = True,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    a_smem: Bool = True,
+](
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
+    c: TileTensor[c_type, CLayout, MutAnyOrigin],
+    num_iters_dev: Int32,
+):
+    comptime assert c.rank == c.flat_rank == 2
+    comptime assert type_of(c).LayoutType.shape_known
+    var num_iters = Int(num_iters_dev)
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
     comptime num_m_mmas = BM // wgmma_shape[0]
     comptime num_n_mmas = BN // wgmma_shape[1]
 
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
+    comptime a_smem_layout = tile_layout_k_major_typed[
+        a_type, BM, BK, a_swizzle
+    ]
+    comptime assert type_of(a_smem_layout).all_dims_known
+    comptime assert BSmemLayout.all_dims_known
 
-    var a_smem_tile = LayoutTensor[
-        a_type,
+    var a_smem_tile = TileTensor[address_space=.SHARED](
+        unsafe_stack_allocation[
+            BM * BK,
+            Scalar[a_type],
+            address_space=.SHARED,
+            alignment=128,
+        ](),
         a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    )
 
-    var b_smem_tile = LayoutTensor[
-        b_type,
+    var b_smem_tile = TileTensor[address_space=.SHARED](
+        unsafe_stack_allocation[
+            BN * BK,
+            Scalar[b_type],
+            address_space=.SHARED,
+            alignment=128,
+        ](),
         b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    )
 
     comptime accum_type = get_accum_type[a_type]()
-    wgmma_op = TensorCoreAsync[
+    var wgmma_op = TensorCoreAsync[
         accum_type,
         a_type,
         b_type,
@@ -164,23 +227,20 @@ def tma_wgmma_kernel[
     ]()
 
     comptime c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-    var c_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
-    ].stack_allocation()
+    var c_reg_tile = stack_allocation[
+        dtype=accum_type, address_space=.LOCAL, alignment=16
+    ](row_major[num_m_mmas * num_n_mmas, c_frag_size]())
 
     _ = c_reg_tile.fill(0.0)
 
-    comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
+    comptime a_expected_bytes = BM * BK * size_of[a_type]()
+    comptime b_expected_bytes = BN * BK * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -194,17 +254,17 @@ def tma_wgmma_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar[0],
-                (Int(i) * BK, block_idx.y * BM),
+                (i * BK, block_idx.y * BM),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 mbar[0],
                 (
-                    Int(i) * BK,
+                    i * BK,
                     block_idx.x * BN,
                 ) if transpose_b else (
                     block_idx.x * BN,
-                    Int(i) * BK,
+                    i * BK,
                 ),
             )
 
@@ -220,7 +280,9 @@ def tma_wgmma_kernel[
         comptime if a_smem:
             wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         else:
-            var a_reg_tile = _load_a_reg_tile[wgmma_shape](a_smem_tile)
+            var a_reg_tile = _load_a_reg_tile[a_type, BM, BK, wgmma_shape](
+                a_smem_tile
+            )
             wgmma_op.wgmma(a_reg_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
         warpgroup_fence(c_reg_tile)
@@ -228,7 +290,7 @@ def tma_wgmma_kernel[
 
         barrier()
 
-    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -236,18 +298,27 @@ def tma_wgmma_kernel[
 
             # (m_mma, n_mma) is coordinates for a warp group's tile.
             # A warp group is 4x1 warps.
-            warp_tile = c_gmem_tile.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
-                m_mma * 4 + warp_id(), n_mma
-            )
+            var warp_tile = c_gmem_tile.tile[
+                wgmma_shape[0] // 4, wgmma_shape[1]
+            ](m_mma * 4 + warp_id(), n_mma)
 
             # Tile at (mma_id, 0) is a long vector containing all fragments
             # for this warp.
-            c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+            var c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+            var c_output_frag = stack_allocation[
+                dtype=c_type, address_space=.LOCAL, alignment=16
+            ](row_major[1, c_frag_size]())
+
+            # Scalar views avoid requiring wider SIMD alignment on C registers.
+            comptime for i in range(c_frag_size):
+                c_output_frag.tile[1, 1](0, i).copy_from(
+                    c_frag.tile[1, 1](0, i)
+                )
 
             # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
             # elementwise. This pattern repeats to fill the warp tile.
-            copy_local_to_dram[Layout.row_major(8, 4)](
-                warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
+            copy_local_to_dram[row_major[8, 4]()](
+                warp_tile.vectorize[1, 2](), c_output_frag.vectorize[1, 2]()
             )
 
 
@@ -290,47 +361,38 @@ def test_tma_wgmma[
     comptime N = prob_shape[1]
     comptime K = prob_shape[2]
 
-    var a = ManagedLayoutTensor[
-        a_type,
-        Layout.row_major(M, K),
-    ](ctx)
-    arange(a.tensor[update=False]())
+    var a = HostDeviceTileTensor[a_type](row_major[M, K](), ctx)
+    arange(a.host_tensor())
 
-    comptime b_layout = Layout.row_major(
-        N, K
-    ) if transpose_b else Layout.row_major(K, N)
-    var b = ManagedLayoutTensor[b_type, b_layout](ctx)
-    arange(b.tensor[update=False]())
+    var b = HostDeviceTileTensor[b_type](
+        row_major[N if transpose_b else K, K if transpose_b else N](), ctx
+    )
+    arange(b.host_tensor())
 
-    var c = ManagedLayoutTensor[
-        c_type,
-        Layout.row_major(M, N),
-    ](ctx)
+    var c = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
 
-    var c_ref = ManagedLayoutTensor[
-        c_type,
-        Layout.row_major(M, N),
-    ](ctx)
+    var c_ref = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
 
-    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    a.to_device()
+    b.to_device()
+
+    var a_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=a_swizzle](
         ctx, a.device_tensor()
     )
-    b_tma_op = create_tensor_tile[
-        Index(BN, BK) if transpose_b else Index(BK, BN),
+    var b_tma_op = create_tensor_tile[
+        coord[BN if transpose_b else BK, BK if transpose_b else BN],
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
     comptime kernel = tma_wgmma_kernel[
+        type_of(row_major[M, N]()),
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        Layout.row_major(M, N),
         block_tile_shape,
         wgmma_shape,
         transpose_b=transpose_b,
@@ -339,28 +401,30 @@ def test_tma_wgmma[
         a_smem=a_smem,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
-        c.device_tensor(),
-        UInt(K // BK),
+        c.device_tensor().as_unsafe_any_origin(),
+        Int32(K // BK),
         grid_dim=(N // BN, M // BM),
         block_dim=(128),
     )
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_tensor[update=False](),
-        a.device_tensor[update=False](),
-        b.device_tensor[update=False](),
+        c_ref.device_tensor(),
+        a.device_tensor(),
+        b.device_tensor(),
         c_row_major=True,
         transpose_b=transpose_b,
     )
 
     ctx.synchronize()
 
-    c_host = c.tensor()
-    c_host_ref = c_ref.tensor()
+    c.to_host()
+    c_ref.to_host()
+    var c_host = c.host_tensor()
+    var c_host_ref = c_ref.host_tensor()
 
     for m in range(M):
         for n in range(N):
@@ -368,7 +432,6 @@ def test_tma_wgmma[
                 c_host[m, n], c_host_ref[m, n], atol=1e-3, rtol=1e-4
             )
 
-    # print(c.tensor())
     _ = a^
     _ = b^
     _ = c^
@@ -378,27 +441,27 @@ def test_tma_wgmma[
 def main() raises:
     with DeviceContext() as ctx:
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(128, 16, 32),
             Index(128, 16, 32),
             Index(64, 8, 16),
         ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),
         ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),
@@ -407,9 +470,9 @@ def main() raises:
         ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(128, 16, 32),
             Index(128, 16, 32),
             Index(64, 8, 16),
@@ -418,9 +481,9 @@ def main() raises:
         ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(128, 16, 16),
             Index(128, 16, 16),
             Index(64, 8, 16),
@@ -431,9 +494,9 @@ def main() raises:
         comptime for log2BN in range(6, 8):
             comptime BN = 1 << log2BN
             test_tma_wgmma[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 Index(128, 256, 64),
                 Index(64, BN, 64),
                 Index(64, 64, 16),
@@ -443,9 +506,9 @@ def main() raises:
             ](ctx)
 
             test_tma_wgmma[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 Index(128, 256, 64),
                 Index(64, BN, 64),
                 Index(64, 64, 16),
@@ -455,9 +518,9 @@ def main() raises:
             ](ctx)
 
             test_tma_wgmma[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 Index(128, 256, 16),
                 Index(64, BN, 16),
                 Index(64, 64, 16),
@@ -467,9 +530,9 @@ def main() raises:
             ](ctx)
 
             test_tma_wgmma[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 Index(128, 256, 16),
                 Index(64, BN, 16),
                 Index(64, 64, 16),
@@ -480,9 +543,9 @@ def main() raises:
             ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),

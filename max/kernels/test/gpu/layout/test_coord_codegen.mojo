@@ -12,21 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedTuple GPU memory codegen."""
 
-import std.sys
-
-from std.gpu.host.compile import _compile_code, get_gpu_target
+from max.gpu.host.compile import _compile_code, get_gpu_target
 from layout import Coord, Idx
 from std.testing import assert_true
 
 
-def kernel(v: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
+def kernel(v: Int, ptr: MutPointer[Int32, MutAnyOrigin]):
     """Kernel that uses MixedTuple with both compile-time and runtime indices.
 
     Args:
         v: Runtime value for dynamic indexing.
         ptr: Output pointer to store results.
     """
-    var l = Coord(Idx[1](), Coord(Idx(v), Idx[3]()))
+    var l = Coord(Idx[1], Coord(v, Idx[3]))
     ptr[0] = Int32(l[0].value())
     ptr[1] = Int32(l[1][0].value())
 

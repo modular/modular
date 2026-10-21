@@ -11,9 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the ARM NEON lane-FMA microkernel for CPU matmul.
+
+Defines `Inner_matmul_neon`, a struct conforming to the `InnerMatmulKernel`
+trait that accumulates partial products using vectorized lane-broadcast FMA
+against a packed B matrix. The dispatcher selects this kernel on ARM NEON
+hardware for operand types that take neither the integer dot-product
+(`dotprod`) nor the `i8mm` path, which in practice means floating-point
+operands.
+"""
+
 from std.math import fma
 
-from layout import LayoutTensor, RuntimeTuple, TileTensor
+from layout import Coord, Idx, TileTensor
 
 from std.utils.index import Index, IndexList
 
@@ -26,7 +36,15 @@ from .impl import InnerMatmulKernel
 # implements the Neon microkernel.
 @fieldwise_init
 struct Inner_matmul_neon(InnerMatmulKernel, Movable):
-    @always_inline
+    """ARM NEON lane-FMA microkernel for CPU matmul.
+
+    Implements `InnerMatmulKernel` using vectorized lane-broadcast FMA to
+    accumulate partial products. Loads `simd_size` elements of A, broadcasts
+    each lane across all kernel rows, and computes dot products against packed
+    B columns. Handles tail elements in the K dimension with scalar cleanup.
+    """
+
+    @inline(.always)
     def _accumulate_lane[
         simd_size: Int,
         a_col_size: Int,
@@ -34,8 +52,8 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         kernel_cols: Int,
     ](
         self,
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        a: TileTensor,
+        b_packed: TileTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -46,14 +64,14 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         local accumulation buffer while processing a single column of A.
 
         Args:
-            a: TODO.
-            b_packed: TODO.
+            a: Input A matrix tile being processed.
+            b_packed: Packed B matrix tile in cache-friendly layout.
             c_local: Pre-allocated local buffer for c partial sums.
-            global_offset: TODO.
+            global_offset: Global (M, N, K) coordinate offset for this tile.
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -61,29 +79,25 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         # Global K index.
         var global_k = global_offset.K + tile_n_k_idx[1]
 
-        var b_offset = b_packed.runtime_layout(
-            RuntimeTuple[b_packed.layout.shape](
-                Index(n_outer_idx, tile_n_k_idx[1], 0)
-            )
-        )
-        var b_ptr = b_packed.ptr + b_offset
-
-        var a_vals = InlineArray[SIMD[c_local.dtype, a_col_size], kernel_rows](
-            uninitialized=True
+        var b_ptr = b_packed.ptr_at_offset(
+            Coord(n_outer_idx, tile_n_k_idx[1], Idx[0])
         )
 
-        comptime for row in range(kernel_rows):
-            var global_m = global_offset.M + row
-            var a_val = a.load[width=a_col_size](
-                IndexList[2](global_m, global_k)
-            ).cast[c_local.dtype]()
-            a_vals[row] = a_val
+        var a_vals = Array[_, kernel_rows](
+            fill_with_unrolled=lambda [row: Int]() -> SIMD[
+                c_local.dtype, a_col_size
+            ]: a.load[width=a_col_size](
+                Coord(global_offset.M + row, global_k)
+            ).cast[
+                c_local.dtype
+            ]()
+        )
 
         comptime for lane in range(a_col_size):
             comptime for col in range(kernel_cols // simd_size):
                 var b_val = (
-                    (b_ptr + col * simd_size)
-                    .load[width=simd_size]()
+                    (b_ptr.unsafe_offset(col * simd_size))
+                    .unsafe_load[width=simd_size]()
                     .cast[c_local.dtype]()
                 )
 
@@ -95,9 +109,9 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                     )
                     c_local[row, col] = c_val
 
-            b_ptr = b_ptr + kernel_cols
+            b_ptr = b_ptr.unsafe_offset(kernel_cols)
 
-    @always_inline
+    @inline(.always)
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -114,17 +128,35 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
+
+        Parameters:
+            kernel_rows: Number of rows in the M-dimension tile processed per
+                invocation.
+            kernel_cols: Number of columns in the N-dimension tile processed
+                per invocation; must be a multiple of `simd_size`.
+            simd_size: SIMD vector width used for lane-broadcast FMA on packed
+                B elements.
+
+        Args:
+            c: Output C matrix tile accumulating the partial products.
+            a: Input A matrix tile read in row-major order.
+            b_packed: Packed B matrix tile in cache-friendly layout; must be
+                rank 3.
+            global_offset: Global (M, N, K) coordinate offset of this tile
+                within the whole matmul problem space.
+            global_bound: Global (M, N, K) extent of the full matmul problem
+                space, used for boundary clipping on the C store.
+            tile_n_k: (n, k) extents of the tile to process in the N and K
+                dimensions.
+            skip_boundary_check: Whether the tile lies fully within
+                `global_bound` so boundary clipping can be skipped.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
-
-        # Convert to LayoutTensor for _accumulate_lane which uses
-        # runtime_layout.
-        var a_lt = a.to_layout_tensor()
-        var b_lt = b_packed.to_layout_tensor()
+        comptime assert c.flat_rank == 2, "c must be rank 2"
 
         var c_stride = Int(c.dim[1]())
 
-        var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr_at_offset(Coord(global_offset.M, global_offset.N))
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
@@ -140,7 +172,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                    rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -151,24 +183,24 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 self._accumulate_lane[
                     simd_size, simd_size, kernel_rows, kernel_cols
                 ](
-                    a_lt,
-                    b_lt,
+                    a,
+                    b_packed,
                     acc,
                     global_offset,
-                    Index(idx_n, idx_k0),
+                    (idx_n, idx_k0),
                 )
 
             for idx_k1 in range(partition_end, tile_n_k[1]):
                 # accumulate data for this (n, k) index
                 self._accumulate_lane[simd_size, 1, kernel_rows, kernel_cols](
-                    a_lt,
-                    b_lt,
+                    a,
+                    b_packed,
                     acc,
                     global_offset,
-                    Index(idx_n, idx_k1),
+                    (idx_n, idx_k1),
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

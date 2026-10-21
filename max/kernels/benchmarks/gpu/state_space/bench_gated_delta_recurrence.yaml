@@ -1,0 +1,51 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_gated_delta_recurrence
+file: $KERNEL_BENCHMARKS_ROOT/gpu/state_space/bench_gated_delta_recurrence.mojo
+
+base: &base
+  $state_dtype: [bfloat16, float32]
+  metadata:
+    KEY_HEAD_DIM: 128
+    VALUE_HEAD_DIM: 128
+  $value_heads: 48
+  $key_heads: 16
+
+params:
+- <<: *base
+  $cohort: smoke
+  $state_dtype: bfloat16
+  $batch: 1
+  $window: 1
+- <<: *base
+  $cohort: decode
+  $state_dtype: float32
+  $batch: 1
+  $window: 1
+- <<: *base
+  $cohort: decode
+  $batch: 1
+  $window: 4
+- <<: *base
+  $cohort: decode
+  $batch: [4, 20]
+  $window: [1, 4]
+- <<: *base
+  $cohort: prefill
+  $batch: 1
+  $window: 8192
+- <<: *base
+  $cohort: prefill
+  $batch: 8
+  $window: 1024

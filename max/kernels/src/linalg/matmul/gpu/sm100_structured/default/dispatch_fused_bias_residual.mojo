@@ -1,0 +1,212 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Dispatcher for fused matmul + bias/residual (`mo.composite.matmul_add`).
+
+Kept separate from `matmul_dispatch_sm100` so the generic matmul dispatch does
+not have to thread an epilogue tensor through every kernel. The bias/residual is
+honored one of two mutually exclusive ways:
+
+  * Native: the SM100 blackwell GEMM applies it via its TMA epilogue load (the
+    tensor is passed, no lambda). Used for GEMM-shaped problems (M>1, N>1, bf16,
+    16B-aligned N/K) -- the fast prefill path.
+  * Fallback: the bias/residual is wrapped as a compute closure and the
+    generic `matmul_dispatch_sm100` is reused. GEMV (M=1/N=1), small-MN, and
+    vendor (cuBLAS) all apply a compute closure, so correctness is universal.
+    No tensor is passed, so there is no double-add.
+"""
+
+from std.collections import OptionalReg
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
+from std.sys import size_of
+
+from internal_utils import Table
+from layout import Coord, RowMajorLayout, TensorEngine, TileTensor
+from std.logger import Logger
+from std.utils.index import Index
+
+from .....utils import identity_compute_fn, no_epilogue_fn
+from .dispatch import (
+    matmul_dispatch_sm100,
+    sm100_heuristic_and_outliers_dispatch,
+    _small_MN_gemms_impl,
+    _vendor_blas_matmul_sm100,
+)
+from .tuning_configs import (
+    TuningConfigSmallMNGemms,
+    _get_tuning_list_small_MN_gemms_bf16,
+)
+
+comptime logger = Logger()
+
+
+@inline(.always)
+def fused_bias_residual_matmul_dispatch_sm100[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    EpilogueEngine: TensorEngine,
+    //,
+    transpose_b: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
+    epilogue_is_1d: Bool = False,
+    has_epilogue_tensor: Bool = True,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    epilogue_tensor: TileTensor[
+        c_type,
+        RowMajorLayout[Int64, Int64],
+        ImmutAnyOrigin,
+        Engine=EpilogueEngine,
+    ],
+    ctx: DeviceContext,
+) raises:
+    """Dispatches a fused matmul plus bias/residual on SM100 (Blackwell) GPUs.
+
+    Selects between a native TMA-epilogue GEMM path for aligned GEMM-shaped
+    problems and a fallback that applies the bias/residual as a compute
+    closure through the generic `matmul_dispatch_sm100` dispatcher (covering
+    GEMV, small-MN, and vendor paths).
+
+    Parameters:
+        c_type: Output element dtype of `c`.
+        a_type: Element dtype of `a`; must equal `b_type` and be bfloat16.
+        b_type: Element dtype of `b`; must equal `a_type` and be bfloat16.
+        EpilogueEngine: Engine of the `epilogue_tensor` bias/residual tensor.
+        transpose_b: Whether `b` is transposed.
+        pdl_level: Persistent kernel launch grid control level.
+        epilogue_is_1d: Treats `epilogue_tensor` as a 1D bias broadcast across rows.
+        has_epilogue_tensor: Indicates an epilogue tensor is supplied for the TMA path.
+
+    Args:
+        c: Rank-2 output tile tensor accumulating `a @ b` plus the residual.
+        a: Rank-2 left-hand side input tile tensor.
+        b: Rank-2 right-hand side input tile tensor.
+        epilogue_tensor: Row-major bias/residual tensor added into `c`.
+        ctx: Device context used to launch the selected kernel.
+
+    Raises:
+        On comptime assertion failures for rank, dtype, or dtype-pair mismatches.
+    """
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
+
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
+
+    comptime assert (
+        a_type == b_type == .bfloat16
+    ), "a_type and b_type must be bfloat16 and must be the same"
+    comptime assert c_type in (DType.bfloat16,), "c_type must be bfloat16"
+
+    # Zero-sized output (e.g. an ``(0, N)`` GEMM from the fused Linear layers
+    # of a diffusion VAE encoder running on the text-to-image ``(0, 0, 3)``
+    # placeholder image): nothing to compute.  The generic ``matmul`` entry
+    # guards this identically. The output buffer is pre-allocated zero-element
+    # by the caller, so an early return produces the correct empty output.
+    if m == 0 or Int(c.dim[1]()) == 0:
+        return
+
+    # The bias/residual as a compute epilogue: `c = (a @ b) + epilogue[coords]`,
+    # broadcasting row 0 for a 1D bias. Every non-TMA kernel (GEMV, small-MN,
+    # cuBLAS) applies this exactly once.
+    @inline(.always)
+    def bias_residual_compute_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var epilogue_tensor} -> SIMD[
+        dtype, width
+    ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row = 0 if epilogue_is_1d else Int(idx[0])
+        return val + rebind[SIMD[dtype, width]](
+            epilogue_tensor.load[
+                width=width, alignment=alignment * size_of[c_type]()
+            ](Coord(row, idx[1]))
+        )
+
+    comptime small_MN_gemms_table = Table(
+        _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
+    )
+
+    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
+        rule=lambda (x: TuningConfigSmallMNGemms) -> Bool: x.K == static_K
+        and x.N == static_N
+    )
+
+    comptime if small_MN_gemms_configs:
+        comptime for config in small_MN_gemms_configs:
+            if m >= config.M and m < config.M_end:
+                logger.info("Dispatching to small_MN_gemms: ", config)
+                _small_MN_gemms_impl[
+                    config=config,
+                    has_epilogue_fn=False,
+                    has_compute_fn=True,
+                    pdl_level=pdl_level,
+                ](c, a, b, no_epilogue_fn, bias_residual_compute_fn, ctx)
+                return
+
+    comptime low_perf_shapes = [
+        Index(2112, 14336),
+    ]
+
+    # fallback to vendor matmul for shapes that Mojo kernel is lagging behind
+    comptime if (static_N, static_K) in low_perf_shapes:
+        _vendor_blas_matmul_sm100[
+            transpose_b=transpose_b,
+            has_compute_fn=True,
+        ](c, a, b, no_epilogue_fn, bias_residual_compute_fn, ctx)
+        return
+
+    comptime has_static_NK = static_N > 0 and static_K > 0
+
+    # Native fast path: the pure SM100 blackwell GEMM applies the bias/residual
+    comptime if (
+        has_static_NK
+        and transpose_b
+        and static_N * size_of[c_type]() % 16 == 0
+        and static_K * size_of[a_type]() % 16 == 0
+    ):
+        if m != 1:
+            var status = sm100_heuristic_and_outliers_dispatch[
+                transpose_b=transpose_b,
+                pdl_level=pdl_level,
+                has_epilogue_tensor=True,
+                epilogue_is_1d=epilogue_is_1d,
+                has_compute_fn=False,
+            ](
+                c,
+                a,
+                b,
+                no_epilogue_fn,
+                identity_compute_fn,
+                ctx,
+                epilogue_tensor=OptionalReg(epilogue_tensor),
+            )
+            if status:
+                logger.info(
+                    "------ Fused matmul+bias/residual: TMA epilogue ----"
+                )
+                return
+
+    # Fallback: residual is a compute closure applied by whichever
+    # kernel the generic dispatcher selects (GEMV / small-MN / cuBLAS). No
+    # tensor is passed, so there is no double-add with a TMA epilogue.
+    logger.info("------ Fused matmul+bias/residual: elementwise epilogue ----")
+    matmul_dispatch_sm100[transpose_b=transpose_b, pdl_level=pdl_level](
+        c, a, b, bias_residual_compute_fn, ctx
+    )

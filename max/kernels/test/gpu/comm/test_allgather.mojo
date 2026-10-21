@@ -12,18 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.sys import size_of, has_amd_gpu_accelerator
+from std.math.uutils import ualign_down
+from std.sys import size_of
 
 from comm.allgather import allgather
-from comm import MAX_GPUS, Signal
-from comm.sync import enable_p2p
+from comm import Signal
+from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from layout import TileTensor, row_major
 from std.testing import assert_equal, assert_true
 
 
@@ -39,15 +36,10 @@ def all_gather_test[
     # Create device buffers for all GPUs.
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     # Calculate temp buffer size for signals.
     var max_length = 0
@@ -63,8 +55,9 @@ def all_gather_test[
         in_bufs_list.append(list_of_ctx[i].create_buffer_sync[dtype](length))
 
         # Create host buffer with test data.
-        var host_buffer = alloc[Scalar[dtype]](length)
-        host_buffers.append(host_buffer)
+        var host_buffer = list_of_ctx[i].enqueue_create_host_buffer[dtype](
+            length
+        )
 
         # Initialize with unique values per device.
         for j in range(length):
@@ -74,15 +67,22 @@ def all_gather_test[
 
         # Create and initialize signal buffers.
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
 
         # Copy to device.
-        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
+        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
+
+        host_buffers.append(host_buffer^)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create output buffers - each device needs ngpus output buffers.
     for device_idx in range(ngpus):
@@ -96,29 +96,32 @@ def all_gather_test[
 
     # Build TileTensor arrays directly.
     comptime InTileType = type_of(
-        TileTensor(
-            in_bufs_list[0].unsafe_ptr(), row_major(Idx(lengths[0]))
-        ).as_immut()
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
-    comptime for i in range(ngpus):
-        tt_in_bufs[i] = TileTensor(
-            in_bufs_list[i].unsafe_ptr(), row_major(Idx(lengths[i]))
-        ).as_immut()
+    var tt_in_bufs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InTileType: (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_imm()
+            .as_unsafe_any_origin()
+        )
+    )
 
     comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0][0].unsafe_ptr(), row_major(Idx(lengths[0])))
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
     )
-    var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
-        uninitialized=True
-    )
-    comptime for i in range(ngpus * ngpus):
-        comptime device_idx = i // ngpus
-        comptime input_idx = i % ngpus
-        tt_out_bufs[i] = TileTensor(
-            out_bufs_list[device_idx][input_idx].unsafe_ptr(),
-            row_major(Idx(lengths[input_idx])),
-        )
+
+    def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
+        var device_idx, input_idx = divmod(i, ngpus)
+        return TileTensor(
+            out_bufs_list[device_idx][input_idx],
+            row_major(lengths[input_idx]),
+        ).as_unsafe_any_origin()
+
+    var tt_out_bufs = Array[_, ngpus * ngpus](fill_with=tt_out_bufs_at)
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
     var uniform = True
@@ -127,7 +130,7 @@ def all_gather_test[
             uniform = False
             break
 
-    if uniform and has_amd_gpu_accelerator():
+    if uniform and list_of_ctx.T.target.is_amd_gpu():
         # Reset outputs for vendor test
         for device_idx in range(ngpus):
             for input_idx in range(ngpus):
@@ -151,11 +154,10 @@ def all_gather_test[
     print("  Testing implementation with rank_sigs (P2P-capable)")
 
     for gpu_idx in range(ngpus):
-        var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
-        comptime for src_idx in range(ngpus):
-            device_out[src_idx] = tt_out_bufs[gpu_idx * ngpus + src_idx]
+        # `tt_out_bufs` is already the world-view output array `allgather`
+        # expects (`ngpus * ngpus` for this full-world, ungrouped test).
         allgather(
-            tt_in_bufs, device_out, rank_sigs, list_of_ctx[gpu_idx], gpu_idx
+            tt_in_bufs, tt_out_bufs, rank_sigs, list_of_ctx[gpu_idx], gpu_idx
         )
 
     # Synchronize all devices.
@@ -164,10 +166,6 @@ def all_gather_test[
 
     # Verify results for new implementation.
     _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
-
-    # Clean up.
-    for i in range(ngpus):
-        host_buffers[i].free()
 
 
 def _verify_results[
@@ -184,7 +182,9 @@ def _verify_results[
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var length = lengths[input_idx]
-            var host_output = alloc[Scalar[dtype]](length)
+            var host_output = list_of_ctx[
+                device_idx
+            ].enqueue_create_host_buffer[dtype](length)
 
             # Copy output back to host.
             list_of_ctx[device_idx].enqueue_copy(
@@ -214,7 +214,265 @@ def _verify_results[
                     )
                     raise e^
 
-            host_output.free()
+
+def grouped_all_gather_test[
+    dtype: DType, ngpus: Int, group_size: Int
+](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
+    """Test allgather with two independent contiguous groups."""
+    comptime assert ngpus == 4, "grouped test expects 4 GPUs"
+    comptime assert group_size == 2, "grouped test expects groups of 2 GPUs"
+
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
+    var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+
+    for i in range(ngpus):
+        var length = lengths[i]
+        in_bufs_list.append(list_of_ctx[i].create_buffer_sync[dtype](length))
+
+        var host_buffer = list_of_ctx[i].enqueue_create_host_buffer[dtype](
+            length
+        )
+        for j in range(length):
+            host_buffer[j] = Scalar[dtype](i * 1000 + j)
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
+        )
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+
+        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
+        host_buffers.append(host_buffer^)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    for device_idx in range(ngpus):
+        var group_start = ualign_down(device_idx, group_size)
+        var device_outputs = List[DeviceBuffer[dtype]](capacity=group_size)
+        for local_idx in range(group_size):
+            var input_idx = group_start + local_idx
+            device_outputs.append(
+                list_of_ctx[device_idx].create_buffer_sync[dtype](
+                    lengths[input_idx]
+                )
+            )
+        out_bufs_list.append(device_outputs^)
+
+    comptime InTileType = type_of(
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var tt_in_bufs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InTileType: (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_imm()
+            .as_unsafe_any_origin()
+        )
+    )
+
+    comptime OutTileType = type_of(
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
+    )
+
+    def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
+        var device_idx, local_idx = divmod(i, group_size)
+        var group_start = ualign_down(device_idx, group_size)
+        var input_idx = group_start + local_idx
+        return TileTensor(
+            out_bufs_list[device_idx][local_idx],
+            row_major(lengths[input_idx]),
+        ).as_unsafe_any_origin()
+
+    var tt_out_bufs = Array[_, ngpus * group_size](fill_with=tt_out_bufs_at)
+
+    # `tt_in_bufs`/`tt_out_bufs`/`rank_sigs` are already the WORLD-view arrays
+    # `allgather` expects (indexed by GLOBAL device rank); it does its own
+    # group-local slicing internally from `group_size` + `my_rank`.
+    for device_idx in range(ngpus):
+        allgather[group_size=group_size](
+            tt_in_bufs,
+            tt_out_bufs,
+            rank_sigs,
+            list_of_ctx[device_idx],
+            device_idx,
+        )
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    for device_idx in range(ngpus):
+        var group_start = ualign_down(device_idx, group_size)
+        for local_idx in range(group_size):
+            var input_idx = group_start + local_idx
+            var length = lengths[input_idx]
+            var host_output = list_of_ctx[
+                device_idx
+            ].enqueue_create_host_buffer[dtype](length)
+            list_of_ctx[device_idx].enqueue_copy(
+                host_output, out_bufs_list[device_idx][local_idx]
+            )
+            list_of_ctx[device_idx].synchronize()
+
+            for j in range(length):
+                var expected = Scalar[dtype](input_idx * 1000 + j)
+                try:
+                    assert_equal(host_output[j], expected)
+                except e:
+                    print(
+                        "Grouped verification failed: device",
+                        device_idx,
+                        "local input",
+                        local_idx,
+                        "global input",
+                        input_idx,
+                    )
+                    raise e^
+
+    _ = host_buffers^
+
+
+def relay_all_gather_test[
+    dtype: DType, ngpus: Int, group_size: Int
+](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
+    """Test the relay-assisted allgather reached through the entrypoint.
+
+    Adjacent groups pair up and relay for each other, which `allgather` picks
+    up on its own once the shape is worth it -- the call is the same one a
+    plain grouped allgather makes. Shards are split on their own lengths, so
+    they may be ragged within a group or between the two; shapes the relay
+    path declines on size must fall back to the plain grouped path and still
+    be correct.
+
+    Uses an exactly-representable float32 pattern rather than the bfloat16 one
+    the other tests use: relayed data lands at an offset inside each shard,
+    and bfloat16 rounds neighbouring indices together at these lengths, which
+    would hide an off-by-a-few slice bug. Outputs are zeroed first so a slice
+    the kernel never writes fails instead of reading back stale memory.
+    """
+    comptime assert ngpus == 2 * group_size, "relay test pairs two groups"
+
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
+    var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+
+    for i in range(ngpus):
+        var length = lengths[i]
+        in_bufs_list.append(list_of_ctx[i].create_buffer_sync[dtype](length))
+
+        var host_buffer = list_of_ctx[i].enqueue_create_host_buffer[dtype](
+            length
+        )
+        for j in range(length):
+            host_buffer[j] = Scalar[dtype](i * 1000000 + j)
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
+        )
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+
+        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
+        host_buffers.append(host_buffer^)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    for device_idx in range(ngpus):
+        var group_start = ualign_down(device_idx, group_size)
+        var device_outputs = List[DeviceBuffer[dtype]](capacity=group_size)
+        for local_idx in range(group_size):
+            var input_idx = group_start + local_idx
+            device_outputs.append(
+                list_of_ctx[device_idx].create_buffer_sync[dtype](
+                    lengths[input_idx]
+                )
+            )
+            list_of_ctx[device_idx].enqueue_memset[dtype](
+                device_outputs[local_idx], val=0
+            )
+        out_bufs_list.append(device_outputs^)
+
+    comptime InTileType = type_of(
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var tt_in_bufs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InTileType: (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_imm()
+            .as_unsafe_any_origin()
+        )
+    )
+
+    comptime OutTileType = type_of(
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
+    )
+
+    def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
+        var device_idx, local_idx = divmod(i, group_size)
+        var group_start = ualign_down(device_idx, group_size)
+        return TileTensor(
+            out_bufs_list[device_idx][local_idx],
+            row_major(lengths[group_start + local_idx]),
+        ).as_unsafe_any_origin()
+
+    var tt_out_bufs = Array[_, ngpus * group_size](fill_with=tt_out_bufs_at)
+
+    for device_idx in range(ngpus):
+        allgather[group_size=group_size](
+            tt_in_bufs,
+            tt_out_bufs,
+            rank_sigs,
+            list_of_ctx[device_idx],
+            device_idx,
+        )
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    for device_idx in range(ngpus):
+        var group_start = ualign_down(device_idx, group_size)
+        for local_idx in range(group_size):
+            var input_idx = group_start + local_idx
+            var length = lengths[input_idx]
+            var host_output = list_of_ctx[
+                device_idx
+            ].enqueue_create_host_buffer[dtype](length)
+            list_of_ctx[device_idx].enqueue_copy(
+                host_output, out_bufs_list[device_idx][local_idx]
+            )
+            list_of_ctx[device_idx].synchronize()
+
+            for j in range(length):
+                var expected = Scalar[dtype](input_idx * 1000000 + j)
+                try:
+                    assert_equal(host_output[j], expected)
+                except e:
+                    print(
+                        "Relay verification failed: device",
+                        device_idx,
+                        "source",
+                        input_idx,
+                        "index",
+                        j,
+                    )
+                    raise e^
+
+    _ = host_buffers^
 
 
 def main() raises -> None:
@@ -254,6 +512,97 @@ def main() raises -> None:
             ctx.append(DeviceContext(device_id=i))
 
         print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
-        all_gather_test[DType.bfloat16, ngpus=num_gpus](
-            ctx, materialize[lengths]()
+        all_gather_test[.bfloat16, ngpus=num_gpus](ctx, materialize[lengths]())
+
+    if DeviceContext.number_of_devices() >= 4:
+        var ctx = List[DeviceContext]()
+        for i in range(4):
+            ctx.append(DeviceContext(device_id=i))
+        print("  Testing grouped allgather with 4 GPUs")
+        comptime grouped_lengths: List[Int] = [
+            8 * 1024,
+            4 * 1024,
+            6 * 1024,
+            2 * 1024,
+        ]
+        grouped_all_gather_test[.bfloat16, ngpus=4, group_size=2](
+            ctx, materialize[grouped_lengths]()
         )
+
+        # Relay-assisted allgather: two groups of 2 pairing off. The cases
+        # cover the relay path, its scalar tail, ragged shards, and the size
+        # the tuning table declines in favour of the plain path.
+        comptime relay_lengths_4: List[List[Int]] = [
+            [128 * 1024, 128 * 1024, 128 * 1024, 128 * 1024],
+            # Not a multiple of the SIMD width: exercises the scalar tail,
+            # which the direct streams own rather than the relays.
+            [100001, 100001, 100001, 100001],
+            # Ragged within each group and between them, with tails.
+            [128 * 1024, 100001, 96 * 1024, 70000],
+            # Ragged where one shard is too short to split at all and one is
+            # empty, so their relays sit idle while the others forward.
+            [128 * 1024, 7, 96 * 1024, 0],
+            # A whole group empty while its partner is not. Only this shape
+            # reaches the pair-widened emptiness scan: the empty group has
+            # nothing of its own to gather but still has to launch, on the
+            # same grid and into the same barrier, because its GPUs relay for
+            # the partner. Returning early there hangs the node.
+            [128 * 1024, 128 * 1024, 0, 0],
+            # The same with the empty group first, so the relay role is
+            # exercised from both sides of the pair.
+            [0, 0, 128 * 1024, 128 * 1024],
+            # Too small for relaying to pay for the wider barrier.
+            [4096, 4096, 4096, 4096],
+        ]
+        comptime for case_idx in range(len(relay_lengths_4)):
+            comptime relay_lengths = relay_lengths_4[case_idx]
+            print("  Testing relay allgather, 2 groups of 2, case", case_idx)
+            relay_all_gather_test[.float32, ngpus=4, group_size=2](
+                ctx, materialize[relay_lengths]()
+            )
+
+    if DeviceContext.number_of_devices() == 8:
+        var ctx = List[DeviceContext]()
+        for i in range(8):
+            ctx.append(DeviceContext(device_id=i))
+        comptime relay_lengths_8: List[List[Int]] = [
+            [
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+            ],
+            # Ragged across both groups of four, including a shard with a
+            # scalar tail and one too short for its relays to split.
+            [
+                128 * 1024,
+                100001,
+                96 * 1024,
+                70000,
+                112 * 1024,
+                64 * 1024,
+                5,
+                90000,
+            ],
+            # One whole group of four empty, relaying for a non-empty partner.
+            [
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+                0,
+                0,
+                0,
+                0,
+            ],
+        ]
+        comptime for case_idx in range(len(relay_lengths_8)):
+            comptime relay_lengths = relay_lengths_8[case_idx]
+            print("  Testing relay allgather, 2 groups of 4, case", case_idx)
+            relay_all_gather_test[.float32, ngpus=8, group_size=4](
+                ctx, materialize[relay_lengths]()
+            )

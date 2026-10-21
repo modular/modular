@@ -1,0 +1,65 @@
+:title: max.pipelines.weights
+:type: module
+:lang: python
+:wrapper_class: rst-module-autosummary
+
+max.pipelines.weights
+===============================
+
+.. automodule:: max.pipelines.weights
+   :no-members:
+
+.. currentmodule:: max.pipelines.weights
+
+HuggingFace integration
+-----------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   HuggingFaceRepo
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   download_weight_files
+   generate_local_model_path
+   ~max.pipelines.weights.hf_utils.header_only_weight_files
+   is_diffusion_pipeline
+   try_to_load_from_cache
+   validate_hf_repo_access
+
+Weight loading
+--------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ModelOptModuleQuant
+   WeightPathParser
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   apply_fused_kernel_flags
+   auto_cast_weights_from_env
+   build_modelopt_nvfp4_config
+   gptq_quant_config
+   parse_quant_config
+   read_modelopt_quantized_layers
+   resolve_hf_quant_config
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   AUTO_CAST_ENV_VAR

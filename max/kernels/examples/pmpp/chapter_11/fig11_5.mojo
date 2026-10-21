@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from max.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 from std.math import abs
 
@@ -24,8 +25,8 @@ comptime SEG_SIZE = 256
 
 # ========================== KERNEL CODE ==========================
 def scan_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
     """Kogge-Stone scan with double-buffering using shared memory.
@@ -36,22 +37,22 @@ def scan_kernel(
         N: Number of elements.
     """
     # Allocate shared memory for two buffers
-    var bufferA = stack_allocation[
+    var bufferA = unsafe_stack_allocation[
         SEG_SIZE,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
-    var bufferB = stack_allocation[
+    var bufferB = unsafe_stack_allocation[
         SEG_SIZE,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     var tx = thread_idx.x
     var idx = block_idx.x * SEG_SIZE + tx
 
     # Read input into first buffer
-    bufferA[tx] = Scalar[DType.float32](input[idx])
+    bufferA[tx] = input[idx]
 
     # Ping-pong between buffers
     var in_buffer = bufferA
@@ -62,9 +63,9 @@ def scan_kernel(
         barrier()
         var addend = Float32(0.0)
         if tx >= stride:
-            addend = Float32(in_buffer[tx - stride])
+            addend = in_buffer[tx - stride]
         # Add it to output buffer position
-        out_buffer[tx] = Scalar[DType.float32](addend + Float32(in_buffer[tx]))
+        out_buffer[tx] = addend + in_buffer[tx]
 
         # Swap buffers
         var tmp = in_buffer
@@ -72,13 +73,13 @@ def scan_kernel(
         out_buffer = tmp
         stride *= 2
 
-    output[idx] = Float32(in_buffer[tx])
+    output[idx] = in_buffer[tx]
 
 
 # ========================== TEST CODE ==========================
 def cpu_scan(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: UInt32,
 ):
     """CPU reference scan implementation.
@@ -99,9 +100,9 @@ def main() raises:
     comptime dtype = DType.float32
 
     # Allocate host memory
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](N)
-    var h_ref = alloc[Float32](N)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](N)
+    var h_ref = unsafe_alloc[Float32](N)
 
     # Initialize input
     for i in range(N):
@@ -125,7 +126,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block)
-        ctx.enqueue_function_experimental[scan_kernel](
+        ctx.enqueue_function[scan_kernel](
             d_input,
             d_output,
             UInt32(N),
@@ -156,9 +157,9 @@ def main() raises:
             errors += 1
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

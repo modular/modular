@@ -20,10 +20,10 @@ Maps HuggingFace checkpoint keys to the MAX module state_dict keys for:
 Two top-level adapters correspond to the two architectures in ``arch.py``:
 
 - :func:`convert_kimik2_5_safetensor_state_dict` —
-  ``KimiK25ForConditionalGeneration`` (e.g. nvidia/Kimi-K2.5-NVFP4).
+  ``KimiK25ForConditionalGeneration`` (such as nvidia/Kimi-K2.5-NVFP4).
   Uses ``mm_projector.*`` projector naming; drops ``.k_scale``/``.v_scale``.
 - :func:`convert_kimivl_safetensor_state_dict` —
-  ``KimiVLForConditionalGeneration`` (e.g. moonshotai/Kimi-VL-A3B).
+  ``KimiVLForConditionalGeneration`` (such as moonshotai/Kimi-VL-A3B).
   Uses ``multi_modal_projector.*`` projector naming.
 
 Both adapters share :func:`_convert_merged_state_dict`, which processes
@@ -32,9 +32,11 @@ vision and language keys in a single loop over the raw checkpoint.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 
 from max.dtype import DType
+from max.graph import Shape
 from max.graph.weights import WeightData, Weights
 from transformers.configuration_utils import PretrainedConfig
 
@@ -102,9 +104,7 @@ def _rename_vision_key(checkpoint_name: str) -> str:
 def _cast_vision_weight(checkpoint_name: str, weight: Weights) -> WeightData:
     """Return WeightData, casting floats (non-FP8, non-scale) to bfloat16."""
     weight_data = weight.data()
-    is_scale = checkpoint_name.endswith(
-        ".weight_scale"
-    ) or checkpoint_name.endswith(".input_scale")
+    is_scale = checkpoint_name.endswith((".weight_scale", ".input_scale"))
     if (
         weight_data.dtype.is_float()
         and not weight_data.dtype.is_float8()
@@ -112,6 +112,17 @@ def _cast_vision_weight(checkpoint_name: str, weight: Weights) -> WeightData:
     ):
         weight_data = weight_data.astype(DType.bfloat16)
     return weight_data
+
+
+def _as_rowwise_scale(scale: WeightData) -> WeightData:
+    """Views a per-row scale stored as ``[N]`` in MAX's ``[N, 1]`` layout."""
+    shape = [int(scale.shape[0]), 1]
+    return WeightData(
+        scale.to_buffer().view(scale.dtype, shape),
+        scale.name,
+        scale.dtype,
+        Shape(shape),
+    )
 
 
 def _convert_merged_state_dict(
@@ -167,12 +178,16 @@ def _convert_merged_state_dict(
             continue
         if name.endswith(".self_attn.rotary_emb.inv_freq"):
             continue
-        if drop_kv_scales and (
-            name.endswith(".k_scale") or name.endswith(".v_scale")
-        ):
+        if drop_kv_scales and (name.endswith((".k_scale", ".v_scale"))):
             continue
 
-        result[name] = weight.data()
+        data = weight.data()
+        # Safetensors stores E8M0 scales as uint8; reinterpret.
+        if name.endswith(".weight_scale") and data.dtype == DType.uint8:
+            data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
+        elif name.endswith(".weight_scale") and len(data.shape) == 1:
+            data = _as_rowwise_scale(data)
+        result[name] = data
 
     return result
 
@@ -283,12 +298,69 @@ def convert_eagle3_draft_state_dict(
         for before, after in _EAGLE3_KEY_MAP.items():
             if name.startswith(before):
                 new_name = after + name[len(before) :]
-                result[new_name] = weight.data()
+                result[new_name] = _cast_vision_weight(name, weight)
                 mapped = True
                 break
 
         if not mapped:
             # fc.*, norm.*, lm_head.* pass through directly
-            result[name] = weight.data()
+            result[name] = _cast_vision_weight(name, weight)
 
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Llama-style Eagle3 draft checkpoint adapter
+# ---------------------------------------------------------------------------
+
+# Llama Eagle3 checkpoint key prefix -> Eagle3MHADraft module path.
+# The MHA draft module's layer is flat (single block, no ``decoder_layer``
+# namespace), so the mapping strips the single-layer prefix and inlines
+# norms.
+#
+# Checkpoints in the wild use different single-layer prefix conventions
+# (``midlayer.``, ``model.layers.0.``, ``layers.0.``). Handle all three.
+_LLAMA_EAGLE3_KEY_MAP: dict[str, str] = {
+    "midlayer.hidden_norm.": "hidden_norm.",
+    "midlayer.input_layernorm.": "input_layernorm.",
+    "midlayer.self_attn.": "self_attn.",
+    "midlayer.post_attention_layernorm.": "post_attention_layernorm.",
+    "midlayer.mlp.": "mlp.",
+    "model.layers.0.hidden_norm.": "hidden_norm.",
+    "model.layers.0.input_layernorm.": "input_layernorm.",
+    "model.layers.0.self_attn.": "self_attn.",
+    "model.layers.0.post_attention_layernorm.": "post_attention_layernorm.",
+    "model.layers.0.mlp.": "mlp.",
+    "model.norm.": "norm.",
+    "model.embed_tokens.": "embed_tokens.",
+    "layers.0.hidden_norm.": "hidden_norm.",
+    "layers.0.input_layernorm.": "input_layernorm.",
+    "layers.0.self_attn.": "self_attn.",
+    "layers.0.post_attention_layernorm.": "post_attention_layernorm.",
+    "layers.0.mlp.": "mlp.",
+}
+
+
+def convert_llama_eagle3_draft_state_dict(
+    state_dict: dict[str, Weights],
+    **unused_kwargs,
+) -> dict[str, WeightData]:
+    """Convert a ``LlamaForCausalLMEagle3`` checkpoint to ``Eagle3MHADraft``.
+
+    Handles both ``model.*``-prefixed (standard HF Llama) and
+    ``layers.0.*``-prefixed (EAGLE-export) checkpoints. ``fc.*``,
+    ``norm.*``, and ``lm_head.*`` pass through.
+    """
+    result: dict[str, WeightData] = {}
+    for name, weight in state_dict.items():
+        mapped = False
+        for before, after in _LLAMA_EAGLE3_KEY_MAP.items():
+            if name.startswith(before):
+                new_name = after + name[len(before) :]
+                result[new_name] = _cast_vision_weight(name, weight)
+                mapped = True
+                break
+        if not mapped:
+            # fc.*, norm.*, lm_head.* and any other top-level keys.
+            result[name] = _cast_vision_weight(name, weight)
     return result

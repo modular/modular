@@ -13,37 +13,26 @@
 
 from std.math import exp
 
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import TileTensor, row_major
 from layout._fillers import random
-from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_update_cpu,
     causal_conv1d_update_cpu_no_bias,
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index
-
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
-@always_inline
+@inline(.always)
 def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
-    var x_f32 = x.cast[DType.float32]()
+    var x_f32 = x.cast[.float32]()
     var neg_x = -x_f32
     var exp_neg_x = exp(neg_x)
-    var one = Scalar[DType.float32](1.0)
+    var one = Float32(1.0)
     var sigmoid_x = one / (one + exp_neg_x)
     return (x_f32 * sigmoid_x).cast[dtype]()
 
@@ -62,54 +51,54 @@ def run_causal_conv1d_update[
 ) raises:
     """Test causal conv1d update kernel against reference implementation."""
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-
     # Input x: (B, C, L)
-    var input_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var input_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var input_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var input_h = TileTensor(
         input_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+        row_major(batch, dim, seqlen),
     )
 
     # Conv state: (B, C, S)
-    var conv_state_heap = alloc[Scalar[dtype]](batch * dim * state_len)
-    var conv_state_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var conv_state_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_state_h = TileTensor(
         conv_state_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
+        row_major(batch, dim, state_len),
     )
 
     # Weight: (C, W)
-    var weight_heap = alloc[Scalar[dtype]](dim * width)
-    var weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
-    )
+    var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
+    var weight_h = TileTensor(weight_heap, row_major(dim, width))
 
     # Bias: (C,)
-    var bias_heap = alloc[Scalar[dtype]](dim)
-    var bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
-    )
+    var bias_heap = List(length=dim, fill=Scalar[dtype](0))
+    var bias_h = TileTensor(bias_heap, row_major(dim))
 
     # Output: (B, C, L)
-    var result_fused_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var result_fused_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var result_fused_heap = List(
+        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    )
+    var result_fused_h = TileTensor(
         result_fused_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+        row_major(batch, dim, seqlen),
+    )
 
-    var result_unfused_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var result_unfused_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var result_unfused_heap = List(
+        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    )
+    var result_unfused_h = TileTensor(
         result_unfused_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+        row_major(batch, dim, seqlen),
+    )
 
     # Copy of conv_state for reference implementation
-    var conv_state_ref_heap = alloc[Scalar[dtype]](batch * dim * state_len)
-    var conv_state_ref_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var conv_state_ref_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_state_ref_h = TileTensor(
         conv_state_ref_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
+        row_major(batch, dim, state_len),
     )
 
     # Initialize input data
@@ -119,52 +108,20 @@ def run_causal_conv1d_update[
     random(bias_h)
 
     # Copy conv_state for reference
+    var conv_state_flat = conv_state_h.reshape(
+        row_major(batch * dim * state_len)
+    )
+    var conv_state_ref_flat = conv_state_ref_h.reshape(
+        row_major(batch * dim * state_len)
+    )
     for i in range(batch * dim * state_len):
-        conv_state_ref_h.ptr[i] = conv_state_h.ptr[i]
-
-    # Create TileTensor versions for kernel call
-    var input_tt = TileTensor(
-        input_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
-    )
-    var conv_state_tt = TileTensor(
-        conv_state_heap,
-        row_major(Idx(batch), Idx(dim), Idx(state_len)),
-    )
-    var weight_tt = TileTensor(weight_heap, row_major(Idx(dim), Idx(width)))
-    var bias_tt = TileTensor(
-        bias_heap,
-        row_major(
-            Idx(dim),
-        ),
-    )
-    var result_fused_tt = TileTensor(
-        result_fused_heap,
-        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
-    )
+        conv_state_ref_flat[i] = conv_state_flat[i]
 
     var input_buf = input_h
-    var conv_state_buf = conv_state_h
     var weight_buf = weight_h
     var bias_buf = bias_h
-    var result_fused_buf = result_fused_h
     var result_unfused_buf = result_unfused_h
     var conv_state_ref_buf = conv_state_ref_h
-
-    # Strides for channel-first layout (B, C, L)
-    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var x_c_stride: UInt32 = UInt32(seqlen)
-    var x_l_stride: UInt32 = 1
-
-    var conv_state_batch_stride: UInt32 = UInt32(dim * state_len)
-    var conv_state_c_stride: UInt32 = UInt32(state_len)
-    var conv_state_l_stride: UInt32 = 1
-
-    var weight_c_stride: UInt32 = UInt32(width)
-    var weight_width_stride: UInt32 = 1
-
-    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var out_c_stride: UInt32 = UInt32(seqlen)
-    var out_l_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
 
@@ -182,22 +139,11 @@ def run_causal_conv1d_update[
             seqlen,
             width,
             state_len,
-            input_tt,
-            conv_state_tt,
-            weight_tt,
-            result_fused_tt,
-            bias_tt,
-            x_batch_stride,
-            x_c_stride,
-            x_l_stride,
-            conv_state_batch_stride,
-            conv_state_c_stride,
-            conv_state_l_stride,
-            weight_c_stride,
-            weight_width_stride,
-            out_batch_stride,
-            out_c_stride,
-            out_l_stride,
+            input_h,
+            conv_state_h,
+            weight_h,
+            result_fused_h,
+            bias_h,
             silu_activation,
         )
     else:
@@ -212,21 +158,10 @@ def run_causal_conv1d_update[
             seqlen,
             width,
             state_len,
-            input_tt,
-            conv_state_tt,
-            weight_tt,
-            result_fused_tt,
-            x_batch_stride,
-            x_c_stride,
-            x_l_stride,
-            conv_state_batch_stride,
-            conv_state_c_stride,
-            conv_state_l_stride,
-            weight_c_stride,
-            weight_width_stride,
-            out_batch_stride,
-            out_c_stride,
-            out_l_stride,
+            input_h,
+            conv_state_h,
+            weight_h,
+            result_fused_h,
             silu_activation,
         )
 
@@ -237,7 +172,7 @@ def run_causal_conv1d_update[
         for c in range(dim):
             var cur_bias: Scalar[dtype] = Scalar[dtype](0.0)
             if has_bias:
-                cur_bias = bias_buf.ptr.load(c)
+                cur_bias = bias_buf[c]
 
             # Process each position in the input sequence
             for l in range(seqlen):
@@ -251,96 +186,50 @@ def run_causal_conv1d_update[
                     if src_pos >= state_len:
                         # Read from x
                         var x_l_pos = src_pos - state_len
-                        var x_offset = (
-                            UInt32(b) * x_batch_stride
-                            + UInt32(c) * x_c_stride
-                            + UInt32(x_l_pos) * x_l_stride
-                        )
-                        input_val = input_buf.ptr.load(x_offset)
+                        input_val = input_buf[b, c, x_l_pos]
                     elif src_pos >= 0:
                         # Read from conv_state
-                        var conv_state_offset = (
-                            UInt32(b) * conv_state_batch_stride
-                            + UInt32(c) * conv_state_c_stride
-                            + UInt32(src_pos) * conv_state_l_stride
-                        )
-                        input_val = conv_state_ref_buf.ptr.load(
-                            conv_state_offset
-                        )
+                        input_val = conv_state_ref_buf[b, c, src_pos]
                     # else: src_pos < 0, treat as 0 (zero padding)
 
-                    var weight_offset = (
-                        UInt32(c) * weight_c_stride
-                        + UInt32(w) * weight_width_stride
-                    )
-                    var weight_val = weight_buf.ptr.load(weight_offset)
+                    var weight_val = weight_buf[c, w]
                     conv_sum = conv_sum + input_val * weight_val
 
                 # Write output
-                var out_offset = (
-                    UInt32(b) * out_batch_stride
-                    + UInt32(c) * out_c_stride
-                    + UInt32(l) * out_l_stride
-                )
                 var out_val = conv_sum
                 if silu_activation:
                     out_val = silu_ref[dtype](out_val)
-                result_unfused_buf.ptr.store(out_offset, out_val)
+                result_unfused_buf[b, c, l] = out_val
 
             # Update conv_state: shift old values and add new x values
             if seqlen >= state_len:
                 # x is longer than state, just copy last state_len values from x
                 for s in range(state_len):
                     var x_l_pos = seqlen - state_len + s
-                    var x_offset = (
-                        UInt32(b) * x_batch_stride
-                        + UInt32(c) * x_c_stride
-                        + UInt32(x_l_pos) * x_l_stride
-                    )
-                    var x_val = input_buf.ptr.load(x_offset)
-                    var conv_state_offset = (
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32(s) * conv_state_l_stride
-                    )
-                    conv_state_ref_buf.ptr.store(conv_state_offset, x_val)
+                    conv_state_ref_buf[b, c, s] = input_buf[b, c, x_l_pos]
             else:
                 # Shift conv_state left by seqlen positions, then append x
                 for s in range(state_len - seqlen):
-                    var src_offset = (
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32((s + seqlen)) * conv_state_l_stride
-                    )
-                    var dst_offset = (
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32(s) * conv_state_l_stride
-                    )
-                    var val = conv_state_ref_buf.ptr.load(src_offset)
-                    conv_state_ref_buf.ptr.store(dst_offset, val)
+                    conv_state_ref_buf[b, c, s] = conv_state_ref_buf[
+                        b, c, s + seqlen
+                    ]
 
                 # Copy x values to the end
                 for l in range(seqlen):
-                    var x_offset = (
-                        UInt32(b) * x_batch_stride
-                        + UInt32(c) * x_c_stride
-                        + UInt32(l) * x_l_stride
-                    )
-                    var x_val = input_buf.ptr.load(x_offset)
-                    var conv_state_offset = (
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32((state_len - seqlen + l)) * conv_state_l_stride
-                    )
-                    conv_state_ref_buf.ptr.store(conv_state_offset, x_val)
+                    conv_state_ref_buf[
+                        b, c, state_len - seqlen + l
+                    ] = input_buf[b, c, l]
 
     # Compare results
     var flattened_size = batch * dim * seqlen
+    var result_fused_flat = result_fused_h.reshape(row_major(flattened_size))
+    var result_unfused_flat = result_unfused_h.reshape(
+        row_major(flattened_size)
+    )
     for i in range(flattened_size):
         assert_almost_equal(
-            result_fused_h.ptr[i],
-            result_unfused_h.ptr[i],
+            result_fused_flat[i],
+            result_unfused_flat[i],
             rtol=rtol,
         )
 
@@ -348,57 +237,48 @@ def run_causal_conv1d_update[
     var conv_state_size = batch * dim * state_len
     for i in range(conv_state_size):
         assert_almost_equal(
-            conv_state_h.ptr[i],
-            conv_state_ref_h.ptr[i],
+            conv_state_flat[i],
+            conv_state_ref_flat[i],
             rtol=rtol,
         )
-
-    # Cleanup
-    input_heap.free()
-    conv_state_heap.free()
-    conv_state_ref_heap.free()
-    weight_heap.free()
-    bias_heap.free()
-    result_fused_heap.free()
-    result_unfused_heap.free()
 
 
 def test_basic_causal_conv1d_update() raises:
     """Test basic causal conv1d update with bias."""
-    run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 3, 4)
+    run_causal_conv1d_update[.float32, True, "none"](2, 4, 1, 3, 4)
 
 
 def test_causal_conv1d_update_with_silu() raises:
     """Test causal conv1d update with SiLU activation."""
-    run_causal_conv1d_update[DType.float32, True, "silu"](2, 4, 1, 3, 4)
+    run_causal_conv1d_update[.float32, True, "silu"](2, 4, 1, 3, 4)
 
 
 def test_causal_conv1d_update_without_bias() raises:
     """Test causal conv1d update without bias."""
-    run_causal_conv1d_update[DType.float32, False, "none"](2, 4, 1, 3, 4)
+    run_causal_conv1d_update[.float32, False, "none"](2, 4, 1, 3, 4)
 
 
 def test_causal_conv1d_update_seqlen_greater_than_one() raises:
     """Test causal conv1d update with seqlen > 1."""
-    run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 4, 3, 4)
+    run_causal_conv1d_update[.float32, True, "none"](2, 4, 4, 3, 4)
 
 
 def test_causal_conv1d_update_various_widths() raises:
     """Test causal conv1d update with various kernel widths."""
-    run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 2, 3)
-    run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 3, 4)
-    run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 4, 5)
+    run_causal_conv1d_update[.float32, True, "none"](2, 4, 1, 2, 3)
+    run_causal_conv1d_update[.float32, True, "none"](2, 4, 1, 3, 4)
+    run_causal_conv1d_update[.float32, True, "none"](2, 4, 1, 4, 5)
 
 
 def test_causal_conv1d_update_larger_state() raises:
     """Test causal conv1d update with larger state length."""
-    run_causal_conv1d_update[DType.float32, True, "none"](2, 8, 1, 3, 8)
+    run_causal_conv1d_update[.float32, True, "none"](2, 8, 1, 3, 8)
 
 
 def test_causal_conv1d_update_combinations() raises:
     """Test causal conv1d update with various bias and activation combinations.
     """
-    run_causal_conv1d_update[DType.float32, False, "none"](2, 4, 1, 3, 4)
-    run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 3, 4)
-    run_causal_conv1d_update[DType.float32, False, "silu"](2, 4, 1, 3, 4)
-    run_causal_conv1d_update[DType.float32, True, "silu"](2, 4, 1, 3, 4)
+    run_causal_conv1d_update[.float32, False, "none"](2, 4, 1, 3, 4)
+    run_causal_conv1d_update[.float32, True, "none"](2, 4, 1, 3, 4)
+    run_causal_conv1d_update[.float32, False, "silu"](2, 4, 1, 3, 4)
+    run_causal_conv1d_update[.float32, True, "silu"](2, 4, 1, 3, 4)

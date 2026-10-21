@@ -17,14 +17,16 @@
 #
 # ===-----------------------------------------------------------------------===#
 
+"""Provides low-level wrappers around Apple's AMX assembly instruction set for matrix operations."""
+
 from std.sys._assembly import inlined_assembly
 
 from layout import TileTensor
 from layout.tile_layout import row_major
 from std.memory import (
-    memcpy,
-    memset_zero,
-    stack_allocation,
+    unsafe_memcpy,
+    unsafe_memset_zero,
+    unsafe_stack_allocation,
 )
 
 
@@ -33,7 +35,7 @@ from std.memory import (
 # where `op` is the operation and `operand` is the register to operate on.
 
 
-@always_inline
+@inline(.always)
 def _no_op_imms[op: Int32, imm: Int32]():
     # In Apple's Accelerate, instruction 17 is apparently always prefixed by
     # three nops.
@@ -45,7 +47,7 @@ def _no_op_imms[op: Int32, imm: Int32]():
     ](op, imm)
 
 
-@always_inline
+@inline(.always)
 def _op_gpr[op: Int32](gpr: Int64):
     inlined_assembly[
         ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
@@ -57,129 +59,198 @@ def _op_gpr[op: Int32](gpr: Int64):
 
 # The `set` and `clr` take no non-constant operands, and so we pass them as
 # immediate values via meta parameters.
-@always_inline
+@inline(.always)
 def _set():
     _no_op_imms[17, 0]()
 
 
-@always_inline
+@inline(.always)
 def _clr():
     _no_op_imms[17, 1]()
 
 
-@always_inline
+@inline(.always)
 def ldx(gpr: Int):
+    """Loads data from the memory address encoded in gpr into an AMX X register row.
+
+    Args:
+        gpr: Encoded operand combining the memory address and X register row index.
+    """
     _op_gpr[0](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def ldy(gpr: Int):
+    """Loads data from the memory address encoded in gpr into an AMX Y register row.
+
+    Args:
+        gpr: Encoded operand combining the memory address and Y register row index.
+    """
     _op_gpr[1](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def stx(gpr: Int):
+    """Stores an AMX X register row to the memory address encoded in gpr.
+
+    Args:
+        gpr: Encoded operand combining the memory address and X register row index.
+    """
     _op_gpr[2](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def sty(gpr: Int):
+    """Stores an AMX Y register row to the memory address encoded in gpr.
+
+    Args:
+        gpr: Encoded operand combining the memory address and Y register row index.
+    """
     _op_gpr[3](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def ldz(gpr: Int):
+    """Loads data from the memory address encoded in gpr into an AMX Z accumulator row.
+
+    Args:
+        gpr: Encoded operand combining the memory address and Z accumulator row index.
+    """
     _op_gpr[4](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def stz(gpr: Int):
+    """Stores an AMX Z accumulator row to the memory address encoded in gpr.
+
+    Args:
+        gpr: Encoded operand combining the memory address and Z accumulator row index.
+    """
     _op_gpr[5](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def ldzi(gpr: Int):
+    """Loads data from the memory address encoded in gpr into an AMX Z accumulator row using interleaved layout.
+
+    Args:
+        gpr: Encoded operand combining the memory address and Z accumulator row
+            index for interleaved layout.
+    """
     _op_gpr[6](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def stzi(gpr: Int):
+    """Stores an AMX Z accumulator row to the memory address encoded in gpr using interleaved layout.
+
+    Args:
+        gpr: Encoded operand combining the memory address and Z accumulator row
+            index for interleaved layout.
+    """
     _op_gpr[7](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def extrx(gpr: Int):
     """
     Extracts a row or moves it to x, result in amx0.
+
+    Args:
+        gpr: Encoded operand selecting the source row and extraction mode.
     """
     _op_gpr[8](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def extry(gpr: Int):
     """
     Extracts a row or moves it to y, result in amx0.
+
+    Args:
+        gpr: Encoded operand selecting the source row and extraction mode.
     """
     _op_gpr[9](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def fma64(gpr: Int):
     """
     Float64 matrix multiply and add.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[10](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def fsm64(gpr: Int):
     """
     Float64 matrix multiply and subtract.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[11](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def fma32(gpr: Int):
     """
     Float32 matrix multiply and add.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[12](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def fsm32(gpr: Int):
     """
     Float32 matrix multiply and subtract.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[13](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def mac16(gpr: Int):
     """
     SI16 matrix multiply and add.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[14](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def fma16(gpr: Int):
     """
     Float16 matrix multiply and subtract.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[15](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def fms16(gpr: Int):
     """
     Float16 matrix multiply and add.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[16](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def vec_int__(gpr: Int):
     """
     Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
@@ -187,7 +258,7 @@ def vec_int__(gpr: Int):
     _op_gpr[18](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def vecfp(gpr: Int):
     """
     Horizontal float16 multiply `z0[i] += x0[i] + y0[i]`.
@@ -195,24 +266,35 @@ def vecfp(gpr: Int):
     _op_gpr[19](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def max_int__(gpr: Int):
     """
     UI16 matrix multiply.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[20](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def matfp(gpr: Int):
     """
     Float16 matrix multiply.
+
+    Args:
+        gpr: Encoded operand combining the X, Y, and Z row indices for the instruction.
     """
     _op_gpr[21](Int64(gpr))
 
 
-@always_inline
+@inline(.always)
 def genlut(gpr: Int):
+    """Issues the Apple AMX genlut instruction using the address encoded in gpr.
+
+    Args:
+        gpr: Encoded operand for the lookup table instruction.
+    """
     _op_gpr[22](Int64(gpr))
 
 
@@ -240,10 +322,10 @@ def genlut(gpr: Int):
 #   is the opposite, taking X[idx][:] and write to the memory location `ptr`.
 
 
-@always_inline
+@inline(.always)
 def _encode_load_store[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype], _], start_index: Int) -> Int:
+](src: Pointer[Scalar[dtype], _], start_index: Int) -> Int:
     """
     Utility to do the bit encoding for load and store ops.
     """
@@ -254,52 +336,127 @@ def _encode_load_store[
     return src_idx
 
 
-@always_inline
+@inline(.always)
 def store_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
+](src: Pointer[Scalar[dtype], _], start_index: Int):
+    """Loads row_count rows from memory at src into AMX X registers starting at start_index.
+
+    Parameters:
+        row_count: Number of X register rows to load; must be 1 or 2.
+        dtype: Element type of the X register rows.
+
+    Args:
+        src: Source memory address to load rows from.
+        start_index: Starting X register row index to load into.
+    """
     ldx(_encode_load_store[row_count, dtype](src, start_index))
 
 
-@always_inline
+@inline(.always)
 def store_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
+](src: Pointer[Scalar[dtype], _], start_index: Int):
+    """Loads row_count rows from memory at src into AMX Y registers starting at start_index.
+
+    Parameters:
+        row_count: Number of Y register rows to load; must be 1 or 2.
+        dtype: Element type of the Y register rows.
+
+    Args:
+        src: Source memory address to load rows from.
+        start_index: Starting Y register row index to load into.
+    """
     ldy(_encode_load_store[row_count, dtype](src, start_index))
 
 
-@always_inline
+@inline(.always)
 def store_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
+](src: Pointer[Scalar[dtype], _], start_index: Int):
+    """Loads row_count rows from memory at src into AMX Z accumulator registers starting at start_index.
+
+    Parameters:
+        row_count: Number of Z accumulator rows to load; must be 1 or 2.
+        dtype: Element type of the Z accumulator rows.
+
+    Args:
+        src: Source memory address to load rows from.
+        start_index: Starting Z accumulator row index to load into.
+    """
     ldz(_encode_load_store[row_count, dtype](src, start_index))
 
 
-@always_inline
+@inline(.always)
 def read_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
+](src: MutPointer[Scalar[dtype], _], start_index: Int):
+    """Stores row_count rows from AMX X registers starting at start_index to memory at src.
+
+    Parameters:
+        row_count: Number of X register rows to store; must be 1 or 2.
+        dtype: Element type of the X register rows.
+
+    Args:
+        src: Destination memory address for the stored rows.
+        start_index: Starting X register row index to store from.
+    """
     stx(_encode_load_store[row_count, dtype](src, start_index))
 
 
-@always_inline
+@inline(.always)
 def read_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
+](src: MutPointer[Scalar[dtype], _], start_index: Int):
+    """Stores row_count rows from AMX Y registers starting at start_index to memory at src.
+
+    Parameters:
+        row_count: Number of Y register rows to store; must be 1 or 2.
+        dtype: Element type of the Y register rows.
+
+    Args:
+        src: Destination memory address for the stored rows.
+        start_index: Starting Y register row index to store from.
+    """
     sty(_encode_load_store[row_count, dtype](src, start_index))
 
 
-@always_inline
+@inline(.always)
 def load_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
+](src: MutPointer[Scalar[dtype], _], start_index: Int):
+    """Stores row_count rows from AMX Z accumulator registers starting at start_index to memory at src.
+
+    Parameters:
+        row_count: Number of Z accumulator rows to store; must be 1 or 2.
+        dtype: Element type of the Z accumulator rows.
+
+    Args:
+        src: Destination memory address for the stored rows.
+        start_index: Starting Z accumulator row index to store from.
+    """
     stz(_encode_load_store[row_count, dtype](src, start_index))
 
 
-@always_inline
+@inline(.always)
 def transpose_z_to_x_or_y[
     destination: StaticString, dtype: DType
 ](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
+    """Transposes a downsampled column of the AMX Z register into a row of the X or Y register.
+
+    Wraps the fp32 transpose mode of the AMX `extry` instruction. One element in every
+    four of the selected Z column (16 elements total) is extracted and placed into a row
+    of the destination X or Y register bank.
+
+    Parameters:
+        destination: Either `"X"` or `"Y"`, selecting the destination register bank.
+        dtype: Must be `DType.float32`.
+
+    Args:
+        z_col_index: Column of Z to read from; must be in [0, 15].
+        xy_row_index: Row of the destination X or Y register; must be in [0, 7].
+        z_row_suboffset: Starting row suboffset within the Z column; must be in [0, 3].
+    """
     # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
     # the amx instruction `extry`. This instruction takes a (sub) column of
     # register Z (see description above), and transposes it into a row in either
@@ -330,7 +487,7 @@ def transpose_z_to_x_or_y[
     # The destination must be either "X" or "Y".
     comptime assert destination == "X" or destination == "Y"
     # The type must be Float32.
-    comptime assert dtype == DType.float32
+    comptime assert dtype == .float32
 
     # make the y offset field
     #  shift left by 6 to make this an offset in rows,
@@ -349,10 +506,30 @@ def transpose_z_to_x_or_y[
     extry(operand)
 
 
-@always_inline
+@inline(.always)
 def fma[
     mode: StaticString, dtype: DType
 ](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
+    """Issues an AMX fused multiply-add of X and Y register rows accumulated into the Z accumulator.
+
+    Supports two modes selected by the `mode` parameter. In `"ROW"` mode the
+    instruction performs an elementwise fused multiply-add computing
+    `Z[z_row_index][:] += X[x_row_index][:] * Y[y_row_index][:]`. In `"TILE"`
+    mode it computes the outer product `Y[y_row_index][:] X X[x_row_index][:]`
+    (a 16x16 matrix) and accumulates the result into
+    `Z[z_row_index::step 4][:]`. When `clear_z` is true the existing Z values
+    are ignored instead of accumulated. Issues the `fma.fp32` AMX instruction.
+
+    Parameters:
+        mode: Either `"ROW"` for elementwise fma or `"TILE"` for outer-product fma.
+        dtype: Must be `DType.float32`.
+
+    Args:
+        z_row_index: Row of Z to write; must be in [0, 8) in row mode or [0, 4) in tile mode.
+        x_row_index: Row of X to read; must be in [0, 8).
+        y_row_index: Row of Y to read; must be in [0, 8).
+        clear_z: When true, clears the target Z rows instead of accumulating into them.
+    """
     # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
     #  fma operations are supported in this instruction, referred to here as
     #  `RowMode` and `TileMode`.
@@ -372,7 +549,7 @@ def fma[
     # The mode must be either "TILE" or "ROW".
     comptime assert mode == "TILE" or mode == "ROW"
     # The type must be Float32.
-    comptime assert dtype == DType.float32
+    comptime assert dtype == .float32
 
     comptime is_row_mode = mode == "ROW"
 
@@ -387,9 +564,9 @@ def fma[
     fma32(operand)
 
 
-@always_inline
+@inline(.always)
 def dot_at_b(
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: type_of(c),
     b: type_of(c),
 ):
@@ -397,14 +574,20 @@ def dot_at_b(
 
     Supports f32 (16x16) and f16 (32x32) tiles. All matrices are stored in
     row-major order.
+
+    Args:
+        c: Output matrix C in row-major order; rank-2 tile with static 16x16
+            shape for f32 or 32x32 shape for f16.
+        a: Input matrix A in row-major order; same shape and dtype as c.
+        b: Input matrix B in row-major order; same shape and dtype as c.
     """
     comptime assert (
-        c.dtype == DType.float32 or c.dtype == DType.float16
+        c.dtype == .float32 or c.dtype == .float16
     ), "the buffer dtype must be float32 or float16"
 
-    var a_pointer = a.ptr
-    var b_pointer = b.ptr
-    var c_pointer = c.ptr
+    var a_pointer = a.unsafe_ptr()
+    var b_pointer = b.unsafe_ptr()
+    var c_pointer = c.unsafe_ptr()
 
     comptime assert c.flat_rank == 2, "expected rank 2 tile"
     comptime assert (
@@ -413,54 +596,67 @@ def dot_at_b(
     comptime num_elements = c.static_shape[0] * c.static_shape[1]
 
     # TODO: We can elide the copy if the data is already aligned.
-    var a_buffer = stack_allocation[
+    var a_buffer = unsafe_stack_allocation[
         num_elements, Scalar[c.dtype], alignment=128
     ]()
-    var b_buffer = stack_allocation[
+    var b_buffer = unsafe_stack_allocation[
         num_elements, Scalar[c.dtype], alignment=128
     ]()
-    var c_buffer = stack_allocation[
+    var c_buffer = unsafe_stack_allocation[
         num_elements, Scalar[c.dtype], alignment=128
     ]()
 
-    memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
-    memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
-    memset_zero(c_buffer, num_elements)
+    unsafe_memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
+    unsafe_memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
+    unsafe_memset_zero(c_buffer, num_elements)
 
     # _set() has the side effect of clearing the z tile
     _set()
 
     comptime dim0 = c.static_shape[0]
 
-    comptime if c.dtype == DType.float32:
-        comptime assert (
-            c.static_shape[0] == 16 and c.static_shape[1] == 16
-        ), "f32 AMX matmul requires 16x16 tiles"
-        comptime for j in range(2):
-            comptime for i in range(8):
-                ldx((i << 56) | Int(b_buffer + (j * 8 + i) * dim0))
-                ldy((i << 56) | Int(a_buffer + (j * 8 + i) * dim0))
+    comptime match c.dtype:
+        case .float32:
+            comptime assert (
+                c.static_shape[0] == 16 and c.static_shape[1] == 16
+            ), "f32 AMX matmul requires 16x16 tiles"
+            comptime for j in range(2):
+                comptime for i in range(8):
+                    ldx(
+                        (i << 56)
+                        | Int(b_buffer.unsafe_offset((j * 8 + i) * dim0))
+                    )
+                    ldy(
+                        (i << 56)
+                        | Int(a_buffer.unsafe_offset((j * 8 + i) * dim0))
+                    )
 
-            comptime for i in range(8):
-                fma32((i << 6 << 10) | (i << 6))
+                comptime for i in range(8):
+                    fma32((i << 6 << 10) | (i << 6))
 
-        comptime for i in range(0, 64, 4):
-            stz((i << 56) | Int(c_buffer + (i >> 2) * dim0))
-    elif c.dtype == DType.float16:
-        comptime assert (
-            c.static_shape[0] == 32 and c.static_shape[1] == 32
-        ), "f16 AMX matmul requires 32x32 tiles"
-        comptime for j in range(4):
-            comptime for i in range(8):
-                ldx((i << 56) | Int(b_buffer + (j * 8 + i) * dim0))
-                ldy((i << 56) | Int(a_buffer + (j * 8 + i) * dim0))
+            comptime for i in range(0, 64, 4):
+                stz((i << 56) | Int(c_buffer.unsafe_offset((i >> 2) * dim0)))
+        case _:
+            comptime assert (
+                c.static_shape[0] == 32 and c.static_shape[1] == 32
+            ), "f16 AMX matmul requires 32x32 tiles"
+            comptime for j in range(4):
+                comptime for i in range(8):
+                    ldx(
+                        (i << 56)
+                        | Int(b_buffer.unsafe_offset((j * 8 + i) * dim0))
+                    )
+                    ldy(
+                        (i << 56)
+                        | Int(a_buffer.unsafe_offset((j * 8 + i) * dim0))
+                    )
 
-            comptime for i in range(8):
-                fma16((i << 6 << 10) | (i << 6))
+                comptime for i in range(8):
+                    fma16((i << 6 << 10) | (i << 6))
 
-        comptime for i in range(0, 64, 2):
-            stz((i << 56) | Int(c_buffer + (i >> 1) * dim0))
+            comptime for i in range(0, 64, 2):
+                stz((i << 56) | Int(c_buffer.unsafe_offset((i >> 1) * dim0)))
 
     _clr()
 
-    memcpy(dest=c_pointer, src=c_buffer, count=num_elements)
+    unsafe_memcpy(dest=c_pointer, src=c_buffer, count=num_elements)

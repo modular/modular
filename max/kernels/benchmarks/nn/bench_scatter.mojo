@@ -14,86 +14,98 @@
 from std.random import rand, randint
 
 from std.benchmark import *
-from nn.gather_scatter import scatter_elements
-from tensor import DynamicTensor
+from max.gpu.host import DeviceContext
+from std.memory import alloc, dealloc
+from nn.gather_scatter import _atomic_reduce, scatter_elements
+from extensibility import DynamicTensor
 
 from std.utils.index import Index
 
 
 def bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
-    @parameter
-    @always_inline
+    @inline(.always)
     def bench_scatter_wrapper(
         mut b: Bencher, concrete_spec: ScatterSpec
-    ) raises:
+    ) raises {}:
         bench_scatter(b, concrete_spec)
 
-    m.bench_with_input[ScatterSpec, bench_scatter_wrapper](
-        BenchId("scatter", String(spec)), spec
+    m.bench_with_input(
+        bench_scatter_wrapper, BenchId("scatter", String(spec)), spec
     )
 
 
-@parameter
-def bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
+def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
 
     var input_shape = Index(spec.m1, spec.m2)
     var indices_shape = Index(spec.n1, spec.n2)
 
-    var data_ptr = alloc[Float32](input_shape.flattened_length())
-    rand(data_ptr, input_shape.flattened_length())
-    var data_tensor = DynamicTensor[DType.float32, 2](data_ptr, input_shape)
+    var data_alloc = alloc[Float32](
+        {length = input_shape.flattened_length()}
+    ).into_managed()
+    rand(data_alloc.unsafe_span())
+    var data_tensor = DynamicTensor[.float32, 2](
+        data_alloc.unsafe_ptr(), input_shape
+    )
 
-    var indices_ptr = alloc[Int32](indices_shape.flattened_length())
+    var indices_alloc = alloc[Int32](
+        {length = indices_shape.flattened_length()}
+    ).into_managed()
     randint(
-        indices_ptr,
-        indices_shape.flattened_length(),
+        indices_alloc.unsafe_span(),
         index_rand_min,
         index_rand_max,
     )
-    var indices_tensor = DynamicTensor[DType.int32, 2](
-        indices_ptr, indices_shape
+    var indices_tensor = DynamicTensor[.int32, 2](
+        indices_alloc.unsafe_ptr(), indices_shape
     )
 
-    var updates_ptr = alloc[Float32](indices_shape.flattened_length())
-    rand(updates_ptr, indices_shape.flattened_length())
-    var updates_tensor = DynamicTensor[DType.float32, 2](
-        updates_ptr, indices_shape
+    var updates_alloc = alloc[Float32](
+        {length = indices_shape.flattened_length()}
+    ).into_managed()
+    rand(updates_alloc.unsafe_span())
+    var updates_tensor = DynamicTensor[.float32, 2](
+        updates_alloc.unsafe_ptr(), indices_shape
     )
 
-    var output_ptr = alloc[Float32](input_shape.flattened_length())
-    var output_tensor = DynamicTensor[DType.float32, 2](output_ptr, input_shape)
+    var output_alloc = alloc[Float32](
+        {length = input_shape.flattened_length()}
+    ).into_managed()
+    var output_tensor = DynamicTensor[.float32, 2](
+        output_alloc.unsafe_ptr(), input_shape
+    )
 
-    @always_inline
-    @parameter
-    def bench_fn():
-        @always_inline
-        @parameter
+    @inline(.always)
+    def bench_fn() raises {mut output_tensor, imm}:
+        @inline(.always)
         def reduce_fn[
-            _dtype: DType, width: Int
+            _dtype: DType, width: SIMDLength
         ](
             input_val: SIMD[_dtype, width], update_val: SIMD[_dtype, width]
         ) -> SIMD[_dtype, width]:
             return input_val + update_val
 
-        try:
-            scatter_elements[reduce_fn](
-                data_tensor,
-                indices_tensor,
-                updates_tensor,
-                spec.axis,
-                output_tensor,
-            )
-        except e:
-            print("Err => ", e)
+        scatter_elements[atomic_update_fn=_atomic_reduce[reduce_fn]](
+            data_tensor,
+            indices_tensor,
+            updates_tensor,
+            spec.axis,
+            output_tensor,
+            DeviceContext(api="cpu"),
+        )
 
-    bencher.iter[bench_fn]()
+    bencher.iter(bench_fn)
 
     _ = data_tensor
     _ = indices_tensor
     _ = updates_tensor
     _ = output_tensor
+
+    dealloc(data_alloc^)
+    dealloc(indices_alloc^)
+    dealloc(updates_alloc^)
+    dealloc(output_alloc^)
 
 
 @fieldwise_init

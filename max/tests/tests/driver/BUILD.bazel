@@ -2,26 +2,39 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
     name = "tests",
+    # The eager stamping cases compile real graphs, which `medium` (300s) does
+    # not cover on a contended worker, still less under a sanitizer.
+    size = "large",
     srcs = glob(
         ["*.py"],
         exclude = [
+            "test_buffer_sync_contracts.py",
             "test_device_event.py",
-            "test_buffer_device_pinned.py",
+            "test_buffer_staging.py",
+            "test_hazard_gpu.py",
+            "test_host_func.py",
+            "test_launch_trace.py",
         ],
     ),
+    tags = [
+        "enable-sanitizers",
+    ],
     deps = [
+        "//max/python/max:_core",
+        # The eager realization path is one of the hazard-record stamp sites.
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+        requirement("ml-dtypes"),
     ],
 )
 
@@ -30,8 +43,12 @@ modular_py_test(
     srcs = [
         "accelerator_tests/test_buffer.py",
         "accelerator_tests/test_device.py",
-        "test_buffer_device_pinned.py",
+        "test_buffer_staging.py",
+        "test_buffer_sync_contracts.py",
         "test_device_event.py",
+        "test_hazard_gpu.py",
+        "test_host_func.py",
+        "test_launch_trace.py",
     ],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -39,6 +56,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
@@ -49,7 +67,26 @@ modular_py_test(
 
 modular_py_test(
     name = "multi_gpu_tests",
-    srcs = ["accelerator_tests/test_multi_device.py"],
+    srcs = [
+        "accelerator_tests/test_hazard_multi_gpu.py",
+        "accelerator_tests/test_multi_device.py",
+    ],
+    gpu_constraints = ["//:has_multi_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "symmetric_pool_tests",
+    srcs = ["accelerator_tests/test_symmetric_pool.py"],
     gpu_constraints = ["//:has_multi_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -58,6 +95,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )

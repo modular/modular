@@ -11,90 +11,90 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import extensibility
 
-from std.builtin.simd import SIMD
-from compiler import register
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor, foreach
+from max.gpu.host import DeviceContext
+from std.simd import SIMD
 
+from extensibility import InputTensor, OutputTensor, foreach
+
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
-@register("grayscale")
+@extensibility.register("grayscale")
 struct Grayscale:
     @staticmethod
     def execute[
         # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
-        ctx: DeviceContextPtr,
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=3, ...],
+        ctx: DeviceContext,
     ) raises:
-        @parameter
-        @always_inline
+        @inline(.always)
         def color_to_grayscale[
             simd_width: Int
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
-            var row = idx[0]
-            var col = idx[1]
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             var r_idx = IndexList[3](row, col, 0)
             var g_idx = IndexList[3](row, col, 1)
             var b_idx = IndexList[3](row, col, 2)
 
-            var r_f32 = img_in.load[simd_width](r_idx).cast[DType.float32]()
-            var g_f32 = img_in.load[simd_width](g_idx).cast[DType.float32]()
-            var b_f32 = img_in.load[simd_width](b_idx).cast[DType.float32]()
+            var r_f32 = img_in.load[simd_width](r_idx).cast[.float32]()
+            var g_f32 = img_in.load[simd_width](g_idx).cast[.float32]()
+            var b_f32 = img_in.load[simd_width](b_idx).cast[.float32]()
 
             var gray_f32 = 0.21 * r_f32 + 0.71 * g_f32 + 0.07 * b_f32
 
-            return gray_f32.clamp(0, 255).cast[DType.uint8]()
+            return gray_f32.clamp(0, 255).cast[.uint8]()
 
-        foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
+        foreach[target=target, simd_width=1](color_to_grayscale, img_out, ctx)
 
 
-@register("brightness")
+@extensibility.register("brightness")
 struct Brightness:
     @staticmethod
     def execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=2, ...],
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=2, ...],
         brightness: Float32,
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
-        @parameter
-        @always_inline  # Added for consistency
+        @inline(.always)  # Added for consistency
         def brighten[
             simd_width: Int  # Renamed 'width' to 'simd_width'
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
-            var pixels_f32 = img_in.load[simd_width](idx).cast[DType.float32]()
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
+            var pixels_f32 = img_in.load[simd_width](idx).cast[.float32]()
 
             var brightened_f32 = pixels_f32 * brightness
 
-            return brightened_f32.clamp(0, 255).cast[DType.uint8]()
+            return brightened_f32.clamp(0, 255).cast[.uint8]()
 
-        foreach[brighten, target=target](img_out, ctx)
+        foreach[target=target](brighten, img_out, ctx)
 
 
-@register("blur")
+@extensibility.register("blur")
 struct Blur:
     @staticmethod
     def execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=2, ...],
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=2, ...],
         blur_size: Int64,
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
-        @parameter
-        @always_inline
+        @inline(.always)
         def blur_kernel[
             simd_width: Int
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
             """
             Computes the blurred value for a SIMD vector of pixels.
             """
@@ -102,8 +102,9 @@ struct Blur:
             var width = img_in.shape()[1]
             var size = Int(blur_size)  # Surrounding pixels to average
 
-            var base_row: Int = idx[0]
-            var base_col: Int = idx[1]
+            var idx_l = coord_to_index_list(idx)
+            var base_row: Int = idx_l[0]
+            var base_col: Int = idx_l[1]
 
             var pix_val_accum = 0
             var pixel_count = 0
@@ -122,4 +123,4 @@ struct Blur:
             return UInt8(max(min(pix_val_accum // pixel_count, 255), 0))
 
         # Apply the kernel to each pixel in the output tensor
-        foreach[blur_kernel, target=target, simd_width=1](img_out, ctx)
+        foreach[target=target, simd_width=1](blur_kernel, img_out, ctx)

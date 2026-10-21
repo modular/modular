@@ -1,3 +1,4 @@
+load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
 load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
@@ -5,6 +6,22 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "graph",
     srcs = glob(["**/*.py"]),
+    # The graph compiler's built-in kernel registrations. Every consumer of
+    # `max.graph` reaches them through here, so this is also where a build that
+    # has closed-source kernel packages picks those up.
+    data = [
+        "//max:builtin_kernels",
+        "//max:builtin_primitives",
+    ] + INTERNAL_KERNEL_MOJOPKGS,
+    # Runtime deps the examples import that this library cannot carry:
+    # engine and nn depend on graph.
+    docstring_example_deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+    ],
+    # Each example compiles its own graph; sharded to stay under CI's 800s
+    # test-timeout clamp.
+    docstring_example_shard_count = 8,
     ignore_unresolved_imports = [
         # `buffer_utils` imports `max.engine.InferenceSession` but `engine` depends
         # on `graph`, so `engine` cannot be added to this library's deps.
@@ -12,6 +29,7 @@ modular_py_library(
         # Optional dependency
         "gguf",
     ],
+    test_docstring_examples = True,
     deps = [
         "//max/python/max:_core",
         "//max/python/max:_mlir_context",
@@ -20,6 +38,5 @@ modular_py_library(
         "//max/python/max/mlir",
         "@mojo//:python",
         requirement("numpy"),
-        requirement("pyyaml"),
     ],
 )

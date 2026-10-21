@@ -11,9 +11,46 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Experimental APIs for the MAX platform."""
+"""Experimental APIs for building, sharding, and running ML workloads.
 
-from . import functional, random, tensor
+Built on top of :mod:`max.graph` and :mod:`max.driver`, in three layers that
+each consume the one below:
+
+- :mod:`~max.experimental.nn` -- the ``Module`` base class plus
+  ahead-of-time compilation to a ``CompiledCallable``.
+- :mod:`~max.experimental.functional` -- a one-function-per-op distributed
+  dispatcher (``F.matmul``, ``F.add``, ...).
+- :mod:`~max.experimental.sharding` -- placements, the device mesh, the
+  action data model, a cost model, and the ``auto_reshard`` policy.
+
+The distributed :class:`~max.experimental.tensor.Tensor` ties them together.
+The following example calls ``Tensor.ones()`` to build a 4x8 tensor and
+passes it to ``F.matmul`` along with its transpose:
+
+.. code-block:: python
+
+    from max.experimental import Tensor
+    from max.experimental import functional as F
+
+    x = Tensor.ones((4, 8))
+    y = F.matmul(x, x.T)
+
+.. caution::
+
+    Experimental. The public API is not stable; names and module structure
+    may change.
+"""
+
+from . import custom, functional, random, tensor, validation
+from .custom import CustomOp
 from .tensor import Tensor
 
-__all__ = ["Tensor", "functional", "random", "tensor"]
+__all__ = [
+    "CustomOp",
+    "Tensor",
+    "custom",
+    "functional",
+    "random",
+    "tensor",
+    "validation",
+]

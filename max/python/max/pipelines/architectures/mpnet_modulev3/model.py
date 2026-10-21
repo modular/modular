@@ -19,35 +19,34 @@ using the V3 eager API (max.experimental.nn).
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import Any
+from collections.abc import Callable
+from typing import Any, ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
-from max.graph import DeviceRef, TensorType
+from max.experimental.tensor import default_dtype
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
-from max.pipelines.dataprocessing import collate_batch
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
+    GraphRole,
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    upper_bounded_default,
 )
-from transformers import AutoConfig
+from max.pipelines.lib.interfaces.batch_processor import (
+    padded_encoder_symbolic_inputs,
+)
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
+from .batch_processor import MPNetModuleV3BatchProcessor
 from .graph import MPNetModel
+from .inputs import MPNetInputs
 from .model_config import MPNetConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -55,15 +54,17 @@ logger = logging.getLogger("max.pipelines")
 PAD_VALUE = 1
 
 
-@dataclass
-class MPNetInputs(ModelInputs):
-    """Input tensors for the MPNet model."""
+class MPNetPipelineModel(PipelineModel[TextContext, MPNetConfig]):
+    model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
+    batch_processor_cls: ClassVar[type[MPNetModuleV3BatchProcessor]] = (
+        MPNetModuleV3BatchProcessor
+    )
 
-    next_tokens_batch: Buffer
-    attention_mask: Buffer
+    model: Callable[..., Any]
 
+    _checkpoint: dict[str, Any]
+    """The checkpoint weights, kept for :meth:`graph_specs`."""
 
-class MPNetPipelineModel(PipelineModel[TextContext]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -71,8 +72,11 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -80,27 +84,15 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
-        self.model = self.load_model()
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for MPNet, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
+        self.load_graphs(session)
+        # The compiled encoder keeps the weights it needs.
+        del self._checkpoint
+        self.model = self.compiled_modules[GraphRole.ENCODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, MPNetInputs)
@@ -111,90 +103,52 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         assert isinstance(result, Buffer)
         return ModelOutputs(logits=result)
 
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> MPNetInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
+    def _load_state_dict(self) -> dict[str, Any]:
+        self._checkpoint = super()._load_state_dict()
+        return self._checkpoint
 
-        context_batch = replica_batches[0]
+    def _create_model_config(self, state_dict: dict[str, Any]) -> MPNetConfig:
+        del state_dict
+        return self.arch_config_as(MPNetConfig)
 
-        # Get tokens and seq_ids.
-        tokens = [ctx.tokens.active for ctx in context_batch]
-
-        # Pad tokens for the batch.
-        pad_value = getattr(self.huggingface_config, "pad_token_id", 1)
-        next_tokens_batch, _ = collate_batch(
-            tokens,
-            pad_value=pad_value,
-            batch_size=len(tokens),
-        )
-
-        # Compute attention mask.
-        attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
-
-        return MPNetInputs(
-            next_tokens_batch=Buffer.from_numpy(next_tokens_batch).to(
-                self.devices[0]
-            ),
-            attention_mask=Buffer.from_numpy(attention_mask).to(
-                self.devices[0]
-            ),
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> MPNetInputs:
-        raise NotImplementedError(
-            "MPNet does not support preparing next tokens inputs."
-        )
-
-    def load_model(self) -> Callable[..., list[Tensor]]:
-        with CompilationTimer("model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(dict(self.weights.items()))
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-
-            # Cast weights to match the model's configured dtype (e.g. float32
-            # safetensor weights -> bfloat16 when default_encoding is bfloat16).
-            # V3 compile() requires exact dtype matching unlike V2 load_state_dict.
-            target_dtype = self.dtype
-            cast_state_dict: dict[str, Any] = {}
-            for k, v in state_dict.items():
-                buf = Buffer.from_dlpack(v) if not isinstance(v, Buffer) else v
-                if buf.dtype != target_dtype and buf.dtype.is_float():
-                    buf = cast_tensor_to(buf, target_dtype)
-                cast_state_dict[k] = buf
-            state_dict = cast_state_dict
-
-            config = MPNetConfig.initialize(self.pipeline_config)
-
-            with F.lazy(), default_dtype(target_dtype):
-                nn_model = MPNetModel(config)
-                nn_model.to(self.devices[0])
-
-            device0 = self.devices[0]
-            device_ref = DeviceRef(device0.label, device0.id)
-            input_ids_type = TensorType(
-                DType.int64, shape=["batch_size", "seq_len"], device=device_ref
+    def _prepare_state_dict(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> dict[str, Any]:
+        del model_config
+        # Cast weights to match the model's configured dtype (e.g. float32
+        # safetensor weights -> bfloat16 when default_encoding is bfloat16).
+        # V3 compile() requires exact dtype matching unlike V2 load_state_dict.
+        target_dtype = self.dtype
+        cast_state_dict: dict[str, Any] = {}
+        for key, value in state_dict.items():
+            buf = (
+                Buffer.from_dlpack(value)
+                if not isinstance(value, Buffer)
+                else value
             )
-            attention_mask_type = TensorType(
-                DType.float32,
-                shape=["batch_size", "seq_len"],
-                device=device_ref,
-            )
+            if buf.dtype != target_dtype and buf.dtype.is_float():
+                buf = cast_tensor_to(buf, target_dtype)
+            cast_state_dict[key] = buf
+        return cast_state_dict
 
-            timer.mark_build_complete()
-            compiled_model = nn_model.compile(
-                input_ids_type,
-                attention_mask_type,
-                weights=state_dict,
-            )
+    def _instantiate_module(self, model_config: Any) -> MPNetModel:
+        assert isinstance(model_config, MPNetConfig)
+        nn_model = MPNetModel(model_config)
+        nn_model.to(self.devices[0])
+        return nn_model
 
-        return compiled_model
+    def graph_specs(self, model_config: MPNetConfig) -> dict[str, GraphSpec]:
+        """Returns the encoder, built from the checkpoint weights."""
+        weights = self._prepare_state_dict(self._checkpoint, model_config)
+        with F.lazy(), default_dtype(self.dtype):
+            nn_model = self._instantiate_module(model_config)
+        return {
+            GraphRole.ENCODER: GraphSpec(
+                nn_model,
+                type(nn_model).__qualname__,
+                tuple(
+                    padded_encoder_symbolic_inputs(device_refs=self.device_refs)
+                ),
+                weights=weights,
+            )
+        }

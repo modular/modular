@@ -11,15 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from std.gpu import block_dim, block_idx, global_idx
-from std.memory import UnsafePointer, alloc
+from max.gpu import block_dim, block_idx, global_idx
+from std.memory import Pointer, alloc
+from std.memory.alloc import unsafe_alloc
+from std.ffi import c_size_t
 from shmem import *
 from std.testing import assert_equal
 
 
 def set_and_shift_kernel(
-    send_data: UnsafePointer[Float32, MutAnyOrigin],
-    recv_data: UnsafePointer[Float32, MutAnyOrigin],
+    send_data: Pointer[Float32, MutAnyOrigin],
+    recv_data: Pointer[Float32, MutAnyOrigin],
     num_elems: Int,
     mype: Int32,
     npes: Int32,
@@ -40,16 +42,16 @@ def set_and_shift_kernel(
 
     if use_nbi == 1:
         shmem_put_nbi[SHMEMScope.block](
-            recv_data + block_offset,
-            send_data + block_offset,
-            UInt(min(block_dim.x, num_elems - block_offset)),
+            recv_data.unsafe_offset(block_offset),
+            send_data.unsafe_offset(block_offset),
+            c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
     else:
         shmem_put[SHMEMScope.block](
-            recv_data + block_offset,
-            send_data + block_offset,
-            UInt(min(block_dim.x, num_elems - block_offset)),
+            recv_data.unsafe_offset(block_offset),
+            send_data.unsafe_offset(block_offset),
+            c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
 
@@ -65,8 +67,8 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
 
-    var send_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
-    var recv_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
+    var send_data = ctx.enqueue_create_buffer[.float32](num_elems)
+    var recv_data = ctx.enqueue_create_buffer[.float32](num_elems)
 
     ctx.barrier_all()
 
@@ -81,7 +83,7 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
         block_dim=threads_per_block,
     )
 
-    var host = alloc[Float32](num_elems)
+    var host = unsafe_alloc[Float32](num_elems)
     recv_data.enqueue_copy_to(host)
 
     # The completion of the non-blocking version of `shmem_put` is

@@ -15,17 +15,18 @@
 # This is the complete implementation combining all the concepts from Chapter 2
 
 from std.math import ceildiv
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from std.memory.alloc import unsafe_alloc
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 
 # ========================== KERNEL CODE ==========================
 
 
 def vec_add_kernel(
-    a_d: UnsafePointer[Float32, MutExternalOrigin],
-    b_d: UnsafePointer[Float32, MutExternalOrigin],
-    c_d: UnsafePointer[Float32, MutExternalOrigin],
-    n: Int,
+    a_d: MutPointer[Float32, MutUntrackedOrigin],
+    b_d: MutPointer[Float32, MutUntrackedOrigin],
+    c_d: MutPointer[Float32, MutUntrackedOrigin],
+    n_dev: Int32,
 ):
     """GPU kernel for vector addition.
 
@@ -33,17 +34,19 @@ def vec_add_kernel(
         a_d: Input vector A (device).
         b_d: Input vector B (device).
         c_d: Output vector C (device).
-        n: Number of elements in the vectors.
+        n_dev: Number of elements in the vectors.
     """
+    # Int is not device-passable; widen the fixed-width arg.
+    var n = Int(n_dev)
     var i = global_idx.x
     if i < n:
         c_d[i] = a_d[i] + b_d[i]
 
 
 def vec_add(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
-    c: UnsafePointer[Float32, MutExternalOrigin],
+    a: MutPointer[Float32, MutUntrackedOrigin],
+    b: MutPointer[Float32, MutUntrackedOrigin],
+    c: MutPointer[Float32, MutUntrackedOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -68,15 +71,15 @@ def vec_add(
     ctx.enqueue_copy(b_d, b)
 
     # Calculate launch configuration
-    var block_dim = 256
+    comptime block_dim = 256
     var grid_dim = ceildiv(n, block_dim)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[vec_add_kernel](
+    ctx.enqueue_function[vec_add_kernel](
         a_d,
         b_d,
         c_d,
-        n,
+        Int32(n),
         grid_dim=grid_dim,
         block_dim=block_dim,
     )
@@ -92,13 +95,13 @@ def vec_add(
 
 
 def main() raises:
-    var n = 512
+    comptime n = 512
 
     # Allocate host memory
-    var a = alloc[Float32](n)
-    var b = alloc[Float32](n)
-    var c = alloc[Float32](n)
-    var c_ref = alloc[Float32](n)
+    var a = unsafe_alloc[Float32](n)
+    var b = unsafe_alloc[Float32](n)
+    var c = unsafe_alloc[Float32](n)
+    var c_ref = unsafe_alloc[Float32](n)
 
     # Initialize input arrays
     for i in range(n):
@@ -122,7 +125,7 @@ def main() raises:
     print("Success")
 
     # Clean up
-    a.free()
-    b.free()
-    c.free()
-    c_ref.free()
+    a.unsafe_free()
+    b.unsafe_free()
+    c.unsafe_free()
+    c_ref.unsafe_free()

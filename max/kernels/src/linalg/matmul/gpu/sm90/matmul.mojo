@@ -10,15 +10,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""
+Provides SM90 warp-specialized GEMM dispatchers with TMA multicasting, split-K
+reduction, and optional epilogue fusion for Hopper matmuls.
+"""
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import H100
-from layout import Layout, TileTensor
+from max.gpu.globals import WARPGROUP_SIZE
+from max.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import H100
+from layout import (
+    Idx,
+    Layout,
+    coord,
+    DefaultEngine,
+    TensorLayout,
+    TensorEngine,
+    TileTensor,
+    row_major,
+)
 from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from std.logger import Logger
 from std.bit import log2_floor
@@ -26,7 +39,12 @@ from std.bit import log2_floor
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from ....utils_gpu import MatmulConfig, get_hilbert_lut_with_cache
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
@@ -59,8 +77,8 @@ def _get_grid_shape[
     # Hardcode values on purpose until we move this inside tile scheduler
     # in a more robust way.
     comptime h100_num_SMs = H100.sm_count
-    num_blocks_n = min(num_tiles_n, h100_num_SMs)
-    adjusted_grid_shape = Index(
+    var num_blocks_n = min(num_tiles_n, h100_num_SMs)
+    var adjusted_grid_shape = Index(
         num_blocks_n,
         h100_num_SMs // num_blocks_n,
     )
@@ -94,28 +112,77 @@ def warp_specialize_gemm_with_multicasting[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
     splits: Int = 0,
     raster_order: RasterOrder = RasterOrder.AlongM,
     swapAB: Bool = False,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c_device: TileTensor[c_type, ...],
     a_device: TileTensor[a_type, ...],
     b_device: TileTensor[b_type, ...],
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
-    """Unified dispatcher for all matmul kernel variants."""
+    """Dispatches an SM90 warp-specialized matmul to split-K or regular kernel paths.
+
+    Routes to `warp_specialize_gemm_with_multicasting_splitk` when `splits > 0`
+    (partitioning K across multiple thread blocks with a reduction pass), or to
+    the persistent `_warp_specialize_gemm_with_multicasting_impl` otherwise.
+    Supports optional TMA stores, epilogue functions, scheduling strategies, and
+    A/B swapping for small-M problems.
+
+    Parameters:
+        c_type: Element type of the output `C` tensor.
+        a_type: Element type of the input `A` tensor.
+        b_type: Element type of the input `B` tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_b: Whether `B` is stored transposed. Must be `True` on H100.
+        config: Kernel configuration holding block tile shape, cluster shape,
+            MMA shape, pipeline stages, and consumer count.
+        grid_shape: Optional override for the launch grid shape
+            `(blocks_m, blocks_n)`. Required when `schedule` is `DS_SCHEDULER`
+            (defaults to `None`).
+        use_tma_store: Whether to use TMA for storing the output tile to global
+            memory (defaults to `False`).
+        schedule: Persistent kernel scheduling strategy (defaults to
+            `MatmulSchedule.NONE`).
+        hilbert_swizzle: Whether to reorder tile iteration via a Hilbert curve
+            for improved L2 locality (defaults to `False`).
+        splits: Number of partitions along `K` for split-K reduction. Routes to
+            the split-K kernel when greater than zero (defaults to `0`).
+        raster_order: Tile rasterization direction, `AlongM` or `AlongN`
+            (defaults to `AlongM`).
+        swapAB: Whether to swap the `A` and `B` operands for small-`M` problems
+            (defaults to `False`).
+        has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
+            to `False`).
+        has_compute_fn: Whether `compute_fn` maps each output before it is
+            stored (defaults to `False`).
+
+    Args:
+        c_device: Output `C` tensor on device with shape `(M, N)`.
+        a_device: Input `A` tensor on device with shape `(M, K)`.
+        b_device: Input `B` tensor on device with shape `(N, K)` when
+            `transpose_b` is `True`.
+        ctx: Device context used to enqueue the kernel.
+        epilogue_fn: Stores each output element when `has_epilogue_fn` is
+            set.
+        compute_fn: Maps each output element to the value to store when
+            `has_compute_fn` is set.
+    """
 
     comptime if splits > 0:
         # TODO: Remove if unnecessary otherwise add support
@@ -129,9 +196,9 @@ def warp_specialize_gemm_with_multicasting[
             splits=splits,
             raster_order=raster_order,
             use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](c_device, a_device, b_device, ctx)
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](c_device, a_device, b_device, ctx, epilogue_fn, compute_fn)
     else:
         # Dispatch to regular kernel
         _warp_specialize_gemm_with_multicasting_impl[
@@ -139,48 +206,209 @@ def warp_specialize_gemm_with_multicasting[
             config=config,
             grid_shape=grid_shape,
             use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             schedule=schedule,
             hilbert_swizzle=hilbert_swizzle,
             swapAB=swapAB,
-        ](c_device, a_device, b_device, ctx)
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](c_device, a_device, b_device, ctx, epilogue_fn, compute_fn)
 
 
-def _warp_specialize_gemm_with_multicasting_impl[
+def warp_specialize_gemm_with_multicasting[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    ComputeFnType: ElementwiseComputeFn,
     //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
+    splits: Int = 0,
+    raster_order: RasterOrder = RasterOrder.AlongM,
     swapAB: Bool = False,
 ](
     c_device: TileTensor[c_type, ...],
     a_device: TileTensor[a_type, ...],
     b_device: TileTensor[b_type, ...],
+    compute_fn: ComputeFnType,
     ctx: DeviceContext,
+) raises:
+    """SM90 warp-specialized matmul that stores `compute_fn(idx, a @ b)` into
+    `c`.
+
+    `compute_fn` is a runtime unified closure applied to each output value
+    before the kernel stores it, so the TMA store path stays in use. Its
+    captures, and the origins they carry, stay live until the launch is
+    enqueued.
+
+    Parameters:
+        c_type: Element type of the output `C` tensor.
+        a_type: Element type of the input `A` tensor.
+        b_type: Element type of the input `B` tensor.
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_b: Whether `B` is stored transposed. Must be `True` on H100.
+        config: Kernel configuration holding block tile shape, cluster shape,
+            MMA shape, pipeline stages, and consumer count.
+        grid_shape: Optional override for the launch grid shape
+            `(blocks_m, blocks_n)` (defaults to `None`).
+        use_tma_store: Whether to use TMA for storing the output tile to global
+            memory (defaults to `False`).
+        schedule: Persistent kernel scheduling strategy (defaults to
+            `MatmulSchedule.NONE`).
+        hilbert_swizzle: Whether to reorder tile iteration via a Hilbert curve
+            (defaults to `False`).
+        splits: Number of partitions along `K` for split-K reduction
+            (defaults to `0`).
+        raster_order: Tile rasterization direction (defaults to `AlongM`).
+        swapAB: Whether to swap the `A` and `B` operands for small-`M` problems
+            (defaults to `False`).
+
+    Args:
+        c_device: Output `C` tensor on device with shape `(M, N)`.
+        a_device: Input `A` tensor on device with shape `(M, K)`.
+        b_device: Input `B` tensor on device with shape `(N, K)`.
+        compute_fn: Maps each output index and value to the value to store.
+        ctx: Device context used to enqueue the kernel.
+    """
+    warp_specialize_gemm_with_multicasting[
+        transpose_b=transpose_b,
+        config=config,
+        grid_shape=grid_shape,
+        use_tma_store=use_tma_store,
+        schedule=schedule,
+        hilbert_swizzle=hilbert_swizzle,
+        splits=splits,
+        raster_order=raster_order,
+        swapAB=swapAB,
+        has_compute_fn=True,
+    ](c_device, a_device, b_device, ctx, compute_fn=compute_fn)
+
+
+def warp_specialize_gemm_with_multicasting[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    grid_shape: OptionalReg[IndexList[2]] = None,
+    use_tma_store: Bool = False,
+    schedule: MatmulSchedule = MatmulSchedule.NONE,
+    hilbert_swizzle: Bool = False,
+    splits: Int = 0,
+    raster_order: RasterOrder = RasterOrder.AlongM,
+    swapAB: Bool = False,
+](
+    c_shape: IndexList[2],
+    a_device: TileTensor[a_type, ...],
+    b_device: TileTensor[b_type, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """SM90 warp-specialized matmul that stores its output through an
+    elementwise epilogue closure, given only the output shape.
+
+    The epilogue is a runtime unified closure that owns the store, so it can
+    capture the output tensor itself. Its captures, and the origins they
+    carry, stay live until the launch is enqueued.
+
+    Parameters:
+        c_type: Element type of the output, passed to `epilogue_fn`.
+        a_type: Element type of the input `A` tensor.
+        b_type: Element type of the input `B` tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        transpose_b: Whether `B` is stored transposed. Must be `True` on H100.
+        config: Kernel configuration holding block tile shape, cluster shape,
+            MMA shape, pipeline stages, and consumer count.
+        grid_shape: Optional override for the launch grid shape
+            `(blocks_m, blocks_n)` (defaults to `None`).
+        use_tma_store: Whether to use TMA for storing the output tile to global
+            memory (defaults to `False`).
+        schedule: Persistent kernel scheduling strategy (defaults to
+            `MatmulSchedule.NONE`).
+        hilbert_swizzle: Whether to reorder tile iteration via a Hilbert curve
+            (defaults to `False`).
+        splits: Number of partitions along `K` for split-K reduction
+            (defaults to `0`).
+        raster_order: Tile rasterization direction (defaults to `AlongM`).
+        swapAB: Whether to swap the `A` and `B` operands for small-`M` problems
+            (defaults to `False`).
+
+    Args:
+        c_shape: Output shape `(M, N)`. `N` must match the static `N` of
+            `b_device`.
+        a_device: Input `A` tensor on device with shape `(M, K)`.
+        b_device: Input `B` tensor on device with shape `(N, K)`.
+        epilogue_fn: Stores each output element. Signature:
+            `def[dtype, width, *, alignment](IndexList[2], SIMD)`, with
+            coordinates in the `(M, N)` output.
+        ctx: Device context used to enqueue the kernel.
+    """
+    comptime assert b_device.rank == 2, "b must be rank 2"
+    comptime N = type_of(b_device).LayoutType.static_shape[0]
+    comptime assert N > -1, "b must have a static N"
+    if c_shape[1] != N:
+        raise Error("c_shape[1] must match the static N of b")
+
+    # The epilogue owns every store, so the kernel never dereferences C;
+    # it reads only C's shape, and C's TMA descriptor is encoded over a
+    # null address.
+    var c_ptr: Optional[MutPointer[Scalar[c_type], MutUntrackedOrigin]] = None
+    var c_shape_only = TileTensor(
+        c_ptr._unsafe_nullable(), row_major(c_shape[0], Idx[N])
+    )
+    warp_specialize_gemm_with_multicasting[
+        transpose_b=transpose_b,
+        config=config,
+        grid_shape=grid_shape,
+        use_tma_store=use_tma_store,
+        schedule=schedule,
+        hilbert_swizzle=hilbert_swizzle,
+        splits=splits,
+        raster_order=raster_order,
+        swapAB=swapAB,
+        has_epilogue_fn=True,
+    ](c_shape_only, a_device, b_device, ctx, epilogue_fn=epilogue_fn)
+
+
+def _warp_specialize_gemm_with_multicasting_impl[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
+    *,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    grid_shape: OptionalReg[IndexList[2]] = None,
+    use_tma_store: Bool = False,
+    schedule: MatmulSchedule = MatmulSchedule.NONE,
+    hilbert_swizzle: Bool = False,
+    swapAB: Bool = False,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
+](
+    c_device: TileTensor[c_type, ...],
+    a_device: TileTensor[a_type, ...],
+    b_device: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     comptime assert c_device.rank == 2, "c must be rank 2"
     comptime assert a_device.rank == 2, "a must be rank 2"
     comptime assert b_device.rank == 2, "b must be rank 2"
 
-    var a = a_device.to_layout_tensor()
-    var b = b_device.to_layout_tensor()
-    var c = c_device.to_layout_tensor()
-
-    # Static shape from the LayoutTensor's type-level layout.
-    comptime N_static = c.layout.shape[1].value()
-    comptime K_static = a.layout.shape[1].value()
+    # Static shape from the TileTensor type-level layout.
+    comptime N_static = type_of(c_device).LayoutType.static_shape[1]
+    comptime K_static = type_of(a_device).LayoutType.static_shape[1]
 
     comptime assert not swapAB or (
         schedule == MatmulSchedule.NONE
@@ -197,27 +425,27 @@ def _warp_specialize_gemm_with_multicasting_impl[
 
     # C is in reference to A and B not being swapped
     # so we derive M and N from A and B instead
-    var M = b.dim[0]() if swapAB else a.dim[0]()
-    var N = a.dim[0]() if swapAB else b.dim[0]()
-    var K = a.dim[1]()
+    var M = Int(b_device.dim[0]()) if swapAB else Int(a_device.dim[0]())
+    var N = Int(a_device.dim[0]()) if swapAB else Int(b_device.dim[0]())
+    var K = Int(a_device.dim[1]())
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
 
-    comptime k_group_size = Int(config.k_group_size)
+    comptime k_group_size = config.k_group_size
 
-    comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
+    comptime assert (a_type == b_type == .float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
     comptime assert (
-        a_type != DType.float8_e4m3fn or BK == 128
+        a_type != .float8_e4m3fn or BK == 128
     ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
-    comptime assert (
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
-    ), "Either the epilogue lambda or the compute lambda can be used"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either epilogue_fn or compute_fn, not both"
 
     comptime assert BM > 64 or (
         BM == 64 and config.num_consumer == 1
@@ -246,12 +474,12 @@ def _warp_specialize_gemm_with_multicasting_impl[
             ds_grid_shape[0] <= H100.sm_count and ds_grid_shape[1] == 1
         ), "Deepseek scheduler only accepts grid shape with 1 column"
 
-    elif grid_shape:
+    elif case .Some(grid_override) = grid_shape:
         comptime assert _is_valid_grid_shape[
-            grid_shape.value(), config.cluster_shape
+            grid_override, config.cluster_shape
         ](ceildiv(N_static, BN)), String(
             "grid shape:",
-            grid_shape.value(),
+            grid_override,
             "is not compatible with cluster shape:",
             config.cluster_shape,
             "and static N:",
@@ -279,7 +507,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_type,
         b_type,
         c_type,
-        Int(config.num_pipeline_stages),
+        config.num_pipeline_stages,
         k_group_size,
         swapAB,
     ]()
@@ -288,43 +516,53 @@ def _warp_specialize_gemm_with_multicasting_impl[
     # For normal: rows stay full, cols are divided by num_consumer
     # For swapAB: rows are divided by num_consumer, cols stay full
     comptime c_smem_rows_reg = c_smem_layout.shape[0].value()
-    comptime c_smem_cols_reg = c_smem_layout.shape[1].value() // Int(
-        config.num_consumer
-    )
+    comptime c_smem_cols_reg = c_smem_layout.shape[
+        1
+    ].value() // config.num_consumer
 
-    comptime c_smem_rows_swapAB = c_smem_layout.shape[0].value() // Int(
-        config.num_consumer
-    )
+    comptime c_smem_rows_swapAB = c_smem_layout.shape[
+        0
+    ].value() // config.num_consumer
     comptime c_smem_cols_swapAB = c_smem_layout.shape[1].value()
 
     comptime c_smem_rows = c_smem_rows_reg if not swapAB else c_smem_rows_swapAB
     comptime c_smem_cols = c_smem_cols_reg if not swapAB else c_smem_cols_swapAB
-    comptime c_smem_tile = Index(c_smem_rows, c_smem_cols)
+    comptime c_smem_tile = coord[c_smem_rows, c_smem_cols]
 
     # BK is always 64
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
+        Int32(
+            min(
+                log2_floor(c_smem_tile.element_types[1].static_value // 8),
+                3,
+            )
+        )
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     var c_tma_op = create_tma_tile_template[
         c_type,
-        2,
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
+        __desc_shape=coord[
+            c_smem_tile.element_types[0].static_value,
+            c_smem_tile.element_types[1].static_value,
+        ],
     ]()
 
     comptime if use_tma_store:
         c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
-            __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
-        ](ctx, c)
+            __desc_shape=coord[
+                c_smem_tile.element_types[0].static_value,
+                c_smem_tile.element_types[1].static_value,
+            ],
+        ](ctx, c_device)
 
-    var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
+    var lut_ptr = ctx.enqueue_create_buffer[.uint32](0)
 
     comptime if hilbert_swizzle:
         var grid_x = ceildiv(N, BN)
@@ -332,20 +570,21 @@ def _warp_specialize_gemm_with_multicasting_impl[
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
 
     # one producer and num_consumer consumers each one warpgroup in size
-    comptime num_threads = WARPGROUP_SIZE * Int(
-        config.num_consumer
-    ) + WARPGROUP_SIZE
+    comptime num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
 
     comptime matmul_kernel[
         a_type: DType,
         b_type: DType,
         c_type: DType,
-        a_layout: Layout,
-        b_layout: Layout,
-        c_layout: Layout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_layout: TensorLayout,
         a_swizzle: TensorMapSwizzle,
         b_swizzle: TensorMapSwizzle,
         c_swizzle: TensorMapSwizzle,
+        a_engine: TensorEngine = DefaultEngine[element_width=1],
+        b_engine: TensorEngine = DefaultEngine[element_width=1],
+        c_engine: TensorEngine = DefaultEngine[element_width=1],
         swapAB: Bool = False,
         hilbert_swizzle: Bool = False,
     ] = HopperMatmulSM90Kernel[
@@ -359,7 +598,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
         config.block_tile_shape,
         config.mma_shape,
         cluster_shape,
-        Int(config.num_pipeline_stages),
+        config.num_pipeline_stages,
         num_threads,
         transpose_b=True,
         a_swizzle=a_swizzle,
@@ -369,11 +608,12 @@ def _warp_specialize_gemm_with_multicasting_impl[
         use_tma_store=use_tma_store,
         promotion_frequency=1,
         pdl_level=config.pdl_level(),
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         hilbert_swizzle=hilbert_swizzle,
         k_group_size=k_group_size,
         swapAB=swapAB,
+        a_engine=a_engine,
+        b_engine=b_engine,
+        c_engine=c_engine,
     ]
 
     comptime matmul_kernel_regular[
@@ -382,12 +622,15 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_type,
         b_type,
         c_type,
-        a.layout,
-        b.layout,
-        c.layout,
+        type_of(a_device).LayoutType,
+        type_of(b_device).LayoutType,
+        type_of(c_device).LayoutType,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
+        a_engine=type_of(a_device).Engine,
+        b_engine=type_of(b_device).Engine,
+        c_engine=type_of(c_device).Engine,
         swapAB=False,
         hilbert_swizzle=hilbert_swizzle,
     ]
@@ -396,12 +639,15 @@ def _warp_specialize_gemm_with_multicasting_impl[
         b_type,
         a_type,
         c_type,
-        b.layout,
-        a.layout,
-        c.layout,
+        type_of(b_device).LayoutType,
+        type_of(a_device).LayoutType,
+        type_of(c_device).LayoutType,
         a_swizzle=b_swizzle,
         b_swizzle=a_swizzle,
         c_swizzle=c_swizzle,
+        a_engine=type_of(b_device).Engine,
+        b_engine=type_of(a_device).Engine,
+        c_engine=type_of(c_device).Engine,
         swapAB=True,
         hilbert_swizzle=False,
     ]
@@ -421,24 +667,23 @@ def _warp_specialize_gemm_with_multicasting_impl[
     comptime if k_align == 16:
         comptime if not swapAB:
             var a_tma_op = create_tensor_tile[
-                Index(
-                    BM // CLUSTER_N, BK
-                ) if config.partitioned_multicast else Index(BM, BK),
+                coord[
+                    BM // CLUSTER_N if config.partitioned_multicast else BM,
+                    BK,
+                ],
                 swizzle_mode=a_swizzle,
-            ](ctx, a)
+            ](ctx, a_device)
 
             var b_tma_op = create_tensor_tile[
-                Index(
-                    BN // CLUSTER_M, BK
-                ) if config.partitioned_multicast else Index(BN, BK),
+                coord[
+                    BN // CLUSTER_M if config.partitioned_multicast else BN,
+                    BK,
+                ],
                 swizzle_mode=b_swizzle,
-            ](ctx, b)
+            ](ctx, b_device)
 
             comptime if schedule != MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_regular[].run_persistent[
-                    type_of(a_tma_op).rank,
-                    type_of(b_tma_op).rank,
-                    type_of(c_tma_op).rank,
                     type_of(a_tma_op).tile_shape,
                     type_of(b_tma_op).tile_shape,
                     type_of(c_tma_op).tile_shape,
@@ -447,14 +692,20 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     type_of(c_tma_op).desc_shape,
                     grid_shape=grid_shape_adjusted,
                     schedule=schedule,
+                    c_tensor_layout=type_of(c_device).LayoutType,
+                    EpilogueFnType=EpilogueFnType,
+                    has_epilogue_fn=has_epilogue_fn,
+                    ComputeFnType=ComputeFnType,
+                    has_compute_fn=has_compute_fn,
                 ]
 
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     a_tma_op,
                     b_tma_op,
                     c_tma_op,
-                    c,
+                    c_device.as_unsafe_any_origin(),
                     Index(M, N, K),
+                    host_args=(epilogue_fn, compute_fn),
                     grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
@@ -467,25 +718,30 @@ def _warp_specialize_gemm_with_multicasting_impl[
                 comptime kernel = matmul_kernel_regular[
                     hilbert_swizzle=hilbert_swizzle
                 ].run[
-                    type_of(a_tma_op).rank,
-                    type_of(b_tma_op).rank,
-                    type_of(c_tma_op).rank,
                     type_of(a_tma_op).tile_shape,
                     type_of(b_tma_op).tile_shape,
                     type_of(c_tma_op).tile_shape,
                     type_of(a_tma_op).desc_shape,
                     type_of(b_tma_op).desc_shape,
                     type_of(c_tma_op).desc_shape,
+                    type_of(a_device).LayoutType,
+                    type_of(b_device).LayoutType,
+                    type_of(c_device).LayoutType,
+                    EpilogueFnType=EpilogueFnType,
+                    has_epilogue_fn=has_epilogue_fn,
+                    ComputeFnType=ComputeFnType,
+                    has_compute_fn=has_compute_fn,
                 ]
 
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     a_tma_op,
                     b_tma_op,
                     c_tma_op,
-                    a.get_immutable(),
-                    b.get_immutable(),
-                    c,
+                    a_device.as_imm().as_unsafe_any_origin(),
+                    b_device.as_imm().as_unsafe_any_origin(),
+                    c_device.as_unsafe_any_origin(),
                     lut_ptr,
+                    host_args=(epilogue_fn, compute_fn),
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
@@ -496,40 +752,47 @@ def _warp_specialize_gemm_with_multicasting_impl[
                 )
         else:
             var a_tma_op = create_tensor_tile[
-                Index(
-                    BM // CLUSTER_N, BK
-                ) if config.partitioned_multicast else Index(BM, BK),
+                coord[
+                    BM // CLUSTER_N if config.partitioned_multicast else BM,
+                    BK,
+                ],
                 swizzle_mode=a_swizzle,
-            ](ctx, b)
+            ](ctx, b_device)
 
             var b_tma_op = create_tensor_tile[
-                Index(
-                    BN // CLUSTER_M, BK
-                ) if config.partitioned_multicast else Index(BN, BK),
+                coord[
+                    BN // CLUSTER_M if config.partitioned_multicast else BN,
+                    BK,
+                ],
                 swizzle_mode=b_swizzle,
-            ](ctx, a)
+            ](ctx, a_device)
 
             comptime if schedule == MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_swapAB.run[
-                    type_of(a_tma_op).rank,
-                    type_of(b_tma_op).rank,
-                    type_of(c_tma_op).rank,
                     type_of(a_tma_op).tile_shape,
                     type_of(b_tma_op).tile_shape,
                     type_of(c_tma_op).tile_shape,
                     type_of(a_tma_op).desc_shape,
                     type_of(b_tma_op).desc_shape,
                     type_of(c_tma_op).desc_shape,
+                    type_of(b_device).LayoutType,
+                    type_of(a_device).LayoutType,
+                    type_of(c_device).LayoutType,
+                    EpilogueFnType=EpilogueFnType,
+                    has_epilogue_fn=has_epilogue_fn,
+                    ComputeFnType=ComputeFnType,
+                    has_compute_fn=has_compute_fn,
                 ]
 
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     a_tma_op,
                     b_tma_op,
                     c_tma_op,
-                    b.get_immutable(),
-                    a.get_immutable(),
-                    c,
+                    b_device.as_imm().as_unsafe_any_origin(),
+                    a_device.as_imm().as_unsafe_any_origin(),
+                    c_device.as_unsafe_any_origin(),
                     lut_ptr,
+                    host_args=(epilogue_fn, compute_fn),
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
@@ -546,16 +809,20 @@ def _warp_specialize_gemm_with_multicasting_impl[
             swapAB == False
         ), "swapAB is not supported for unaligned kernel"
         comptime kernel = matmul_kernel_regular[].run_unaligned[
-            type_of(c_tma_op).rank,
             type_of(c_tma_op).tile_shape,
             type_of(c_tma_op).desc_shape,
+            EpilogueFnType=EpilogueFnType,
+            has_epilogue_fn=has_epilogue_fn,
+            ComputeFnType=ComputeFnType,
+            has_compute_fn=has_compute_fn,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c_tma_op,
-            a.get_immutable(),
-            b.get_immutable(),
-            c,
+            a_device.as_imm().as_unsafe_any_origin(),
+            b_device.as_imm().as_unsafe_any_origin(),
+            c_device.as_unsafe_any_origin(),
+            host_args=(epilogue_fn, compute_fn),
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,
@@ -585,7 +852,7 @@ def _get_c_smem_layout[
     comptime available_smem_size: Int = H100.shared_memory_per_multiprocessor - 1024
 
     comptime assert not swapAB or (
-        a_type == b_type == c_type == DType.bfloat16
+        a_type == b_type == c_type == .bfloat16
     ), "swapAB is only supported for bfloat16 dtypes"
 
     comptime groups = num_pipeline_stages // k_group_size
@@ -624,7 +891,7 @@ def _get_c_smem_layout[
         + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
     )
 
-    def _get_max_wg_bn() capturing -> Int:
+    def _get_max_wg_bn() -> Int:
         var WG_BN = MAX_WG_BN
         while (
             available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
@@ -643,6 +910,8 @@ def warp_specialize_gemm_with_multicasting_splitk[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     *,
     transpose_b: Bool,
@@ -650,28 +919,62 @@ def warp_specialize_gemm_with_multicasting_splitk[
     splits: Int,
     raster_order: RasterOrder,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c_device: TileTensor[c_type, ...],
     a_device: TileTensor[a_type, ...],
     b_device: TileTensor[b_type, ...],
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
+    """Dispatches an SM90 warp-specialized split-K matmul that partitions the K dimension across thread blocks and reduces partial sums via a workspace buffer and locks.
+
+    Allocates a workspace accumulation buffer and a locks buffer, builds a
+    `SplitKTileScheduler` to map tiles to thread blocks, and enqueues the
+    split-K kernel variant of `HopperMatmulSM90Kernel`. Supports optional TMA
+    stores and epilogue or compute lambda functions.
+
+    Parameters:
+        c_type: Element type of the output `C` tensor.
+        a_type: Element type of the input `A` tensor.
+        b_type: Element type of the input `B` tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_b: Whether `B` is stored transposed. Must be `True` on H100.
+        config: Kernel configuration holding block tile shape, cluster shape,
+            MMA shape, pipeline stages, and consumer count.
+        splits: Number of partitions along `K`. Each partition is computed by a
+            separate thread block and reduced via a workspace buffer.
+        raster_order: Tile rasterization direction, `AlongM` or `AlongN`.
+        use_tma_store: Whether to use TMA for storing the output tile to global
+            memory (defaults to `False`).
+        has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
+            to `False`).
+        has_compute_fn: Whether `compute_fn` maps each output before it is
+            stored (defaults to `False`).
+
+    Args:
+        c_device: Output `C` tensor on device with shape `(M, N)`.
+        a_device: Input `A` tensor on device with shape `(M, K)`.
+        b_device: Input `B` tensor on device with shape `(N, K)` when
+            `transpose_b` is `True`.
+        ctx: Device context used to enqueue the kernel.
+        epilogue_fn: Stores each output element when `has_epilogue_fn` is
+            set.
+        compute_fn: Maps each output element to the value to store when
+            `has_compute_fn` is set.
+    """
+
     comptime assert c_device.rank == 2, "c must be rank 2"
     comptime assert a_device.rank == 2, "a must be rank 2"
     comptime assert b_device.rank == 2, "b must be rank 2"
 
-    var a = a_device.to_layout_tensor()
-    var b = b_device.to_layout_tensor()
-    var c = c_device.to_layout_tensor()
-
-    var M = c.dim[0]()
-    # Static shape from the LayoutTensor's type-level layout.
-    comptime N = c.layout.shape[1].value()
-    comptime K = a.layout.shape[1].value()
+    var M = c_device.dim[0]()
+    # Static shape from the TileTensor type-level layout.
+    comptime N = type_of(c_device).LayoutType.static_shape[1]
+    comptime K = type_of(a_device).LayoutType.static_shape[1]
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -680,17 +983,13 @@ def warp_specialize_gemm_with_multicasting_splitk[
 
     comptime assert k_group_size == 1, "Only support k_group_size == 1 for now"
 
-    comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
+    comptime assert (a_type == b_type == .float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
     comptime assert (
-        a_type != DType.float8_e4m3fn or BK == 128
+        a_type != .float8_e4m3fn or BK == 128
     ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
-
-    comptime assert (
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
-    ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime assert BM > 64 or (
         BM == 64 and config.num_consumer == 1
@@ -715,41 +1014,47 @@ def warp_specialize_gemm_with_multicasting_splitk[
         a_type,
         b_type,
         c_type,
-        Int(config.num_pipeline_stages),
-        Int(k_group_size),
+        config.num_pipeline_stages,
+        k_group_size,
     ]()
-    comptime c_smem_tile = Index(
+    comptime c_smem_tile = coord[
         c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // Int(config.num_consumer),
-    )
+        c_smem_layout.shape[1].value() // config.num_consumer,
+    ]
 
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
+        Int32(
+            min(
+                log2_floor(c_smem_tile.element_types[1].static_value // 8),
+                3,
+            )
+        )
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
-    a_tma_op = create_tensor_tile[
-        Index(BM // CLUSTER_N, BK) if config.partitioned_multicast else Index(
-            BM, BK
-        ),
+    comptime pm_a = (BM // CLUSTER_N if config.partitioned_multicast else BM)
+    comptime pm_b = (BN // CLUSTER_M if config.partitioned_multicast else BN)
+    var a_tma_op = create_tensor_tile[
+        coord[pm_a, BK],
         swizzle_mode=a_swizzle,
-    ](ctx, a)
-    b_tma_op = create_tensor_tile[
-        Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
-            BN, BK
-        ),
+    ](ctx, a_device)
+    var b_tma_op = create_tensor_tile[
+        coord[pm_b, BK],
         swizzle_mode=b_swizzle,
-    ](ctx, b)
-
-    c_tma_op = create_tensor_tile[
+    ](ctx, b_device)
+    var c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
-    ](ctx, c)
+        __desc_shape=coord[
+            c_smem_tile.element_types[0].static_value,
+            c_smem_tile.element_types[1].static_value,
+        ],
+    ](ctx, c_device)
 
     comptime scheduler = SplitKTileScheduler[
+        locks_origin=MutAnyOrigin,
         Index(N, K),
         config.block_tile_shape,
         UInt32(splits),
@@ -787,9 +1092,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
         )
     )
 
-    var locks_ptr = ctx.enqueue_create_buffer[DType.uint8](
-        locks_buffer_size_bytes
-    )
+    var locks_ptr = ctx.enqueue_create_buffer[.uint8](locks_buffer_size_bytes)
 
     ctx.enqueue_memset(locks_ptr, 0)
 
@@ -799,14 +1102,14 @@ def warp_specialize_gemm_with_multicasting_splitk[
         a_type,
         b_type,
         c_type,
-        a.layout,
-        b.layout,
-        c.layout,
+        type_of(a_device).LayoutType,
+        type_of(b_device).LayoutType,
+        type_of(c_device).LayoutType,
         c_smem_layout,
         config.block_tile_shape,
         config.mma_shape,
         cluster_shape,
-        Int(config.num_pipeline_stages),
+        config.num_pipeline_stages,
         Int(num_threads),
         transpose_b=True,
         a_swizzle=a_swizzle,
@@ -816,8 +1119,9 @@ def warp_specialize_gemm_with_multicasting_splitk[
         use_tma_store=use_tma_store,
         promotion_frequency=1,
         pdl_level=config.pdl_level(),
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        a_engine=type_of(a_device).Engine,
+        b_engine=type_of(b_device).Engine,
+        c_engine=type_of(c_device).Engine,
     ]
 
     comptime smem_size = matmul_kernel.SMem.storage_size()
@@ -827,9 +1131,6 @@ def warp_specialize_gemm_with_multicasting_splitk[
     ), "requested SMEM size exceeds 227KB limit."
 
     comptime kernel = matmul_kernel.run_splitk[
-        type_of(a_tma_op).rank,
-        type_of(b_tma_op).rank,
-        type_of(c_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(b_tma_op).tile_shape,
         type_of(c_tma_op).tile_shape,
@@ -838,16 +1139,22 @@ def warp_specialize_gemm_with_multicasting_splitk[
         type_of(c_tma_op).desc_shape,
         splits=splits,
         raster_order=raster_order,
+        c_tensor_layout=type_of(c_device).LayoutType,
+        EpilogueFnType=EpilogueFnType,
+        has_epilogue_fn=has_epilogue_fn,
+        ComputeFnType=ComputeFnType,
+        has_compute_fn=has_compute_fn,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        c,
+        c_device.as_unsafe_any_origin(),
         workspace_ptr,
         locks_ptr,
         Index(M, N, K),
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(
             launch_grid_shape[0],
             launch_grid_shape[1],

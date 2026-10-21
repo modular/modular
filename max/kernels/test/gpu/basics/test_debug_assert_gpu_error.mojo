@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_fail
@@ -36,7 +36,7 @@ def main() raises:
 
         comptime kernel = fail_assert
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             grid_dim=2,
             block_dim=(2, 2),
         )

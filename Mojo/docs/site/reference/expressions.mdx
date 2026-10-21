@@ -1,0 +1,553 @@
+---
+title: Mojo expression reference
+sidebar_label: Expressions
+description: >
+  Complete reference for Mojo expressions. Covers
+  parenthesized expressions, tuples, collection literal expressions,
+  member access, calls, subscripts, slices, ternary
+  conditionals, walrus operator, compile-time expressions,
+  and comprehensions.
+---
+
+{/* VERIFIED: ParserExprs.cpp, ExprNode.h, ParserBase.h,
+     ExprNodes.h
+     Compiler verified: 2026-10-02, Mojo 1.2.0.dev2026100205 (7791487a)
+     Last updated: 2026-10-09 */}
+
+An *expression* is any piece of code that produces a value.
+Expressions are the building blocks of computation: you combine
+them with operators, pass them as arguments, assign their
+results to variables, and use them as conditions in control
+flow.
+
+## Identifier expressions
+
+An identifier refers to a named element: a variable, function,
+type, or module. Using an identifier in an expression gives you
+the thing it refers to:
+
+```mojo
+score        # a variable
+Int          # a type
+range        # a function
+```
+
+## Parenthesized expressions
+
+Parentheses group subexpressions, overriding default
+precedence:
+
+```mojo
+(a + b) * c  # add a and b, multiply by c
+(x)          # just x
+```
+
+Parentheses also let expressions span multiple lines without
+using backslash escapes:
+
+```mojo
+var result = (
+    first_value
+    + second_value
+    + third_value
+)
+```
+
+## Tuples
+
+A *tuple* is a fixed-size, ordered group of values. Commas create tuples,
+not parentheses:
+
+```mojo
+var a = 2, 3       # tuple without parentheses
+var b = (2, 3)     # same tuple with parentheses
+var x, y = b       # x is 2, y is 3
+```
+
+Use a trailing comma to create a one-element tuple. Without it,
+`(1)` is just the integer `1` in parentheses:
+
+```mojo
+()          # empty tuple
+(1,)        # one-element tuple
+(1, 2, 3)   # three-element tuple
+```
+
+Tuples support indexing:
+
+```mojo
+var point = (10, 20)
+print(point[0])  # 10
+```
+
+## Collection expressions
+
+For example, two array literal expressions:
+
+```mojo
+[1, 2, 3]  # literal entries
+[1, 1+1, 1+1+1]  # expression entries
+```
+
+Without type context, an array literal expression builds a fixed-size
+`Array`. Annotate the binding (`var x: List = [1, 2, 3]`) to build a `List`
+and not an `Array`. Once typed, reassignments don't need further type
+annotations.
+
+### Lists and arrays
+
+A list or array expression creates a collection from comma-separated values:
+
+```mojo
+var empty: List[Float32] = []
+var numbers: Array[Int, 3] = [1, 2, 3]
+var strings: List[String] = ["one", "two", "three",]
+```
+
+Mojo allows trailing commas after all collection elements,
+including the final one.
+
+### Dictionaries
+
+A *dict expression* maps keys to values with `:` between each
+pair:
+
+```mojo
+var empty: Dict[String, Int] = {}
+var ages = {"Alice": 30, "Bob": 25}
+```
+
+### Sets
+
+A *set expression* uses braces with values but no colons:
+
+```mojo
+var primes = {2, 3, 5, 7}
+```
+
+Don't mix set and dict syntax. `{1, 2}` is a set. `{1: 2}` is a dict.
+
+```mojo
+{"a": 1, 2}   # Error: expected 'key: value' in dictionary expression
+{1, "b": 2}   # Error: cannot have a 'key: value' pair in set initializer
+```
+
+**Sets are not initializer lists**.
+Brace syntax also serves as an *initializer list* that creates
+an instance of an inferred type. Without type context, the
+compiler can't distinguish a set from an initializer list, so
+the distinction is resolved at type-check time. Initializer
+lists can include positional values and keyword arguments:
+
+```mojo
+{x, y}           # set or initializer list, without context
+{z=4, "foo"}     # initializer list with keyword argument
+```
+
+Initializer lists are syntactic sugar for initializer calls.
+`{1, "hello"}` is equivalent to `T(1, "hello")` when the
+type `T` is known from context. Use them for passing
+initialized instances as arguments:
+
+```mojo
+process({1, "hello"})  # type inferred from signature
+
+var x: T = {}  # type inferred from variable declaration, calls T()
+```
+
+**Sharp edge: set expressions are core Mojo syntax but the `Set` type is
+not**. You must import `Set` from the standard library to use it as a type:
+
+```mojo
+from std.collections import Set # Required to use Set type
+from std.testing import assert_equal
+
+def main() raises:
+    var my_set = {1, 2, 3}        # A set with elements 1, 2, and 3
+    assert_equal(len(my_set), 3)  # The length of the set is 3
+
+    var empty_set = Set[Int]()         # An empty set
+    empty_set.add(4)                   # Add an element to the set
+    empty_set.add(4)
+    assert_equal(len(empty_set), 1)    # Sets do not allow duplicate elements
+```
+
+## Member access
+
+The dot operator accesses an attribute or method on a value:
+
+```mojo
+var length = text.my_method()
+var x = point.x
+var name = person.name.upper()
+```
+
+Chaining is left to right: `a.b.c` accesses `c` on the
+result of `a.b`.
+
+### Implicit member references
+
+A leading dot with no value in front of it, such as `.red` or
+`.float32`, names a member of the type that the surrounding context
+expects. It's identical to using the fully spelled-out type name,
+such as "Color.red" or "DType.float32".
+
+Use this dot notation wherever an argument, annotation, or parameter
+already supplies the type:
+
+```mojo
+@fieldwise_init
+struct Color(ImplicitlyCopyable):
+    var r: Int
+    comptime red = Color(255)
+    comptime green = Color(0)
+
+    @staticmethod
+    def gray(level: Int) -> Color:
+        return Color(level)
+
+    def dimmed(self) -> Color:
+        return Color(self.r // 2)
+
+def brightness(c: Color) -> Int:
+    return c.r
+
+brightness(.red)           # 255, resolves to Color.red
+brightness(.gray(40))      # 40, static methods work
+brightness(.red.dimmed())  # 127, attribute chains work
+var c: Color = .green      # the annotation supplies the type
+var v = SIMD[.float32, 4](1, 2, 3, 4)  # DType.float32
+var w = v.cast[.int32]()               # DType.int32
+```
+
+Without an expected type, a leading-dot member is an error, because
+the compiler has no type to look the member up in:
+
+```mojo
+var c = .red  # Error because nothing supplies a type for .red
+```
+
+## Calls
+
+A *call expression* invokes a function or constructs a value
+by appending `()` to an expression:
+
+```mojo
+print("hello")
+var result = compute(a, b)
+var p = Point(1.0, 2.0)
+```
+
+### Positional and keyword arguments
+
+Arguments before any keyword argument are positional. Keyword
+arguments use `name=value` syntax.
+
+```mojo
+def greet(name: String, loud: Bool = False):
+    print(t"Hello, {name if not loud else name.upper()}!")
+
+greet("Alice")  # Hello, Alice!
+greet("Alice", loud=True)  # Hello, ALICE!
+greet(name="Bob") # Hello, Bob!
+```
+
+Positional arguments can't follow keyword arguments:
+
+```mojo
+    # greet(loud=True, "Alice")
+    # Error: positional argument follows keyword argument
+```
+
+Keyword arguments can't be repeated:
+
+```mojo
+greet(name="Alice", name="Bob")
+# Error: duplicate keyword argument 'name'
+```
+
+## Subscripts and slices
+
+Square brackets after an expression look up a value by
+index(es) or key(s):
+
+```mojo
+var item = collection[0]
+var value = mapping["key"]
+var cell = matrix[i, j]
+```
+
+### Slices
+
+Colons inside square brackets create *slices*. Slices select
+a range of elements using `start:stop` or
+`start:stop:stride`:
+
+```mojo
+var items: List = [0, 1, 2, 3, 4, 5]
+var first_three = items[0:3]   # [0, 1, 2] (3 not included)
+var from_three  = items[3:]    # [3, 4, 5]
+var every_other = items[::2]   # [0, 2, 4]
+var reversed    = items[::-1]  # [5, 4, 3, 2, 1, 0]
+```
+
+All three parts are optional. Start defaults to the beginning,
+stop defaults to the end, and stride defaults to 1. The
+element at the stop position isn't included in the result.
+
+## Ternary conditional
+
+The `if`-`else` expression selects between two values based
+on a condition:
+
+```mojo
+var label = "even" if x % 2 == 0 else "odd"
+```
+
+The condition follows `if`, and the alternate value follows
+`else`. If the condition is true, the expression evaluates to
+the first value. If false, the alternate.
+
+Ternary expressions are right-associative and can be chained:
+
+```mojo
+var size = (
+    "small" if n < 10
+        else "large" if n > 100
+        else "medium"
+)
+```
+
+This groups as
+`"small" if n < 10 else ("large" if n > 100 else "medium")`.
+
+## Walrus operator
+
+Regular assignments (`=`) are statements, not expressions. They don't
+produce a value.
+
+The walrus operator (`:=`) is the expression form of assignment. It stores
+a value to a target and evaluates to that value. You can assign and use the
+result in a single step:
+
+```mojo
+def main() raises:
+    var samples = List(range(20))
+    var sample_count: Int
+    if (sample_count := len(samples)) > 10:
+        print(sample_count)
+
+    var name: String                  # declare before use
+    while name := input("Prompt: "):  # input is raising
+        print("Hello,", name)
+```
+
+Strings are truthy. The loop ends when you press Return without entering
+text.
+
+The name must already be declared. Walrus only assigns into existing values.
+Walrus assignment is most useful for temporary values created as part of an
+expression.
+
+The target can be any mutable location: a declared binding, a field,
+or a subscript. The expression yields the right-hand side after
+conversion to the target's type, the same value the target now holds:
+
+```mojo
+var count: Int8
+print(count := 300)  # 44, the Int8 value stored in count
+
+var p = Point(1, 2)
+print(p.x := 7)      # 7, stores into the field
+
+var nums: List[Int] = [1, 2, 3]
+print(nums[0] := 9)  # 9, stores through the subscript
+```
+
+The walrus operator has the lowest precedence of any expression operator.
+Use parentheses when needed to make your intent clear:
+
+```mojo
+var readings: List[Int] = [12, 80]
+var item: Int
+if item := readings[0] < 50:      # Error: stores a Bool into an Int
+    print(t"{item} is under 50")
+```
+
+versus:
+
+```mojo
+var readings: List[Int] = [12, 80]
+var item: Int
+if (item := readings[0]) < 50:    # stores the reading
+    print(t"{item} is under 50")  # 12 is under 50
+```
+
+## Compile-time expressions
+
+`comptime` forces an expression to evaluate at compile time.
+Parentheses are required:
+
+```mojo
+def heavy_calculation() -> Int:
+    var sum = 0
+    for i in range(1_000_000):
+        sum += i
+    return sum
+
+# var x = comptime heavy_calculation()
+# Error: requires parentheses
+
+var x = comptime(heavy_calculation())  # O(1) at runtime
+print(x)  # 499999500000
+```
+
+The loop runs once during compilation. At runtime, `x` is
+a constant. If the expression can't be evaluated at compile
+time, the compiler reports an error.
+
+Mojo also provides built-in expressions for compile-time
+type introspection. These look like function calls but
+they're keywords that operate on types and traits at
+compile time:
+
+```mojo
+type_of(x)             # type of an expression
+conforms_to(T, Trait)  # test trait conformance, returns Bool
+origin_of(x)           # origin of a reference
+```
+
+These three expressions are used for reflection, conditional type
+conformance, and origin sets. The type and origin return
+compiler-internal values and won't print directly.
+
+To print a type, use:
+
+```mojo
+print(reflect[type_of(x)].name())
+```
+
+## Function type expressions
+
+A function type expression describes the signature of a
+function as a type:
+
+```mojo
+def() -> Int
+def(Int, Int) -> Int
+def(var value: String) -> None
+def() raises -> String
+def(T) -> T
+```
+
+Function type expressions can include argument types with
+conventions, return types, and effects like `raises`.
+
+## Lambda expressions
+
+A `lambda` is an anonymous, single-expression function. Its arguments are
+parenthesized and typed, like a function declaration, and its body is a
+single expression with no `return`:
+
+```text
+lambda [[parameter-list]] [(argument-list)] [effects]
+       [{capture-list}] [-> ResultType] : expression
+```
+
+For example, this lambda returns its argument value incremented by 1:
+
+```mojo
+var inc = lambda (x: Int) {} -> Int: x + 1
+var y = inc(4)  # 5
+```
+
+For complete syntax, semantics, and examples, see the
+[lambda expressions reference](/docs/reference/lambda-expressions).
+
+## Comprehension expressions
+
+A comprehension is a concise way to build a new collection by
+iterating over existing values and optionally filtering or
+transforming them. It replaces common loop-and-append patterns
+with a single expression.
+
+### List comprehensions
+
+List comprehensions create lists:
+
+```mojo
+var squares = [x * x for x in [0, 1, 2, 3, 4] if x % 2 == 0]
+# [0, 4, 16]
+
+var positive = [x for x in range(-3, 3) if x > 0]
+# [1, 2]
+```
+
+**Syntax:** `[expr for pattern in iterable if condition]`
+
+- Multiple `for` clauses create nested iteration
+- `if` clauses filter elements
+
+### Set comprehensions
+
+Set comprehensions create sets. Sets don't store duplicates,
+so you may get fewer elements than iterations. For a Fibonacci
+generator that starts with `fib(0)=1` and `fib(1)=1`, the first 6 Fibonacci
+numbers are `1, 1, 2, 3, 5, 8`:
+
+```mojo
+var fibs = {fib(x) for x in range(6)}
+# {1, 2, 3, 5, 8}, 5 elements from 6 iterations
+```
+
+**Syntax:** `{expr for pattern in iterable if condition}`
+
+### Dictionary comprehensions
+
+Dictionary comprehensions create dictionaries:
+
+```mojo
+var dict_squares = {x: x * x for x in range(3)}
+# {0: 0, 1: 1, 2: 4}
+
+var lengths: Dict[String, Int] = {
+    k: k.byte_length() for k in ["one", "two", "three", "four"]
+}
+# {one: 3, two: 3, three: 5, four: 4}
+```
+
+**Syntax:**
+`{key_expr: value_expr for pattern in iterable if condition}`
+
+### Comprehension clauses
+
+Comprehensions support multiple `for` and `if` clauses:
+
+```mojo
+var products = [
+    (x, y, x * y)
+    for x in range(3)
+    for y in range(3)
+    if (x + y) % 2 == 0
+]
+# [(0, 0, 0), (0, 2, 0), (1, 1, 1), (2, 0, 0), (2, 2, 4)]
+```
+
+Clauses are evaluated left to right:
+
+- Each `for` introduces a new iteration variable
+- Each `if` filters based on the current values
+
+## Evaluation order
+
+Mojo evaluates subexpressions left to right:
+
+- Call arguments run in the order written: `f(a(), b(), c())` calls
+  `a()`, then `b()`, then `c()`.
+- Binary operands run left to right regardless of precedence: in
+  `x() + y() * z()`, `x()` runs first.
+- In a ternary, the condition runs first, then only the selected
+  value.
+- In an assignment or augmented assignment, the target's
+  subexpressions run before the right-hand side: `items[i()] = v()`
+  and `items[i()] += v()` both call `i()` before `v()`.

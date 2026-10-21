@@ -15,18 +15,18 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
-    PagedCacheValues,
+    MHAKVCacheParams,
 )
-from test_common.context_utils import create_text_context
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
 @dataclass(frozen=True)
@@ -61,12 +61,7 @@ class RMSNormKeyCacheModel:
         """
         rms_norm_key_cache(
             self.kv_params,
-            PagedCacheValues(
-                kv_blocks=graph_inputs[0].buffer,
-                cache_lengths=graph_inputs[1].tensor,
-                lookup_table=graph_inputs[2].tensor,
-                max_lengths=graph_inputs[3].tensor,
-            ),
+            self.kv_params.unflatten_kv_inputs(iter(graph_inputs))[0],
             gamma=gamma,
             epsilon=1e-5,
             layer_idx=ops.constant(
@@ -86,8 +81,7 @@ class RMSNormKeyCacheModel:
 )
 def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     seq_lens = [10, 4]
-    batch_size = 2
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -95,13 +89,6 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(
         dtype, shape=[kv_params.head_dim], device=DeviceRef.CPU()
@@ -117,42 +104,39 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
     # Compile and init the model.
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache.
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        batch.append(context)
+    graph_inputs = paged_kv_cache_inputs(kv_params, seq_lens, total_num_pages=8)
 
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = graph_inputs.blocks
+    kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        blocks=Buffer.from_numpy(all_ones.copy()),
+        kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
-        max_lengths=graph_inputs.max_lengths,
+        max_prompt_length=graph_inputs.max_prompt_length,
+        max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs)
+    model(gamma, input_row_offsets, *tree.leaves(graph_inputs))
 
     # Check that the RMSNorm wrote output to the KV cache.
-    assert (graph_inputs.blocks.to_numpy() != all_ones).any()
+    assert (graph_inputs.kv_blocks.to_numpy() != all_ones).any()
 
 
 @pytest.mark.parametrize(
@@ -165,9 +149,8 @@ def test_partial_rms_norm_key_cache(
     seq_lens = [
         10,
     ]
-    batch_size = 1
     gamma_size = 512
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=1,
         head_dim=576,
@@ -175,13 +158,6 @@ def test_partial_rms_norm_key_cache(
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
     input_row_offsets_type = TensorType(
@@ -198,42 +174,39 @@ def test_partial_rms_norm_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
     # Compile and init the model.
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache.
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        batch.append(context)
+    graph_inputs = paged_kv_cache_inputs(kv_params, seq_lens, total_num_pages=8)
 
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = graph_inputs.blocks
+    kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        blocks=Buffer.from_numpy(all_ones.copy()),
+        kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
-        max_lengths=graph_inputs.max_lengths,
+        max_prompt_length=graph_inputs.max_prompt_length,
+        max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs)
+    model(gamma, input_row_offsets, *tree.leaves(graph_inputs))
 
     # shape: [batch_size,kv_dim,num_layers,max_seq_len,n_kv_heads,head_dim]
-    kv_block = graph_inputs.blocks.to_numpy()
+    kv_block = graph_inputs.kv_blocks.to_numpy()
 
     # Check that the first 512 elements of each head is normalized
     for seq_idx in range(seq_lens[0]):
@@ -259,9 +232,8 @@ def test_rms_norm_new_key_cache(
     seq_lens = [
         10,
     ]
-    batch_size = 1
     gamma_size = 128
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -269,13 +241,6 @@ def test_rms_norm_new_key_cache(
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
     input_row_offsets_type = TensorType(
@@ -292,49 +257,43 @@ def test_rms_norm_new_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
     # Compile and init the model.
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache.
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        batch.append(context)
-
-    # note that unlike previous tests, we step the kv cache by 10 tokens
-    # this is to test that we only operate on the new tokens
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
-    for ctx in batch:
-        ctx.update(42)
-    kv_manager.step([batch])
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    # Unlike the previous tests, each request already holds ``seq_lens[i]``
+    # tokens in the cache, so the kernel must only touch the new tokens.
+    graph_inputs = paged_kv_cache_inputs(
+        kv_params, seq_lens, cache_lengths=seq_lens, total_num_pages=8
+    )
 
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = graph_inputs.blocks
+    kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        blocks=Buffer.from_numpy(all_ones.copy()),
+        kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
-        max_lengths=graph_inputs.max_lengths,
+        max_prompt_length=graph_inputs.max_prompt_length,
+        max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs)
+    model(gamma, input_row_offsets, *tree.leaves(graph_inputs))
 
     # shape: [batch_size,kv_dim,num_layers,max_seq_len,n_kv_heads,head_dim]
-    kv_block = graph_inputs.blocks.to_numpy()
+    kv_block = graph_inputs.kv_blocks.to_numpy()
 
     # check that for the first 10 tokens all heads are unchanged
     for seq_idx in range(10):
@@ -366,7 +325,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
 ) -> None:
     """Tests that a TypeError is raised when gamma dtype mismatches kv dtype."""
     seq_lens = [10]
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=kv_dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -386,7 +345,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
         f"expected gamma dtype {gamma_dtype} to match KV dtype {kv_dtype}"
     )
     with pytest.raises(TypeError, match=expected_msg):
-        graph = Graph(
+        Graph(
             "matmul_kv_cache_ragged",
             forward=RMSNormKeyCacheModel(
                 kv_params, layer_idx=0, total_seq_len=sum(seq_lens)
@@ -394,7 +353,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
             input_types=[
                 gamma_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.flattened_kv_inputs(),
             ],
         )
 
@@ -402,11 +361,10 @@ def test_rms_norm_key_cache_dtype_mismatch(
 def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     """Test RMS normalization applied per token (across all heads) rather than per head."""
     seq_lens = [5, 3]
-    batch_size = 2
     n_kv_heads = 4
     head_dim = 64
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -414,13 +372,6 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # For per token normalization, gamma has shape [n_kv_heads * head_dim]
     # This means normalization is applied across all heads for each token
     total_features = n_kv_heads * head_dim
@@ -443,34 +394,30 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
     # Compile and init the model
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        batch.append(context)
-
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    graph_inputs = paged_kv_cache_inputs(kv_params, seq_lens, total_num_pages=8)
 
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = graph_inputs.blocks
+    kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        blocks=Buffer.from_numpy(all_ones.copy()),
+        kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
-        max_lengths=graph_inputs.max_lengths,
+        max_prompt_length=graph_inputs.max_prompt_length,
+        max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
@@ -479,10 +426,10 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
 
     # Run the model
-    model(gamma, input_row_offsets, *graph_inputs)
+    model(gamma, input_row_offsets, *tree.leaves(graph_inputs))
 
     # Verify that normalization was applied per token (across all heads)
-    kv_block = graph_inputs.blocks.to_numpy()
+    kv_block = graph_inputs.kv_blocks.to_numpy()
 
     # For per token norm, verify that normalization was applied consistently
     # across all heads for each token by checking that the output has expected properties

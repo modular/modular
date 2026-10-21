@@ -1,8 +1,8 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -10,9 +10,7 @@ package(default_visibility = [
 modular_py_test(
     name = "deepseekV3",
     size = "large",
-    srcs = glob(
-        ["*.py"],
-    ),
+    srcs = ["test_modulev3_grouped_silu.py"],
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
@@ -25,13 +23,51 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental/nn",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "deepseekV3_cpu",
+    srcs = [
+        "test_deepseekv3_config_validation.py",
+        "test_deepseekv3_memory_estimation.py",
+        "test_logits_postprocess.py",
+        "test_weight_adapter.py",
+    ],
+    imports = ["."],
+    per_test_tags = {
+        "test_deepseekv3_memory_estimation.py": ["skip-external-ci"],
+    },
+    per_test_target_compatible_with = {
+        # Needs mega_ffn.ep_fused_plan (fused EP MoE), registered only by the closed-source kernels.
+        "test_deepseekv3_memory_estimation.py": REQUIRES_INTERNAL_KERNELS,
+    },
+    deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV3_nextn",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
     ],
 )

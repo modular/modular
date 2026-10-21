@@ -28,7 +28,6 @@ class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
 
         VisionArena datasets are loaded directly in sample_requests, not as a separate fetch step.
         """
-        pass
 
     def sample_requests(
         self,
@@ -50,7 +49,7 @@ class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
             item = dataset[len(sampled_requests)]  # type: ignore[index]
             prompt = item["turns"][0][0]["content"]
             encoded_images = [encode_image(img) for img in item["images"]]
-            prompt_len = len(tokenizer(prompt).input_ids)
+            prompt_len = len(tokenizer.encode(prompt))
             output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
                 SampledRequest(

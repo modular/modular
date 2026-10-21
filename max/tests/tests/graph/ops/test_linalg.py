@@ -290,7 +290,7 @@ def test_layer_norm() -> None:
         ),
     )
 
-    assert "mo.layer_norm" in str(graph._mlir_op)
+    assert "mo.reduce.layer_norm" in str(graph._mlir_op)
 
 
 def test_matmul_dtype_promotion() -> None:

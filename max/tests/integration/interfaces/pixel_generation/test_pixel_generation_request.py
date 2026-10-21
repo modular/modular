@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.interfaces import RequestID
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import OpenResponsesRequestBody
+from max.pipelines.modeling.types import RequestID
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import OpenResponsesRequestBody
 
 
 def test_pixel_generation_request_init() -> None:

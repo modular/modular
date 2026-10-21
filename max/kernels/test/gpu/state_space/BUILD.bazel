@@ -1,14 +1,19 @@
 load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
-# TODO(GEX-3342): Metal GPU execution not supported for causal_conv1d kernels
+# TODO(GEX-3342): Metal GPU execution not supported for state_space kernels
 _EXTRA_CONSTRAINTS = {
     "test_causal_conv1d.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     "test_causal_conv1d_update.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_causal_conv1d_update_functional.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
@@ -36,6 +41,31 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_gated_delta.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_gated_delta_conv1d.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_gated_delta_spec_ring.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
+_EXTRA_DEPS = {
+    "test_mamba2_ssd_scan.mojo": ["//max/kernels/test/common/ssd_scan_test_utils:ssd_scan_test_utils"],
+}
+
+_GPU_MEMORY = {
+    # These four each hold a ~4 GiB state or ring pool, to reach a row past a
+    # 32-bit offset.
+    "test_gated_delta.mojo": "6",
+    "test_gated_delta_conv1d.mojo": "6",
+    "test_gated_delta_spec_ring.mojo": "6",
+    "test_varlen_causal_conv1d.mojo": "6",
 }
 
 [
@@ -43,17 +73,20 @@ _EXTRA_CONSTRAINTS = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        enable_assertions = True,
         exec_properties = {
-            "test.resources:gpu-memory": "2",
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "2"),
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:testdata",
             "//max/kernels/src/state_space",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(["**/*.mojo"])
 ]

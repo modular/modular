@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -194,7 +193,11 @@ kdiff: compare performance with origin/main
 """
 
 
-@click.command(help=help_str, no_args_is_help=True)
+@click.command(
+    help=help_str,
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "-help", "--help"]},
+)
 @click.option(
     "--run", "-r", "run_branch", help="Run the workflow on CI.", multiple=False
 )

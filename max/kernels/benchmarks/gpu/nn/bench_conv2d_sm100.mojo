@@ -28,7 +28,7 @@ The benchmark reports:
 - Comparison ratio (SM100 / cuDNN)
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.conv.gpu.nvidia.sm100.conv2d import (
     conv2d_fprop,
@@ -147,13 +147,13 @@ def bench_conv2d[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
 
     # Initialize with random data
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Convert filter KRSC -> NCHW for cuDNN
     for k in range(out_channels):
@@ -189,38 +189,30 @@ def bench_conv2d[
 
     # Create TileTensor views for conv2d_fprop
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
-        ),
+        filter_dev,
+        row_major(out_channels, filter_h, filter_w, in_channels),
     )
     var output_sm100_tt = TileTensor(
-        output_sm100_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        output_sm100_dev,
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     # Create TileTensor views for cuDNN
     var input_dev_tensor = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_nchw_dev_tensor = TileTensor(
-        filter_nchw_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
-        ),
+        filter_nchw_dev,
+        row_major(out_channels, in_channels, filter_h, filter_w),
     )
     var output_cudnn_dev_tensor = TileTensor(
-        output_cudnn_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        output_cudnn_dev,
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     # ==================== Warmup ====================
@@ -239,21 +231,22 @@ def bench_conv2d[
     ctx.synchronize()
 
     # ==================== Benchmark SM100 implicit im2col ====================
-    @parameter
-    @__copy_capture(input_tt, filter_tt, output_sm100_tt)
-    def sm100_implicit_kernel() raises:
+    def sm100_implicit_kernel() raises {
+        var input_tt, var filter_tt, var output_sm100_tt, imm
+    }:
         conv2d_fprop(output_sm100_tt, input_tt, filter_tt, problem, ctx)
 
-    var sm100_time_ns = ctx.execution_time[sm100_implicit_kernel](num_iters)
+    var sm100_time_ns = ctx.execution_time(sm100_implicit_kernel, num_iters)
     var sm100_time_ms = Float64(sm100_time_ns) / 1e6 / Float64(num_iters)
     var sm100_tflops = Float64(flops) / (sm100_time_ms / 1000) / 1e12
 
     # ==================== Benchmark cuDNN ====================
-    @parameter
-    @__copy_capture(
-        input_dev_tensor, filter_nchw_dev_tensor, output_cudnn_dev_tensor
-    )
-    def cudnn_kernel() raises:
+    def cudnn_kernel() raises {
+        var input_dev_tensor,
+        var filter_nchw_dev_tensor,
+        var output_cudnn_dev_tensor,
+        imm,
+    }:
         conv_cudnn[dtype, dtype, dtype](
             input_dev_tensor,
             filter_nchw_dev_tensor,
@@ -265,13 +258,13 @@ def bench_conv2d[
             ctx,
         )
 
-    var cudnn_time_ns = ctx.execution_time[cudnn_kernel](num_iters)
+    var cudnn_time_ns = ctx.execution_time(cudnn_kernel, num_iters)
     var cudnn_time_ms = Float64(cudnn_time_ns) / 1e6 / Float64(num_iters)
     var cudnn_tflops = Float64(flops) / (cudnn_time_ms / 1000) / 1e12
 
     # Verify outputs match
-    var output_sm100_host_ptr = alloc[Scalar[dtype]](output_size)
-    var output_cudnn_host_ptr = alloc[Scalar[dtype]](output_size)
+    var output_sm100_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var output_cudnn_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
     ctx.enqueue_copy(output_sm100_host_ptr, output_sm100_dev)
     ctx.enqueue_copy(output_cudnn_host_ptr, output_cudnn_dev)
     ctx.synchronize()
@@ -279,14 +272,11 @@ def bench_conv2d[
     var max_diff: Float32 = 0.0
     for i in range(output_size):
         var diff = abs(
-            output_sm100_host_ptr[i].cast[DType.float32]()
-            - output_cudnn_host_ptr[i].cast[DType.float32]()
+            output_sm100_host_ptr[i].cast[.float32]()
+            - output_cudnn_host_ptr[i].cast[.float32]()
         )
         if diff > max_diff:
             max_diff = diff
-
-    output_sm100_host_ptr.free()
-    output_cudnn_host_ptr.free()
 
     # Report
     var ratio = cudnn_time_ms / sm100_time_ms
@@ -316,16 +306,16 @@ def bench_conv2d[
     print("  Correctness: max_diff=", max_diff, sep="")
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
-
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_sm100_dev^
     _ = output_cudnn_dev^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
+    _ = output_cudnn_host_ptr^
+    _ = output_sm100_host_ptr^
 
 
 def bench_all_configs[
@@ -389,12 +379,12 @@ def bench_all_configs[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
 
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Convert filter KRSC -> NCHW for cuDNN
     for k in range(out_channels):
@@ -429,44 +419,34 @@ def bench_all_configs[
     ctx.synchronize()
 
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
-        ),
+        filter_dev,
+        row_major(out_channels, filter_h, filter_w, in_channels),
     )
     var output_1sm_tt = TileTensor(
-        output_1sm_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        output_1sm_dev,
+        row_major(batch, out_height, out_width, out_channels),
     )
     var output_2sm_tt = TileTensor(
-        output_2sm_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        output_2sm_dev,
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     # Create TileTensor views for cuDNN
     var input_dev_tensor = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_nchw_dev_tensor = TileTensor(
-        filter_nchw_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
-        ),
+        filter_nchw_dev,
+        row_major(out_channels, in_channels, filter_h, filter_w),
     )
     var output_cudnn_dev_tensor = TileTensor(
-        output_cudnn_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        output_cudnn_dev,
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     # Get configs
@@ -494,35 +474,36 @@ def bench_all_configs[
     ctx.synchronize()
 
     # Benchmark 1-SM
-    @parameter
-    @__copy_capture(input_tt, filter_tt, output_1sm_tt)
-    def kernel_1sm() raises:
+    def kernel_1sm() raises {
+        var input_tt, var filter_tt, var output_1sm_tt, imm
+    }:
         conv2d_fprop[config=config_1sm](
             output_1sm_tt, input_tt, filter_tt, problem, ctx
         )
 
-    var time_1sm_ns = ctx.execution_time[kernel_1sm](num_iters)
+    var time_1sm_ns = ctx.execution_time(kernel_1sm, num_iters)
     var time_1sm_ms = Float64(time_1sm_ns) / 1e6 / Float64(num_iters)
     var tflops_1sm = Float64(flops) / (time_1sm_ms / 1000) / 1e12
 
     # Benchmark 2-SM
-    @parameter
-    @__copy_capture(input_tt, filter_tt, output_2sm_tt)
-    def kernel_2sm() raises:
+    def kernel_2sm() raises {
+        var input_tt, var filter_tt, var output_2sm_tt, imm
+    }:
         conv2d_fprop[config=config_2sm](
             output_2sm_tt, input_tt, filter_tt, problem, ctx
         )
 
-    var time_2sm_ns = ctx.execution_time[kernel_2sm](num_iters)
+    var time_2sm_ns = ctx.execution_time(kernel_2sm, num_iters)
     var time_2sm_ms = Float64(time_2sm_ns) / 1e6 / Float64(num_iters)
     var tflops_2sm = Float64(flops) / (time_2sm_ms / 1000) / 1e12
 
     # Benchmark cuDNN
-    @parameter
-    @__copy_capture(
-        input_dev_tensor, filter_nchw_dev_tensor, output_cudnn_dev_tensor
-    )
-    def cudnn_kernel() raises:
+    def cudnn_kernel() raises {
+        var input_dev_tensor,
+        var filter_nchw_dev_tensor,
+        var output_cudnn_dev_tensor,
+        imm,
+    }:
         conv_cudnn[dtype, dtype, dtype](
             input_dev_tensor,
             filter_nchw_dev_tensor,
@@ -534,7 +515,7 @@ def bench_all_configs[
             ctx,
         )
 
-    var cudnn_time_ns = ctx.execution_time[cudnn_kernel](num_iters)
+    var cudnn_time_ns = ctx.execution_time(cudnn_kernel, num_iters)
     var cudnn_time_ms = Float64(cudnn_time_ns) / 1e6 / Float64(num_iters)
     var cudnn_tflops = Float64(flops) / (cudnn_time_ms / 1000) / 1e12
 
@@ -569,16 +550,15 @@ def bench_all_configs[
     )
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_1sm_dev^
     _ = output_2sm_dev^
     _ = output_cudnn_dev^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def bench_residual[
@@ -643,12 +623,12 @@ def bench_residual[
     )
 
     # Allocate
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var source_host_ptr = alloc[Scalar[dtype]](output_size)
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
-    rand(source_host_ptr, output_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var source_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
+    rand(source_host_ptr)
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -662,32 +642,24 @@ def bench_residual[
     ctx.synchronize()
 
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
-        ),
+        filter_dev,
+        row_major(out_channels, filter_h, filter_w, in_channels),
     )
     var output_tt = TileTensor(
-        output_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        output_dev,
+        row_major(batch, out_height, out_width, out_channels),
     )
     var output_res_tt = TileTensor(
-        output_res_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        output_res_dev,
+        row_major(batch, out_height, out_width, out_channels),
     )
     var source_tt = TileTensor(
-        source_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[4](batch, out_height, out_width, out_channels))
-        ),
+        source_dev,
+        row_major(batch, out_height, out_width, out_channels),
     )
 
     comptime config_1sm = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm()
@@ -709,21 +681,19 @@ def bench_residual[
     ctx.synchronize()
 
     # Benchmark conv2d only
-    @parameter
-    @__copy_capture(input_tt, filter_tt, output_tt)
-    def kernel_conv() raises:
+    def kernel_conv() raises {var input_tt, var filter_tt, var output_tt, imm}:
         conv2d_fprop[config=config_1sm](
             output_tt, input_tt, filter_tt, problem, ctx
         )
 
-    var time_conv_ns = ctx.execution_time[kernel_conv](num_iters)
+    var time_conv_ns = ctx.execution_time(kernel_conv, num_iters)
     var time_conv_ms = Float64(time_conv_ns) / 1e6 / Float64(num_iters)
     var tflops_conv = Float64(flops) / (time_conv_ms / 1000) / 1e12
 
     # Benchmark conv2d + fused residual
-    @parameter
-    @__copy_capture(input_tt, filter_tt, output_res_tt, source_tt)
-    def kernel_residual() raises:
+    def kernel_residual() raises {
+        var input_tt, var filter_tt, var output_res_tt, var source_tt, imm
+    }:
         conv2d_fprop_with_residual[config=config_1sm, has_residual=True](
             output_res_tt,
             input_tt,
@@ -734,7 +704,7 @@ def bench_residual[
             ctx,
         )
 
-    var time_res_ns = ctx.execution_time[kernel_residual](num_iters)
+    var time_res_ns = ctx.execution_time(kernel_residual, num_iters)
     var time_res_ms = Float64(time_res_ns) / 1e6 / Float64(num_iters)
     var tflops_res = Float64(flops) / (time_res_ms / 1000) / 1e12
 
@@ -765,15 +735,14 @@ def bench_residual[
     )
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    source_host_ptr.free()
     _ = input_dev^
     _ = filter_dev^
     _ = output_dev^
     _ = output_res_dev^
     _ = source_dev^
+    _ = source_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def main() raises:

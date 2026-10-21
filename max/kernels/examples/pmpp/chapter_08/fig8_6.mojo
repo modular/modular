@@ -16,17 +16,18 @@
 
 from std.random import random_float64
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
 
 def stencil_kernel(
-    in_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    N: Int,
+    in_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
+    n_dim: Int32,
     c0: Float32,
     c1: Float32,
     c2: Float32,
@@ -40,7 +41,7 @@ def stencil_kernel(
     Args:
         in_ptr: Input 3D array (device).
         out_ptr: Output 3D array (device).
-        N: Dimension size (N x N x N volume).
+        n_dim: Dimension size (N x N x N volume).
         c0: Coefficient for center element.
         c1: Coefficient for k-1 neighbor.
         c2: Coefficient for k+1 neighbor.
@@ -50,6 +51,8 @@ def stencil_kernel(
         c6: Coefficient for i+1 neighbor.
     """
     comptime BLOCK_DIM = 8
+    # `Int` is not device-passable; widen the fixed-width arg back for indexing.
+    var N = Int(n_dim)
     var i = block_idx.z * BLOCK_DIM + thread_idx.z
     var j = block_idx.y * BLOCK_DIM + thread_idx.y
     var k = block_idx.x * BLOCK_DIM + thread_idx.x
@@ -74,8 +77,8 @@ def stencil_kernel(
 
 
 def stencil_3d(
-    h_in: UnsafePointer[Float32, MutAnyOrigin],
-    h_out: UnsafePointer[Float32, MutAnyOrigin],
+    h_in: ImmPointer[Float32, _],
+    h_out: MutPointer[Float32, _],
     N: Int,
     c0: Float32,
     c1: Float32,
@@ -119,10 +122,10 @@ def stencil_3d(
     var grid_dim_z = ceildiv(N, BLOCK_DIM)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[stencil_kernel](
+    ctx.enqueue_function[stencil_kernel](
         d_in,
         d_out,
-        N,
+        Int32(N),
         c0,
         c1,
         c2,
@@ -143,8 +146,8 @@ def stencil_3d(
 
 
 def cpu_3d_stencil(
-    in_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    in_ptr: ImmPointer[Float32, _],
+    out_ptr: MutPointer[Float32, _],
     N: Int,
     c0: Float32,
     c1: Float32,
@@ -199,13 +202,13 @@ def main() raises:
     var c6 = Float32(1.0)
 
     # Allocate host memory
-    var h_in = alloc[Float32](total_elements)
-    var h_out = alloc[Float32](total_elements)
-    var h_ref = alloc[Float32](total_elements)
+    var h_in = unsafe_alloc[Float32](total_elements)
+    var h_out = unsafe_alloc[Float32](total_elements)
+    var h_ref = unsafe_alloc[Float32](total_elements)
 
     # Initialize input with random values
     for i in range(total_elements):
-        h_in[i] = random_float64().cast[DType.float32]()
+        h_in[i] = random_float64().cast[.float32]()
 
     # Initialize output to zero
     for i in range(total_elements):
@@ -249,6 +252,6 @@ def main() raises:
         print("SUCCESS: All values match!")
 
     # Cleanup
-    h_in.free()
-    h_out.free()
-    h_ref.free()
+    h_in.unsafe_free()
+    h_out.unsafe_free()
+    h_ref.unsafe_free()

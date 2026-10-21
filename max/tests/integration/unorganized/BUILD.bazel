@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_library", "
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -10,11 +9,17 @@ package(default_visibility = [
 modular_py_test(
     name = "test_vision_encoder_cache",
     srcs = ["test_vision_encoder_cache.py"],
+    # TODO(MODELS-1494): Times out at 600s on slow macOS BuildBuddy workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/request",
         requirement("numpy"),
     ],
 )
@@ -23,7 +28,33 @@ modular_py_test(
     name = "test_sampling_params",
     srcs = ["test_sampling_params.py"],
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/context",
+    ],
+)
+
+modular_py_test(
+    name = "test_permissive_arch_config",
+    srcs = ["test_permissive_arch_config.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures/olmo2_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:mocks",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_bounded_arch_config",
+    srcs = ["test_bounded_arch_config.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures/mistral",
+        "//max/python/max/pipelines/architectures/mistral3",
+        "//max/python/max/pipelines/architectures/pixtral",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:mocks",
+        requirement("transformers"),
     ],
 )
 
@@ -31,11 +62,10 @@ modular_py_test(
     name = "tests-pure-cpu",
     srcs = [
         "conftest.py",
-        "test_bfloat16_utils.py",
+        "test_config_vision_budgets.py",
         "test_context.py",
         "test_dtype.py",
         "test_logits_processor.py",
-        "test_lora.py",
         "test_memory_estimation.py",
         "test_speculative_config.py",
         "test_telemetry.py",
@@ -59,15 +89,18 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/sampling",
+        "//max/python/max/pipelines/speculative",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         requirement("hypothesis"),
         requirement("numpy"),
+        requirement("pydantic"),
     ],
 )
 
@@ -97,10 +130,12 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
+        "//max/python/max/pipelines/lora",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
@@ -111,14 +146,12 @@ modular_py_test(
     ],
 )
 
-# TODO (SERVOPT-900): Move these tests back into tests-pure once they stop reaching out to HF
 modular_py_test(
     name = "tests-pure-hf",
     size = "large",
     srcs = [
         "conftest.py",
         "test_config_pure.py",
-        "test_prefer_module_v3.py",
     ],
     data = [
         "//max/tests/integration/Inputs:inputs",
@@ -131,7 +164,7 @@ modular_py_test(
     },
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
-        "test.resources:gpu-memory": "20",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = [
         "//:has_gpu",
@@ -141,117 +174,228 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
-        "manual",  # TODO(SERVOPT-900)
         "no-sandbox",
         "requires-network",
-        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     deps = [
+        "//max/python/max/_entrypoints",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/sampling",
+        "//max/python/max/pipelines/speculative",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
+        requirement("huggingface-hub"),
         requirement("transformers"),
     ],
 )
 
+# Common configuration for sampling tests (GPU required)
+_SAMPLING_GPU_CONSTRAINTS = ["//:has_gpu"] + select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})  # FIXME: MOCO-2411
+
+_SAMPLING_BASE_DEPS = [
+    "//max/python/max/driver",
+    "//max/python/max/dtype",
+    "//max/python/max/engine",
+    "//max/python/max/graph",
+    requirement("numpy"),
+]
+
+# Test for SamplingParams validation (no GPU required, fast)
 modular_py_test(
-    name = "test-speculative-decoding",
-    size = "large",
+    name = "test-sampling-params",
+    size = "small",
     srcs = [
-        "conftest.py",
-        "test_speculative_decoding.py",
+        "sampling/test_sampling_params.py",
     ],
-    data = [
-        # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//max/tests/integration/Inputs:inputs",
-        "//max/tests/integration/Inputs:pytest_inputs",
-    ],
-    env = {"MODULAR_PATH": "."},
-    exec_properties = {
-        "test.resources:gpu-memory": "20",
+    env = {
+        "MODULAR_PATH": ".",
     },
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
-        "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
+    # TODO(MODELS-1494): Times out at 300s (small) on slow macOS workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    deps = [
+        "//max/python/max/pipelines/context",
+    ],
+)
+
+# Graph-construction tests for token_sampler (no GPU required).
+modular_py_test(
+    name = "test-token-sampler-construction",
+    size = "small",
+    srcs = [
+        "sampling/test_token_sampler_construction.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    # TODO(MODELS-1494): Times out at 300s (small) on slow macOS workers, still
+    # inside pytest collection — the cost is importing `max.graph`, not the
+    # tests themselves.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/sampling",
+    ],
+)
+
+# Test for structured-output sampling across grammar backends
+modular_py_test(
+    name = "test-structured-output-sampling",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_structured_output_sampling.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
-        "manual",
         "no-sandbox",
         "requires-network",
     ],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/engine",
-        "//max/python/max/interfaces",
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+# Test for the fused apply_packed_bitmask op (rank-2 and rank-3 paths)
+modular_py_test(
+    name = "test-apply-packed-bitmask",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_apply_packed_bitmask.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
-        "//max/tests/integration/test_common:pipeline_model_dummy",
-        "//max/tests/integration/test_common:registry",
-        requirement("numpy"),
+        "//max/python/max/support",
     ],
 )
 
+# Test for token_sampler (basic sampling without structured output)
 modular_py_test(
-    name = "test-speculative-decoding-rejection",
-    size = "large",
+    name = "test-token-sampler",
+    size = "medium",
     srcs = [
         "conftest.py",
-        "test_speculative_decoding_rejection.py",
+        "sampling/test_token_sampler.py",
     ],
-    data = [
-        # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//max/tests/integration/Inputs:inputs",
-        "//max/tests/integration/Inputs:pytest_inputs",
-    ],
-    env = {"MODULAR_PATH": "."},
-    exec_properties = {
-        "test.resources:gpu-memory": "20",
+    env = {
+        "MODULAR_PATH": ".",
     },
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
-        "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
-        "//conditions:default": [],
-    }),
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
-        "manual",
         "no-sandbox",
-        "requires-network",
     ],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/engine",
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
-        requirement("numpy"),
+        "//max/python/max/pipelines/request",
+        "//max/python/max/pipelines/sampling",
     ],
 )
 
+# Test for fused_token_sampling with top_p
 modular_py_test(
-    name = "test-sampling",
-    size = "large",
+    name = "test-fused-top-p",
+    size = "medium",
     srcs = [
         "conftest.py",
-        "sampling/test_build_token_frequency_csr.py",
-        "sampling/test_gumbel_sampling.py",
-        "sampling/test_sampling.py",
+        "sampling/test_fused_top_p.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Test for fused_token_sampling with min_p filtering
+modular_py_test(
+    name = "test-min-p-filtering",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_min_p_filtering.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Test for token_sampler with return_all_top_k_logits (skipped - MXSERV-41)
+modular_py_test(
+    name = "test-sampling-return-logits",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_sampling_return_logits.py",
     ],
     env = {
         "MODULAR_PATH": ".",
@@ -259,63 +403,394 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
     tags = [
         "gpu",
         "no-sandbox",
-        "requires-network",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Test for token frequency CSR building
+modular_py_test(
+    name = "test-token-frequency-csr",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_build_token_frequency_csr.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
     ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
-        requirement("llguidance"),
+        "//max/python/max/pipelines/sampling",
         requirement("numpy"),
-        requirement("torch"),
-        requirement("transformers"),
     ],
 )
 
+# The grammar bitmask must not resurrect -inf logits (vocab-tail safety).
 modular_py_test(
-    name = "tests-hf",
-    size = "large",
+    name = "test-bitmask-preserves-vocab-mask",
+    size = "medium",
     srcs = [
         "conftest.py",
-        "test_config.py",
+        "sampling/test_bitmask_preserves_vocab_mask.py",
     ],
-    data = [
-        # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//max/tests/integration/Inputs:inputs",
-        "//max/tests/integration/Inputs:pytest_inputs",
-    ],
-    env = {"MODULAR_PATH": "."},
-    env_inherit = ["HF_TOKEN"],
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
-        "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
-        "requires-network",
-        "run-in-hf-workflow",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        # conftest.py imports generate_local_model_path.
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Acceptance-sampler behaviour on a draft that proposes masked padded ids.
+modular_py_test(
+    name = "test-padded-tail-acceptance",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_padded_tail_acceptance.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Test for gumbel sampling
+modular_py_test(
+    name = "test-gumbel-sampling",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_gumbel_sampling.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Output-distribution test for the stochastic acceptance sampler
+# (speculative decoding)
+modular_py_test(
+    name = "test-stochastic-acceptance-distribution",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_stochastic_acceptance_distribution.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Output-distribution test for the acceptance sampler under top_p truncation
+# (speculative decoding)
+modular_py_test(
+    name = "test-stochastic-acceptance-truncated",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_stochastic_acceptance_truncated.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Is the sampled verdict lossless, and what does a miscalibrated q look like?
+modular_py_test(
+    name = "test-sampled-draft-q-calibration",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_sampled_draft_q_calibration.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# What does a shared key between the bonus and a draft proposal cost?
+modular_py_test(
+    name = "test-bonus-draft-quantile-collision",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_bonus_draft_quantile_collision.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Is the per-row-keyed uniform a sound accept coin through the graph API?
+modular_py_test(
+    name = "test-keyed-uniform-coin",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_keyed_uniform_coin.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Does the sampled verdict's implicit RNG stream collide with a draft
+# proposal's explicit-seed stream, and does it leak across batch rows?
+modular_py_test(
+    name = "test-verdict-draft-seed-collision",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_verdict_draft_seed_collision.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Does a request's sampled token move when the request changes batch slot?
+modular_py_test(
+    name = "test-sampling-slot-invariance",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_sampling_slot_invariance.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/request",
+        "//max/python/max/pipelines/sampling",
+    ],
+)
+
+# Test for rejection_sampler (speculative decoding)
+modular_py_test(
+    name = "test-rejection-sampler",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_rejection_sampler.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
     ],
     deps = [
-        "//max/python/max",
-        "//max/python/max/entrypoints",
-        "//max/tests/integration/test_common:mocks",
-        "//max/tests/integration/test_common:pipeline_model_dummy",
-        "//max/tests/integration/test_common:registry",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# Test for rejection_sampler_with_residuals (speculative decoding)
+modular_py_test(
+    name = "test-rejection-sampler-residuals",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_rejection_sampler_residuals.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Test for penalty ops (apply_penalties, update_frequency_data)
+modular_py_test(
+    name = "test-penalty-ops",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_penalty_ops.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+        requirement("torch"),
     ],
 )
 
@@ -347,9 +822,9 @@ modular_py_test(
         "//max/tests/integration/Inputs/kernel_verification_ops",
     ],
     env = {
-        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEBUG": "source-tracebacks",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
-        "MOJO_ASSERT_LEVEL": "all",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL": "all",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
     gpu_constraints = ["//:has_gpu"] + select({
@@ -377,9 +852,9 @@ modular_py_test(
         "//max/tests/integration/Inputs/kernel_verification_ops",
     ],
     env = {
-        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEBUG": "source-tracebacks",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
-        "MOJO_ASSERT_LEVEL": "all",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL": "all",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
     gpu_constraints = ["//:has_gpu"] + select({

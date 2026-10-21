@@ -27,12 +27,16 @@ Usage:
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import (
+    TileTensor,
+    CoordLike,
+    row_major,
+    Idx,
+)
 
 # Direct import of structured kernel (same name, different module)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
@@ -64,9 +68,9 @@ def test_structured[
     register_based_epilogue: Bool = True,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType, test_name: String) raises:
     """Test structured kernel with given configuration."""
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         "[",
@@ -90,42 +94,40 @@ def test_structured[
         sep="",
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k) if transpose_b else Int(k) * Int(n)
+    var c_size = Int(m) * Int(n)
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Initialize with random data
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -153,15 +155,11 @@ def test_structured[
         ctx,
     )
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -174,8 +172,8 @@ def test_structured[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
@@ -183,10 +181,6 @@ def test_structured[
     print("  PASSED\n")
 
     # Clean up
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = c_device
     _ = c_device_ref
     _ = a_device
@@ -210,76 +204,76 @@ def main() raises:
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(64, 32, BK),
             mma_shape=Index(64, 32, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
             cta_group=1,
-        ](ctx, Idx(Int(256)), Idx[256](), Idx[256](), "1SM-basic")
+        ](ctx, Int(256), Idx[256], Idx[256], "1SM-basic")
 
         # Test 2: Basic 2SM
         print("--- Test 2: Basic 2SM ---")
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(128, 64, BK),
             mma_shape=Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
-        ](ctx, Idx(Int(512)), Idx[512](), Idx[512](), "2SM-basic")
+        ](ctx, Int(512), Idx[512], Idx[512], "2SM-basic")
 
         # Test 3: swapAB (transpose output)
         print("--- Test 3: swapAB ---")
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(128, 64, BK),
             mma_shape=Index(128, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=1,
             swapAB=True,
-        ](ctx, Idx(Int(256)), Idx[512](), Idx[512](), "swapAB")
+        ](ctx, Int(256), Idx[512], Idx[512], "swapAB")
 
         # Test 4: Split-K
         print("--- Test 4: Split-K ---")
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(64, 32, BK),
             mma_shape=Index(128, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
             num_split_k=2,
-        ](ctx, Idx(Int(256)), Idx[256](), Idx[512](), "split-K")
+        ](ctx, Int(256), Idx[256], Idx[512], "split-K")
 
         # Test 5: k_group_size=2
         print("--- Test 5: k_group=2 ---")
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(64, 32, BK),
             mma_shape=Index(64, 32, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
             cta_group=1,
             k_group_size=2,
-        ](ctx, Idx(Int(256)), Idx[512](), Idx[1024](), "k_group=2")
+        ](ctx, Int(256), Idx[512], Idx[1024], "k_group=2")
 
         # Test 6: 2SM + swapAB
         print("--- Test 6: 2SM + swapAB ---")
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(128, 64, BK),
             mma_shape=Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
             swapAB=True,
-        ](ctx, Idx(Int(256)), Idx[512](), Idx[512](), "2SM+swapAB")
+        ](ctx, Int(256), Idx[512], Idx[512], "2SM+swapAB")
 
     print("=" * 60)
     print("ALL STRUCTURED KERNEL TESTS PASSED!")

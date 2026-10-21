@@ -18,10 +18,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 
 
 @dataclass(frozen=True)
@@ -44,12 +41,7 @@ class PrintKVCacheModel:
         This contains both the print KV cache op and a "fetch" op to get a
         KVCacheCollection.
         """
-        kv_collection = PagedCacheValues(
-            kv_blocks=kv_inputs[0].buffer,
-            cache_lengths=kv_inputs[1].tensor,
-            lookup_table=kv_inputs[2].tensor,
-            max_lengths=kv_inputs[3].tensor,
-        )
+        kv_collection = self.kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
         page_size = self.kv_params.page_size
         if page_size is None:
             raise ValueError(
@@ -60,7 +52,7 @@ class PrintKVCacheModel:
             device=valid_lengths.device,
             values=[
                 valid_lengths,
-                *kv_collection,
+                *kv_collection.flatten_without_attention_dispatch_metadata(),
                 ops.constant(
                     self.layer_idx, DType.uint32, device=DeviceRef.CPU()
                 ),
@@ -72,31 +64,22 @@ class PrintKVCacheModel:
 @pytest.mark.parametrize(
     "dtype",
     [
-        d
-        for d in DType
-        if d
-        not in [
-            # Skip types unsupported on CPU.
-            DType.float4_e2m1fn,
-            DType.float8_e8m0fnu,
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
-            DType.float16,
-            # Skip bf16 since ARM CPU doesn't support it.
-            DType.bfloat16,
-        ]
+        # Test representative dtypes for compilation: one integer, one float.
+        # The print_kv_cache kernel handles dtypes uniformly, so testing all
+        # 10+ supported dtypes adds time without proportional coverage value.
+        DType.uint32,
+        DType.float32,
     ],
 )
 def test_print_kv_cache(dtype: DType) -> None:
     """Tests compiling a print KV cache op."""
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
-        n_kv_heads=8,
-        head_dim=128,
+        # Use minimal model parameters for faster compilation.
+        n_kv_heads=1,
+        head_dim=16,
         num_layers=1,
-        page_size=128,
+        page_size=16,
         devices=[DeviceRef.CPU()],
     )
 
@@ -108,7 +91,7 @@ def test_print_kv_cache(dtype: DType) -> None:
             TensorType(
                 dtype=DType.uint32, shape=[batch_size], device=DeviceRef.CPU()
             ),
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 

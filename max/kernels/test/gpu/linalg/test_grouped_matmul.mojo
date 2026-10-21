@@ -11,19 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import B200, H100, _is_sm10x_gpu
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import B200, H100, _is_sm10x_gpu
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.utils import elementwise_epilogue_type
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -31,7 +24,7 @@ from std.utils.index import Index
 import std.itertools
 
 
-@always_inline
+@inline(.always)
 def test_epilogue[
     dtype: DType
 ](m: Int, n: Int, val: Scalar[dtype]) -> Scalar[dtype]:
@@ -44,6 +37,7 @@ def test[
     num_experts: Int,
     expert_shape: IndexList[2],
     has_epilogue: Bool = False,
+    has_compute_epilogue: Bool = False,
     qkv_perm_dim: Bool = False,
 ](
     num_active_experts: Int,
@@ -74,8 +68,8 @@ def test[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -88,28 +82,36 @@ def test[
     comptime actual_N = 3 * N if qkv_perm_dim else N
     var c_size = total_num_tokens * actual_N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
+        num_experts + 1
+    )
+    for i in range(num_experts + 1):
+        a_offsets_host_ptr[i] = 0
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(total_num_tokens, Idx[K]),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
 
     # Create host B buffers
     var b_size = num_experts * (3 * N if qkv_perm_dim else N) * K
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
+        num_experts
+    )
+    for i in range(num_experts):
+        expert_ids_host_ptr[i] = 0
 
     var b_host = TileTensor(
         b_host_ptr,
@@ -133,36 +135,34 @@ def test[
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
-        num_experts
-    )
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
-    var a_dev = TileTensor[a_type](
+    var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(total_num_tokens, Idx[K]),
     )
-    var c_dev = TileTensor[c_type](
+    var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
-    var c_ref_dev = TileTensor[c_type](
+    var c_ref_dev = TileTensor(
         c_ref_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
-    var b_dev = TileTensor[b_type](
+    var b_dev = TileTensor(
         b_dev_buffer,
         row_major[num_experts, 3 * N if qkv_perm_dim else N, K](),
     )
-    var a_offsets_dev = TileTensor[DType.uint32](
+    var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(Coord(Idx(num_experts + 1))),
+        row_major(num_experts + 1),
     )
-    var expert_ids_dev = TileTensor[DType.int32](
+    var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Idx[num_experts]),
     )
 
     # Move inputs to device
@@ -184,74 +184,142 @@ def test[
     )
     ctx.synchronize()
 
-    var c_dev_tile = c_dev
+    # The epilogue stores to its own buffer: `c` only gives the kernels the
+    # output shape. Capture the bare device address, not a device tile: a
+    # `DevicePointerEngine` tile only resolves to a pointer through its host
+    # `DeviceBuffer` handle, which is invalid inside the device epilogue.
+    var c_out_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_out_ptr = c_out_dev_buffer.unsafe_ptr()
 
     comptime assert not (
         qkv_perm_dim and has_epilogue
     ), "qkv_perm_dim and has_epilogue cannot be True at the same time"
 
-    @always_inline
-    @__copy_capture(c_dev_tile)
-    @parameter
-    def epilogue_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
-        var new_val = val
+    comptime if qkv_perm_dim:
 
-        comptime for i in range(width):
-            new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
+        @inline(.always)
+        def perm_dim_fn[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[dtype, width]) {
+            var c_out_ptr, var total_num_tokens
+        }:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var i = Int(idx[0])
+            var j = Int(idx[1])
+            var new_j, new_k = divmod(j, N)
+            comptime assert N % width == 0, "N must be divisible by width"
+            # The current index is [i, new_j, new_k] in the M x 3 x N row major
+            # tensor.
+            # The permdim tensor has the shape 3 x M x N, so the index is then
+            # [new_j, i, new_k].
+            var ptr = (
+                c_out_ptr.unsafe_bitcast[Scalar[out_type]]()
+                .unsafe_offset(new_j * total_num_tokens * N)
+                .unsafe_offset(i * N)
+                .unsafe_offset(new_k)
+            )
+            ptr.unsafe_store[width=width, alignment=alignment](
+                val.cast[out_type]()
+            )
 
-        ptr = c_dev_tile.ptr.bitcast[Scalar[out_type]]() + idx[0] * N + idx[1]
-
-        ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
-
-    @always_inline
-    @__copy_capture(c_dev_tile, total_num_tokens)
-    @parameter
-    def perm_dim_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
-        var new_val = val
-        var i = idx[0]
-        var j = idx[1]
-        var new_j, new_k = divmod(j, N)
-        comptime assert N % width == 0, "N must be divisible by width"
-        # The current index is [i, new_j, new_k] in the M x 3 x N row major
-        # tensor.
-        # The permdim tensor has the shape 3 x M x N, so the index is then
-        # [new_j, i, new_k].
-        ptr = (
-            c_dev_tile.ptr.bitcast[Scalar[out_type]]()
-            + new_j * total_num_tokens * N
-            + i * N
-            + new_k
+        grouped_matmul[has_epilogue_fn=True](
+            c_dev,
+            a_dev,
+            b_dev,
+            a_offsets_dev,
+            expert_ids_dev,
+            max_num_tokens_by_expert,
+            num_active_experts,
+            ctx,
+            perm_dim_fn,
         )
-        ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
+    elif has_epilogue:
 
-    comptime elementwise_lambda_fn = Optional[elementwise_epilogue_type](
-        perm_dim_fn
-    ) if qkv_perm_dim else (
-        Optional[elementwise_epilogue_type](
-            epilogue_fn
-        ) if has_epilogue else None
-    )
-    grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
-        c_dev,
-        a_dev,
-        b_dev,
-        a_offsets_dev,
-        expert_ids_dev,
-        max_num_tokens_by_expert,
-        num_active_experts,
-        ctx,
-    )
+        @inline(.always)
+        def epilogue_fn[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[dtype, width]) {var c_out_ptr}:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var new_val = val
+            var row = Int(idx[0])
+            var col = Int(idx[1])
+
+            comptime for i in range(width):
+                new_val[i] = test_epilogue(row, col + i, val[i])
+
+            var ptr = (
+                c_out_ptr.unsafe_bitcast[Scalar[out_type]]()
+                .unsafe_offset(row * N)
+                .unsafe_offset(col)
+            )
+            ptr.unsafe_store[width=width, alignment=alignment](
+                new_val.cast[out_type]()
+            )
+
+        grouped_matmul[has_epilogue_fn=True](
+            c_dev,
+            a_dev,
+            b_dev,
+            a_offsets_dev,
+            expert_ids_dev,
+            max_num_tokens_by_expert,
+            num_active_experts,
+            ctx,
+            epilogue_fn,
+        )
+    elif has_compute_epilogue:
+
+        @inline(.always)
+        def compute_fn[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var new_val = val
+            var row = Int(idx[0])
+            var col = Int(idx[1])
+
+            comptime for i in range(width):
+                new_val[i] = test_epilogue(row, col + i, val[i])
+            return new_val
+
+        grouped_matmul[has_compute_fn=True](
+            c_dev,
+            a_dev,
+            b_dev,
+            a_offsets_dev,
+            expert_ids_dev,
+            max_num_tokens_by_expert,
+            num_active_experts,
+            ctx,
+            compute_fn=compute_fn,
+        )
+    else:
+        grouped_matmul(
+            c_dev,
+            a_dev,
+            b_dev,
+            a_offsets_dev,
+            expert_ids_dev,
+            max_num_tokens_by_expert,
+            num_active_experts,
+            ctx,
+        )
 
     ctx.synchronize()
     ctx.enqueue_copy(c_ref_host_ptr, c_ref_dev_buffer)
-    ctx.enqueue_copy(c_host_ptr, c_dev_buffer)
+    comptime if qkv_perm_dim or has_epilogue:
+        ctx.enqueue_copy(c_host_ptr, c_out_dev_buffer)
+    else:
+        ctx.enqueue_copy(c_host_ptr, c_dev_buffer)
     ctx.synchronize()
 
-    rtol = 1e-2
+    var rtol = 1e-2
 
     comptime if qkv_perm_dim:
         for qkv_idx, m, n in std.itertools.product(
@@ -273,7 +341,7 @@ def test[
         for m, n in std.itertools.product(range(total_num_tokens), range(N)):
             var expect: Scalar[out_type]
 
-            comptime if has_epilogue:
+            comptime if has_epilogue or has_compute_epilogue:
                 expect = test_epilogue(m, n, c_ref_host[m, n][0])
             else:
                 expect = c_ref_host[m, n][0]
@@ -284,15 +352,10 @@ def test[
             )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_ref_host_ptr.free()
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
     _ = a_dev_buffer^
     _ = b_dev_buffer^
     _ = c_dev_buffer^
+    _ = c_out_dev_buffer^
     _ = c_ref_dev_buffer^
     _ = a_offsets_dev_buffer^
     _ = expert_ids_dev_buffer^
@@ -333,8 +396,8 @@ def test_negative_lora_id[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -346,19 +409,23 @@ def test_negative_lora_id[
 
     var c_size = total_num_tokens * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
+        num_active_experts + 1
+    )
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(total_num_tokens, Idx[K]),
     )
 
     # Create host B buffers
     var b_size = num_experts * N * K
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
+        num_active_experts
+    )
 
     var b_host = TileTensor(
         b_host_ptr,
@@ -381,32 +448,32 @@ def test_negative_lora_id[
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
 
-    var a_dev = TileTensor[a_type](
+    var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(total_num_tokens, Idx[K]),
     )
-    var c_dev = TileTensor[c_type](
+    var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(total_num_tokens, Idx[N]),
     )
-    var b_dev = TileTensor[b_type](
+    var b_dev = TileTensor(
         b_dev_buffer,
         row_major[num_experts, N, K](),
     )
-    var a_offsets_dev = TileTensor[DType.uint32](
+    var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(Coord(Idx(num_active_experts + 1))),
+        row_major(num_active_experts + 1),
     )
-    var expert_ids_dev = TileTensor[DType.int32](
+    var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(Coord(Idx(num_active_experts))),
+        row_major(num_active_experts),
     )
 
     # Move inputs to device
@@ -486,11 +553,6 @@ def test_negative_lora_id[
     print("✓ Negative lora_id test passed - expert_id -1 produces zero outputs")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
     _ = a_dev_buffer^
     _ = b_dev_buffer^
     _ = c_dev_buffer^
@@ -525,10 +587,10 @@ def test_step3p5_moe_dims[
 
     # ---- A (activations): [total_tokens, K] ----
     var a_size = total_tokens * K
-    var a_host_ptr = alloc[Scalar[in_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[in_type](a_size)
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_tokens), Idx[K]())),
+        row_major(total_tokens, Idx[K]),
     )
     random(a_host)
 
@@ -536,29 +598,37 @@ def test_step3p5_moe_dims[
     # Use runtime Idx so `random` uses a runtime loop instead of
     # hitting the compile-time element cap.
     var b_size = num_experts * N * K
-    var b_host_ptr = alloc[Scalar[in_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[in_type](b_size)
     var b_host = TileTensor(
         b_host_ptr,
-        row_major(Coord(Idx(num_experts), Idx[N](), Idx[K]())),
+        row_major(num_experts, Idx[N], Idx[K]),
     )
     random(b_host)
 
     # ---- C (output): [total_tokens, N] ----
     var c_size = total_tokens * N
-    var c_host_ptr = alloc[Scalar[out_type]](c_size)
-    var c_ref_host_ptr = alloc[Scalar[out_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
+    var c_ref_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx(total_tokens), Idx[N]())),
+        row_major(total_tokens, Idx[N]),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(Idx(total_tokens), Idx[N]())),
+        row_major(total_tokens, Idx[N]),
     )
 
     # ---- offsets & expert ids ----
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
+        num_experts + 1
+    )
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
+        num_experts
+    )
+    for i in range(num_experts + 1):
+        a_offsets_host_ptr[i] = 0
+    for i in range(num_experts):
+        expert_ids_host_ptr[i] = 0
 
     a_offsets_host_ptr[0] = 0
     for i in range(num_active):
@@ -573,28 +643,18 @@ def test_step3p5_moe_dims[
     var b_dev_buf = ctx.enqueue_create_buffer[in_type](b_size)
     var c_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
     var c_ref_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
-    var off_dev_buf = ctx.enqueue_create_buffer[DType.uint32](num_experts + 1)
-    var eid_dev_buf = ctx.enqueue_create_buffer[DType.int32](num_experts)
+    var off_dev_buf = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var eid_dev_buf = ctx.enqueue_create_buffer[.int32](num_experts)
 
-    var a_dev = TileTensor[in_type](
-        a_dev_buf, row_major(Coord(Idx(total_tokens), Idx[K]()))
-    )
-    var b_dev = TileTensor[in_type](
+    var a_dev = TileTensor(a_dev_buf, row_major(total_tokens, Idx[K]))
+    var b_dev = TileTensor(
         b_dev_buf,
         row_major[num_experts, N, K](),
     )
-    var c_dev = TileTensor[out_type](
-        c_dev_buf, row_major(Coord(Idx(total_tokens), Idx[N]()))
-    )
-    var c_ref_dev = TileTensor[out_type](
-        c_ref_dev_buf, row_major(Coord(Idx(total_tokens), Idx[N]()))
-    )
-    var off_dev = TileTensor[DType.uint32](
-        off_dev_buf, row_major(Coord(Idx(num_experts + 1)))
-    )
-    var eid_dev = TileTensor[DType.int32](
-        eid_dev_buf, row_major(Coord(Idx[num_experts]()))
-    )
+    var c_dev = TileTensor(c_dev_buf, row_major(total_tokens, Idx[N]))
+    var c_ref_dev = TileTensor(c_ref_dev_buf, row_major(total_tokens, Idx[N]))
+    var off_dev = TileTensor(off_dev_buf, row_major(num_experts + 1))
+    var eid_dev = TileTensor(eid_dev_buf, row_major(Idx[num_experts]))
 
     ctx.enqueue_copy(a_dev_buf, a_host_ptr)
     ctx.enqueue_copy(b_dev_buf, b_host_ptr)
@@ -630,7 +690,7 @@ def test_step3p5_moe_dims[
     ctx.enqueue_copy(c_ref_host_ptr, c_ref_dev_buf)
     ctx.synchronize()
 
-    rtol = 1e-2
+    var rtol = 1e-2
     for m, n in std.itertools.product(range(total_tokens), range(N)):
         var expect = c_ref_host[m, n][0]
         var actual = c_host[m, n][0]
@@ -638,12 +698,6 @@ def test_step3p5_moe_dims[
             actual, expect, msg=String(t"m: {m} n: {n}"), rtol=rtol
         )
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_ref_host_ptr.free()
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
     _ = a_dev_buf^
     _ = b_dev_buf^
     _ = c_dev_buf^
@@ -652,80 +706,153 @@ def test_step3p5_moe_dims[
     _ = eid_dev_buf^
 
 
+def test_expert_offset_past_int32(ctx: DeviceContext) raises:
+    """Routes experts on both sides of the 32-bit element offset.
+
+    The shape is Kimi K3's routed gate/up weight at eight devices. Only the two
+    routed slices hold ones, so a read from anywhere else, such as the address
+    before the stack that a wrapped offset gives, changes the output or faults;
+    the last expert that still fits is the control.
+    """
+    comptime num_experts = 896
+    comptime N = 768
+    comptime K = 3584
+    comptime tokens_per_expert = 32
+    comptime tokens = 2 * tokens_per_expert
+    comptime below = 2147483647 // (N * K)
+    comptime above = num_experts - 1
+    comptime assert (
+        below < above
+    ), "shape no longer straddles a 32-bit element offset"
+
+    var a_host = ctx.enqueue_create_host_buffer[.bfloat16](tokens * K)
+    var c_host = ctx.enqueue_create_host_buffer[.bfloat16](tokens * N)
+    var offsets_host = ctx.enqueue_create_host_buffer[.uint32](3)
+    var ids_host = ctx.enqueue_create_host_buffer[.int32](2)
+    for i in range(tokens * K):
+        a_host[i] = 1.0
+    offsets_host[0] = 0
+    offsets_host[1] = tokens_per_expert
+    offsets_host[2] = tokens
+    ids_host[0] = below
+    ids_host[1] = above
+
+    var a_dev = ctx.enqueue_create_buffer[.bfloat16](tokens * K)
+    var b_dev = ctx.enqueue_create_buffer[.bfloat16](num_experts * N * K)
+    var c_dev = ctx.enqueue_create_buffer[.bfloat16](tokens * N)
+    var offsets_dev = ctx.enqueue_create_buffer[.uint32](3)
+    var ids_dev = ctx.enqueue_create_buffer[.int32](2)
+
+    ctx.enqueue_memset(b_dev, Scalar[.bfloat16](0))
+    ctx.enqueue_memset(
+        b_dev.create_sub_buffer[.bfloat16](below * N * K, N * K),
+        Scalar[.bfloat16](1),
+    )
+    ctx.enqueue_memset(
+        b_dev.create_sub_buffer[.bfloat16](above * N * K, N * K),
+        Scalar[.bfloat16](1),
+    )
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(offsets_dev, offsets_host)
+    ctx.enqueue_copy(ids_dev, ids_host)
+
+    grouped_matmul(
+        TileTensor[.bfloat16](c_dev, row_major(tokens, Idx[N])),
+        TileTensor[.bfloat16](a_dev, row_major(tokens, Idx[K])),
+        TileTensor[.bfloat16](b_dev, row_major[num_experts, N, K]()),
+        TileTensor[.uint32](offsets_dev, row_major(3)),
+        TileTensor[.int32](ids_dev, row_major(Idx[2])),
+        tokens_per_expert,
+        2,
+        ctx,
+    )
+    ctx.enqueue_copy(c_host, c_dev)
+    ctx.synchronize()
+
+    for i in range(tokens * N):
+        assert_almost_equal(c_host[i], Scalar[.bfloat16](K))
+
+    _ = a_dev^
+    _ = b_dev^
+    _ = c_dev^
+    _ = offsets_dev^
+    _ = ids_dev^
+
+
 def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(16, 256),
         ](1, [128], [0], ctx)
 
         # unaligned matmul
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(1024, 256),
         ](1, [200], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # simple expert routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](1, [128], [2], ctx)
 
         # simple aligned group routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(2880, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(5760, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
@@ -733,45 +860,123 @@ def main() raises:
         # Multiple matmuls selecting part of experts
         # num_tokesn not multiple of tile size
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
+
+        # Decode-shaped routing: every expert has a slot, most are empty, and
+        # the few routed rows sit at scattered (including the highest) ids.
+        var decode_tokens = List[Int]()
+        var decode_ids = List[Int]()
+        for e in range(128):
+            decode_ids.append(e)
+            decode_tokens.append(
+                1 if e == 3 or e == 40 or e == 77 or e == 126 or e == 127 else 0
+            )
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=128,
+            expert_shape=(256, 512),
+        ](128, decode_tokens, decode_ids, ctx)
+
+        # More groups than one warp-wide lookup step, with routed rows on
+        # both sides of the step boundary at 256.
+        var wide_tokens = List[Int]()
+        var wide_ids = List[Int]()
+        for e in range(300):
+            wide_ids.append(e)
+            wide_tokens.append(
+                3 if e == 5
+                or e == 255 else (70 if e == 256 else (1 if e == 299 else 0))
+            )
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=300,
+            expert_shape=(128, 256),
+        ](300, wide_tokens, wide_ids, ctx)
 
         # Multiple matmuls selecting part of experts
         # num_tokesn not multiple of tile size
         # expert N dimension not multiple of 256
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
             test[
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
                 num_experts=6,
                 expert_shape=Index(1280, 16),
             ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(16, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
             has_epilogue=True,
         ](2, [128, 256], [0, 2], ctx)
+
+        # The compute epilogue maps each value before the kernel's own store.
+        # Its result depends on the coordinates, so these cover the aligned
+        # and unaligned group tails, both CTA groupings (N = 1280 and 192),
+        # and the decode-shaped routing with mostly empty experts.
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=4,
+            expert_shape=(768, 1024),
+            has_compute_epilogue=True,
+        ](2, [128, 256], [0, 2], ctx)
+
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=6,
+            expert_shape=(1280, 1024),
+            has_compute_epilogue=True,
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
+
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=6,
+            expert_shape=(192, 1024),
+            has_compute_epilogue=True,
+        ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
+
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=128,
+            expert_shape=(256, 512),
+            has_compute_epilogue=True,
+        ](128, decode_tokens, decode_ids, ctx)
+
+        # An inactive expert's rows hold the epilogue of zero.
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=2,
+            expert_shape=(256, 512),
+            has_compute_epilogue=True,
+        ](2, [64, 128], [0, -1], ctx)
 
         comptime ns = [16, 256]
         comptime ms = [16, 512]
@@ -782,28 +987,28 @@ def main() raises:
                 comptime m = ms[m_idx]
 
                 comptime if m == 16 or n == 16:
-                    comptime if ctx.default_device_info != B200:
+                    comptime if ctx.default_device_info != B200.gpu_info:
                         continue
                 # Test that expert id of -1 results in 0s in the output
                 test[
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     num_experts=2,
                     expert_shape=Index(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
                 # Test negative lora_id behavior with naive matmul
                 test_negative_lora_id[
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     num_experts=2,
                     expert_shape=Index(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
         # QKV perm dim test
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
             qkv_perm_dim=True,
@@ -820,30 +1025,76 @@ def main() raises:
             # expert_shape=(2560, 4096).  Total B buffer is ~5.6 GiB;
             # the crash appears related to >4 GiB weight buffer
             # addressing in the sm100 grouped matmul kernel.
-            test_step3p5_moe_dims[
-                DType.bfloat16, DType.bfloat16, Index(2560, 4096), 288
-            ](8, 256, ctx)
+            test_step3p5_moe_dims[.bfloat16, .bfloat16, Index(2560, 4096), 288](
+                8, 256, ctx
+            )
 
         # FP8 grouped matmul (H100 only).
         comptime if ctx.default_device_info == H100:
             test[
-                DType.float8_e4m3fn,
-                DType.bfloat16,
+                .float8_e4m3fn,
+                .bfloat16,
                 num_experts=4,
                 expert_shape=Index(256, 256),
             ](2, [32, 64], [0, 2], ctx)
 
             test[
-                DType.float8_e4m3fn,
-                DType.bfloat16,
+                .float8_e4m3fn,
+                .bfloat16,
                 num_experts=4,
                 expert_shape=Index(256, 128),
             ](3, [10, 60, 30], [2, 0, 1], ctx)
 
             # Non-128-aligned K dimension.
             test[
-                DType.float8_e4m3fn,
-                DType.bfloat16,
+                .float8_e4m3fn,
+                .bfloat16,
                 num_experts=4,
                 expert_shape=Index(256, 192),
             ](2, [25, 40], [1, 3], ctx)
+
+        # float32 C output. The SM90/SM100 TMA kernels cannot emit a float32
+        # C (their store path is 16-bit and they hard-assert
+        # `c_type != float32`); the `grouped_matmul` dispatch must route
+        # float32 output to the naive path. These shapes mirror the LoRA
+        # `o_proj` grouped matmuls that crashed an un-quantized (float32)
+        # model serving with LoRA on B200: the LoRA-A "shrink"
+        # (`[M, hidden] @ [G, rank, hidden]`, expert_shape=(rank, hidden)) and
+        # the LoRA-B "expand" (`[M, rank] @ [G, hidden, rank]`,
+        # expert_shape=(hidden, rank)). hidden=576, rank=16 = SmolLM-135M.
+        # See SERVOPT-1478.
+        test[
+            .float32,
+            .float32,
+            num_experts=4,
+            expert_shape=Index(16, 576),  # LoRA shrink (contracts hidden)
+        ](2, [128, 64], [0, 2], ctx)
+
+        test[
+            .float32,
+            .float32,
+            num_experts=4,
+            expert_shape=Index(576, 16),  # LoRA expand (contracts rank)
+        ](2, [128, 64], [0, 2], ctx)
+
+        # float32 output with an elementwise epilogue (mirrors the LoRA
+        # shrink's permute epilogue threading through the naive path).
+        test[
+            .float32,
+            .float32,
+            num_experts=4,
+            expert_shape=Index(16, 576),
+            has_epilogue=True,
+        ](2, [128, 64], [0, 2], ctx)
+
+        # float32 QKV-permute epilogue: the exact epilogue shape the LoRA
+        # shrink (`shrink_qkv_permute_3mn_sm100`) uses.
+        test[
+            .float32,
+            .float32,
+            num_experts=4,
+            expert_shape=Index(16, 576),
+            qkv_perm_dim=True,
+        ](2, [128, 64], [0, 2], ctx)
+
+        test_expert_offset_past_int32(ctx)

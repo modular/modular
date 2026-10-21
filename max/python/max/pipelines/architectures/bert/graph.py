@@ -23,13 +23,10 @@ Bert uses:
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
 
 import numpy as np
-from max.driver import DLPackArray
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.graph.weights import WeightData
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn.activation import activation_function_from_name
 from max.nn.embedding import Embedding
 from max.nn.layer import Module
@@ -302,6 +299,20 @@ class BertModel(Module):
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
         self.pool_outputs = config.pool_embeddings
+        self.device = config.device
+
+    def input_types(self) -> tuple[TensorType, TensorType]:
+        """Returns the graph's input types: input IDs and attention mask."""
+        return (
+            TensorType(
+                DType.int64, shape=["batch_size", "seq_len"], device=self.device
+            ),
+            TensorType(
+                DType.float32,
+                shape=["batch_size", "seq_len"],
+                device=self.device,
+            ),
+        )
 
     def __call__(
         self,
@@ -316,10 +327,8 @@ class BertModel(Module):
         extended_attention_mask = ops.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )
-        extended_attention_mask = (1 - extended_attention_mask) * ops.constant(
-            np.finfo(np.float32).min,
-            DType.float32,
-            device=attention_mask.device,
+        extended_attention_mask = (1 - extended_attention_mask) * float(
+            np.finfo(np.float32).min
         )
 
         encoded_results = self.encoder(
@@ -334,9 +343,7 @@ class BertModel(Module):
             )
             input_lengths = ops.max(
                 ops.sum(input_mask_expanded),
-                ops.constant(
-                    1e-9, DType.float32, device=input_mask_expanded.device
-                ),
+                1e-9,
             )
             pooled_output = (
                 ops.sum(encoded_results * input_mask_expanded) / input_lengths
@@ -344,26 +351,3 @@ class BertModel(Module):
             return ops.squeeze(pooled_output, 2)
         else:
             return encoded_results
-
-
-def build_graph(
-    config: BertModelConfig,
-    state_dict: Mapping[str, DLPackArray | WeightData],
-) -> Graph:
-    input_ids_type = TensorType(
-        DType.int64, shape=["batch_size", "seq_len"], device=config.device
-    )
-    attention_mask_type = TensorType(
-        DType.float32, shape=["batch_size", "seq_len"], device=config.device
-    )
-
-    with Graph(
-        "bert", input_types=[input_ids_type, attention_mask_type]
-    ) as graph:
-        model = BertModel(config)
-        model.load_state_dict(state_dict)
-        input_ids = graph.inputs[0].tensor
-        attention_mask = graph.inputs[1].tensor
-        graph.output(model(input_ids, attention_mask))
-
-    return graph

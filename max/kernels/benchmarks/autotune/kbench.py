@@ -194,7 +194,7 @@ def run(
     visible_device_prefix = _get_visible_device_prefix(str(target_accelerator))
 
     # 0 means no timeout (infinite wait).
-    effective_timeout = timeout_secs if timeout_secs else None
+    effective_timeout = timeout_secs or None
 
     # Run the code over the mesh of param/values
     t_start_total = time()
@@ -298,7 +298,9 @@ def set_build_opts(
 
 
 @click.command(
-    help="Benchmarking toolkit for Mojo kernels", no_args_is_help=True
+    help="Benchmarking toolkit for Mojo kernels",
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "-help", "--help"]},
 )
 @click.option(
     "--filter",
@@ -659,6 +661,9 @@ def cli(
 
     # Auto-select: use shared lib (.so) mode when possible for faster execution.
     # Falls back to subprocess mode when profiling or using custom exec wrappers.
+    # Under sanitizers, kbench_model._maybe_preload_libubsan handles the
+    # dlopen-from-non-instrumented-Python case, so shared-lib mode works there
+    # too (see MOTO-1576).
     use_shared_lib = not profile and not exec_prefix and not exec_suffix
     if use_shared_lib:
         logging.info("Using shared library (.so) mode for faster execution")

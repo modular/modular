@@ -11,21 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
 from std.math import exp, isclose
+from std.memory.alloc import unsafe_alloc
 from std.random import rand, seed
 
-from std.collections import Optional
 from layout import (
-    IntTuple,
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
+    TileTensor,
+    Coord,
+    row_major,
     UNKNOWN_VALUE,
 )
+from layout.tile_layout import RowMajorLayout
+from layout.int_tuple import _IntTupleToCoordLike
+from layout.coord import coord_to_index_list
+from std.sys import align_of
 from nn.attention.cpu.mha import flash_attention, flash_attention_split_kv
-from nn.attention.mha_mask import NullMask
 from std.testing import assert_equal
 
 from std.utils import IndexList
@@ -35,43 +36,49 @@ from std.utils.index import Index
 def reference_attention_bshd[
     dtype: DType
 ](
-    q_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    v_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    mask_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    output_nd: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    q_nd: TileTensor[dtype, address_space=.GENERIC, ...],
+    k_nd: TileTensor[dtype, address_space=.GENERIC, ...],
+    v_nd: TileTensor[dtype, address_space=.GENERIC, ...],
+    mask_nd: TileTensor[dtype, address_space=.GENERIC, ...],
+    output_nd: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     scale: Float32,
 ) raises:
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
-    comptime layout_4d = Layout.row_major[4]()
+    comptime Layout4D = RowMajorLayout[Int64, Int64, Int64, Int64]
 
     def reshape_4d(
-        buf: LayoutTensor[dtype, ...]
-    ) -> LayoutTensor[
-        dtype, layout_4d, buf.origin, address_space=buf.address_space
+        buf: TileTensor[dtype, ...]
+    ) -> TileTensor[
+        dtype,
+        Layout4D,
+        buf.origin,
+        address_space=buf.address_space,
+        Engine=buf.Engine,
     ]:
-        var shape = buf.runtime_layout.shape.value.canonicalize()
+        comptime assert buf.is_row_major
+        comptime assert buf.rank == buf.flat_rank
+        var shape = coord_to_index_list(buf.layout.shape_coord())
         var num_heads = shape[buf.rank - 2] if buf.rank == 4 else 1
         var shape_4d = Index(shape[0], shape[1], num_heads, shape[buf.rank - 1])
-        return LayoutTensor[dtype, layout_4d, address_space=buf.address_space](
-            buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
-        )
+        return buf.reshape(Coord(shape_4d))
 
     def reshape_mask_4d(
-        buf: LayoutTensor[dtype, ...]
-    ) -> LayoutTensor[
-        dtype, layout_4d, buf.origin, address_space=buf.address_space
+        buf: TileTensor[dtype, ...]
+    ) -> TileTensor[
+        dtype,
+        Layout4D,
+        buf.origin,
+        address_space=buf.address_space,
+        Engine=buf.Engine,
     ]:
-        var shape = buf.runtime_layout.shape.value.canonicalize()
+        comptime assert buf.is_row_major
+        comptime assert buf.rank == buf.flat_rank
+        var shape = coord_to_index_list(buf.layout.shape_coord())
         var num_heads = shape[1] if buf.rank == 4 else 1
         var shape_4d = Index(
             shape[0], num_heads, shape[buf.rank - 2], shape[buf.rank - 1]
         )
-        return LayoutTensor[dtype, layout_4d, address_space=buf.address_space](
-            buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
-        )
+        return buf.reshape(Coord(shape_4d))
 
     var q_4d = reshape_4d(q_nd)
     var k_4d = reshape_4d(k_nd)
@@ -79,41 +86,39 @@ def reference_attention_bshd[
     var mask_4d = reshape_mask_4d(mask_nd)
     var output_4d = reshape_4d(output_nd)
 
-    var batch_count = q_4d.dim(0)
-    var seq_len = q_4d.dim(1)
-    var num_heads = q_4d.dim(2)
-    var depth_dim = q_4d.dim(3)
-    var kv_seq_len = v_4d.dim(1)
-    var kv_num_heads = v_4d.dim(2)
+    var batch_count = Int(q_4d.dim[0]())
+    var seq_len = Int(q_4d.dim[1]())
+    var num_heads = Int(q_4d.dim[2]())
+    var depth_dim = Int(q_4d.dim[3]())
+    var kv_seq_len = Int(v_4d.dim[1]())
+    var kv_num_heads = Int(v_4d.dim[2]())
 
     assert_equal(num_heads % kv_num_heads, 0)
 
     var kv_group_count = num_heads // kv_num_heads
 
-    assert_equal(batch_count, k_4d.dim(0))
-    assert_equal(kv_seq_len, k_4d.dim(1))
-    assert_equal(kv_num_heads, k_4d.dim(2))
-    assert_equal(depth_dim, k_4d.dim(3))
+    assert_equal(batch_count, Int(k_4d.dim[0]()))
+    assert_equal(kv_seq_len, Int(k_4d.dim[1]()))
+    assert_equal(kv_num_heads, Int(k_4d.dim[2]()))
+    assert_equal(depth_dim, Int(k_4d.dim[3]()))
 
-    assert_equal(batch_count, v_4d.dim(0))
-    assert_equal(depth_dim, v_4d.dim(3))
+    assert_equal(batch_count, Int(v_4d.dim[0]()))
+    assert_equal(depth_dim, Int(v_4d.dim[3]()))
 
-    assert_equal(batch_count, mask_4d.dim(0))
-    assert_equal(num_heads, mask_4d.dim(1))
-    assert_equal(seq_len, mask_4d.dim(2))
-    assert_equal(kv_seq_len, mask_4d.dim(3))
+    assert_equal(batch_count, Int(mask_4d.dim[0]()))
+    assert_equal(num_heads, Int(mask_4d.dim[1]()))
+    assert_equal(seq_len, Int(mask_4d.dim[2]()))
+    assert_equal(kv_seq_len, Int(mask_4d.dim[3]()))
 
     assert_equal(
-        q_4d.runtime_layout.shape.value.canonicalize(),
-        output_4d.runtime_layout.shape.value.canonicalize(),
+        coord_to_index_list(q_4d.layout.shape_coord()),
+        coord_to_index_list(output_4d.layout.shape_coord()),
     )
 
-    comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
-    var score_2d = LayoutTensor[dtype, layout_2d](
-        score_ptr,
-        RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
-    )
+    var score_ptr = List(length=seq_len * kv_seq_len, fill=Scalar[dtype](0))
+    var score_2d = TileTensor(
+        Span(score_ptr), row_major(len(score_ptr))
+    ).reshape(Coord(Int64(seq_len), Int64(kv_seq_len)))
 
     for b in range(batch_count):
         for h in range(num_heads):
@@ -161,51 +166,58 @@ def reference_attention_bshd[
                             v_4d[b, k, kv_h, n][0], accum
                         )
                     output_4d[b, m, h, n] = accum
-
-    score_ptr.free()
+    _ = score_ptr^
 
 
 def reference_attention_bshd_with_sinks[
     dtype: DType
 ](
-    q_nd: LayoutTensor[dtype, ...],
-    k_nd: LayoutTensor[dtype, ...],
-    v_nd: LayoutTensor[dtype, ...],
-    mask_nd: LayoutTensor[dtype, ...],
-    sink_weights_nd: LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), _],
-    output_nd: LayoutTensor[mut=True, dtype, ...],
+    q_nd: TileTensor[dtype, ...],
+    k_nd: TileTensor[dtype, ...],
+    v_nd: TileTensor[dtype, ...],
+    mask_nd: TileTensor[dtype, ...],
+    sink_weights_nd: TileTensor[dtype, ...],
+    output_nd: TileTensor[mut=True, dtype, ...],
     scale: Float32,
 ) raises:
     """Reference implementation of attention with sink weights."""
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
 
-    comptime layout_4d = Layout.row_major[4]()
+    comptime Layout4D = RowMajorLayout[Int64, Int64, Int64, Int64]
 
     def reshape_4d(
-        buf: LayoutTensor[dtype, ...]
-    ) -> LayoutTensor[
-        dtype, layout_4d, buf.origin, address_space=buf.address_space
+        buf: TileTensor[dtype, ...]
+    ) -> TileTensor[
+        dtype,
+        Layout4D,
+        buf.origin,
+        address_space=buf.address_space,
+        Engine=buf.Engine,
     ]:
-        var shape = buf.runtime_layout.shape.value.canonicalize()
+        comptime assert buf.is_row_major
+        comptime assert buf.rank == buf.flat_rank
+        var shape = coord_to_index_list(buf.layout.shape_coord())
         var num_heads = shape[buf.rank - 2] if buf.rank == 4 else 1
         var shape_4d = Index(shape[0], shape[1], num_heads, shape[buf.rank - 1])
-        return LayoutTensor[dtype, layout_4d, address_space=buf.address_space](
-            buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
-        )
+        return buf.reshape(Coord(shape_4d))
 
     def reshape_mask_4d(
-        buf: LayoutTensor[dtype, ...]
-    ) -> LayoutTensor[
-        dtype, layout_4d, buf.origin, address_space=buf.address_space
+        buf: TileTensor[dtype, ...]
+    ) -> TileTensor[
+        dtype,
+        Layout4D,
+        buf.origin,
+        address_space=buf.address_space,
+        Engine=buf.Engine,
     ]:
-        var shape = buf.runtime_layout.shape.value.canonicalize()
+        comptime assert buf.is_row_major
+        comptime assert buf.rank == buf.flat_rank
+        var shape = coord_to_index_list(buf.layout.shape_coord())
         var num_heads = shape[1] if buf.rank == 4 else 1
         var shape_4d = Index(
             shape[0], num_heads, shape[buf.rank - 2], shape[buf.rank - 1]
         )
-        return LayoutTensor[dtype, layout_4d, address_space=buf.address_space](
-            buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
-        )
+        return buf.reshape(Coord(shape_4d))
 
     var q_4d = reshape_4d(q_nd)
     var k_4d = reshape_4d(k_nd)
@@ -213,25 +225,23 @@ def reference_attention_bshd_with_sinks[
     var mask_4d = reshape_mask_4d(mask_nd)
     var output_4d = reshape_4d(output_nd)
 
-    var batch_count = q_4d.dim(0)
-    var seq_len = q_4d.dim(1)
-    var num_heads = q_4d.dim(2)
-    var depth_dim = q_4d.dim(3)
-    var kv_seq_len = v_4d.dim(1)
-    var kv_num_heads = v_4d.dim(2)
+    var batch_count = Int(q_4d.dim[0]())
+    var seq_len = Int(q_4d.dim[1]())
+    var num_heads = Int(q_4d.dim[2]())
+    var depth_dim = Int(q_4d.dim[3]())
+    var kv_seq_len = Int(v_4d.dim[1]())
+    var kv_num_heads = Int(v_4d.dim[2]())
     # Note: sink_weights has one weight per head, not per token
-    _ = min(sink_weights_nd.dim(0), num_heads)
+    _ = min(Int(sink_weights_nd.dim[0]()), num_heads)
 
     assert_equal(num_heads % kv_num_heads, 0)
 
     var kv_group_count = num_heads // kv_num_heads
 
-    comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
-    var score_2d = LayoutTensor[dtype, layout_2d](
-        score_ptr,
-        RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
-    )
+    var score_ptr = List(length=seq_len * kv_seq_len, fill=Scalar[dtype](0))
+    var score_2d = TileTensor(
+        Span(score_ptr), row_major(len(score_ptr))
+    ).reshape(Coord(Int64(seq_len), Int64(kv_seq_len)))
 
     for b in range(batch_count):
         for h in range(num_heads):
@@ -289,8 +299,7 @@ def reference_attention_bshd_with_sinks[
                             v_4d[b, k, kv_h, n][0], accum
                         )
                     output_4d[b, m, h, n] = accum
-
-    score_ptr.free()
+    _ = score_ptr^
 
 
 @fieldwise_init
@@ -308,12 +317,12 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterPassable):
     var depth_dim: Int
     var scale: Float32
 
-    @always_inline
+    @inline(.always)
     def prev_seq_len(self) -> Int:
         """Returns the KV cache length from previous iterations."""
         return self.kv_seq_len - self.seq_len
 
-    @always_inline
+    @inline(.always)
     def build_shape[
         *, shape_rank: Int = Self.rank, is_kv: Bool = False
     ](self, x: Int, y: Int) -> IndexList[shape_rank]:
@@ -339,7 +348,7 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterPassable):
 
         return shape
 
-    @always_inline
+    @inline(.always)
     def build_shape_bshd[
         *, shape_rank: Int = Self.rank, is_kv: Bool = False
     ](self, x: Int, y: Int) -> IndexList[shape_rank]:
@@ -372,21 +381,22 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterPassable):
 def verify_output[
     dtype: DType, batch_rank: Int
 ](
-    output: LayoutTensor[dtype, ...],
-    ref_output: LayoutTensor[dtype, ...],
+    output: TileTensor[dtype, ...],
+    ref_output: TileTensor[dtype, ...],
     cfg: TestCaseConfig[batch_rank],
 ) raises -> None:
-    """Compares `output` and `ref_output` elementwise, printing up to 5 mismatches.
-    """
+    """Checks output against the reference, printing at most six mismatches."""
     var mismatches = 0
-    for i in range(output.size()):
-        var idx = output._offset(
-            output.runtime_layout.idx2crd(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
-            ).value
-        )
+    for i in range(output.num_elements()):
+        var crd = output.layout.idx2crd(i)
+        var idx = Int(output.layout(crd))
+        var actual = output.load[width=1](crd)
+        var expected = ref_output.load[width=1](crd)
         if not isclose(
-            output.ptr[idx], ref_output.ptr[idx], atol=1e-5, rtol=1e-4
+            actual,
+            expected,
+            atol=1e-5,
+            rtol=1e-4,
         ):
             if mismatches == 0:
                 print(
@@ -401,13 +411,14 @@ def verify_output[
             print(
                 "Mismatch at",
                 idx,
-                output.ptr[idx],
-                ref_output.ptr[idx],
+                actual,
+                expected,
             )
 
             mismatches = mismatches + 1
             if mismatches > 5:
                 break
+    assert_equal(mismatches, 0, "Flash attention output differs from reference")
 
 
 def build_ndbuffer[
@@ -415,13 +426,24 @@ def build_ndbuffer[
     rank: Int,
     *,
     static_shape: IndexList[rank] = IndexList[rank](fill=UNKNOWN_VALUE),
-](shape: IndexList[rank]) raises -> LayoutTensor[
-    dtype, Layout.row_major(static_shape), MutAnyOrigin
+](shape: IndexList[rank]) raises -> TileTensor[
+    dtype,
+    RowMajorLayout[
+        *_IntTupleToCoordLike[.int64, Layout.row_major(static_shape).shape]
+    ],
+    MutUntrackedOrigin,
 ]:
-    var ptr = alloc[Scalar[dtype]](shape.flattened_length())
+    var ptr = unsafe_alloc[Scalar[dtype]](shape.flattened_length())
     rand(ptr, shape.flattened_length())
-    return LayoutTensor[dtype, Layout.row_major(static_shape), MutAnyOrigin](
-        ptr, RuntimeLayout[Layout.row_major(static_shape)].row_major(shape)
+    comptime ShapeTypes = _IntTupleToCoordLike[
+        .int64, Layout.row_major(static_shape).shape
+    ]
+    var native_shape = Coord[*ShapeTypes]()
+    comptime for i in range(rank):
+        comptime if static_shape[i] == UNKNOWN_VALUE:
+            native_shape[i] = rebind[ShapeTypes[i]](Int64(shape[i]))
+    return TileTensor(ptr, row_major(shape.flattened_length())).reshape(
+        native_shape
     )
 
 
@@ -453,53 +475,55 @@ def test_case[
     var output = build_ndbuffer[dtype, static_shape=output_static_shape](
         q_shape
     )
+    comptime assert output.is_row_major
     var ref_output = build_ndbuffer[dtype](q_shape)
 
     reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return k.load[width=simd_width, alignment=align_of[dtype]()](
+            Coord(rebind[IndexList[k.rank]](idx))
+        )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return v.load[width=simd_width, alignment=align_of[dtype]()](
+            Coord(rebind[IndexList[v.rank]](idx))
+        )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return mask.load[width=simd_width, alignment=align_of[dtype]()](
+            Coord(rebind[IndexList[mask.rank]](idx))
+        )
 
-    flash_attention[input_k_fn, input_v_fn, mask_fn](
-        q,
-        k.runtime_layout.shape.value.canonicalize(),
-        v.runtime_layout.shape.value.canonicalize(),
-        mask.runtime_layout.shape.value.canonicalize(),
-        LayoutTensor[output.dtype, Layout.row_major[output.rank]()](
-            output.ptr,
-            RuntimeLayout[Layout.row_major[output.rank]()].row_major(
-                output.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+    flash_attention(
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
+        q.as_imm(),
+        coord_to_index_list(k.layout.shape_coord()),
+        coord_to_index_list(v.layout.shape_coord()),
+        coord_to_index_list(mask.layout.shape_coord()),
+        output.reshape(Coord(coord_to_index_list(output.layout.shape_coord()))),
         cfg.scale,
     )
 
     verify_output(output, ref_output, cfg)
 
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    output.ptr.free()
-    ref_output.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    output.ptr.unsafe_free()
+    ref_output.ptr.unsafe_free()
 
 
 def test_flash_attention[dtype: DType]() raises:
@@ -617,58 +641,52 @@ def test_case_split_kv[
     var output = build_ndbuffer[dtype, static_shape=output_static_shape](
         q_shape
     )
+    comptime assert output.is_row_major
     var ref_output = build_ndbuffer[dtype](q_shape)
 
     # Compute reference outputs for comparison.
     reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
 
     # Define input lambdas for split KV cache attn `flash_attention_split_kv`.
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return k.load[width=simd_width](
-            IndexList[k.rank](
-                idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3]
-            )
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return k.load[width=simd_width, alignment=align_of[dtype]()](
+            (idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
         )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return v.load[width=simd_width](
-            IndexList[v.rank](
-                idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3]
-            )
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return v.load[width=simd_width, alignment=align_of[dtype]()](
+            (idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
         )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_k_cache_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return k.load[width=simd_width](
-            IndexList[k.rank](idx[1], idx[3], idx[2], idx[4])
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return k.load[width=simd_width, alignment=align_of[dtype]()](
+            (idx[1], idx[3], idx[2], idx[4])
         )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_v_cache_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return v.load[width=simd_width](
-            IndexList[v.rank](idx[1], idx[3], idx[2], idx[4])
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return v.load[width=simd_width, alignment=align_of[dtype]()](
+            (idx[1], idx[3], idx[2], idx[4])
         )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return mask.load[width=simd_width, alignment=align_of[dtype]()](
+            Coord(rebind[IndexList[mask.rank]](idx))
+        )
 
     var kv_present_shape = cfg.build_shape_bshd[is_kv=True](
         cfg.seq_len, cfg.depth_dim
@@ -677,38 +695,30 @@ def test_case_split_kv[
         shape_rank=cfg.kv_cache_rank, is_kv=True
     ](cfg.prev_seq_len(), cfg.depth_dim)
 
-    flash_attention_split_kv[
-        dtype=dtype,
-        rank=batch_rank + 2,
+    flash_attention_split_kv[dtype=dtype, rank=batch_rank + 2](
         input_k_fn,
         input_v_fn,
         input_k_cache_fn,
         input_v_cache_fn,
         mask_fn,
-    ](
-        q,
+        q.as_imm(),
         kv_present_shape,
         kv_present_shape,
         rebind[IndexList[cfg.rank + 1]](kv_past_shape),
         rebind[IndexList[cfg.rank + 1]](kv_past_shape),
-        mask.runtime_layout.shape.value.canonicalize(),
-        LayoutTensor[output.dtype, Layout.row_major[output.rank]()](
-            output.ptr,
-            RuntimeLayout[Layout.row_major[output.rank]()].row_major(
-                output.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+        coord_to_index_list(mask.layout.shape_coord()),
+        output.reshape(Coord(coord_to_index_list(output.layout.shape_coord()))),
         cfg.scale,
     )
 
     verify_output(output, ref_output, cfg)
 
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    output.ptr.free()
-    ref_output.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    output.ptr.unsafe_free()
+    ref_output.ptr.unsafe_free()
 
 
 def test_flash_attention_split_kv[dtype: DType]() raises:
@@ -791,7 +801,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
 
     # Create sink weights (one per head)
     var sink_weights_shape = Index(num_heads)
-    var sink_weights = build_ndbuffer[dtype](sink_weights_shape)
+    var sink_weights_owner = build_ndbuffer[dtype](sink_weights_shape)
+    comptime assert sink_weights_owner.is_row_major
+    var sink_weights = sink_weights_owner.reshape(Coord(Int64(num_heads)))
 
     # Fill sink weights with known values
     for i in range(num_heads):
@@ -807,43 +819,50 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     reference_attention_bshd(q, k, v, mask, ref_output_no_sinks, scale)
 
     # Test flash attention without sinks
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return k.load[width=simd_width, alignment=align_of[dtype]()](
+            Coord(rebind[IndexList[k.rank]](idx))
+        )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return v.load[width=simd_width, alignment=align_of[dtype]()](
+            Coord(rebind[IndexList[v.rank]](idx))
+        )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
+        return mask.load[width=simd_width, alignment=align_of[dtype]()](
+            Coord(rebind[IndexList[mask.rank]](idx))
+        )
 
     # Call without sink weights
-    flash_attention[input_k_fn, input_v_fn, mask_fn](
-        q,
-        k.runtime_layout.shape.value.canonicalize(),
-        v.runtime_layout.shape.value.canonicalize(),
-        mask.runtime_layout.shape.value.canonicalize(),
+    flash_attention(
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
+        q.as_imm(),
+        coord_to_index_list(k.layout.shape_coord()),
+        coord_to_index_list(v.layout.shape_coord()),
+        coord_to_index_list(mask.layout.shape_coord()),
         output_no_sinks,
         scale,
     )
 
     # Verify no-sinks result
     var mismatches_no_sinks = 0
-    for i in range(output_no_sinks.size()):
+    for i in range(output_no_sinks.num_elements()):
+        var coord = output_no_sinks.layout.idx2crd(i)
         if not isclose(
-            output_no_sinks.ptr[i],
-            ref_output_no_sinks.ptr[i],
+            output_no_sinks[coord],
+            ref_output_no_sinks[coord],
             atol=1e-5,
             rtol=1e-4,
         ):
@@ -852,9 +871,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
                     "No-sinks mismatch at",
                     i,
                     ":",
-                    output_no_sinks.ptr[i],
+                    output_no_sinks[coord],
                     "vs",
-                    ref_output_no_sinks.ptr[i],
+                    ref_output_no_sinks[coord],
                 )
             mismatches_no_sinks += 1
 
@@ -867,6 +886,12 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
             "mismatches",
         )
 
+    assert_equal(
+        mismatches_no_sinks,
+        0,
+        "Flash attention without sinks differs from reference",
+    )
+
     # Test 2: Attention with sinks
     var output_with_sinks = build_ndbuffer[dtype](q_shape)
     var ref_output_with_sinks = build_ndbuffer[dtype](q_shape)
@@ -877,40 +902,31 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         k,
         v,
         mask,
-        LayoutTensor[sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE), _](
-            sink_weights.ptr,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                sink_weights.runtime_layout.shape.value
-            ),
-        ),
+        sink_weights,
         ref_output_with_sinks,
         scale,
     )
 
-    # Call with sink weights (pass the data pointer wrapped in Optional)
-    flash_attention[input_k_fn, input_v_fn, mask_fn](
-        q,
-        k.runtime_layout.shape.value.canonicalize(),
-        v.runtime_layout.shape.value.canonicalize(),
-        mask.runtime_layout.shape.value.canonicalize(),
+    flash_attention(
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
+        q.as_imm(),
+        coord_to_index_list(k.layout.shape_coord()),
+        coord_to_index_list(v.layout.shape_coord()),
+        coord_to_index_list(mask.layout.shape_coord()),
         output_with_sinks,
         scale,
-        sink_weights=LayoutTensor[
-            sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE), _
-        ](
-            sink_weights.ptr.as_immutable(),
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                sink_weights.runtime_layout.shape.value
-            ),
-        ),
+        sink_weights=sink_weights.as_imm().as_unsafe_any_origin(),
     )
 
     # Verify sinks result
     var mismatches_with_sinks = 0
-    for i in range(output_with_sinks.size()):
+    for i in range(output_with_sinks.num_elements()):
+        var coord = output_with_sinks.layout.idx2crd(i)
         if not isclose(
-            output_with_sinks.ptr[i],
-            ref_output_with_sinks.ptr[i],
+            output_with_sinks[coord],
+            ref_output_with_sinks[coord],
             atol=1e-5,
             rtol=1e-4,
         ):
@@ -919,9 +935,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
                     "With-sinks mismatch at",
                     i,
                     ":",
-                    output_with_sinks.ptr[i],
+                    output_with_sinks[coord],
                     "vs",
-                    ref_output_with_sinks.ptr[i],
+                    ref_output_with_sinks[coord],
                 )
             mismatches_with_sinks += 1
 
@@ -934,19 +950,25 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
             "mismatches",
         )
 
+    assert_equal(
+        mismatches_with_sinks,
+        0,
+        "Flash attention with sinks differs from reference",
+    )
+
     # Free memory
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    sink_weights.ptr.free()
-    output_no_sinks.ptr.free()
-    ref_output_no_sinks.ptr.free()
-    output_with_sinks.ptr.free()
-    ref_output_with_sinks.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    sink_weights.ptr.unsafe_free()
+    output_no_sinks.ptr.unsafe_free()
+    ref_output_no_sinks.ptr.unsafe_free()
+    output_with_sinks.ptr.unsafe_free()
+    ref_output_with_sinks.ptr.unsafe_free()
 
 
 def main() raises:
-    test_flash_attention[DType.float32]()
-    test_flash_attention_split_kv[DType.float32]()
-    test_flash_attention_with_sinks[DType.float32]()
+    test_flash_attention[.float32]()
+    test_flash_attention_split_kv[.float32]()
+    test_flash_attention_with_sinks[.float32]()

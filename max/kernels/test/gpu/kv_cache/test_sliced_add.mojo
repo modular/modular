@@ -11,12 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from layout import Coord, Layout, RuntimeLayout, TileTensor, row_major
-from layout._utils import ManagedLayoutTensor
+from max.gpu.host import DeviceContext
+from layout import row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.slice import sliced_add
-
-from std.utils import IndexList
 
 
 def test_sliced_add[
@@ -31,45 +29,33 @@ def test_sliced_add[
     ), "batch_end_idx must be less than or equal to rows"
 
     # Create managed buffers and host views.
-    var shape = IndexList[2](rows, cols)
-    var layout = row_major(Coord(shape))
-    var managed_shape = IndexList[2](rows, cols)
-    var a = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
-        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
-    )
-    var b = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
-        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
-    )
-    var c = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
-        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
-    )
-    var a_host = TileTensor(a.tensor[update=False]().ptr, layout)
-    var b_host = TileTensor(b.tensor[update=False]().ptr, layout)
-    var c_host = TileTensor(c.tensor[update=False]().ptr, layout)
+    var layout = row_major((rows, cols))
+    var a = HostDeviceTileTensor[dtype](layout, ctx)
+    var b = HostDeviceTileTensor[dtype](layout, ctx)
+    var c = HostDeviceTileTensor[dtype](layout, ctx)
+    var a_host = a.host_tensor()
+    var b_host = b.host_tensor()
+    var c_host = c.host_tensor()
 
     # Initialize with known patterns
     # a: all ones, b: all twos, c: zeros
     for i in range(rows):
         for j in range(cols):
-            var idx = a_host.layout(Coord(IndexList[2](i, j)))
-            a_host.ptr[idx] = 1.0
-            b_host.ptr[idx] = 2.0
-            c_host.ptr[idx] = 0.0
+            a_host[i, j] = 1.0
+            b_host[i, j] = 2.0
+            c_host[i, j] = 0.0
 
     # Keep lora_end_idx on host; sliced_add reads this scalar on host.
-    var lora_end_idx = ManagedLayoutTensor[DType.int64, Layout.row_major[1]()](
-        RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](1)),
-        ctx,
-    )
-    var lora_end_idx_host = TileTensor(
-        lora_end_idx.tensor[update=False]().ptr,
-        row_major(Coord(IndexList[1](1))),
-    )
-    lora_end_idx_host.ptr[0] = Int64(batch_end_idx)
+    var lora_end_idx = HostDeviceTileTensor[.int64](row_major(1))
+    var lora_end_idx_host = lora_end_idx.host_tensor()
+    lora_end_idx_host[0] = Int64(batch_end_idx)
 
-    var a_device_tensor = TileTensor(a.device_tensor().ptr, layout)
-    var b_device_tensor = TileTensor(b.device_tensor().ptr, layout)
-    var c_device_tensor = TileTensor(c.device_tensor().ptr, layout)
+    a.to_device()
+    b.to_device()
+    c.to_device()
+    var a_device_tensor = a.device_tensor()
+    var b_device_tensor = b.device_tensor()
+    var c_device_tensor = c.device_tensor()
 
     # Execute sliced_add directly
     sliced_add[target="gpu"](
@@ -77,11 +63,10 @@ def test_sliced_add[
         a_device_tensor,
         b_device_tensor,
         lora_end_idx_host,
-        Optional(ctx),
+        ctx,
     )
 
-    # Pull device results back via managed host view.
-    c_host = TileTensor(c.tensor().ptr, layout)
+    c.to_host()
 
     # Verify results
     for i in range(rows):
@@ -94,8 +79,7 @@ def test_sliced_add[
                 # Should be just a = 1
                 expected = 1.0
 
-            var idx = c_host.layout(Coord(IndexList[2](i, j)))
-            var actual = c_host.ptr[idx]
+            var actual = c_host[i, j]
             if actual != expected:
                 raise Error(
                     "Mismatch at ["
@@ -111,25 +95,25 @@ def test_sliced_add[
 
 def test_sliced_add_boundary_cases(ctx: DeviceContext) raises:
     # Test case 1: batch_end_idx = 0 (no addition, all copy)
-    test_sliced_add[DType.float32, 4, 8, 0](ctx)
+    test_sliced_add[.float32, 4, 8, 0](ctx)
 
     # Test case 2: batch_end_idx = rows (all addition)
-    test_sliced_add[DType.float32, 4, 8, 4](ctx)
+    test_sliced_add[.float32, 4, 8, 4](ctx)
 
     # Test case 3: batch_end_idx in middle
-    test_sliced_add[DType.float32, 8, 16, 4](ctx)
+    test_sliced_add[.float32, 8, 16, 4](ctx)
 
     # Test case 4: Single row with addition
-    test_sliced_add[DType.float32, 1, 8, 1](ctx)
+    test_sliced_add[.float32, 1, 8, 1](ctx)
 
     # Test case 5: Larger tensor
-    test_sliced_add[DType.float32, 128, 64, 64](ctx)
+    test_sliced_add[.float32, 128, 64, 64](ctx)
 
 
 def test_sliced_add_dtypes(ctx: DeviceContext) raises:
-    test_sliced_add[DType.float32, 16, 32, 8](ctx)
-    test_sliced_add[DType.float16, 16, 32, 8](ctx)
-    test_sliced_add[DType.bfloat16, 16, 32, 8](ctx)
+    test_sliced_add[.float32, 16, 32, 8](ctx)
+    test_sliced_add[.float16, 16, 32, 8](ctx)
+    test_sliced_add[.bfloat16, 16, 32, 8](ctx)
 
 
 def main() raises:

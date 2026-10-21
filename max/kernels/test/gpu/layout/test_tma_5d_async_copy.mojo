@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import size_of
+from std.sys import align_of, size_of
 
-from std.gpu import barrier
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, grid_dim, thread_idx
-from layout import IntTuple, Layout, LayoutTensor
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu import block_idx, grid_dim, thread_idx
+from layout import Coord, Idx, IntTuple, Layout, TileTensor, coord, row_major
+from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
     SharedMemBarrier,
@@ -27,10 +28,8 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
-
-from std.utils.index import Index, IndexList
 
 
 # Test loading a single 5d tile.
@@ -38,55 +37,65 @@ from std.utils.index import Index, IndexList
 def test_tma_5d_load_kernel[
     dtype: DType,
     dst_layout: Layout,
-    tile_rank: Int,
-    cta_tile_shape: IndexList[tile_rank],
-    desc_shape: IndexList[tile_rank],
+    cta_tile_shape: Coord,
+    desc_shape: Coord,
     smem_layout: Layout,
     grid_dim1: Int,
     grid_dim2: Int,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tile_rank, cta_tile_shape, desc_shape],
+    dst: TileTensor[
+        dtype,
+        type_of(
+            row_major[
+                dst_layout.shape[0].value(), dst_layout.shape[1].value()
+            ]()
+        ),
+        MutAnyOrigin,
+    ],
+    tma_tile: TMATensorTile[dtype, cta_tile_shape, desc_shape],
 ):
     comptime assert (
-        _idx_product[tile_rank, cta_tile_shape]() == smem_layout.size()
+        _idx_product[cta_tile_shape]() == smem_layout.size()
     ), "CTA Tile and SMEM tile should be the same size"
 
     comptime dst_dim0 = dst_layout.shape[0].value()
     comptime dst_dim1 = dst_layout.shape[1].value()
 
-    comptime cta_tile_dim0 = cta_tile_shape[0]
-    comptime cta_tile_dim1 = cta_tile_shape[1]
-    comptime cta_tile_dim2 = cta_tile_shape[2]
-    comptime cta_tile_dim3 = cta_tile_shape[3]
-    comptime cta_tile_dim4 = cta_tile_shape[4]
+    comptime cta_tile_dim0 = Int(cta_tile_shape[0])
+    comptime cta_tile_dim1 = Int(cta_tile_shape[1])
+    comptime cta_tile_dim2 = Int(cta_tile_shape[2])
+    comptime cta_tile_dim3 = Int(cta_tile_shape[3])
+    comptime cta_tile_dim4 = Int(cta_tile_shape[4])
 
     comptime assert (
         dst_dim1 == cta_tile_dim4
     ), "dst and cta should have the same last dimension for these test cases"
 
-    smem_tile = LayoutTensor[
-        dtype,
-        smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    comptime assert smem_layout == Layout.row_major(smem_layout.shape)
+    var smem_tile = stack_allocation[
+        dtype=dtype, address_space=.SHARED, alignment=128
+    ](
+        row_major[
+            smem_layout.shape[0].value(),
+            smem_layout.shape[1].value(),
+            smem_layout.shape[2].value(),
+            smem_layout.shape[3].value(),
+            smem_layout.shape[4].value(),
+        ]()
+    )
 
-    comptime expected_bytes = _idx_product[
-        tile_rank, cta_tile_shape
-    ]() * size_of[dtype]()
+    comptime expected_bytes = _idx_product[cta_tile_shape]() * size_of[dtype]()
 
-    mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
-    idx0, rem = divmod(block_idx.z, grid_dim1 * grid_dim2)
-    idx1, idx2 = divmod(rem, grid_dim2)
-    idx3 = block_idx.y
-    idx4 = block_idx.x
+    var idx0, rem = divmod(block_idx.z, grid_dim1 * grid_dim2)
+    var idx1, idx2 = divmod(rem, grid_dim2)
+    var idx3 = block_idx.y
+    var idx4 = block_idx.x
 
     if thread_idx.x == 0:
         mbar[0].init()
@@ -106,12 +115,6 @@ def test_tma_5d_load_kernel[
     barrier()
     mbar[0].wait()
 
-    comptime smem_dim0 = smem_layout.shape[0].value()
-    comptime smem_dim1 = smem_layout.shape[1].value()
-    comptime smem_dim2 = smem_layout.shape[2].value()
-    comptime smem_dim3 = smem_layout.shape[3].value()
-    comptime smem_dim4 = smem_layout.shape[4].value()
-
     var idx = (
         block_idx.z * grid_dim.y + block_idx.y
     ) * grid_dim.x + block_idx.x
@@ -119,17 +122,22 @@ def test_tma_5d_load_kernel[
         cta_tile_dim1, cta_tile_dim2, cta_tile_dim3, cta_tile_dim4
     )
     comptime dst_tile_size = dst_tile_layout.size()
-    comptime DstTileType = LayoutTensor[dtype, dst_tile_layout, MutAnyOrigin]
-    comptime cta_tile_size = _idx_product[tile_rank, cta_tile_shape]()
-
-    local_dst_ptr = dst.ptr + idx * cta_tile_size
 
     for i in range(cta_tile_dim0):
-        smem_tile_i = smem_tile.tile[
+        var smem_tile_i = smem_tile.tile[
             1, cta_tile_dim1, cta_tile_dim2, cta_tile_dim3, cta_tile_dim4
-        ](i)
+        ](Coord(i, 0, 0, 0, 0))
 
-        dst_tile = DstTileType(local_dst_ptr + i * dst_tile_size)
+        var dst_tile = dst.tile[dst_tile_size // dst_dim1, dst_dim1](
+            Coord(idx * cta_tile_dim0 + i, 0)
+        ).reshape(
+            Coord(
+                Idx[cta_tile_dim1],
+                Idx[cta_tile_dim2],
+                Idx[cta_tile_dim3],
+                Idx[cta_tile_dim4],
+            )
+        )
         if thread_idx.x == 0:
             dst_tile.copy_from(smem_tile_i)
 
@@ -160,19 +168,26 @@ def test_tma_5d_load_row_major[
         cta_tile_dim4,
     )
 
-    var src = ManagedLayoutTensor[dtype, src_layout](ctx)
-    var dst = ManagedLayoutTensor[dtype, dst_layout](ctx)
+    comptime assert src_layout == Layout.row_major(src_layout.shape)
+    var src = HostDeviceTileTensor[dtype](
+        row_major[src_dim0, src_dim1, src_dim2, src_dim3, src_dim4](), ctx
+    )
+    var dst = HostDeviceTileTensor[dtype](
+        row_major[dst_layout.shape[0].value(), dst_layout.shape[1].value()](),
+        ctx,
+    )
 
-    arange(src.tensor(), start=0, step=0.015625)
+    arange(src.host_tensor(), start=0, step=0.015625)
+    src.to_device()
 
-    tma_tensor = create_tensor_tile[
-        Index(
+    var tma_tensor = create_tensor_tile[
+        coord[
             cta_tile_dim0,
             cta_tile_dim1,
             cta_tile_dim2,
             cta_tile_dim3,
             cta_tile_dim4,
-        ),
+        ],
         swizzle_mode=swizzle_mode,
     ](ctx, src.device_tensor())
 
@@ -185,15 +200,14 @@ def test_tma_5d_load_row_major[
     comptime kernel = test_tma_5d_load_kernel[
         type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
-        type_of(tma_tensor).rank,
         type_of(tma_tensor).tile_shape,  # cta_tile
         type_of(tma_tensor).desc_shape,  # desc_tile
         smem_tile_layout,  # smem layout
         grid_dim1=src_dim1 // cta_tile_dim1,
         grid_dim2=src_dim2 // cta_tile_dim2,
     ]
-    ctx.enqueue_function[kernel, kernel](
-        dst.device_tensor(),
+    ctx.enqueue_function[kernel](
+        dst.device_tensor().as_unsafe_any_origin(),
         tma_tensor,
         grid_dim=(
             src_dim4 // cta_tile_dim4,
@@ -205,30 +219,40 @@ def test_tma_5d_load_row_major[
         block_dim=(1),
     )
 
-    src_host = src.tensor()
-    dst_host = dst.tensor()
+    dst.to_host()
+    var src_host = src.host_tensor()
+    var dst_host = dst.host_tensor()
 
     comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
     comptime cta_tile_size = cta_tile_layout.size()
 
-    comptime desc_tile_dim0 = type_of(tma_tensor).desc_shape[0]
-    comptime desc_tile_dim1 = type_of(tma_tensor).desc_shape[1]
-    comptime desc_tile_dim2 = type_of(tma_tensor).desc_shape[2]
-    comptime desc_tile_dim3 = type_of(tma_tensor).desc_shape[3]
-    comptime desc_tile_dim4 = type_of(tma_tensor).desc_shape[4]
+    comptime desc_tile_dim0 = Int(
+        type_of(tma_tensor).desc_shape.element_types[0].static_value
+    )
+    comptime desc_tile_dim1 = Int(
+        type_of(tma_tensor).desc_shape.element_types[1].static_value
+    )
+    comptime desc_tile_dim2 = Int(
+        type_of(tma_tensor).desc_shape.element_types[2].static_value
+    )
+    comptime desc_tile_dim3 = Int(
+        type_of(tma_tensor).desc_shape.element_types[3].static_value
+    )
+    comptime desc_tile_dim4 = Int(
+        type_of(tma_tensor).desc_shape.element_types[4].static_value
+    )
 
     comptime desc_tile_size = (
         desc_tile_dim1 * desc_tile_dim2 * desc_tile_dim3 * desc_tile_dim4
     )
 
-    desc_tile = LayoutTensor[
-        dtype,
-        Layout.row_major(
+    var desc_tile = stack_allocation[dtype=dtype, alignment=align_of[dtype]()](
+        row_major[
             desc_tile_dim1, desc_tile_dim2, desc_tile_dim3, desc_tile_dim4
-        ),
-        MutAnyOrigin,
-    ].stack_allocation()
+        ]()
+    )
+    var desc_flat = desc_tile.coalesce()
 
     var dest_ptr = dst_host.ptr
     for dest_tile_v in range(src_dim0 // cta_tile_dim0):
@@ -250,23 +274,28 @@ def test_tma_5d_load_row_major[
                                                 desc_tile_dim3,
                                                 desc_tile_dim4,
                                             ](
-                                                dest_tile_v * cta_tile_dim0 + v,
-                                                dest_tile_w + w,
-                                                dest_tile_z + z,
-                                                dest_tile_y + y,
-                                                dest_tile_x + x,
+                                                Coord(
+                                                    dest_tile_v * cta_tile_dim0
+                                                    + v,
+                                                    dest_tile_w + w,
+                                                    dest_tile_z + z,
+                                                    dest_tile_y + y,
+                                                    dest_tile_x + x,
+                                                ),
                                             )
 
                                             desc_tile.copy_from(src_tile)
 
                                             for i in range(desc_tile_size):
-                                                desc_idx = swizzle(i)
+                                                var desc_idx = swizzle(i)
                                                 assert_equal(
-                                                    desc_tile.ptr[desc_idx],
+                                                    desc_flat[desc_idx],
                                                     dest_ptr[i],
                                                 )
 
-                                            dest_ptr += desc_tile_size
+                                            dest_ptr = dest_ptr.unsafe_offset(
+                                                desc_tile_size
+                                            )
 
     _ = src^
     _ = dst^

@@ -15,18 +15,19 @@
 # Basic matrix multiplication implementation
 
 from std.math import ceildiv
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
 
 def matrix_mul_kernel(
-    M: UnsafePointer[Float32, MutExternalOrigin],
-    N: UnsafePointer[Float32, MutExternalOrigin],
-    P: UnsafePointer[Float32, MutExternalOrigin],
-    Width: Int,
+    M: MutPointer[Float32, MutUntrackedOrigin],
+    N: MutPointer[Float32, MutUntrackedOrigin],
+    P: MutPointer[Float32, MutUntrackedOrigin],
+    width_dev: Int32,
 ):
     """GPU kernel for matrix multiplication.
 
@@ -34,8 +35,10 @@ def matrix_mul_kernel(
         M: Input matrix M (device).
         N: Input matrix N (device).
         P: Output matrix P = M * N (device).
-        Width: Matrix dimension (Width x Width matrices).
+        width_dev: Matrix dimension (Width x Width matrices).
     """
+    # Int is not device-passable; widen the fixed-width arg.
+    var Width = Int(width_dev)
     var row = global_idx.y
     var col = global_idx.x
 
@@ -50,9 +53,9 @@ def matrix_mul_kernel(
 
 
 def matmul_cpu(
-    A_host: UnsafePointer[Float32, _],
-    B_host: UnsafePointer[Float32, _],
-    C_ref: UnsafePointer[Float32, MutAnyOrigin],
+    A_host: ImmPointer[Float32, _],
+    B_host: ImmPointer[Float32, _],
+    C_ref: MutPointer[Float32, _],
     Width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -72,8 +75,8 @@ def matmul_cpu(
 
 
 def initialize_host(
-    A_host: UnsafePointer[Float32, MutExternalOrigin],
-    B_host: UnsafePointer[Float32, MutExternalOrigin],
+    A_host: MutPointer[Float32, MutUntrackedOrigin],
+    B_host: MutPointer[Float32, MutUntrackedOrigin],
     Width: Int,
 ):
     """Initialize input matrices with test data.
@@ -95,10 +98,10 @@ def main() raises:
     var num_elements = Width * Width
 
     # Allocate host memory
-    var A_h = alloc[Float32](num_elements)
-    var B_h = alloc[Float32](num_elements)
-    var C_h = alloc[Float32](num_elements)
-    var C_ref = alloc[Float32](num_elements)
+    var A_h = unsafe_alloc[Float32](num_elements)
+    var B_h = unsafe_alloc[Float32](num_elements)
+    var C_h = unsafe_alloc[Float32](num_elements)
+    var C_ref = unsafe_alloc[Float32](num_elements)
 
     # Initialize host arrays
     initialize_host(A_h, B_h, Width)
@@ -123,11 +126,11 @@ def main() raises:
         var grid_dim_y = ceildiv(Width, block_dim_y)
 
         # Launch kernel
-        ctx.enqueue_function_experimental[matrix_mul_kernel](
+        ctx.enqueue_function[matrix_mul_kernel](
             A_d,
             B_d,
             C_d,
-            Width,
+            Int32(Width),
             grid_dim=(grid_dim_x, grid_dim_y, 1),
             block_dim=(block_dim_x, block_dim_y, 1),
         )
@@ -139,7 +142,7 @@ def main() raises:
         ctx.synchronize()
 
     # Run CPU matrix multiplication
-    matmul_cpu(A_h, B_h, C_ref, Width)
+    matmul_cpu(A_h, B_h, C_ref.as_unsafe_any_origin(), Width)
 
     # Compare results (allow small floating point error)
     var errors = 0
@@ -169,7 +172,7 @@ def main() raises:
         print("Success")
 
     # Cleanup
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    C_ref.free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    C_ref.unsafe_free()

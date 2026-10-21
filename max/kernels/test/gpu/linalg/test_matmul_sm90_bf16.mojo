@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from layout import Idx
@@ -35,9 +34,9 @@ def main() raises:
         comptime for i in range(len(wgmma_n)):
             comptime for j in range(1, 3):
                 test_matmul_sm90[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     Index(1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
@@ -46,15 +45,15 @@ def main() raises:
                     schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
-                    Idx[1024](),
-                    Idx[512](),
-                    Idx[128](),
+                    Idx[1024],
+                    Idx[512],
+                    Idx[128],
                 )
 
                 test_matmul_sm90[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     Index(1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
@@ -63,15 +62,15 @@ def main() raises:
                     schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
-                    Idx(Int(99)),
-                    Idx[1024](),
-                    Idx[1024](),
+                    Int(99),
+                    Idx[1024],
+                    Idx[1024],
                 )
 
                 test_matmul_sm90[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     Index(1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
@@ -80,16 +79,16 @@ def main() raises:
                     schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
-                    Idx(Int(100)),
-                    Idx[512](),
-                    Idx[256](),
+                    Int(100),
+                    Idx[512],
+                    Idx[256],
                 )
 
                 # Test K not multiple of tile size.
                 test_matmul_sm90[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     Index(1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
@@ -98,143 +97,143 @@ def main() raises:
                     schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
-                    Idx(Int(201)),
-                    Idx[2048](),
-                    Idx[200](),
+                    Int(201),
+                    Idx[2048],
+                    Idx[200],
                 )
 
         # K is aligned by 8B
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             block_tile_shape[2, 128],
             wgmma_shape[128],
             num_consumer=2,
             num_pipeline_stages=4,
-        ](ctx, Idx(Int(150)), Idx[3200](), Idx[588]())
+        ](ctx, Int(150), Idx[3200], Idx[588])
 
         # K is aligned by 4B
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             block_tile_shape[2, 256],
             wgmma_shape[256],
             num_consumer=2,
             num_pipeline_stages=4,
-        ](ctx, Idx(Int(90)), Idx[256](), Idx[270]())
+        ](ctx, Int(90), Idx[256], Idx[270])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             block_tile_shape[2, 128],
             wgmma_shape[128],
             num_consumer=2,
             num_pipeline_stages=4,
-        ](ctx, Idx(Int(213)), Idx[1111](), Idx[128]())
+        ](ctx, Int(213), Idx[1111], Idx[128])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(128, 64, 64),
             Index(64, 64, 16),
             num_consumer=2,
             num_pipeline_stages=8,
-        ](ctx, Idx(Int(256)), Idx[4096](), Idx[1536]())
+        ](ctx, Int(256), Idx[4096], Idx[1536])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 48, 64),
             Index(64, 48, 16),
             num_consumer=1,
             num_pipeline_stages=8,
             k_group_size=2,
-        ](ctx, Idx(Int(256)), Idx[1536](), Idx[4096]())
+        ](ctx, Int(256), Idx[1536], Idx[4096])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 48, 64),
             Index(64, 48, 16),
             num_consumer=1,
             num_pipeline_stages=12,
             k_group_size=4,
-        ](ctx, Idx(Int(256)), Idx[1536](), Idx[4096]())
+        ](ctx, Int(256), Idx[1536], Idx[4096])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 32, 64),
             Index(64, 32, 16),
             num_consumer=1,
             num_pipeline_stages=17,
-        ](ctx, Idx(Int(2)), Idx[4096](), Idx[1536]())
+        ](ctx, Int(2), Idx[4096], Idx[1536])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 8, 64),
             Index(64, 8, 16),
             num_consumer=1,
             num_pipeline_stages=20,
-        ](ctx, Idx(Int(16)), Idx[64](), Idx[256]())
+        ](ctx, Int(16), Idx[64], Idx[256])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(64, 256, 64),
             Index(64, 256, 16),
             num_consumer=1,
             num_pipeline_stages=5,
-        ](ctx, Idx(Int(20)), Idx[84](), Idx[4096]())
+        ](ctx, Int(20), Idx[84], Idx[4096])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(128, 256, 64),
             Index(64, 256, 16),
             num_consumer=2,
             num_pipeline_stages=2,
-        ](ctx, Idx(Int(476)), Idx[1024](), Idx[128]())
+        ](ctx, Int(476), Idx[1024], Idx[128])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(128, 48, 64),
             Index(64, 48, 16),
             num_consumer=2,
             num_pipeline_stages=2,
-        ](ctx, Idx(Int(1536)), Idx[48](), Idx[4096]())
+        ](ctx, Int(1536), Idx[48], Idx[4096])
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),  # cluster_shape
             Index(128, 8, 64),
             Index(64, 8, 16),
             num_consumer=2,
             num_pipeline_stages=2,
-        ](ctx, Idx(Int(1536)), Idx[13](), Idx[4096]())
+        ](ctx, Int(1536), Idx[13], Idx[4096])

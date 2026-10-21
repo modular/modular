@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from ._cache_busting import CacheBustingBuffer, CACHE_BUST_BYTES
-from ._measure import correlation, cosine, kl_div
+from ._measure import cosine, kl_div
 from ._testing import (
     assert_almost_equal,
     assert_equal,
@@ -32,6 +32,4 @@ from ._utils import (
     parse_shape,
     update_bench_config_args,
 )
-from .amd_configs import TuningConfigAMD, TuningTableAMD
 from .dispatch_utils import Table, TuningConfig
-from .nvidia_configs import TuningConfigNvidia, TuningTableNvidia

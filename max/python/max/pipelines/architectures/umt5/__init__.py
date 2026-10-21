@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""UMT5 multilingual text encoder architecture for diffusion conditioning."""
 
-from .model import UMT5Model
+from .model import _prepare_state_dict
 
-__all__ = ["UMT5Model"]
+__all__ = ["_prepare_state_dict"]

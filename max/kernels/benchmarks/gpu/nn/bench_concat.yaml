@@ -73,3 +73,27 @@ params:
   X1: 8
   Y1: 2048
   Z1: 128
+
+# large 2D: matches element-wise throughput scale from nn/parallel:tests
+- num_inputs: 2
+  axis: 0
+  W0: 1
+  X0: 1
+  Y0: 7776
+  Z0: 1176
+  W1: 1
+  X1: 1
+  Y1: 7776
+  Z1: 1176
+
+# large 3D: high element count across spatial dims
+- num_inputs: 2
+  axis: 0
+  W0: 1
+  X0: 1000
+  Y0: 1000
+  Z0: 3
+  W1: 1
+  X1: 1000
+  Y1: 1000
+  Z1: 3

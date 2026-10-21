@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -25,11 +27,21 @@ from max.experimental.torch import max_dtype_to_torch
 from max.graph import Shape
 from max.graph.weights import WeightData
 from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
     QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
+    WeightScaleSpec,
 )
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.weights.quant import (
+    _modelopt_ignore_patterns,
+    _modelopt_layer_subtree_ignored,
+    _modelopt_shared_experts_quantized_dtype,
+    _quantized_layers_from_modelopt_ignore,
+    parse_quant_config,
+    resolve_hf_quant_config,
+)
 from transformers import AutoConfig
 
 # Define a base path for test data.
@@ -780,7 +792,10 @@ def test_parse_float4_from_standalone_hf_quant_config(
     repo_dir.mkdir(parents=True)
     hf_quant_config = {
         "producer": {"name": "modelopt", "version": "0.0"},
-        "quantization": {"quant_algo": "NVFP4"},
+        "quantization": {
+            "quant_algo": "NVFP4",
+            "ignore": ["model.layers.0.mlp*"],
+        },
     }
     (repo_dir / "hf_quant_config.json").write_text(json.dumps(hf_quant_config))
 
@@ -788,11 +803,388 @@ def test_parse_float4_from_standalone_hf_quant_config(
     if hasattr(hf_config, "quantization_config"):
         del hf_config.quantization_config
     hf_config._name_or_path = str(repo_dir)
+    state_dict: dict[str, WeightData] = {
+        "layers.0.weight_scale_2": WeightData(
+            name="layers.0.weight_scale_2",
+            shape=Shape((1,)),
+            dtype=DType.uint8,
+            data=torch.zeros((1,), dtype=torch.uint8),
+        ),
+    }
 
-    quant_config = parse_quant_config(hf_config, {}, DType.uint8)
+    quant_config = parse_quant_config(hf_config, state_dict, DType.uint8)
 
     assert quant_config is not None
     assert quant_config.format == QuantFormat.NVFP4
+    assert quant_config.mlp_quantized_layers == set(
+        range(1, hf_config.num_hidden_layers)
+    )
+
+
+def test_resolve_hf_quant_config_prefers_embedded_config(
+    hf_config_instruct_fbgemm: AutoConfig, tmp_path: Path
+) -> None:
+    embedded = {"quant_method": "modelopt", "quant_algo": "NVFP4"}
+    hf_config_instruct_fbgemm.quantization_config = embedded
+    hf_config_instruct_fbgemm._name_or_path = str(tmp_path)
+    (tmp_path / "hf_quant_config.json").write_text(
+        json.dumps(
+            {
+                "producer": {"name": "sidecar"},
+                "quantization": {"quant_algo": "OTHER"},
+            }
+        )
+    )
+
+    state_dict: dict[str, object] = {"weight_scale_2": object()}
+    resolved = resolve_hf_quant_config(hf_config_instruct_fbgemm, state_dict)
+
+    assert resolved is embedded
+
+
+def test_resolve_hf_quant_config_reads_standalone_file(
+    hf_config_instruct_fbgemm: AutoConfig, tmp_path: Path
+) -> None:
+    (tmp_path / "hf_quant_config.json").write_text(
+        json.dumps(
+            {
+                "producer": {"name": "modelopt"},
+                "quantization": {"quant_algo": "NVFP4"},
+            }
+        )
+    )
+    if hasattr(hf_config_instruct_fbgemm, "quantization_config"):
+        del hf_config_instruct_fbgemm.quantization_config
+    hf_config_instruct_fbgemm._name_or_path = str(tmp_path)
+
+    state_dict: dict[str, object] = {"weight_scale_2": object()}
+    resolved = resolve_hf_quant_config(hf_config_instruct_fbgemm, state_dict)
+
+    assert resolved == {"quant_method": "modelopt", "quant_algo": "NVFP4"}
+
+
+def test_resolve_hf_quant_config_nvfp4_fallback_uses_names_only(
+    hf_config_instruct_fbgemm: AutoConfig,
+) -> None:
+    if hasattr(hf_config_instruct_fbgemm, "quantization_config"):
+        del hf_config_instruct_fbgemm.quantization_config
+    state_dict: dict[str, object] = {"layers.0.weight_scale_2": object()}
+
+    resolved = resolve_hf_quant_config(hf_config_instruct_fbgemm, state_dict)
+
+    assert resolved == {"quant_method": "modelopt", "quant_algo": "NVFP4"}
+
+
+def test_standalone_hf_quant_config_reads_config_snapshot(
+    hf_config_instruct_fbgemm: AutoConfig,
+    tmp_path: Path,
+) -> None:
+    """The hub lookup for hf_quant_config.json must pass the commit sha that
+    config.json was resolved to (recorded by transformers as _commit_hash),
+    so a pinned model revision doesn't silently read the sidecar from main.
+    """
+    hf_quant_config = {
+        "producer": {"name": "modelopt", "version": "0.0"},
+        "quantization": {"quant_algo": "NVFP4"},
+    }
+    sidecar = tmp_path / "hf_quant_config.json"
+    sidecar.write_text(json.dumps(hf_quant_config))
+
+    commit_sha = "0123456789abcdef0123456789abcdef01234567"
+    hf_config = deepcopy(hf_config_instruct_fbgemm)
+    if hasattr(hf_config, "quantization_config"):
+        del hf_config.quantization_config
+    hf_config._name_or_path = "nvidia/DeepSeek-R1-0528-NVFP4-v2"
+    hf_config._commit_hash = commit_sha
+
+    with patch(
+        "huggingface_hub.hf_hub_download", return_value=str(sidecar)
+    ) as mock_download:
+        quant_config = parse_quant_config(hf_config, {}, DType.uint8)
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.NVFP4
+    assert mock_download.call_args.kwargs["revision"] == commit_sha
+
+
+@pytest.fixture
+def hf_config_glm_5_1_nvfp4() -> AutoConfig:
+    """Modelopt NVFP4 config with selective ``ignore`` (GLM-5.1-style)."""
+    config_path = TEST_DATA_PATH / "lukealonso_glm_5_1_nvfp4_quant.json"
+    return AutoConfig.from_pretrained(str(config_path), trust_remote_code=True)
+
+
+def test_parse_modelopt_nvfp4_respects_ignore_patterns(
+    hf_config_glm_5_1_nvfp4: AutoConfig,
+) -> None:
+    """Parses modelopt ``ignore`` globs like lukealonso/GLM-5.1-NVFP4.
+
+    Dense layers 0-2 skip MLP; layer 3+ MoE is NVFP4. All listed layers keep
+    BF16 attention (``self_attn*`` ignored). ``*shared_experts*`` does not
+    remove a layer from ``mlp_quantized_layers``.
+    """
+    state_dict = {
+        "embed_tokens.weight": WeightData(
+            name="embed_tokens.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.bfloat16,
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
+        ),
+    }
+    quant_config = parse_quant_config(
+        hf_config_glm_5_1_nvfp4, state_dict, DType.uint8
+    )
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.NVFP4
+    assert quant_config.mlp_quantized_layers == {3}
+    assert quant_config.attn_quantized_layers == set()
+    assert quant_config.embedding_output_dtype == DType.bfloat16
+    assert quant_config.shared_experts_weight_dtype == DType.bfloat16
+
+
+def test_modelopt_ignore_normalizes_block_sparse_moe_shared_experts() -> None:
+    """``block_sparse_moe.shared_experts`` ignore globs map to ``mlp.shared_experts``."""
+    ignore_patterns = _modelopt_ignore_patterns(
+        {
+            "ignore": [
+                "model.language_model.layers.3.block_sparse_moe.shared_experts*",
+            ]
+        }
+    )
+    assert ignore_patterns == ["layers.3.mlp.shared_experts*"]
+
+    global_ignore = _modelopt_ignore_patterns(
+        {
+            "ignore": [
+                "model.language_model.layers.*.block_sparse_moe.shared_experts*"
+            ]
+        }
+    )
+    assert global_ignore == ["layers.*.mlp.shared_experts*"]
+    assert (
+        _modelopt_shared_experts_quantized_dtype(global_ignore)
+        == DType.bfloat16
+    )
+
+
+@pytest.fixture
+def hf_config_qwen3_8_flash_next_nvfp4() -> AutoConfig:
+    """Modelopt NVFP4 config with Qwen3.8-Flash-Next's real ``ignore`` list."""
+    config_path = (
+        TEST_DATA_PATH / "radixark__qwen3_8_flash_next_nvfp4_quant.json"
+    )
+    return AutoConfig.from_pretrained(str(config_path), trust_remote_code=True)
+
+
+@pytest.fixture
+def state_dict_bf16_embed_tokens() -> dict[str, WeightData]:
+    """A state dict holding only the BF16 embedding, as the parser reads."""
+    return {
+        "embed_tokens.weight": WeightData(
+            name="embed_tokens.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.bfloat16,
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
+        ),
+    }
+
+
+def test_parse_modelopt_nvfp4_qwen3_8_flash_next_ignore_list(
+    hf_config_qwen3_8_flash_next_nvfp4: AutoConfig,
+    state_dict_bf16_embed_tokens: dict[str, WeightData],
+) -> None:
+    """Reads RadixArk/Qwen3.8-Flash-Next-NVFP4's ``ignore`` list verbatim.
+
+    Only the routed experts of the 48 MoE layers carry NVFP4 weights. Every
+    attention tensor is BF16, named by two globs -- ``*.self_attn.*`` for the
+    12 full-attention layers and ``*.linear_attn.*`` for the 36 gated-DeltaNet
+    ones, which ``layer_types`` tells apart -- and the gated shared expert is
+    BF16 under the singular ``shared_expert`` spelling Qwen uses.
+
+    The checkpoint writes those 12 as ``qwen_sparse_attention``, which only its
+    own remote-code config class accepts; ``layer_types`` here holds the
+    ``full_attention`` the reference rewrites to it, and
+    ``test_modelopt_layer_types_read_through_a_vl_text_config`` covers the
+    checkpoint's own spelling.
+    """
+    quant_config = parse_quant_config(
+        hf_config_qwen3_8_flash_next_nvfp4,
+        state_dict_bf16_embed_tokens,
+        DType.uint8,
+    )
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.NVFP4
+    # `*.mlp.gate*` and `*.mlp.shared_expert*` name parts of the MLP, so the
+    # routed experts stay quantized -- the layer must not roll up to ignored.
+    assert quant_config.mlp_quantized_layers == set(range(48))
+    assert quant_config.attn_quantized_layers == set()
+    assert quant_config.shared_experts_weight_dtype == DType.bfloat16
+    assert quant_config.embedding_output_dtype == DType.bfloat16
+
+
+def test_modelopt_nvfp4_flash_next_ignore_list_is_prefix_independent(
+    hf_config_qwen3_8_flash_next_nvfp4: AutoConfig,
+    state_dict_bf16_embed_tokens: dict[str, WeightData],
+) -> None:
+    """The leading-``*`` globs hold whichever prefix the arch passes.
+
+    Which prefix a multimodal architecture strips is its own choice, and this
+    checkpoint's attention globs are anchored on the module name rather than on
+    the model root, so the answer cannot depend on it.
+    """
+    quant_config = parse_quant_config(
+        hf_config_qwen3_8_flash_next_nvfp4,
+        state_dict_bf16_embed_tokens,
+        DType.uint8,
+        state_dict_name_prefix="",
+        ignored_modules_prefix="language_model.",
+    )
+
+    assert quant_config is not None
+    assert quant_config.mlp_quantized_layers == set(range(48))
+    assert quant_config.attn_quantized_layers == set()
+
+
+@pytest.mark.parametrize(
+    ("pattern", "expected_ignored"),
+    [
+        # Descendant globs cover the whole subtree.
+        ("*.self_attn.*", True),
+        ("model.layers.7.self_attn.*", True),
+        ("layers.7.self_attn.*", True),
+        # Trailing-wildcard globs on the module itself, already handled.
+        ("*.self_attn*", True),
+        ("model.layers.7.self_attn*", True),
+        ("model.layers.7.*", True),
+        # A glob naming only part of the subtree must not cover it.
+        ("*.self_attn.q_proj", False),
+        ("*.self_attn.q*", False),
+        ("*.mlp.gate*", False),
+        ("mtp.*", False),
+        ("*hyper_connection*", False),
+    ],
+)
+def test_modelopt_layer_subtree_ignored_glob_shapes(
+    pattern: str, expected_ignored: bool
+) -> None:
+    """Pins which glob shapes leave a whole layer subtree unquantized.
+
+    ``*.self_attn.*`` and ``*.self_attn.q_proj`` both match modules under
+    ``self_attn`` and differ only in whether they match *every* one, which is
+    what makes the layer's attention BF16 rather than partially quantized.
+    """
+    assert (
+        _modelopt_layer_subtree_ignored(7, "self_attn", [pattern])
+        is expected_ignored
+    )
+
+
+def test_modelopt_linear_attn_counts_as_the_attention_subtree() -> None:
+    """A hybrid checkpoint may only name ``linear_attn`` in its ``ignore`` list.
+
+    Its linear-attention layers hold no ``self_attn`` tensors at all, so
+    testing that spelling alone would report the layer as attention-quantized
+    and build FP4 projections for BF16 weights. Without ``layer_types`` there
+    is nothing to say which layer is which, so either spelling has to count.
+    """
+    hf_config = SimpleNamespace(num_hidden_layers=4)
+    mlp, attn = _quantized_layers_from_modelopt_ignore(
+        hf_config, ["*.linear_attn.*"]
+    )
+
+    assert attn == set()
+    assert mlp == {0, 1, 2, 3}
+
+
+def test_modelopt_layer_types_keep_the_two_attentions_apart() -> None:
+    """``layer_types`` decides which spelling a given layer is judged by.
+
+    A checkpoint that leaves its Gated DeltaNet layers BF16 while quantizing
+    full attention names only ``*.linear_attn.*``. Testing both spellings for
+    every index would drop the ``self_attn`` layers too and read their packed
+    weights as BF16.
+    """
+    hf_config = SimpleNamespace(
+        num_hidden_layers=4,
+        layer_types=[
+            "linear_attention",
+            "linear_attention",
+            "linear_attention",
+            "full_attention",
+        ],
+    )
+    _, attn = _quantized_layers_from_modelopt_ignore(
+        hf_config, ["*.linear_attn.*"]
+    )
+    assert attn == {3}
+
+    # And the mirror image, which is the shape a checkpoint quantizing only
+    # the linear layers would take.
+    _, attn = _quantized_layers_from_modelopt_ignore(
+        hf_config, ["*.self_attn.*"]
+    )
+    assert attn == {0, 1, 2}
+
+
+def test_modelopt_layer_types_read_through_a_vl_text_config() -> None:
+    """The field sits on the text config of a multimodal checkpoint.
+
+    ``num_hidden_layers`` is already read from there, and a mismatch would
+    silently fall back to the both-spellings union rather than fail.
+    """
+    hf_config = SimpleNamespace(
+        text_config=SimpleNamespace(
+            num_hidden_layers=2,
+            layer_types=["linear_attention", "qwen_sparse_attention"],
+        )
+    )
+    _, attn = _quantized_layers_from_modelopt_ignore(
+        hf_config, ["*.linear_attn.*"]
+    )
+    # `qwen_sparse_attention` is a full-attention layer under another name;
+    # its tensors live under `self_attn`.
+    assert attn == {1}
+
+
+def test_modelopt_shared_expert_singular_spelling() -> None:
+    """Qwen writes ``shared_expert``; DeepSeek and GLM write ``shared_experts``.
+
+    Reading only the plural leaves the shared expert marked quantized while
+    its weights are BF16, which is a silent mis-typing rather than an error.
+    """
+    for pattern in (
+        "*.mlp.shared_expert.*",
+        "layers.*.mlp.shared_experts*",
+        "*shared_expert*",
+    ):
+        assert (
+            _modelopt_shared_experts_quantized_dtype([pattern])
+            == DType.bfloat16
+        ), pattern
+
+    assert _modelopt_shared_experts_quantized_dtype(["*.mlp.gate*"]) is None
+
+
+def test_modelopt_shared_expert_gate_is_not_the_shared_expert() -> None:
+    """``shared_expert_gate`` is a separate one-column gating projection.
+
+    A checkpoint can leave that gate BF16 while quantizing the shared expert
+    itself, so treating the name as a substring reads the expert's packed
+    weights as BF16.
+    """
+    assert (
+        _modelopt_shared_experts_quantized_dtype(["*.mlp.shared_expert_gate*"])
+        is None
+    )
+    # Qwen3.8-Flash-Next ignores both, and the expert's own glob still counts.
+    assert (
+        _modelopt_shared_experts_quantized_dtype(
+            ["*.mlp.shared_expert.*", "*.mlp.shared_expert_gate*"]
+        )
+        == DType.bfloat16
+    )
 
 
 def test_parse_float4_skips_gptq_quant_method(
@@ -823,3 +1215,94 @@ def test_parse_mxfp4_quark_quant_method(
 
     assert quant_config is not None
     assert quant_config.format == QuantFormat.MXFP4
+
+
+def _minimal_nvfp4_quant_config() -> QuantConfig:
+    """Build a tiny NVFP4 :class:`QuantConfig` for layout inference tests."""
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.STATIC,
+        dtype=DType.float32,
+        block_size=(1, 16),
+    )
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float8_e4m3fn,
+        block_size=(1, 16),
+    )
+    layers = {0, 1}
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=layers,
+        attn_quantized_layers=set(),
+        embedding_output_dtype=DType.bfloat16,
+        format=QuantFormat.NVFP4,
+    )
+
+
+def test_infer_kimi_nvfp4_weight_flags_k25_style() -> None:
+    """Kimi K2.5 NVFP4: dense layer 0 and shared experts carry FP4 scales."""
+    from max.pipelines.architectures.kimik2_5.kimi_nvfp4_policy import (
+        infer_kimi_nvfp4_weight_flags,
+    )
+
+    state_dict = {
+        "language_model.layers.0.mlp.gate_proj.weight": SimpleNamespace(
+            dtype=DType.uint8
+        ),
+        "language_model.layers.0.mlp.gate_proj.weight_scale": SimpleNamespace(
+            dtype=DType.float8_e4m3fn
+        ),
+        "language_model.layers.1.mlp.shared_experts.gate_proj.weight": (
+            SimpleNamespace(dtype=DType.uint8)
+        ),
+        "language_model.layers.1.mlp.shared_experts.gate_proj.weight_scale": (
+            SimpleNamespace(dtype=DType.float8_e4m3fn)
+        ),
+    }
+    shared_dtype, dense_skip = infer_kimi_nvfp4_weight_flags(
+        state_dict,
+        first_k_dense_replace=1,
+        quant_config=_minimal_nvfp4_quant_config(),
+    )
+    assert shared_dtype is None
+    assert dense_skip == frozenset()
+
+
+def test_infer_kimi_nvfp4_weight_flags_k26_style() -> None:
+    """Kimi K2.6 NVFP4: layer 0 dense + shared experts omit ModelOpt scales."""
+    from max.pipelines.architectures.kimik2_5.kimi_nvfp4_policy import (
+        infer_kimi_nvfp4_weight_flags,
+    )
+
+    state_dict = {
+        "language_model.layers.0.mlp.gate_proj.weight": SimpleNamespace(
+            dtype=DType.bfloat16
+        ),
+        "language_model.layers.1.mlp.shared_experts.gate_proj.weight": (
+            SimpleNamespace(dtype=DType.bfloat16)
+        ),
+    }
+    shared_dtype, dense_skip = infer_kimi_nvfp4_weight_flags(
+        state_dict,
+        first_k_dense_replace=1,
+        quant_config=_minimal_nvfp4_quant_config(),
+    )
+    assert shared_dtype == DType.bfloat16
+    assert dense_skip == frozenset({0})
+
+
+def test_infer_kimi_nvfp4_weight_flags_non_fp4() -> None:
+    """Without NVFP4 quant config, inference returns defaults."""
+    from max.pipelines.architectures.kimik2_5.kimi_nvfp4_policy import (
+        infer_kimi_nvfp4_weight_flags,
+    )
+
+    shared_dtype, dense_skip = infer_kimi_nvfp4_weight_flags(
+        {},
+        first_k_dense_replace=1,
+        quant_config=None,
+    )
+    assert shared_dtype is None
+    assert dense_skip == frozenset()

@@ -16,8 +16,11 @@ max.pipelines.lib.registry
    :toctree: generated
    :template: autosummary/class.rst
 
-   SupportedArchitecture
+   PipelineModelType
    PipelineRegistry
+   PipelineTypes
+   RetrievedPipeline
+   SupportedArchitecture
 
 .. autosummary::
    :nosignatures:

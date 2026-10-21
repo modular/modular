@@ -14,7 +14,7 @@
 
 from hypothesis import given
 from hypothesis import strategies as st
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 # Instead of testing mlir string escaping, just limit the label to something reasonable.
 printable_ascii = st.characters(min_codepoint=ord(" "), max_codepoint=ord("~"))
@@ -26,11 +26,11 @@ def test_tensor_prints(
 ) -> None:
     with Graph("print_tensors", input_types=[input_type]) as graph:
         out = graph.inputs[0].tensor
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[DeviceRef.CPU()]
         out.print(label1)
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[DeviceRef.CPU()]
         out.print(label2)
-        chain_2 = graph._current_chain
+        chain_2 = graph.device_chains[DeviceRef.CPU()]
 
         graph.output(out)
 
@@ -50,11 +50,11 @@ def test_tensor_prints(
 )
 def test_prints(msg1: str, label1: str, msg2: str, label2: str) -> None:
     with Graph("print") as graph:
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[DeviceRef.CPU()]
         ops.print(msg1, label1)
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[DeviceRef.CPU()]
         ops.print(msg2, label2)
-        chain_2 = graph._current_chain
+        chain_2 = graph.device_chains[DeviceRef.CPU()]
 
         graph.output()
 

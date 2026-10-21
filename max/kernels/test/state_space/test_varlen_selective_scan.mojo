@@ -13,17 +13,8 @@
 
 from std.math import exp, log
 
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import TileTensor, row_major
 from layout._fillers import random
-from std.memory import alloc
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_state_update_cpu,
@@ -38,7 +29,7 @@ comptime LOG2E = 1.4426950408889634
 comptime MAX_DSTATE = 256
 
 
-@always_inline
+@inline(.always)
 def softplus_ref(val: Float32) -> Float32:
     """Reference softplus implementation: log(1 + exp(x))."""
     if val > 20.0:
@@ -48,7 +39,7 @@ def softplus_ref(val: Float32) -> Float32:
     return log(one + exp_val)
 
 
-@always_inline
+@inline(.always)
 def sigmoid_ref(val: Float32) -> Float32:
     """Reference sigmoid implementation."""
     if val < -20.0:
@@ -57,7 +48,7 @@ def sigmoid_ref(val: Float32) -> Float32:
     return 1.0 / (1.0 + exp_neg)
 
 
-@always_inline
+@inline(.always)
 def silu_ref(val: Float32) -> Float32:
     """Reference SiLU implementation."""
     if val < -20.0:
@@ -99,112 +90,91 @@ def run_varlen_selective_scan_fwd[
         total_length += seq_lengths[i]
 
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-
     # u: (dim, total_length)
-    var u_heap = alloc[Scalar[dtype]](dim * total_length)
-    var u_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        u_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
-    )
+    var u_heap = List(length=dim * total_length, fill=Scalar[dtype](0))
+    var u_h = TileTensor(u_heap, row_major(dim, total_length))
 
     # delta: (dim, total_length) - also used as output if no z
-    var delta_heap = alloc[Scalar[dtype]](dim * total_length)
-    var delta_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        delta_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
-    )
+    var delta_heap = List(length=dim * total_length, fill=Scalar[dtype](0))
+    var delta_h = TileTensor(delta_heap, row_major(dim, total_length))
 
     # A: (dim, dstate)
-    var A_heap = alloc[Scalar[dtype]](dim * dstate)
-    var A_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        A_heap, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
+    var A_heap = List(length=dim * dstate, fill=Scalar[dtype](0))
+    var A_h = TileTensor(A_heap, row_major(dim, dstate))
 
     # B: (ngroups, dstate, total_length)
-    var B_heap = alloc[Scalar[dtype]](ngroups * dstate * total_length)
-    var B_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var B_heap = List(
+        length=ngroups * dstate * total_length, fill=Scalar[dtype](0)
+    )
+    var B_h = TileTensor(
         B_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(ngroups, dstate, total_length)
-        ),
+        row_major((ngroups, dstate, total_length)),
     )
 
     # C: (ngroups, dstate, total_length)
-    var C_heap = alloc[Scalar[dtype]](ngroups * dstate * total_length)
-    var C_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var C_heap = List(
+        length=ngroups * dstate * total_length, fill=Scalar[dtype](0)
+    )
+    var C_h = TileTensor(
         C_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(ngroups, dstate, total_length)
-        ),
+        row_major((ngroups, dstate, total_length)),
     )
 
     # D: (dim,) or empty
     var D_size = dim if has_D else 0
-    var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
-    var D_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        D_heap, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
+    var D_heap = List(length=max(D_size, 1), fill=Scalar[dtype](0))
+    var D_h = TileTensor(D_heap, row_major(D_size))
 
     # z: (dim, total_length) or empty
     var z_size = dim * total_length if has_z else 0
-    var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
-    var z_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var z_heap = List(length=max(z_size, 1), fill=Scalar[dtype](0))
+    var z_h = TileTensor(
         z_heap,
-        RuntimeLayout[layout_2d].row_major(
-            Index(dim if has_z else 0, total_length if has_z else 0)
-        ),
+        row_major((dim if has_z else 0, total_length if has_z else 0)),
     )
 
     # delta_bias: (dim,) or empty
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_heap = alloc[Scalar[dtype]](max(delta_bias_size, 1))
-    var delta_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var delta_bias_heap = List(
+        length=max(delta_bias_size, 1), fill=Scalar[dtype](0)
+    )
+    var delta_bias_h = TileTensor(
         delta_bias_heap,
-        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
+        row_major(delta_bias_size),
     )
 
     # ssm_states: (batch, dim, dstate) - in/out
-    var ssm_states_heap = alloc[Scalar[dtype]](batch * dim * dstate)
-    var ssm_states_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        ssm_states_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    ).fill(0)
+    var ssm_states_heap = List(
+        length=batch * dim * dstate, fill=Scalar[dtype](0)
+    )
 
     # output: (dim, total_length) - same as delta
-    var output_heap = alloc[Scalar[dtype]](dim * total_length)
-    var output_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var output_heap = List(length=dim * total_length, fill=Scalar[dtype](0))
+    var output_h = TileTensor(
         output_heap,
-        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
-    ).fill(0)
+        row_major(dim, total_length),
+    )
 
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
-    var query_start_loc_heap = alloc[Scalar[DType.int32]](batch + 1)
-    var query_start_loc_h = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
+    var query_start_loc_heap = List(length=batch + 1, fill=Int32(0))
+    var query_start_loc_h = TileTensor(
         query_start_loc_heap,
-        RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
+        row_major(batch + 1),
     )
     var cumsum = 0
-    query_start_loc_h.ptr.store(0, Scalar[DType.int32](0))
+    query_start_loc_h[0] = Int32(0)
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
+        query_start_loc_h[i + 1] = Int32(cumsum)
 
     # cache_indices: (batch,) - can be empty or identity mapping
-    var cache_indices_heap = alloc[Scalar[DType.int32]](batch)
-    var cache_indices_h = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
-        cache_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
-    )
+    var cache_indices_heap = List(length=batch, fill=Int32(0))
+    var cache_indices_h = TileTensor(cache_indices_heap, row_major(batch))
     for i in range(batch):
-        cache_indices_h.ptr.store(i, Scalar[DType.int32](i))
+        cache_indices_h[i] = Int32(i)
 
     # has_initial_state: (batch,) - can be empty or all False
-    var has_initial_state_heap = alloc[Scalar[DType.bool]](batch)
-    var has_initial_state_h = LayoutTensor[DType.bool, layout_1d, MutAnyOrigin](
-        has_initial_state_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
-    )
-    for i in range(batch):
-        has_initial_state_h.ptr.store(i, Scalar[DType.bool](False))
+    var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
 
     # Initialize input data
     random(u_h)
@@ -220,101 +190,30 @@ def run_varlen_selective_scan_fwd[
         random(delta_bias_h)
 
     # Scale A to be negative for stability
+    var A_flat = A_h.reshape(row_major(dim * dstate))
     for i in range(dim * dstate):
-        var val = A_h.ptr.load(i)
-        A_h.ptr.store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_flat[i]
+        A_flat[i] = Scalar[dtype](Float32(val) * -0.5)
 
     # Scale delta to be positive
+    var delta_flat = delta_h.reshape(row_major(dim * total_length))
     for i in range(dim * total_length):
-        var val = delta_h.ptr.load(i)
-        delta_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_flat[i]
+        delta_flat[i] = Scalar[dtype](abs(Float32(val)) * 0.5)
 
-    # Create TileTensor versions for kernel call
-    var u_tt = TileTensor(u_heap, row_major(Idx(dim), Idx(total_length)))
-    var delta_tt = TileTensor(
-        delta_heap, row_major(Idx(dim), Idx(total_length))
-    )
-    var A_tt = TileTensor(A_heap, row_major(Idx(dim), Idx(dstate)))
-    var B_tt = TileTensor(
-        B_heap,
-        row_major(Idx(ngroups), Idx(dstate), Idx(total_length)),
-    )
-    var C_tt = TileTensor(
-        C_heap,
-        row_major(Idx(ngroups), Idx(dstate), Idx(total_length)),
-    )
-    var D_tt = TileTensor(
-        D_heap,
-        row_major(
-            Idx(D_size),
-        ),
-    )
-    var z_tt = TileTensor(
-        z_heap,
-        row_major(
-            (
-                Idx(dim if has_z else 0),
-                Idx(total_length if has_z else 0),
-            )
-        ),
-    )
-    var delta_bias_tt = TileTensor(
-        delta_bias_heap,
-        row_major(
-            Idx(delta_bias_size),
-        ),
-    )
     var ssm_states_tt = TileTensor(
         ssm_states_heap,
-        row_major(Idx(batch), Idx(dim), Idx(dstate)),
-    )
-    var output_tt = TileTensor(
-        output_heap, row_major(Idx(dim), Idx(total_length))
-    )
-    var query_start_loc_tt = TileTensor(
-        query_start_loc_heap,
-        row_major(
-            Idx(batch + 1),
-        ),
-    )
-    var cache_indices_tt = TileTensor(
-        cache_indices_heap,
-        row_major(
-            Idx(batch),
-        ),
+        row_major(batch, dim, dstate),
     )
     var has_initial_state_tt = TileTensor(
         has_initial_state_heap,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
 
-    var u_buf = u_h
-    var delta_buf = delta_h
-    var A_buf = A_h
-    var B_buf = B_h
-    var C_buf = C_h
-    var D_buf = D_h
     var z_buf = z_h
-    var delta_bias_buf = delta_bias_h
-    var ssm_states_buf = ssm_states_h
     var output_buf = output_h
-    var query_start_loc_buf = query_start_loc_h
-    var cache_indices_buf = cache_indices_h
-    var has_initial_state_buf = has_initial_state_h
-
-    # Strides for row-major layout using IndexList types
-    var u_strides = IndexList[2](total_length, 1)
-    var delta_strides = IndexList[2](total_length, 1)
-    var A_strides = IndexList[2](dstate, 1)
-    var B_strides = IndexList[3](dstate * total_length, total_length, 1)
-    var C_strides = IndexList[3](dstate * total_length, total_length, 1)
-    var D_strides = IndexList[1](1)
-    var z_strides = IndexList[2](total_length, 1)
-    var delta_bias_strides = IndexList[1](1)
-    var ssm_states_strides = IndexList[3](dim * dstate, dstate, 1)
-    var out_strides = IndexList[2](total_length, 1)
 
     # Call kernel
     varlen_selective_scan_fwd_cpu[
@@ -326,59 +225,38 @@ def run_varlen_selective_scan_fwd[
         batch,
         Int32(-1),  # pad_slot_id
         Int8(1) if delta_softplus else Int8(0),
-        u_tt,
-        delta_tt,
-        A_tt,
-        B_tt,
-        C_tt,
-        D_tt,
-        z_tt,
-        delta_bias_tt,
+        u_h,
+        delta_h,
+        A_h,
+        B_h,
+        C_h,
+        D_h,
+        z_h,
+        delta_bias_h,
         ssm_states_tt,
-        output_tt,
-        query_start_loc_tt,
-        cache_indices_tt,
+        output_h,
+        query_start_loc_h,
+        cache_indices_h,
         has_initial_state_tt,
-        u_strides,
-        delta_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        delta_bias_strides,
-        ssm_states_strides,
-        out_strides,
     )
 
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
-    var output_to_check = z_buf if has_z else output_buf
-    var output_size = dim * total_length
-    for i in range(output_size):
-        if abs(Float32(output_to_check.ptr.load(i))) > 1e-6:
-            has_nonzero = True
+    for d in range(dim):
+        for t in range(total_length):
+            var value = Float32(z_buf[d, t]) if has_z else Float32(
+                output_buf[d, t]
+            )
+            if abs(value) > 1e-6:
+                has_nonzero = True
+                break
+        if has_nonzero:
             break
 
     if not has_nonzero:
         raise Error(
             "Output is all zeros - kernel may not be executing correctly"
         )
-
-    # Cleanup
-    u_heap.free()
-    delta_heap.free()
-    A_heap.free()
-    B_heap.free()
-    C_heap.free()
-    D_heap.free()
-    z_heap.free()
-    delta_bias_heap.free()
-    ssm_states_heap.free()
-    output_heap.free()
-    query_start_loc_heap.free()
-    cache_indices_heap.free()
-    has_initial_state_heap.free()
 
 
 def run_varlen_selective_state_update[
@@ -404,74 +282,59 @@ def run_varlen_selective_state_update[
     var nheads_ngroups_ratio = nheads // ngroups
 
     # Allocate host memory
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-
     # state: (batch, nheads, dim, dstate) - in/out
-    var state_heap = alloc[Scalar[dtype]](batch * nheads * dim * dstate)
-    var state_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        state_heap,
-        RuntimeLayout[layout_4d].row_major(Index(batch, nheads, dim, dstate)),
-    ).fill(0)
+    var state_heap = List(
+        length=batch * nheads * dim * dstate, fill=Scalar[dtype](0)
+    )
 
     # output: (batch, nheads, dim)
-    var output_heap = alloc[Scalar[dtype]](batch * nheads * dim)
-    var output_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var output_heap = List(length=batch * nheads * dim, fill=Scalar[dtype](0))
+    var output_h = TileTensor(
         output_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, nheads, dim)),
-    ).fill(0)
+        row_major(batch, nheads, dim),
+    )
 
     # x: (batch, nheads, dim)
-    var x_heap = alloc[Scalar[dtype]](batch * nheads * dim)
-    var x_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        x_heap, RuntimeLayout[layout_3d].row_major(Index(batch, nheads, dim))
-    )
+    var x_heap = List(length=batch * nheads * dim, fill=Scalar[dtype](0))
+    var x_h = TileTensor(x_heap, row_major(batch, nheads, dim))
 
     # dt: (batch, nheads, dim)
-    var dt_heap = alloc[Scalar[dtype]](batch * nheads * dim)
-    var dt_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        dt_heap, RuntimeLayout[layout_3d].row_major(Index(batch, nheads, dim))
-    )
+    var dt_heap = List(length=batch * nheads * dim, fill=Scalar[dtype](0))
+    var dt_h = TileTensor(dt_heap, row_major(batch, nheads, dim))
 
     # A: (nheads, dim, dstate)
-    var A_heap = alloc[Scalar[dtype]](nheads * dim * dstate)
-    var A_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        A_heap, RuntimeLayout[layout_3d].row_major(Index(nheads, dim, dstate))
-    )
+    var A_heap = List(length=nheads * dim * dstate, fill=Scalar[dtype](0))
+    var A_h = TileTensor(A_heap, row_major(nheads, dim, dstate))
 
     # B: (batch, ngroups, dstate)
-    var B_heap = alloc[Scalar[dtype]](batch * ngroups * dstate)
-    var B_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var B_heap = List(length=batch * ngroups * dstate, fill=Scalar[dtype](0))
+    var B_h = TileTensor(
         B_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, ngroups, dstate)),
+        row_major(batch, ngroups, dstate),
     )
 
     # C: (batch, ngroups, dstate)
-    var C_heap = alloc[Scalar[dtype]](batch * ngroups * dstate)
-    var C_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var C_heap = List(length=batch * ngroups * dstate, fill=Scalar[dtype](0))
+    var C_h = TileTensor(
         C_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, ngroups, dstate)),
+        row_major(batch, ngroups, dstate),
     )
 
     # D: (nheads, dim) or empty
     var D_size = nheads * dim if has_D else 0
-    var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
-    var D_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var D_heap = List(length=max(D_size, 1), fill=Scalar[dtype](0))
+    var D_h = TileTensor(
         D_heap,
-        RuntimeLayout[layout_2d].row_major(
-            Index(nheads if has_D else 0, dim if has_D else 0)
-        ),
+        row_major((nheads if has_D else 0, dim if has_D else 0)),
     )
 
     # z: (batch, nheads, dim) or empty
     var z_size = batch * nheads * dim if has_z else 0
-    var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
-    var z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var z_heap = List(length=max(z_size, 1), fill=Scalar[dtype](0))
+    var z_h = TileTensor(
         z_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
+        row_major(
+            (
                 batch if has_z else 0,
                 nheads if has_z else 0,
                 dim if has_z else 0,
@@ -481,24 +344,20 @@ def run_varlen_selective_state_update[
 
     # dt_bias: (nheads, dim) or empty
     var dt_bias_size = nheads * dim if has_dt_bias else 0
-    var dt_bias_heap = alloc[Scalar[dtype]](max(dt_bias_size, 1))
-    var dt_bias_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var dt_bias_heap = List(length=max(dt_bias_size, 1), fill=Scalar[dtype](0))
+    var dt_bias_h = TileTensor(
         dt_bias_heap,
-        RuntimeLayout[layout_2d].row_major(
-            Index(nheads if has_dt_bias else 0, dim if has_dt_bias else 0)
-        ),
+        row_major((nheads if has_dt_bias else 0, dim if has_dt_bias else 0)),
     )
 
     # state_batch_indices: (batch,) - can be empty or identity
-    var state_batch_indices_heap = alloc[Scalar[DType.int32]](batch)
-    var state_batch_indices_h = LayoutTensor[
-        DType.int32, layout_1d, MutAnyOrigin
-    ](
+    var state_batch_indices_heap = List(length=batch, fill=Int32(0))
+    var state_batch_indices_h = TileTensor(
         state_batch_indices_heap,
-        RuntimeLayout[layout_1d].row_major(Index(batch)),
+        row_major(batch),
     )
     for i in range(batch):
-        state_batch_indices_h.ptr.store(i, Scalar[DType.int32](i))
+        state_batch_indices_h[i] = Int32(i)
 
     # Initialize input data
     random(x_h)
@@ -514,97 +373,21 @@ def run_varlen_selective_state_update[
         random(dt_bias_h)
 
     # Scale A to be negative for stability
+    var A_flat = A_h.reshape(row_major(nheads * dim * dstate))
     for i in range(nheads * dim * dstate):
-        var val = A_h.ptr.load(i)
-        A_h.ptr.store(i, Scalar[dtype](Float32(val) * -0.5))
+        var val = A_flat[i]
+        A_flat[i] = Scalar[dtype](Float32(val) * -0.5)
 
     # Scale dt to be positive
+    var dt_flat = dt_h.reshape(row_major(batch * nheads * dim))
     for i in range(batch * nheads * dim):
-        var val = dt_h.ptr.load(i)
-        dt_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = dt_flat[i]
+        dt_flat[i] = Scalar[dtype](abs(Float32(val)) * 0.5)
 
-    # Create TileTensor versions for kernel call
     var state_tt = TileTensor(
         state_heap,
-        row_major(Idx(batch), Idx(nheads), Idx(dim), Idx(dstate)),
+        row_major(batch, nheads, dim, dstate),
     )
-    var output_tt2 = TileTensor(
-        output_heap,
-        row_major(Idx(batch), Idx(nheads), Idx(dim)),
-    )
-    var x_tt2 = TileTensor(x_heap, row_major(Idx(batch), Idx(nheads), Idx(dim)))
-    var dt_tt2 = TileTensor(
-        dt_heap, row_major(Idx(batch), Idx(nheads), Idx(dim))
-    )
-    var A_tt2 = TileTensor(
-        A_heap, row_major(Idx(nheads), Idx(dim), Idx(dstate))
-    )
-    var B_tt2 = TileTensor(
-        B_heap, row_major(Idx(batch), Idx(ngroups), Idx(dstate))
-    )
-    var C_tt2 = TileTensor(
-        C_heap, row_major(Idx(batch), Idx(ngroups), Idx(dstate))
-    )
-    var D_tt2 = TileTensor(
-        D_heap,
-        row_major(
-            (
-                Idx(nheads if has_D else 0),
-                Idx(dim if has_D else 0),
-            )
-        ),
-    )
-    var z_tt2 = TileTensor(
-        z_heap,
-        row_major(
-            (
-                Idx(batch if has_z else 0),
-                Idx(nheads if has_z else 0),
-                Idx(dim if has_z else 0),
-            )
-        ),
-    )
-    var dt_bias_tt2 = TileTensor(
-        dt_bias_heap,
-        row_major(
-            (
-                Idx(nheads if has_dt_bias else 0),
-                Idx(dim if has_dt_bias else 0),
-            )
-        ),
-    )
-    var state_batch_indices_tt = TileTensor(
-        state_batch_indices_heap,
-        row_major(
-            Idx(batch),
-        ),
-    )
-
-    var state_buf = state_h
-    var output_buf = output_h
-    var x_buf = x_h
-    var dt_buf = dt_h
-    var A_buf = A_h
-    var B_buf = B_h
-    var C_buf = C_h
-    var D_buf = D_h
-    var z_buf = z_h
-    var dt_bias_buf = dt_bias_h
-    var state_batch_indices_buf = state_batch_indices_h
-
-    # Strides for row-major layout using IndexList types
-    var state_strides = IndexList[4](
-        nheads * dim * dstate, dim * dstate, dstate, 1
-    )
-    var x_strides = IndexList[3](nheads * dim, dim, 1)
-    var dt_strides = IndexList[3](nheads * dim, dim, 1)
-    var dt_bias_strides = IndexList[2](dim, 1)
-    var A_strides = IndexList[3](dim * dstate, dstate, 1)
-    var B_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var C_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var D_strides = IndexList[2](dim, 1)
-    var z_strides = IndexList[3](nheads * dim, dim, 1)
-    var out_strides = IndexList[3](nheads * dim, dim, 1)
 
     # Call kernel
     varlen_selective_state_update_cpu[
@@ -619,32 +402,23 @@ def run_varlen_selective_state_update[
         Int8(1) if dt_softplus else Int8(0),
         Int8(1),  # has_state_batch_indices
         state_tt,
-        x_tt2,
-        dt_tt2,
-        A_tt2,
-        B_tt2,
-        C_tt2,
-        D_tt2,
-        z_tt2,
-        output_tt2,
-        dt_bias_tt2,
-        state_batch_indices_tt,
-        state_strides,
-        x_strides,
-        dt_strides,
-        dt_bias_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        out_strides,
+        x_h,
+        dt_h,
+        A_h,
+        B_h,
+        C_h,
+        D_h,
+        z_h,
+        output_h,
+        dt_bias_h,
+        state_batch_indices_h,
     )
 
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
+    var output_flat = output_h.reshape(row_major(batch * nheads * dim))
     for i in range(batch * nheads * dim):
-        if abs(Float32(output_h.ptr.load(i))) > 1e-6:
+        if abs(Float32(output_flat[i])) > 1e-6:
             has_nonzero = True
             break
 
@@ -652,19 +426,6 @@ def run_varlen_selective_state_update[
         raise Error(
             "Output is all zeros - kernel may not be executing correctly"
         )
-
-    # Cleanup
-    state_heap.free()
-    output_heap.free()
-    x_heap.free()
-    dt_heap.free()
-    A_heap.free()
-    B_heap.free()
-    C_heap.free()
-    D_heap.free()
-    z_heap.free()
-    dt_bias_heap.free()
-    state_batch_indices_heap.free()
 
 
 # =============================================================================
@@ -675,7 +436,7 @@ def run_varlen_selective_state_update[
 def test_varlen_selective_scan_fwd_equal_lengths() raises:
     """Test varlen selective scan forward with equal-length sequences."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,
@@ -687,7 +448,7 @@ def test_varlen_selective_scan_fwd_equal_lengths() raises:
 def test_varlen_selective_scan_fwd_variable_lengths() raises:
     """Test varlen selective scan forward with variable-length sequences."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,
@@ -699,7 +460,7 @@ def test_varlen_selective_scan_fwd_variable_lengths() raises:
 def test_varlen_selective_scan_fwd_without_D() raises:
     """Test varlen selective scan forward without D tensor."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=False,
         has_z=True,
@@ -711,7 +472,7 @@ def test_varlen_selective_scan_fwd_without_D() raises:
 def test_varlen_selective_scan_fwd_without_z() raises:
     """Test varlen selective scan forward without z tensor."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=False,
@@ -723,7 +484,7 @@ def test_varlen_selective_scan_fwd_without_z() raises:
 def test_varlen_selective_scan_fwd_with_delta_softplus() raises:
     """Test varlen selective scan forward with delta softplus activation."""
     run_varlen_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,
@@ -740,7 +501,7 @@ def test_varlen_selective_scan_fwd_with_delta_softplus() raises:
 def test_varlen_selective_state_update_basic() raises:
     """Test basic varlen selective state update."""
     run_varlen_selective_state_update[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,
@@ -752,7 +513,7 @@ def test_varlen_selective_state_update_basic() raises:
 def test_varlen_selective_state_update_without_D() raises:
     """Test varlen selective state update without D tensor."""
     run_varlen_selective_state_update[
-        DType.float32,
+        .float32,
         4,
         has_D=False,
         has_z=True,
@@ -764,7 +525,7 @@ def test_varlen_selective_state_update_without_D() raises:
 def test_varlen_selective_state_update_without_z() raises:
     """Test varlen selective state update without z tensor."""
     run_varlen_selective_state_update[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=False,
@@ -776,7 +537,7 @@ def test_varlen_selective_state_update_without_z() raises:
 def test_varlen_selective_state_update_with_dt_softplus() raises:
     """Test varlen selective state update with dt softplus activation."""
     run_varlen_selective_state_update[
-        DType.float32,
+        .float32,
         4,
         has_D=True,
         has_z=True,

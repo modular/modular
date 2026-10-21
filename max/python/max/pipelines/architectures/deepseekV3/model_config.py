@@ -15,26 +15,70 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheQuantizationConfig,
+    spec_decode_cache_slack,
+)
+from max.nn.kv_cache.cache_params import FP4_KV_CACHE_QUANTIZATION_GRANULARITY
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+
+def mla_kv_cache_quant_config(
+    cache_dtype: DType, qk_rope_head_dim: int
+) -> KVCacheQuantizationConfig | None:
+    """Returns the quantization config of an MLA latent cache of `cache_dtype`.
+
+    A `uint8` cache is a packed NVFP4 latent with one E4M3 scale per 16
+    elements. Its `qk_rope_head_dim` rope dims stay FP8, as in an FP8 cache:
+    rope dominates the attention scores, so E2M1 there costs accuracy. An FP8
+    cache reads at unit scale and carries no scales.
+    """
+    if cache_dtype == DType.uint8:
+        return KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn,
+            quantization_granularity=FP4_KV_CACHE_QUANTIZATION_GRANULARITY,
+            fp8_tail_dim=qk_rope_head_dim,
+        )
+    if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        # TODO(SERVOPT-1094): Set a valid scale_dtype when SnapMLA needs
+        # kv_scales.
+        return KVCacheQuantizationConfig(
+            scale_dtype=DType.int8, quantization_granularity=32
+        )
+    return None
 
 
 @dataclass(kw_only=True)
 class DeepseekV3Config(ArchConfigWithKVCache):
     """Configuration for DeepseekV3 models."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
 
     # MAX specific fields
     dtype: DType
@@ -42,6 +86,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     devices: list[DeviceRef]
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
+    quantization_encoding: SupportedEncoding | None = None
 
     vocab_size: int = 129280
     hidden_size: int = 7168
@@ -69,8 +114,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     max_position_embeddings: int = 4096
     """Maximum positional embeddings as defined by the original model."""
-    max_seq_len: int = 163840
-    """Maximum sequence length as defined by the MAX Engine pipeline configuration."""
+    max_seq_len: int
+    """Maximum sequence length as defined by the MAX Engine pipeline
+    configuration. Required so that a subclass ``initialize`` that forgets to
+    resolve it fails at construction instead of inheriting another model's
+    limit."""
 
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = False
@@ -86,6 +134,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     quant_config: QuantConfig | None = None
+    attn_quant_config: QuantConfig | None = None
+    """Quantization of the MLA projections when it differs from
+    ``quant_config``, such as rowwise FP8 attention beside MXFP4 experts."""
+    dense_mlp_layers_without_quant: frozenset[int] = frozenset()
+    """Dense prefix layers (indices ``< first_k_dense_replace``) that skip MLP quant."""
     ep_config: EPConfig | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
@@ -97,6 +150,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     eagle_aux_hidden_state_layer_ids: list[int] | None = None
     """Optional explicit hidden-state capture layer ids for EAGLE3."""
+
+    eplb_profile_enabled: bool = False
+    """When True, the language graph emits per-layer ep_counter_buffers
+    mutated in-place by scatter_nd_add. Set from
+    pipeline_config.runtime.eplb_profile at config build time."""
 
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
@@ -132,6 +190,17 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
 
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        return upper_bounded_default(
+            upper_bound=huggingface_config.max_position_embeddings,
+            default=model_config.max_length,
+        )
+
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
@@ -141,16 +210,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-        kvcache_quant_config = None
-        if kv_cache_config.cache_dtype in (
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-        ):
-            # Configure the KVCacheParams quantization parameters.
-            # TODO: Set valid scale_dtype when kv_scales are needed (SERVOPT-1094: [EPIC] SnapMLA Implementation).
-            kvcache_quant_config = KVCacheQuantizationConfig(
-                scale_dtype=DType.int8, quantization_granularity=32
-            )
+        kvcache_quant_config = mla_kv_cache_quant_config(
+            cache_dtype, huggingface_config.qk_rope_head_dim
+        )
 
         return kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -165,6 +227,14 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=kvcache_quant_config,
+            speculative_method=pipeline_config.speculative.speculative_method
+            if pipeline_config.speculative
+            else None,
+            num_draft_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
+            if pipeline_config.speculative
+            else 0,
         )
 
     @staticmethod
@@ -177,12 +247,14 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config and so on)
         should be set via the `finalize()` method.
 
         Args:
@@ -200,11 +272,13 @@ class DeepseekV3Config(ArchConfigWithKVCache):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -217,11 +291,6 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
-        )
-
-        max_seq_len = upper_bounded_default(
-            upper_bound=config.max_position_embeddings,
-            default=model_config.max_length,
         )
 
         return cls(
@@ -253,7 +322,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             first_k_dense_replace=config.first_k_dense_replace,
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
-            max_position_embeddings=config.max_position_embeddings,
+            max_position_embeddings=config.max_position_embeddings
+            + spec_decode_cache_slack(kv_params),
             max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
@@ -263,4 +333,5 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            quantization_encoding=quantization_encoding,
         )

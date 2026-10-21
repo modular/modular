@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.sys.defines import (
     get_defined_bool,
     get_defined_dtype,
@@ -27,18 +27,21 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import Idx, TileTensor, row_major
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
+from layout import TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allgather import allgather
-from comm import MAX_GPUS, Signal
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from comm import Signal
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 
 from std.testing import assert_true
 
 
-@always_inline
-@parameter
+@inline(.always)
 def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
     return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
@@ -46,7 +49,7 @@ def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
 
 def _compute_lengths[
     ngpus: Int, length_mode: StaticString
-](num_bytes: Int, elem_size: Int) -> InlineArray[Int, ngpus]:
+](num_bytes: Int, elem_size: Int) -> Array[Int, ngpus]:
     """Compute per-GPU element counts based on the length distribution mode.
 
     Modes:
@@ -58,25 +61,26 @@ def _compute_lengths[
                       (mimics off-by-one splits like 37919/37918).
     """
     var base_length = num_bytes // elem_size
-    var lengths = InlineArray[Int, ngpus](fill=base_length)
+    var lengths = Array[Int, ngpus](fill=base_length)
 
-    comptime if length_mode == "uniform":
-        pass
-    elif length_mode == "halved_last":
-        lengths[ngpus - 1] = base_length // 2
-    elif length_mode == "doubled_first":
-        lengths[0] = base_length * 2
-    elif length_mode == "staircase":
-        for i in range(ngpus):
-            lengths[i] = base_length * (i + 1) // ngpus
-    elif length_mode == "uneven":
-        # First ceil(ngpus/2) GPUs get base_length, rest get base_length - 1.
-        # If base_length is 0 the shorter ones clamp to 0.
-        var half = (ngpus + 1) // 2
-        for i in range(half, ngpus):
-            lengths[i] = max(base_length - 1, 0)
-    else:
-        comptime assert False, "unknown length_mode: " + length_mode
+    comptime match length_mode:
+        case "uniform":
+            pass
+        case "halved_last":
+            lengths[ngpus - 1] = base_length // 2
+        case "doubled_first":
+            lengths[0] = base_length * 2
+        case "staircase":
+            for i in range(ngpus):
+                lengths[i] = base_length * (i + 1) // ngpus
+        case "uneven":
+            # First ceil(ngpus/2) GPUs get base_length, rest get base_length - 1.
+            # If base_length is 0 the shorter ones clamp to 0.
+            var half = (ngpus + 1) // 2
+            for i in range(half, ngpus):
+                lengths[i] = max(base_length - 1, 0)
+        case _:
+            comptime assert False, t"unknown length_mode: {length_mode}"
 
     return lengths^
 
@@ -112,7 +116,7 @@ def bench_allgather[
 ](
     mut b: Bench,
     list_of_ctx: List[DeviceContext],
-    lengths: InlineArray[Int, ngpus],
+    lengths: Array[Int, ngpus],
     max_num_blocks: Optional[Int],
 ) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
@@ -130,18 +134,13 @@ def bench_allgather[
 
     # Create cache-busting input buffers for each GPU.
     var cb_inputs = List[CacheBustingBuffer[dtype]]()
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     # Create output device buffers: ngpus outputs per GPU (one per source).
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus * ngpus)
 
     # Create signal buffers for synchronization.
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     for gpu_idx in range(ngpus):
         var length = lengths[gpu_idx]
@@ -165,8 +164,9 @@ def bench_allgather[
             )
 
         # Host buffer for verification.
-        var host_buffer = alloc[Scalar[dtype]](cb_inputs[gpu_idx].alloc_size())
-        host_buffers.append(host_buffer)
+        var host_buffer = List[Scalar[dtype]](
+            unsafe_uninit_length=cb_inputs[gpu_idx].alloc_size()
+        )
 
         # Fill with GPU-specific values for cache busting.
         for i in range(
@@ -182,72 +182,71 @@ def bench_allgather[
             cb_inputs[gpu_idx].device_buffer(), host_buffer
         )
 
+        host_buffers.append(host_buffer^)
+
         # Signal buffers.
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
-        )
+        list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Build TileTensor arrays for allgather.
-    comptime InTileType = type_of(
-        TileTensor(
-            cb_inputs[0].unsafe_ptr(), row_major(Idx(lengths[0]))
-        ).as_immut()
-    )
-    var tt_in = InlineArray[InTileType, ngpus](uninitialized=True)
+    comptime InTileType = TileTensor[
+        dtype, type_of(row_major(lengths[0])), ImmutAnyOrigin
+    ]
+    var tt_in = Array[InTileType, ngpus](uninitialized=True)
 
-    comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(lengths[0])))
-    )
-    var tt_out = InlineArray[OutTileType, ngpus * ngpus](uninitialized=True)
+    comptime OutTileType = TileTensor[
+        dtype, type_of(row_major(lengths[0])), MutAnyOrigin
+    ]
+    var tt_out = Array[OutTileType, ngpus * ngpus](uninitialized=True)
 
     for gpu_idx in range(ngpus):
         comptime for src_idx in range(ngpus):
             var flat_idx = gpu_idx * ngpus + src_idx
             tt_out[flat_idx] = TileTensor(
-                out_bufs_list[flat_idx].unsafe_ptr(),
-                row_major(Idx(lengths[src_idx])),
+                out_bufs_list[flat_idx],
+                row_major(lengths[src_idx]),
             )
         list_of_ctx[gpu_idx].synchronize()
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
-        @parameter
-        @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+    ) raises {mut tt_in, imm}:
+        @inline(.always)
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut tt_in, imm}:
             # Update input pointers to the cache-busted offset.
             comptime for i in range(ngpus):
                 tt_in[i] = TileTensor(
                     cb_inputs[i].offset_ptr(cache_iter),
-                    row_major(Idx(lengths[i])),
-                ).as_immut()
+                    row_major(lengths[i]),
+                ).as_imm()
 
-            var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
-            comptime for src_idx in range(ngpus):
-                device_out[src_idx] = tt_out[ctx_idx * ngpus + src_idx]
-
+            # `tt_out` is already the world-view output array `allgather`
+            # expects (`ngpus * ngpus` for this full-world, ungrouped bench).
             allgather(
                 tt_in,
-                device_out,
+                tt_out,
                 rank_sigs,
                 ctx_inner,
                 ctx_idx,
                 max_num_blocks,
             )
 
-        bencher.iter_custom[call_fn](ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
-    b.bench_multicontext[bench_iter](
+    bench_multicontext(
+        b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -277,7 +276,7 @@ def bench_allgather[
     var max_length = 0
     for i in range(ngpus):
         max_length = max(max_length, lengths[i])
-    var verify_host = alloc[Scalar[dtype]](max_length)
+    var verify_host = List(length=max_length, fill=Scalar[dtype](0))
 
     for gpu_idx in range(ngpus):
         for src_idx in range(ngpus):
@@ -304,17 +303,16 @@ def bench_allgather[
                     raise Error("Verification failed")
 
     # Cleanup.
-    verify_host.free()
-    for i in range(ngpus):
-        host_buffers[i].free()
+    _ = host_buffers^
     _ = signal_buffers^
     _ = cb_inputs^
+    _ = verify_host^
 
 
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
     comptime length_mode = get_defined_string["length_mode", "uniform"]()

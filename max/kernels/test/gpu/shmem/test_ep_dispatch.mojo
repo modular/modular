@@ -15,20 +15,20 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from std.collections import OptionalReg
-
 import std.time
 from std.io.io import _printf
 from std.math import sqrt
 from std.random import randint, randn, seed
 from std.sys import argv
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
-from std.memory import UnsafePointer
+from std.memory import Pointer
+from std.memory.alloc import unsafe_alloc
 from shmem import *
 from shmem.ep_comm import (
+    EP_NO_INPUT_SCALES,
     BF16TokenFormat,
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
@@ -52,7 +52,7 @@ def is_pressure_test() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def welford_update(
     mut mean: Float64, mut m2: Float64, count: Int, new_value: Float64
 ):
@@ -66,13 +66,13 @@ def welford_update(
 
 def legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
+](topk_ids: Pointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
-        var topk_ids_for_token = topk_ids + tok_id * top_k
+        var topk_ids_for_token = topk_ids.unsafe_offset(tok_id * top_k)
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        def is_duplicate() unified {read} -> Int:
+        def is_duplicate() {imm} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -81,7 +81,12 @@ def legalize_topk_ids[
 
         var duplicate_idx = is_duplicate()
         while duplicate_idx != -1:
-            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            randint(
+                topk_ids_for_token.unsafe_offset(duplicate_idx),
+                1,
+                0,
+                n_experts - 1,
+            )
             duplicate_idx = is_duplicate()
 
 
@@ -97,7 +102,7 @@ def test_dispatch[
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
 
     comptime output_tt_layout = row_major(
-        (Idx[max_recv_num_tokens](), Idx[hidden_size]())
+        (Idx[max_recv_num_tokens], Idx[hidden_size])
     )
     comptime token_fmt_type = BF16TokenFormat[
         output_layout=type_of(output_tt_layout), hidden_size, top_k
@@ -120,29 +125,27 @@ def test_dispatch[
             n_tokens_per_rank,
         )
 
-    var send_buf = shmem_malloc[DType.uint8](
-        UInt(n_tokens_per_rank * msg_bytes)
+    var send_buf = shmem_malloc[.uint8](n_tokens_per_rank * msg_bytes)
+    var recv_buf = shmem_malloc[.uint8](
+        n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
     )
-    var recv_buf = shmem_malloc[DType.uint8](
-        UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
-    )
-    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
+    var recv_count = shmem_malloc[.uint64](n_local_experts * n_ranks)
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
-    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](
+    var atomic_counter = ctx.enqueue_create_buffer[.int32](
         EPLocalSyncCounters[n_experts].total_size()
     )
 
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
 
-    var host_topk_ids = alloc[Int32](n_tokens_per_rank * top_k)
-    var host_input_tokens = alloc[Scalar[input_type]](
+    var host_topk_ids = unsafe_alloc[Int32](n_tokens_per_rank * top_k)
+    var host_input_tokens = unsafe_alloc[Scalar[input_type]](
         n_tokens_per_rank * hidden_size
     )
 
-    var device_topk_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_topk_buf = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * top_k
     )
     var device_input_buf = ctx.enqueue_create_buffer[input_type](
@@ -151,26 +154,26 @@ def test_dispatch[
     var device_output_buf = ctx.enqueue_create_buffer[input_type](
         n_tokens_per_rank * n_ranks * n_local_experts * hidden_size
     )
-    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.uint32](
+    var device_row_offsets_buf = ctx.enqueue_create_buffer[.uint32](
         n_local_experts + 1
     )
-    var device_expert_ids_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_expert_ids_buf = ctx.enqueue_create_buffer[.int32](
         n_local_experts
     )
-    var device_src_token_info_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_src_token_info_buf = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * n_ranks * n_local_experts * 2
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
+        device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k])
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[hidden_size]),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major(Idx[max_recv_num_tokens](), Idx[hidden_size]()),
+        row_major(Idx[max_recv_num_tokens], Idx[hidden_size]),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -180,7 +183,7 @@ def test_dispatch[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major(Idx[max_recv_num_tokens](), Idx[2]()),
+        row_major(Idx[max_recv_num_tokens], Idx[2]),
     )
 
     var format_handler = token_fmt_type(output_tensor)
@@ -198,9 +201,10 @@ def test_dispatch[
         n_tokens_per_rank,
         1,  # p2p world size
         token_fmt_type,
+        InputScalesFnType=type_of(EP_NO_INPUT_SCALES),
     ]
 
-    var func = ctx.compile_function[dispatch_async, dispatch_async]()
+    var func = ctx.compile_function[dispatch_async]()
     shmem_module_init(func)
 
     comptime dispatch_wait = dispatch_wait_kernel[
@@ -215,7 +219,7 @@ def test_dispatch[
         type_of(format_handler),
     ]
 
-    var func_wait = ctx.compile_function[dispatch_wait, dispatch_wait]()
+    var func_wait = ctx.compile_function[dispatch_wait]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var dispatch_async_stat_m: Float64 = 0
@@ -225,21 +229,16 @@ def test_dispatch[
     var e2e_stat_m: Float64 = 0
     var e2e_stat_m2: Float64 = 0
 
-    @always_inline
-    @parameter
-    def run_dispatch_async(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_dispatch_async(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], 1](
-            fill={}
-        )
-        var recv_count_ptrs = InlineArray[
-            UnsafePointer[UInt64, MutAnyOrigin], 1
-        ](fill={})
-        recv_buf_ptrs[0] = recv_buf
-        recv_count_ptrs[0] = recv_count
+        var recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [recv_buf]
+        var recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [
+            recv_count
+        ]
 
-        ctx.enqueue_function(
-            func,
+        func._call_with_pack_checked(
+            ctx,
             input_tokens_tensor,
             topk_ids_tensor,
             send_buf,
@@ -247,13 +246,15 @@ def test_dispatch[
             recv_count_ptrs,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
+            host_args=(EP_NO_INPUT_SCALES,),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
 
-    @always_inline
-    @parameter
-    def run_dispatch_async_wait(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_dispatch_async_wait(
+        ctx: DeviceContext,
+    ) raises {var atomic_counter, imm}:
         ctx.enqueue_function(
             func_wait,
             format_handler,
@@ -264,26 +265,17 @@ def test_dispatch[
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
-            OptionalReg[
-                TileTensor[
-                    input_type,
-                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                    ImmutAnyOrigin,
-                ]
-            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
 
-    @always_inline
-    @parameter
-    def run_e2e(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_e2e(ctx: DeviceContext) raises {imm}:
         run_dispatch_async(ctx)
         run_dispatch_async_wait(ctx)
 
-    @always_inline
-    @parameter
-    def clean_up(ctx: DeviceContext) raises:
+    @inline(.always)
+    def clean_up(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     for i in range(num_iters):
@@ -314,7 +306,7 @@ def test_dispatch[
         var new_value: Float64
 
         # First, bench kernel overhead
-        new_value = Float64(ctx.execution_time[run_dispatch_async](1)) * 1e-3
+        new_value = Float64(ctx.execution_time(run_dispatch_async, 1)) * 1e-3
         welford_update(
             dispatch_async_stat_m, dispatch_async_stat_m2, i + 1, new_value
         )
@@ -323,7 +315,7 @@ def test_dispatch[
         std.time.sleep(1e-2)
 
         new_value = (
-            Float64(ctx.execution_time[run_dispatch_async_wait](1)) * 1e-3
+            Float64(ctx.execution_time(run_dispatch_async_wait, 1)) * 1e-3
         )
         welford_update(
             dispatch_wait_stat_m, dispatch_wait_stat_m2, i + 1, new_value
@@ -332,28 +324,28 @@ def test_dispatch[
 
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
-        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
+        new_value = Float64(ctx.execution_time(run_e2e, 1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 
         if not is_benchmark():
-            var host_output = alloc[Scalar[input_type]](
+            var host_output = unsafe_alloc[Scalar[input_type]](
                 n_tokens_per_rank * n_ranks * n_local_experts * hidden_size
             )
             ctx.enqueue_copy(host_output, device_output_buf)
 
-            var host_row_offsets = alloc[UInt32](n_local_experts + 1)
+            var host_row_offsets = unsafe_alloc[UInt32](n_local_experts + 1)
             ctx.enqueue_copy(host_row_offsets, device_row_offsets_buf)
 
-            var host_expert_ids = alloc[Int32](n_tokens_per_rank)
+            var host_expert_ids = unsafe_alloc[Int32](n_tokens_per_rank)
             ctx.enqueue_copy(host_expert_ids, device_expert_ids_buf)
 
-            var host_src_token_info = alloc[Int32](
+            var host_src_token_info = unsafe_alloc[Int32](
                 n_tokens_per_rank * n_ranks * n_local_experts * 2
             )
             ctx.enqueue_copy(host_src_token_info, device_src_token_info_buf)
 
-            var host_atomic_counter = alloc[Int32](
+            var host_atomic_counter = unsafe_alloc[Int32](
                 EPLocalSyncCounters[n_experts].total_size()
             )
             ctx.enqueue_copy(host_atomic_counter, atomic_counter)
@@ -366,29 +358,34 @@ def test_dispatch[
             # Check the results
 
             # First, reproduce the input tokens and topk ids
-            var all_ranks_input_tokens = alloc[Scalar[input_type]](
+            var all_ranks_input_tokens = unsafe_alloc[Scalar[input_type]](
                 n_tokens_per_rank * n_ranks * hidden_size
             )
-            var all_ranks_topk_ids = alloc[Int32](
+            var all_ranks_topk_ids = unsafe_alloc[Int32](
                 n_tokens_per_rank * n_ranks * top_k
             )
 
             for rank in range(n_ranks):
                 seed(Int(rank) + i * n_ranks)
                 randn(
-                    all_ranks_input_tokens
-                    + rank * n_tokens_per_rank * hidden_size,
+                    all_ranks_input_tokens.unsafe_offset(
+                        rank * n_tokens_per_rank * hidden_size
+                    ),
                     n_tokens_per_rank * hidden_size,
                 )
                 seed(Int(rank) + i * n_ranks)
                 randint(
-                    all_ranks_topk_ids + rank * n_tokens_per_rank * top_k,
+                    all_ranks_topk_ids.unsafe_offset(
+                        rank * n_tokens_per_rank * top_k
+                    ),
                     n_tokens_per_rank * top_k,
                     0,
                     n_experts - 1,
                 )
                 legalize_topk_ids[n_experts, top_k](
-                    all_ranks_topk_ids + rank * n_tokens_per_rank * top_k,
+                    all_ranks_topk_ids.unsafe_offset(
+                        rank * n_tokens_per_rank * top_k
+                    ),
                     n_tokens_per_rank,
                 )
 
@@ -435,22 +432,24 @@ def test_dispatch[
 
                     # check if curr_expert is in remote rank's topk_ids
                     var remote_rank_top_k_ids = (
-                        all_ranks_topk_ids
-                        + remote_rank * n_tokens_per_rank * top_k
+                        all_ranks_topk_ids.unsafe_offset(
+                            remote_rank * n_tokens_per_rank * top_k
+                        )
                     )
 
                     assert_equal(
                         remote_rank_top_k_ids[
                             remote_loc * Int32(top_k) + remote_topk_id
                         ],
-                        curr_expert,
+                        Int32(curr_expert),
                     )
 
                     # check if the received token matches the remote rank's token
 
                     var remote_rank_input_tokens = (
-                        all_ranks_input_tokens
-                        + remote_rank * n_tokens_per_rank * hidden_size
+                        all_ranks_input_tokens.unsafe_offset(
+                            remote_rank * n_tokens_per_rank * hidden_size
+                        )
                     )
                     for i in range(hidden_size):
                         var remote_token_val = remote_rank_input_tokens[

@@ -17,7 +17,7 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
-from max.driver import CPU, Device
+from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.experimental.sharding import DeviceMesh
 
 # ── Inline mesh helpers (no conftest dependency) ──────────────────────
@@ -89,6 +89,40 @@ class TestDeviceMesh:
         assert mesh.axis_size(0) == 2
         assert mesh.axis_size(1) == 4
 
+    def test_device_coord_1d(self) -> None:
+        """1D mesh: device's coord on the single axis equals its flat index."""
+        mesh = mesh_1d(4)
+        for i in range(4):
+            assert mesh.device_coord(i, 0) == i
+            assert mesh.device_coord(i, "tp") == i
+
+    def test_device_coord_2d_row_major(self) -> None:
+        """2D mesh shape (2, 4) is row-major: device i has coords
+        ``(i // 4, i % 4)``."""
+        mesh = mesh_2d(2, 4)
+        for i in range(mesh.num_devices):
+            assert mesh.device_coord(i, "dp") == i // 4
+            assert mesh.device_coord(i, "tp") == i % 4
+            assert mesh.device_coord(i, 0) == i // 4
+            assert mesh.device_coord(i, 1) == i % 4
+
+    def test_device_coord_out_of_range_device_raises(self) -> None:
+        mesh = mesh_1d(4)
+        with pytest.raises(IndexError, match="device_idx 4 out of range"):
+            mesh.device_coord(4, 0)
+        with pytest.raises(IndexError, match="out of range"):
+            mesh.device_coord(-1, 0)
+
+    def test_device_coord_unknown_axis_raises(self) -> None:
+        mesh = mesh_2d(2, 4)
+        with pytest.raises(ValueError, match="Unknown axis name 'bad'"):
+            mesh.device_coord(0, "bad")
+
+    def test_device_coord_bad_axis_index_raises(self) -> None:
+        mesh = mesh_2d(2, 4)
+        with pytest.raises(IndexError, match="out of range"):
+            mesh.device_coord(0, 5)
+
     def test_resolve_axis_bad_name_raises(self) -> None:
         mesh = mesh_1d(4)
         with pytest.raises(ValueError, match="Unknown axis name 'bad'"):
@@ -118,29 +152,9 @@ class TestDeviceMesh:
             mesh.mesh_shape = (2,)  # type: ignore[misc]
 
     def test_single(self) -> None:
-        from max.driver import CPU
-
         mesh = DeviceMesh.single(CPU())
         assert mesh.num_devices == 1
-        assert mesh.is_single
         assert mesh.ndim == 1
-
-    def test_is_single_false_for_multi(self) -> None:
-        mesh = mesh_1d(4)
-        assert not mesh.is_single
-
-    def test_simulated_mesh_same_devices(self) -> None:
-        cpu = CPU()
-        mesh = DeviceMesh(
-            devices=(cpu, cpu, cpu, cpu),
-            mesh_shape=(4,),
-            axis_names=("tp",),
-        )
-        assert mesh.is_simulated
-
-    def test_is_simulated_false_for_single(self) -> None:
-        mesh = DeviceMesh.single(CPU())
-        assert not mesh.is_simulated
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -171,18 +185,10 @@ class TestDeviceMeshEquality:
         assert hash(a) == hash(b)
         assert {a, b} == {a}
 
+    @pytest.mark.skipif(accelerator_count() < 2, reason="Need at least 2 GPUs")
     def test_mixed_mesh_raises(self) -> None:
         """Rejects meshes with some repeated and some different devices."""
-        try:
-            from max.driver import Accelerator
-
-            devices = (
-                Accelerator(0),
-                Accelerator(0),
-                Accelerator(1),
-            )
-        except Exception:
-            pytest.skip("Need at least 2 GPUs for mixed-mesh test")
+        devices = (Accelerator(0), Accelerator(0), Accelerator(1))
         with pytest.raises(ValueError, match=r"all-same.*or all-distinct"):
             DeviceMesh(
                 devices=devices,

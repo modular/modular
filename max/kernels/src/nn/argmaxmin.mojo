@@ -10,35 +10,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-
-# ===-----------------------------------------------------------------------===#
-# _argn
-# ===-----------------------------------------------------------------------===#
+"""Provides a CPU implementation of the argmax reduction."""
 
 from std.math import align_down, ceildiv, iota
+from std.sys import align_of
 from std.sys.info import simd_width_of
 
-from std.algorithm import sync_parallelize
-from std.algorithm.functional import _get_num_workers
+from max.algorithm import sync_parallelize
+from max.algorithm.functional import _get_num_workers
+from max.gpu.host import DeviceContext
 from std.math.math import min as _min
-from layout import TileTensor
+from layout import Coord, Idx, TileTensor
+from layout.tile_layout import Layout
 
 
-def _argn[
-    is_max: Bool
-](input: TileTensor, axis: Int, output: TileTensor[mut=True, ...]) raises:
+def argmax(
+    input: TileTensor[mut=False, ...],
+    axis: Int,
+    output: TileTensor[mut=True, ...],
+    ctx: Optional[DeviceContext.CPU] = None,
+) raises:
     """
-    Finds the indices of the maximum/minimum element along the specified axis.
-
-    Parameters:
-        is_max: If True compute then compute argmax, otherwise compute the
-                argmin.
+    Finds the indices of the maximum element along the specified axis.
 
     Args:
         input: The input tensor.
         axis: The axis.
         output: The output tensor.
+        ctx: The context to execute the work on.
     """
     comptime rank = input.rank
     comptime simd_width = simd_width_of[input.dtype]()
@@ -81,85 +80,79 @@ def _argn[
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.num_elements()),
+            _get_num_workers(input.num_elements(), ctx=ctx),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
 
-    @__copy_capture(
-        axis_size, chunk_size, output_stride, input_stride, parallel_size
-    )
-    @parameter
-    def task_func(task_id: Int):
-        @parameter
-        @always_inline
+    def task_func(
+        task_id: Int,
+    ) {
+        var axis_size,
+        var chunk_size,
+        var output_stride,
+        var input_stride,
+        var parallel_size,
+        imm,
+    }:
+        @inline(.always)
         def cmpeq[
-            dtype: DType, simd_width: Int
+            dtype: DType, simd_width: SIMDLength
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            comptime if is_max:
-                return a.le(b)
-            else:
-                return a.ge(b)
+            return a.le(b)
 
-        @parameter
-        @always_inline
+        @inline(.always)
         def cmp[
-            dtype: DType, simd_width: Int
+            dtype: DType, simd_width: SIMDLength
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            comptime if is_max:
-                return a.lt(b)
-            else:
-                return a.gt(b)
+            return a.lt(b)
 
         # iterate over flattened axes
         var start = task_id * chunk_size
         var end = _min((task_id + 1) * chunk_size, parallel_size)
+        var input_rows = input.reshape(
+            Layout(Coord(parallel_size, axis_size), Coord(input_stride, Idx[1]))
+        )
+        var output_rows = output.reshape(
+            Layout(Coord(parallel_size), Coord(output_stride))
+        )
         for i in range(start, end):
-            var input_offset = i * input_stride
-            var output_offset = i * output_stride
-            var input_dim_ptr = input.ptr + input_offset
-            var output_dim_ptr = output.ptr + output_offset
-            var global_val: Scalar[input.dtype]
+            var global_val = Scalar[input.dtype].MIN
 
-            # initialize limits
-            comptime if is_max:
-                global_val = Scalar[input.dtype].MIN
-            else:
-                global_val = Scalar[input.dtype].MAX
-
-            # initialize vector of maximal/minimal values
+            # initialize vector of maximal values
             var global_values: SIMD[input.dtype, simd_width]
             if axis_size < simd_width:
                 global_values = global_val
             else:
-                global_values = input_dim_ptr.load[width=simd_width]()
+                global_values = input_rows.load[
+                    width=simd_width, alignment=align_of[input.dtype]()
+                ]((i, 0))
 
             # iterate over values evenly divisible by simd_width
             var indices = iota[output.dtype, simd_width]()
             var global_indices = indices
             var last_simd_index = align_down(axis_size, simd_width)
             for j in range(simd_width, last_simd_index, simd_width):
-                var curr_values = input_dim_ptr.load[width=simd_width](j)
+                var curr_values = input_rows.load[
+                    width=simd_width, alignment=align_of[input.dtype]()
+                ]((i, j))
                 indices += Scalar[output.dtype](simd_width)
 
                 var mask = cmpeq(curr_values, global_values)
                 global_indices = mask.select(global_indices, indices)
                 global_values = mask.select(global_values, curr_values)
 
-            comptime if is_max:
-                global_val = global_values.reduce_max()
-            else:
-                global_val = global_values.reduce_min()
+            global_val = global_values.reduce_max()
 
             # Check trailing indices.
             var idx = Scalar[output.dtype](0)
             var found_min: Bool = False
             for j in range(last_simd_index, axis_size, 1):
-                var elem = input_dim_ptr.load(j)
+                var elem = input_rows.load[width=1]((i, j))
                 if cmp(global_val, elem):
                     global_val = elem
                     idx = Scalar[output.dtype](j)
@@ -172,84 +165,6 @@ def _argn[
                     global_indices, Scalar[output.dtype].MAX
                 )
                 idx = min_indices.reduce_min()
-            output_dim_ptr[] = idx
+            output_rows.store((i,), idx)
 
-    sync_parallelize[task_func](parallel_size)
-
-
-# ===-----------------------------------------------------------------------===#
-# argmax
-# ===-----------------------------------------------------------------------===#
-
-
-def argmax(
-    input: TileTensor,
-    axis: Int,
-    output: TileTensor[mut=True, ...],
-) raises:
-    """
-    Finds the indices of the maximum element along the specified axis.
-
-    Args:
-        input: The input tensor.
-        axis: The axis.
-        output: The output tensor.
-    """
-
-    _argn[is_max=True](input, axis, output)
-
-
-def argmax(
-    input: TileTensor,
-    axis_buf: TileTensor,
-    output: TileTensor[mut=True, ...],
-) raises where axis_buf.flat_rank == 1:
-    """
-    Finds the indices of the maximum element along the specified axis.
-
-    Args:
-        input: The input tensor.
-        axis_buf: The axis tensor.
-        output: The axis tensor.
-    """
-
-    argmax(input, Int(axis_buf[0]), output)
-
-
-# ===-----------------------------------------------------------------------===#
-# argmin
-# ===-----------------------------------------------------------------------===#
-
-
-def argmin(
-    input: TileTensor,
-    axis: Int,
-    output: TileTensor[mut=True, ...],
-) raises:
-    """
-    Finds the indices of the minimum element along the specified axis.
-
-    Args:
-        input: The input tensor.
-        axis: The axis.
-        output: The output tensor.
-    """
-
-    _argn[is_max=False](input, axis, output)
-
-
-def argmin(
-    input: TileTensor,
-    axis_buf: TileTensor,
-    output: TileTensor[mut=True, ...],
-) raises where axis_buf.flat_rank == 1:
-    """
-    Finds the indices of the minimum element along the specified axis.
-
-    Args:
-        input: The input tensor.
-        axis_buf: The axis tensor.
-        output: The axis tensor.
-    """
-
-    argmin(input, Int(axis_buf[0]), output)
+    sync_parallelize(task_func, parallel_size, ctx)

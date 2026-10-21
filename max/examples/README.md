@@ -6,22 +6,15 @@ READMEs for usage instructions.
 
 ## Mojo code examples
 
-We moved the Mojo examples to [/mojo/examples](../../mojo/examples/)
+The Mojo examples that don't depend on MAX moved to
+[/Mojo/examples](../../Mojo/examples/). The Mojo examples that use the MAX
+accelerator and layout APIs are still in this directory, and are listed below.
 
-## [Basic MAX graph](max-graph/)
+## [Modules](modules/)
 
-The [MAX Python API](https://docs.modular.com/max/api/python/) provides a
-PyTorch-like interface for building neural network components that compile to
-highly optimized graphs. This is a simple example of how to build a graph in
-Python, before moving on to more complex custom ops using Mojo.
-
-## [Custom MAX graph module](custom-graph-module/)
-
-This example shows how to create a reusable, modular component for a MAX graph,
-using the `nn.Module` class. It include custom layers, blocks, and
-architectural patterns that showcase the flexibility of MAX's Python API for
-deep learning development, from simple MLP blocks to more complex neural
-network architectures.
+This example shows how to build model graphs using MAX's `nn.Module` class. It
+demonstrates composing built-in modules, writing custom modules with explicit
+weights, loading checkpoint data, and constructing a graph from the result.
 
 ## [Custom GPU and CPU graph ops in Mojo](custom_ops/)
 
@@ -37,15 +30,40 @@ PyTorch custom operations can be defined in Mojo to try out new algorithms on
 GPUs. These examples show how to extend PyTorch layers using custom operations
 written in Mojo.
 
-## [Offline inference](offline-inference/)
-
-A simple example showing how to directly send inference to an LLMs using the
-MAX Python API, without starting a webserver (without an endpoint).
-
 ## [Custom MAX models](custom-models/)
 
 An example of how to define and register a custom architecture with MAX for
 text generation or serving.
+
+## [Mojo GPU functions](gpu-functions/)
+
+Introductory examples of how to program GPUs using Mojo, including: vector
+addition, grayscale conversion, matrix multiplication, reduction operations,
+and calculating a Mandelbrot set fractal.
+
+## [Get started with GPU programming](gpu-intro/)
+
+The complete solution for the [Get started with GPU
+programming](https://max.modular.com/gpu/intro-tutorial/) tutorial: a simple
+vector addition kernel written in Mojo.
+
+## [GPU block and warp operations](gpu-block-and-warp/)
+
+A tiled matrix multiplication that demonstrates block-level and warp-level
+synchronization, accompanying [GPU block and warp operations and
+synchronization](https://max.modular.com/gpu/block-and-warp/).
+
+## [Layouts](layouts/)
+
+Using the `Layout` type to describe how multidimensional data is arranged in
+memory, accompanying [Introduction to
+layouts](https://max.modular.com/layout/layouts/).
+
+## [Music generation](music_generation/)
+
+Rendering a full-length song from a caption and lyrics with MiniMax-Music3,
+either in process or through a running MAX server, and measuring the joins
+between the model's denoising windows.
 
 ---
 
@@ -57,18 +75,22 @@ Whenever possible, code examples should be tested in the following ways.
 
 Use a `BUILD.bazel` file to create an executable binary for the code.
 
-Any code used in a build function (such as `modular_by_binary()` or
+Any code used in a build function (such as `modular_py_binary()` or
 `mojo_binary()`), is automatically built as part of the "build everything" CI
 commands that run during PR pre-submit. For
-[example](https://github.com/modular/modular/tree/main/examples/max-graph/BUILD.bazel):
+[example](modules/BUILD.bazel):
 
 ```bzl
 modular_py_binary(
-    name = "addition",
-    srcs = ["addition.py"],
+    name = "modules",
+    srcs = ["modules.py"],
     imports = ["."],
     deps = [
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
@@ -77,7 +99,7 @@ modular_py_binary(
 You can run it directly to confirm it works like this:
 
 ```sh
-br //max/examples/max-graph:addition
+br //max/examples/modules:modules
 ```
 
 For help writing this code, look at the other `BUILD.bazel` files in the
@@ -100,7 +122,7 @@ It's possible that an API changed in a way that passes the above build but
 doesn't break until the code is executed. To verify that the code actually runs
 successfully, add a `modular_run_binary_test()` function to the same
 `BUILD.bazel` file that calls the previously-defined binary. For
-[example](https://github.com/modular/modular/blob/8dbd252/examples/mojo/gpu-intro/BUILD.bazel#L15-L19):
+[example](gpu-intro/BUILD.bazel):
 
 ```bzl
 mojo_binary(
@@ -126,7 +148,7 @@ You can run it directly to confirm it works like this (but notice this example
 requires a GPU):
 
 ```sh
-bt //oss/modular/mojo/examples/gpu-intro:vector_addition_test
+bt //max/examples/gpu-intro:vector_addition_test
 ```
 
 With this, we can now be sure that the code runs under specific build
@@ -143,8 +165,7 @@ environment might have different package versions.)
 
 To make every example easy to use, they should already have a `pixi.toml` file
 that specifies the code's dependencies. To add a test, just add a task named
-`test` to the code's local `pixi.toml` file that executes the code. For
-[example](https://github.com/modular/modular/blob/8d0650d/examples/offline-inference/pixi.toml):
+`test` to the code's local `pixi.toml` file that executes the code:
 
 ```toml
 [tasks]
@@ -164,8 +185,7 @@ fixed (hopefully).
 
 The simple `pixi` test above is good enough for most cases, but it doesn't
 assert that the result produced is what's expected. To go to that next level, we
-might add an actual [pytest](https://docs.pytest.org/en/stable/). For
-[example](https://github.com/modular/modular/tree/main/examples/max-graph/pixi.toml):
+might add an actual [pytest](https://docs.pytest.org/en/stable/):
 
 ```toml
 [tasks]

@@ -12,27 +12,54 @@
 # ===----------------------------------------------------------------------=== #
 """Mixture of Experts (MoE) module."""
 
-from .moe import MoE, MoEGate
+from ..activation import GatedActivation
+from .eplb import (
+    EplbExpertContainer,
+    apply_eplb_placement,
+    router_fold_supported,
+)
+from .expert_parallel import forward_moe_sharded_layers
+from .moe import (
+    MoE,
+    MoEGate,
+    make_concatenated_gated_activation_fn,
+    make_interleaved_gated_activation_fn,
+)
 from .moe_fp8 import MoEQuantized
 from .quant_strategy import (
+    BlockScaledStrategy,
     Fp8Strategy,
+    Mxfp6Strategy,
     Nvfp4Scales,
-    Nvfp4Strategy,
+    NvMxf4f8Strategy,
     QuantStrategy,
-    silu_gate,
+    interleaved_block_scales_shape,
 )
-from .stacked_moe import GateUpFormat, StackedMoE, silu_activation
+from .sigmoid_router import SigmoidTopKRouter
+from .stacked_moe import (
+    GateUpFormat,
+    StackedMoE,
+    make_stacked_gated_activation_fn,
+)
 
 __all__ = [
+    "EplbExpertContainer",
     "Fp8Strategy",
     "GateUpFormat",
+    "GatedActivation",
     "MoE",
     "MoEGate",
     "MoEQuantized",
+    "NvMxf4f8Strategy",
     "Nvfp4Scales",
-    "Nvfp4Strategy",
     "QuantStrategy",
+    "SigmoidTopKRouter",
     "StackedMoE",
-    "silu_activation",
-    "silu_gate",
+    "apply_eplb_placement",
+    "forward_moe_sharded_layers",
+    "interleaved_block_scales_shape",
+    "make_concatenated_gated_activation_fn",
+    "make_interleaved_gated_activation_fn",
+    "make_stacked_gated_activation_fn",
+    "router_fold_supported",
 ]

@@ -15,14 +15,14 @@
 
 import warnings
 
-import hf_repo_lock
 from max.benchmark.benchmark_shared.datasets import BenchmarkDataset
+from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
+    TokenizerPool,
+)
 from max.pipelines.lib import generate_local_model_path
 from transformers import AutoTokenizer
 
 REPO_ID = "HuggingFaceTB/SmolLM-135M"
-REPO_REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
-
 # Minimum average match rate for system prompt token consistency across requests.
 # Set to 0.90 to accommodate tokenization boundary effects when repeating base
 # prompts to different target lengths. Rates of 90-96% are expected and indicate
@@ -64,11 +64,8 @@ def test_random_replacement_token_with_smollm_tokenizer() -> None:
     This is a replicated logic in random dataset that picks a replacement for
     special tokens using candidates: plain space, U+0120 (BPE), U+2581 (SentencePiece).
     """
-    assert isinstance(REPO_REVISION, str), (
-        "REPO_REVISION must be a string and present in hf-repo-lock.tsv"
-    )
     try:
-        model_path = generate_local_model_path(REPO_ID, REPO_REVISION)
+        model_path = generate_local_model_path(REPO_ID)
     except FileNotFoundError as e:
         warnings.warn(f"Failed to generate local model path: {str(e)}")
         warnings.warn(
@@ -105,11 +102,8 @@ def test_random_dataset_sys_prompt_ratio_matches_requested() -> None:
     cause minor token alignment mismatches (typically 90-96% consistency). This is
     expected behavior and still indicates high consistency.
     """
-    assert isinstance(REPO_REVISION, str), (
-        "REPO_REVISION must be a string and present in hf-repo-lock.tsv"
-    )
     try:
-        model_path = generate_local_model_path(REPO_ID, REPO_REVISION)
+        model_path = generate_local_model_path(REPO_ID)
     except FileNotFoundError as e:
         warnings.warn(f"Failed to generate local model path: {str(e)}")
         warnings.warn(
@@ -120,17 +114,19 @@ def test_random_dataset_sys_prompt_ratio_matches_requested() -> None:
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
 
-    for sys_prompt_ratio in (0.0, 0.25, 0.5, 0.75):
-        samples = dataset.sample_requests(
-            num_requests=10,
-            tokenizer=tokenizer,
-            input_len="U(80, 100)",
-            output_len="10",
-            sys_prompt_ratio=sys_prompt_ratio,
-            max_num_unique_sys_prompt=1,
-            shuffle=False,
-        )
-        assert len(samples.requests) == 10, "Expected 10 requests"
+    with TokenizerPool(tokenizer) as pool:
+        for sys_prompt_ratio in (0.0, 0.25, 0.5, 0.75):
+            samples = dataset.sample_requests(
+                num_requests=10,
+                tokenizer=tokenizer,
+                pool=pool,
+                input_len="U(80, 100)",
+                output_len="10",
+                sys_prompt_ratio=sys_prompt_ratio,
+                max_num_unique_sys_prompt=1,
+                shuffle=False,
+            )
+            assert len(samples.requests) == 10, "Expected 10 requests"
 
         # (1) Each request's system length in tokens = prompt_len * sys_prompt_ratio
         # (2) Encode prompt_formatted and take first expected_sys_len token ids
@@ -152,4 +148,24 @@ def test_random_dataset_sys_prompt_ratio_matches_requested() -> None:
         assert consistent, (
             f"System prompt token consistency below {SYS_PROMPT_PATTERN_CONSISTENCY_THRESHOLD} "
             f"for sys_prompt_ratio={sys_prompt_ratio}: rates={rates}"
+        )
+
+
+def test_synthetic_placeholder_token_count() -> None:
+    """Synthetic placeholder for prefix turns should tokenize to ~output_len."""
+    try:
+        model_path = generate_local_model_path(REPO_ID)
+    except FileNotFoundError:
+        model_path = REPO_ID
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    for output_len in [1, 5, 10, 50]:
+        placeholder = " ".join(["token"] * max(output_len, 1))
+        token_count = len(
+            tokenizer.encode(placeholder, add_special_tokens=False)
+        )
+        assert abs(token_count - output_len) / output_len < 0.2, (
+            f"output_len={output_len}: expected ~{output_len} tokens,"
+            f" got {token_count}"
         )

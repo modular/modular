@@ -334,6 +334,88 @@ def test_allgather_nonzero_dim_uneven() -> None:
         graph.output(*outputs)
 
 
+def test_allgather_grouped_uneven_shapes() -> None:
+    """Test grouped allgather with different per-group concat sizes."""
+    num_gpus = 8
+    group_size = 4
+    devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    signals = Signals(devices)
+    input_shapes = [[5, 128]] * group_size + [[3, 128]] * group_size
+    expected_shapes = [Shape((20, 128))] * group_size + [
+        Shape((12, 128))
+    ] * group_size
+
+    with Graph(
+        "grouped_allgather",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=shape, device=device)
+            for shape, device in zip(input_shapes, devices, strict=True)
+        ]
+        + list(signals.input_types()),
+    ) as graph:
+        outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[:num_gpus]),
+            signal_buffers=(v.buffer for v in graph.inputs[num_gpus:]),
+            axis=0,
+            group_size=group_size,
+        )
+        graph.output(*outputs)
+        for output, device, expected_shape in zip(
+            outputs, devices, expected_shapes, strict=True
+        ):
+            assert output.device == device
+            assert output.shape == expected_shape
+            assert output.dtype == DType.float32
+
+
+def test_allgather_group_size_must_divide_inputs() -> None:
+    """Test grouped allgather requires complete contiguous groups."""
+    num_gpus = 6
+    devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    signals = Signals(devices)
+
+    with pytest.raises(
+        ValueError,
+        match=r"group_size to evenly divide the number of input tensors",
+    ):
+        with Graph(
+            "grouped_allgather",
+            input_types=[
+                TensorType(dtype=DType.float32, shape=[6, 16], device=device)
+                for device in devices
+            ]
+            + list(signals.input_types()),
+        ) as graph:
+            ops.allgather(
+                inputs=(v.tensor for v in graph.inputs[:num_gpus]),
+                signal_buffers=(v.buffer for v in graph.inputs[num_gpus:]),
+                axis=0,
+                group_size=4,
+            )
+
+
+def test_allgather_group_size_one_is_noop() -> None:
+    """Tests that singleton allgather groups return the original tensors."""
+    devices = [DeviceRef.GPU(id=0), DeviceRef.GPU(id=1)]
+    signals = Signals(devices)
+
+    with Graph(
+        "allgather_group_size_one",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=[6, 5], device=device)
+            for device in devices
+        ]
+        + list(signals.input_types()),
+    ) as graph:
+        outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            group_size=1,
+        )
+        assert outputs[0]._mlir_value == graph.inputs[0]._mlir_value
+        assert outputs[1]._mlir_value == graph.inputs[1]._mlir_value
+
+
 def test_allgather_noop() -> None:
     """Tests that allgather is a noop if the number of inputs is 0 or 1."""
     devices = [DeviceRef.GPU(id=0)]
@@ -395,3 +477,48 @@ def test_allgather_signal_buffer_mismatch() -> None:
                 signal_buffers=(v.buffer for v in graph.inputs[4:]),
             )
             graph.output(*allgather_outputs)
+
+
+def test_allgather_uneven_symbolic_split_is_stable() -> None:
+    """Repeated allgathers of an uneven symbolic split infer one stable shape.
+
+    Concat's shape inference used to mint fresh graph parameters while summing
+    the axis dims, and KGEN orders a commutative operand list by parameter name,
+    so the term order of the gathered dim drifted with the graph's parameter
+    counter. Inference runs again when the op is verified, so a drifting order
+    surfaced as ``'rmo.concat' op inferred type(s) ... are incompatible with
+    return type(s)``. Only uneven splits were affected: an even split makes
+    every shard the same dim, and any order of identical terms is the same term.
+    """
+    devices = [DeviceRef.GPU(id=i) for i in range(4)]
+    signals = Signals(devices)
+
+    with Graph(
+        "allgather_uneven_symbolic",
+        input_types=[
+            TensorType(dtype=DType.bfloat16, shape=["seq_len", 64], device=d)
+            for d in devices
+        ]
+        + list(signals.input_types()),
+    ) as graph:
+        hs = [v.tensor for v in graph.inputs[: len(devices)]]
+        buffers = [v.buffer for v in graph.inputs[len(devices) :]]
+
+        shapes = []
+        # One round is not enough: the first inference in a graph agreed with
+        # its own re-inference, and the orders only diverged further in.
+        for _ in range(4):
+            shards = ops.reducescatter.sum(
+                hs, buffers, axis=0, group_size=len(devices)
+            )
+            assert len({str(s.shape[0]) for s in shards}) == len(devices), (
+                "reduce-scatter should bin the symbolic dim unevenly"
+            )
+            gathered = ops.allgather(
+                shards, buffers, axis=0, group_size=len(devices)
+            )
+            shapes.append(str(gathered[0].shape[0]))
+            hs = [ops.rebind(g, ["seq_len", 64]) for g in gathered]
+
+        assert len(set(shapes)) == 1, f"gathered dim drifted: {shapes}"
+        graph.output(*hs)

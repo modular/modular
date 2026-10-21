@@ -11,8 +11,8 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: bench_matmul_mxfp4
-file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul_mxfp4.mojo
+name: bench_matmul_dequant_mxfp4_amd
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul_dequant_mxfp4_amd.mojo
 
 params:
 

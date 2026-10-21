@@ -21,6 +21,8 @@ from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import RotaryEmbedding
 
+from .pooling import last_token_pool, normalize_embeddings
+
 
 class Qwen3EmbeddingTransformerBlock(Module):
     """Transformer block for embedding models without KV caching.
@@ -60,10 +62,6 @@ class Qwen3EmbeddingTransformerBlock(Module):
         Returns:
             Output tensor of shape [total_seq_len, hidden_size]
         """
-        residual_multiplier = ops.constant(
-            self.residual_multiplier, x.dtype, device=x.device
-        )
-
         # Attention with pre-normalization
         attn_out = self.self_attn(
             self.input_layernorm(x),
@@ -71,7 +69,7 @@ class Qwen3EmbeddingTransformerBlock(Module):
         )
 
         if self.residual_multiplier != 1.0:
-            attn_out = attn_out * residual_multiplier
+            attn_out = attn_out * float(self.residual_multiplier)
 
         h = x + attn_out
 
@@ -79,7 +77,7 @@ class Qwen3EmbeddingTransformerBlock(Module):
         mlp_out = self.mlp(self.post_attention_layernorm(h))
 
         if self.residual_multiplier != 1.0:
-            mlp_out = mlp_out * residual_multiplier
+            mlp_out = mlp_out * float(self.residual_multiplier)
 
         return h + mlp_out
 
@@ -90,7 +88,7 @@ class Qwen3EmbeddingTransformer(Module):
     This is a simplified transformer that:
     - Does not use KVCache (no PagedCacheValues)
     - Designed for single-pass forward (no autoregressive generation)
-    - Returns hidden states for pooling, not logits
+    - Returns pooled embeddings or hidden states, not logits
     """
 
     def __init__(
@@ -103,7 +101,8 @@ class Qwen3EmbeddingTransformer(Module):
         embedding: Embedding,
         rope: RotaryEmbedding,
         embedding_multiplier: float = 1.0,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
+        pool_embeddings: bool = False,
     ) -> None:
         """Initialize the embedding transformer.
 
@@ -116,6 +115,9 @@ class Qwen3EmbeddingTransformer(Module):
             embedding: Token embedding layer
             rope: Rotary position embedding
             embedding_multiplier: Multiplier for embeddings (if applicable)
+            device: Device the model runs on
+            pool_embeddings: Whether to return last-token pooled, normalized
+                embeddings rather than the hidden states
         """
         super().__init__()
         self.dim = dim
@@ -127,6 +129,7 @@ class Qwen3EmbeddingTransformer(Module):
         self.embedding_multiplier = embedding_multiplier
         self.rope = rope
         self.device = device
+        self.pool_embeddings = pool_embeddings
 
     def input_types(self) -> tuple[TensorType, ...]:
         """Get the input types for the graph.
@@ -160,14 +163,13 @@ class Qwen3EmbeddingTransformer(Module):
             return_n_logits: Number of logits to return (unused for embeddings)
 
         Returns:
-            Hidden states tensor [total_seq_len, hidden_size]
+            Normalized embeddings [batch_size, hidden_size] if pooling, else
+            float32 hidden states [total_seq_len, hidden_size]
         """
         # Embed tokens
         h = self.embed_tokens(tokens)
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         # Process through transformer layers
         input_row_offsets_device = input_row_offsets.to(self.device)
@@ -175,4 +177,6 @@ class Qwen3EmbeddingTransformer(Module):
             h = layer(h, input_row_offsets_device)
         h = self.norm(h)
 
-        return h
+        if self.pool_embeddings:
+            return normalize_embeddings(last_token_pool(h, input_row_offsets))
+        return ops.cast(h, DType.float32)

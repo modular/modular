@@ -15,7 +15,6 @@
 Script to generate random inputs and expected output values:
 
 ```python
-import std.math
 import torch
 
 def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1) raises:
@@ -51,9 +50,10 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.fold import fold
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from std.utils.index import Index, IndexList
 
@@ -81,7 +81,8 @@ def test[
         capacity=input_shape.flattened_length()
     )
     input_stack.resize(input_shape.flattened_length(), 0)
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    var input_stack_ptr = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     _copy_values_to_tile_tensor(input, input_values)
 
     # Create expected tensor with dynamic layout
@@ -90,7 +91,8 @@ def test[
         capacity=output_shape.flattened_length()
     )
     expected_stack.resize(output_shape.flattened_length(), 0)
-    var expected = TileTensor(expected_stack.unsafe_ptr(), output_layout)
+    var expected_stack_ptr = expected_stack.unsafe_ptr()
+    var expected = TileTensor(expected_stack_ptr, output_layout)
     _copy_values_to_tile_tensor(expected, expected_output)
 
     # Create output tensor with dynamic layout
@@ -98,14 +100,15 @@ def test[
         capacity=output_shape.flattened_length()
     )
     output_stack.resize(output_shape.flattened_length(), 0)
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    var output_stack_ptr = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
         input=input,
         output=output,
         output_size=output_size,
         kernel_size=kernel_size,
-        ctx=DeviceContextPtr(),
+        ctx=DeviceContext(api="cpu"),
     )
 
     # Check results, return on the first failed comparison.
@@ -152,8 +155,9 @@ def _copy_values_to_tile_tensor[
     if num_elements != len(values):
         raise Error("Tensor size and values size mismatch")
 
+    var flat = tensor.reshape(row_major(num_elements))
     for i in range(num_elements):
-        tensor.ptr[i] = values[i]
+        flat.store((i,), values[i])
 
 
 def main() raises:
@@ -161,7 +165,7 @@ def main() raises:
     # fmt: off
     test[
         input_shape = IndexList[3](1, 6, 15),
-        output_shape = IndexList[4](1, 1, 5, 6),
+        output_shape = (1, 1, 5, 6),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),
@@ -188,7 +192,7 @@ def main() raises:
     # Test with dilation.
     test[
         input_shape = IndexList[3](1, 6, 4),
-        output_shape = IndexList[4](1, 1, 5, 6),
+        output_shape = (1, 1, 5, 6),
         stride=(1, 1),
         dilation=(2, 2),
         padding=(0, 0),
@@ -215,7 +219,7 @@ def main() raises:
     # Test with stride and dilation.
     test[
         input_shape = IndexList[3](1, 6, 2),
-        output_shape = IndexList[4](1, 1, 5, 6),
+        output_shape = (1, 1, 5, 6),
         stride=(2, 2),
         dilation=(2, 2),
         padding=(0, 0),
@@ -242,7 +246,7 @@ def main() raises:
     # Test with stride, dilation and padding.
     test[
         input_shape = IndexList[3](1, 6, 12),
-        output_shape = IndexList[4](1, 1, 5, 6),
+        output_shape = (1, 1, 5, 6),
         stride=(2, 2),
         dilation=(1, 1),
         padding=(1, 1),
@@ -269,7 +273,7 @@ def main() raises:
     # Test with batch > 1.
     test[
         input_shape = IndexList[3](2, 4, 2),
-        output_shape = IndexList[4](2, 1, 2, 3),
+        output_shape = (2, 1, 2, 3),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),
@@ -298,7 +302,7 @@ def main() raises:
     # Test with channel size > 1.
     test[
         input_shape = IndexList[3](1, 8, 2),
-        output_shape = IndexList[4](1, 2, 2, 3),
+        output_shape = (1, 2, 2, 3),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),

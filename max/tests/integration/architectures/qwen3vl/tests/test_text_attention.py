@@ -16,13 +16,13 @@
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
@@ -31,6 +31,7 @@ from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
 from max.pipelines.architectures.qwen3vl_moe.nn.text_rotary import (
     Qwen3VLTextRotaryEmbedding,
 )
+from max.pipelines.kv_cache import PagedKVCacheManagerInterface, load_kv_manager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen3_vl_moe.configuration_qwen3_vl_moe import (
@@ -227,7 +228,7 @@ def generate_qwen3_max_outputs(
     }
 
     kv_cache_config = KVCacheConfig()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
@@ -277,8 +278,11 @@ def generate_qwen3_max_outputs(
         max_seq_len=MAX_SEQ_LEN,
         available_cache_memory=30 * 1024 * 1024,
         session=session,
+        is_di_enabled=False,
+        model_name="FAKE",
+        max_num_input_tokens=None,
     )
-    assert isinstance(kv_manager, PagedKVCacheManager)
+    assert isinstance(kv_manager, PagedKVCacheManagerInterface)
 
     input_type = TensorType(
         dtype, [Dim("total_seq_len"), hidden_size], device=device_ref
@@ -287,7 +291,7 @@ def generate_qwen3_max_outputs(
         DType.uint32, shape=[Dim("row_offsets_len")], device=device_ref
     )
 
-    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
+    flattened_kv_types = kv_params.flattened_kv_inputs()
 
     input_row_offsets = _build_input_row_offsets(seq_lens).to(torch_device)
 
@@ -301,9 +305,7 @@ def generate_qwen3_max_outputs(
     ) as graph:
         x, input_row_offsets_input, *kv_cache = graph.inputs
 
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
-        )[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
 
         output = attention(
             layer_idx=ops.constant(0, DType.uint32, DeviceRef.CPU()),
@@ -321,16 +323,16 @@ def generate_qwen3_max_outputs(
         for seq_len in seq_lens
     ]
     for context in batch:
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
 
-    kv_cache_runtime = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_cache_runtime = kv_manager.runtime_inputs_for_leaf([batch])[0]
     assert kv_cache_runtime.attention_dispatch_metadata is not None
 
     result = compiled.execute(
         Buffer.from_dlpack(flat_input.to(torch_device)).to(device),
         Buffer.from_dlpack(input_row_offsets.to(torch_device)).to(device),
-        *kv_cache_runtime,
+        *tree.leaves(kv_cache_runtime),
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)

@@ -21,22 +21,23 @@ Note: Scatter pattern has poor parallelism for few atoms and requires
 atomic operations which can be a performance bottleneck.
 """
 
-from std.math import sqrt
-from std.os import Atomic
-from std.gpu import block_idx, thread_idx, block_dim
-from std.gpu.host import DeviceContext
+from std.math import ceildiv, sqrt
+from std.atomic import Atomic
+from std.memory.alloc import unsafe_alloc
+from max.gpu import block_idx, thread_idx, block_dim
+from max.gpu.host import DeviceContext
 
 from dcs_utils import GridDim, init_atoms, verify_grid
 
 
 def cenergy_scatter_kernel(
-    energygrid: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    atoms: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    grid_x: Int,
-    grid_y: Int,
+    energygrid: MutPointer[Float32, MutAnyOrigin],
+    atoms: ImmPointer[Float32, ImmutAnyOrigin],
+    grid_x_dev: Int32,
+    grid_y_dev: Int32,
     gridspacing: Float32,
     z: Float32,
-    numatoms: Int,
+    numatoms_dev: Int32,
 ):
     """Scatter kernel: each thread processes one atom.
 
@@ -46,12 +47,16 @@ def cenergy_scatter_kernel(
     Args:
         energygrid: Output energy grid.
         atoms: Atom array (4 floats per atom: x, y, z, charge).
-        grid_x: Grid X dimension.
-        grid_y: Grid Y dimension.
+        grid_x_dev: Grid X dimension.
+        grid_y_dev: Grid Y dimension.
         gridspacing: Grid spacing.
         z: Z-coordinate of the grid slice.
-        numatoms: Number of atoms.
+        numatoms_dev: Number of atoms.
     """
+    # Int is not device-passable; widen the fixed-width args.
+    var grid_x = Int(grid_x_dev)
+    var grid_y = Int(grid_y_dev)
+    var numatoms = Int(numatoms_dev)
     # Each thread handles one atom
     var n = (block_idx.x * block_dim.x + thread_idx.x) * 4
 
@@ -80,16 +85,17 @@ def cenergy_scatter_kernel(
                 # Scatter add with atomic operation
                 var energy_contrib = charge / sqrt(dx * dx + dy2 + dz2)
                 _ = Atomic.fetch_add(
-                    energygrid + grid_row_offset + i, energy_contrib
+                    energygrid.unsafe_offset(grid_row_offset).unsafe_offset(i),
+                    energy_contrib,
                 )
 
 
 def cenergy_cpu_reference(
-    energygrid: UnsafePointer[Float32, MutAnyOrigin],
+    energygrid: MutPointer[Float32, _],
     grid: GridDim,
     gridspacing: Float32,
     z: Float32,
-    atoms: UnsafePointer[Float32, MutAnyOrigin],
+    atoms: ImmPointer[Float32, _],
     numatoms: Int,
 ):
     """CPU reference implementation for verification."""
@@ -130,9 +136,9 @@ def main() raises:
     var grid_size = vol_dim.x * vol_dim.y * vol_dim.z
 
     # Allocate host memory
-    var h_atoms = alloc[Float32](atoms_size)
-    var h_energygrid_cpu = alloc[Float32](grid_size)
-    var h_energygrid_gpu = alloc[Float32](grid_size)
+    var h_atoms = unsafe_alloc[Float32](atoms_size)
+    var h_energygrid_cpu = unsafe_alloc[Float32](grid_size)
+    var h_energygrid_gpu = unsafe_alloc[Float32](grid_size)
 
     # Initialize
     init_atoms(h_atoms, numatoms, gridspacing, vol_dim.x, vol_dim.y, vol_dim.z)
@@ -141,31 +147,31 @@ def main() raises:
         h_energygrid_gpu[i] = 0.0
 
     # Allocate device memory
-    var d_atoms = ctx.enqueue_create_buffer[DType.float32](atoms_size)
-    var d_energygrid = ctx.enqueue_create_buffer[DType.float32](grid_size)
+    var d_atoms = ctx.enqueue_create_buffer[.float32](atoms_size)
+    var d_energygrid = ctx.enqueue_create_buffer[.float32](grid_size)
 
     # Copy atoms to device
     ctx.enqueue_copy(d_atoms, h_atoms)
 
     # Initialize device grid to zero
-    var h_zeros = alloc[Float32](grid_size)
+    var h_zeros = unsafe_alloc[Float32](grid_size)
     for i in range(grid_size):
         h_zeros[i] = 0.0
     ctx.enqueue_copy(d_energygrid, h_zeros)
-    h_zeros.free()
+    h_zeros.unsafe_free()
 
     # Launch config: one thread per atom
     var block_size = 256
-    var num_blocks = (numatoms + block_size - 1) // block_size
+    var num_blocks = ceildiv(numatoms, block_size)
 
-    ctx.enqueue_function[cenergy_scatter_kernel, cenergy_scatter_kernel](
+    ctx.enqueue_function[cenergy_scatter_kernel](
         d_energygrid,
         d_atoms,
-        vol_dim.x,
-        vol_dim.y,
+        Int32(vol_dim.x),
+        Int32(vol_dim.y),
         gridspacing,
         z_coord,
-        numatoms,
+        Int32(numatoms),
         grid_dim=(num_blocks, 1, 1),
         block_dim=(block_size, 1, 1),
     )
@@ -186,6 +192,6 @@ def main() raises:
         print("Figure 21.5 (Scatter) Failed!")
 
     # Cleanup
-    h_atoms.free()
-    h_energygrid_cpu.free()
-    h_energygrid_gpu.free()
+    h_atoms.unsafe_free()
+    h_energygrid_cpu.unsafe_free()
+    h_energygrid_gpu.unsafe_free()

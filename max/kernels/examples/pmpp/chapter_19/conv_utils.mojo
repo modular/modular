@@ -24,7 +24,7 @@ from std.math import abs
 from std.random import rand
 
 
-@always_inline
+@inline(.always)
 def idx_x(
     n: Int, c: Int, h: Int, w: Int, N: Int, C: Int, H: Int, W: Int
 ) -> Int:
@@ -32,13 +32,13 @@ def idx_x(
     return n * (C * H * W) + c * (H * W) + h * W + w
 
 
-@always_inline
+@inline(.always)
 def idx_f(m: Int, c: Int, p: Int, q: Int, M: Int, C: Int, K: Int) -> Int:
     """Index into F (filter) tensor: (M, C, K, K) layout."""
     return m * (C * K * K) + c * (K * K) + p * K + q
 
 
-@always_inline
+@inline(.always)
 def idx_y(
     n: Int, m: Int, h: Int, w: Int, N: Int, M: Int, H_out: Int, W_out: Int
 ) -> Int:
@@ -53,9 +53,9 @@ def conv_cpu(
     H: Int,
     W: Int,
     K: Int,
-    X: UnsafePointer[Float32, MutAnyOrigin],
-    F: UnsafePointer[Float32, MutAnyOrigin],
-    Y: UnsafePointer[Float32, MutAnyOrigin],
+    X: ImmPointer[Float32, _],
+    F: ImmPointer[Float32, _],
+    Y: MutPointer[Float32, _],
 ):
     """CPU implementation of batched convolution (Figure 19.4 logic).
 
@@ -86,7 +86,7 @@ def conv_cpu(
         Y[y_idx] = acc
 
 
-def init_data(data: UnsafePointer[Float32, MutAnyOrigin], size: Int):
+def init_data(data: MutPointer[Float32, _], size: Int):
     """Initialize data with random values in [-0.5, 0.5].
 
     Args:
@@ -99,8 +99,8 @@ def init_data(data: UnsafePointer[Float32, MutAnyOrigin], size: Int):
 
 
 def verify_results(
-    h_Y_cpu: UnsafePointer[Float32, MutAnyOrigin],
-    h_Y_gpu: UnsafePointer[Float32, MutAnyOrigin],
+    h_Y_cpu: ImmPointer[Float32, _],
+    h_Y_gpu: ImmPointer[Float32, _],
     N: Int,
     M: Int,
     H_out: Int,

@@ -21,9 +21,10 @@ from threading import Thread
 
 import numpy as np
 import pytest
+from _transfer_engine_helpers import every_leaf, kv_memory
 from max.driver import CPU, Device
 from max.driver.buffer import Buffer
-from max.kv_cache import (
+from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     TransferReqData,
@@ -47,7 +48,11 @@ def transfer_routine_reader(
     dst_replica_idx: int,
 ) -> None:
     transfer_req = engine.initiate_read_transfer(
-        remote, src_idxs, dst_idxs, src_replica_idx, dst_replica_idx
+        remote,
+        every_leaf(remote, src_idxs),
+        every_leaf(remote, dst_idxs),
+        src_replica_idx,
+        dst_replica_idx,
     )
     queue.put(transfer_req)
     engine.sync_and_release(transfer_req)
@@ -75,13 +80,11 @@ def test_read_transfer_completion_from_both_engines(device: Device) -> None:
 
     engine_1 = KVTransferEngine(
         "engine_1",
-        [[blocks_1]],
-        total_num_pages=total_num_pages,
+        [[kv_memory(blocks_1, total_num_pages)]],
     )
     engine_2 = KVTransferEngine(
         "engine_2",
-        [[blocks_2]],
-        total_num_pages=total_num_pages,
+        [[kv_memory(blocks_2, total_num_pages)]],
     )
 
     engine_1.connect(engine_2.metadata)

@@ -15,34 +15,21 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
-import numpy as np
-from max.driver import Buffer
 from max.dtype import DType
-from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.engine import InferenceSession
 from max.graph.weights import WeightData
-from max.kv_cache import PagedKVCacheManager
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-    MultiKVCacheParams,
-)
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    CompilationTimer,
-    KVCacheConfig,
-    ModelInputs,
-    PipelineConfig,
-)
-from max.pipelines.lib.quant import parse_quant_config
-from transformers import AutoConfig
+from max.nn.comm.ep import EPConfig
+from max.pipelines.lib import GraphRole, GraphSpec
+from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
-from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
+from ..deepseekV3.memory_planner import (
+    _ep_max_rank_send_tokens_for_pipeline,
+    ep_fuse_ffn_combine_send_for_pipeline,
+)
+from ..deepseekV3.model import DeepseekV3Model
 from .deepseekV3_2 import DeepseekV3_2
 from .model_config import DeepseekV3_2Config
 
@@ -52,35 +39,17 @@ logger = logging.getLogger("max.pipelines")
 class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
 
-    # Set by pipeline for extra KV cache managers
-    extra_kv_managers: list[PagedKVCacheManager]
-    # Stored for step() call in execute()
-    _current_batches: Sequence[Sequence[TextContext]]
+    model_config_cls: ClassVar[type[Any]] = DeepseekV3_2Config
 
-    @property
-    def indexer_kv_manager(self) -> PagedKVCacheManager:
-        """Returns the indexer KV cache manager (the single extra manager)."""
-        assert len(self.extra_kv_managers) == 1, (
-            "Expected exactly one extra KV manager (indexer cache)"
-        )
-        return self.extra_kv_managers[0]
+    def _first_mla_layer(self) -> int:
+        """Index of the first layer that actually has multi-latent attention.
 
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParamInterface:
-        return DeepseekV3_2Config.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
+        Zero for an all-MLA decoder, which is every model on this path today.
+        A hybrid schedule that interleaves another attention family overrides
+        this: probing layer 0 for an MLA-only tensor raises ``KeyError`` when
+        layer 0 belongs to the other family.
+        """
+        return 0
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
@@ -92,9 +61,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         #   == num_devices  ->  DP attention  (each device owns a batch shard)
         #   == 1            ->  TP attention  (heads sharded, tokens replicated)
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
-        max_batch_total_tokens = (
-            self.pipeline_config.runtime.max_batch_total_tokens
-        )
+        max_batch_total_tokens = self.planned_max_batch_total_tokens
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
@@ -106,7 +73,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             graph_mode = "auto"
 
         dtype = self.dtype
-        if dtype == DType.float8_e4m3fn:
+        if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
             quant_config = parse_quant_config(config, state_dict, dtype)
         else:
             quant_config = None
@@ -117,18 +84,15 @@ class DeepseekV3_2Model(DeepseekV3Model):
         else:
             if ep_size % len(self.devices) != 0:
                 raise ValueError(
-                    "If you are running with expert parallelism, ep_size must"
-                    " be set to the total number of GPUs across nodes."
+                    f"ep_size={ep_size} is not divisible by the number of GPUs"
+                    f" on this node ({len(self.devices)}). ep_size must equal"
+                    f" n_gpus_per_node * n_nodes. For a single-node deployment"
+                    f" set ep_size={len(self.devices)}."
                 )
             n_nodes = ep_size // len(self.devices)
 
-            # With a mixed TP-attention + EP-MoE strategy, the attention output
-            # will be scattered across ranks, so each rank will only send a
-            # subset of the tokens.
-            attn_tp_size = ep_size // data_parallel_degree
-            ep_max_rank_send_tokens = (
-                self.pipeline_config.runtime.max_batch_input_tokens
-                // attn_tp_size
+            ep_max_rank_send_tokens = _ep_max_rank_send_tokens_for_pipeline(
+                self.pipeline_config
             )
 
             ep_kwargs: dict[str, Any] = dict(
@@ -137,16 +101,28 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
+                moe_dim=config.moe_intermediate_size,
                 max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
+                use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
+                fuse_ffn_combine_send=ep_fuse_ffn_combine_send_for_pipeline(
+                    self.pipeline_config, config
+                ),
             )
 
             if config.n_shared_experts == 1:
-                # Only enable shared expert fusion if the shared expert is of
-                # the same shape as routed experts.
-                ep_kwargs["fused_shared_expert"] = True
+                # Fuse into EP dispatch only when shared experts use the same
+                # quantized layout as routed experts (modelopt ``*shared_experts*``
+                # ignore leaves them bf16 → separate unfused path).
+                if quant_config is None:
+                    ep_kwargs["fused_shared_expert"] = True
+                else:
+                    ep_kwargs["fused_shared_expert"] = (
+                        quant_config.shared_experts_dtype(DType.bfloat16)
+                        == dtype
+                    )
 
             if quant_config is not None:
                 ep_kwargs["dispatch_quant_config"] = quant_config
@@ -154,7 +130,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             ep_config = EPConfig(**ep_kwargs)
 
         norm_dtype = state_dict[
-            "layers.0.self_attn.kv_a_layernorm.weight"
+            f"layers.{self._first_mla_layer()}.self_attn.kv_a_layernorm.weight"
         ].dtype
 
         if config.topk_method == "noaux_tc":
@@ -170,7 +146,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             correction_bias_dtype = None
 
         # Initialize config with parameters from pipeline_config
-        model_config = DeepseekV3_2Config.initialize(self.pipeline_config)
+        model_config = self.arch_config
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype
@@ -181,6 +157,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
+        model_config.return_hidden_states = self.return_hidden_states
 
         if ep_size > 1:
             attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
@@ -193,181 +170,38 @@ class DeepseekV3_2Model(DeepseekV3Model):
         return model_config
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        """Load the model with the given weights."""
-
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
-        # `max_batch_size` of requests on each DP rank.
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: DeepseekV3_2Config,
+    ) -> None:
+        self.ep_comm_initializer = None
+        if model_config.ep_config is None:
+            return
+        self.ep_comm_initializer = self._init_ep_comm(
+            session, model_config.ep_config
         )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        # create batch context lengths tensor for each device
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
-        with CompilationTimer("model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=self.huggingface_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            # Create the model
-            config = self._create_model_config(state_dict)
-
-            self.ep_comm_initializer: EPCommInitializer | None = None
-            if config.ep_config is not None:
-                self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-                self.ep_comm_initializer.ep_init(session)
-                if config.ep_config.node_id == -1:
-                    raise ValueError(
-                        "EP node ID is not set. Please check if the EP initialization is successful."
-                    )
-
-            nn_model = DeepseekV3_2(config)
-            nn_model.load_state_dict(
-                state_dict, weight_alignment=1, strict=True
+        if model_config.ep_config.node_id == -1:
+            raise ValueError(
+                "EP node ID is not set. Please check if the EP initialization is successful."
             )
 
-            # Create the graph
-            with Graph(
+    @override
+    def graph_specs(
+        self, model_config: DeepseekV3_2Config
+    ) -> dict[str, GraphSpec]:
+        """Returns the decoder graph."""
+        nn_model = DeepseekV3_2(model_config)
+        nn_model.load_state_dict(
+            self._weights_dict, weight_alignment=1, strict=True
+        )
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
                 "deepseekV3_2_graph",
-                input_types=nn_model.input_types(self.kv_params),
-            ) as graph:
-                (
-                    tokens,
-                    devices_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
-
-                variadic_args_iter = iter(variadic_args)
-                # Multi-GPU passes a signal buffer per device: unmarshal these.
-                signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
-
-                # Unmarshal the KV cache arguments.
-                assert isinstance(self.kv_params, MultiKVCacheParams)
-                len_of_mla_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs()[0].flatten()
-                )
-                mla_kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [
-                        next(variadic_args_iter)
-                        for _ in range(len_of_mla_kv_inputs)
-                    ],
-                    self.kv_params.params[0],
-                )
-
-                len_of_indexer_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs()[1].flatten()
-                )
-                indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [
-                        next(variadic_args_iter)
-                        for _ in range(len_of_indexer_kv_inputs)
-                    ],
-                    self.kv_params.params[1],
-                )
-
-                # Unmarshal the batch context lengths
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
-
-                # all remaining arguments are for EP inputs
-                ep_model_inputs = list(variadic_args_iter)
-
-                outputs = nn_model(
-                    tokens.tensor,
-                    signal_buffers,
-                    mla_kv_caches_per_dev,
-                    indexer_kv_caches_per_dev,
-                    return_n_logits.tensor,
-                    devices_input_row_offsets.tensor,
-                    host_input_row_offsets.tensor,
-                    data_parallel_splits.tensor,
-                    batch_context_lengths,
-                    ep_model_inputs,
-                )
-
-                graph.output(*outputs)
-
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=nn_model.state_dict())
-
-        return model
-
-    @override
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> DeepseekV3Inputs:
-        # Store batches for step() call in execute()
-        self._current_batches = replica_batches
-
-        # Get base inputs from parent (contains MLA KV cache inputs)
-        model_inputs = super().prepare_initial_token_inputs(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
-
-        # Combine primary (MLA) and indexer KV cache inputs
-        indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
-            replica_batches
-        )
-        kv_cache_inputs = model_inputs.kv_cache_inputs
-        assert kv_cache_inputs is not None
-        combined_inputs = list(kv_cache_inputs.inputs) + list(
-            indexer_kv_inputs.inputs
-        )
-        model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
-
-        return model_inputs
-
-    @override
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> DeepseekV3Inputs:
-        model_inputs = super().prepare_next_token_inputs(
-            next_tokens, prev_model_inputs
-        )
-        # Get updated indexer KV inputs
-        indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
-            self._current_batches
-        )
-
-        # Extract MLA inputs from previous inputs and combine with new indexer inputs
-        assert isinstance(prev_model_inputs.kv_cache_inputs, KVCacheInputs)
-        prev_kv_inputs = prev_model_inputs.kv_cache_inputs.inputs
-        # MLA inputs are at the beginning, indexer inputs are at the end
-        num_indexer_inputs = len(indexer_kv_inputs.inputs)
-        mla_kv_inputs = prev_kv_inputs[:-num_indexer_inputs]
-        combined_inputs = list(mla_kv_inputs) + list(indexer_kv_inputs.inputs)
-        model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
-
-        return model_inputs
+                self._bind_graph_inputs(
+                    nn_model.input_tree(model_config.kv_params)
+                ),
+                weights=nn_model.state_dict(),
+            )
+        }

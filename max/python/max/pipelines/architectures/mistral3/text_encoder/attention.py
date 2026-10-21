@@ -92,7 +92,7 @@ class EncoderAttention(Module):
         batch_size = x.shape[0]
         seq_len = x.shape[1]
         x = ops.unsqueeze(x, 3)
-        x = ops.concat([x] * n_rep, axis=3)
+        x = ops.tile(x, [1, 1, 1, n_rep, 1])
         return ops.reshape(
             x,
             [batch_size, seq_len, self.n_kv_heads * n_rep, self.head_dim],

@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
+from std.memory import alloc, dealloc, Layout as AllocLayout
 from std.random import rand
 from std.sys import simd_width_of, size_of
 from std.sys.defines import get_defined_int, get_defined_string
 
 from std.benchmark import *
 from std.benchmark import keep
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv.conv_utils import (
     ConvShape,
@@ -35,7 +36,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     comptime filter_type = spec.static_info.filter_type
     comptime output_type = spec.static_info.output_type
 
-    # Alignment in terms of number of elmements.
+    # Alignment in terms of number of elements.
     comptime alignment = 64
     comptime input_align = alignment // size_of[input_type]()
     comptime filter_align = alignment // size_of[filter_type]()
@@ -89,90 +90,99 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
-    var input_ptr = alloc[Scalar[input_type]](
-        input_alloc_size * num_copies, alignment=alignment
-    )
-    var filter_ptr = alloc[Scalar[filter_type]](
-        num_copies * filter_alloc_size, alignment=alignment
-    )
-    var output_ptr = alloc[Scalar[output_type]](
-        num_copies * output_alloc_size, alignment=alignment
-    )
+    var input_alloc = alloc(
+        AllocLayout[Scalar[input_type], alignment=.of_bytes[alignment]()](
+            length=num_copies * input_alloc_size
+        )
+    ).into_managed()
+    var input_ptr = input_alloc.unsafe_ptr()
+    var filter_alloc = alloc(
+        AllocLayout[Scalar[filter_type], alignment=.of_bytes[alignment]()](
+            length=num_copies * filter_alloc_size
+        )
+    ).into_managed()
+    var filter_ptr = filter_alloc.unsafe_ptr()
+    var output_alloc = alloc(
+        AllocLayout[Scalar[output_type], alignment=.of_bytes[alignment]()](
+            length=num_copies * output_alloc_size
+        )
+    ).into_managed()
+    var output_ptr = output_alloc.unsafe_ptr()
 
-    rand[input_type](input_ptr, num_copies * input_alloc_size)
-    rand[filter_type](filter_ptr, num_copies * filter_alloc_size)
+    rand(input_alloc.unsafe_span())
+    rand(filter_alloc.unsafe_span())
 
     var pad_d = IndexList[2](0)
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    comptime if spec.static_info.rank == 1:
-        pad_w = Index(spec.pad[0], spec.pad[1])
-    elif spec.static_info.rank == 2:
-        pad_h = Index(spec.pad[0], spec.pad[1])
-        pad_w = Index(spec.pad[2], spec.pad[3])
-    elif spec.static_info.rank == 3:
-        pad_d = Index(spec.pad[0], spec.pad[1])
-        pad_h = Index(spec.pad[2], spec.pad[3])
-        pad_w = Index(spec.pad[4], spec.pad[5])
+    comptime match spec.static_info.rank:
+        case 1:
+            pad_w = Index(spec.pad[0], spec.pad[1])
+        case 2:
+            pad_h = Index(spec.pad[0], spec.pad[1])
+            pad_w = Index(spec.pad[2], spec.pad[3])
+        case 3:
+            pad_d = Index(spec.pad[0], spec.pad[1])
+            pad_h = Index(spec.pad[2], spec.pad[3])
+            pad_w = Index(spec.pad[4], spec.pad[5])
+        case _:
+            pass
 
     var conv_shape = ConvShape[spec.static_info.rank](
         n=spec.n,
-        input_dims=spec.input_dims,
-        output_dims=output_dims,
-        filter_dims=spec.filter_dims,
+        input_dims=Coord(spec.input_dims),
+        output_dims=Coord(output_dims),
+        filter_dims=Coord(spec.filter_dims),
         c=spec.c,
         f=spec.f,
-        stride=spec.stride,
-        dilation=spec.dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(spec.stride),
+        dilation=Coord(spec.dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=spec.num_groups,
     )
 
-    @parameter
-    @always_inline
+    @inline(.always)
     def bench_conv_wrapper(
         mut b: Bencher, concrete_spec: ConvSpec[spec.static_info]
-    ) raises:
+    ) raises {imm}:
         # Count the iteration to decide which input copy to use.
         var counter = 0
 
-        @always_inline
-        @parameter
-        def bench_fn():
-            comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
-            comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
-            var input = LayoutTensor[input_type, layout_2](
-                input_ptr + (counter % num_copies) * input_alloc_size,
-                RuntimeLayout[layout_2].row_major(input_shape),
+        @inline(.always)
+        def bench_fn() {mut counter, imm}:
+            var input = TileTensor(
+                input_ptr.unsafe_offset(
+                    (counter % num_copies) * input_alloc_size
+                ),
+                row_major(Coord(input_shape)),
             )
-            var filter = LayoutTensor[filter_type, layout_3](
-                filter_ptr + (counter % num_copies) * filter_alloc_size,
-                RuntimeLayout[layout_3].row_major(packed_filter_shape),
+            var filter = TileTensor(
+                filter_ptr.unsafe_offset(
+                    (counter % num_copies) * filter_alloc_size
+                ),
+                row_major(Coord(packed_filter_shape)),
             )
-            var output = LayoutTensor[output_type, layout_2](
-                output_ptr + (counter % num_copies) * output_alloc_size,
-                RuntimeLayout[layout_2].row_major(output_shape),
+            var output = TileTensor(
+                output_ptr.unsafe_offset(
+                    (counter % num_copies) * output_alloc_size
+                ),
+                row_major(Coord(output_shape)),
             )
 
             try:
                 ConvDirectNHWC[
-                    layout_2,
-                    layout_3,
-                    layout_2,
+                    input.LayoutType,
+                    filter.LayoutType,
+                    output.LayoutType,
                     input_type,
                     filter_type,
                     output_type,
                     True,
                     ConvInfoStatic[spec.static_info.rank](),
-                ].run(
-                    output,
-                    input,
-                    filter,
-                    conv_shape,
-                )
+                ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
                 counter += 1
 
@@ -181,18 +191,19 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
             keep(output.ptr)
 
-        b.iter[bench_fn]()
+        b.iter(bench_fn)
 
-    m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
-        BenchId("Conv", String.write(spec)),
+    m.bench_with_input(
+        bench_conv_wrapper,
+        BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
         [ThroughputMeasure(BenchMetric.elements, spec.flops())],
     )
 
-    input_ptr.free()
-    filter_ptr.free()
-    output_ptr.free()
+    dealloc(input_alloc^)
+    dealloc(filter_alloc^)
+    dealloc(output_alloc^)
 
 
 @fieldwise_init
@@ -256,21 +267,21 @@ def main() raises:
 
     comptime fp32_1d = ConvSpecStatic(
         rank=1,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
-    @always_inline
+    @inline(.always)
     def rebind1d(idx: IndexList[1]) -> IndexList[fp32_1d.rank]:
         return rebind[IndexList[fp32_1d.rank]](idx)
 
-    @always_inline
+    @inline(.always)
     def rebind1d_pad(idx: IndexList[2]) -> IndexList[2 * fp32_1d.rank]:
         return rebind[IndexList[2 * fp32_1d.rank]](idx)
 
     # fmt: off
-    @always_inline
+    @inline(.always)
     def spec1d(N: Int, W: Int, C: Int, S: Int, F: Int, st: Int, di: Int, \
         pa: IndexList[2], ng: Int
     ) -> ConvSpec[fp32_1d]:
@@ -291,20 +302,20 @@ def main() raises:
 
     comptime fp32_2d = ConvSpecStatic(
         rank=2,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
-    @always_inline
+    @inline(.always)
     def rebind2d(idx: IndexList[2]) -> IndexList[fp32_2d.rank]:
         return rebind[IndexList[fp32_2d.rank]](idx)
 
-    @always_inline
+    @inline(.always)
     def rebind2d_pad(idx: IndexList[4]) -> IndexList[2 * fp32_2d.rank]:
         return rebind[IndexList[2 * fp32_2d.rank]](idx)
 
-    @always_inline
+    @inline(.always)
     def spec2d(
         N: Int,
         H: Int,
@@ -332,16 +343,16 @@ def main() raises:
 
     comptime fp32_3d = ConvSpecStatic(
         rank=3,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
-    @always_inline
+    @inline(.always)
     def rebind3d(idx: IndexList[3]) -> IndexList[fp32_3d.rank]:
         return rebind[IndexList[fp32_3d.rank]](idx)
 
-    @always_inline
+    @inline(.always)
     def rebind3d_pad(idx: IndexList[6]) -> IndexList[3 * fp32_3d.rank]:
         return rebind[IndexList[3 * fp32_3d.rank]](idx)
 

@@ -13,70 +13,88 @@
 
 from std.math import ceildiv
 
-from std.gpu import barrier, global_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
-from layout import TileTensor, Coord, Idx, row_major
+from max.gpu import global_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
+from layout import TileTensor, Idx, row_major
 
 comptime BLOCK_DIM = 4
 
 
 def stencil2d(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    arr_size: Int,
-    num_rows: Int,
-    num_cols: Int,
-    coeff0: Int,
-    coeff1: Int,
-    coeff2: Int,
-    coeff3: Int,
-    coeff4: Int,
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
+    arr_size_dev: Int32,
+    num_rows_dev: Int32,
+    num_cols_dev: Int32,
+    coeff0_dev: Int32,
+    coeff1_dev: Int32,
+    coeff2_dev: Int32,
+    coeff3_dev: Int32,
+    coeff4_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var arr_size = Int(arr_size_dev)
+    var num_rows = Int(num_rows_dev)
+    var num_cols = Int(num_cols_dev)
+    var coeff0 = Int(coeff0_dev)
+    var coeff1 = Int(coeff1_dev)
+    var coeff2 = Int(coeff2_dev)
+    var coeff3 = Int(coeff3_dev)
+    var coeff4 = Int(coeff4_dev)
     var tidx = global_idx.x
     var tidy = global_idx.y
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var a = TileTensor(a_ptr, row_major(arr_size))
+    var b = TileTensor(b_ptr, row_major(arr_size))
 
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
         var idx = tidy * num_cols + tidx
         b.store(
-            Coord(Idx(idx)),
-            Float32(coeff0) * a.load[width=1](Coord(Idx(idx - 1)))
-            + Float32(coeff1) * a.load[width=1](Coord(Idx(idx)))
-            + Float32(coeff2) * a.load[width=1](Coord(Idx(idx + 1)))
-            + Float32(coeff3)
-            * a.load[width=1](Coord(Idx((tidy - 1) * num_cols + tidx)))
-            + Float32(coeff4)
-            * a.load[width=1](Coord(Idx((tidy + 1) * num_cols + tidx))),
+            (idx,),
+            Float32(coeff0) * a[idx - 1]
+            + Float32(coeff1) * a[idx]
+            + Float32(coeff2) * a[idx + 1]
+            + Float32(coeff3) * a[(tidy - 1) * num_cols + tidx]
+            + Float32(coeff4) * a[(tidy + 1) * num_cols + tidx],
         )
 
 
 def stencil2d_smem(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    arr_size: Int,
-    num_rows: Int,
-    num_cols: Int,
-    coeff0: Int,
-    coeff1: Int,
-    coeff2: Int,
-    coeff3: Int,
-    coeff4: Int,
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
+    arr_size_dev: Int32,
+    num_rows_dev: Int32,
+    num_cols_dev: Int32,
+    coeff0_dev: Int32,
+    coeff1_dev: Int32,
+    coeff2_dev: Int32,
+    coeff3_dev: Int32,
+    coeff4_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var arr_size = Int(arr_size_dev)
+    var num_rows = Int(num_rows_dev)
+    var num_cols = Int(num_cols_dev)
+    var coeff0 = Int(coeff0_dev)
+    var coeff1 = Int(coeff1_dev)
+    var coeff2 = Int(coeff2_dev)
+    var coeff3 = Int(coeff3_dev)
+    var coeff4 = Int(coeff4_dev)
     var tidx = global_idx.x
     var tidy = global_idx.y
     var lindex_x = thread_idx.x + 1
     var lindex_y = thread_idx.y + 1
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var a = TileTensor(a_ptr, row_major(arr_size))
+    var b = TileTensor(b_ptr, row_major(arr_size))
 
-    var a_shared_ptr = stack_allocation[
+    var a_shared_ptr = unsafe_stack_allocation[
         (BLOCK_DIM + 2) * (BLOCK_DIM + 2),
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var a_shared = TileTensor(
         a_shared_ptr, row_major[BLOCK_DIM + 2, BLOCK_DIM + 2]()
@@ -84,53 +102,48 @@ def stencil2d_smem(
 
     # Each element is loaded in shared memory.
     a_shared.store(
-        Coord(Idx(lindex_y), Idx(lindex_x)),
-        a.load[width=1](Coord(Idx(tidy * num_cols + tidx))),
+        (lindex_y, lindex_x),
+        a[tidy * num_cols + tidx],
     )
 
     # First column also loads elements left and right to the block.
     if thread_idx.x == 0:
         var idx = tidy * num_cols + (tidx - 1)
         a_shared.store(
-            Coord(Idx(lindex_y), Idx(0)),
-            a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
+            (lindex_y, Idx[0]),
+            a[idx] if 0 <= idx < arr_size else 0,
         )
 
         idx = tidy * num_cols + tidx + BLOCK_DIM
         a_shared.store(
-            Coord(Idx(lindex_y), Idx(BLOCK_DIM + 1)),
-            a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
+            (lindex_y, BLOCK_DIM + 1),
+            a[idx] if 0 <= idx < arr_size else 0,
         )
 
     # First row also loads elements above and below the block.
     if thread_idx.y == 0:
         var idx = (tidy - 1) * num_cols + tidx
         a_shared.store(
-            Coord(Idx(0), Idx(lindex_x)),
-            a.load[width=1](Coord(Idx(idx))) if 0 < idx < arr_size else 0,
+            (Idx[0], lindex_x),
+            a[idx] if 0 < idx < arr_size else 0,
         )
 
         idx = (tidy + BLOCK_DIM) * num_cols + tidx
         a_shared.store(
-            Coord(Idx(BLOCK_DIM + 1), Idx(lindex_x)),
-            a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
+            (BLOCK_DIM + 1, lindex_x),
+            a[idx] if 0 <= idx < arr_size else 0,
         )
 
     barrier()
 
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
         b.store(
-            Coord(Idx(tidy * num_cols + tidx)),
-            Float32(coeff0)
-            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x - 1)))
-            + Float32(coeff1)
-            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x)))
-            + Float32(coeff2)
-            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x + 1)))
-            + Float32(coeff3)
-            * a_shared.load[width=1](Coord(Idx(lindex_y - 1), Idx(lindex_x)))
-            + Float32(coeff4)
-            * a_shared.load[width=1](Coord(Idx(lindex_y + 1), Idx(lindex_x))),
+            (tidy * num_cols + tidx,),
+            Float32(coeff0) * a_shared[lindex_y, lindex_x - 1]
+            + Float32(coeff1) * a_shared[lindex_y, lindex_x]
+            + Float32(coeff2) * a_shared[lindex_y, lindex_x + 1]
+            + Float32(coeff3) * a_shared[lindex_y - 1, lindex_x]
+            + Float32(coeff4) * a_shared[lindex_y + 1, lindex_x],
         )
 
 
@@ -149,15 +162,15 @@ def run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     comptime num_rows = 8
     comptime num_cols = 8
 
-    var a_host = alloc[Float32](m)
-    var b_host = alloc[Float32](m)
+    var a_host = unsafe_alloc[Float32](m)
+    var b_host = unsafe_alloc[Float32](m)
 
     for i in range(m):
         a_host[i] = Float32(i)
         b_host[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](m)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](m)
+    var a_device = ctx.enqueue_create_buffer[.float32](m)
+    var b_device = ctx.enqueue_create_buffer[.float32](m)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -165,17 +178,17 @@ def run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     comptime func_select = stencil2d_smem if smem == True else stencil2d
 
     for _ in range(iterations):
-        ctx.enqueue_function_experimental[func_select](
+        ctx.enqueue_function[func_select](
             a_device,
             b_device,
-            m,
-            num_rows,
-            num_cols,
-            coeff0,
-            coeff1,
-            coeff2,
-            coeff3,
-            coeff4,
+            Int32(m),
+            Int32(num_rows),
+            Int32(num_cols),
+            Int32(coeff0),
+            Int32(coeff1),
+            Int32(coeff2),
+            Int32(coeff3),
+            Int32(coeff4),
             grid_dim=(
                 ceildiv(num_rows, BLOCK_DIM),
                 ceildiv(num_cols, BLOCK_DIM),

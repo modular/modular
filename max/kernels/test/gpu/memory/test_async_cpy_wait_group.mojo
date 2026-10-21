@@ -13,34 +13,36 @@
 
 from std.sys import size_of
 
-from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu import thread_idx
+from max.gpu.host import DeviceContext
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 
 def copy_via_shared(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     var thread_id = thread_idx.x
-    var mem_buff: UnsafePointer[
-        Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ] = stack_allocation[16, Float32, address_space=AddressSpace.SHARED]()
-    var src_global: UnsafePointer[
-        Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
-    ] = src.address_space_cast[AddressSpace.GLOBAL]()
+    var mem_buff: MutPointer[
+        Float32, MutAnyOrigin, address_space=.SHARED
+    ] = unsafe_stack_allocation[
+        16, Float32, address_space=.SHARED
+    ]().as_unsafe_any_origin()
+    var src_global: ImmPointer[
+        Float32, ImmutAnyOrigin, address_space=.GLOBAL
+    ] = src.unsafe_address_space_cast[.GLOBAL]()
 
     async_copy[4](
-        src_global + thread_id,
-        mem_buff + thread_id,
+        src_global.unsafe_offset(thread_id),
+        mem_buff.unsafe_offset(thread_id),
     )
 
     async_copy_commit_group()
@@ -51,10 +53,10 @@ def copy_via_shared(
 
 def run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
-    var in_data = alloc[Float32](16)
-    var out_data = alloc[Float32](16)
-    var in_data_device = ctx.enqueue_create_buffer[DType.float32](16)
-    var out_data_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var in_data = unsafe_alloc[Float32](16)
+    var out_data = unsafe_alloc[Float32](16)
+    var in_data_device = ctx.enqueue_create_buffer[.float32](16)
+    var out_data_device = ctx.enqueue_create_buffer[.float32](16)
 
     for i in range(16):
         in_data[i] = Float32(i + 1)
@@ -63,7 +65,7 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_data_device, in_data)
     ctx.enqueue_copy(out_data_device, out_data)
 
-    ctx.enqueue_function_experimental[copy_via_shared](
+    ctx.enqueue_function[copy_via_shared](
         in_data_device,
         out_data_device,
         grid_dim=(1,),
@@ -79,17 +81,19 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
 
     _ = in_data_device
     _ = out_data_device
-    in_data.free()
-    out_data.free()
+    in_data.unsafe_free()
+    out_data.unsafe_free()
 
 
 def copy_with_src_size(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    src_size: Int,
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
+    src_size_dev: Int32,
 ):
-    var smem = stack_allocation[
-        8, DType.float32, address_space=AddressSpace.SHARED
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var src_size = Int(src_size_dev)
+    var smem = unsafe_stack_allocation[
+        8, DType.float32, address_space=.SHARED
     ]()
 
     for i in range(8):
@@ -97,14 +101,16 @@ def copy_with_src_size(
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
     async_copy[16, fill=Float32(0)](
-        src.address_space_cast[AddressSpace.GLOBAL](), smem, Int32(src_size)
+        src.unsafe_address_space_cast[.GLOBAL](), smem, Int32(src_size)
     )
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
     async_copy[16, fill=Float32(0)](
-        src.address_space_cast[AddressSpace.GLOBAL]() + 4, smem + 4, 0
+        src.unsafe_address_space_cast[.GLOBAL]().unsafe_offset(4),
+        smem.unsafe_offset(4),
+        0,
     )
     async_copy_wait_all()
 
@@ -115,11 +121,11 @@ def copy_with_src_size(
 def copy_with_non_zero_fill[
     smem_size: Int
 ](
-    src: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    dst: UnsafePointer[BFloat16, MutAnyOrigin],
+    src: ImmPointer[BFloat16, ImmutAnyOrigin],
+    dst: MutPointer[BFloat16, MutAnyOrigin],
 ):
-    var smem = stack_allocation[
-        smem_size, DType.bfloat16, address_space=AddressSpace.SHARED
+    var smem = unsafe_stack_allocation[
+        smem_size, DType.bfloat16, address_space=.SHARED
     ]()
 
     for i in range(smem_size):
@@ -128,12 +134,12 @@ def copy_with_non_zero_fill[
     var offset = smem_size // 2
 
     async_copy[16, fill=BFloat16(32)](
-        src.address_space_cast[AddressSpace.GLOBAL](), smem, predicate=True
+        src.unsafe_address_space_cast[.GLOBAL](), smem, predicate=True
     )
 
     async_copy[16, fill=BFloat16(32)](
-        (src + offset).address_space_cast[AddressSpace.GLOBAL](),
-        smem + offset,
+        src.unsafe_offset(offset).unsafe_address_space_cast[.GLOBAL](),
+        smem.unsafe_offset(offset),
         predicate=False,
     )
     async_copy_wait_all()
@@ -146,8 +152,8 @@ def test_copy_with_src_size(ctx: DeviceContext) raises:
     comptime size = 4
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
-    var a_host = alloc[Float32](size)
-    var b_host = alloc[Float32](2 * size)
+    var a_host = unsafe_alloc[Float32](size)
+    var b_host = unsafe_alloc[Float32](2 * size)
 
     for i in range(size):
         a_host[i] = Float32(i + 1)
@@ -155,18 +161,18 @@ def test_copy_with_src_size(ctx: DeviceContext) raises:
     for i in range(2 * size):
         b_host[i] = Float32(i + 1)
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](size)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](2 * size)
+    var a_device = ctx.enqueue_create_buffer[.float32](size)
+    var b_device = ctx.enqueue_create_buffer[.float32](2 * size)
 
     ctx.enqueue_copy(a_device, a_host)
 
     comptime kernel = copy_with_src_size
     comptime src_size = 3 * size_of[DType.float32]()
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
-        src_size,
+        Int32(src_size),
         grid_dim=(1, 1, 1),
         block_dim=(1, 1, 1),
     )
@@ -186,16 +192,16 @@ def test_copy_with_src_size(ctx: DeviceContext) raises:
 
     _ = a_device
     _ = b_device
-    a_host.free()
-    b_host.free()
+    a_host.unsafe_free()
+    b_host.unsafe_free()
 
 
 def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     comptime size = 8
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
-    var a_host = alloc[BFloat16](size)
-    var b_host = alloc[BFloat16](2 * size)
+    var a_host = unsafe_alloc[BFloat16](size)
+    var b_host = unsafe_alloc[BFloat16](2 * size)
 
     for i in range(size):
         a_host[i] = BFloat16(i + 1)
@@ -203,8 +209,8 @@ def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     for i in range(2 * size):
         b_host[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](size)
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](2 * size)
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](size)
+    var b_device = ctx.enqueue_create_buffer[.bfloat16](2 * size)
 
     ctx.enqueue_copy(a_device, a_host)
 
@@ -212,7 +218,7 @@ def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     comptime src_size = 3 * size_of[DType.bfloat16]()
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
         grid_dim=(1, 1, 1),
@@ -242,8 +248,8 @@ def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     _ = a_device
     _ = b_device
-    a_host.free()
-    b_host.free()
+    a_host.unsafe_free()
+    b_host.unsafe_free()
 
 
 def main() raises:

@@ -1,0 +1,188 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Tests for PipelineRuntimeConfig."""
+
+import pytest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.config_enums import (
+    EagerValidatorMode,
+    PipelineRole,
+)
+from max.pipelines.modeling.eager_validation import (
+    Phase,
+    eager_usage_validator,
+)
+from pydantic import ValidationError
+
+
+@pytest.mark.parametrize(
+    ("field", "env_var"),
+    [
+        ("disable_overlap", "MAX_DISABLE_OVERLAP"),
+        ("disable_vendor_blas_fallback", "MODULAR_DISABLE_VENDOR_FALLBACK"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("env_value", "expected"),
+    [
+        (None, False),
+        ("1", True),
+        ("true", True),
+        ("0", False),
+        ("off", False),
+    ],
+)
+def test_debug_flag_defaults_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    env_var: str,
+    env_value: str | None,
+    expected: bool,
+) -> None:
+    monkeypatch.delenv(env_var, raising=False)
+    if env_value is not None:
+        monkeypatch.setenv(env_var, env_value)
+    assert getattr(PipelineRuntimeConfig(), field) is expected
+
+
+@pytest.mark.parametrize(
+    ("field", "env_var"),
+    [
+        ("disable_overlap", "MAX_DISABLE_OVERLAP"),
+        ("disable_vendor_blas_fallback", "MODULAR_DISABLE_VENDOR_FALLBACK"),
+    ],
+)
+def test_debug_flag_explicit_value_beats_env(
+    monkeypatch: pytest.MonkeyPatch, field: str, env_var: str
+) -> None:
+    monkeypatch.setenv(env_var, "1")
+    assert (
+        getattr(PipelineRuntimeConfig.model_validate({field: False}), field)
+        is False
+    )
+
+
+def test_emit_reasoning_content_defaults_false() -> None:
+    assert PipelineRuntimeConfig().emit_reasoning_content is False
+
+
+def test_emit_reasoning_content_can_be_enabled() -> None:
+    assert (
+        PipelineRuntimeConfig(
+            emit_reasoning_content=True
+        ).emit_reasoning_content
+        is True
+    )
+
+
+@pytest.mark.parametrize("utilization", [0, 0.05, 1])
+def test_vision_cache_utilization_accepts_in_range_values(
+    utilization: float,
+) -> None:
+    assert (
+        PipelineRuntimeConfig(
+            vision_cache_utilization=utilization
+        ).vision_cache_utilization
+        == utilization
+    )
+
+
+@pytest.mark.parametrize(
+    ("pipeline_role", "expected"),
+    [
+        ("prefill_and_decode", False),
+        ("prefill_only", True),
+        ("decode_only", True),
+    ],
+)
+def test_is_disaggregated(pipeline_role: PipelineRole, expected: bool) -> None:
+    runtime = PipelineRuntimeConfig(pipeline_role=pipeline_role)
+    assert runtime.is_disaggregated is expected
+
+
+@pytest.mark.parametrize(
+    ("pipeline_role", "expected"),
+    [
+        ("prefill_and_decode", 1024),
+        ("prefill_only", 1024),
+        ("decode_only", None),
+    ],
+)
+def test_max_num_input_tokens_uncapped_on_decode(
+    pipeline_role: PipelineRole, expected: int | None
+) -> None:
+    runtime = PipelineRuntimeConfig(
+        pipeline_role=pipeline_role,
+        enable_chunked_prefill=True,
+        max_batch_input_tokens=1024,
+    )
+    assert runtime.max_num_input_tokens == expected
+
+
+@pytest.mark.parametrize("utilization", [-0.01, -1, 1.01, 2, 100])
+def test_vision_cache_utilization_rejects_out_of_range_values(
+    utilization: float,
+) -> None:
+    """Out-of-range values must fail at config validation with a message
+    naming the field, not surface later as a confusing allocation failure
+    (a negative or over-100% byte budget) deep in memory estimation."""
+    with pytest.raises(ValidationError, match="vision_cache_utilization"):
+        PipelineRuntimeConfig(vision_cache_utilization=utilization)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("enabled", EagerValidatorMode.ENABLED),
+        ("disabled", EagerValidatorMode.DISABLED),
+        ("init-only", EagerValidatorMode.INIT_ONLY),
+    ],
+)
+def test_eager_usage_validator_accepts_every_mode(
+    value: str, expected: EagerValidatorMode
+) -> None:
+    config = PipelineRuntimeConfig.model_validate(
+        {"eager_usage_validator": value}
+    )
+    assert config.eager_usage_validator is expected
+
+
+def test_eager_usage_validator_defaults_to_init_only() -> None:
+    assert (
+        PipelineRuntimeConfig().eager_usage_validator
+        is EagerValidatorMode.INIT_ONLY
+    )
+
+
+def test_eager_usage_validator_rejects_unknown_mode() -> None:
+    with pytest.raises(ValidationError):
+        PipelineRuntimeConfig.model_validate(
+            {"eager_usage_validator": "sometimes"}
+        )
+
+
+@pytest.mark.parametrize(
+    ("mode", "phase", "expected"),
+    [
+        (EagerValidatorMode.ENABLED, "initialization", True),
+        (EagerValidatorMode.ENABLED, "execution", True),
+        (EagerValidatorMode.INIT_ONLY, "initialization", True),
+        (EagerValidatorMode.INIT_ONLY, "execution", False),
+        (EagerValidatorMode.DISABLED, "initialization", False),
+        (EagerValidatorMode.DISABLED, "execution", False),
+    ],
+)
+def test_eager_usage_validator_enables_the_configured_phases(
+    mode: EagerValidatorMode, phase: Phase, expected: bool
+) -> None:
+    assert eager_usage_validator(mode, phase).enabled is expected

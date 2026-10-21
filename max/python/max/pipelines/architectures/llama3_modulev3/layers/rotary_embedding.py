@@ -14,7 +14,7 @@
 
 import math
 
-from max.driver import Device
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
@@ -81,7 +81,7 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
                     - self.scaling_params.low_freq_factor
                 )
             else:
-                smooth = F.constant(0, DType.float32, device=self.device)
+                smooth = F.constant(0, DType.float32, device=CPU())
             inv_freqs = F.where(
                 wave_len < high_freq_wavelen,
                 inv_freqs,
@@ -136,7 +136,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
         num_freqs = int(inv_freqs.shape[0])
         factors_to_use = factors[:num_freqs]
         factor_tensors = [
-            F.constant(factor, dtype=DType.float32, device=self.device)
+            F.constant(factor, dtype=DType.float32, device=CPU())
             for factor in factors_to_use
         ]
         factors_tensor = F.stack(factor_tensors, axis=0)
@@ -158,7 +158,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             t_short = F.arange(
                 0,
                 self.scaling_params.original_max_position,
-                device=self.device,
+                device=CPU(),
                 dtype=DType.float32,
             )
 
@@ -168,7 +168,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             t_long = F.arange(
                 long_start,
                 long_end,
-                device=self.device,
+                device=CPU(),
                 dtype=DType.float32,
             )
 

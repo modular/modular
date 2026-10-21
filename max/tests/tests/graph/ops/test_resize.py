@@ -18,6 +18,7 @@ import pytest
 from conftest import GraphBuilder, dtypes, small_shapes
 from hypothesis import assume, given
 from hypothesis import strategies as st
+from max._core.dialects import mo
 from max.dtype import DType
 from max.graph import DeviceRef, Shape, TensorType, ops
 
@@ -134,24 +135,22 @@ def test_resize_error_insufficient_rank(graph_builder: GraphBuilder) -> None:
             )
 
 
-def test_resize_error_unsupported_interpolation(
-    graph_builder: GraphBuilder,
-) -> None:
-    """Test error when using unsupported interpolation mode (NEAREST)."""
+def test_resize_nearest(graph_builder: GraphBuilder) -> None:
+    """Test resize with NEAREST interpolation delegates to resize_nearest."""
     input_type = TensorType(
         shape=[1, 3, 224, 224], dtype=DType.float32, device=DeviceRef.CPU()
     )
 
     with graph_builder(input_types=[input_type]) as graph:
-        with pytest.raises(
-            NotImplementedError,
-            match=re.escape("InterpolationMode.NEAREST is not yet supported"),
-        ):
-            ops.resize(
-                graph.inputs[0].tensor,
-                [1, 3, 448, 448],
-                interpolation=ops.InterpolationMode.NEAREST,
-            )
+        out = ops.resize(
+            graph.inputs[0].tensor,
+            [1, 3, 448, 448],
+            interpolation=ops.InterpolationMode.NEAREST,
+        )
+
+        assert out.dtype == input_type.dtype
+        assert out.shape == Shape([1, 3, 448, 448])
+        graph.output(out)
 
 
 def test_resize_bilinear(graph_builder: GraphBuilder) -> None:
@@ -169,4 +168,34 @@ def test_resize_bilinear(graph_builder: GraphBuilder) -> None:
 
         assert out.dtype == input_type.dtype
         assert out.shape == Shape([1, 3, 448, 448])
+        graph.output(out)
+
+
+def test_coordinate_transform_mode_matches_mo() -> None:
+    """Each mode keeps the code of its ``mo.CoordinateTransformMode`` case."""
+    for mode in ops.CoordinateTransformMode:
+        assert mo.CoordinateTransformMode(mode.value).name.upper() == mode.name
+
+
+def test_resize_nearest_modes(graph_builder: GraphBuilder) -> None:
+    """``resize_nearest`` takes the mode enums and rejects unknown codes."""
+    input_type = TensorType(
+        shape=[1, 3, 4, 4], dtype=DType.float32, device=DeviceRef.CPU()
+    )
+
+    with graph_builder(input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        out = ops.resize_nearest(
+            x,
+            [1, 3, 8, 8],
+            coordinate_transform_mode=ops.CoordinateTransformMode.ASYMMETRIC,
+            round_mode=ops.RoundMode.FLOOR,
+        )
+        assert out.shape == Shape([1, 3, 8, 8])
+        with pytest.raises(ValueError):
+            ops.resize_nearest(
+                x,
+                [1, 3, 8, 8],
+                round_mode=4,  # type: ignore[arg-type]
+            )
         graph.output(out)

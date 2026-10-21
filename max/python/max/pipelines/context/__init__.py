@@ -1,0 +1,148 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Request contexts and supporting types for MAX pipelines.
+
+A context carries one request's state across generation steps: its prompt
+and generated tokens, sampling parameters, structured-output state, and the
+outputs produced so far.
+"""
+
+from .context import (
+    FUTURE_TOKEN,
+    AudioContext,
+    AudioGenerationContextType,
+    BaseContext,
+    BaseContextType,
+    GrammarEnforcementSnapshot,
+    GrammarEnforcementState,
+    GrammarMatcher,
+    PixelContext,
+    PixelGenerationContextType,
+    SpecDecodingState,
+    StructuredOutputRegionDelimiters,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationContextType,
+    TextGenerationResponseFormat,
+    VLMContextType,
+)
+from .context_validators import (
+    validate_aspect_ratio_args,
+    validate_image_grid_thw_args,
+    validate_image_shape_5d,
+    validate_initial_prompt_has_image,
+    validate_only_one_image,
+    validate_requires_vision_context,
+    validate_vision_position_ids,
+)
+from .eos_tracking import EOSTracker
+from .exceptions import (
+    InputError,
+    MediaBudgetExceeded,
+    MediaDecodeError,
+    PromptTooLongError,
+)
+from .log_probabilities import LogProbabilities
+from .logit_processors_type import (
+    BatchLogitsProcessor,
+    BatchProcessorInputs,
+    LogitsProcessor,
+    ProcessorInputs,
+)
+from .outputs import GenerationOutput, TextGenerationOutput
+from .pixel_context_validators import (
+    validate_flux2_max_pixel_area,
+    validate_wan_max_pixel_area,
+)
+from .sampling_params import (
+    SamplingParams,
+    SamplingParamsGenerationConfigDefaults,
+    SamplingParamsInput,
+)
+from .status import GenerationStatus
+from .tokens import (
+    ImageMetadata,
+    Range,
+    TokenBuffer,
+    TokenHashOverride,
+    TokenSlice,
+)
+from .video import (
+    SampledVideo,
+    VideoSource,
+    VideoStreamInfo,
+    decode_video_frames,
+    open_video_container,
+    plan_frame_indices,
+    probe_video,
+    validate_video,
+)
+
+__all__ = [
+    "FUTURE_TOKEN",
+    "AudioContext",
+    "AudioGenerationContextType",
+    "BaseContext",
+    "BaseContextType",
+    "BatchLogitsProcessor",
+    "BatchProcessorInputs",
+    "EOSTracker",
+    "GenerationOutput",
+    "GenerationStatus",
+    "GrammarEnforcementSnapshot",
+    "GrammarEnforcementState",
+    "GrammarMatcher",
+    "ImageMetadata",
+    "InputError",
+    "LogProbabilities",
+    "LogitsProcessor",
+    "MediaBudgetExceeded",
+    "MediaDecodeError",
+    "PixelContext",
+    "PixelGenerationContextType",
+    "ProcessorInputs",
+    "PromptTooLongError",
+    "Range",
+    "SampledVideo",
+    "SamplingParams",
+    "SamplingParamsGenerationConfigDefaults",
+    "SamplingParamsInput",
+    "SpecDecodingState",
+    "StructuredOutputRegionDelimiters",
+    "TextAndVisionContext",
+    "TextContext",
+    "TextGenerationContextType",
+    "TextGenerationOutput",
+    "TextGenerationResponseFormat",
+    "TokenBuffer",
+    "TokenHashOverride",
+    "TokenSlice",
+    "VLMContextType",
+    "VideoSource",
+    "VideoStreamInfo",
+    "decode_video_frames",
+    "open_video_container",
+    "plan_frame_indices",
+    "probe_video",
+    "validate_aspect_ratio_args",
+    "validate_flux2_max_pixel_area",
+    "validate_image_grid_thw_args",
+    "validate_image_shape_5d",
+    "validate_initial_prompt_has_image",
+    "validate_only_one_image",
+    "validate_requires_vision_context",
+    "validate_video",
+    "validate_vision_position_ids",
+    "validate_wan_max_pixel_area",
+]

@@ -11,10 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ._loader_wrappers import GGUFWeights
+"""Weight-loading utilities for MAX graphs.
+
+Defines the weight container interfaces, adapters for common weight formats,
+and loaders that turn checkpoint files into :class:`WeightData` for graph
+construction.
+"""
+
 from .format import WeightsFormat, weights_format
 from .load import load_weights
 from .load_safetensors import SafetensorWeights
+from .loader_wrappers import GGUFWeights
 from .weights import WeightData, Weights, WeightsAdapter
 
 __all__ = [

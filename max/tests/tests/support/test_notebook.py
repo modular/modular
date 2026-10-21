@@ -50,7 +50,7 @@ def test_compile_error(ipython) -> None:  # noqa: ANN001
 def test_mojo_package(ipython) -> None:  # noqa: ANN001
     ipython.run_cell_magic(
         magic_name="mojo",
-        line="package -o hello.mojopkg",
+        line="package -o hello.mojoc",
         cell='''def hello() -> String: return "hello"''',
     )
-    assert Path("hello.mojopkg").is_file()
+    assert Path("hello.mojoc").is_file()

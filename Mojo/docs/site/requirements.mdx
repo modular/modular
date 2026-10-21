@@ -1,0 +1,93 @@
+---
+title: System requirements
+description: Operating system, hardware, and software requirements for Mojo.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+Mojo runs on Mac, Linux, and Windows (with WSL).
+
+For installation instructions, see the [install guide](/install/).
+
+## Operating system
+
+<Tabs groupId="os">
+<TabItem value="linux" label="Linux">
+
+- glibc 2.34 or later (for example, Ubuntu 22.04 LTS or later).
+
+  :::note Officially supported distribution
+
+  Modular tests Mojo on Ubuntu 22.04 LTS or later. Other Linux distributions
+  that meet the glibc 2.34+ requirement are expected to work but aren't
+  continuously tested. If your system has an older glibc version, run Mojo
+  inside a container with a compatible base image such as Ubuntu 22.04.
+
+  :::
+
+</TabItem>
+<TabItem value="mac" label="Mac">
+
+- macOS Sequoia (15) or later.
+- Apple silicon (M1–M5 processor).
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Mojo doesn't natively support Windows. You can use Mojo on [Windows with
+WSL](https://learn.microsoft.com/en-us/windows/wsl/install) using a compatible
+version of Ubuntu (see the Linux requirements).
+
+</TabItem>
+</Tabs>
+
+## Hardware
+
+{/* rumdl's MD013 reflow strips blank lines inside the nested admonition
+below; disable it for this section. */}
+<!-- rumdl-disable MD013 -->
+
+- **CPU:** x86-64-v3 (Haswell-class or newer; CPUs from approximately 2013
+  onward) or ARM64 Neoverse N1 or newer (for example, AWS Graviton2 and later)
+  on Linux; Apple silicon on macOS.
+
+  :::note x86-64-v3 CPU instruction sets
+
+  The [x86-64-v3 microarchitecture
+  level](https://github.com/llvm/llvm-project/blob/main/clang/docs/UsersManual.md#x86)
+  requires AVX, AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, and XSAVE
+  instructions. To verify your x86-64 CPU on Linux, run
+  `cat /proc/cpuinfo | grep flags` and confirm those flags are present.
+  This requirement doesn't apply to ARM64 or Apple silicon hosts.
+
+  :::
+
+<!-- rumdl-enable MD013 -->
+
+- **RAM:** 8 GiB minimum for Mojo development. MAX inference and model serving
+  require significantly more memory, with the exact amount varying by model.
+  For the catalog of supported models, see the
+  [supported models](https://max.modular.com/models/) page; for a
+  specific model, check its Hugging Face page for memory details.
+- **GPU:** Optional. For GPU programming, see
+  [GPU compatibility](https://max.modular.com/gpu/hardware-compatibility/)
+  in the MAX documentation.
+
+## Software
+
+- A C compiler (such as `cc`, `gcc`, or `clang`) on Linux—used as a linker.
+- Xcode or Xcode Command Line Tools 16 or later on macOS.
+
+## GPU compatibility
+
+GPU programming with Mojo requires MAX. For the GPUs you can program and the
+software each vendor requires, see
+[GPU compatibility](https://max.modular.com/gpu/hardware-compatibility/)
+in the MAX documentation.
+
+## Troubleshooting GPU detection
+
+To check that Mojo can see your GPU and to fix common detection problems, see
+[Troubleshooting GPU detection](https://max.modular.com/gpu/hardware-compatibility/#troubleshooting-gpu-detection)
+in the MAX documentation.

@@ -134,14 +134,13 @@ def query_llm(
                 max_tokens=max_new_tokens,
             )
             return completion.choices[0].message.content or ""
-        except KeyboardInterrupt as e:
-            raise e
+        except KeyboardInterrupt:
+            raise
         except Exception as e:
             print(f"Error Occurs: {e}        Retry ...")
             time.sleep(1)
-    else:
-        print("Max tries. Failed.")
-        return ""
+    print("Max tries. Failed.")
+    return ""
 
 
 def extract_answer(response: str) -> str | None:
@@ -520,11 +519,15 @@ def main(
     # Load model config to get context length
     logger.info(f"Loading config for {model}...")
     config = AutoConfig.from_pretrained(model, trust_remote_code=True)
-    context_length = max_context_length or config.max_position_embeddings
+    model_max_length = getattr(
+        config, "max_position_embeddings", None
+    ) or getattr(
+        getattr(config, "text_config", None), "max_position_embeddings", None
+    )
+    context_length = max_context_length or model_max_length
 
     logger.info(
-        f"Context length: {context_length} "
-        f"(model max: {config.max_position_embeddings}), "
+        f"Context length: {context_length} (model max: {model_max_length}), "
     )
 
     output_dir = Path(save_dir)

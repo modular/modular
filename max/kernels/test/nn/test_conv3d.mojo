@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, isclose
+from std.math import isclose
 from std.random import rand
 from std.sys.info import simd_width_of
 
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout import lt_to_tt
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -67,23 +66,18 @@ def test[
     var WO = (W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1) // stride[2] + 1
     # fmt: on
 
-    # Alternative with explicit dtype parameters
-    var padding_0 = IndexList[2](pad_d[0], pad_d[1])
-    var padding_1 = IndexList[2](pad_h[0], pad_h[1])
-    var padding_2 = IndexList[2](pad_w[0], pad_w[1])
-
     var conv_shape = ConvShape[3](
         n=N,
-        input_dims=DHW,
-        output_dims=Index(DO, HO, WO),
-        filter_dims=QRS,
+        input_dims=Coord(DHW),
+        output_dims=Coord(Index(DO, HO, WO)),
+        filter_dims=Coord(QRS),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 
@@ -93,49 +87,39 @@ def test[
     var filter_size = Q * R * S * C_per_group * F
     var output_size = N * DO * HO * WO * F
 
-    var input_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_ptr = alloc[Scalar[dtype]](filter_size)
-    var output_ptr = alloc[Scalar[dtype]](output_size)
-    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var input_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var output_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
-    rand[dtype](input_ptr, input_size)
-    rand[dtype](filter_ptr, filter_size)
+    rand(input_ptr)
+    rand(filter_ptr)
 
     # Find the tile size used in packing.
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-
-    comptime layout_5d = Layout.row_major[5]()
-    comptime layout_6d = Layout.row_major[6]()
-
     # Buffers for direct conv.
-    var input = LayoutTensor[dtype, layout_5d](
-        input_ptr, RuntimeLayout[layout_5d].row_major(Index(N, D, H, W, C))
+    var input = TileTensor(
+        Span(input_ptr), row_major(Coord(Index(N, D, H, W, C)))
     )
-    var filter = LayoutTensor[dtype, layout_5d](
-        filter_ptr,
-        RuntimeLayout[layout_5d].row_major(Index(Q, R, S, C_per_group, F)),
+    var filter = TileTensor(
+        Span(filter_ptr), row_major(Coord(Index(Q, R, S, C_per_group, F)))
     )
-    var packed_filter_shape = pack_conv_filter_shape(
-        lt_to_tt(filter), num_groups
-    )
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
 
-    var packed_filter_ptr = alloc[Scalar[dtype]](
-        packed_filter_shape.flattened_length()
+    var packed_filter_ptr = List(
+        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    var packed_filter = LayoutTensor[dtype, layout_6d](
-        packed_filter_ptr,
-        RuntimeLayout[layout_6d].row_major(packed_filter_shape),
+    var packed_filter = TileTensor(
+        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
     )
-    var output = LayoutTensor[dtype, layout_5d](
-        output_ptr, RuntimeLayout[layout_5d].row_major(Index(N, DO, HO, WO, F))
+    var output = TileTensor(
+        Span(output_ptr), row_major(Coord(Index(N, DO, HO, WO, F)))
     )
 
     comptime if filter_packed:
-        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -143,9 +127,9 @@ def test[
         dtype,
         dtype,
     ].run(
-        output_ref_ptr,
-        input_ptr,
-        filter_ptr,
+        output_ref_ptr.unsafe_ptr(),
+        input_ptr.unsafe_ptr(),
+        filter_ptr.unsafe_ptr(),
         Index(N, DO, HO, WO, F),
         Index(N, D, H, W, C),
         Index(Q, R, S, C // num_groups, F),
@@ -162,26 +146,26 @@ def test[
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_5d,
-            layout_6d,
-            layout_5d,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
-        ].run(output, input, packed_filter, conv_shape)
+        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_5d,
-            layout_5d,
-            layout_5d,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
-        ].run(output, input, filter, conv_shape)
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Check results, return on the first failed comparison.
     var total_elements = output_size
@@ -222,20 +206,19 @@ def test[
             match_percentage,
         )
 
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr.free()
-    output_ptr.free()
-    output_ref_ptr.free()
-
     if matching_elements == total_elements:
         print("Succeed")
+    _ = output_ref_ptr^
+    _ = output_ptr^
+    _ = packed_filter_ptr^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:
     comptime dtype = DType.float32
 
-    test[DType.float32, False](  # dtype, filter_packed
+    test[.float32, False](  # dtype, filter_packed
         1,  # N: batch size
         IndexList[3](4, 4, 4),  # DHW: depth, height, width
         2,  # C: channels

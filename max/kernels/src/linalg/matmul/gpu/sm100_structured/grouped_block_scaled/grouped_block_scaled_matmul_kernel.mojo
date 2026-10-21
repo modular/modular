@@ -33,22 +33,25 @@ Key differences from block_scaled_matmul_kernel.mojo:
 5. K-loop uses per-group k_tile_count instead of global K dimension
 """
 
-from std.collections import Optional
-from std.math import ceildiv
-from std.memory import UnsafePointer, Pointer
+from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv, umod
+from std.memory import Pointer
 from std.sys import size_of
 
-from std.gpu import (
-    WARP_SIZE,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-)
-from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
-from std.gpu.sync import syncwarp
-from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
+from max.gpu import WARP_SIZE, block_idx, lane_id
+from max.gpu.memory import external_memory, fence_mbarrier_init
+from max.gpu.primitives.cluster import cluster_sync, elect_one_sync
+from max.gpu.sync import syncwarp
+from max.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
-from layout import ComptimeInt, RowMajorLayout, TileTensor
+from layout import (
+    Coord,
+    ComptimeInt,
+    Layout,
+    RowMajorLayout,
+    TensorEngine,
+    TileTensor,
+)
 from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
@@ -70,7 +73,7 @@ from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import ElementwiseComputeFn, no_compute_fn
 from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
     OutputPipelineConfig,
@@ -112,16 +115,22 @@ from .grouped_tile_scheduler import (
 
 
 comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
-    ComptimeInt[max_groups], ComptimeInt[1]
+    *Coord[ComptimeInt[max_groups], ComptimeInt[1]].element_types
 ]
-comptime _GroupPtrTile[max_groups: Int] = TileTensor[
-    DType.uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
+comptime _GroupPtrTile[
+    max_groups: Int,
+    Engine: TensorEngine,
+] = TileTensor[
+    .uint64, _GroupPtrLayout[max_groups], MutAnyOrigin, Engine=Engine
 ]
 comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
-    ComptimeInt[max_groups], ComptimeInt[4]
+    *Coord[ComptimeInt[max_groups], ComptimeInt[4]].element_types
 ]
-comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
-    DType.int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
+comptime _ProblemSizesTile[
+    max_groups: Int,
+    Engine: TensorEngine,
+] = TileTensor[
+    .int32, _ProblemSizesLayout[max_groups], MutAnyOrigin, Engine=Engine
 ]
 
 
@@ -153,40 +162,29 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
     to ensure all warps access the same SMEM locations.
     """
 
-    var desc_a: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]
-    var desc_b: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]
-    var desc_sfa: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]
-    var desc_sfb: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]
-    var desc_c: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]
+    @__allow_legacy_any_origin_fields
+    var desc_a: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
+
+    @__allow_legacy_any_origin_fields
+    var desc_b: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
+
+    @__allow_legacy_any_origin_fields
+    var desc_sfa: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
+
+    @__allow_legacy_any_origin_fields
+    var desc_sfb: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
+
+    @__allow_legacy_any_origin_fields
+    var desc_c: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED]
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def from_smem(
-        ptr_a: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
-        ptr_b: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
-        ptr_sfa: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
-        ptr_sfb: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
-        ptr_c: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr_a: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_b: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_sfa: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_sfb: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
+        ptr_c: MutPointer[TMADescriptor, MutAnyOrigin, address_space=.SHARED],
     ) -> Self:
         """Create tensormap pointers from explicit SMEM pointers.
 
@@ -218,7 +216,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     3. tensormap_cp_fence_release() - Copy SMEM -> block's GMEM tensormap
     4. syncwarp() - Sync before using updated tensormap
 
-    TMA descriptor arrays are passed by reference (as UnsafePointer from
+    TMA descriptor arrays are passed by reference (as Pointer from
     TMATensorTileArray[blk]) to methods rather than stored by value. This
     ensures PTX tensormap operations receive valid GMEM addresses with correct
     address space semantics.
@@ -230,39 +228,61 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     # SMEM descriptors for in-place tensormap updates
     var smem: GroupedTensormapSmem
 
-    @always_inline
+    @inline(.always)
     def init_ab_tensormaps[
         a_dtype: DType,
-        a_rank: Int,
-        a_tile_shape: IndexList[a_rank],
-        a_desc_shape: IndexList[a_rank],
+        a_tile_shape: Coord,
+        a_desc_shape: Coord,
         b_dtype: DType,
-        b_rank: Int,
-        b_tile_shape: IndexList[b_rank],
-        b_desc_shape: IndexList[b_rank],
+        b_tile_shape: Coord,
+        b_desc_shape: Coord,
         sfa_dtype: DType,
-        sfa_rank: Int,
-        sfa_tile_shape: IndexList[sfa_rank],
-        sfa_desc_shape: IndexList[sfa_rank],
+        sfa_tile_shape: Coord,
+        sfa_desc_shape: Coord,
         sfb_dtype: DType,
-        sfb_rank: Int,
-        sfb_tile_shape: IndexList[sfb_rank],
-        sfb_desc_shape: IndexList[sfb_rank],
+        sfb_tile_shape: Coord,
+        sfb_desc_shape: Coord,
     ](
         self,
-        template_a: TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
-        template_b: TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
-        template_sfa: TMATensorTile[
-            sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
-        ],
-        template_sfb: TMATensorTile[
-            sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape
-        ],
+        template_a: TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
+        template_b: TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
+        template_sfa: TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
+        template_sfb: TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
     ):
         """Initialize A/B/SFA/SFB tensormaps in SMEM from grid-constant templates.
 
         Called by MMA warp (lane 0). Copies template descriptors to SMEM.
         Templates must be kernel parameters with nvvm.grid_constant metadata.
+
+        Parameters:
+            a_dtype: Element type of the A matrix tensor.
+            a_tile_shape: Per-tile shape of the A TMA load in each rank.
+            a_desc_shape: Full tensor shape of the A matrix described by
+                the TMA descriptor.
+            b_dtype: Element type of the B matrix tensor.
+            b_tile_shape: Per-tile shape of the B TMA load in each rank.
+            b_desc_shape: Full tensor shape of the B matrix described by
+                the TMA descriptor.
+            sfa_dtype: Element type of the A scale-factor tensor.
+            sfa_tile_shape: Per-tile shape of the SFA TMA load in each
+                rank.
+            sfa_desc_shape: Full tensor shape of the SFA scale-factor
+                tensor described by the TMA descriptor.
+            sfb_dtype: Element type of the B scale-factor tensor.
+            sfb_tile_shape: Per-tile shape of the SFB TMA load in each
+                rank.
+            sfb_desc_shape: Full tensor shape of the SFB scale-factor
+                tensor described by the TMA descriptor.
+
+        Args:
+            template_a: Grid-constant TMA template whose descriptor is
+                copied into the A SMEM tensormap slot.
+            template_b: Grid-constant TMA template whose descriptor is
+                copied into the B SMEM tensormap slot.
+            template_sfa: Grid-constant TMA template whose descriptor is
+                copied into the SFA SMEM tensormap slot.
+            template_sfb: Grid-constant TMA template whose descriptor is
+                copied into the SFB SMEM tensormap slot.
         """
         if lane_id() == 0:
             template_a.smem_tensormap_init(self.smem.desc_a)
@@ -270,63 +290,66 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
             template_sfa.smem_tensormap_init(self.smem.desc_sfa)
             template_sfb.smem_tensormap_init(self.smem.desc_sfb)
 
-    @always_inline
+    @inline(.always)
     def init_c_tensormap[
         c_dtype: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
-    ](
-        self,
-        template_c: TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
-    ):
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
+    ](self, template_c: TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],):
         """Initialize C tensormap in SMEM from grid-constant template.
 
         Called by epilogue warp (lane 0). Copies template descriptor to SMEM.
+
+        Parameters:
+            c_dtype: Element type of the C output matrix tensor.
+            c_tile_shape: Per-tile shape of the C TMA store in each rank.
+            c_desc_shape: Full tensor shape of the C matrix described by
+                the TMA descriptor.
+
+        Args:
+            template_c: Grid-constant TMA template whose descriptor is
+                copied into the C SMEM tensormap slot.
         """
         if lane_id() == 0:
             template_c.smem_tensormap_init(self.smem.desc_c)
 
-    @always_inline
+    @inline(.always)
     def update_ab_for_group[
         a_dtype: DType,
-        a_rank: Int,
-        a_tile_shape: IndexList[a_rank],
-        a_desc_shape: IndexList[a_rank],
+        a_tile_shape: Coord,
+        a_desc_shape: Coord,
         b_dtype: DType,
-        b_rank: Int,
-        b_tile_shape: IndexList[b_rank],
-        b_desc_shape: IndexList[b_rank],
+        b_tile_shape: Coord,
+        b_desc_shape: Coord,
         sfa_dtype: DType,
-        sfa_rank: Int,
-        sfa_tile_shape: IndexList[sfa_rank],
-        sfa_desc_shape: IndexList[sfa_rank],
+        sfa_tile_shape: Coord,
+        sfa_desc_shape: Coord,
         sfb_dtype: DType,
-        sfb_rank: Int,
-        sfb_tile_shape: IndexList[sfb_rank],
-        sfb_desc_shape: IndexList[sfb_rank],
+        sfb_tile_shape: Coord,
+        sfb_desc_shape: Coord,
         max_groups: Int,
+        group_ptr_engine: TensorEngine,
     ](
         self,
         group_idx: UInt32,
-        group_a_ptrs: _GroupPtrTile[max_groups],
-        group_b_ptrs: _GroupPtrTile[max_groups],
-        group_sfa_ptrs: _GroupPtrTile[max_groups],
-        group_sfb_ptrs: _GroupPtrTile[max_groups],
-        tma_a: UnsafePointer[
-            TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
+        group_a_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_b_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_sfa_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_sfb_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        tma_a: MutPointer[
+            TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
             MutAnyOrigin,
         ],
-        tma_b: UnsafePointer[
-            TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
+        tma_b: MutPointer[
+            TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
             MutAnyOrigin,
         ],
-        tma_sfa: UnsafePointer[
-            TMATensorTile[sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape],
+        tma_sfa: MutPointer[
+            TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
             MutAnyOrigin,
         ],
-        tma_sfb: UnsafePointer[
-            TMATensorTile[sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape],
+        tma_sfb: MutPointer[
+            TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
             MutAnyOrigin,
         ],
     ):
@@ -334,6 +357,49 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Called when group_changed=True in TMA load warp.
         TMA pointers must be from TMATensorTileArray[block_idx.x] (GMEM).
+
+        Parameters:
+            a_dtype: Element type of the A matrix tensor.
+            a_tile_shape: Per-tile shape of the A TMA load in each rank.
+            a_desc_shape: Full tensor shape of the A matrix described by
+                the TMA descriptor.
+            b_dtype: Element type of the B matrix tensor.
+            b_tile_shape: Per-tile shape of the B TMA load in each rank.
+            b_desc_shape: Full tensor shape of the B matrix described by
+                the TMA descriptor.
+            sfa_dtype: Element type of the A scale-factor tensor.
+            sfa_tile_shape: Per-tile shape of the SFA TMA load in each
+                rank.
+            sfa_desc_shape: Full tensor shape of the SFA scale-factor
+                tensor described by the TMA descriptor.
+            sfb_dtype: Element type of the B scale-factor tensor.
+            sfb_tile_shape: Per-tile shape of the SFB TMA load in each
+                rank.
+            sfb_desc_shape: Full tensor shape of the SFB scale-factor
+                tensor described by the TMA descriptor.
+            max_groups: Maximum number of GEMM groups in the per-group
+                pointer arrays.
+            group_ptr_engine: Engine of the per-group pointer tiles.
+
+        Args:
+            group_idx: Index of the GEMM group whose tensor base
+                addresses are loaded into the tensormaps.
+            group_a_ptrs: Per-group array of GMEM base addresses for the
+                A matrices.
+            group_b_ptrs: Per-group array of GMEM base addresses for the
+                B matrices.
+            group_sfa_ptrs: Per-group array of GMEM base addresses for
+                the SFA scale-factor tensors.
+            group_sfb_ptrs: Per-group array of GMEM base addresses for
+                the SFB scale-factor tensors.
+            tma_a: Pointer to the per-block A tensormap in GMEM to
+                update.
+            tma_b: Pointer to the per-block B tensormap in GMEM to
+                update.
+            tma_sfa: Pointer to the per-block SFA tensormap in GMEM to
+                update.
+            tma_sfb: Pointer to the per-block SFB tensormap in GMEM to
+                update.
         """
         # Step 1: Acquire fences on GMEM tensormaps
         tma_a[].tensormap_fence_acquire()
@@ -345,18 +411,18 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         if lane_id() == 0:
             var g = Int(group_idx)
 
-            var a_ptr = UnsafePointer[mut=True, Scalar[a_dtype], MutAnyOrigin](
+            var a_ptr = MutPointer[Scalar[a_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_a_ptrs[g, 0])
             )
-            var b_ptr = UnsafePointer[mut=True, Scalar[b_dtype], MutAnyOrigin](
+            var b_ptr = MutPointer[Scalar[b_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_b_ptrs[g, 0])
             )
-            var sfa_ptr = UnsafePointer[
-                mut=True, Scalar[sfa_dtype], MutAnyOrigin
-            ](unsafe_from_address=Int(group_sfa_ptrs[g, 0]))
-            var sfb_ptr = UnsafePointer[
-                mut=True, Scalar[sfb_dtype], MutAnyOrigin
-            ](unsafe_from_address=Int(group_sfb_ptrs[g, 0]))
+            var sfa_ptr = MutPointer[Scalar[sfa_dtype], MutAnyOrigin](
+                unsafe_from_address=Int(group_sfa_ptrs[g, 0])
+            )
+            var sfb_ptr = MutPointer[Scalar[sfb_dtype], MutAnyOrigin](
+                unsafe_from_address=Int(group_sfb_ptrs[g, 0])
+            )
 
             tma_a[].replace_tensormap_global_address_in_shared_mem(
                 self.smem.desc_a, a_ptr
@@ -382,19 +448,19 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         # Step 4: Sync within warp
         syncwarp()
 
-    @always_inline
+    @inline(.always)
     def update_c_for_group[
         c_dtype: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         max_groups: Int,
+        group_ptr_engine: TensorEngine,
     ](
         self,
         group_idx: UInt32,
-        group_c_ptrs: _GroupPtrTile[max_groups],
-        tma_c: UnsafePointer[
-            TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
+        group_c_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        tma_c: MutPointer[
+            TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],
             MutAnyOrigin,
         ],
     ):
@@ -402,6 +468,22 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Called when group_changed=True in epilogue warp.
         TMA pointer must be from TMATensorTileArray[block_idx.x] (GMEM).
+
+        Parameters:
+            c_dtype: Element type of the C output matrix tensor.
+            c_tile_shape: Per-tile shape of the C TMA store in each rank.
+            c_desc_shape: Full tensor shape of the C matrix described by
+                the TMA descriptor.
+            max_groups: Maximum number of GEMM groups in the per-group
+                pointer arrays.
+            group_ptr_engine: Engine of the per-group pointer tiles.
+
+        Args:
+            group_idx: Index of the GEMM group whose C tensor base
+                address is loaded into the tensormap.
+            group_c_ptrs: Per-group array of GMEM base addresses for the
+                C output matrices.
+            tma_c: Pointer to the per-block C tensormap in GMEM to update.
         """
         # Step 1: Acquire fence
         tma_c[].tensormap_fence_acquire()
@@ -409,7 +491,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         # Step 2: Update SMEM descriptor (lane 0 only)
         if lane_id() == 0:
             var g = Int(group_idx)
-            var c_ptr = UnsafePointer[mut=True, Scalar[c_dtype], MutAnyOrigin](
+            var c_ptr = MutPointer[Scalar[c_dtype], MutAnyOrigin](
                 unsafe_from_address=Int(group_c_ptrs[g, 0])
             )
 
@@ -476,7 +558,7 @@ def is_valid_dtypes_and_scale_factor_vec_size(
 
     # Check sf_dtype and sf_vec_size combinations
     # Float8E4M3FN scale factors only valid with sf_vec_size=16 (NVF4)
-    if sf_dtype == DType.float8_e4m3fn and sf_vec_size == 32:
+    if sf_dtype == .float8_e4m3fn and sf_vec_size == 32:
         return False
 
     # MXF8 (Float8) requires sf_vec_size=32
@@ -514,6 +596,20 @@ def is_valid_mma_tiler_and_cluster_shape(
     - Cluster M must be multiple of 2 if MMA tiler M is 256
     - Cluster M/N: Power of 2, <=4 per axis (for SF multicast)
     - Total cluster size: <=16
+
+    Args:
+        mma_tiler_m: MMA tile height in the M dimension; must be 128
+            or 256.
+        mma_tiler_n: MMA tile width in the N dimension; must be 128
+            or 256.
+        cluster_m: Number of CTAs in the cluster along the M dimension;
+            must be a power of 2 and at most 4, and a multiple of 2 when
+            `mma_tiler_m` is 256.
+        cluster_n: Number of CTAs in the cluster along the N dimension;
+            must be a power of 2 and at most 4.
+
+    Returns:
+        True if the combination is valid.
     """
     # Check MMA tiler
     if mma_tiler_m not in (128, 256):
@@ -564,9 +660,11 @@ struct GroupedBlockScaledMatmulKernel[
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Epilogue fusion parameters
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    has_compute_fn: Bool = False,
+    *,
+    group_ptr_engine: TensorEngine,
+    problem_sizes_engine: TensorEngine,
 ]:
     """Grouped block-scaled matmul kernel with dynamic tensormap updates.
 
@@ -579,6 +677,25 @@ struct GroupedBlockScaledMatmulKernel[
     - TMA warp: Initializes A/B/SFA/SFB tensormaps, handles group transitions
     - MMA warp: Waits for tensormap init, consumes tiles, performs block-scaled MMA
     - Epilogue warps: Initializes C tensormap, handles C group transitions
+
+    Parameters:
+        a_type: Element type of the A input matrix.
+        b_type: Element type of the B input matrix.
+        c_type: Element type of the C output matrix.
+        sfa_dtype: Element type of the A block scale factors.
+        sfb_dtype: Element type of the B block scale factors.
+        transpose_b: Whether B is stored transposed; must be `True`.
+        config: Tile shapes, pipeline stages, and swizzle configuration.
+        max_groups: Maximum number of GEMM groups supported at runtime.
+        cluster_shape: CTA cluster dimensions as
+            `(cluster_m, cluster_n, cluster_k)` (defaults to `(1, 1, 1)`).
+        ComputeFnType: Type of the `compute_fn` argument of `run` and
+            `run_2sm`.
+        has_compute_fn: Whether `compute_fn` maps the accumulated results
+            before they are stored (defaults to False). Launch with
+            `host_args=(compute_fn,)`.
+        group_ptr_engine: Engine of the per-group pointer tiles.
+        problem_sizes_engine: Engine of the problem-sizes tile.
     """
 
     # ========== Derived Constants (from config) ==========
@@ -631,10 +748,18 @@ struct GroupedBlockScaledMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
+    # `_copy_sf_to_tmem_tt` writes a whole scale-factor atom whatever MMA_N
+    # is, so SMEM, TMA and TMEM all use the aligned width and `mma` offsets
+    # into the atom. Only `grouped_block_scaled_matmul`'s MMA_N constraint
+    # keeps a sub-atom tile out of this kernel today.
+    comptime SFB_N_ALIGNED = align_up(Self.MMA_N, SF_MN_GROUP_SIZE)
+
     # TMEM configuration — stride matches MMA output width for scaled kernels.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
-    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
+    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (
+        Self.SFB_N_ALIGNED // 32
+    )
     comptime stage_stride_cols = Self.MMA_N
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
@@ -676,6 +801,7 @@ struct GroupedBlockScaledMatmulKernel[
         tile_n=Self.BN,
         tile_k=Self.BK,
         max_groups=Self.max_groups,
+        problem_sizes_engine=Self.problem_sizes_engine,
     ]
 
     # ========== TMA Descriptor Array Types ==========
@@ -684,35 +810,30 @@ struct GroupedBlockScaledMatmulKernel[
     comptime TMATensorTileArrayA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.a_type,
-        Self.ATmaOp.rank,
         Self.ATmaOp.tile_shape,
         Self.ATmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.b_type,
-        Self.BTmaOp.rank,
         Self.BTmaOp.tile_shape,
         Self.BTmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfa_dtype,
-        Self.SFATmaOp.rank,
         Self.SFATmaOp.tile_shape,
         Self.SFATmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfb_dtype,
-        Self.SFBTmaOp.rank,
         Self.SFBTmaOp.tile_shape,
         Self.SFBTmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayC = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.c_type,
-        Self.CTmaOp.rank,
         Self.CTmaOp.tile_shape,
         Self.CTmaOp.desc_shape,
     ]
@@ -721,7 +842,9 @@ struct GroupedBlockScaledMatmulKernel[
     # Layout for arrays of per-group tensor pointers
 
     comptime GroupPtrLayout = _GroupPtrLayout[Self.max_groups]
-    comptime GroupPtrTile = _GroupPtrTile[Self.max_groups]
+    comptime GroupPtrTile = _GroupPtrTile[
+        Self.max_groups, Self.group_ptr_engine
+    ]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -747,7 +870,7 @@ struct GroupedBlockScaledMatmulKernel[
     ]()
 
     comptime sfb_smem_layout = tile_sf_layout_k_major[
-        Self.MMA_N,
+        Self.SFB_N_ALIGNED,
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
     ]()
@@ -837,6 +960,7 @@ struct GroupedBlockScaledMatmulKernel[
         Self.num_pipeline_stages,
         cta_group=Self.cta_group,
         num_sf_k_tiles=Self.config.num_sf_k_tiles,
+        SFB_N=Self.SFB_N_ALIGNED,
     ]
 
     comptime OutputPipeline = OutputTilePipeline[Self.opc]
@@ -882,7 +1006,6 @@ struct GroupedBlockScaledMatmulKernel[
         c_smem_dim1=Self.SmemType.Core.OutputN,
         num_output_stages=Self.config.num_output_stages,
         num_output_warps=Self.num_output_warps,
-        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
         batched=True,
     ]
@@ -977,7 +1100,7 @@ struct GroupedBlockScaledMatmulKernel[
     comptime SFBTileLayout = RowMajorLayout[
         *_IntToComptimeInt[
             1,
-            Self.MMA_N // SF_MN_GROUP_SIZE,
+            Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
             SF_ATOM_M[0],
             SF_ATOM_M[1] * SF_ATOM_K,
@@ -986,7 +1109,7 @@ struct GroupedBlockScaledMatmulKernel[
     comptime SFBDescLayout = tma_desc_layout_5d[
         Self.sfb_dtype,
         1,
-        Self.MMA_N // SF_MN_GROUP_SIZE,
+        Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
         Self.config.num_sf_k_tiles,
         SF_ATOM_M[0],
         TensorMapSwizzle.SWIZZLE_NONE,
@@ -1030,15 +1153,14 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== TMA Update Helper ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _update_tensormap_address[
         dtype: DType,
-        tma_rank: Int,
-        cta_tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        cta_tile_shape: Coord,
+        desc_shape: Coord,
     ](
-        tma_desc_ptr: UnsafePointer[
-            TMATensorTile[dtype, tma_rank, cta_tile_shape, desc_shape],
+        tma_desc_ptr: MutPointer[
+            TMATensorTile[dtype, cta_tile_shape, desc_shape],
             MutAnyOrigin,
         ],
         new_addr: Int,
@@ -1050,7 +1172,7 @@ struct GroupedBlockScaledMatmulKernel[
             new_addr: New global memory address for the tensor.
         """
         # Get pointer to the descriptor bytes
-        var desc_byte_ptr = tma_desc_ptr.bitcast[NoneType]()
+        var desc_byte_ptr = tma_desc_ptr.unsafe_bitcast[NoneType]()
 
         # Use PTX instruction to update the global address
         inlined_assembly[
@@ -1065,12 +1187,14 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Problem Sizes Layout ==========
     # Layout for problem_sizes tensor: (max_groups, 4) with [M, N, K, L] per group
     comptime ProblemSizesLayout = _ProblemSizesLayout[Self.max_groups]
-    comptime ProblemSizesTile = _ProblemSizesTile[Self.max_groups]
+    comptime ProblemSizesTile = _ProblemSizesTile[
+        Self.max_groups, Self.problem_sizes_engine
+    ]
 
     # ========== Static Helper Methods ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def init_barriers(
         ctx: Self.Context,
         a_tma_template: Self.ATmaOp,
@@ -1083,6 +1207,20 @@ struct GroupedBlockScaledMatmulKernel[
         tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
     ):
         """Initialize barriers and prefetch TMA descriptors (1SM path, no CLC).
+
+        Args:
+            ctx: Kernel context with cluster and CTA election state.
+            a_tma_template: Grid-constant TMA template for A loads.
+            b_tma_template: Grid-constant TMA template for B loads.
+            c_tma_template: Grid-constant TMA template for C stores.
+            sfa_tma_template: Grid-constant TMA template for SFA loads.
+            sfb_tma_template: Grid-constant TMA template for SFB loads.
+            input_barriers: SMEM mbarrier array for input pipeline
+                synchronization.
+            accum_barriers: SMEM mbarrier array for accumulator pipeline
+                synchronization.
+            tmem_dealloc: SMEM barrier for TMEM deallocation
+                synchronization.
         """
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_template.prefetch_descriptor()
@@ -1112,7 +1250,7 @@ struct GroupedBlockScaledMatmulKernel[
         cluster_sync()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def init_barriers_2sm(
         ctx: Self.Context,
         a_tma_template: Self.ATmaOp,
@@ -1128,6 +1266,26 @@ struct GroupedBlockScaledMatmulKernel[
         tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
     ):
         """Initialize barriers and prefetch TMA descriptors (2SM path, with CLC).
+
+        Args:
+            ctx: Kernel context with cluster and CTA elected state.
+            a_tma_template: Grid-constant TMA template for A loads.
+            b_tma_template: Grid-constant TMA template for B loads.
+            c_tma_template: Grid-constant TMA template for C stores.
+            sfa_tma_template: Grid-constant TMA template for SFA loads.
+            sfb_tma_template: Grid-constant TMA template for SFB loads.
+            input_barriers: SMEM mbarrier array for input pipeline
+                synchronization.
+            accum_barriers: SMEM mbarrier array for accumulator pipeline
+                synchronization.
+            clc_throttle: SMEM throttle barriers limiting in-flight CLC
+                work between scheduler and consumer warps.
+            clc_full: SMEM mbarrier array signalling CLC buffer slots
+                are full (producer to consumer).
+            clc_empty: SMEM mbarrier array signalling CLC buffer slots
+                are empty (consumer to producer).
+            tmem_dealloc: SMEM barrier for TMEM deallocation
+                synchronization.
         """
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_template.prefetch_descriptor()
@@ -1176,13 +1334,17 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== 1SM Kernel Entry Point ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
     @__llvm_arg_metadata(a_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
+    @__name(
+        StaticString(Self.config.get_kernel_name())
+        + StaticString("_compute_fn" if Self.has_compute_fn else ""),
+    )
     def run(
         # Template tensormaps for SMEM initialization
         a_tma_template: Self.ATmaOp,
@@ -1205,13 +1367,52 @@ struct GroupedBlockScaledMatmulKernel[
         # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
         problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
-        num_groups: Int,
+        num_groups: Int32,
+        compute_fn: Self.ComputeFnType,
     ):
         """Grouped block-scaled GEMM kernel entry point.
 
         This kernel processes multiple GEMM problems (groups) with dynamic
         tensormap updates at group boundaries.
+
+        Args:
+            a_tma_template: Grid-constant TMA template for A loads, used
+                to initialize the per-block A tensormap in SMEM.
+            b_tma_template: Grid-constant TMA template for B loads, used
+                to initialize the per-block B tensormap in SMEM.
+            c_tma_template: Grid-constant TMA template for C stores, used
+                to initialize the per-block C tensormap in SMEM.
+            sfa_tma_template: Grid-constant TMA template for SFA loads,
+                used to initialize the per-block SFA tensormap in SMEM.
+            sfb_tma_template: Grid-constant TMA template for SFB loads,
+                used to initialize the per-block SFB tensormap in SMEM.
+            device_tma_a: Per-block updatable TMA descriptor array for A,
+                indexed by `block_idx.x`.
+            device_tma_b: Per-block updatable TMA descriptor array for B,
+                indexed by `block_idx.x`.
+            device_tma_sfa: Per-block updatable TMA descriptor array for
+                SFA, indexed by `block_idx.x`.
+            device_tma_sfb: Per-block updatable TMA descriptor array for
+                SFB, indexed by `block_idx.x`.
+            device_tma_c: Per-block updatable TMA descriptor array for C,
+                indexed by `block_idx.x`.
+            group_a_ptrs_lt: Per-group array of GMEM base addresses for
+                the A matrices.
+            group_b_ptrs_lt: Per-group array of GMEM base addresses for
+                the B matrices.
+            group_c_ptrs_lt: Per-group array of GMEM base addresses for
+                the C matrices.
+            group_sfa_ptrs_lt: Per-group array of GMEM base addresses for
+                the SFA scale-factor tensors.
+            group_sfb_ptrs_lt: Per-group array of GMEM base addresses for
+                the SFB scale-factor tensors.
+            problem_sizes_lt: Per-group problem sizes as a
+                `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
+            num_groups: Number of active GEMM groups to process.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
         """
+        var _num_groups = Int(num_groups)
         Self.validate_config()
 
         # Alias kernel args for internal methods
@@ -1224,10 +1425,10 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()
@@ -1253,10 +1454,7 @@ struct GroupedBlockScaledMatmulKernel[
         var ctx = Self.Context(tmem_addr_storage)
 
         # ===== Grouped Tile Scheduler =====
-        var scheduler = Self.SchedulerType(problem_sizes, num_groups)
-
-        # Per-warp work iterator
-        var work_iter = scheduler.work_iterator()
+        var scheduler = Self.SchedulerType(problem_sizes, _num_groups)
 
         # ===== Barrier Initialization =====
         Self.init_barriers(
@@ -1275,99 +1473,99 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
-            var blk = Int(block_idx.x)
+            var load_iter = scheduler.work_iterator()
+            var blk = block_idx.x
             var tensormap_init_done = False
 
             # Tensormap manager for SMEM descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
             with input_pipeline.producer() as producer:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # Wait for MMA warp to init tensormaps (first time only)
-                        if not tensormap_init_done:
-                            Self.TensormapAbInitBarrier.sync()
-                            tensormap_init_done = True
+                for current in load_iter:
+                    # Wait for MMA warp to init tensormaps (first time only)
+                    if not tensormap_init_done:
+                        Self.TensormapAbInitBarrier.sync()
+                        tensormap_init_done = True
 
-                        # === LOOKAHEAD PATTERN (CuteDSL style) ===
-                        # Initialize to "ready" (True), only peek if there's work.
-                        # This avoids wasted try_acquire when num_k_iters == 0.
-                        var num_k_iters = Int(current.k_tile_count)
-                        var next_ready = True
-                        if num_k_iters > 0:
+                    # === LOOKAHEAD PATTERN (CuteDSL style) ===
+                    # Initialize to "ready" (True), only peek if there's work.
+                    # This avoids wasted try_acquire when num_k_iters == 0.
+                    var num_k_iters = Int(current.k_tile_count)
+                    var next_ready = True
+                    if num_k_iters > 0:
+                        next_ready = producer.try_acquire()
+
+                    # Update tensormaps on group change (overlaps with peek)
+                    if current.group_changed:
+                        tensormap_mgr.update_ab_for_group(
+                            current.group_idx,
+                            group_a_ptrs,
+                            group_b_ptrs,
+                            group_sfa_ptrs,
+                            group_sfb_ptrs,
+                            device_tma_a[blk],
+                            device_tma_b[blk],
+                            device_tma_sfa[blk],
+                            device_tma_sfb[blk],
+                        )
+
+                    # Load tiles using lookahead pattern
+                    for k_tile in range(num_k_iters):
+                        with producer.acquire_if_needed(next_ready) as tiles:
+                            Self.load_input_tiles(
+                                device_tma_a[blk][],
+                                device_tma_b[blk][],
+                                device_tma_sfa[blk][],
+                                device_tma_sfb[blk][],
+                                tiles,
+                                ctx.peer_cta_coord,
+                                (
+                                    Int(current.m),
+                                    Int(current.n),
+                                    0,  # batch = 0 for grouped
+                                ),
+                                ctx.a_multicast_mask,
+                                ctx.b_multicast_mask,
+                                UInt32(k_tile),
+                                ctx.elect_one_cta,
+                            )
+                        # Peek for next iteration (CuteDSL style):
+                        # Reset to ready, then conditionally peek.
+                        next_ready = True
+                        if k_tile + 1 < num_k_iters:
                             next_ready = producer.try_acquire()
 
-                        # Update tensormaps on group change (overlaps with peek)
-                        if current.group_changed:
-                            tensormap_mgr.update_ab_for_group(
-                                current.group_idx,
-                                group_a_ptrs,
-                                group_b_ptrs,
-                                group_sfa_ptrs,
-                                group_sfb_ptrs,
-                                device_tma_a[blk],
-                                device_tma_b[blk],
-                                device_tma_sfa[blk],
-                                device_tma_sfb[blk],
-                            )
-
-                        # Load tiles using lookahead pattern
-                        for k_tile in range(num_k_iters):
-                            with producer.acquire_if_needed(
-                                next_ready
-                            ) as tiles:
-                                Self.load_input_tiles(
-                                    device_tma_a[blk][],
-                                    device_tma_b[blk][],
-                                    device_tma_sfa[blk][],
-                                    device_tma_sfb[blk][],
-                                    tiles,
-                                    ctx.peer_cta_coord,
-                                    (
-                                        Int(current.m),
-                                        Int(current.n),
-                                        0,  # batch = 0 for grouped
-                                    ),
-                                    ctx.a_multicast_mask,
-                                    ctx.b_multicast_mask,
-                                    UInt32(k_tile),
-                                    ctx.elect_one_cta,
-                                )
-                            # Peek for next iteration (CuteDSL style):
-                            # Reset to ready, then conditionally peek.
-                            next_ready = True
-                            if k_tile + 1 < num_k_iters:
-                                next_ready = producer.try_acquire()
-
-                        syncwarp()
+                    syncwarp()
 
                 producer.drain()
 
         # ===== SCHEDULER WARP =====
-        # For grouped GEMM, no CLC scheduling is needed (num_clc_pipeline_stages=0).
-        # The scheduler warp just returns immediately, matching working kernel pattern.
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            # No CLC for grouped GEMM - just return
-            return
+        # For grouped GEMM, no CLC scheduling is needed (num_clc_pipeline_stages=0),
+        # so the scheduler warp has nothing to do here. KERN-3311: it used to
+        # `return` immediately, which would have skipped the cluster exit
+        # barrier at the end of this function, leaving it divergent
+        # (undefined behavior). Just fall through instead.
 
         # ===== MMA WARP =====
         if WarpRole.is_mma():
+            var mma_iter = scheduler.work_iterator()
+
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
             tensormap_mgr.init_ab_tensormaps(
@@ -1392,54 +1590,51 @@ struct GroupedBlockScaledMatmulKernel[
             var tmem_region = Self.TmemRegion(tmem)
 
             with mma_ctx:
-                while work_iter.has_work():
-                    # Use wait_and_advance() like working kernel
-                    with work_iter.wait_and_advance() as current:
-                        if ctx.elect_one_cta:
-                            with mma_ctx.output_pipeline.producer() as output_stage:
-                                var tmem_offset = UInt32(
-                                    output_stage.tmem.offset()
-                                )
+                for current in mma_iter:
+                    if ctx.elect_one_cta:
+                        with mma_ctx.output_pipeline.producer() as output_stage:
+                            var tmem_offset = UInt32(output_stage.tmem.offset())
 
-                                with input_pipeline.consumer() as consumer:
-                                    var num_k_iters = Int(current.k_tile_count)
+                            with input_pipeline.consumer() as consumer:
+                                var num_k_iters = Int(current.k_tile_count)
 
-                                    # === LOOKAHEAD PATTERN (CuteDSL style) ===
-                                    # Initialize to "ready" (True), only peek if there's work.
-                                    var next_ready = True
-                                    if num_k_iters > 0:
+                                # === LOOKAHEAD PATTERN (CuteDSL style) ===
+                                # Initialize to "ready" (True), only peek if there's work.
+                                var next_ready = True
+                                if num_k_iters > 0:
+                                    next_ready = consumer.try_acquire()
+
+                                for k_tile in range(num_k_iters):
+                                    with consumer.acquire_if_needed(
+                                        next_ready
+                                    ) as input_tiles:
+                                        Self.mma(
+                                            input_tiles,
+                                            mma_op,
+                                            tmem_offset,
+                                            tmem_region,
+                                            UInt32(k_tile),
+                                            0,  # k_start = 0 for each group
+                                            Int(current.n),
+                                        )
+                                    # Peek for next iteration (CuteDSL style):
+                                    # Reset to ready, then conditionally peek.
+                                    next_ready = True
+                                    if k_tile + 1 < num_k_iters:
                                         next_ready = consumer.try_acquire()
-
-                                    for k_tile in range(num_k_iters):
-                                        with consumer.acquire_if_needed(
-                                            next_ready
-                                        ) as input_tiles:
-                                            Self.mma(
-                                                input_tiles,
-                                                mma_op,
-                                                tmem_offset,
-                                                tmem_region,
-                                                UInt32(k_tile),
-                                                0,  # k_start = 0 for each group
-                                            )
-                                        # Peek for next iteration (CuteDSL style):
-                                        # Reset to ready, then conditionally peek.
-                                        next_ready = True
-                                        if k_tile + 1 < num_k_iters:
-                                            next_ready = consumer.try_acquire()
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
 
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1458,37 +1653,53 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
+            var epi_iter = scheduler.work_iterator()
+
             with epi_ctx:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # Update C tensormap on group change
-                        if current.group_changed:
-                            tensormap_mgr.update_c_for_group(
-                                current.group_idx,
-                                group_c_ptrs,
-                                device_tma_c[blk],
-                            )
+                for current in epi_iter:
+                    # Update C tensormap on group change
+                    if current.group_changed:
+                        tensormap_mgr.update_c_for_group(
+                            current.group_idx,
+                            group_c_ptrs,
+                            device_tma_c[blk],
+                        )
 
-                        # Get current group's M, N dimensions
-                        var g = Int(current.group_idx)
-                        var group_m = UInt32(Int(problem_sizes[g, 0]))
-                        var group_n = UInt32(Int(problem_sizes[g, 1]))
+                    # Get current group's M, N dimensions
+                    var g = Int(current.group_idx)
+                    var group_m = UInt32(Int(problem_sizes[g, 0]))
+                    var group_n = UInt32(Int(problem_sizes[g, 1]))
 
-                        # Use per-block GMEM tensormap for epilogue
-                        with epi_ctx.output_pipeline.consumer() as output_stage:
-                            Self.epilogue(
-                                c_tiles,
-                                device_tma_c[blk][],
-                                output_stage,
-                                (current.m, current.n, UInt32(0)),
-                                group_m,
-                                group_n,
-                            )
+                    # Use per-block GMEM tensormap for epilogue
+                    with epi_ctx.output_pipeline.consumer() as output_stage:
+                        Self.epilogue(
+                            c_tiles,
+                            device_tma_c[blk][],
+                            output_stage,
+                            (current.m, current.n, UInt32(0)),
+                            group_m,
+                            group_n,
+                            compute_fn,
+                        )
+
+        # KERN-3311: hold the cluster together until every CTA is finished.
+        # The epilogue's cluster-mapped `arrive_cluster` (signal_peer() in
+        # structured_kernels/tmem.mojo) needs the peer CTA to still be
+        # resident; if the peer retires first the arrive targets a departed
+        # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then
+        # freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` only orders mbarrier initialization. Gated on
+        # cta_group == 2, the only config with that cross-CTA arrive -- this
+        # entry point (run()) is only launched with cta_group == 1, so the
+        # gate never fires here, but it is kept for parity with run_2sm() and
+        # in case this entry is ever reused with cta_group == 2.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
 
     # ========== Load Input Tiles ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
@@ -1510,7 +1721,38 @@ struct GroupedBlockScaledMatmulKernel[
         iter_idx: UInt32,
         elect_one_cta: Bool,
     ):
-        """Load A, B, SFA, SFB tiles using TMA with InputProducerStage."""
+        """Load A, B, SFA, SFB tiles using TMA with InputProducerStage.
+
+        Parameters:
+            tiles_origin: Memory origin tag for the producer tile
+                pipeline SMEM buffers.
+
+        Args:
+            a_tma_op: TMA descriptor used to multicast-load A tiles
+                from GMEM.
+            b_tma_op: TMA descriptor used to multicast-load B tiles
+                from GMEM.
+            sfa_tma_op: TMA descriptor used to copy SFA scale-factor
+                tiles from GMEM.
+            sfb_tma_op: TMA descriptor used to copy SFB scale-factor
+                tiles from GMEM.
+            tiles: Producer pipeline stage providing the SMEM tile
+                slots to fill.
+            peer_cta_coord: `(rank_n, rank_m, m_rank)` coordinates of
+                the peer CTA within the cluster, used to compute
+                per-CTA GMEM source offsets.
+            work_tile_coord: `(m, n, batch)` tile coordinates within
+                the current group, used to compute GMEM source
+                offsets.
+            a_multicast_mask: Bitmask of cluster CTAs receiving the
+                A load.
+            b_multicast_mask: Bitmask of cluster CTAs receiving the
+                B load.
+            iter_idx: K-tile iteration index within the current
+                group's K loop.
+            elect_one_cta: Whether this CTA is the elected CTA for
+                the tile.
+        """
         var peer_rank_n = peer_cta_coord[0]
         var peer_rank_m = peer_cta_coord[1]
         var peer_m_rank = peer_cta_coord[2]
@@ -1543,11 +1785,15 @@ struct GroupedBlockScaledMatmulKernel[
 
                 # Peer CTA slicing using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
                     b_tile.layout,
                 )
 
@@ -1590,7 +1836,7 @@ struct GroupedBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        work_tile_coord[1] * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        (work_tile_coord[1] * Self.MMA_N) // SF_MN_GROUP_SIZE,
                         batch_coord,
                     ),
                 )
@@ -1598,7 +1844,7 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== MMA Operation ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma[
         tiles_origin: MutOrigin,
         //,
@@ -1614,8 +1860,42 @@ struct GroupedBlockScaledMatmulKernel[
         tmem_region: Self.TmemRegion,
         iter_idx: UInt32,
         k_start: UInt32,
+        work_tile_n: Int,
     ):
-        """Execute MMA operations using ConsumerTiles."""
+        """Execute MMA operations using ConsumerTiles.
+
+        Parameters:
+            tiles_origin: Memory origin tag for the consumer tile pipeline
+                SMEM buffers (inferred).
+
+        Args:
+            tiles: Consumer pipeline stage providing the SMEM tile slots to
+                consume.
+            mma_op: Block-scaled MMA operation object that executes the
+                tensor-core multiply-accumulate.
+            tmem_addr: TMEM column address of the accumulator buffer for
+                this output stage.
+            tmem_region: TMEM region holding per-tile scale-factor offsets
+                for SFA and SFB.
+            iter_idx: K-tile iteration index within the current group's K
+                loop.
+            k_start: K-tile index where accumulation begins for the current
+                group; the first iteration initializes the accumulator.
+            work_tile_n: N-axis tile index, used to pick this tile's part of
+                a shared scale-factor atom.
+        """
+        # Same numerator as the SFB source coordinate in `load_input_tiles`.
+        var sfb_tmem_adj: UInt32
+        comptime if Self.MMA_N in (64, 192):
+            sfb_tmem_adj = UInt32(
+                ufloordiv(
+                    umod(work_tile_n * Self.MMA_N, SF_MN_GROUP_SIZE),
+                    SF_ATOM_M[0],
+                )
+            )
+        else:
+            sfb_tmem_adj = UInt32(0)
+
         if elect_one_sync():
             comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
@@ -1647,6 +1927,7 @@ struct GroupedBlockScaledMatmulKernel[
                     sfa_tmem_offset,
                     sfb_tmem_offset,
                     init_c=is_first_k,
+                    sfb_tmem_adj=sfb_tmem_adj,
                 )
 
             mma_op.commit(tiles.mbar())
@@ -1654,7 +1935,7 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Epilogue ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def epilogue(
         c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
@@ -1662,28 +1943,57 @@ struct GroupedBlockScaledMatmulKernel[
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
         M: UInt32,
         N: UInt32,
+        compute_fn: Self.ComputeFnType,
         alpha: Float32 = Float32(1.0),
     ):
-        """Execute epilogue to store accumulated results."""
+        """Execute epilogue to store accumulated results.
+
+        Args:
+            c_tiles: SMEM tile array holding C output tiles.
+            c_tma_op: TMA descriptor for C store operations.
+            stage: Output pipeline stage with accumulated results to store.
+            work_tile_coord: `(m, n, batch)` tile coordinates within the
+                current group.
+            M: Row extent of the current group's output matrix.
+            N: Column extent of the current group's output matrix.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
+            alpha: Scaling factor applied to accumulators before storing
+                (defaults to 1.0).
+        """
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
-        tile_writer.write_batched(
-            c_tiles,
-            stage,
-            work_tile_coord,
-            (M, N),
-            alpha,
-        )
+        comptime if Self.has_compute_fn:
+            tile_writer.write_batched(
+                c_tiles,
+                stage,
+                work_tile_coord,
+                (M, N),
+                compute_fn,
+                alpha,
+            )
+        else:
+            tile_writer.write_batched(
+                c_tiles,
+                stage,
+                work_tile_coord,
+                (M, N),
+                alpha,
+            )
 
     # ========== 2SM Kernel Entry Point ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
     @__llvm_arg_metadata(a_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
+    @__name(
+        StaticString(Self.config.get_kernel_name())
+        + StaticString("_compute_fn" if Self.has_compute_fn else ""),
+    )
     def run_2sm(
         # Template tensormaps for SMEM initialization
         a_tma_template: Self.ATmaOp,
@@ -1703,10 +2013,11 @@ struct GroupedBlockScaledMatmulKernel[
         group_c_ptrs_lt: Self.GroupPtrTile,
         group_sfa_ptrs_lt: Self.GroupPtrTile,
         group_sfb_ptrs_lt: Self.GroupPtrTile,
-        # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
+        # Per-group problem sizes: (_num_groups, 4) with [M, N, K, L]
         problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
-        num_groups: Int,
+        num_groups: Int32,
+        compute_fn: Self.ComputeFnType,
     ):
         """Grouped block-scaled GEMM kernel with 2SM (cta_group=2) support.
 
@@ -1719,7 +2030,45 @@ struct GroupedBlockScaledMatmulKernel[
         - TMA warp: Loads tiles with tensormap updates on group change
         - MMA warp: Waits on CLC, executes MMA (elected CTA only)
         - Epilogue warps: Stores results with tensormap updates
+
+        Args:
+            a_tma_template: Grid-constant TMA template for A loads, used
+                to initialize the per-block A tensormap in SMEM.
+            b_tma_template: Grid-constant TMA template for B loads, used
+                to initialize the per-block B tensormap in SMEM.
+            c_tma_template: Grid-constant TMA template for C stores, used
+                to initialize the per-block C tensormap in SMEM.
+            sfa_tma_template: Grid-constant TMA template for SFA loads,
+                used to initialize the per-block SFA tensormap in SMEM.
+            sfb_tma_template: Grid-constant TMA template for SFB loads,
+                used to initialize the per-block SFB tensormap in SMEM.
+            device_tma_a: Per-block updatable TMA descriptor array for A,
+                indexed by `block_idx.x`.
+            device_tma_b: Per-block updatable TMA descriptor array for B,
+                indexed by `block_idx.x`.
+            device_tma_sfa: Per-block updatable TMA descriptor array for
+                SFA, indexed by `block_idx.x`.
+            device_tma_sfb: Per-block updatable TMA descriptor array for
+                SFB, indexed by `block_idx.x`.
+            device_tma_c: Per-block updatable TMA descriptor array for C,
+                indexed by `block_idx.x`.
+            group_a_ptrs_lt: Per-group array of GMEM base addresses for
+                the A matrices.
+            group_b_ptrs_lt: Per-group array of GMEM base addresses for
+                the B matrices.
+            group_c_ptrs_lt: Per-group array of GMEM base addresses for
+                the C matrices.
+            group_sfa_ptrs_lt: Per-group array of GMEM base addresses for
+                the SFA scale-factor tensors.
+            group_sfb_ptrs_lt: Per-group array of GMEM base addresses for
+                the SFB scale-factor tensors.
+            problem_sizes_lt: Per-group problem sizes as a
+                `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
+            num_groups: Number of active GEMM groups to process.
+            compute_fn: Element-wise epilogue applied to each output value;
+                ignored unless `has_compute_fn` is True.
         """
+        var _num_groups = Int(num_groups)
         Self.validate_config()
 
         # Alias kernel args for internal methods
@@ -1732,10 +2081,10 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()
@@ -1766,9 +2115,11 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== Initial Work Info =====
         # Compute initial work from first cluster's tile
-        var initial_linear_idx = UInt32(block_idx.x // 2)  # 2SM: cta_group=2
+        var initial_linear_idx = UInt32(
+            ufloordiv(block_idx.x, 2)
+        )  # 2SM: cta_group=2
         var initial_work = Self._compute_initial_work(
-            problem_sizes, num_groups, initial_linear_idx
+            problem_sizes, _num_groups, initial_linear_idx
         )
 
         # ===== Barrier Initialization =====
@@ -1791,17 +2142,17 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
             var tensormap_init_done = False
 
             # Tensormap manager for SMEM descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1813,9 +2164,10 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
-                num_groups,
+                _num_groups,
                 clc_full.ptr,
                 clc_empty.ptr,
                 clc_response.ptr,
@@ -1824,65 +2176,59 @@ struct GroupedBlockScaledMatmulKernel[
             )
 
             with input_pipeline.producer() as producer:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # Signal throttle (first CTA only)
-                        work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
+                for current in work_iter:
+                    # Wait for MMA warp to init tensormaps (first time only)
+                    if not tensormap_init_done:
+                        Self.TensormapAbInitBarrier.sync()
+                        tensormap_init_done = True
 
-                        # Wait for MMA warp to init tensormaps (first time only)
-                        if not tensormap_init_done:
-                            Self.TensormapAbInitBarrier.sync()
-                            tensormap_init_done = True
+                    # === LOOKAHEAD PATTERN (CuteDSL style) ===
+                    # Initialize to "ready" (True), only peek if there's work.
+                    var num_k_iters = Int(current.k_tile_count)
+                    var next_ready = True
+                    if num_k_iters > 0:
+                        next_ready = producer.try_acquire()
 
-                        # === LOOKAHEAD PATTERN (CuteDSL style) ===
-                        # Initialize to "ready" (True), only peek if there's work.
-                        var num_k_iters = Int(current.k_tile_count)
-                        var next_ready = True
-                        if num_k_iters > 0:
-                            next_ready = producer.try_acquire()
+                    # Update tensormaps on group change (overlaps with peek)
+                    if current.group_changed:
+                        tensormap_mgr.update_ab_for_group(
+                            current.group_idx,
+                            group_a_ptrs,
+                            group_b_ptrs,
+                            group_sfa_ptrs,
+                            group_sfb_ptrs,
+                            device_tma_a[blk],
+                            device_tma_b[blk],
+                            device_tma_sfa[blk],
+                            device_tma_sfb[blk],
+                        )
 
-                        # Update tensormaps on group change (overlaps with peek)
-                        if current.group_changed:
-                            tensormap_mgr.update_ab_for_group(
-                                current.group_idx,
-                                group_a_ptrs,
-                                group_b_ptrs,
-                                group_sfa_ptrs,
-                                group_sfb_ptrs,
-                                device_tma_a[blk],
-                                device_tma_b[blk],
-                                device_tma_sfa[blk],
-                                device_tma_sfb[blk],
+                    # Load tiles using lookahead pattern
+                    for k_tile in range(num_k_iters):
+                        with producer.acquire_if_needed(next_ready) as tiles:
+                            Self.load_input_tiles(
+                                device_tma_a[blk][],
+                                device_tma_b[blk][],
+                                device_tma_sfa[blk][],
+                                device_tma_sfb[blk][],
+                                tiles,
+                                ctx.peer_cta_coord,
+                                (
+                                    Int(current.m),
+                                    Int(current.n),
+                                    0,
+                                ),
+                                ctx.a_multicast_mask,
+                                ctx.b_multicast_mask,
+                                UInt32(k_tile),
+                                ctx.elect_one_cta,
                             )
-
-                        # Load tiles using lookahead pattern
-                        for k_tile in range(num_k_iters):
-                            with producer.acquire_if_needed(
-                                next_ready
-                            ) as tiles:
-                                Self.load_input_tiles(
-                                    device_tma_a[blk][],
-                                    device_tma_b[blk][],
-                                    device_tma_sfa[blk][],
-                                    device_tma_sfb[blk][],
-                                    tiles,
-                                    ctx.peer_cta_coord,
-                                    (
-                                        Int(current.m),
-                                        Int(current.n),
-                                        0,
-                                    ),
-                                    ctx.a_multicast_mask,
-                                    ctx.b_multicast_mask,
-                                    UInt32(k_tile),
-                                    ctx.elect_one_cta,
-                                )
-                            # Peek for next iteration (CuteDSL style):
-                            # Reset to ready, then conditionally peek.
-                            next_ready = True
-                            if k_tile + 1 < num_k_iters:
-                                next_ready = producer.try_acquire()
-                        syncwarp()
+                        # Peek for next iteration (CuteDSL style):
+                        # Reset to ready, then conditionally peek.
+                        next_ready = True
+                        if k_tile + 1 < num_k_iters:
+                            next_ready = producer.try_acquire()
+                    syncwarp()
 
                 producer.drain()
 
@@ -1896,9 +2242,10 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
-                num_groups,
+                _num_groups,
                 clc_full.ptr,
                 clc_empty.ptr,
                 clc_response.ptr,
@@ -1906,9 +2253,8 @@ struct GroupedBlockScaledMatmulKernel[
                 initial_work,
             )
 
-            while sched_iter.has_work():
-                with sched_iter.next():
-                    sched_iter.signal_and_advance()
+            for _ in sched_iter:
+                sched_iter.signal_and_advance()
 
             sched_iter.drain()
 
@@ -1917,11 +2263,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
             tensormap_mgr.init_ab_tensormaps(
@@ -1953,65 +2299,64 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
-                num_groups,
+                _num_groups,
                 clc_full.ptr,
                 clc_empty.ptr,
                 clc_response.ptr,
                 clc_throttle.ptr,
                 initial_work,
+                use_clc_fetch=True,
             )
 
             with mma_ctx:
-                while work_iter.has_work():
-                    # Wait on CLC for next work (synchronizes both CTAs)
-                    with work_iter.wait_and_advance() as current:
-                        if ctx.elect_one_cta:
-                            with mma_ctx.output_pipeline.producer() as output_stage:
-                                var tmem_offset = UInt32(
-                                    output_stage.tmem.offset()
-                                )
+                for current in work_iter:
+                    if ctx.elect_one_cta:
+                        with mma_ctx.output_pipeline.producer() as output_stage:
+                            var tmem_offset = UInt32(output_stage.tmem.offset())
 
-                                with input_pipeline.consumer() as consumer:
-                                    var num_k_iters = Int(current.k_tile_count)
+                            with input_pipeline.consumer() as consumer:
+                                var num_k_iters = Int(current.k_tile_count)
 
-                                    # === LOOKAHEAD PATTERN (CuteDSL style) ===
-                                    # Initialize to "ready" (True), only peek if there's work.
-                                    var next_ready = True
-                                    if num_k_iters > 0:
+                                # === LOOKAHEAD PATTERN (CuteDSL style) ===
+                                # Initialize to "ready" (True), only peek if there's work.
+                                var next_ready = True
+                                if num_k_iters > 0:
+                                    next_ready = consumer.try_acquire()
+
+                                for k_tile in range(num_k_iters):
+                                    with consumer.acquire_if_needed(
+                                        next_ready
+                                    ) as input_tiles:
+                                        Self.mma(
+                                            input_tiles,
+                                            mma_op,
+                                            tmem_offset,
+                                            tmem_region,
+                                            UInt32(k_tile),
+                                            0,
+                                            Int(current.n),
+                                        )
+                                    # Peek for next iteration (CuteDSL style):
+                                    # Reset to ready, then conditionally peek.
+                                    next_ready = True
+                                    if k_tile + 1 < num_k_iters:
                                         next_ready = consumer.try_acquire()
-
-                                    for k_tile in range(num_k_iters):
-                                        with consumer.acquire_if_needed(
-                                            next_ready
-                                        ) as input_tiles:
-                                            Self.mma(
-                                                input_tiles,
-                                                mma_op,
-                                                tmem_offset,
-                                                tmem_region,
-                                                UInt32(k_tile),
-                                                0,
-                                            )
-                                        # Peek for next iteration (CuteDSL style):
-                                        # Reset to ready, then conditionally peek.
-                                        next_ready = True
-                                        if k_tile + 1 < num_k_iters:
-                                            next_ready = consumer.try_acquire()
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():
-            var blk = Int(block_idx.x)
+            var blk = block_idx.x
 
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    Pointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    Pointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -2038,9 +2383,10 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
-                num_groups,
+                _num_groups,
                 clc_full.ptr,
                 clc_empty.ptr,
                 clc_response.ptr,
@@ -2049,36 +2395,47 @@ struct GroupedBlockScaledMatmulKernel[
             )
 
             with epi_ctx:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # Update C tensormap on group change
-                        if current.group_changed:
-                            tensormap_mgr.update_c_for_group(
-                                current.group_idx,
-                                group_c_ptrs,
-                                device_tma_c[blk],
-                            )
+                for current in work_iter:
+                    # Update C tensormap on group change
+                    if current.group_changed:
+                        tensormap_mgr.update_c_for_group(
+                            current.group_idx,
+                            group_c_ptrs,
+                            device_tma_c[blk],
+                        )
 
-                        # Get current group's M, N dimensions
-                        var g = Int(current.group_idx)
-                        var group_m = UInt32(Int(problem_sizes[g, 0]))
-                        var group_n = UInt32(Int(problem_sizes[g, 1]))
+                    # Get current group's M, N dimensions
+                    var g = Int(current.group_idx)
+                    var group_m = UInt32(Int(problem_sizes[g, 0]))
+                    var group_n = UInt32(Int(problem_sizes[g, 1]))
 
-                        with epi_ctx.output_pipeline.consumer() as output_stage:
-                            Self.epilogue(
-                                c_tiles,
-                                device_tma_c[blk][],
-                                output_stage,
-                                (current.m, current.n, UInt32(0)),
-                                group_m,
-                                group_n,
-                            )
+                    with epi_ctx.output_pipeline.consumer() as output_stage:
+                        Self.epilogue(
+                            c_tiles,
+                            device_tma_c[blk][],
+                            output_stage,
+                            (current.m, current.n, UInt32(0)),
+                            group_m,
+                            group_n,
+                            compute_fn,
+                        )
+
+        # KERN-3311: hold the cluster together until every CTA is finished.
+        # The epilogue's cluster-mapped `arrive_cluster` (signal_peer() in
+        # structured_kernels/tmem.mojo) needs the peer CTA to still be
+        # resident; if the peer retires first the arrive targets a departed
+        # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then
+        # freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` in init_barriers_2sm only orders mbarrier
+        # initialization. run_2sm() is only launched with cta_group == 2, so
+        # unlike run() this barrier is unconditional.
+        cluster_sync()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _compute_initial_work(
         problem_sizes: Self.ProblemSizesTile,
-        num_groups: Int,
+        _num_groups: Int,
         linear_idx: UInt32,
     ) -> GroupedWorkInfo:
         """Compute initial work info from linear tile index."""
@@ -2089,7 +2446,7 @@ struct GroupedBlockScaledMatmulKernel[
             cumulative[i] = 0
 
         var cumsum: UInt32 = 0
-        for g in range(num_groups):
+        for g in range(_num_groups):
             var m = UInt32(Int(problem_sizes[g, 0]))
             var n = UInt32(Int(problem_sizes[g, 1]))
             var m_tiles = ceildiv(Int(m), Self.BM)
@@ -2102,7 +2459,7 @@ struct GroupedBlockScaledMatmulKernel[
 
         # Binary search for group
         var lo: UInt32 = 0
-        var hi: UInt32 = UInt32(num_groups)
+        var hi: UInt32 = UInt32(_num_groups)
         while lo < hi:
             var mid = (lo + hi) / 2
             if linear_idx < cumulative[Int(mid + 1)]:

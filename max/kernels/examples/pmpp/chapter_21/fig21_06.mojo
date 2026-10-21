@@ -20,22 +20,23 @@ The gather pattern provides better parallelism (one thread per grid point)
 and avoids atomic operations since each grid point is written by only one thread.
 """
 
-from std.math import sqrt
-from std.gpu import block_idx, thread_idx, block_dim
-from std.gpu.host import DeviceContext
+from std.math import ceildiv, sqrt
+from max.gpu import block_idx, thread_idx, block_dim
+from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 from dcs_utils import GridDim, init_atoms, verify_grid
 
 
 def cenergy_gather_kernel(
-    energygrid: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    atoms: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    grid_x: Int,
-    grid_y: Int,
+    energygrid: MutPointer[Float32, MutAnyOrigin],
+    atoms: ImmPointer[Float32, ImmutAnyOrigin],
+    grid_x_dev: Int32,
+    grid_y_dev: Int32,
     gridspacing: Float32,
     z: Float32,
-    numatoms: Int,
+    numatoms_dev: Int32,
 ):
     """Gather kernel: each thread computes one grid point.
 
@@ -45,12 +46,16 @@ def cenergy_gather_kernel(
     Args:
         energygrid: Output energy grid.
         atoms: Atom array (4 floats per atom: x, y, z, charge).
-        grid_x: Grid X dimension.
-        grid_y: Grid Y dimension.
+        grid_x_dev: Grid X dimension.
+        grid_y_dev: Grid Y dimension.
         gridspacing: Grid spacing.
         z: Z-coordinate of the grid slice.
-        numatoms: Number of atoms.
+        numatoms_dev: Number of atoms.
     """
+    # Int is not device-passable; widen the fixed-width args.
+    var grid_x = Int(grid_x_dev)
+    var grid_y = Int(grid_y_dev)
+    var numatoms = Int(numatoms_dev)
     var i = block_idx.x * block_dim.x + thread_idx.x
     var j = block_idx.y * block_dim.y + thread_idx.y
 
@@ -72,11 +77,11 @@ def cenergy_gather_kernel(
 
 
 def cenergy_cpu_reference(
-    energygrid: UnsafePointer[Float32, MutAnyOrigin],
+    energygrid: MutPointer[Float32, _],
     grid: GridDim,
     gridspacing: Float32,
     z: Float32,
-    atoms: UnsafePointer[Float32, MutAnyOrigin],
+    atoms: ImmPointer[Float32, _],
     numatoms: Int,
 ):
     """CPU reference implementation for verification."""
@@ -110,9 +115,9 @@ def main() raises:
     var grid_size = vol_dim.x * vol_dim.y * vol_dim.z
 
     # Allocate host memory
-    var h_atoms = alloc[Float32](atoms_size)
-    var h_energygrid_cpu = alloc[Float32](grid_size)
-    var h_energygrid_gpu = alloc[Float32](grid_size)
+    var h_atoms = unsafe_alloc[Float32](atoms_size)
+    var h_energygrid_cpu = unsafe_alloc[Float32](grid_size)
+    var h_energygrid_gpu = unsafe_alloc[Float32](grid_size)
 
     init_atoms(h_atoms, numatoms, gridspacing, vol_dim.x, vol_dim.y, vol_dim.z)
     for i in range(grid_size):
@@ -120,32 +125,32 @@ def main() raises:
         h_energygrid_gpu[i] = 0.0
 
     # Allocate device memory
-    var d_atoms = ctx.enqueue_create_buffer[DType.float32](atoms_size)
-    var d_energygrid = ctx.enqueue_create_buffer[DType.float32](grid_size)
+    var d_atoms = ctx.enqueue_create_buffer[.float32](atoms_size)
+    var d_energygrid = ctx.enqueue_create_buffer[.float32](grid_size)
 
     ctx.enqueue_copy(d_atoms, h_atoms)
 
     # Initialize device grid to zero
-    var h_zeros = alloc[Float32](grid_size)
+    var h_zeros = unsafe_alloc[Float32](grid_size)
     for i in range(grid_size):
         h_zeros[i] = 0.0
     ctx.enqueue_copy(d_energygrid, h_zeros)
-    h_zeros.free()
+    h_zeros.unsafe_free()
 
     # Launch config: one thread per grid point (2D grid)
     comptime BLOCK_DIM_X = 16
     comptime BLOCK_DIM_Y = 16
-    var grid_dim_x = (vol_dim.x + BLOCK_DIM_X - 1) // BLOCK_DIM_X
-    var grid_dim_y = (vol_dim.y + BLOCK_DIM_Y - 1) // BLOCK_DIM_Y
+    var grid_dim_x = ceildiv(vol_dim.x, BLOCK_DIM_X)
+    var grid_dim_y = ceildiv(vol_dim.y, BLOCK_DIM_Y)
 
-    ctx.enqueue_function[cenergy_gather_kernel, cenergy_gather_kernel](
+    ctx.enqueue_function[cenergy_gather_kernel](
         d_energygrid,
         d_atoms,
-        vol_dim.x,
-        vol_dim.y,
+        Int32(vol_dim.x),
+        Int32(vol_dim.y),
         gridspacing,
         z_coord,
-        numatoms,
+        Int32(numatoms),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(BLOCK_DIM_X, BLOCK_DIM_Y, 1),
     )
@@ -164,6 +169,6 @@ def main() raises:
     else:
         print("Figure 21.6 (Gather) Failed!")
 
-    h_atoms.free()
-    h_energygrid_cpu.free()
-    h_energygrid_gpu.free()
+    h_atoms.unsafe_free()
+    h_energygrid_cpu.unsafe_free()
+    h_energygrid_gpu.unsafe_free()

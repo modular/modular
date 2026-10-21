@@ -1,0 +1,8 @@
+package(default_visibility = ["//rust_kv:consumers"])
+
+# The binding source of max._kv_core. The extension itself is declared in
+# //max/python/max (`_kv_core.bindings`).
+filegroup(
+    name = "srcs",
+    srcs = glob(["src/**/*.rs"]),
+)

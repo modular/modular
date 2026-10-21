@@ -11,46 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.info import _current_target, simd_width_of
+from std.sys.info import CompilationTarget, simd_width_of
+from std.math.uutils import ufloordiv
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import get_gpu_target
-from std.gpu.host.info import is_cpu
-from layout import LayoutTensor, TileTensor
-from std.runtime.asyncrt import DeviceContextPtr
-from layout import Coord, Idx
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu
+from layout import TileTensor
+from layout import Coord, coord_to_index_list
 
 from std.utils import IndexList
 
 
-@always_inline
+@inline(.always)
 def get_batch_from_row_offsets(
-    row_offsets: LayoutTensor[DType.uint32, ...], tok_idx: Int
-) -> Int:
-    """Calculate the batch_idx for the given flattened token_idx using row_offsets.
-    """
-    var row_offsets_size = row_offsets.size()
-
-    assert tok_idx >= 0 and tok_idx < Int(
-        row_offsets[row_offsets_size - 1]
-    ), "tok_idx is out of range of row_offsets"
-
-    var low: UInt = 0
-    var high = UInt(row_offsets_size - 1)
-    while low + 1 != high:
-        var mid = (low + high) // 2
-
-        if tok_idx >= Int(row_offsets[mid]):
-            low = mid
-        else:
-            high = mid
-
-    return Int(low)
-
-
-@always_inline
-def get_batch_from_row_offsets(
-    row_offsets: TileTensor[DType.uint32, ...], tok_idx: Int
+    row_offsets: TileTensor[mut=False, .uint32, ...], tok_idx: Int
 ) -> Int:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """
@@ -62,29 +37,33 @@ def get_batch_from_row_offsets(
         row_offsets[row_offsets_size - 1]
     ), "tok_idx is out of range of row_offsets"
 
-    var low: UInt = 0
-    var high = UInt(row_offsets_size - 1)
+    var low = 0
+    var high: Int = row_offsets_size - 1
     while low + 1 != high:
-        var mid = (low + high) // 2
+        var mid = ufloordiv(low + high, 2)
 
         if tok_idx >= Int(row_offsets[mid]):
             low = mid
         else:
             high = mid
 
-    return Int(low)
+    return low
 
 
-@always_inline
+@inline(.always)
 def get_batch_and_token_idx_from_row_offsets(
-    row_offsets: TileTensor[DType.uint32, ...], tok_idx: Int
+    row_offsets: TileTensor[mut=False, .uint32, ...], tok_idx: Int
 ) -> Tuple[Int, Int]:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """
     comptime assert row_offsets.flat_rank == 1
 
     var batch_idx = get_batch_from_row_offsets(row_offsets, tok_idx)
-    return batch_idx, Int(tok_idx - Int(row_offsets[UInt(batch_idx)]))
+    var batch_start = row_offsets[batch_idx]
+    assert tok_idx >= Int(
+        batch_start
+    ), "tok_idx is before its batch's first row"
+    return batch_idx, Int(UInt32(tok_idx) - batch_start)
 
 
 def merge_ragged_tensors[
@@ -94,12 +73,12 @@ def merge_ragged_tensors[
     target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, dtype, ...],
-    c_row_offsets: TileTensor[mut=True, DType.uint32, ...],
-    a: TileTensor[dtype, ...],
-    a_row_offsets: TileTensor[DType.uint32, ...],
-    b: TileTensor[dtype, ...],
-    b_row_offsets: TileTensor[DType.uint32, ...],
-    ctx: DeviceContextPtr,
+    c_row_offsets: TileTensor[mut=True, .uint32, ...],
+    a: TileTensor[mut=False, dtype, ...],
+    a_row_offsets: TileTensor[mut=False, .uint32, ...],
+    b: TileTensor[mut=False, dtype, ...],
+    b_row_offsets: TileTensor[mut=False, .uint32, ...],
+    ctx: DeviceContext,
 ) raises:
     comptime assert c.flat_rank == rank, "c.flat_rank must equal rank"
     comptime assert a.flat_rank == rank, "a.flat_rank must equal rank"
@@ -114,25 +93,26 @@ def merge_ragged_tensors[
         b_row_offsets.flat_rank == 1
     ), "b_row_offsets.flat_rank must be 1"
 
-    @always_inline
-    @parameter
-    def merge_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](idx: IndexList[rank_]):
-        comptime assert rank_ == rank, "Invalid rank passed to the kernel"
+    @inline(.always)
+    def merge_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == rank, "Invalid rank passed to the kernel"
 
         var a_tensor_size = Int(a.dim[0]())
-        var is_tensor_a = idx[0] < a_tensor_size
+        var is_tensor_a = Int(idx[0]) < a_tensor_size
 
         var batch_id: Int
-        var src_idx: IndexList[rank_] = idx
+        var src_idx: IndexList[rank] = rebind[IndexList[rank]](
+            coord_to_index_list(idx)
+        )
         if is_tensor_a:
             batch_id = get_batch_from_row_offsets(a_row_offsets, src_idx[0])
         else:
-            src_idx[0] = idx[0] - a_tensor_size
+            src_idx[0] = Int(idx[0]) - a_tensor_size
             batch_id = get_batch_from_row_offsets(b_row_offsets, src_idx[0])
 
-        var dst_idx: IndexList[rank_] = idx
+        var dst_idx: IndexList[rank] = rebind[IndexList[rank]](
+            coord_to_index_list(idx)
+        )
         var dst_row_idx: Int = src_idx[0]
 
         if is_tensor_a:
@@ -141,17 +121,6 @@ def merge_ragged_tensors[
             dst_row_idx += Int(a_row_offsets[batch_id + 1])
 
         dst_idx[0] = dst_row_idx
-
-        # Compute flat offsets for pointer load/store (Horner form).
-        # Inner dimensions are the same across a, b, and c.
-        @always_inline
-        @parameter
-        def _flat_offset[r: Int](index: IndexList[r]) -> Int:
-            comptime assert r == rank
-            var flat = index[0]
-            comptime for i in range(1, rank):
-                flat = flat * Int(c.dim[i]()) + index[i]
-            return flat
 
         # The elementwise function takes care of handling the scenario where
         # tensors' last dimension is not multiple of simdwidth. It will call
@@ -162,7 +131,7 @@ def merge_ragged_tensors[
         else:
             val = b.load[width=width](Coord(src_idx))
 
-        c.store[width=width](Coord(dst_idx), val)
+        c.store(Coord(dst_idx), val)
 
         # Update the row offsets if this is the first element of the batch
         var is_first_element = is_tensor_a and src_idx[0] == Int(
@@ -170,7 +139,7 @@ def merge_ragged_tensors[
         )
 
         comptime for i in range(1, rank):
-            if idx[i] != 0:
+            if idx[i].value() != 0:
                 is_first_element = False
 
         if is_first_element:
@@ -181,22 +150,18 @@ def merge_ragged_tensors[
                 var total_size = Int(a.dim[0]()) + Int(b.dim[0]())
                 c_row_offsets[batch_id + 1] = UInt32(total_size)
 
-    comptime compile_target = _current_target() if is_cpu[
-        target
-    ]() else get_gpu_target()
-    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime target_simd_width = (
+        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
+            target
+        ]() else simd_width_of[dtype, target=ctx.target]()
+    )
     comptime kernel_simd_width = 1 if rank == 1 else target_simd_width
 
-    var shape = IndexList[rank]()
-    comptime for i in range(rank):
-        shape[i] = Int(c.dim[i]())
-
     elementwise[
-        func=merge_fn,
         simd_width=kernel_simd_width,
         target=target,
         _trace_description="merge_ragged_tensors",
-    ](shape, ctx)
+    ](merge_fn, c.layout.shape_coord(), ctx)
 
 
 def eagle_prefill_shift_tokens[
@@ -205,10 +170,10 @@ def eagle_prefill_shift_tokens[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, ...],
-    tokens: TileTensor[dtype, ...],
-    offsets: TileTensor[DType.uint32, ...],
-    shift_next_tokens: TileTensor[dtype, ...],
-    ctx: DeviceContextPtr,
+    tokens: TileTensor[mut=False, dtype, ...],
+    offsets: TileTensor[mut=False, .uint32, ...],
+    shift_next_tokens: TileTensor[mut=False, dtype, ...],
+    ctx: DeviceContext,
 ) raises:
     """Shift ragged tokens left by 1 per request, appending bonus tokens."""
     comptime assert output.flat_rank == 1
@@ -216,14 +181,11 @@ def eagle_prefill_shift_tokens[
     comptime assert offsets.flat_rank == 1
     comptime assert shift_next_tokens.flat_rank == 1
 
-    @always_inline
-    @parameter
-    def shift_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](idx: IndexList[rank_]):
-        comptime assert rank_ == 1
+    @inline(.always)
+    def shift_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == 1
 
-        var i = idx[0]
+        var i = Int(idx[0])
 
         # Shift left by 1 per batch, append bonus token
         var batch_id = get_batch_from_row_offsets(offsets, i)
@@ -231,19 +193,18 @@ def eagle_prefill_shift_tokens[
 
         if i < end - 1:
             # Not the last position: copy from next position
-            output.store(Coord(Idx(i)), tokens.load[width=1](Coord(Idx(i + 1))))
+            output.store((i,), tokens.load((i + 1,)))
         else:
             # Last position in batch: append shift_next_tokens
             output.store(
-                Coord(Idx(i)),
-                shift_next_tokens.load[width=1](Coord(Idx(batch_id))),
+                (i,),
+                shift_next_tokens.load((batch_id,)),
             )
 
-    var shape = IndexList[1](Int(output.dim[0]()))
+    var shape = Coord(Int(output.dim[0]()))
 
     elementwise[
-        func=shift_fn,
         simd_width=1,
         target=target,
         _trace_description="eagle_prefill_shift_tokens",
-    ](shape, ctx)
+    ](shift_fn, shape, ctx)

@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
-from std.gpu.primitives.id import lane_id, warp_id
-from std.gpu.primitives.warp import shuffle_up
+from max.gpu import block_idx, thread_idx, WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
+from max.gpu.primitives.id import lane_id, warp_id
+from max.gpu.primitives.warp import shuffle_up
 
 from std.math import abs
 
@@ -61,10 +62,10 @@ def block_scan(val: Float32) -> Float32:
     var result = warp_scan(val)
 
     # Allocate shared memory for warp sums
-    var warp_sums_s = stack_allocation[
+    var warp_sums_s = unsafe_stack_allocation[
         NUM_WARPS,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Step 2: Collect warp sums
@@ -93,8 +94,8 @@ def block_scan(val: Float32) -> Float32:
 
 # ========================== TEST CODE ==========================
 def test_block_scan(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
     """Test kernel for block-level scan.
@@ -112,8 +113,8 @@ def test_block_scan(
 
 
 def cpu_scan(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: UInt32,
 ):
     """CPU reference scan implementation.
@@ -134,9 +135,9 @@ def main() raises:
     comptime dtype = DType.float32
 
     # Allocate host memory
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](N)
-    var h_ref = alloc[Float32](N)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](N)
+    var h_ref = unsafe_alloc[Float32](N)
 
     # Initialize input
     for i in range(N):
@@ -157,7 +158,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block)
-        ctx.enqueue_function_experimental[test_block_scan](
+        ctx.enqueue_function[test_block_scan](
             d_input,
             d_output,
             UInt32(N),
@@ -188,9 +189,9 @@ def main() raises:
             errors += 1
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

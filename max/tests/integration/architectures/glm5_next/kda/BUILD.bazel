@@ -1,0 +1,101 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "torch_reference",
+    testonly = True,
+    srcs = ["torch_reference.py"],
+    imports = ["."],
+    deps = [
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_kimi_delta_attention",
+    srcs = ["test_kimi_delta_attention.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    # Needs kda_decode, registered only by the closed-source kernels.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":torch_reference",
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)
+
+modular_py_test(
+    name = "test_kda_chunk_prefill",
+    srcs = ["test_kda_chunk_prefill.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    # Needs kda_chunk, registered only by the closed-source kernels.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)
+
+modular_py_test(
+    name = "test_kda_state_cache",
+    srcs = ["test_kda_state_cache.py"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_kda_module",
+    srcs = ["test_kda_module.py"],
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)

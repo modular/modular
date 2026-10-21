@@ -20,12 +20,14 @@ from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
-from itertools import islice
-from typing import Any, Protocol
+from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, DLPackArray
 from max.dtype import DType
+from max.engine import InferenceSession, Model
 from max.graph import (
     DeviceRef,
     Graph,
@@ -34,16 +36,18 @@ from max.graph import (
     ShardingStrategy,
     StaticDim,
     Type,
-    Value,
     Weight,
 )
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from max.tree import Tree
 from typing_extensions import Self
 
 from .._identity import IdentitySet
 
 
+@runtime_checkable
 class Shardable(Protocol):
     """Protocol for objects that support sharding across multiple devices.
 
@@ -79,16 +83,17 @@ class Shardable(Protocol):
 
 
 class Layer:
-    """.. deprecated:: 25.2
+    """Base class for neural network components.
 
-    Base class for neural network components.
-    Use :class:`Module` instead.
+    .. deprecated:: 25.2
+        Use :class:`Module` instead.
 
     Provides functionality for adding hooks to the call function of
     each layer to support testing, debugging or profiling.
     """
 
-    def __init_subclass__(cls):
+    def __init_subclass__(cls, **kwargs: Any):
+        super().__init_subclass__(**kwargs)
         if cls.__name__ == "Module":
             # Module subclasses Layer, but we don't want to apply
             # _call_with_hooks to it.
@@ -124,13 +129,14 @@ class Module(Layer, ABC):
         class Linear(nn.Module):
             def __init__(self, in_dims, out_dims):
                 super().__init__()
-                self.weight = Weight("weight", DType.float32, (in_dim, out_dim), DeviceRef.CPU())
+                self.weight = Weight("weight", DType.float32, (in_dims, out_dims), DeviceRef.CPU())
 
             def __call__(self, x):
                 return x @ self.weight.T
 
         class MLP(nn.Module):
             def __init__(self):
+                super().__init__()
                 self.up = Linear(5, 10)
                 self.gate = Linear(5, 10)
                 self.down = Linear(10, 5)
@@ -147,6 +153,26 @@ class Module(Layer, ABC):
     :meth:`load_state_dict` to initialize or set the weights values, and finalize
     the weight names to be unique within the model.
     """
+
+    @property
+    def _omit_module_attr_name(self) -> bool:
+        """Whether this module's attribute name is dropped from descendant FQNs.
+
+        When ``True``, this module's attribute name is skipped when building
+        weight FQNs in :meth:`raw_state_dict` / :meth:`load_state_dict`, so
+        children appear in the namespace as if they were attached directly
+        to the parent.
+
+        Example: by default, a child Linear's weight under
+        ``self.qkv_proj`` is exposed as ``self_attn.qkv_proj.q_proj.weight``.
+        If ``qkv_proj`` opts into ``_omit_module_attr_name``, the same
+        weight is exposed as ``self_attn.q_proj.weight`` instead.
+
+        Defaults to ``False``. Subclasses opt in by overriding this
+        property (see :class:`~max.nn.StackedLinear`, which returns
+        ``not self._stacked``).
+        """
+        return False
 
     def __init__(self) -> None:
         # `__init__` may be called if `__setattr__` is called before
@@ -212,7 +238,7 @@ class Module(Layer, ABC):
     def build_subgraph(
         self,
         name: str,
-        input_types: Sequence[Type[Any] | list[Type[Any]]],
+        inputs: Sequence[Tree[Any]],
         weight_prefix: str = "",
     ) -> Graph:
         """Builds a subgraph encapsulating this layer's computation.
@@ -223,36 +249,66 @@ class Module(Layer, ABC):
         once rather than once per repetition, which significantly reduces compile
         time for models with many identical layers.
 
-        Examples:
+        For example, define a small layer, build a subgraph from a
+        representative input, then call it once per repetition with a
+        layer-specific weight ``prefix``:
 
-            Build a subgraph from layer 0 and call it once per layer with
-            layer-specific weights:
+        .. code-block:: python
 
-            .. code-block:: python
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+            from max.nn.layer import Module
 
-                input_types = [hidden.type for hidden in h]
+            class Linear(Module):
+                def __init__(self, in_dims, out_dims, weight_name):
+                    super().__init__()
+                    self.weight = Weight(
+                        weight_name,
+                        DType.float32,
+                        (in_dims, out_dims),
+                        DeviceRef.CPU(),
+                    )
 
-                # Build the subgraph once.
-                subgraph = self.layers[0].build_subgraph(
-                    "transformer_block",
-                    input_types=input_types,
+                def __call__(self, x):
+                    return x @ self.weight.T
+
+            num_layers = 3
+            # Name the representative layer's weight with the first layer's
+            # prefix so build_subgraph() turns it into a placeholder.
+            layer = Linear(4, 4, weight_name="layers.0.weight")
+            with Graph(
+                "build_subgraph_example",
+                input_types=(
+                    TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
+                ),
+            ) as graph:
+                h = graph.inputs[0].tensor
+
+                # Build the subgraph once from a representative input.
+                subgraph = layer.build_subgraph(
+                    "linear_block",
+                    inputs=[h],
                     weight_prefix="layers.0.",
                 )
 
                 # Call it once per layer with the correct weight prefix.
-                for idx in range(len(self.layers)):
-                    outputs = ops.call(
-                        subgraph, *h, prefix=f"layers.{idx}."
-                    )
-                    h = [x.tensor for x in outputs]
+                for idx in range(num_layers):
+                    outputs = ops.call(subgraph, h, prefix=f"layers.{idx}.")
+                    h = outputs[0].tensor
+
+                graph.output(h)
 
         Args:
             name: The name of the subgraph. Must be unique within the containing
                 graph.
-            input_types: The input types for the subgraph. Pass a flat
-                :class:`~max.graph.type.Type` for a single tensor, or a list of
-                :class:`~max.graph.type.Type` objects for a group of tensors that
-                should be passed together (for example, KV-cache blocks).
+            inputs: Representative input values for the subgraph, one per
+                positional argument of the layer's ``__call__``. Each argument
+                may be a single :class:`~max.graph.Value`, a (possibly nested)
+                list/tuple of values, or a structured type following the pytree
+                protocol, such as :class:`~max.nn.kv_cache.PagedCacheValues`.
+                The subgraph's signature is derived from the flattened leaves'
+                types, and the same structure is rebuilt from the subgraph's
+                inputs before the layer is invoked.
             weight_prefix: A prefix string to strip from weight names before
                 registering them as placeholder weights. At call time, the caller
                 supplies the same prefix via the ``prefix`` argument of
@@ -265,36 +321,25 @@ class Module(Layer, ABC):
         Notes:
             Weights with names that start with ``weight_prefix`` are marked as
             placeholders. Any :func:`~max.graph.ops.call` invocation for this
-            subgraph must supply a matching ``prefix``.
+            subgraph must supply a matching ``prefix``. Pass the flattened
+            leaves (via :func:`~max.graph.ops.call`) in the same order that
+            ``inputs`` flattens to.
         """
         layer_weights = list(self.raw_state_dict().values())
-        subgraph_input_types: list[Type[Any]] = []
 
-        def flatten(t: Any, result: list[Any]) -> None:
-            if isinstance(t, list | tuple):
-                for item in t:
-                    flatten(item, result)
-            else:
-                result.append(t)
+        flat_leaves, input_structure = tree.flatten(inputs)
+        subgraph_input_types: list[Type[Any]] = [
+            leaf.type for leaf in flat_leaves
+        ]
 
-        def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
-            """Return the next *n* items from *it* as a list."""
-            return list(islice(it, n))
-
-        flatten(input_types, subgraph_input_types)
         with Graph.current.add_subgraph(
             name,
             input_types=subgraph_input_types,
             devices=list(Graph.current.device_chains.keys()),
         ) as subgraph:
-            subgraph_inputs = []
-            inputs = iter(subgraph.inputs)
-
-            for input_type in input_types:
-                if isinstance(input_type, list):
-                    subgraph_inputs.append(take(inputs, len(input_type)))
-                else:
-                    subgraph_inputs.append(next(inputs))
+            fresh_inputs = iter(subgraph.inputs)
+            subgraph_args = tree.unflatten(input_structure, fresh_inputs)
+            assert isinstance(subgraph_args, list)
 
             if weight_prefix:
                 for weight in filter(
@@ -303,7 +348,7 @@ class Module(Layer, ABC):
                     weight._placeholder = True
                     weight.name = weight.name.removeprefix(weight_prefix)
 
-            result = self(*subgraph_inputs)
+            result = self(*subgraph_args)
             if isinstance(result, list | tuple):
                 subgraph.output(*result)
             else:
@@ -311,9 +356,135 @@ class Module(Layer, ABC):
 
         return subgraph
 
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces this module's ``__call__`` into a graph without compiling it.
+
+        The graph passes one input per entry of ``input_types`` to
+        ``__call__`` positionally, and ``__call__`` returns the graph's
+        outputs: one value, a sequence of values, or ``None``. A subclass
+        whose ``__call__`` takes structured arguments overrides this method
+        to adapt the flat graph inputs to them. Weights keep
+        the names they have when tracing starts. :meth:`load_state_dict` and
+        :meth:`state_dict` name each weight by its attribute path, so call one
+        of them first when the graph's weights registry comes from
+        :meth:`state_dict`.
+
+        The following example traces a linear layer:
+
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.graph import DeviceRef, TensorType, Weight
+            from max.nn.layer import Module
+
+            class Linear(Module):
+                def __init__(self) -> None:
+                    super().__init__()
+                    self.weight = Weight(
+                        "weight", DType.float32, (4, 4), DeviceRef.CPU()
+                    )
+
+                def __call__(self, x):
+                    return x @ self.weight.T
+
+            graph = Linear().trace(
+                TensorType(DType.float32, [2, 4], device=DeviceRef.CPU())
+            )
+
+        .. invisible-code-block: python
+
+            assert graph.name == "Linear"
+
+        Args:
+            *input_types: The type of each graph input.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to, so that several
+                graphs compile into one artifact. Defaults to a new module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            self,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
+    def compile(
+        self,
+        *input_types: Type[Any],
+        session: InferenceSession,
+        weights: Mapping[str, DLPackArray] | None = None,
+        name: str | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Model:
+        """Traces this module, then compiles and initializes the graph.
+
+        The compile goes through ``session``'s precompiled or exported MEFs
+        when the session has them, as :meth:`InferenceSession.load
+        <max.engine.InferenceSession.load>` does.
+
+        Args:
+            *input_types: The type of each graph input.
+            session: The session that compiles and initializes the graph.
+            weights: The weight values, keyed by the graph's weight names.
+                Defaults to :meth:`state_dict`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The compiled and initialized :class:`~max.engine.Model`.
+        """
+        graph = self.trace(
+            *input_types,
+            name=name,
+            custom_extensions=custom_extensions,
+            is_device_graph=is_device_graph,
+        )
+        return session.load(
+            graph,
+            weights_registry=self.state_dict() if weights is None else weights,
+        )
+
     @property
     def sublayers(self) -> dict[str, Module]:
         return self._sublayers
+
+    def replace_module(self, name: str, module: Module) -> None:
+        """Replaces the child module registered at ``name``.
+
+        Args:
+            name: The attribute name of an existing child module.
+            module: The replacement module.
+
+        Raises:
+            KeyError: If ``name`` is not a registered child module. Unlike a
+                bare ``setattr``, this surfaces a wrong name instead of
+                silently creating a new, unreferenced child.
+        """
+        if name not in self._sublayers:
+            raise KeyError(
+                f"{type(self).__name__!r} has no child module {name!r}"
+            )
+        setattr(self, name, module)
 
     def load_state_dict(
         self,
@@ -324,6 +495,20 @@ class Module(Layer, ABC):
         strict: bool = True,
     ) -> None:
         """Sets the values of all weights in this model.
+
+        The keys in ``state_dict`` must match the fully-qualified weight
+        names used internally by the `Module`. Those names normally
+        follow the attribute hierarchy (such as
+        ``model.layers.0.self_attn.qkv_proj.weight``), but a sublayer
+        whose :attr:`_omit_module_attr_name` is ``True`` is *omitted*
+        from its descendants' FQNs. The canonical example is
+        :class:`~max.nn.StackedLinear` in unfused mode, where
+        ``self.qkv_proj = StackedLinear(names=["q_proj", "k_proj", "v_proj"], stacked=False)``
+        exposes weights at ``self_attn.q_proj.weight`` /
+        ``self_attn.k_proj.weight`` / ``self_attn.v_proj.weight`` rather
+        than nested under ``self_attn.qkv_proj.``. Use
+        :meth:`raw_state_dict` to inspect the exact keys this method
+        expects for a given module.
 
         Args:
             state_dict: A map from weight name to a numpy array or
@@ -347,40 +532,31 @@ class Module(Layer, ABC):
         loaded_keys = set()
         missing_keys = set()
 
-        for name, layer in recursive_named_layers(self):
-            weight_prefix = f"{name}." if name else ""
-            for weight_name, weight in layer.layer_weights.items():
-                # Skip shared weights, as they are loaded with the original layers.
-                if weight_name in layer._shared_weights:
-                    continue
-
-                full_weight_name = f"{weight_prefix}{weight_name}"
-
-                if (data := state_dict.get(full_weight_name)) is not None:
-                    loaded_keys.add(full_weight_name)
-                    if isinstance(data, WeightData):
-                        data = _array_from_weight_loader(
-                            weight,
-                            data,
-                            override_quantization_encoding,
-                            full_weight_name,
-                        ).data
-                    else:
-                        _validate_weight_value(weight, data, full_weight_name)
-
-                    if weight_alignment:
-                        weight.align = weight_alignment
-
-                    _check_alignment(
+        for full_weight_name, weight, _layer in self._iter_named_weights():
+            if (data := state_dict.get(full_weight_name)) is not None:
+                loaded_keys.add(full_weight_name)
+                if isinstance(data, WeightData):
+                    data = _array_from_weight_loader(
+                        weight,
                         data,
-                        weight.align or weight.dtype.align,
+                        override_quantization_encoding,
                         full_weight_name,
-                    )
-                    self._weight_values[full_weight_name] = data
-                    weight.name = full_weight_name
+                    ).data
                 else:
-                    # If a key is missing, just add it to the set for later.
-                    missing_keys.add(full_weight_name)
+                    _validate_weight_value(weight, data, full_weight_name)
+
+                if weight_alignment:
+                    weight.align = weight_alignment
+
+                _check_alignment(
+                    data,
+                    weight.align or weight.dtype.align,
+                    full_weight_name,
+                )
+                self._weight_values[full_weight_name] = data
+                weight.name = full_weight_name
+            else:
+                missing_keys.add(full_weight_name)
 
         # After the loop, check for all errors at once if in strict mode.
         unused_keys = state_dict.keys() - loaded_keys
@@ -388,7 +564,7 @@ class Module(Layer, ABC):
         if strict and (missing_keys or unused_keys):
             parts = []
             if missing_keys:
-                sorted_missing = sorted(list(missing_keys))
+                sorted_missing = sorted(missing_keys)
                 parts.append(
                     f"Missing required weights: {', '.join(sorted_missing)}"
                 )
@@ -404,7 +580,7 @@ class Module(Layer, ABC):
 
             if unused_keys:
                 parts.append(
-                    f"Unexpected keys in state_dict: {', '.join(sorted(list(unused_keys)))}"
+                    f"Unexpected keys in state_dict: {', '.join(sorted(unused_keys))}"
                 )
 
             raise ValueError(
@@ -420,6 +596,12 @@ class Module(Layer, ABC):
         The values returned are the same as the values set in :meth:`load_state_dict`.
         If :meth:`load_state_dict` has not been called and none of the weights have
         values, then they are initialized to zero.
+
+        Keys follow the same FQN convention as :meth:`load_state_dict`:
+        attribute paths through the module tree, with any sublayer that
+        sets :attr:`_omit_module_attr_name` (such as
+        :class:`~max.nn.StackedLinear` in unfused mode) skipped in the
+        prefix.
 
         Args:
             auto_initialize: Determines whether to initialize weights to zero if
@@ -457,18 +639,115 @@ class Module(Layer, ABC):
         - :obj:`~max.graph.Weight.quantization_encoding`
         - :obj:`~max.graph.Weight.shape`
 
+        Keys follow the same FQN convention as :meth:`load_state_dict`:
+        attribute paths through the module tree, with any sublayer that
+        sets :attr:`_omit_module_attr_name` skipped in the prefix.
+
         Returns:
             Map from weight name to the :class:`~max.graph.Weight` object.
         """
-        state_dict = {}
-        for name, layer in recursive_named_layers(self):
-            prefix = f"{name}." if name else ""
+        return {
+            name: weight for name, weight, _layer in self._iter_named_weights()
+        }
 
+    def named_modules(self) -> Iterable[tuple[str, Module]]:
+        """Yields ``(weight prefix, module)`` for every module in the tree.
+
+        The walk is bfs from self and visits each module once,
+        even when it is reachable through several attribute paths. The prefix
+        is the string `raw_state_dict` prepends to the module's own
+        weight names: empty for ``self``, otherwise the attribute path with a
+        trailing ``.`` (e.g. ``layers.3.mlp.``). A sublayer whose
+        :attr:`_omit_module_attr_name` is ``True`` shares its parent's prefix.
+
+        Returns:
+            An iterable of ``(prefix, module)`` pairs.
+        """
+        for _display_name, prefix, module in self._iter_named_modules():
+            yield prefix, module
+
+    def _iter_named_modules(self) -> Iterable[tuple[str, str, Module]]:
+        """Yields ``(display name, weight prefix, module)`` triples.
+
+        ``display_name`` always includes every attribute name on the path,
+        even for name-omitting modules, so error messages can point at the
+        attribute path used in the source.
+        """
+        # We carry the weight prefix explicitly through the walk rather
+        # than re-deriving it from each child's display name; otherwise a
+        # name-omitting child's dropped attribute name would be silently
+        # reintroduced when descending past it.
+        queue: deque[tuple[str, str, Module]] = deque()
+        queue.append(("", "", self))
+        visited = IdentitySet[Module]()
+
+        while queue:
+            display_name, weight_prefix, layer = queue.popleft()
+            if layer in visited:
+                continue
+            visited.add(layer)
+            yield display_name, weight_prefix, layer
+
+            for local_name, child in layer.sublayers.items():
+                if child._omit_module_attr_name:
+                    child_weight_prefix = weight_prefix
+                else:
+                    child_weight_prefix = f"{weight_prefix}{local_name}."
+                if display_name:
+                    child_display = f"{display_name}.{local_name}"
+                else:
+                    child_display = local_name
+                queue.append((child_display, child_weight_prefix, child))
+
+    def _iter_named_weights(
+        self,
+    ) -> Iterable[tuple[str, Weight, Module]]:
+        """Yields ``(fully-qualified name, weight, owning layer)`` triples.
+
+        This is the single chokepoint that turns the module tree into a
+        flat namespace of weights. It is consumed by :meth:`raw_state_dict`,
+        :meth:`state_dict`, and :meth:`load_state_dict` so they all agree
+        on naming and on collision detection.
+
+        Raises:
+            ValueError: If two distinct attribute paths produce the same
+                fully-qualified weight name. This can happen when a
+                module with ``_omit_module_attr_name`` (such as
+                :class:`~max.nn.StackedLinear`) flattens a child name into
+                the parent's namespace and a sibling already claims that
+                name.
+        """
+        seen: dict[str, str] = {}
+        for display_name, weight_prefix, layer in self._iter_named_modules():
             for weight_name, weight in layer.layer_weights.items():
                 if weight_name in layer._shared_weights:
                     continue
-                state_dict[f"{prefix}{weight_name}"] = weight
-        return state_dict
+                full_name = f"{weight_prefix}{weight_name}"
+                if (existing_owner := seen.get(full_name)) is not None:
+                    raise ValueError(
+                        f"Duplicate weight FQN '{full_name}' produced by "
+                        f"two distinct attribute paths: '{existing_owner}' "
+                        f"and '{display_name or '<root>'}'. Two weights "
+                        "cannot share the same fully-qualified name in a "
+                        "module's state_dict.\n\n"
+                        "This most often happens because one of the "
+                        "owning modules sets `_omit_module_attr_name = "
+                        "True` (notably `StackedLinear` in unfused mode, "
+                        "i.e. `stacked=False`), which drops the module's "
+                        "own attribute name from its descendants' FQNs. "
+                        "When such a module flattens a child name "
+                        "(e.g. `qkv_proj.q_proj` -> `q_proj`) into a "
+                        "namespace where a sibling already uses that "
+                        "name, the two collide here.\n\n"
+                        "To fix: rename one of the colliding attributes "
+                        "(e.g. pass different `names=[...]` to the "
+                        "name-omitting module, or rename the conflicting "
+                        "sibling), or set `_omit_module_attr_name = "
+                        "False` on the offending module if its attribute "
+                        "name should be preserved in the FQN."
+                    )
+                seen[full_name] = display_name or "<root>"
+                yield full_name, weight, layer
 
     @abstractmethod
     def __call__(self, *args, **kwargs):
@@ -646,26 +925,6 @@ def _validate_weight_value(
         )
 
 
-def recursive_named_layers(
-    parent: Module, prefix: str = ""
-) -> Iterable[tuple[str, Module]]:
-    """Recursively walks through the layers and generates names."""
-    seen = IdentitySet[Module]()
-    queue: deque[tuple[str, Module]] = deque()
-    queue.append((prefix, parent))
-
-    while queue:
-        name, layer = queue.popleft()
-        if layer in seen:
-            continue
-        seen.add(layer)
-
-        yield (name, layer)
-        prefix = f"{name}." if name else ""
-        for local_name, layer in layer.sublayers.items():  # noqa: B020
-            queue.append((f"{prefix}{local_name}", layer))
-
-
 _LOCAL = threading.local()
 _LAYER_HOOKS = _LOCAL._layer_hooks = []
 
@@ -691,6 +950,8 @@ def add_layer_hook(
     Example of printing debug inputs:
 
     .. code-block:: python
+
+        from max.nn.layer import add_layer_hook
 
         def print_info(layer, args, kwargs, outputs):
             print("Layer:", type(layer).__name__)

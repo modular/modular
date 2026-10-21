@@ -16,8 +16,8 @@ import std.math as math
 from std.math import rsqrt
 from std.sys import simd_width_of
 
-from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor, row_major
+from max.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.normalization import *
 from std.testing import assert_almost_equal, assert_true
 
@@ -26,7 +26,7 @@ from std.utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) raises -> Tuple[
+](vec: TileTensor[t, ...], size: Int, eps: Float32) raises -> Tuple[
     Float64,
     Float64,
 ]:
@@ -45,7 +45,7 @@ def compute_group_stats[
 
 
 def run_group_norm_gpu[
-    dtype: DType, rank: Int
+    dtype: DType, rank: Int, nhwc_view: Bool = False
 ](
     ctx: DeviceContext,
     shape: IndexList[rank],
@@ -53,6 +53,15 @@ def run_group_norm_gpu[
     rtol: Float64 = 1e-4,
     atol: Float64 = 1e-5,
 ) raises:
+    """Runs group_norm on the GPU and compares it against a float64 reference.
+
+    With `nhwc_view`, the logical NCHW (or NCL) input is stored as NHWC (NLC),
+    and `input_fn` reads it the way a view-fused transpose does: a vector load
+    of `width` elements is `width` consecutive spatial positions of ONE
+    channel, strided by `C`. That load is only correct when the window stays in
+    one channel, so it fails if group_norm does not fall back to scalar loads
+    for windows that straddle a channel boundary.
+    """
     print("== run_group_norm_gpu")
 
     var N = shape[0]
@@ -62,10 +71,10 @@ def run_group_norm_gpu[
     var rows = N * num_groups
     var cols = group_size
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](C)
-    var beta_h = alloc[Scalar[dtype]](C)
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](C)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](C)
 
     for i in range(rows * cols):
         data_h[i] = Scalar[dtype](i % 256)  # bounded range to avoid overflow
@@ -74,54 +83,97 @@ def run_group_norm_gpu[
         gamma_h[i] = (Float64(i + C) / Float64(C)).cast[dtype]()
         beta_h[i] = (Float64(i) / Float64(C)).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    # Padding so that a straddling window read past the end of the NHWC
+    # storage stays in bounds when the straddle guard is broken.
+    var pad = 16 * C if nhwc_view else 0
+    var store_h = ctx.enqueue_create_host_buffer[dtype](rows * cols + pad)
+    for i in range(rows * cols + pad):
+        store_h[i] = Scalar[dtype](0)
+    comptime if nhwc_view:
+        for n in range(N):
+            for c in range(C):
+                for hw in range(spatial):
+                    store_h[(n * spatial + hw) * C + c] = data_h[
+                        (n * C + c) * spatial + hw
+                    ]
+    else:
+        for i in range(rows * cols):
+            store_h[i] = data_h[i]
+
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols + pad)
+    # Distinct output buffer: input_fn (reads) and output (writes) are
+    # separate value args, so they must reference distinct buffer origins
+    # (normalizing in place into `data_d` would alias the read).
+    var out_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](C)
     var beta_d = ctx.enqueue_create_buffer[dtype](C)
 
     var param_shape = Index(C)
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var out_buf = TileTensor(out_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
 
-    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(data_d, store_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
     ctx.enqueue_copy(beta_d, beta_h)
 
-    @__copy_capture(data_buf)
-    @always_inline
-    @parameter
+    var storage = TileTensor(data_d, row_major(Coord(Index(rows * cols + pad))))
+    var row_len = shape[rank - 1]
+
+    @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int
+    ](coords: Coord) {
+        var data_buf,
+        var storage,
+        var C,
+        var spatial,
+        var row_len,
+    } -> SIMD[dtype, width]:
+        comptime if nhwc_view:
+            var n = Int(coords[0].value())
+            var c = Int(coords[1].value())
+            var hw = Int(coords[2].value())
+            comptime if rank == 4:
+                hw = hw * row_len + Int(coords[3].value())
+            var result = SIMD[dtype, width]()
+            comptime for i in range(width):
+                result[i] = storage[(n * spatial + hw + i) * C + c][0]
+            return result
+        else:
+            return data_buf.load[width=width](coords)
 
-        return data_buf.ptr.load[width=width](idx)
+    @inline(.always)
+    def gamma_scalar_fn[
+        width: Int
+    ](coords: Coord) {var gamma} -> SIMD[dtype, width]:
+        return gamma.load[width=width](coords)
 
-    @__copy_capture(gamma)
-    @always_inline
-    @parameter
-    def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Coord(coords))
-        return gamma.ptr.load[width=width](idx)
+    @inline(.always)
+    def beta_scalar_fn[
+        width: Int
+    ](coords: Coord) {var beta} -> SIMD[dtype, width]:
+        return beta.load[width=width](coords)
 
-    @__copy_capture(beta)
-    @always_inline
-    @parameter
-    def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-        var idx = beta.layout(Coord(coords))
-        return beta.ptr.load[width=width](idx)
-
-    group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
-        shape, epsilon, Int32(num_groups), data_buf, ctx=ctx
+    group_norm[dtype, rank, target="gpu"](
+        input_fn,
+        gamma_scalar_fn,
+        beta_scalar_fn,
+        Coord(shape),
+        epsilon,
+        Int32(num_groups),
+        out_buf,
+        ctx=ctx,
     )
-    ctx.enqueue_copy(res, data_d)
+    ctx.enqueue_copy(res, out_d)
     ctx.synchronize()
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h + r * cols,
-            row_major(Idx(cols)),
+            data_h.unsafe_ptr().unsafe_offset(r * cols),
+            row_major(cols),
         )
         var stats = compute_group_stats(vec, cols, epsilon)
         var mean_ref = stats[0]
@@ -143,64 +195,51 @@ def run_group_norm_gpu[
             assert_almost_equal(val, res[idx], rtol=rtol, atol=atol)
 
     _ = data_d^
+    _ = out_d^
     _ = gamma_d^
     _ = beta_d^
-    data_h.free()
-    res.free()
-    gamma_h.free()
-    beta_h.free()
 
 
 def main() raises:
     with DeviceContext() as ctx:
         comptime default_simd = simd_width_of[
-            DType.float32, target=get_gpu_target()
+            DType.float32, target=ctx.target
         ]()
 
         # === Warp-Tiling Kernel Dispatch (SIMD-aligned, fits warp strategy) ===
 
         # Small, SIMD-aligned groups
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 8, 2, 2), num_groups=4)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 8, 4), num_groups=4)
+        run_group_norm_gpu[.float32](ctx, Index(2, 8, 2, 2), num_groups=4)
+        run_group_norm_gpu[.float32](ctx, Index(2, 8, 4), num_groups=4)
 
         # Larger, but still small enough for warp tiling
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 32, 2, 2), num_groups=8)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 32, 4), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 2, 2), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 4), num_groups=8)
 
         # SIMD aligned with group boundary, but not aligned with channel boundary
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(2, 32, 1, 10), num_groups=8
-        )
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 1, 10), num_groups=8)
 
         # === Block Kernel Dispatch (too wide for warp or not divisible by SIMD width) ===
 
         # Large column count (too wide for warp)
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(1, 128, 1, 64), num_groups=8
-        )
-        run_group_norm_gpu[DType.float32](ctx, Index(1, 128, 64), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(1, 128, 1, 64), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(1, 128, 64), num_groups=8)
 
         # Aligned, but still too large for warp strategy
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(1, 64, 1, 64), num_groups=8
-        )
-        run_group_norm_gpu[DType.float32](ctx, Index(1, 64, 64), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(1, 64, 1, 64), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(1, 64, 64), num_groups=8)
 
         # === Invalid Case: cols < simd_width → triggers safety assertion ===
 
         # Misaligned shape
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(1, 33, 1, 1), num_groups=11
-            )
+            run_group_norm_gpu[.float32](ctx, Index(1, 33, 1, 1), num_groups=11)
         except e:
             assert_true(
                 "group_norm_gpu requires num_cols >= simd_width" in String(e)
             )
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(1, 33, 1), num_groups=11
-            )
+            run_group_norm_gpu[.float32](ctx, Index(1, 33, 1), num_groups=11)
         except e:
             assert_true(
                 "group_norm_gpu requires num_cols >= simd_width" in String(e)
@@ -208,17 +247,13 @@ def main() raises:
 
         # Small group sizes result in too few columns
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(1, 12, 1, 1), num_groups=6
-            )
+            run_group_norm_gpu[.float32](ctx, Index(1, 12, 1, 1), num_groups=6)
         except e:
             assert_true(
                 "group_norm_gpu requires num_cols >= simd_width" in String(e)
             )
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(1, 12, 1), num_groups=6
-            )
+            run_group_norm_gpu[.float32](ctx, Index(1, 12, 1), num_groups=6)
         except e:
             assert_true(
                 "group_norm_gpu requires num_cols >= simd_width" in String(e)
@@ -227,22 +262,31 @@ def main() raises:
         # === Edge Cases ===
 
         # Trivial spatial=1 (all channels collapsed to one dimension)
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(2, 128, 1, 1), num_groups=1
-        )
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 128, 1), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 128, 1, 1), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 128, 1), num_groups=1)
 
         # Non-multiple of simd_width → scalar fallback block path
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 33, 1, 1), num_groups=1)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 33, 1), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 33, 1, 1), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 33, 1), num_groups=1)
 
         # One-channel, one-group (channel_per_group=1)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 1, 4, 8), num_groups=1)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 1, 32), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 1, 4, 8), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 1, 32), num_groups=1)
 
         # Edge case from group norm layer tests
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 4, 4), num_groups=1)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 16), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 2, 4, 4), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 2, 16), num_groups=1)
+
+        # Zero-spatial input: the FLUX.2 VAE encoder is invoked
+        # unconditionally on a ``(0, 0, 3)`` placeholder image for
+        # text-to-image, and every ``GroupNorm`` inside the encoder sees
+        # a ``(B, C, 0, 0)`` tensor.  The kernel must early-return rather
+        # than dispatching with ``num_cols=0`` (which previously failed
+        # the ``num_cols >= simd_width`` check).
+        run_group_norm_gpu[.float32](ctx, Index(1, 128, 0, 0), num_groups=32)
+        run_group_norm_gpu[.float32](ctx, Index(1, 512, 0, 0), num_groups=32)
+        run_group_norm_gpu[.bfloat16](ctx, Index(1, 128, 0, 0), num_groups=32)
+        run_group_norm_gpu[.bfloat16](ctx, Index(1, 512, 0, 0), num_groups=32)
 
         # === Multi-Block Kernel Dispatch (large group_size, few groups) ===
 
@@ -255,40 +299,100 @@ def main() raises:
         # which diverge more at large group sizes.
 
         # bfloat16 tests matching FLUX2 VAE decoder dtype
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(1, 128, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
         )
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(1, 256, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
         )
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(1, 512, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
         )
         # Batch > 1 with multi-block
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(2, 256, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
         )
         # 3D multi-block
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(1, 128, 16384), num_groups=32, rtol=2e-3, atol=5e-4
         )
 
         # float32 multi-block tests for coverage
-        run_group_norm_gpu[DType.float32](
+        run_group_norm_gpu[.float32](
             ctx, Index(1, 128, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
         )
-        run_group_norm_gpu[DType.float32](
+        run_group_norm_gpu[.float32](
             ctx, Index(1, 512, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+
+        # === SIMD windows vs channel boundaries ===
+
+        # H*W (or L) is a multiple of the SIMD width: windows never cross a
+        # channel boundary, so the kernels take the vectorized fast paths.
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 4, 8), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 32), num_groups=8)
+        run_group_norm_gpu[.float32](
+            ctx, Index(2, 256, 16, 16), num_groups=8, rtol=2e-3, atol=5e-4
+        )
+
+        # H*W (or L) is not a multiple of the SIMD width: some windows
+        # straddle a channel boundary. With a contiguous input a wrongly
+        # vectorized straddling load is still correct, so these cases only
+        # cover the gamma/beta channel selection; the NHWC-view cases below
+        # cover the straddle guard.
+        # Warp-tiling dispatch.
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 3, 5), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 15), num_groups=8)
+        run_group_norm_gpu[.bfloat16](
+            ctx, Index(2, 64, 3, 5), num_groups=8, rtol=2e-3, atol=5e-4
+        )
+        # Multi-block dispatch.
+        run_group_norm_gpu[.float32](
+            ctx, Index(1, 512, 15, 15), num_groups=4, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[.float32](
+            ctx, Index(1, 256, 1125), num_groups=4, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[.bfloat16](
+            ctx, Index(1, 512, 15, 15), num_groups=4, rtol=2e-3, atol=5e-4
+        )
+
+        # === Straddle guard: NHWC storage read through NCHW coordinates ===
+
+        # Each case has a group size that is a multiple of the SIMD width but
+        # H*W (or L) that is not, so SIMD windows cross channel boundaries.
+        # Warp-tiling dispatch.
+        run_group_norm_gpu[.bfloat16, nhwc_view=True](
+            ctx, Index(1, 64, 3, 5), num_groups=8, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[.bfloat16, nhwc_view=True](
+            ctx, Index(1, 64, 15), num_groups=8, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[.float32, nhwc_view=True](
+            ctx, Index(2, 32, 3, 5), num_groups=8, rtol=2e-3, atol=5e-4
+        )
+        # Multi-block dispatch.
+        run_group_norm_gpu[.bfloat16, nhwc_view=True](
+            ctx, Index(1, 512, 15, 15), num_groups=4, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[.float32, nhwc_view=True](
+            ctx, Index(1, 512, 15, 15), num_groups=4, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[.float32, nhwc_view=True](
+            ctx, Index(1, 256, 1125), num_groups=4, rtol=2e-3, atol=5e-4
+        )
+        # Aligned control: no window straddles, so the vector load is used
+        # throughout.
+        run_group_norm_gpu[.bfloat16, nhwc_view=True](
+            ctx, Index(1, 64, 4, 8), num_groups=8, rtol=2e-3, atol=5e-4
         )
 
         # Mismatched channels/groups → top-level init error
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(2, 7, 3, 3), num_groups=3
-            )
+            run_group_norm_gpu[.float32](ctx, Index(2, 7, 3, 3), num_groups=3)
         except e:
             assert_true("Invalid num_groups" in String(e))
         try:
-            run_group_norm_gpu[DType.float32](ctx, Index(2, 7, 9), num_groups=3)
+            run_group_norm_gpu[.float32](ctx, Index(2, 7, 9), num_groups=3)
         except e:
             assert_true("Invalid num_groups" in String(e))

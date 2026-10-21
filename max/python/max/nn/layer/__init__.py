@@ -17,16 +17,16 @@ from .layer import (
     Shardable,
     add_layer_hook,
     clear_hooks,
-    recursive_named_layers,
 )
 from .layer_list import LayerList
+from .missing_layer import MissingLayer
 
 __all__ = [
     "Layer",
     "LayerList",
+    "MissingLayer",
     "Module",
     "Shardable",
     "add_layer_hook",
     "clear_hooks",
-    "recursive_named_layers",
 ]

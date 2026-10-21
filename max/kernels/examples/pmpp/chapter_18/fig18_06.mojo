@@ -18,10 +18,12 @@ If the vertex was visited in the previous level, it pushes updates to all
 its unvisited neighbors.
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
-from std.gpu.host import DeviceContext
-from std.os import Atomic
+from max.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu.host import DeviceContext
+from std.atomic import Atomic
 from std.collections import List
+from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 from graph_utils import (
     UNVISITED,
@@ -34,11 +36,11 @@ comptime BLOCK_SIZE = 256
 
 
 def bfs_kernel(
-    src_ptrs: UnsafePointer[UInt32, MutAnyOrigin],
-    dst: UnsafePointer[UInt32, MutAnyOrigin],
-    num_vertices: Int,
-    level: UnsafePointer[UInt32, MutAnyOrigin],
-    new_vertex_visited: UnsafePointer[UInt32, MutAnyOrigin],
+    src_ptrs: MutPointer[UInt32, MutAnyOrigin],
+    dst: MutPointer[UInt32, MutAnyOrigin],
+    num_vertices_dev: Int32,
+    level: MutPointer[UInt32, MutAnyOrigin],
+    new_vertex_visited: MutPointer[UInt32, MutAnyOrigin],
     curr_level: UInt32,
 ):
     """BFS kernel: vertex-centric push-based traversal.
@@ -50,11 +52,13 @@ def bfs_kernel(
     Args:
         src_ptrs: CSR row pointers.
         dst: CSR column indices (neighbor vertices).
-        num_vertices: Total number of vertices.
+        num_vertices_dev: Total number of vertices.
         level: Level array (distance from source).
         new_vertex_visited: Flag indicating if any new vertex was visited.
         curr_level: Current BFS level being processed.
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_vertices = Int(num_vertices_dev)
     var vertex = block_idx.x * block_dim.x + thread_idx.x
 
     if vertex < num_vertices:
@@ -85,7 +89,7 @@ def main() raises:
     print("Graph has", num_edges, "edges")
 
     # Allocate host memory
-    var h_level = alloc[UInt32](NUM_VERTICES)
+    var h_level = unsafe_alloc[UInt32](NUM_VERTICES)
     for i in range(NUM_VERTICES):
         h_level[i] = UNVISITED
 
@@ -93,14 +97,14 @@ def main() raises:
     h_level[start_vertex] = 0
 
     # Allocate device memory
-    var d_src_ptrs = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES + 1)
-    var d_dst = ctx.enqueue_create_buffer[DType.uint32](num_edges)
-    var d_level = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES)
-    var d_new_vertex_visited = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_src_ptrs = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES + 1)
+    var d_dst = ctx.enqueue_create_buffer[.uint32](num_edges)
+    var d_level = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES)
+    var d_new_vertex_visited = ctx.enqueue_create_buffer[.uint32](1)
 
     # Copy graph to device
-    var h_src_ptrs = alloc[UInt32](NUM_VERTICES + 1)
-    var h_dst = alloc[UInt32](num_edges)
+    var h_src_ptrs = unsafe_alloc[UInt32](NUM_VERTICES + 1)
+    var h_dst = unsafe_alloc[UInt32](num_edges)
     for i in range(NUM_VERTICES + 1):
         h_src_ptrs[i] = src_ptrs[i]
     for i in range(num_edges):
@@ -112,19 +116,19 @@ def main() raises:
 
     # BFS iteration
     var curr_level: UInt32 = 1
-    var grid_size = (NUM_VERTICES + BLOCK_SIZE - 1) // BLOCK_SIZE
+    var grid_size = ceildiv(NUM_VERTICES, BLOCK_SIZE)
 
     print("Running BFS...")
     while True:
         # Reset new_vertex_visited flag
-        var h_flag = alloc[UInt32](1)
+        var h_flag = unsafe_alloc[UInt32](1)
         h_flag[0] = 0
         ctx.enqueue_copy(d_new_vertex_visited, h_flag)
 
-        ctx.enqueue_function_experimental[bfs_kernel](
+        ctx.enqueue_function[bfs_kernel](
             d_src_ptrs,
             d_dst,
-            NUM_VERTICES,
+            Int32(NUM_VERTICES),
             d_level,
             d_new_vertex_visited,
             curr_level,
@@ -138,10 +142,10 @@ def main() raises:
         ctx.synchronize()
 
         if h_flag[0] == 0:
-            h_flag.free()
+            h_flag.unsafe_free()
             break
 
-        h_flag.free()
+        h_flag.unsafe_free()
         curr_level += 1
 
     print("BFS completed at level", curr_level - 1)
@@ -161,6 +165,6 @@ def main() raises:
         print("Figure 18.6 BFS Failed!")
 
     # Cleanup
-    h_level.free()
-    h_src_ptrs.free()
-    h_dst.free()
+    h_level.unsafe_free()
+    h_src_ptrs.unsafe_free()
+    h_dst.unsafe_free()

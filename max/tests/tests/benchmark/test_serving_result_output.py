@@ -1,0 +1,473 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Tests for benchmark_shared.serving_result_output."""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import pytest
+from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
+from max.benchmark.benchmark_shared.datasets.image_augmentation import (
+    generate_random_image,
+)
+from max.benchmark.benchmark_shared.datasets.types import (
+    ChatSamples,
+    ChatSession,
+    OpenAIImage,
+    RequestSamples,
+    SampledRequest,
+    SessionMessage,
+    encode_image,
+)
+from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
+    PercentileMetrics,
+    StandardPercentileMetrics,
+    TextGenAggregates,
+    ThroughputMetrics,
+)
+from max.benchmark.benchmark_shared.serving_result_output import (
+    BenchmarkRunResultLabels,
+    PercentileRow,
+    _image_dimensions,
+    _image_long_side,
+    elide_data_uris_in_string,
+    format_gpu_statistics_title,
+    format_percentile_table,
+    print_benchmark_summary,
+    print_workload_stats,
+    save_result_json,
+)
+
+
+def test_elide_data_uris_in_string() -> None:
+    """Test that elide_data_uris_in_string correctly elides base64 data URIs."""
+
+    # fmt: off
+
+    # Basic case
+    sample = "'image': 'data:image/jpeg;base64,/9j/4AAQSASDEEAE'"
+    expected = "'image': 'data:image/jpeg;base64,...(hash: 783e7013, 16 bytes)...'"
+    assert elide_data_uris_in_string(sample) == expected
+
+    # Two data URIs in a single string
+    sample = "data:image/jpeg;base64,/9j/4AAQSASDEEAE + data:image/jpeg;base64,/9j/4AAQSASDEEAE"
+    expected = "data:image/jpeg;base64,...(hash: 783e7013, 16 bytes)... + data:image/jpeg;base64,...(hash: 783e7013, 16 bytes)..."
+    assert elide_data_uris_in_string(sample) == expected
+
+    # Still elides even if it results in longer string
+    sample = "data:image/jpeg;base64,ABC"
+    expected = "data:image/jpeg;base64,...(hash: b5d4045c, 3 bytes)..."
+    assert elide_data_uris_in_string(sample) == expected
+
+    # Does not elide if invalid characters in data
+    sample = "data:image/jpeg;base64,ദ്ദി(˵ •̀ ᴗ - ˵ ) ✧"
+    expected = "data:image/jpeg;base64,ദ്ദി(˵ •̀ ᴗ - ˵ ) ✧"
+    assert elide_data_uris_in_string(sample) == expected
+
+    # Does not elide if data uri type is empty
+    sample = "data:;base64,ABC"
+    expected = "data:;base64,ABC"
+    assert elide_data_uris_in_string(sample) == expected
+
+    # `data:` is present in string but not part of data uri
+    sample = "Here is some data: 'data:image/jpeg;base64,AAAAAAAAASTUFF=='"
+    expected = "Here is some data: 'data:image/jpeg;base64,...(hash: 6c6e1584, 16 bytes)...'"
+    assert elide_data_uris_in_string(sample) == expected
+
+    # `;base64` is present in string but not part of data uri
+    sample = ";base64"
+    expected = ";base64"
+    assert elide_data_uris_in_string(sample) == expected
+
+    # String is empty
+    sample = ""
+    expected = ""
+    assert elide_data_uris_in_string(sample) == expected
+
+    # fmt: on
+
+
+def _pm(
+    mean: float,
+    std: float,
+    p50: float,
+    p90: float,
+    p95: float,
+    p99: float,
+) -> PercentileMetrics:
+    return PercentileMetrics(
+        mean=mean, std=std, p50=p50, p90=p90, p95=p95, p99=p99
+    )
+
+
+def test_format_percentile_table() -> None:
+    """The rendered table matches exactly, byte for byte."""
+    table = format_percentile_table(
+        [
+            PercentileRow(
+                "TTFT (ms)",
+                _pm(15539.31, 4200.50, 15068.37, 28000.00, 31000.00, 33034.17),
+            ),
+            PercentileRow(
+                "TPOT (ms)",
+                _pm(34.23, 18.10, 28.47, 60.20, 95.40, 138.55),
+            ),
+            PercentileRow(
+                "ITL (ms)",
+                _pm(26.76, 22.40, 5.42, 48.90, 120.30, 228.45),
+            ),
+            PercentileRow(
+                "Request Latency (ms)",
+                _pm(20345.10, 5120.30, 19980.40, 30120.50, 33450.10, 35880.90),
+            ),
+            PercentileRow(
+                "Input throughput (tok/s)",
+                _pm(2180.51, 210.30, 2200.10, 1980.40, 1900.20, 1820.60),
+            ),
+            PercentileRow(
+                "Output throughput (tok/s)",
+                _pm(2301.89, 180.70, 2320.50, 2100.30, 2010.80, 1950.40),
+            ),
+        ]
+    )
+
+    expected = (
+        "┌───────────────────────────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┐\n"
+        "│ Metric                    │     Mean │     Std │      P50 │      P90 │      P95 │      P99 │\n"
+        "├───────────────────────────┼──────────┼─────────┼──────────┼──────────┼──────────┼──────────┤\n"
+        "│ TTFT (ms)                 │ 15539.31 │ 4200.50 │ 15068.37 │ 28000.00 │ 31000.00 │ 33034.17 │\n"
+        "│ TPOT (ms)                 │    34.23 │   18.10 │    28.47 │    60.20 │    95.40 │   138.55 │\n"
+        "│ ITL (ms)                  │    26.76 │   22.40 │     5.42 │    48.90 │   120.30 │   228.45 │\n"
+        "│ Request Latency (ms)      │ 20345.10 │ 5120.30 │ 19980.40 │ 30120.50 │ 33450.10 │ 35880.90 │\n"
+        "│ Input throughput (tok/s)  │  2180.51 │  210.30 │  2200.10 │  1980.40 │  1900.20 │  1820.60 │\n"
+        "│ Output throughput (tok/s) │  2301.89 │  180.70 │  2320.50 │  2100.30 │  2010.80 │  1950.40 │\n"
+        "└───────────────────────────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┘"
+    )
+    assert table == expected
+
+
+def test_format_percentile_table_accepts_metric_wrappers() -> None:
+    """The helper accepts the computed StandardPercentileMetrics / ThroughputMetrics wrappers."""
+    latency = StandardPercentileMetrics([0.5, 0.6, 0.7], scale_factor=1000.0)
+    tput = ThroughputMetrics([50.0, 60.0, 70.0], unit="tok/s")
+
+    table = format_percentile_table(
+        [
+            PercentileRow("Request Latency (ms)", latency),
+            PercentileRow("Output throughput (tok/s)", tput),
+        ]
+    )
+    lines = table.splitlines()
+    assert any("Request Latency (ms)" in ln for ln in lines)
+    assert any("Output throughput (tok/s)" in ln for ln in lines)
+
+
+def test_format_gpu_statistics_title_names_device_count() -> None:
+    """The section title says the percentile rows are aggregated across devices."""
+    assert format_gpu_statistics_title(1) == (
+        "GPU Statistics (aggregated across 1 device)"
+    )
+    assert format_gpu_statistics_title(2) == (
+        "GPU Statistics (aggregated across 2 devices)"
+    )
+    assert format_gpu_statistics_title(8) == (
+        "GPU Statistics (aggregated across 8 devices)"
+    )
+
+
+def _gpu_benchmark_result(
+    tool_request_rate: float | None = None,
+    tool_call_response_rate: float | None = None,
+    image_request_rate: float | None = None,
+    lora_request_rate: float | None = None,
+    gpu_utilization_by_group: dict[str, list[float]] | None = None,
+) -> BenchmarkResult:
+    return BenchmarkResult(
+        task_type="text",
+        max_concurrency=8,
+        peak_gpu_memory_mib=[40000.0, 40500.0],
+        available_gpu_memory_mib=[39000.0, 38500.0],
+        gpu_utilization=[95.0, 97.0],
+        gpu_utilization_by_group=gpu_utilization_by_group or {},
+        text_data=TextGenAggregates(
+            duration=60.0,
+            completed=100,
+            failures=0,
+            request_throughput=1.66,
+            total_input=5000,
+            total_output=8000,
+            nonempty_response_chunks=8000,
+            max_input=100,
+            max_output=200,
+            max_total=300,
+            global_cached_token_rate=0.42,
+            tool_request_rate=tool_request_rate,
+            tool_call_response_rate=tool_call_response_rate,
+            image_request_rate=image_request_rate,
+            lora_request_rate=lora_request_rate,
+        ),
+    )
+
+
+def _print_summary(result: BenchmarkResult) -> None:
+    print_benchmark_summary(
+        metrics=result,
+        request_rate=float("inf"),
+        max_concurrency=8,
+        achieved_request_rate=1.66,
+        collect_gpu_stats=True,
+        collect_cpu_stats=False,
+    )
+
+
+def test_print_benchmark_summary_prints_request_mix_section(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(
+        _gpu_benchmark_result(
+            tool_request_rate=0.68,
+            tool_call_response_rate=0.5,
+            image_request_rate=0.2,
+            lora_request_rate=0.0,
+        )
+    )
+    out = capsys.readouterr().out
+    assert out.index("Request Mix") < out.index("Tool-offering requests:")
+    assert re.search(r"Tool-offering requests:\s+68\.00%", out)
+    assert re.search(r"of which called a tool:\s+50\.00%", out)
+    assert re.search(r"Image-carrying requests:\s+20\.00%", out)
+    assert "LoRA-routed requests:" not in out
+
+
+def test_print_benchmark_summary_omits_request_mix_when_unused(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(_gpu_benchmark_result(tool_request_rate=0.0))
+    assert "Request Mix" not in capsys.readouterr().out
+
+
+def test_print_benchmark_summary_tabulates_gpu_stats(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """GPU stats reuse the shared percentile table, not one block per device."""
+    print_benchmark_summary(
+        metrics=_gpu_benchmark_result(),
+        request_rate=float("inf"),
+        max_concurrency=8,
+        achieved_request_rate=1.66,
+        collect_gpu_stats=True,
+        collect_cpu_stats=False,
+    )
+    out = capsys.readouterr().out
+    assert "GPU Statistics (aggregated across 2 devices)" in out
+    assert "For per-GPU metrics, dump the result JSON instead" in out
+    assert "Peak GPU memory (MiB)" in out
+    assert "GPU 0 peak memory" not in out
+    assert "GPU 1 peak memory" not in out
+    # Same Mean/Std/P50/P90/P95/P99 columns as latency / throughput.
+    peak = re.search(
+        r"│\s*Peak GPU memory \(MiB\)\s*│([^│]+)│([^│]+)│([^│]+)│"
+        r"([^│]+)│([^│]+)│([^│]+)│",
+        out,
+    )
+    assert peak is not None
+    assert float(peak.group(1).strip()) == 40250.0
+    util = re.search(
+        r"│\s*GPU utilization \(%\)\s*│([^│]+)│([^│]+)│([^│]+)│"
+        r"([^│]+)│([^│]+)│([^│]+)│",
+        out,
+    )
+    assert util is not None
+    assert float(util.group(1).strip()) == 96.0
+    assert "GPU utilization, prefill" not in out
+
+
+def test_print_benchmark_summary_splits_gpu_utilization_by_role(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A disaggregated run adds one utilization row per role and node."""
+    print_benchmark_summary(
+        metrics=_gpu_benchmark_result(
+            gpu_utilization_by_group={
+                "prefill": [95.0],
+                "decode node 1": [97.0],
+            }
+        ),
+        request_rate=float("inf"),
+        max_concurrency=8,
+        achieved_request_rate=1.66,
+        collect_gpu_stats=True,
+        collect_cpu_stats=False,
+    )
+    out = capsys.readouterr().out
+    for label, mean in (("prefill", 95.0), ("decode node 1", 97.0)):
+        row = re.search(rf"│\s*GPU utilization, {label} \(%\)\s*│([^│]+)│", out)
+        assert row is not None, label
+        assert float(row.group(1).strip()) == mean
+
+
+def _make_request(
+    prompt_len: int = 10, encoded_images: list[OpenAIImage] | None = None
+) -> SampledRequest:
+    return SampledRequest(
+        prompt_formatted="hello",
+        prompt_len=prompt_len,
+        output_len=5,
+        encoded_images=encoded_images or [],
+        ignore_eos=False,
+    )
+
+
+def test_print_workload_stats_request_samples_without_images_omits_section(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    samples = RequestSamples(requests=[_make_request() for _ in range(3)])
+    print_workload_stats(samples)
+    out = capsys.readouterr().out
+    assert "Image count" not in out
+
+
+def test_print_workload_stats_request_samples_with_images_prints_section(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    image = encode_image(generate_random_image(64, 64))
+    samples = RequestSamples(
+        requests=[_make_request(encoded_images=[image]) for _ in range(3)]
+    )
+    print_workload_stats(samples)
+    out = capsys.readouterr().out
+    assert "Image count (per request)" in out
+    assert "Image long side (px)" in out
+
+
+def test_print_workload_stats_chat_samples_with_images_prints_per_session(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    image = encode_image(generate_random_image(32, 32))
+    session = ChatSession(
+        id=0,
+        messages=[
+            SessionMessage(
+                source="user", content="hi", num_tokens=5, images=[image]
+            ),
+            SessionMessage(source="assistant", content="hello", num_tokens=5),
+        ],
+    )
+    samples = ChatSamples(chat_sessions=[session])
+    print_workload_stats(samples)
+    out = capsys.readouterr().out
+    assert "Image count (per session)" in out
+
+
+def test_print_workload_stats_reports_image_aspect_ratio(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Long side alone hides what shape a sampled aspect ratio produced."""
+    image = encode_image(generate_random_image(256, 1024))
+    samples = RequestSamples(
+        requests=[_make_request(encoded_images=[image]) for _ in range(3)]
+    )
+    print_workload_stats(samples)
+    out = capsys.readouterr().out
+    assert "Image aspect ratio (w/h)" in out
+
+
+def test_image_dimensions_decodes_width_and_height() -> None:
+    image = encode_image(generate_random_image(48, 96))
+    assert _image_dimensions(image) == (96, 48)
+
+
+def test_image_long_side_decodes_data_uri() -> None:
+    image = encode_image(generate_random_image(48, 96))
+    assert _image_long_side(image) == 96
+
+
+def test_image_long_side_none_for_non_data_uri() -> None:
+    image: OpenAIImage = {
+        "type": "image_url",
+        "image_url": {"url": "https://example.com/x.jpg"},
+    }
+    assert _image_long_side(image) is None
+
+
+def test_image_long_side_none_for_corrupt_data() -> None:
+    image: OpenAIImage = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64,not-valid-base64!!"},
+    }
+    assert _image_long_side(image) is None
+
+
+def test_save_result_json_writes_labels_in_base_layout(
+    tmp_path: Path,
+) -> None:
+    """Labels land in the base layout with the iteration's rate and concurrency."""
+    config = ServingBenchmarkConfig(model="myorg/model", metadata=["tp=2"])
+    result = BenchmarkResult(
+        task_type="text",
+        max_concurrency=4,
+        text_data=TextGenAggregates(
+            duration=1.0,
+            completed=2,
+            failures=0,
+            request_throughput=2.0,
+            total_input=10,
+            total_output=7,
+            nonempty_response_chunks=7,
+            max_input=5,
+            max_output=4,
+            max_total=9,
+            global_cached_token_rate=0.0,
+            output_lens=[3, 4],
+        ),
+    )
+    path = tmp_path / "result.json"
+
+    save_result_json(
+        str(path),
+        BenchmarkRunResultLabels.from_config(
+            config,
+            benchmark_task="text-generation",
+            model_id="myorg/model",
+            tokenizer_id="myorg/tokenizer",
+        ),
+        result,
+        request_rate=2.5,
+        record_max_concurrency=4,
+    )
+
+    data = json.loads(path.read_text())
+    assert list(data)[:13] == [
+        "date",
+        "backend",
+        "benchmark_task",
+        "model_id",
+        "tokenizer_id",
+        "num_prompts",
+        "dataset_name",
+        "client_args",
+        "request_rate",
+        "burstiness",
+        "max_concurrency",
+        "max_concurrent_conversations",
+        "tp",
+    ]
+    assert data["tokenizer_id"] == "myorg/tokenizer"
+    assert data["tp"] == "2"
+    assert data["client_args"]["model"] == "myorg/model"
+    assert data["client_args"]["request_rate"] == "2.5"
+    assert data["client_args"]["max_concurrency"] == 4

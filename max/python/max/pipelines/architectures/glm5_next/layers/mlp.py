@@ -1,0 +1,265 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Feed-forward sublayers for GLM-5.3-Flash: dense MLP and MoE.
+
+Layers 0-2 are dense at ``intermediate_size`` (12288); layers 3 onward, the MTP
+draft layer included, are MoE at ``moe_intermediate_size`` (2048) with one
+shared expert and eight of 288 routed. Both use GLM's clamped SwiGLU.
+
+GLM needs ``silu(min(gate, limit)) * clamp(up, -limit, limit)``: the clamp
+bounds the activation's *input*. Clamping after the activation agrees below
+the limit and diverges above it, so random weights never show the difference
+and a real checkpoint does.
+
+The MoE below gets this order from the fused ``"silu"`` activation with a
+``limit``. The dense MLP calls :func:`clamped_swiglu` directly, because the
+other clamped-SwiGLU paths in MAX compute something else:
+
+* ``max/python/max/nn/activation.py`` -- ``swigluoai`` adds GPT-OSS's
+  ``+1`` bias on ``up`` and an ``alpha`` inside the sigmoid.
+* ``max/python/max/nn/moe/moe.py`` -- ``make_concatenated_gated_activation_fn``
+  with a ``limit`` applies the activation and *then* clamps.
+* ``max/python/max/nn/linear.py`` -- the ``swiglu_limit`` branch does the same.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
+
+from max import tree
+from max.dtype import DType
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    TensorValue,
+    TensorValueLike,
+    Value,
+)
+from max.nn import MLP
+from max.nn.activation import GatedActivation
+from max.nn.comm.ep import EPBatchManager
+from max.nn.layer import Module
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
+from max.pipelines.architectures.deepseekV3_2.layers.moe import DeepseekV3_2MoE
+
+from ..model_config import Glm5NextConfig, token_shard_degree
+from .clamped_swiglu import clamped_swiglu
+from .token_parallel import gather_token_shards, token_shard
+
+__all__ = [
+    "Glm5NextMLP",
+    "Glm5NextMlpSublayer",
+    "Glm5NextMlpSublayerInputs",
+    "Glm5NextMoE",
+]
+
+
+class Glm5NextMLP(MLP):
+    """The dense MLP on layers 0-2.
+
+    Accumulates in float32 like DeepSeek-V3.2 -- the reference evaluates
+    ``silu`` on a float32 cast -- and clamps before the activation.
+    """
+
+    def __init__(self, *args, swiglu_limit: float, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.swiglu_limit = swiglu_limit
+
+    def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Applies the clamped gated MLP.
+
+        Args:
+            x: Input of shape ``(..., hidden_dim)``.
+
+        Returns:
+            Output of shape ``(..., hidden_dim)``.
+        """
+        x = TensorValue(x)
+        gate_out = self.gate_proj(x).cast(DType.float32)
+        up_out = self.up_proj(x).cast(DType.float32)
+        hidden = clamped_swiglu(gate_out, up_out, self.swiglu_limit)
+        return self.down_proj(hidden.cast(x.dtype))
+
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[Glm5NextMLP]:
+        """Creates :class:`Glm5NextMLP` shards across multiple devices.
+
+        :meth:`MLP.shard` builds stock :class:`MLP` shards, which activate
+        before clamping and skip the float32 accumulation. The model only runs
+        the dense MLP and the shared expert through their shards, so every
+        shard has to keep this class's ``__call__``.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            Sharded :class:`Glm5NextMLP` instances, one per device.
+        """
+        shards = []
+        for base in super().shard(devices):
+            shard = Glm5NextMLP(
+                dtype=self.gate_proj.weight.dtype,
+                quantization_encoding=self.quantization_encoding,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.feed_forward_length,
+                devices=base.devices,
+                has_bias=self.gate_proj.bias is not None,
+                quant_config=self.quant_config,
+                swiglu_limit=self.swiglu_limit,
+                is_sharding=True,
+            )
+            shard.gate_proj = base.gate_proj
+            shard.down_proj = base.down_proj
+            shard.up_proj = base.up_proj
+            shard._parent_layer = self
+            shards.append(shard)
+        return shards
+
+
+class Glm5NextMoE(DeepseekV3_2MoE):
+    """The MoE block on layers 3 onward.
+
+    Identical to DeepSeek-V3.2's -- ``noaux_tc`` sigmoid routing with a learned
+    ``e_score_correction_bias``, float32 router math, one shared expert -- apart
+    from the activation, which clamps before ``silu``.
+
+    ``n_group`` and ``topk_group`` are both 1, so group-limited routing is
+    inactive and any of the 288 experts is reachable from any token. That is
+    what makes expert parallelism's all-to-all dense and unbounded here, unlike
+    DeepSeek-V3's node-limited routing.
+    """
+
+    def __init__(
+        self, *args, swiglu_limit: float | None = None, **kwargs
+    ) -> None:
+        # `MoE.shard()` rebuilds each shard through `self.__class__`, passing
+        # the parent's `activation` rather than `swiglu_limit`.
+        if swiglu_limit is not None:
+            kwargs["activation"] = GatedActivation("silu", limit=swiglu_limit)
+        elif kwargs.get("activation") is None:
+            raise ValueError("Glm5NextMoE needs swiglu_limit or activation")
+        super().__init__(*args, **kwargs)
+
+
+@tree.dataclass(frozen=True, kw_only=True)
+class Glm5NextMlpSublayerInputs:
+    """The feed-forward sublayer's per-step inputs, one entry per device.
+
+    A bundle rather than the bare buffer list the other feed-forward paths
+    take, because the expert-parallel MoE now runs on one rank's share of the
+    tokens and needs the collective buffers to gather the result back.
+    """
+
+    ep_buffers: list[Value[Any]]
+    """Expert-parallel communication buffers, empty without EP. Bound per
+    sublayer rather than once for the stack because a subgraph body cannot
+    reference a value the outer graph owns."""
+
+    signal_buffers: list[BufferValue]
+    """Collective synchronization buffers, for the all-gather that puts the
+    MoE's per-rank outputs back together."""
+
+    host_input_row_offsets: TensorValue
+    """``[batch_size + 1]`` exclusive prefix offsets over the packed tokens,
+    on CPU. Only the last entry is read, as the row count the token split
+    divides. The host copy rather than the device one because
+    :func:`~max.graph.ops.slice_tensor` wants its bounds on CPU, and reading
+    them off the device tensor would put a synchronizing device-to-host copy
+    in every step -- which no captured device graph can record."""
+
+
+class Glm5NextMlpSublayer(Module):
+    """The feed-forward sublayer as the decoder layer calls it.
+
+    Satisfies ``Glm5NextSublayer[None]``: one already-normalized sequence per
+    device in, one output per device out, no residual add and no input
+    layernorm -- the decoder layer owns both, because the mHC write-back is not
+    an add.
+
+    Wraps either the dense MLP or the MoE block. Its inputs bundle is the
+    expert-parallel communication buffers, which an EP MoE needs and every
+    other feed-forward path ignores. ``forward_moe_sharded_layers`` runs the
+    full expert-parallel dispatch/compute/combine for an EP MoE and falls back
+    to a plain per-shard forward for a replicated MLP, so one wrapper covers
+    both.
+    """
+
+    def __init__(
+        self,
+        mlp: Glm5NextMLP | Glm5NextMoE,
+        devices: Sequence[DeviceRef],
+        config: Glm5NextConfig,
+        ep_manager: EPBatchManager | None = None,
+    ) -> None:
+        super().__init__()
+        self.mlp = mlp
+        self.ep_manager = ep_manager
+        # The MoE is per-token, so under tensor-parallel attention each rank
+        # runs the experts over its own slice of the rows instead of over
+        # every rank's copy of the whole sequence.
+        self.token_shards = token_shard_degree(
+            len(devices), config.data_parallel_degree
+        )
+        # Typed as callables rather than as the module union: that is exactly
+        # what `forward_moe_sharded_layers` takes, and `shard()` returns
+        # `Sequence[Self]`, which does not narrow to a union of two subclasses.
+        shards: Sequence[Callable[[TensorValue], TensorValue]] = (
+            mlp.shard(devices) if mlp.sharding_strategy is not None else [mlp]
+        )
+        self.shards = list(shards)
+
+    @property
+    def _omit_module_attr_name(self) -> bool:
+        """Keeps the wrapper out of weight FQNs.
+
+        The decoder layer holds this as ``self.mlp`` and it holds the block as
+        ``self.mlp``, so without this the checkpoint's
+        ``layers.N.mlp.gate_proj.weight`` would have to be
+        ``layers.N.mlp.mlp.gate_proj.weight``. The wrapper exists to satisfy a
+        call signature, not to add a level to the checkpoint's namespace.
+        """
+        return True
+
+    def __call__(
+        self, xs: list[TensorValue], inputs: Glm5NextMlpSublayerInputs
+    ) -> list[TensorValue]:
+        """Runs the feed-forward block on every device.
+
+        Every rank is handed the same ``xs`` here, because the residual is
+        replicated. When attention is tensor-parallel that would have each
+        rank dispatch every token to the experts, so instead each takes a
+        distinct slice of the rows, runs the block on that, and the outputs
+        are gathered back. That is also what makes the shared EP dispatch cap
+        correct without an architecture-specific override, since a rank now
+        really does send at most ``ceildiv(total_tokens, degree)``.
+
+        Args:
+            xs: ``[total_tokens, hidden_size]`` per device, normalized.
+            inputs: This layer's communication buffers.
+
+        Returns:
+            ``[total_tokens, hidden_size]`` per device.
+        """
+        if self.ep_manager is not None and inputs.ep_buffers:
+            self.ep_manager.fetch_buffers(inputs.ep_buffers)
+        if self.token_shards == 1:
+            return forward_moe_sharded_layers(list(self.shards), xs)
+        # The last row offset is the packed token count, already on CPU --
+        # which is where `slice_tensor` wants its bounds.
+        total = inputs.host_input_row_offsets[-1].cast(DType.int64)
+        shards = [
+            token_shard(x, i, self.token_shards, total)
+            for i, x in enumerate(xs)
+        ]
+        outs = forward_moe_sharded_layers(list(self.shards), shards)
+        return gather_token_shards(outs, xs, inputs.signal_buffers)

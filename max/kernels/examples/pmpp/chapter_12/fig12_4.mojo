@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.primitives.warp import vote, shuffle_idx
-from std.gpu.primitives.id import lane_id
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.warp import vote, shuffle_idx
+from max.gpu.primitives.id import lane_id
 from std.bit import pop_count, count_trailing_zeros
-from std.os import Atomic
+from std.atomic import Atomic
+from std.math import ceildiv
 
 
 # ========================== CONFIGURATION ==========================
@@ -24,7 +25,7 @@ comptime BLOCK_DIM = 256
 
 
 # ========================== DEVICE FUNCTIONS ==========================
-@always_inline
+@inline(.always)
 def cond(val: UInt32) -> Bool:
     """Filter: keep only even numbers.
 
@@ -39,9 +40,9 @@ def cond(val: UInt32) -> Bool:
 
 # ========================== KERNEL CODE ==========================
 def filter_kernel(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    output_size: UnsafePointer[UInt32, MutAnyOrigin],
+    input: MutPointer[UInt32, MutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    output_size: MutPointer[UInt32, MutAnyOrigin],
     N: UInt32,
 ):
     """Figure 12.4: Unstable filter using cooperative groups pattern.
@@ -63,7 +64,7 @@ def filter_kernel(
         passes = cond(val)
 
     # Create coalesced group (threads that passed the condition)
-    var active_threads_mask = vote[DType.uint32](passes)
+    var active_threads_mask = vote[.uint32](passes)
 
     if passes:
         # Get group properties
@@ -107,7 +108,7 @@ def main() raises:
             h_size[0] = UInt32(0)
 
         # Launch kernel
-        var num_blocks = (N + BLOCK_DIM - 1) // BLOCK_DIM
+        var num_blocks = ceildiv(N, BLOCK_DIM)
         print(
             (
                 "Launching unstable filter kernel with cooperative groups (Fig"
@@ -121,7 +122,7 @@ def main() raises:
         print("Input size:", N, "elements")
 
         comptime kernel = filter_kernel
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             d_input,
             d_output,
             d_output_size,

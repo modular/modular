@@ -49,19 +49,48 @@ First, consider that several parts of this repository currently do not accept
 contributions. You should refer to the README or CONTRIBUTING file nearest the
 code you're interested in.
 
-We also want to be sure that you spend your time efficiently and prepare
-changes that aren’t controversial and get stuck in long rounds of reviews. So
-if the change is non-trivial, please submit an issue or write a proposal, as
-described in the corresponding sections.
+We accept contributions to the following sections, each of which has its own
+contribution guidelines:
 
-For example, we accept contributions to the following sections where you can
-find specific contribution guidelines:
-
-- [Mojo standard library](mojo/CONTRIBUTING.md)
+- [Mojo](Mojo/CONTRIBUTING.md)
 - [MAX API and models](/max/CONTRIBUTING.md)
-- [MAX AI kernels](/max/kernels/CONTRIBUTING.md)
-- [Code examples](examples#contributing)
-- [Mojo documentation](mojo/docs#contributing)
+- [MAX accelerator library](/max/kernels/CONTRIBUTING.md)
+- [Code examples](/max/examples#contributing) and
+  [Mojo/examples#contributing](Mojo/examples#contributing)
+- [Mojo documentation](Mojo/docs#contributing)
+
+#### Please open an issue before opening a pull request
+
+We want your time to be well spent, and we want to be able to give your PR
+the review it deserves. The best way to make both of those things happen is
+to talk with us *before* you start writing code.
+
+For anything beyond a small, obvious fix, please open a GitHub issue (or, for
+larger standard library changes, a [standard library
+proposal](Mojo/docs/contributing/stdlib/proposal-process.md))
+that describes the problem you're solving and the approach you have in mind. A
+maintainer will respond to let you know whether the change aligns with where
+we're headed, suggest alternatives, or flag anything you should know before
+investing the time. Once a maintainer has signaled that the change is a good fit
+— typically by adding the `accepted` label or by leaving a comment giving the
+go-ahead — you're clear to start work.
+
+What counts as a "small, obvious fix" where you can skip straight to a PR:
+
+- Typos and grammar fixes in documentation or comments.
+- One- or two-line bug fixes with an obvious root cause and a clear test.
+- Small, localized documentation clarifications.
+
+Everything else — new APIs, refactors, performance work, behavior changes,
+anything touching public interfaces, or anything over ~100 lines — benefits
+from a conversation first. If you're unsure which bucket your change falls
+into, please err on the side of opening an issue; we're happy to help you
+scope it.
+
+If you open a non-trivial PR without a linked, maintainer-approved issue, we
+may ask you to pause the PR and file an issue so we can align on the
+approach. This isn't a rejection of your contribution — it's us trying to
+make sure your work lands rather than stalling in review.
 
 ### Step 2: Create a pull request
 
@@ -72,7 +101,7 @@ If you're experienced with GitHub, here's the basic process:
 2. Create a branch from `main`.
 
    If you're contributing to the Mojo standard library, see the
-   [Mojo standard library developer guide](mojo/stdlib/docs/development.md).
+   [Mojo standard library developer guide](Mojo/docs/contributing/stdlib/stdlib-development.md).
 
 3. Create a PR into the `main` branch of this repo.
 
@@ -111,7 +140,8 @@ Before submitting, make sure your changes are correct and complete:
 
 - **Run the relevant tests.** If you changed code, run the tests for the
   affected area. For the Mojo standard library, see the
-  [development guide](mojo/stdlib/docs/development.md) for instructions.
+  [development guide](Mojo/docs/contributing/stdlib/stdlib-development.md)
+  for instructions.
 - **Check for regressions.** Run a broader test pass if your change touches
   shared infrastructure or has wide impact.
 - **Assess quality.** Review your diff as a maintainer would. Is the logic
@@ -142,7 +172,7 @@ pull request:
    To clarify, you're working with three repo entities:
 
    - This repo (`https://github.com/modular/modular`) is known as the upstream
-      repo. In Git terminology, it's the *upstream remote*.
+     repo. In Git terminology, it's the *upstream remote*.
    - Your fork on GitHub is known as *origin* (also remote).
    - Your local clone is stored on your computer.
 
@@ -165,12 +195,12 @@ pull request:
     git checkout -b my-fix
     ```
 
-    Now start your work on the repo! If you're contributing to the Mojo
-    standard library, see the [Mojo standard library developer
-    guide](mojo/stdlib/docs/development.md).
+   Now start your work on the repo! If you're contributing to the Mojo
+   standard library, see the [Mojo standard library developer
+   guide](Mojo/docs/contributing/stdlib/stdlib-development.md).
 
-    Although not necessary right now, you should periodically make sure you have
-    the latest code, especially right before you create the pull request:
+   Although not necessary right now, you should periodically make sure you have
+   the latest code, especially right before you create the pull request:
 
     ```bash
     git fetch upstream
@@ -204,9 +234,10 @@ pull request:
    Now fill out the pull request details in the GitHub UI:
 
    - Add a short commit title describing the change.
-   - Add a detailed commit description that includes rationalization for the
-     change and/or explanation of the problem that it solves, with a link to any
-     relevant GitHub issues.
+   - Fill out the [pull request template](.github/PULL_REQUEST_TEMPLATE.md).
+     In particular, link the GitHub issue that was agreed upon in
+     [Step 1](#step-1-evaluate-and-get-buy-in-on-the-change) (for example,
+     `Fixes #1234`) and write a clear motivation for the change.
 
      Click **Create pull request**.
 
@@ -261,18 +292,18 @@ website), a day or two after it's merged.
 
    Initial Review:
    - Maintainers will provide an initial review or feedback within 3 weeks of
-      the PR submission. At times, it may be significantly quicker, but it
-      depends on a variety of factors.
+     the PR submission. At times, it may be significantly quicker, but it
+     depends on a variety of factors.
 
    Subsequent Reviews:
    - Once a contributor addresses feedback, maintainers will review updates as
-      soon as they can, typically within 5 business days.
+     soon as they can, typically within 5 business days.
 
 1. Issue Triage Timeline
 
    New Issues:
    - Maintainers will label and acknowledge new issues within 10 days of the
-      issue submission.
+     issue submission.
 
 1. Proposals
 
@@ -312,8 +343,8 @@ We look forward to working together with you in making Mojo better for everyone!
 To ensure quicker reviews:
 
 - **Ensure your PR is small and focused.** See the
-  [pull request size section](mojo/CONTRIBUTING.md#about-pull-request-sizes) for
-  more info.
+  [pull request size guidance](Mojo/docs/contributing/issue-pr-etiquette.md#keep-pull-requests-small)
+  for more info.
 - Write a good commit message/PR description outlining the motivation and
   describing the changes. Use the
   [pull request template](.github/PULL_REQUEST_TEMPLATE.md) as a guide.

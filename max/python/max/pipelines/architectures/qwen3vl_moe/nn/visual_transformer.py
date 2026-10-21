@@ -13,24 +13,35 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
     Dim,
+    DimLike,
+    Graph,
     ShardingStrategy,
+    TensorType,
     TensorValue,
+    Type,
+    Value,
     ops,
 )
-from max.nn.comm import Allreduce
+from max.graph import Module as GraphModule
+from max.nn.comm import Allreduce, Signals
 from max.nn.embedding import Embedding
 from max.nn.kernels import spatial_merge
 from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm
+from max.nn.transformer.transformer import forward_sequential_layers
 
 from ...qwen2_5vl.nn.vision_attention import DistributedVisionWindowAttention
 from ..model_config import VisionConfig
@@ -156,7 +167,7 @@ class BilinearInterpolationPositionEmbedding(Module):
 
     It uses a Standard embedding layer
     * Embedding table of size (num_position_embeddings, hidden_size).
-    * Assumes a square grid (e.g., 16x16 = 256 embeddings).
+    * Assumes a square grid (such as 16x16 = 256 embeddings).
     * Computes num_grid_per_side = sqrt(num_position_embeddings).
     * Bilinear interpolation is applied for each patch:
         1. Retrieve embeddings of the 4 neighboring positions using nn.Embedding.
@@ -191,16 +202,20 @@ class BilinearInterpolationPositionEmbedding(Module):
         idxs: TensorValue,
         weights: TensorValue,
         grid_thw: TensorValue,
+        out_rows: DimLike,
     ) -> TensorValue:
         """
         Args:
-            idxs: tensor of shape (4, total_n_patches)
-            weights: tensor of shape (4, total_n_patches)
+            idxs: tensor of shape (4, sum(h * w))
+            weights: tensor of shape (4, sum(h * w), 1)
             grid_thw: tensor of shape (n_images, 3)
-            signal_buffers: sequence of buffers for peer-to-peer communication in allreduce
+            out_rows: patch-row count of the result, ``sum(t * h * w)``. The
+                position grid is interpolated once per frame but consumed once
+                per temporal patch, so it exceeds ``idxs``' length whenever a
+                grid item is a clip.
 
         Returns:
-            tensor of shape (total_n_patches, hidden_size)
+            tensor of shape (out_rows, hidden_size)
         """
         weights = weights.cast(self.embedding.weight.dtype)
         # pos_embeds_[i].shape: (total_n_patches, hidden_size)
@@ -240,6 +255,7 @@ class BilinearInterpolationPositionEmbedding(Module):
             grid_thw=grid_thw,
             hidden_size=self.dim,
             merge_size=self.spatial_merge_size,
+            out_rows=out_rows,
         )
         return weighted_embeds
 
@@ -493,7 +509,8 @@ class VisionBlock(Module):
     def __call__(
         self,
         xs: Sequence[TensorValue],
-        position_embeddings: list[tuple[TensorValue, TensorValue]],
+        cos_embs: Sequence[TensorValue],
+        sin_embs: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         max_seqlen: Sequence[TensorValue],
         signal_buffers: list[BufferValue],
@@ -507,14 +524,15 @@ class VisionBlock(Module):
         attn_outs = [
             attn(
                 norm_out,
-                position_embeddings=pos_embs,
+                position_embeddings=(cos, sin),
                 input_row_offsets=row_offsets,
                 max_seqlen=mx,
             )
-            for attn, norm_out, pos_embs, row_offsets, mx in zip(
+            for attn, norm_out, cos, sin, row_offsets, mx in zip(
                 self.attn_shards,
                 norm1_outs,
-                position_embeddings,
+                cos_embs,
+                sin_embs,
                 input_row_offsets,
                 max_seqlen,
                 strict=True,
@@ -796,6 +814,103 @@ class VisionTransformer(Module):
         self.merger_shards = self.merger.shard(self.devices)
         self.merger_allreduce = Allreduce(num_accelerators=len(self.devices))
 
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
+        arguments.
+
+        Each argument takes one input per device. ``vision_seq_len`` is the
+        number of patches in the batch.
+
+        Returns:
+            The input types, in graph order.
+        """
+
+        def per_device(
+            dtype: DType, shape: list[int | str], on_host: bool = False
+        ) -> tuple[TensorType, ...]:
+            return tuple(
+                TensorType(
+                    dtype,
+                    shape=shape,
+                    device=DeviceRef.CPU() if on_host else device,
+                )
+                for device in self.devices
+            )
+
+        return OrderedDict(
+            pixel_values=per_device(
+                DType.float32, ["vision_seq_len", self.patch_embed.patch_dim]
+            ),
+            # Own dimension, not `vision_seq_len`: the bilinear position grid
+            # is interpolated once per FRAME while the pixels and rotary ids
+            # carry one row per temporal PATCH. The two coincide only for
+            # still images, and the tokenizer also emits clips.
+            weights=per_device(DType.float32, [4, "vision_pos_len", 1]),
+            idxs=per_device(DType.int64, [4, "vision_pos_len"]),
+            rot_pos_ids=per_device(DType.int32, ["vision_seq_len", 2]),
+            max_grid_size=per_device(DType.int32, [], on_host=True),
+            grid_thw=per_device(DType.int64, ["n_images", 3]),
+            cu_seqlens=per_device(DType.uint32, ["n_seqlens"]),
+            max_seqlen=per_device(DType.uint32, [1], on_host=True),
+            signal_buffers=tuple(Signals(devices=self.devices).input_types()),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the vision graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        The graph outputs the image embeddings, one per device, then the
+        deepstack embeddings, per device within each deepstack layer.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        treedef = tree.flatten(self.input_tree())[1]
+
+        def forward(*inputs: Value[Any]) -> list[TensorValue]:
+            named = tree.unflatten(treedef, iter(inputs))
+            assert isinstance(named, OrderedDict)
+            tensors = {
+                key: [v.tensor for v in values]
+                for key, values in named.items()
+                if key != "signal_buffers"
+            }
+            image_embeddings, deepstack_embeddings = self(
+                **tensors,
+                signal_buffers=[v.buffer for v in named["signal_buffers"]],
+            )
+            return [
+                *image_embeddings,
+                *(item for layer in deepstack_embeddings for item in layer),
+            ]
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def __call__(
         self,
         pixel_values: Sequence[TensorValue],
@@ -855,7 +970,10 @@ class VisionTransformer(Module):
 
         # compute position embeddings for the grid of image and video patches.
         pos_embeds = self.pos_embed(
-            idxs=idxs[0], weights=weights[0], grid_thw=grid_thw[0]
+            idxs=idxs[0],
+            weights=weights[0],
+            grid_thw=grid_thw[0],
+            out_rows=seq_len,
         )
         hs = [h + pos_embeds.to(h.device) for h in hs]
 
@@ -867,24 +985,20 @@ class VisionTransformer(Module):
                 seq_len=seq_len,
             )
         )
-        rotary_position_embeddings = [
-            (
-                rotary_position_embeddings_host[0].to(device),
-                rotary_position_embeddings_host[1].to(device),
-            )
+        cos_embs = [
+            rotary_position_embeddings_host[0].to(device)
+            for device in self.devices
+        ]
+        sin_embs = [
+            rotary_position_embeddings_host[1].to(device)
             for device in self.devices
         ]
 
-        deepstack_feature_lists = []
-        # Pass patch and positional embeddings though Window Attention Blocks to get hidden states for each patch.
-        for layer_num, blk in enumerate(self.blocks):
-            hs = blk(
-                hs,
-                position_embeddings=rotary_position_embeddings,
-                input_row_offsets=cu_seqlens,
-                max_seqlen=max_seqlen,
-                signal_buffers=signal_buffers,
-            )
+        deepstack_feature_lists: list[list[TensorValue]] = []
+
+        def on_layer_output(
+            layer_num: int, layer_hs: list[TensorValue]
+        ) -> None:
             if layer_num in self.deepstack_visual_indexes:
                 deepstack_merger_idx = self.deepstack_visual_indexes.index(
                     layer_num
@@ -898,16 +1012,36 @@ class VisionTransformer(Module):
                 deepstack_merger_outs = [
                     deepstack_merger(h)
                     for h, deepstack_merger in zip(
-                        hs, deepstack_merger_shards, strict=True
+                        layer_hs, deepstack_merger_shards, strict=True
                     )
                 ]
                 deepstack_feature = deepstack_merger_allreduce(
-                    deepstack_merger_outs, signal_buffers
+                    deepstack_merger_outs, list(signal_buffers)
                 )
-
-                # Append the list of features (one tensor per device) for this layer.
-                # Each device's feature tensor shape = (seq_len // (spatial_merge_size^2), out_hidden_size) = (seq_len//4, 2048).
                 deepstack_feature_lists.append(deepstack_feature)
+
+        def inputs_for_layer(
+            _idx: int, h: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            return [
+                h,
+                cos_embs,
+                sin_embs,
+                list(cu_seqlens),
+                list(max_seqlen),
+                list(signal_buffers),
+            ]
+
+        # All blocks share a single compiled subgraph, reducing compile time from O(N) to O(1).
+        hs = forward_sequential_layers(
+            list(self.blocks),
+            inputs_for_layer=inputs_for_layer,
+            initial_hidden_states=hs,
+            weight_prefix_for_layer=lambda i: f"vision_encoder.blocks.{i}.",
+            subgraph_layer_groups=[list(range(len(self.blocks)))],
+            name_for_subgraph=lambda _: "vision_block",
+            on_layer_output=on_layer_output,
+        )
 
         # The merged features are projected via a linear layer to align with the language model's embedding space.
         # Apply per-device merger, then concatenate back in original order

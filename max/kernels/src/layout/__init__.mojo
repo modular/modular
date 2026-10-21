@@ -10,35 +10,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides layout and layout tensor types, which abstract memory layout for
+"""Provides layout and tensor types, which abstract memory layout for
 multidimensional data.
 
-- The [`Layout`](/mojo/kernels/layout/layout/Layout) type represents a mapping
+- The [`Layout`](/api/mojo/layout/layout/Layout) type represents a mapping
   between a set of logical coordinates and a linear index. It can be used, for
   example, to map logical tensor coordinates to a memory address, or to map GPU
   threads to tiles of data.
 
-- The [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) type is a
-  high-performance tensor with explicit memory layout via a `Layout`.
+- The [`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor) type is the
+  tensor with explicit memory layout, and
+  [`TileTensorIter`](/api/mojo/layout/tile_iterator/TileTensorIter) steps
+  through a buffer of equally shaped tiles.
 """
 from .coord import (
-    All,
+    _CoordReplaceAt,
     Coord,
     CoordLike,
     ComptimeInt,
     Idx,
-    RuntimeInt,
     coord,
     coord_to_index_list,
 )
 from .int_tuple import (
     UNKNOWN_VALUE,
     IntTuple,
-    create_unknown_int_tuple,
     to_index_list,
 )
 from .layout import Layout, LayoutList, composition, print_layout
-from .layout_tensor import LayoutTensor, stack_allocation_like
 from .tile_layout import (
     TensorLayout,
     Layout as MixedLayout,
@@ -47,12 +46,35 @@ from .tile_layout import (
     row_major,
     col_major,
 )
-from .runtime_layout import RuntimeLayout
-from .runtime_tuple import RuntimeTuple
+from .numpy import from_numpy, to_numpy
 from .tile_tensor import (
+    ImmTileTensor,
+    LTToTTLayout,
+    MutTileTensor,
     TileTensor,
     flatten_leading,
     stack_allocation,
-    lt_to_tt,
-    LTToTTLayout,
+)
+from .tensor_engine import (
+    TensorEngine,
+    DefaultEngine,
+)
+from .tmem_engine import (
+    TMemEngine,
+    TMem16x256bLayout,
+    TMem16x256bRegisters,
+    TMemStorage,
+    TMEM_NUM_COLS,
+    TMEM_NUM_LANES,
+    tmem_cell,
+    tmem_copy_async,
+    tmem_16x256b,
+)
+from ._plugin import (
+    CurrentLayoutPlugin,
+    CurrentTensorEngine,
+    DefaultLayoutPlugin,
+    LayoutPluginForTarget,
+    LayoutPluginHooks,
+    TensorEngineForTarget,
 )

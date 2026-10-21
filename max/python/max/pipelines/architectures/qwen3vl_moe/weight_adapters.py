@@ -27,6 +27,9 @@ QWEN3_VL_MODEL_MAPPING = {
     "weight_scale_inv": "weight_scale",
     "gate_up_proj_scale_inv": "gate_up_proj_scale",
     "down_proj_scale_inv": "down_proj_scale",
+    # Remap unfused Q/K/V projections into StackedLinear namespace (decoder).
+    # Remap stacked QKV in vision attention to StackedLinear namespace.
+    "attn.qkv.": "attn.qkv_proj.",
 }
 
 
@@ -40,6 +43,7 @@ def convert_qwen3vl_model_state_dict(
     naming without this prefix.
 
     This adapter:
+
     1. Filters to only include language model weights (those with
        `language_model.` prefix).
     2. Strips the `language_model.model.` prefix to match Qwen3VLLanguageModel
@@ -64,10 +68,8 @@ def convert_qwen3vl_model_state_dict(
         #     precision.
         #   * All other floating-point tensors → BF16.
         if weight_data.dtype.is_float():
-            is_scale = (
-                checkpoint_name.endswith(".weight_scale")
-                or checkpoint_name.endswith(".input_scale")
-                or checkpoint_name.endswith("_scale_inv")
+            is_scale = checkpoint_name.endswith(
+                (".weight_scale", ".input_scale", "_scale_inv")
             )
 
             if not weight_data.dtype.is_float8() and not is_scale:

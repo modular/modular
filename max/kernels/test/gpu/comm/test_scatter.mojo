@@ -30,16 +30,16 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
     Replica D [0,8,16]  -> GPU 6, GPU 7
 """
 
-from layout import Idx, TileTensor, row_major
-from std.collections import InlineArray
+from layout import TileTensor, row_major
+from std.collections import Array
 from std.math import ceildiv
 from std.sys import size_of
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_true
 
-from comm import Signal, MAX_GPUS
+from comm import Signal
 from comm.scatter import scatter
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 
 comptime dtype = DType.uint32
 
@@ -75,14 +75,14 @@ def _test_pull[
 
     # Allocate input chunks on GPU 0.
     var input_devbufs = List[DeviceBuffer[dtype]]()
-    var host_buf = alloc[Scalar[dtype]](max_chunk_size)
+    var host_buf = ctxs[0].enqueue_create_host_buffer[dtype](max_chunk_size)
 
     comptime InputTileType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[dtype], MutAnyOrigin](), row_major(Idx(Int(0)))
-        ).as_immut()
+        TileTensor(input_devbufs[0], row_major(Int(0)))
+        .as_unsafe_any_origin()
+        .as_imm()
     )
-    var tt_input_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
+    var tt_input_bufs = Array[InputTileType, dp_size](uninitialized=True)
 
     for dp in range(dp_size):
         var n = len(expected[dp])
@@ -91,40 +91,41 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        tt_input_bufs[dp] = TileTensor(
-            dev_buf.unsafe_ptr(), row_major(Idx(n))
-        ).as_immut()
+        tt_input_bufs[dp] = (
+            TileTensor(dev_buf, row_major(n)).as_unsafe_any_origin().as_imm()
+        )
         input_devbufs.append(dev_buf)
-    host_buf.free()
 
     # Output buffers on each GPU (sized to its replica's chunk).
     var output_devbufs = List[DeviceBuffer[dtype]]()
-    comptime OutputTileType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[dtype], MutAnyOrigin](), row_major(Idx(Int(0)))
-        )
-    )
-    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Int(0))), MutAnyOrigin
+    ]
+    var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         var replica = i // tp_size
         var n = len(expected[replica])
         var out_buf = ctxs[i].enqueue_create_buffer[dtype](n)
         ctxs[i].enqueue_memset(out_buf, 0)
         ctxs[i].synchronize()
-        out_tiles[i] = OutputTileType(out_buf.unsafe_ptr(), row_major(Idx(n)))
+        out_tiles[i] = OutputTileType(
+            out_buf.unsafe_ptr().as_unsafe_any_origin(), row_major(n)
+        )
         output_devbufs.append(out_buf)
 
     # Signal buffers.
-    var signal_bufs = List[DeviceBuffer[DType.uint8]]()
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
-    )
+    var signal_bufs = List[DeviceBuffer[.uint8]]()
     for i in range(ngpus):
-        var sig_buf = ctxs[i].create_buffer_sync[DType.uint8](size_of[Signal]())
-        ctxs[i].enqueue_memset[DType.uint8](sig_buf, 0)
+        var sig_buf = ctxs[i].create_buffer_sync[.uint8](size_of[Signal]())
+        init_signal_buffer(sig_buf, ctxs[i])
         ctxs[i].synchronize()
-        rank_sigs[i] = sig_buf.unsafe_ptr().bitcast[Signal]()
         signal_bufs.append(sig_buf)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_bufs[i])
+    )
 
     # Launch scatter.
     comptime for i in range(ngpus):
@@ -135,7 +136,7 @@ def _test_pull[
         ctxs[i].synchronize()
 
     # Verify.
-    var host_out = alloc[Scalar[dtype]](max_chunk_size)
+    var host_out = List(length=max_chunk_size, fill=Scalar[dtype](0))
     for gpu in range(ngpus):
         var replica = gpu // tp_size
         var n = len(expected[replica])
@@ -155,7 +156,6 @@ def _test_pull[
                     "expected",
                     expected[replica][j],
                 )
-    host_out.free()
     print(
         "PASS: scatter ngpus=",
         ngpus,
@@ -168,11 +168,12 @@ def _test_pull[
     _ = signal_bufs^
     _ = output_devbufs^
     _ = input_devbufs^
+    _ = host_buf^
 
 
 def _test_dp2() raises:
     """2 GPUs, DP=2."""
-    var expected = List[List[Scalar[DType.uint32]]]()
+    var expected = List[List[UInt32]]()
     expected.append([0, 5, 12])  # Replica A
     expected.append([0, 8, 16])  # Replica B
     _test_pull[ngpus=2, dp_size=2](expected)
@@ -180,7 +181,7 @@ def _test_dp2() raises:
 
 def _test_dp4[ngpus: Int]() raises:
     """DP=4 with configurable ngpus (KERN-2435 data)."""
-    var expected = List[List[Scalar[DType.uint32]]]()
+    var expected = List[List[UInt32]]()
     expected.append([0, 5, 12])  # Replica A
     expected.append([0, 8, 16])  # Replica B
     expected.append([0, 7, 12])  # Replica C
@@ -190,7 +191,7 @@ def _test_dp4[ngpus: Int]() raises:
 
 def _test_dp2_fewer_elems_gpu0() raises:
     """2 GPUs, DP=2: GPU-0's replica gets fewer elements than GPU-1's."""
-    var expected = List[List[Scalar[DType.uint32]]]()
+    var expected = List[List[UInt32]]()
     expected.append([42])  # Replica A (1 element)
     expected.append([10, 20, 30])  # Replica B (3 elements)
     _test_pull[ngpus=2, dp_size=2](expected)
@@ -198,7 +199,7 @@ def _test_dp2_fewer_elems_gpu0() raises:
 
 def _test_dp2_single_elem() raises:
     """2 GPUs, DP=2: each GPU gets exactly 1 element."""
-    var expected = List[List[Scalar[DType.uint32]]]()
+    var expected = List[List[UInt32]]()
     expected.append([7])  # Replica A
     expected.append([99])  # Replica B
     _test_pull[ngpus=2, dp_size=2](expected)
@@ -208,12 +209,12 @@ def _test_dp4_large_chunks() raises:
     """8 GPUs, DP=4: large chunks that require multiple thread blocks."""
     comptime NUM_ELEMS = 16384
 
-    var expected = List[List[Scalar[DType.uint32]]]()
+    var expected = List[List[UInt32]]()
     for dp in range(4):
-        var chunk = List[Scalar[DType.uint32]](capacity=NUM_ELEMS)
+        var chunk = List[UInt32](capacity=NUM_ELEMS)
         var offset = dp * NUM_ELEMS
         for i in range(NUM_ELEMS):
-            chunk.append(Scalar[DType.uint32](offset + i))
+            chunk.append(UInt32(offset + i))
         expected.append(chunk^)
     _test_pull[ngpus=8, dp_size=4](expected)
 

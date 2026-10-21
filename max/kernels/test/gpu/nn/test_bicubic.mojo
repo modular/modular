@@ -13,7 +13,7 @@
 
 from std.math import isclose
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord, row_major
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
@@ -44,9 +44,15 @@ def test_bicubic_kernel[
     var input_dim_flattened = input_dim.static_product
     var output_dim_flattened = output_dim.static_product
 
-    var input_host_ptr = alloc[Scalar[dtype]](input_dim_flattened)
-    var output_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
-    var output_ref_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        input_dim_flattened
+    )
+    var output_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_dim_flattened
+    )
+    var output_ref_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_dim_flattened
+    )
 
     var input_host = TileTensor(input_host_ptr, row_major(input_dim))
     var output_host = TileTensor(output_host_ptr, row_major(output_dim))
@@ -56,10 +62,6 @@ def test_bicubic_kernel[
     print("output_dim_flattened: ", output_dim_flattened)
     print("input_dim: ", input_dim)
     print("output_dim: ", output_dim)
-
-    _ = input_host.fill(0)
-    _ = output_host.fill(0)
-    _ = output_ref_host.fill(0)
 
     print("input_host (zeroed): ", input_host)
     print("output_host (zeroed): ", output_host)
@@ -137,7 +139,7 @@ def test_bicubic_kernel[
         "--------------------------------now we want to call the bicubic"
         " upsampling kernel--------------------------------"
     )
-    # Call the bicubic upsampling kernel - convert to LayoutTensor
+    # Call the bicubic upsampling kernel.
     resize_bicubic[target="cpu"](output_host, input_host, ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
@@ -587,10 +589,8 @@ def test_bicubic_kernel[
     var input_dev = ctx.enqueue_create_buffer[dtype](input_dim_flattened)
     var output_dev = ctx.enqueue_create_buffer[dtype](output_dim_flattened)
 
-    var input_dev_nd = TileTensor(input_dev.unsafe_ptr(), row_major(input_dim))
-    var output_dev_nd = TileTensor(
-        output_dev.unsafe_ptr(), row_major(output_dim)
-    )
+    var input_dev_nd = TileTensor(input_dev, row_major(input_dim))
+    var output_dev_nd = TileTensor(output_dev, row_major(output_dim))
 
     ctx.enqueue_copy(input_dev, input_host_ptr)
 
@@ -630,10 +630,6 @@ def test_bicubic_kernel[
         "--------------------------------asserted!!!--------------------------------"
     )
 
-    input_host_ptr.free()
-    output_host_ptr.free()
-    output_ref_host_ptr.free()
-
 
 def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     """Test that GPU kernel can handle large images without exceeding thread limits.
@@ -644,9 +640,15 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     comptime input_dim_flattened = input_dim.product()
     comptime output_dim_flattened = output_dim.product()
 
-    var input_host_ptr = alloc[Scalar[dtype]](input_dim_flattened)
-    var output_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
-    var output_gpu_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        input_dim_flattened
+    )
+    var output_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_dim_flattened
+    )
+    var output_gpu_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_dim_flattened
+    )
 
     var input_host = TileTensor(input_host_ptr, input_dim)
     var output_host = TileTensor(output_host_ptr, output_dim)
@@ -677,14 +679,16 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
         dtype,
         output_origin=output_dev_nd.origin,
         OutputLayoutType=output_dev_nd.LayoutType,
-        input_origin=ImmutOrigin(input_dev_nd.origin),
+        OutputEngine=output_dev_nd.Engine,
+        input_origin=ImmOrigin(input_dev_nd.origin),
         InputLayoutType=input_dev_nd.LayoutType,
+        InputEngine=input_dev_nd.Engine,
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_dev_nd,
-        input_dev_nd.as_immut(),
+        input_dev_nd.as_imm(),
         grid_dim=(1, 3),
         block_dim=(256,),
     )
@@ -710,19 +714,16 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     assert_almost_equal(max_diff, 0.0, atol=0.0001)
     print("Large image test passed!")
 
-    input_host_ptr.free()
-    output_host_ptr.free()
-    output_gpu_host_ptr.free()
     _ = input_dev^
     _ = output_dev^
 
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_bicubic_kernel[DType.float32,](  # data_type
-            coord[1, 3, 5, 5](),  # input  (NCHW)
-            coord[1, 3, 10, 10](),  # output (NCHW)
+        test_bicubic_kernel[.float32,](  # data_type
+            coord[1, 3, 5, 5],  # input  (NCHW)
+            coord[1, 3, 10, 10],  # output (NCHW)
             ctx,
         )
 
-        test_large_image_gpu_launch[DType.float32](ctx)
+        test_large_image_gpu_launch[.float32](ctx)

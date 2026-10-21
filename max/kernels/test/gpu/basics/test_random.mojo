@@ -13,16 +13,15 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm.functional import elementwise
-from std.gpu import *
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.algorithm.functional import elementwise
+from max.gpu import *
+from max.gpu.host import DeviceContext
 from std.random import NormalRandom, Random
 from std.testing import *
-from std.sys import has_apple_gpu_accelerator
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord
 
-from layout import TileTensor, Idx, row_major
+from layout import TileTensor, row_major
 
 
 def run_elementwise[
@@ -30,52 +29,44 @@ def run_elementwise[
 ](ctx: DeviceContext) raises:
     comptime length = 256
 
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
-    var out_stack = InlineArray[Scalar[dtype], length](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], length](fill={})
     var out_host = TileTensor(out_stack, row_major[length]())
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
-    var out_buffer = TileTensor(out_device, row_major(Idx(length)))
+    var out_buffer = TileTensor(out_device, row_major(length))
 
-    @always_inline
-    @__copy_capture(out_buffer)
-    @parameter
-    def func_uniform[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var rng_state = Random(seed=UInt64(idx0[0]))
+    @inline(.always)
+    def func_uniform[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
+        var rng_state = Random(seed=UInt64(idx0[0].value()))
         var rng = rng_state.step_uniform()
 
         # idx0[0] is safe because we are working on rank 1 buffers
         comptime if simd_width == 1:
-            out_buffer[idx0[0]] = rng[0].cast[dtype]()
+            out_buffer[idx0[0].value()] = rng[0].cast[dtype]()
         else:
             comptime for i in range(simd_width):
-                out_buffer[idx0[0] + i] = rng[i % len(rng)].cast[dtype]()
+                out_buffer[Int(idx0[0]) + i] = rng[i % len(rng)].cast[dtype]()
 
-    @always_inline
-    @__copy_capture(out_buffer)
-    @parameter
-    def func_normal[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var rng_state = NormalRandom(seed=UInt64(idx0[0]))
+    @inline(.always)
+    def func_normal[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
+        var rng_state = NormalRandom(seed=UInt64(idx0[0].value()))
         var rng = rng_state.step_normal()
 
         # idx0[0] is safe because we are working on rank 1 buffers
         comptime if simd_width == 1:
-            out_buffer[idx0[0]] = rng[0].cast[dtype]()
+            out_buffer[idx0[0].value()] = rng[0].cast[dtype]()
         else:
             comptime for i in range(simd_width):
-                out_buffer[idx0[0] + i] = rng[i % len(rng)].cast[dtype]()
+                out_buffer[Int(idx0[0]) + i] = rng[i % len(rng)].cast[dtype]()
 
     comptime if distribution == "uniform":
-        elementwise[func_uniform, 4, target="gpu"](Index(length), ctx)
+        elementwise[4, target="gpu"](func_uniform, Coord(length), ctx)
     else:
-        elementwise[func_normal, 4, target="gpu"](Index(length), ctx)
+        elementwise[4, target="gpu"](func_normal, Coord(length), ctx)
 
-    ctx.enqueue_copy(out_host.ptr, out_device)
+    ctx.enqueue_copy(out_host._storage, out_device)
     ctx.synchronize()
 
     print("Testing", distribution, "distribution:")
@@ -85,11 +76,11 @@ def run_elementwise[
 
 def main() raises:
     with DeviceContext() as ctx:
-        run_elementwise[DType.float16](ctx)
-        run_elementwise[DType.float32](ctx)
-        run_elementwise[DType.float16, "normal"](ctx)
-        run_elementwise[DType.float32, "normal"](ctx)
-        comptime if not has_apple_gpu_accelerator():
+        run_elementwise[.float16](ctx)
+        run_elementwise[.float32](ctx)
+        run_elementwise[.float16, "normal"](ctx)
+        run_elementwise[.float32, "normal"](ctx)
+        comptime if not ctx.target.is_apple_gpu():
             # Metal does not support DType.float64
-            run_elementwise[DType.float64](ctx)
-            run_elementwise[DType.float64, "normal"](ctx)
+            run_elementwise[.float64](ctx)
+            run_elementwise[.float64, "normal"](ctx)

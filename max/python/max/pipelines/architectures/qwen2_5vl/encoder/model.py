@@ -29,7 +29,7 @@ from max.pipelines.architectures.llama3.weight_adapters import (
     LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
 )
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import Qwen25VLTextEncoderConfig
 from .qwen25vl import Qwen25VLTextEncoderTransformer
@@ -87,9 +87,7 @@ class Qwen25VLEncoderModel(ComponentModel):
 
             # Normalize floating-point weights to bf16
             if wd.dtype.is_float() and not wd.dtype.is_float8():
-                is_scale = key.endswith(".weight_scale") or key.endswith(
-                    ".input_scale"
-                )
+                is_scale = key.endswith((".weight_scale", ".input_scale"))
                 if not is_scale:
                     wd = wd.astype(DType.bfloat16)
 
@@ -102,9 +100,7 @@ class Qwen25VLEncoderModel(ComponentModel):
                     adapted_key = adapted_key.replace(before, after)
 
             # Skip vision weights
-            if adapted_key.startswith("visual.") or adapted_key.startswith(
-                "vision_encoder."
-            ):
+            if adapted_key.startswith(("visual.", "vision_encoder.")):
                 continue
 
             # Strip "model." prefix
@@ -112,11 +108,7 @@ class Qwen25VLEncoderModel(ComponentModel):
 
             if adapted_key.startswith("embed_tokens."):
                 embed_state[adapted_key] = wd
-            elif (
-                adapted_key.startswith("layers.")
-                or adapted_key.startswith("norm.")
-                or adapted_key.startswith("rope.")
-            ):
+            elif adapted_key.startswith(("layers.", "norm.", "rope.")):
                 transform_state[adapted_key] = wd
 
         lc = self.config

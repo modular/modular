@@ -13,7 +13,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import weakref
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import cast
@@ -22,14 +23,53 @@ import numpy as np
 import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import Model
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice, KVCacheParams
-from max.pipelines.lib import ModelOutputs
+from max.nn.kv_cache import (
+    BatchCharacteristics,
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+    MHAAttnKey,
+    packed_page_stride,
+)
+from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 from test_common.mocks.pipeline_model import MockModelInputs
 
 MiB = 1024 * 1024
+
+
+def _gk(batch_size: int) -> MultiAttnKey:
+    """Builds the non-spec capture key the runner produces for ``batch_size``.
+
+    The mock resolver returns ``MHAAttnKey(batch_size, q=1, num_partitions=1)``
+    for every probed length, which the runner folds into a ``MultiAttnKey``
+    keyed by ``"verify"`` (no ``"draft"`` without speculative decoding).
+    """
+    return MultiAttnKey.from_dict(
+        {
+            "verify": MHAAttnKey(
+                batch_size=batch_size, max_prompt_length=1, num_partitions=1
+            )
+        }
+    )
+
+
+def _mock_kv_params(num_draft_tokens_per_step: int = 0) -> SimpleNamespace:
+    """A minimal KVCacheParams stand-in exposing the dispatch resolver API."""
+    return SimpleNamespace(
+        devices=[DeviceRef.CPU()],
+        is_mla=False,
+        n_kv_heads_per_device=1,
+        num_q_heads_per_device=1,
+        is_fp8_kv_dtype=False,
+        data_parallel_degree=1,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
+        graph_capture_probe_cache_lengths=lambda max_cache_length, q: [1],
+        resolve_attn_key=lambda batch_size, q, cache_length: MHAAttnKey(
+            batch_size=batch_size, max_prompt_length=q, num_partitions=1
+        ),
+    )
 
 
 @pytest.fixture
@@ -51,6 +91,7 @@ class OutputAllocatingModel:
         self._device = CPU()
         self._output_bytes = output_bytes
         self.input_devices = [self._device]
+        self.released_graph_keys: list[int] = []
 
     def capture(self, graph_key: int, *buffers: Buffer) -> list[Buffer]:
         del graph_key, buffers
@@ -68,28 +109,41 @@ class OutputAllocatingModel:
         del graph_key, buffers
         raise AssertionError("debug_verify_replay is not used in warmup")
 
+    def _await_device_graphs(self) -> None:
+        pass
 
-def _make_kv_per_device() -> KVCacheInputsPerDevice:
-    max_lengths = np.array([[0, 1]], dtype=np.uint32)
+    def release_captured_graph(self, graph_keys: int | Sequence[int]) -> None:
+        # Mirrors the engine API surface. ``ServeGraphCaptureRunner`` only
+        # forwards a single packed int; we record exactly that for assertions.
+        assert isinstance(graph_keys, int)
+        self.released_graph_keys.append(graph_keys)
+
+
+def _make_kv_per_device() -> KVCacheInputsPerDevice[Buffer, Buffer]:
+    max_prompt_length = np.array([0], dtype=np.uint32)
+    max_cache_length = np.array([1], dtype=np.uint32)
     dispatch = np.array([1, 1, 1, 1], dtype=np.int64)
+    kv_blocks = Buffer.zeros((1,), dtype=DType.float32)
     return KVCacheInputsPerDevice(
-        blocks=Buffer.zeros((1,), dtype=DType.float32),
+        kv_blocks=kv_blocks,
+        page_stride=packed_page_stride(kv_blocks),
         cache_lengths=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         lookup_table=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
-        max_lengths=Buffer.from_numpy(max_lengths),
+        max_prompt_length=Buffer.from_numpy(max_prompt_length),
+        max_cache_length=Buffer.from_numpy(max_cache_length),
         attention_dispatch_metadata=Buffer.from_numpy(dispatch),
     )
 
 
 @contextmanager
 def _warmup_model_inputs(
-    batch_size: int, num_steps: int
+    batch_size: int,
+    batch_characteristics: BatchCharacteristics,
 ) -> Iterator[MockModelInputs]:
-    del num_steps
     yield MockModelInputs(
         active_batch_size=batch_size,
         eos_prob=0.0,
-        kv_cache_inputs=KVCacheInputs(inputs=[_make_kv_per_device()]),
+        kv_cache_inputs=(_make_kv_per_device(),),
     )
 
 
@@ -106,20 +160,9 @@ def test_warmup_pre_ready_releases_capture_outputs(
     # memory manager can reuse the same backing allocation.
     output_bytes = 48 * MiB
     model = OutputAllocatingModel(output_bytes)
-    kv_params = SimpleNamespace(
-        devices=[DeviceRef.CPU()],
-        is_mla=False,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=1,
-        is_fp8_kv_dtype=False,
-        data_parallel_degree=1,
-    )
+    kv_params = _mock_kv_params()
     runner = ServeGraphCaptureRunner(
         model=cast(Model, model),
-        execute_model=lambda model_inputs: ModelOutputs(
-            logits=Buffer.zeros((1,), dtype=DType.float32)
-        ),
-        session=cast(InferenceSession, object()),
         kv_params=cast(KVCacheParams, kv_params),
         warmup_model_inputs=_warmup_model_inputs,
         max_cache_length_upper_bound=1,
@@ -128,10 +171,85 @@ def test_warmup_pre_ready_releases_capture_outputs(
 
     runner.warmup_pre_ready()
 
-    assert sorted(runner.graph_entries) == [
-        (1, 1, 1),
-        (2, 1, 1),
-        (3, 1, 1),
-    ]
+    assert set(runner.graph_entries) == {_gk(1), _gk(2), _gk(3)}
     for _inputs, outputs in runner.graph_entries.values():
         assert outputs.logits.num_elements == output_bytes
+
+
+def test_release_graph_drops_entry_and_forwards_to_model(
+    host_memory_manager_config: None,
+) -> None:
+    del host_memory_manager_config
+
+    output_bytes = 48 * MiB
+    model = OutputAllocatingModel(output_bytes)
+    kv_params = _mock_kv_params()
+    runner = ServeGraphCaptureRunner(
+        model=cast(Model, model),
+        kv_params=cast(KVCacheParams, kv_params),
+        warmup_model_inputs=_warmup_model_inputs,
+        max_cache_length_upper_bound=1,
+        max_batch_size=2,
+    )
+
+    runner.warmup_pre_ready()
+
+    assert set(runner.graph_entries) == {_gk(1), _gk(2)}
+
+    target = _gk(1)
+    runner.release_graph(target)
+
+    assert target not in runner.graph_entries
+    assert set(runner.graph_entries) == {_gk(2)}
+    assert len(model.released_graph_keys) == 1
+
+    # Releasing the same key again is idempotent at the runner level and still
+    # forwards to the model (engine-side release is also a no-op for unknown
+    # keys, so this is safe).
+    runner.release_graph(target)
+    assert set(runner.graph_entries) == {_gk(2)}
+    assert len(model.released_graph_keys) == 2
+
+
+class OutputTrackingModel(OutputAllocatingModel):
+    """Captures return host arrays wrapped as buffers, tracked by weakref."""
+
+    def __init__(self, num_outputs: int) -> None:
+        super().__init__(output_bytes=1)
+        self._num_outputs = num_outputs
+        self._previous_outputs: list[weakref.ref[np.ndarray]] = []
+        self.live_at_capture: list[int] = []
+
+    def capture(self, graph_key: int, *buffers: Buffer) -> list[Buffer]:
+        del graph_key, buffers
+        self.live_at_capture.append(
+            sum(ref() is not None for ref in self._previous_outputs)
+        )
+        arrays = [np.zeros(4, dtype=np.int64) for _ in range(self._num_outputs)]
+        self._previous_outputs = [weakref.ref(array) for array in arrays]
+        return [Buffer.from_numpy(array) for array in arrays]
+
+
+@pytest.mark.parametrize(
+    "num_speculative_tokens, num_outputs", [(0, 1), (2, 3)]
+)
+def test_warmup_pre_ready_frees_outputs_before_next_capture(
+    num_speculative_tokens: int, num_outputs: int
+) -> None:
+    # A captured graph's outputs live in its working memory, so any owning
+    # handle still alive when the next capture starts forces that capture to
+    # allocate a second working-memory block instead of reusing the first.
+    model = OutputTrackingModel(num_outputs)
+    runner = ServeGraphCaptureRunner(
+        model=cast(Model, model),
+        kv_params=cast(KVCacheParams, _mock_kv_params(num_speculative_tokens)),
+        warmup_model_inputs=_warmup_model_inputs,
+        max_cache_length_upper_bound=1,
+        max_batch_size=3,
+        num_speculative_tokens=num_speculative_tokens,
+    )
+
+    runner.warmup_pre_ready()
+
+    assert len(runner.graph_entries) == 3
+    assert model.live_at_capture == [0, 0, 0]

@@ -14,11 +14,12 @@
 """Figure 15.3: Tiled matrix multiplication kernel combining all optimizations."""
 
 from std.math import ceildiv
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from max.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.itertools import product
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 comptime bM = 64
 comptime bN = 64
@@ -28,17 +29,13 @@ comptime tN = 4
 comptime NUM_THREADS_PER_BLOCK = 128
 
 
-@always_inline
+@inline(.always)
 def loadTile(
-    T: UnsafePointer[Float32, _],
+    T: Pointer[Float32, _],
     lda: Int,
     maxRow: Int,
     maxCol: Int,
-    T_s: UnsafePointer[
-        Scalar[DType.float32],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ],
+    T_s: MutPointer[Float32, _, address_space=.SHARED],
     ldas: Int,
     height: Int,
     width: Int,
@@ -65,15 +62,15 @@ def loadTile(
         row += subtile * num_rows_per_tile
 
         if row < maxRow and col < maxCol:
-            T_s[row * ldas + col] = Scalar[DType.float32](T[row * lda + col])
+            T_s[row * ldas + col] = T[row * lda + col]
         else:
-            T_s[row * ldas + col] = Scalar[DType.float32](0.0)
+            T_s[row * ldas + col] = 0.0
 
 
 def mm_tiled_kernel(
-    A: UnsafePointer[Float32, MutAnyOrigin],
-    B: UnsafePointer[Float32, MutAnyOrigin],
-    C: UnsafePointer[Float32, MutAnyOrigin],
+    A: ImmPointer[Float32, ImmutAnyOrigin],
+    B: ImmPointer[Float32, ImmutAnyOrigin],
+    C: MutPointer[Float32, MutAnyOrigin],
     M: UInt32,
     N: UInt32,
     K: UInt32,
@@ -101,26 +98,26 @@ def mm_tiled_kernel(
     var tCol = tile_y * tN
 
     # Register accumulator - use SIMD vector
-    var Cr = SIMD[DType.float32, tM * tN](0.0)
+    var Cr = SIMD[.float32, tM * tN](0.0)
 
     # Allocate shared memory
-    var A_s = stack_allocation[
+    var A_s = unsafe_stack_allocation[
         bM * bK,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
-    var B_s = stack_allocation[
+    var B_s = unsafe_stack_allocation[
         bK * bN,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # Iterate over tiles
     for i in range(ceildiv(Int(K), bK)):
         # Load tiles into shared memory
         var curr_offset = i * bK
-        var addr_A = A + bRow * Int(K) + curr_offset
-        var addr_B = B + curr_offset * Int(N) + bCol
+        var addr_A = A.unsafe_offset(bRow * Int(K)).unsafe_offset(curr_offset)
+        var addr_B = B.unsafe_offset(curr_offset * Int(N)).unsafe_offset(bCol)
 
         loadTile(
             addr_A, Int(K), Int(M) - bRow, Int(K) - curr_offset, A_s, bK, bM, bK
@@ -137,9 +134,7 @@ def mm_tiled_kernel(
                 for k in range(bK):
                     var a_idx = (tRow + row) * bK + k
                     var b_idx = k * bN + (tCol + col)
-                    Cr[row * tN + col] += Float32(A_s[a_idx]) * Float32(
-                        B_s[b_idx]
-                    )
+                    Cr[row * tN + col] += A_s[a_idx] * B_s[b_idx]
 
         barrier()
 
@@ -154,9 +149,9 @@ def mm_tiled_kernel(
 
 
 def cpu_mm(
-    A: UnsafePointer[Float32, _],
-    B: UnsafePointer[Float32, _],
-    C: UnsafePointer[Float32, MutAnyOrigin],
+    A: Pointer[Float32, _],
+    B: Pointer[Float32, _],
+    C: MutPointer[Float32, _],
     M: Int,
     N: Int,
     K: Int,
@@ -199,10 +194,10 @@ def main() raises:
     )
 
     # Allocate host memory
-    var h_A = alloc[Float32](M * K)
-    var h_B = alloc[Float32](K * N)
-    var h_C_gpu = alloc[Float32](M * N)
-    var h_C_cpu = alloc[Float32](M * N)
+    var h_A = unsafe_alloc[Float32](M * K)
+    var h_B = unsafe_alloc[Float32](K * N)
+    var h_C_gpu = unsafe_alloc[Float32](M * N)
+    var h_C_cpu = unsafe_alloc[Float32](M * N)
 
     # Initialize matrices
     print("Initializing matrices...")
@@ -239,7 +234,7 @@ def main() raises:
             ")...",
         )
 
-        ctx.enqueue_function_experimental[mm_tiled_kernel](
+        ctx.enqueue_function[mm_tiled_kernel](
             d_A,
             d_B,
             d_C,
@@ -308,7 +303,7 @@ def main() raises:
         print("✗ FAILED: Results do not match!")
 
     # Cleanup
-    h_A.free()
-    h_B.free()
-    h_C_gpu.free()
-    h_C_cpu.free()
+    h_A.unsafe_free()
+    h_B.unsafe_free()
+    h_C_gpu.unsafe_free()
+    h_C_cpu.unsafe_free()

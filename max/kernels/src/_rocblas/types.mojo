@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.os import abort
 
 
 @fieldwise_init
 struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer[MutAnyOrigin]
+    var _value: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
 
     def __init__(out self):
-        self._value = {_unsafe_null = ()}
+        self._value = None
 
 
 @fieldwise_init
@@ -113,18 +114,21 @@ struct DataType(Equatable, TrivialRegisterPassable):
         self._value = Int32(value)
 
     def __init__(out self, dtype: DType) raises:
-        if dtype == DType.float16:
-            self = Self.F16_R
-        elif dtype == DType.bfloat16:
-            self = Self.BF16_R
-        elif dtype == DType.float32:
-            self = Self.F32_R
-        elif dtype == DType.float64:
-            self = Self.F64_R
-        else:
-            raise Error(
-                "the dtype '", dtype, "' is not currently handled by rocBLAS"
-            )
+        match dtype:
+            case .float16:
+                self = Self.F16_R
+            case .bfloat16:
+                self = Self.BF16_R
+            case .float32:
+                self = Self.F32_R
+            case .float64:
+                self = Self.F64_R
+            case _:
+                raise Error(
+                    "the dtype '",
+                    dtype,
+                    "' is not currently handled by rocBLAS",
+                )
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -174,7 +178,7 @@ struct Status(Equatable, TrivialRegisterPassable, Writable):
     def __int__(self) -> Int:
         return Int(self._value)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write_string("SUCCESS")

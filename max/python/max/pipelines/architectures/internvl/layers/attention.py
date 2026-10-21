@@ -18,13 +18,14 @@ import math
 from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.attention import num_heads_for_device
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
+from max.nn.stacked_linear import StackedLinear
 
 
 class InternVLMultiheadAttention(Module, Shardable):
@@ -97,43 +98,15 @@ class InternVLMultiheadAttention(Module, Shardable):
 
     def _init_weights(self) -> None:
         """Initialize the attention weights."""
-        if self.stacked_qkv:
-            self.qkv_proj = Weight(
-                name="qkv_proj.weight",
-                dtype=self.dtype,
-                shape=(3 * self.embed_dim, self.embed_dim),
-                device=self.device,
-            )
-
-            if self.qkv_has_bias:
-                self.qkv_proj_bias = Weight(
-                    name="qkv_proj.bias",
-                    dtype=self.dtype,
-                    shape=(3 * self.embed_dim,),
-                    device=self.device,
-                )
-        else:
-            self.q_proj = Linear(
-                in_dim=self.embed_dim,
-                out_dim=self.embed_dim,
-                has_bias=self.qkv_has_bias,
-                dtype=self.dtype,
-                device=self.device,
-            )
-            self.k_proj = Linear(
-                in_dim=self.embed_dim,
-                out_dim=self.embed_dim,
-                has_bias=self.qkv_has_bias,
-                dtype=self.dtype,
-                device=self.device,
-            )
-            self.v_proj = Linear(
-                in_dim=self.embed_dim,
-                out_dim=self.embed_dim,
-                has_bias=self.qkv_has_bias,
-                dtype=self.dtype,
-                device=self.device,
-            )
+        self.qkv_proj = StackedLinear(
+            in_dim=self.embed_dim,
+            out_dims=[self.embed_dim, self.embed_dim, self.embed_dim],
+            names=["q_proj", "k_proj", "v_proj"],
+            dtype=self.dtype,
+            device=self.device,
+            stacked=self.stacked_qkv,
+            has_bias=self.qkv_has_bias,
+        )
 
         self.o_proj = Linear(
             in_dim=self.embed_dim,
@@ -143,49 +116,12 @@ class InternVLMultiheadAttention(Module, Shardable):
             device=self.device,
         )
 
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        if self.stacked_qkv:
-            return self.qkv_proj
-        else:
-            wq: TensorValue = self.q_proj.weight
-            wk: TensorValue = self.k_proj.weight
-            wv: TensorValue = self.v_proj.weight
-            return ops.concat([wq, wk, wv], axis=0)
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        if not self.qkv_has_bias:
-            return None
-
-        if self.stacked_qkv:
-            return self.qkv_proj_bias
-
-        if (
-            self.q_proj.bias is None
-            or self.k_proj.bias is None
-            or self.v_proj.bias is None
-        ):
-            raise ValueError(
-                "Projection bias is None, but has_bias=True was specified."
-            )
-
-        return ops.concat(
-            [self.q_proj.bias, self.k_proj.bias, self.v_proj.bias], axis=0
-        )
-
     def _compute_qkv(
         self, x: TensorValue
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Compute Q, K, V projections with QK normalization."""
-        # Fused in-projection for Q, K, V
-        qkv = x @ self.wqkv.T
-
-        # Add bias if present
-        if self.wqkv_bias is not None:
-            qkv += self.wqkv_bias
+        # Fused in-projection for Q, K, V via StackedLinear.
+        qkv = self.qkv_proj(x)
 
         # For tensor parallel attention with uneven head distribution,
         # the QKV output dimension matches the weight's row dimension
@@ -249,10 +185,7 @@ class InternVLMultiheadAttention(Module, Shardable):
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
         """Get the attention sharding strategy."""
-        if self.stacked_qkv:
-            return self.qkv_proj.sharding_strategy
-        else:
-            return self.q_proj.sharding_strategy
+        return self.qkv_proj.sharding_strategy
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
@@ -262,15 +195,7 @@ class InternVLMultiheadAttention(Module, Shardable):
             strategy: The sharding strategy to apply.
         """
         if strategy.is_replicate:
-            # For replicate strategy, all weights use the same strategy
-            if self.stacked_qkv:
-                self.qkv_proj.sharding_strategy = strategy
-                if self.qkv_has_bias:
-                    self.qkv_proj_bias.sharding_strategy = strategy
-            else:
-                self.q_proj.sharding_strategy = strategy
-                self.k_proj.sharding_strategy = strategy
-                self.v_proj.sharding_strategy = strategy
+            self.qkv_proj.sharding_strategy = strategy
             self.o_proj.sharding_strategy = strategy
         else:
             # For tensor parallel: QKV stacked sharding, output column-wise
@@ -279,20 +204,8 @@ class InternVLMultiheadAttention(Module, Shardable):
                 self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
                     num_devices, self.num_heads, self.head_dim
                 )
-                if self.qkv_has_bias:
-                    self.qkv_proj_bias.sharding_strategy = (
-                        ShardingStrategy.stacked_qkv(
-                            num_devices, self.num_heads, self.head_dim
-                        )
-                    )
             else:
-                self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                    num_devices
-                )
-                self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                    num_devices
-                )
-                self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+                self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(
                     num_devices
                 )
             self.o_proj.sharding_strategy = (
@@ -330,16 +243,7 @@ class InternVLMultiheadAttention(Module, Shardable):
             )
 
         # Get sharded weights
-        if self.stacked_qkv:
-            qkv_proj_shards = self.qkv_proj.shard(devices)
-            qkv_proj_bias_shards = []
-            if self.qkv_has_bias:
-                qkv_proj_bias_shards = self.qkv_proj_bias.shard(devices)
-        else:
-            q_proj_shards = self.q_proj.shard(devices)
-            k_proj_shards = self.k_proj.shard(devices)
-            v_proj_shards = self.v_proj.shard(devices)
-
+        qkv_proj_shards = self.qkv_proj.shard(devices)
         o_proj_shards = self.o_proj.shard(devices)
 
         q_norm_weight_shards = []
@@ -363,9 +267,7 @@ class InternVLMultiheadAttention(Module, Shardable):
                 hidden_size=self.embed_dim,
                 head_dim=self.head_dim,
                 devices=[device],
-                dtype=self.q_proj.weight.dtype
-                if hasattr(self, "q_proj")
-                else self.qkv_proj.dtype,
+                dtype=self.dtype,
                 scale=self.scale,
                 qkv_has_bias=self.qkv_has_bias,
                 o_proj_has_bias=self.o_proj_has_bias,
@@ -375,15 +277,7 @@ class InternVLMultiheadAttention(Module, Shardable):
             )
 
             # Assign sharded weights
-            if self.stacked_qkv:
-                sharded.qkv_proj = qkv_proj_shards[shard_idx]
-                if qkv_proj_bias_shards:
-                    sharded.qkv_proj_bias = qkv_proj_bias_shards[shard_idx]
-            else:
-                sharded.q_proj = q_proj_shards[shard_idx]
-                sharded.k_proj = k_proj_shards[shard_idx]
-                sharded.v_proj = v_proj_shards[shard_idx]
-
+            sharded.qkv_proj = qkv_proj_shards[shard_idx]
             sharded.o_proj = o_proj_shards[shard_idx]
 
             # Assign QK normalization weights

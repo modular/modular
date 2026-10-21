@@ -14,14 +14,13 @@
 from std.math import ceildiv
 from std.random import seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import *
-from layout._utils import ManagedLayoutTensor, UNKNOWN_VALUE
-from std.memory import memset_zero
+from layout import Coord, Idx, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.kv_cache_ragged import kv_cache_store_padded, kv_cache_store_ragged
 from std.testing import assert_almost_equal
 
@@ -61,22 +60,17 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         ceildiv(max_full_context_length, page_size) * batch_size
     )
 
-    var kv_block_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+    var kv_block = HostDeviceTileTensor[dtype](
+        row_major(
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
+        ctx,
     )
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
-        kv_block_shape
-    )
-    var kv_block_managed = ManagedLayoutTensor[dtype, kv_block_layout](
-        kv_block_runtime_layout, ctx
-    )
-    var kv_block_tensor = kv_block_managed.tensor()
 
     var paged_lut = PagedLookupTable[page_size].build(
         valid_lengths,
@@ -86,25 +80,31 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         ctx,
     )
 
-    var kv_collection_paged_device = PagedKVCacheCollection[
-        dtype, kv_params, page_size
-    ](
-        kv_block_managed.device_tensor(),
-        cache_lengths_table.cache_lengths.device_tensor(),
-        paged_lut.device_tensor(),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection_paged_device = Collection(
+        kv_block.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_table.cache_lengths.device_tile_tensor(),
+        paged_lut.device_tile_tensor(),
         UInt32(max_seq_length_batch),
         UInt32(max_full_context_length),
     )
 
-    var q_shape = IndexList[3](
-        total_length, num_kv_heads, Int(kv_params.head_size)
+    var q_shape = (total_length, num_kv_heads, kv_params.head_size)
+    var q = HostDeviceTileTensor[dtype](
+        row_major(
+            Int64(total_length), Idx[num_kv_heads], Idx[kv_params.head_size]
+        ),
+        ctx,
     )
-    comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_kv_heads, Int(kv_params.head_size)
-    )
-    var q_runtime_layout = RuntimeLayout[q_layout].row_major(q_shape)
-    var q_managed = ManagedLayoutTensor[dtype, q_layout](q_runtime_layout, ctx)
-    var q_tensor = q_managed.tensor()
+    var q_tensor = q.host_tensor()
 
     # Fill input data for testing
     var current_offset = 0
@@ -116,42 +116,39 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     # Calculate expected value
                     var global_token_idx = current_offset + token_idx
                     var expected_linear_idx = (
-                        global_token_idx
-                        * num_kv_heads
-                        * Int(kv_params.head_size)
-                        + head_idx * Int(kv_params.head_size)
-                        + Int(head_dim_idx)
+                        global_token_idx * num_kv_heads * kv_params.head_size
+                        + head_idx * kv_params.head_size
+                        + head_dim_idx
                     )
                     q_tensor[
                         global_token_idx, head_idx, head_dim_idx
                     ] = Float32(expected_linear_idx)
         current_offset += seq_len
+    q.to_device()
 
-    var q_device_tensor = q_managed.device_tensor()
+    var q_device_tensor = q.device_tensor()
 
-    @parameter
-    @always_inline
-    @__copy_capture(q_device_tensor)
+    @inline(.always)
     def input_fn[
         width: Int, alignment: Int
-    ](idx: IndexList[3]) -> SIMD[dtype, width]:
-        return q_device_tensor.load[width](idx)
+    ](idx: Coord) {var q_device_tensor} -> SIMD[dtype, width]:
+        return q_device_tensor.load[width=width](idx)
 
     var k_cache_device = kv_collection_paged_device.get_key_cache(0)
-    kv_cache_store_ragged[input_fn=input_fn, target="gpu"](
+    kv_cache_store_ragged[target="gpu"](
         k_cache_device,
         q_shape,
-        cache_lengths_table.input_row_offsets.device_tensor(),
+        cache_lengths_table.input_row_offsets.device_tile_tensor(),
+        input_fn,
         ctx,
     )
     ctx.synchronize()
+    kv_block.to_host()
 
-    var kv_collection_paged_host = PagedKVCacheCollection[
-        dtype, kv_params, page_size
-    ](
-        kv_block_managed.tensor(),
-        cache_lengths_table.cache_lengths.host_tensor(),
-        paged_lut.host_tensor(),
+    var kv_collection_paged_host = Collection(
+        kv_block.host_tensor().as_unsafe_any_origin(),
+        cache_lengths_table.cache_lengths.host_tile_tensor(),
+        paged_lut.host_tile_tensor(),
         UInt32(max_seq_length_batch),
         UInt32(max_full_context_length),
     )
@@ -167,11 +164,9 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     # Calculate expected value
                     var global_token_idx = current_offset + token_idx
                     var expected_linear_idx = (
-                        global_token_idx
-                        * num_kv_heads
-                        * Int(kv_params.head_size)
-                        + head_idx * Int(kv_params.head_size)
-                        + Int(head_dim_idx)
+                        global_token_idx * num_kv_heads * kv_params.head_size
+                        + head_idx * kv_params.head_size
+                        + head_dim_idx
                     )
                     var expected_value = Float32(expected_linear_idx)
 
@@ -181,7 +176,7 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                         batch_idx,
                         head_idx,
                         cache_token_idx,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     )
                     # Verify the values match
                     assert_almost_equal(
@@ -204,6 +199,8 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     )
         current_offset += seq_len
 
+    # The collections hold untracked views of these buffers.
+    _ = kv_block^
     _ = cache_lengths_table^
     _ = paged_lut^
 
@@ -235,23 +232,19 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         ceildiv(max_full_context_length, page_size) * batch_size
     )
 
-    var kv_block_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+    var kv_block = HostDeviceTileTensor[dtype](
+        row_major(
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
+        ctx,
     )
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
-        kv_block_shape
-    )
-    var kv_block_managed = ManagedLayoutTensor[dtype, kv_block_layout](
-        kv_block_runtime_layout, ctx
-    )
-    var kv_block_tensor = kv_block_managed.tensor()
-    memset_zero(kv_block_tensor.ptr, kv_block_shape.flattened_length())
+    _ = kv_block.host_tensor().fill(0)
+    kv_block.to_device()
 
     var paged_lut = PagedLookupTable[page_size].build(
         valid_lengths,
@@ -261,17 +254,19 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         ctx,
     )
 
-    var kv_collection_paged_device = PagedKVCacheCollection[
-        dtype, kv_params, page_size
-    ](
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_managed.device_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()].row_major(
-                kv_block_managed.device_tensor().runtime_layout.shape.value
-            ),
-        ),
-        cache_lengths_table.cache_lengths.device_tensor(),
-        paged_lut.device_tensor(),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection_paged_device = Collection(
+        kv_block.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_table.cache_lengths.device_tile_tensor(),
+        paged_lut.device_tile_tensor(),
         UInt32(max_seq_length_batch),
         UInt32(max_full_context_length),
     )
@@ -280,14 +275,18 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         batch_size,
         max_seq_length_batch,
         num_kv_heads,
-        Int(kv_params.head_size),
+        kv_params.head_size,
     )
-    comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_kv_heads, Int(kv_params.head_size)
+    var q = HostDeviceTileTensor[dtype](
+        row_major(
+            Int64(batch_size),
+            Int64(max_seq_length_batch),
+            Idx[num_kv_heads],
+            Idx[kv_params.head_size],
+        ),
+        ctx,
     )
-    var q_runtime_layout = RuntimeLayout[q_layout].row_major(q_shape)
-    var q_managed = ManagedLayoutTensor[dtype, q_layout](q_runtime_layout, ctx)
-    var q_tensor = q_managed.tensor()
+    var q_tensor = q.host_tensor()
 
     for batch_idx in range(batch_size):
         for token_idx in range(max_seq_length_batch):
@@ -297,58 +296,45 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
                         batch_idx
                         * max_seq_length_batch
                         * num_kv_heads
-                        * Int(kv_params.head_size)
-                        + token_idx * num_kv_heads * Int(kv_params.head_size)
-                        + head_idx * Int(kv_params.head_size)
-                        + Int(head_dim_idx)
+                        * kv_params.head_size
+                        + token_idx * num_kv_heads * kv_params.head_size
+                        + head_idx * kv_params.head_size
+                        + head_dim_idx
                     )
                     q_tensor[
                         batch_idx, token_idx, head_idx, head_dim_idx
                     ] = Float32(expected_linear_idx)
 
-    var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var valid_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with valid_lengths_device.map_to_host() as valid_lengths_host:
         for i in range(batch_size):
             valid_lengths_host[i] = UInt32(valid_lengths[i])
 
-    var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        valid_lengths_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size)
-        ),
+    var valid_lengths_tensor = TileTensor(
+        valid_lengths_device, row_major(Int64(batch_size))
     )
 
-    var q_device_tensor = q_managed.device_tensor()
+    q.to_device()
+    var q_device_tensor = q.device_tensor()
 
-    @parameter
-    @always_inline
-    @__copy_capture(q_device_tensor)
+    @inline(.always)
     def input_fn[
         width: Int, alignment: Int
-    ](idx: IndexList[4]) -> SIMD[dtype, width]:
-        return q_device_tensor.load[width](idx)
+    ](idx: Coord) {var q_device_tensor} -> SIMD[dtype, width]:
+        comptime assert idx.rank == 4
+        return q_device_tensor.load[width=width](idx)
 
     var k_cache_device = kv_collection_paged_device.get_key_cache(0)
-    kv_cache_store_padded[input_fn=input_fn, target="gpu"](
-        k_cache_device, q_shape, valid_lengths_tensor, ctx
+    kv_cache_store_padded[target="gpu"](
+        k_cache_device, q_shape, valid_lengths_tensor, input_fn, ctx
     )
     ctx.synchronize()
+    kv_block.to_host()
 
-    var kv_collection_paged_host = PagedKVCacheCollection[
-        dtype, kv_params, page_size
-    ](
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_managed.tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()].row_major(
-                kv_block_managed.tensor().runtime_layout.shape.value
-            ),
-        ),
-        cache_lengths_table.cache_lengths.host_tensor(),
-        paged_lut.host_tensor(),
+    var kv_collection_paged_host = Collection(
+        kv_block.host_tensor().as_unsafe_any_origin(),
+        cache_lengths_table.cache_lengths.host_tile_tensor(),
+        paged_lut.host_tile_tensor(),
         UInt32(max_seq_length_batch),
         UInt32(max_full_context_length),
     )
@@ -363,10 +349,10 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
                         batch_idx
                         * max_seq_length_batch
                         * num_kv_heads
-                        * Int(kv_params.head_size)
-                        + token_idx * num_kv_heads * Int(kv_params.head_size)
-                        + head_idx * Int(kv_params.head_size)
-                        + Int(head_dim_idx)
+                        * kv_params.head_size
+                        + token_idx * num_kv_heads * kv_params.head_size
+                        + head_idx * kv_params.head_size
+                        + head_dim_idx
                     )
                     var expected_value = Float32(expected_linear_idx)
 
@@ -375,7 +361,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
                         batch_idx,
                         head_idx,
                         cache_token_idx,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     )
 
                     assert_almost_equal(
@@ -419,6 +405,8 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
                     + String(head_idx),
                 )
 
+    # The collections hold untracked views of these buffers.
+    _ = kv_block^
     _ = cache_lengths_table^
     _ = paged_lut^
 

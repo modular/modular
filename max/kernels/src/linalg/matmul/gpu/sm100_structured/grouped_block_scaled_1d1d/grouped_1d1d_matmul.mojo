@@ -34,14 +34,15 @@ Usage:
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, Dim, FuncAttribute
-from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
-from structured_kernels.tile_types import create_tma_tile
-from structured_kernels.kernel_common import WarpRole1D1D
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext, Dim, FuncAttribute
+from max.gpu.host.info import B200
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from layout import Coord, Idx, TileTensor, coord, row_major
+from layout.tma_async import create_tensor_tile
+from structured_kernels.tile_types import create_tma_tile, TmaOpType
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
@@ -51,9 +52,16 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
+    _is_packed_fp4,
 )
+from structured_kernels.trace_buf import NullTrace, TraceBuf
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
+from .grouped_1d1d_matmul_kernel import (
+    Grouped1D1DMatmulKernel,
+    NullSwiGLUOutput,
+    SwiGLUOutput,
+)
+from ..structured_kernels.row_scales import NullRowScales, RowScales
 
 
 def grouped_matmul_block_scaled[
@@ -67,6 +75,23 @@ def grouped_matmul_block_scaled[
     config: BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
+    pdl_level: PDLLevel = PDLLevel.ON,
+    # When True, the kernel emits packed NVFP4 + a 5D FP8-E4M3 scale tile
+    # in place of the BF16 GMEM C store, fusing SwiGLU + per-block quant
+    # into the matmul epilogue. Caller must:
+    #   1) pre-permute W on the N axis with σ(2i)=i, σ(2i+1)=H+i,
+    #   2) pass a `RealSwiGLUOutput[...]` instance via `swiglu_out`.
+    # When False, swiglu_out=NullSwiGLUOutput() is used and the kernel
+    # is bit-identical to the original BF16-output path.
+    fuse_swiglu: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[],
+    swiglu_match_bf16: Bool = True,
+    swiglu_disable_compute: Bool = False,
+    swiglu_enable_trace: Bool = False,
+    TraceBufT: TraceBuf = NullTrace,
+    swiglu_use_inplace: Bool = False,
+    swiglu_inplace_token_per_lane: Bool = False,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -79,11 +104,54 @@ def grouped_matmul_block_scaled[
     expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
+    trace_buf: TraceBufT = NullTrace(),
+    row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Launch grouped 1D-1D block-scaled matmul kernel.
 
     This function sets up TMA descriptors and launches the kernel with the
     proper configuration for 1D-1D tensor layout.
+
+    Parameters:
+        a_type: Element dtype of the A (activations) operand.
+        b_type: Element dtype of the B (weights) operand.
+        c_type: Element dtype of the C (output) operand.
+        sfa_dtype: Scale-factor dtype for A. Must equal `sfb_dtype`
+            and be one of `NVFP4_SF_DTYPE`, `MXFP4_SF_DTYPE`, or
+            `MXFP8_SF_DTYPE`.
+        sfb_dtype: Scale-factor dtype for B. Must equal `sfa_dtype`.
+        transpose_b: Whether B is stored transposed. Must be `True`
+            (the only supported layout).
+        config: Compile-time tiling, swizzle, and pipeline config for
+            the matmul kernel.
+        pdl_level: Programmatic dependent launch level passed to the
+            kernel launch (defaults to `PDLLevel.ON`).
+        fuse_swiglu: When `True`, fuses SwiGLU plus per-block NVFP4
+            quantization into the matmul epilogue in place of the
+            BF16 GMEM store (defaults to `False`).
+        SwiGLUOutputT: Carrier type for the fused SwiGLU output.
+            Defaults to `NullSwiGLUOutput[]` for the non-fused path.
+        swiglu_match_bf16: When `True`, the fused epilogue mirrors the
+            BF16 SMEM round trip of the unfused path so precision
+            matches bit-for-bit (defaults to `True`).
+        swiglu_disable_compute: When `True`, zeroes the SwiGLU
+            cooperative compute iterations for structural-epilogue
+            cost isolation; output is invalid (defaults to `False`).
+        swiglu_enable_trace: When `True`, records per-CTA timing
+            events into `trace_buf` for the SwiGLU path (defaults to
+            `False`).
+        TraceBufT: Trace buffer type used when
+            `swiglu_enable_trace=True`. Defaults to `NullTrace`.
+        swiglu_use_inplace: When `True`, the SwiGLU epilogue writes
+            packed output in place via `store_packed_word` instead of
+            a separate store path (defaults to `False`).
+        swiglu_inplace_token_per_lane: Enables experimental token-per-lane
+            staging for NVFP4 when `swiglu_use_inplace=True`. Each lane
+            quantizes and stores one token's scale-factor block. Ignored
+            for MXFP8. Defaults to `False`.
+        RowScalesT: Per-row output scales type. Defaults to the no-op
+            `NullRowScales`.
 
     Args:
         c_device: Output tensor (total_tokens, N).
@@ -97,7 +165,25 @@ def grouped_matmul_block_scaled[
         expert_scales: Per-expert output scaling (num_experts).
         num_active_experts: Number of active experts.
         ctx: Device context.
+        swiglu_out: Sink carrier when `fuse_swiglu=True` (packed
+            NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
+        trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
+            `NullTrace()` otherwise.
+        row_scales: Per-row output scales, one per `a_device` row, applied
+            with `expert_scales`. `NullRowScales()` for none.
     """
+    # Early-exit for empty inputs to avoid creating invalid TMA descriptors: a
+    # tensor map rejects `globalDim == 0` (while accepting
+    # `globalDim < boxDim`), so a zero-row token operand fails the launch with
+    # CUDA_ERROR_INVALID_VALUE instead of computing nothing. Mirrors the SM90
+    # grouped matmul's guard. The graph wrappers test only
+    # `num_active_experts == 0`, which misses the reachable case: a rank whose
+    # expert slots are all published but hold no tokens. C's extent is
+    # deliberately not tested -- a zero-element C is legitimate wherever the
+    # local output store has been elided.
+    if num_active_experts == 0 or Int(a_device.dim[0]()) == 0:
+        return
+
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
@@ -125,8 +211,6 @@ def grouped_matmul_block_scaled[
         2,
     ), "Only support cta_group == 1 or 2"
 
-    comptime assert config.k_group_size == 1, "Only support k_group_size == 1"
-
     comptime assert config.num_split_k == 1, "Only support split_k == 1"
 
     comptime assert (
@@ -138,16 +222,56 @@ def grouped_matmul_block_scaled[
     comptime num_experts = type_of(_b_device).static_shape[0]
     comptime N = type_of(c_device).static_shape[1]
     comptime expert_n = N
-    comptime K = type_of(a_device).static_shape[1]
+    # W4A8 stores the weights nibble-packed, so their row is half as many
+    # bytes as the activations'. The FP4 TMA copy unpacks them on the way into
+    # shared memory, so every K extent the kernel sees is in ELEMENTS and the
+    # two operands agree again; only the weights' GMEM row stays halved.
+    comptime a_packed_fp4 = _is_packed_fp4[a_device.dtype, _b_device.dtype]()
+    comptime b_packed_fp4 = _is_packed_fp4[_b_device.dtype, a_device.dtype]()
+    # Under `kind::mxf8f6f4` a `uint8` operand is read padded, and only the
+    # W4A8 pair gets the padded TMA copy that produces that layout. Two `uint8`
+    # operands encode a legal descriptor under this kind but leave both copies
+    # dense, so the tensor cores would read one nibble-packed byte per element
+    # and the K arithmetic below would count bytes as elements. The FP4-only
+    # kinds want exactly that dense layout, hence the kind guard.
+    comptime assert config.scaling_kind != UMMAKind.KIND_MXF8F6F4 or (
+        (a_device.dtype != .uint8 or a_packed_fp4)
+        and (_b_device.dtype != .uint8 or b_packed_fp4)
+    ), String(
+        (
+            "kind::mxf8f6f4 accepts a nibble-packed operand only as the W4A8"
+            " pair (E4M3 activations, E2M1 weights), but got a="
+        ),
+        a_device.dtype,
+        " b=",
+        _b_device.dtype,
+    )
+    comptime K = type_of(a_device).static_shape[1] * (2 if a_packed_fp4 else 1)
+    comptime K_WEIGHT_BYTES = type_of(_b_device).static_shape[2]
+    comptime assert K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1) == K, (
+        "activations and weights must span the same number of K elements, but"
+        " got "
+        + String(K)
+        + " and "
+        + String(K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1))
+    )
     comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 bytes"
+        "Due to TMA limitations, K must be a multiple of 16 elements"
         + " but got K = "
         + String(K)
     )
+    # `cuTensorMapEncodeTiled` rejects an ALIGN16B packed-FP4 descriptor whose
+    # innermost extent is not a multiple of 128. The descriptor helper only
+    # `debug_assert`s that, which is compiled out at the default assert level,
+    # so gate it here where K is comptime.
+    comptime assert not (a_packed_fp4 or b_packed_fp4) or K % 128 == 0, (
+        "packed FP4 requires K to be a multiple of 128 elements but got K = "
+        + String(K)
+    )
 
-    # Reshape B from (num_experts, N, K) to (num_experts * N, K)
+    # Reshape B from (num_experts, N, K bytes) to (num_experts * N, K bytes)
     var b_device = _b_device.reshape(
-        row_major(Coord(Idx[num_experts * N](), Idx[K]()))
+        row_major(Idx[num_experts * N], Idx[K_WEIGHT_BYTES])
     )
 
     comptime if config.cta_group == 2:
@@ -196,6 +320,21 @@ def grouped_matmul_block_scaled[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
+        pdl_level=pdl_level,
+        fuse_swiglu=fuse_swiglu,
+        SwiGLUOutputT=SwiGLUOutputT,
+        swiglu_match_bf16=swiglu_match_bf16,
+        swiglu_disable_compute=swiglu_disable_compute,
+        swiglu_enable_trace=swiglu_enable_trace,
+        TraceBufT=TraceBufT,
+        swiglu_use_inplace=swiglu_use_inplace,
+        swiglu_inplace_token_per_lane=swiglu_inplace_token_per_lane,
+        c_device_engine=type_of(c_device).Engine,
+        offsets_engine=type_of(a_offsets).Engine,
+        a_scale_offsets_engine=type_of(a_scale_offsets).Engine,
+        expert_ids_engine=type_of(expert_ids).Engine,
+        expert_scales_engine=type_of(expert_scales).Engine,
+        RowScalesT=RowScalesT,
     ]
     comptime KernelType = type_of(matmul_kernel)
 
@@ -206,68 +345,107 @@ def grouped_matmul_block_scaled[
     # B200 SMEM limit
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
-    comptime c_tma_tile_shape_mma128 = Index(
-        64, config.output_tile_shape[1]
-    ) if not config.AB_swapped else Index(config.output_tile_shape[0], 64)
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
+    comptime g1_m128_m = (
+        64 if not config.AB_swapped else config.output_tile_shape[0]
+    )
+    comptime g1_m128_n = (
+        config.output_tile_shape[1] if not config.AB_swapped else 64
+    )
+    comptime g1_use_full = MMA_M == 256 or config.cta_group == 1
+    comptime g1_c_m = (
+        config.output_tile_shape[0] if g1_use_full else g1_m128_m
+    )
+    comptime g1_c_n = (
+        config.output_tile_shape[1] if g1_use_full else g1_m128_n
+    )
+    comptime c_tma_tile_shape = coord[g1_c_m, g1_c_n]
 
     # When c_swizzle is SWIZZLE_NONE (MMA_N=8), c_swizzle.bytes() is 0.
     # The TMA descriptor dim1 must equal the tile dim1 in that case.
     comptime _c_swizzle_elems = config.c_swizzle.bytes() // size_of[c_type]()
-    comptime c_tma_tile_shape_1 = c_tma_tile_shape[
-        1
-    ] if _c_swizzle_elems == 0 else _c_swizzle_elems
+    comptime c_tma_tile_shape_1 = (
+        c_tma_tile_shape.element_types[1].static_value if _c_swizzle_elems
+        == 0 else _c_swizzle_elems
+    )
 
-    comptime sfa_tma_tile_shape = Index(
+    # Scale factor TMA — use 4D uint16 with batch=1 to avoid 2× TMA overfetch.
+    # SM100 TMA rounds boxDim[0] to 32B min; old innermost=16B caused 2× fetch.
+    # Reinterpret as uint16, merge SF_ATOM_M[0] and SF_ATOM_M[1]*SF_ATOM_K into
+    # sf_atom_u16 = 256 uint16 = 512B, well above 32B minimum.
+    comptime sf_atom_u16 = (
+        SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
+    ) // 2  # 256 uint16 = 512 bytes
+    comptime sfb_atom_u16 = (
+        KernelType.SFB_TMA_ROWS * SF_ATOM_M[1] * SF_ATOM_K
+    ) // 2
+
+    comptime sfa_tma_tile_shape = coord[
+        1,  # batch dim
         BM // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    )
+        sf_atom_u16,
+    ]
 
     # SFB TMA tile shape: for MMA_N < 64, reduced tile (1 k-atom, MMA_N rows)
     # loaded by the dedicated SfbTMALoad warp; for MMA_N >= 64, full atom.
     # Derive from kernel struct to keep a single source of truth.
-    comptime sfb_tma_tile_shape = Index(
+    comptime sfb_tma_tile_shape = coord[
+        1,  # batch dim
         align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         KernelType.SFB_TMA_K_ATOMS,
-        KernelType.SFB_TMA_ROWS,
-        SF_ATOM_M[1] * SF_ATOM_K,
+        sfb_atom_u16,
+    ]
+
+    # Create 4D uint16 views of scale tensors (same memory, reinterpreted).
+    # a_scales: 5D (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    #        -> 4D uint16 (1, M_groups, K_groups, sf_atom_u16)
+    var sfa_4d_shape = Coord(
+        Idx[1],
+        a_scales.layout.shape[0](),
+        a_scales.layout.shape[1](),
+        Idx[sf_atom_u16],
+    )
+    var sfa_4d_layout = row_major(sfa_4d_shape)
+    var sfa_4d = TileTensor[
+        .uint16,
+        type_of(sfa_4d_layout),
+        MutAnyOrigin,
+        Engine=a_scales.Engine,
+        address_space=a_scales.address_space,
+    ](
+        a_scales._unsafe_storage_cast[
+            to_dtype=.uint16, to_origin=MutAnyOrigin
+        ](),
+        sfa_4d_layout,
     )
 
-    # Reshape scale tensors from 5D to 4D for TMA.
-    # a_scales: (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
-    #        -> (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K)
-    var sfa_4d = a_scales.reshape(
-        row_major(
-            Coord(
-                a_scales.layout.shape[0](),
-                a_scales.layout.shape[1](),
-                a_scales.layout.shape[2](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
-            )
-        )
+    # _b_scales: 6D -> 4D uint16 (1, num_experts*N_groups, K_groups, sf_atom_u16)
+    # Global view always uses sf_atom_u16 (full atom); TMA tile may be smaller.
+    var sfb_dim0 = Int(_b_scales.dim[0]()) * Int(_b_scales.dim[1]())
+    var sfb_4d_shape = Coord(
+        Idx[1],
+        Int64(sfb_dim0),
+        _b_scales.layout.shape[2](),
+        Idx[sf_atom_u16],
+    )
+    var sfb_4d_layout = row_major(sfb_4d_shape)
+    var sfb_4d = TileTensor[
+        .uint16,
+        type_of(sfb_4d_layout),
+        MutAnyOrigin,
+        Engine=_b_scales.Engine,
+        address_space=_b_scales.address_space,
+    ](
+        _b_scales._unsafe_storage_cast[
+            to_dtype=.uint16, to_origin=MutAnyOrigin
+        ](),
+        sfb_4d_layout,
     )
 
-    # _b_scales is 6D; reshape directly to 4D:
-    # (num_experts, N_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
-    # -> (num_experts*N_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1]*SF_ATOM_K)
-    var sfb_dim0 = (
-        _b_scales.layout.shape[0]().value()
-        * _b_scales.layout.shape[1]().value()
-    )
-    var sfb_4d = _b_scales.reshape(
-        row_major(
-            Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](sfb_dim0)),
-                _b_scales.layout.shape[2](),
-                _b_scales.layout.shape[3](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
-            )
-        )
-    )
+    # Raw SFB pointer and strides for cp.async path (MMA_N < 64).
+    # When group_size < SF_MN_GROUP_SIZE, the SfbTMALoad warp uses cp.async
+    # instead of TMA to avoid loading full 128-row atoms for small groups.
+    comptime _sfb_K_TILE_ELEMS = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
 
     # Define kernel function
     comptime kernel = matmul_kernel.run
@@ -278,83 +456,114 @@ def grouped_matmul_block_scaled[
         1,
     )
 
-    # Thread count from WarpRole1D1D (single source of truth):
-    # MMA_N >= 64: 192 threads (6 warps: 4 epilogue + 1 load + 1 MMA)
-    # MMA_N <  64: 352 threads (+ 1 SFB TMA load + 4 SFB TMEM load)
-    comptime block_threads = WarpRole1D1D.TOTAL_THREADS_WITH_SFB if MMA_N < 64 else WarpRole1D1D.TOTAL_THREADS
+    # Always launch with scheduler warp. SFB warps only on MMA_N < 64 decode
+    # path, so MMA_N >= 64 (prefill / 2SM) shrinks from 384 → 224 threads and
+    # frees ~7.5K registers per CTA. Source the launch dim from the kernel's
+    # WarpRole so any per-config epilogue-warp count flows through.
+    comptime block_threads = KernelType.WarpRole.TOTAL_THREADS_WITH_SCHED
 
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
     # LayoutType (from _IntTupleToCoordLike) than the kernel's GMEMLayout1D.
-    from std.memory import UnsafePointer as Ptr
     from structured_kernels.tile_types import GMEMLayout1D
 
     def _to_1d[
         target_type: DType,
-    ](t: TileTensor) -> TileTensor[target_type, GMEMLayout1D, MutAnyOrigin]:
-        var shape = Coord(
-            RuntimeInt[DType.int64](
-                Scalar[DType.int64](t.layout.shape[0]().value())
-            )
-        )
-        var stride = Coord(Idx[1]())
-        return TileTensor[target_type, GMEMLayout1D, MutAnyOrigin](
-            ptr=Ptr[Scalar[target_type], MutAnyOrigin](
-                unsafe_from_address=Int(t.ptr)
-            ),
-            layout=GMEMLayout1D(shape, stride),
-        )
+    ](t: TileTensor) -> TileTensor[
+        target_type,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Engine=t.Engine,
+        address_space=t.address_space,
+    ]:
+        var shape = Coord(Int64(t.dim[0]()))
+        var stride = Coord(Idx[1])
+        return {
+            t._unsafe_storage_cast[
+                to_dtype=target_type, to_origin=MutAnyOrigin
+            ](),
+            GMEMLayout1D(shape, stride),
+        }
 
     # When AB_swapped, swap A/B operands and their scale factors for TMA
-    # and kernel launch. The @parameter if ensures compile-time branching.
+    # and kernel launch. The comptime if ensures compile-time branching.
     comptime if config.AB_swapped:
         var a_tma_op = create_tma_tile[
             KernelType.ATileLayout,
             KernelType.ADescLayout,
-            Index(BM // cluster_shape[1], BK),
+            coord[BM // cluster_shape[1], BK],
             swizzle_mode=config.a_swizzle,
+            unpack_fp4=b_packed_fp4,
         ](ctx, b_device)
         var b_tma_op = create_tma_tile[
             KernelType.BTileLayout,
             KernelType.BDescLayout,
-            Index(
-                BN // (cluster_shape[0] // config.cta_group), BK
-            ) if transpose_b else Index(
-                BK, BN // (cluster_shape[0] // config.cta_group)
-            ),
+            coord[
+                BN
+                // (
+                    cluster_shape[0] // config.cta_group
+                ) if transpose_b else BK,
+                BK if transpose_b else BN
+                // (cluster_shape[0] // config.cta_group),
+            ],
             swizzle_mode=config.b_swizzle,
+            unpack_fp4=a_packed_fp4,
         ](ctx, a_device)
-        var c_tma_op = create_tma_tile[
-            KernelType.CTileLayout,
-            KernelType.CDescLayout,
-            Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
-            swizzle_mode=config.c_swizzle,
-        ](ctx, c_device)
-        var sfa_tma_op = create_tma_tile[
-            KernelType.SFATileLayout,
-            KernelType.SFADescLayout,
+        # C TMA descriptor is only consumed on the non-fused (BF16 store)
+        # path. When `fuse_swiglu`, the epilogue writes through `swiglu_out`
+        # and the kernel gates out the C prefetch + store, so the C TMA op is
+        # unused. Skip the encode (the caller's C tensor is a null-backed
+        # placeholder) and pass an empty descriptor.
+        var c_tma_op = TmaOpType[
+            c_device.dtype, KernelType.CTileLayout, KernelType.CDescLayout
+        ](TMADescriptor())
+        comptime if not fuse_swiglu:
+            c_tma_op = create_tma_tile[
+                KernelType.CTileLayout,
+                KernelType.CDescLayout,
+                coord[
+                    c_tma_tile_shape.element_types[0].static_value,
+                    c_tma_tile_shape_1,
+                ],
+                swizzle_mode=config.c_swizzle,
+            ](ctx, c_device)
+        # SF TMA: use create_tensor_tile directly with uint16 views.
+        var sfa_tma_op = create_tensor_tile[
             sfa_tma_tile_shape,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        ](ctx, sfb_4d)
-        var sfb_tma_op = create_tma_tile[
-            KernelType.SFBTileLayout,
-            KernelType.SFBDescLayout,
+            __tile_shape=sfa_tma_tile_shape,
+            __desc_shape=sfa_tma_tile_shape,
+        ](
+            ctx, sfb_4d
+        )  # AB_swapped: SFA uses sfb data
+        var sfb_tma_op = create_tensor_tile[
             sfb_tma_tile_shape,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        ](ctx, sfa_4d)
-        ctx.enqueue_function[kernel, kernel](
+            __tile_shape=sfb_tma_tile_shape,
+            __desc_shape=sfb_tma_tile_shape,
+        ](
+            ctx, sfa_4d
+        )  # AB_swapped: SFB uses sfa data
+        ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
             c_tma_op,
             sfa_tma_op,
             sfb_tma_op,
-            _to_1d[DType.uint32](a_offsets),
-            _to_1d[DType.uint32](a_scale_offsets),
-            _to_1d[DType.int32](expert_ids),
-            _to_1d[DType.float32](expert_scales),
+            _to_1d[.uint32](a_offsets),
+            _to_1d[.uint32](a_scale_offsets),
+            _to_1d[.int32](expert_ids),
+            _to_1d[.float32](expert_scales),
             c_device,
-            num_active_experts,
+            Int32(num_active_experts),
             UInt32(K),
+            # AB_swapped: SFB data comes from a_scales.
+            rebind[ImmPointer[Scalar[sfa_dtype], ImmutAnyOrigin]](a_scales.ptr),
+            Int32(Int(a_scales.dim[1]()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(a_scales.dim[1]())),
+            swiglu_out,
+            trace_buf,
+            row_scales,
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(
@@ -364,55 +573,76 @@ def grouped_matmul_block_scaled[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         var a_tma_op = create_tma_tile[
             KernelType.ATileLayout,
             KernelType.ADescLayout,
-            Index(BM // cluster_shape[1], BK),
+            coord[BM // cluster_shape[1], BK],
             swizzle_mode=config.a_swizzle,
+            unpack_fp4=a_packed_fp4,
         ](ctx, a_device)
         var b_tma_op = create_tma_tile[
             KernelType.BTileLayout,
             KernelType.BDescLayout,
-            Index(
-                BN // (cluster_shape[0] // config.cta_group), BK
-            ) if transpose_b else Index(
-                BK, BN // (cluster_shape[0] // config.cta_group)
-            ),
+            coord[
+                BN
+                // (
+                    cluster_shape[0] // config.cta_group
+                ) if transpose_b else BK,
+                BK if transpose_b else BN
+                // (cluster_shape[0] // config.cta_group),
+            ],
             swizzle_mode=config.b_swizzle,
+            unpack_fp4=b_packed_fp4,
         ](ctx, b_device)
-        var c_tma_op = create_tma_tile[
-            KernelType.CTileLayout,
-            KernelType.CDescLayout,
-            c_tma_tile_shape,
-            swizzle_mode=config.c_swizzle,
-        ](ctx, c_device)
-        var sfa_tma_op = create_tma_tile[
-            KernelType.SFATileLayout,
-            KernelType.SFADescLayout,
+        # See the AB_swapped branch: the C TMA op is unused on the fused path.
+        var c_tma_op = TmaOpType[
+            c_device.dtype, KernelType.CTileLayout, KernelType.CDescLayout
+        ](TMADescriptor())
+        comptime if not fuse_swiglu:
+            c_tma_op = create_tma_tile[
+                KernelType.CTileLayout,
+                KernelType.CDescLayout,
+                coord[g1_c_m, g1_c_n],
+                swizzle_mode=config.c_swizzle,
+            ](ctx, c_device)
+        # SF TMA: use create_tensor_tile directly with uint16 views.
+        var sfa_tma_op = create_tensor_tile[
             sfa_tma_tile_shape,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+            __tile_shape=sfa_tma_tile_shape,
+            __desc_shape=sfa_tma_tile_shape,
         ](ctx, sfa_4d)
-        var sfb_tma_op = create_tma_tile[
-            KernelType.SFBTileLayout,
-            KernelType.SFBDescLayout,
+        var sfb_tma_op = create_tensor_tile[
             sfb_tma_tile_shape,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+            __tile_shape=sfb_tma_tile_shape,
+            __desc_shape=sfb_tma_tile_shape,
         ](ctx, sfb_4d)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
             c_tma_op,
             sfa_tma_op,
             sfb_tma_op,
-            _to_1d[DType.uint32](a_offsets),
-            _to_1d[DType.uint32](a_scale_offsets),
-            _to_1d[DType.int32](expert_ids),
-            _to_1d[DType.float32](expert_scales),
+            _to_1d[.uint32](a_offsets),
+            _to_1d[.uint32](a_scale_offsets),
+            _to_1d[.int32](expert_ids),
+            _to_1d[.float32](expert_scales),
             c_device,
-            num_active_experts,
+            Int32(num_active_experts),
             UInt32(K),
+            # Non-swapped: SFB data comes from _b_scales.
+            rebind[ImmPointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
+                _b_scales.ptr
+            ),
+            Int32(Int(_b_scales.dim[2]()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(_b_scales.dim[2]())),
+            swiglu_out,
+            trace_buf,
+            row_scales,
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(
@@ -422,4 +652,5 @@ def grouped_matmul_block_scaled[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(pdl_level),
         )

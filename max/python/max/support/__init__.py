@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides debugging, formatting, and data-fetching utilities."""
+
 from .forked_pdb import ForkedPdb
 from .human_readable_formatter import (
     to_human_readable_bytes,

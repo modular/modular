@@ -26,13 +26,9 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, TextIO
 
-if sys.version_info >= (3, 11):
-    from asyncio import TaskGroup
-else:
-    from taskgroup import TaskGroup
-
 import httpx
 import scipy.special
+from max.support._taskgroups import TaskGroup
 
 from . import schema
 
@@ -304,15 +300,12 @@ class BaseProgressNotifier:
 
     def adjust_total_tasks(self, delta: int) -> None:
         """Notify of a change in the number of tasks."""
-        pass
 
     def worker_start_item(self, worker: int, item: int) -> None:
         """Notify that a worker has picked up an item."""
-        pass
 
     def worker_finish_item(self, worker: int, item: int) -> None:
         """Notify that a worker has finished an item."""
-        pass
 
 
 class TrackingProgressNotifier(BaseProgressNotifier):
@@ -396,7 +389,6 @@ class TrackingProgressNotifier(BaseProgressNotifier):
 
         Subclasses should implement this to be notified of progress changes.
         """
-        pass
 
 
 class TerminalProgressNotifier(TrackingProgressNotifier):

@@ -20,28 +20,42 @@ from __future__ import annotations
 
 import functools
 import math
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     Weight,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.comm.allreduce import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
+    rope_split_store_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
@@ -53,6 +67,11 @@ from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+    vision_merge_inputs,
+)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 
@@ -228,32 +247,26 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             if wqkv_bf16.dtype != DType.bfloat16:
                 wqkv_bf16 = ops.cast(wqkv_bf16, DType.bfloat16)
 
-        # Fused QKV matmul: input and wqkv are both BF16 now.
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x_in,
-            wqkv=wqkv_bf16,
-            bias=self.wqkv_bias,
+        # QKV matmul: BF16 input x BF16 wqkv.
+        qkv = x_in @ wqkv_bf16.T
+        if self.wqkv_bias is not None:
+            qkv = qkv + self.wqkv_bias
+
+        # Fused rope + split + KV store.
+        freqs_cis = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-        )
-
-        # Apply RoPE and flash attention (also in BF16).
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        freqs_cis = freqs_cis.to(xq.device)
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
             interleaved=self.rope.interleaved,
             position_ids=position_ids,
             mrope_section=mrope_section,
         )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         attn_out = flash_attention_ragged(
             self.kv_params,
@@ -336,6 +349,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             )
             sharded_num_heads = head_end - head_start
 
+            assert isinstance(self.kv_params, MHAKVCacheParams)
             sharded_head_start, sharded_head_end = _compute_shard_range(
                 self.kv_params.n_kv_heads,
                 shard_idx,
@@ -459,9 +473,25 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
     - Multi-axis rotary position embeddings (mrope) for 2D position encoding
     """
 
-    def __init__(self, config: Llama3Config) -> None:
+    def __init__(
+        self,
+        config: Llama3Config,
+        *,
+        mrope_section: list[int],
+        image_embedding_dtype: DType,
+    ) -> None:
+        """Initializes the decoder.
+
+        Args:
+            config: The language model config.
+            mrope_section: The rotary dimensions of each position-id axis.
+            image_embedding_dtype: The dtype of the image embeddings the
+                graph takes.
+        """
         super().__init__()
         self.devices = config.devices
+        self.mrope_section = mrope_section
+        self._image_embedding_dtype = image_embedding_dtype
 
         rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
@@ -571,6 +601,110 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
         self.kv_params = config.kv_params
         self.rope = rope
         self.return_logits = config.return_logits
+
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; its leaves are its inputs.
+
+        Image embeddings are always inputs: a text-only batch feeds zero rows.
+
+        Args:
+            kv_params: The KV cache parameters.
+
+        Returns:
+            The input types under ``batch``, ``row_offsets``, ``vision``,
+            ``position_ids``, ``signals`` and ``kv``, in graph order.
+        """
+        return OrderedDict(
+            batch=ragged_batch_inputs(
+                self.devices[0], ("tokens", "return_n_logits")
+            ),
+            row_offsets=tuple(
+                TensorType(
+                    DType.uint32, shape=["input_row_offsets_len"], device=device
+                )
+                for device in self.devices
+            ),
+            vision=vision_merge_inputs(
+                self.devices,
+                self._image_embedding_dtype,
+                self.dim,
+                rows_dim="vision_seq_len",
+            ),
+            position_ids=TensorType(
+                DType.uint32,
+                shape=[len(self.mrope_section), "total_seq_len"],
+                device=self.devices[0],
+            ),
+            signals=signal_inputs(list(self.devices)),
+            kv=kv_params.get_symbolic_inputs(),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        # The KV cache comes last, and unflattens through the KV params.
+        head = OrderedDict(
+            (key, types)
+            for key, types in self.input_tree(self.kv_params).items()
+            if key != "kv"
+        )
+        head_treedef = tree.flatten(head)[1]
+
+        def forward(*inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            remaining = iter(inputs)
+            named = tree.unflatten(head_treedef, remaining, exact=False)
+            assert isinstance(named, OrderedDict)
+            batch, vision = named["batch"], named["vision"]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(remaining),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens=batch["tokens"].tensor,
+                return_n_logits=batch["return_n_logits"].tensor,
+                image_embeddings=[v.tensor for v in vision["image_embeddings"]],
+                image_token_indices=[
+                    v.tensor for v in vision["image_token_indices"]
+                ],
+                position_ids=named["position_ids"].tensor,
+                signal_buffers=[v.buffer for v in named["signals"]["signal"]],
+                kv_collections=kv_collections,
+                input_row_offsets=[v.tensor for v in named["row_offsets"]],
+                mrope_section=self.mrope_section,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
     def __call__(
         self,

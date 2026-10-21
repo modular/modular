@@ -19,6 +19,10 @@ Model inference
    :toctree: generated
    :template: autosummary/class.rst
 
+   CompilationStopped
+   CompiledModel
+   CompileOnlyExecutionError
+   CompileOnlyModel
    InferenceSession
    Model
 
@@ -30,6 +34,7 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
+   DebugConfig
    GPUProfilingMode
    LogLevel
    TensorSpec
@@ -37,4 +42,9 @@ Configuration
 Types
 -----
 
-.. py:data:: CustomExtensionsType
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   CustomExtensionsType

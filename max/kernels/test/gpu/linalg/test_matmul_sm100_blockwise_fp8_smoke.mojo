@@ -21,10 +21,9 @@ Target: < 1 minute compile + run for debugging purposes.
 
 from std.math import ceildiv
 from std.sys import size_of
-from linalg.matmul.gpu.sm100.config import MatmulConfig
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
+from linalg.matmul.gpu.sm100.config import MatmulConfig, GEMMKind
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -33,7 +32,6 @@ from std.random import rand
 from internal_utils._measure import relative_difference
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -60,7 +58,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
-    scales_type: DType = DType.float32,
+    scales_type: DType = .float32,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -69,9 +67,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     comptime BLOCK_SCALE_K = 128
     comptime accum_type = get_accum_type[c_type]()
 
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     if M * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")
@@ -107,35 +105,33 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Shapes
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
-    var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
-    )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var a_shape = row_major(m, Idx[KType.static_value])
+    var b_shape = row_major(Idx[NType.static_value], Idx[KType.static_value])
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
     var b_scales_shape_n = ceildiv(N, BLOCK_SCALE_K)
     var b_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
 
-    var a_scales_shape = row_major(Coord(Idx(a_scales_shape_k), m))
-    var b_scales_shape = row_major(
-        Coord(Idx(b_scales_shape_n), Idx(b_scales_shape_k))
-    )
+    var a_scales_shape = row_major(a_scales_shape_k, m)
+    var b_scales_shape = row_major(b_scales_shape_n, b_scales_shape_k)
 
     # Allocate host memory
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
-    var c_host_ptr = alloc[Scalar[c_type]](M * N)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_shape_k * M)
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_shape_k * M
+    )
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
         b_scales_shape_n * b_scales_shape_k
     )
 
@@ -154,22 +150,18 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         b_scales_shape_n * b_scales_shape_k
     )
 
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var a_tensor = TileTensor(a_device, a_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -184,6 +176,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         mma_shape=mma_shape,
         block_swizzle_size=0,
         cta_group=cta_group,
+        gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
     )
 
     blockwise_fp8_matmul[
@@ -206,11 +199,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_ref_tensor.to_layout_tensor(),
-        a_tensor.to_layout_tensor(),
-        b_tensor.to_layout_tensor(),
-        a_scales_tensor.to_layout_tensor(),
-        b_scales_tensor.to_layout_tensor(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
         ctx,
     )
 
@@ -221,24 +214,21 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
     )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -285,9 +275,9 @@ def main() raises:
             cta_group=1,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(576),
-            Idx(512),
+            Int(512),
+            Idx[576],
+            Idx[512],
         )
 
         # ============================================================
@@ -316,9 +306,9 @@ def main() raises:
             cta_group=2,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(576),
-            Idx(512),
+            Int(512),
+            Idx[576],
+            Idx[512],
         )
 
         # Additional 2SM test with larger cluster (4,4,1) from original tests
@@ -334,9 +324,9 @@ def main() raises:
             cta_group=2,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(4096),
-            Idx(1024),
+            Int(512),
+            Idx[4096],
+            Idx[1024],
         )
 
         print("\n=== ALL SMOKE TESTS PASSED ===")

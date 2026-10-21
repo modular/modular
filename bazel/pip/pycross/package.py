@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import defaultdict
+from collections.abc import Collection
 from typing import Any
 
 from dependency import Dependency
@@ -22,7 +23,12 @@ from utils import assert_keys
 
 
 class Package:
-    def __init__(self, blob: dict[str, Any], all_versions: dict[str, str]):
+    def __init__(
+        self,
+        blob: dict[str, Any],
+        all_versions: dict[str, str],
+        skip_optional_deps: Collection[tuple[str, str]] = (),
+    ):
         assert_keys(
             blob,
             required={"name", "version"},
@@ -64,6 +70,7 @@ class Package:
             Dependency(dep, all_versions)
             for deps in blob.get("optional-dependencies", {}).values()
             for dep in deps
+            if (self.name, dep["name"]) not in skip_optional_deps
         ]
         unique_dependencies: dict[str, Dependency] = {}
         for dep in all_dependencies:
@@ -176,6 +183,12 @@ class Package:
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,"""
 
+        patches_line = ""
+        if self.library_name.startswith("torch@2.9.1"):
+            # Backport https://github.com/pytorch/pytorch/pull/167046
+            patches_line = """
+        post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],"""
+
         package += f"""\
     native.alias(
         name = "{self.wheel_target_name}",
@@ -184,7 +197,7 @@ class Package:
 
     pycross_wheel_library(
         name = "{self.library_name}",{deps_line}
-        wheel = ":{self.wheel_target_name}",{tags_line}{testonly_line}
+        wheel = ":{self.wheel_target_name}",{tags_line}{testonly_line}{patches_line}
     )
 
 """

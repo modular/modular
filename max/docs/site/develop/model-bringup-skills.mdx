@@ -1,0 +1,252 @@
+---
+title: Bring up a model with MAX skills
+sidebar_label: Bring-up with MAX skills
+description: Learn how to bring up new Hugging Face models in MAX using AI coding agents and MAX skills, including installation, prompting, and verification.
+---
+
+You can accelerate bringing a new large language model architecture to MAX using
+AI coding agents equipped with MAX skills. These skills
+define automated, step-by-step workflows that let agents inspect Hugging Face
+checkpoints, scaffold custom architectures from similar models, implement
+layer-level differences, and run verification loops.
+
+By delegating the mechanical tasks of mapping configurations and remapping
+weight keys to an agent, you can focus on directing high-level architecture
+decisions and verifying the final inference results.
+
+You can use `import-model` to assist in bringing up a model from an existing
+architecture, and `debug-model` to track down output divergences when the new
+model produces incorrect results. When the model serves correctly, the
+[`eval-model`](https://github.com/modular/skills/blob/main/eval-model/SKILL.md)
+skill measures its task accuracy on standard benchmarks such as GSM8K and MMLU.
+You can then compare it against the original model's published scores. Once the
+model runs correctly, the [`profile-model`](/gpu-system-profiling/) skill
+helps you find where it spends time and whether the GPU is saturated.
+
+## Install MAX skills
+
+To equip your AI coding agent with the model bring-up workflow, you must install
+the MAX skills.
+
+### Install with Claude Code
+
+Add the Modular plugin marketplace to Claude Code and install the MAX skills
+plugin:
+
+```text
+/plugin marketplace add modular/skills
+/plugin install max-skills@modular
+```
+
+The `max-skills` plugin includes the model lifecycle skills used on this page
+(`import-model`, `debug-model`, `migrate-max-v2-to-v3`, and `eval-model`) along
+with skills to serve, benchmark, and profile models. To install all Modular
+skills, including the Mojo skills, use `skills@modular` instead.
+
+### Install with npx
+
+With Codex and other agents, install the skills with
+[Node.js](https://nodejs.org/en/download):
+
+```bash
+npx skills add modular/skills
+```
+
+If you only want to install the model bring-up skill in isolation, specify the
+`--skill` flag:
+
+```bash
+npx skills add modular/skills --skill import-model
+```
+
+To update your skills to the latest version, run:
+
+```bash
+npx skills update
+```
+
+### Install manually
+
+If you prefer to install the skills manually, clone the official repository:
+
+```bash
+git clone https://github.com/modular/skills.git
+```
+
+After cloning, copy or symlink the individual skills into your AI agent's
+configuration directory. For Claude Code, copy the directories into
+`~/.claude/skills/`:
+
+```bash
+cp -r skills/import-model skills/debug-model skills/migrate-max-v2-to-v3 \
+  skills/eval-model ~/.claude/skills/
+```
+
+Consult your specific agent's documentation to find its configuration and skills
+directory.
+
+## Start the model bring-up
+
+To begin, open your AI coding agent in your project workspace and instruct it to
+import the model using its Hugging Face model ID.
+
+The following example prompts start the workflow:
+
+```text
+Import the Hugging Face model "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct" into MAX.
+```
+
+```text
+Bring up the Hugging Face model "stabilityai/stablelm-2-1_6b" in MAX.
+```
+
+After receiving the prompt, the agent starts the decide and plan phase and
+presents the bring-up plan for your review.
+
+## Debug output divergences
+
+A brought-up model can load, compile, and generate tokens yet still disagree
+with the original model. It might return gibberish, pick the wrong greedy token,
+or stay coherent for a while and then drift. The [`debug-model`][debug-model]
+skill is a parity-debugging protocol for a model that serves but produces
+wrong output. For a crash on load or an unfinished module, use `import-model`.
+
+[debug-model]: https://github.com/modular/skills/blob/main/debug-model/SKILL.md
+
+Invoke the skill once `import-model` reports a parity or coherence failure, and
+point it at a reference you can run, such as the same Hugging Face model:
+
+```text
+The MAX implementation of "stabilityai/stablelm-2-1_6b" serves but generates incorrect tokens. Use /debug-model to find where it diverges from the reference.
+```
+
+The agent builds a per-layer tensor-dump comparator that records the reference
+and MAX activations at every layer. It then reads the comparison to localize
+the divergence:
+
+- If a specific layer diverges, the agent hunts that part of the module,
+  verifies a candidate fix against the dumps numerically, and only then
+  recompiles.
+- If every layer matches but the generated text still drifts, the model math
+  is likely correct. The agent bisects the decode state (such as the KV cache)
+  and the harness (tokenizer and chat template).
+
+Review each finding and confirm the fix, the same way you steer the bring-up
+itself. To run the same per-layer comparison yourself, see
+[Layer comparison](/develop/layer-comparison/).
+
+## Migrate an existing architecture to ModuleV3
+
+If you already ported an architecture with the graph API
+([`max.nn`](/api/python/nn/) layers and an explicit
+[`Graph`](/api/python/generated/max.graph.Graph/)), the
+[`migrate-max-v2-to-v3`][migrate-skill] skill converts it to ModuleV3. Point
+the agent at the model's source:
+
+```text
+Migrate the MAX architecture in models/my_model/ to ModuleV3 with /migrate-max-v2-to-v3.
+```
+
+The agent leaves the original implementation in place and writes the ModuleV3
+version next to it, then confirms that both produce the same greedy tokens on
+the same inputs. For a registered architecture, the ModuleV3 variant's name
+ends in `_ModuleV3`, and `max serve --prefer-module-v3` selects it.
+
+[migrate-skill]: https://github.com/modular/skills/blob/main/migrate-max-v2-to-v3/SKILL.md
+
+## How agent-driven model bring-up works
+
+The `import-model` skill drives a phased workflow (decide and plan,
+implement, then verify), and you remain the coordinator and validator at each
+checkpoint. The agent writes the port with the
+[`max.experimental.nn`](/api/python/experimental.nn/) module API, as described
+in the [Model bring-up workflow](/develop/model-bringup-workflow/). The
+sections below describe what the agent delivers in each phase and how you
+steer it. For the full procedure, see the skill's
+[`SKILL.md`](https://github.com/modular/skills/blob/main/import-model/SKILL.md).
+
+### Decide and plan
+
+The agent first checks whether MAX already registers the model's
+`architectures[0]` class. If it does, the agent serves the model with
+`max serve` and stops, because the model doesn't need a port.
+
+Otherwise, the agent reads the model's `config.json`, checkpoint metadata, and
+model card, and scans for hard blockers such as custom CUDA kernels. It runs
+`list_native_archs.py` to list the reference architectures your installed MAX
+ships, then selects the closest one as a donor template (such as
+`llama3_modulev3` or `olmo3`). It compares the donor's modules with the
+Hugging Face modeling code and presents a written plan listing the chosen
+donor and a delta list, one row per difference between the donor and the target.
+
+Review the plan before authorizing the agent to write code. Confirm that it
+chose the correct donor and identified every unique layer property described in
+the model's paper or Hugging Face model card.
+
+### Implement
+
+After you approve the plan, the agent runs
+`scaffold.py --start-from <donor>` to write a skeleton package that subclasses
+the donor:
+
+- `model_config.py`: a subclass of the donor's config class, with a hook for
+  the Hugging Face fields the donor doesn't read.
+- `model.py`: a subclass of the donor's pipeline model that builds your root
+  module and places it on the donor's device or device mesh. It inherits the
+  donor's batch processor.
+- `weight_adapters.py`: an adapter that delegates to the donor's renames.
+- `{model_name}.py`: a subclass of the donor's root module.
+- `arch.py`: a registration that carries the donor's memory planner.
+
+For a vision-language donor, the agent passes `--full-copy`, which copies
+every donor file and renames its classes.
+
+The skeleton still runs the donor's computation. The agent then implements
+each row of the delta list as `max.experimental.nn` modules, maps the
+remaining config fields, and rewrites the weight adapter for your checkpoint.
+
+Make sure the agent updates the copied docstrings and comments so they describe
+your model. Donor files copied with `--full-copy` or by hand keep the donor's
+text until someone rewrites it. The skill requires an audit of that text
+before it reports the implementation as complete.
+
+### Verify and validate
+
+Before serving, the agent runs preflight gates and local checks. These
+include an import smoke test, a lazy build of the module, and a diff between
+the adapter's keys and the module's parameter names. It then serves the model
+locally to confirm that it compiles and loads weights without orphan keys.
+Finally, it compares greedy token generation against the reference Hugging
+Face model.
+
+Review the generated output and verification reports. The skill is still
+evolving and can't guarantee a correct port. If you see gibberish or incoherent
+text, the `debug-model` skill takes the model from here to isolate and resolve
+the divergence.
+
+Greedy token comparison confirms the model matches the reference on a handful of
+prompts. To confirm accuracy holds across a full benchmark, the `eval-model`
+skill runs standard datasets against the served model and compares the scores
+against the original model's model card.
+
+## Next steps
+
+Once the agent has created and verified your new model architecture, you can
+serve and deploy it:
+
+- [Serve custom model architectures](/develop/serve-custom-model-architectures/):
+  Learn how to package and run your new custom model architecture using
+  `max serve`.
+- [Evaluate model accuracy](https://github.com/modular/skills/blob/main/eval-model/SKILL.md):
+  Use the `eval-model` skill to benchmark your served model on standard datasets
+  and compare the scores against the original model.
+- [Logit comparison](/develop/logit-comparison/) and
+  [Layer comparison](/develop/layer-comparison/): Validate the architecture
+  yourself, measuring logit similarity and localizing the first layer that
+  diverges from the reference.
+- [Model bring-up workflow](/develop/model-bringup-workflow/): Read the
+  detailed manual bring-up steps to better understand module compilation,
+  memory sizing, and weight remapping.
+- [Using AI coding assistants](/coding-assistants/): Configure your
+  development environment with rules and context files for general AI-assisted
+  development.

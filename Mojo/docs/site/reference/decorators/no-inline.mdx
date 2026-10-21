@@ -1,0 +1,32 @@
+---
+title: '@no_inline'
+description: Prevents a function from being inlined (in new code, use @inline instead).
+codeTitle: true
+---
+
+:::caution
+
+In new code, prefer [`@inline`](/docs/reference/decorators/inline/), which sets
+the same inline levels and can also take the level from a parameter.
+`@no_inline` is equivalent to `@inline(.never)`.
+
+:::
+
+You can add the `@no_inline` decorator on any function to prevent it from being
+inlined by the compiler.
+
+```mojo
+@no_inline
+def my_large_function():
+    ...
+```
+
+Inlining is an optimization that reduces function call overhead for small,
+frequently-called functions. Functions can be explicitly marked for inlining
+using
+[`@always_inline`](/docs/reference/decorators/always-inline/), or may be inlined
+automatically by the compiler.
+
+Too many inlined functions can slow compilation and substantially increase the
+binary size of the compiled program. In particular, large or complex functions
+may not benefit as much from inlining.

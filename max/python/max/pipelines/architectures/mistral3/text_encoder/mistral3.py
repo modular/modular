@@ -153,6 +153,7 @@ class Mistral3TextEncoderTransformer(Module):
         self.device = config.device
         self._hidden_state_layers = set(config.hidden_state_layers)
         self._sorted_hidden_state_layers = sorted(config.hidden_state_layers)
+        self._output_seq_len = config.output_seq_len
 
         self.rope = RotaryEmbedding(
             dim=self.dim,
@@ -211,11 +212,15 @@ class Mistral3TextEncoderTransformer(Module):
         h = self.embed_tokens(tokens)
 
         selected: dict[int, TensorValue] = {}
-        max_layer = self._sorted_hidden_state_layers[-1]
+        # Use 1-indexed layer numbering to match diffusers convention
+        # where hidden_states[0] = embedding output and hidden_states[k]
+        # = output of transformer layer k-1. So hidden_states[10] means
+        # the output after the 10th transformer block (0-indexed layer 9).
+        max_layer = self._sorted_hidden_state_layers[-1] - 1
         for i, layer in enumerate(self.layers):
             h = layer(h, self.rope)
-            if i in self._hidden_state_layers:
-                selected[i] = h
+            if (i + 1) in self._hidden_state_layers:
+                selected[i + 1] = h
             if i == max_layer:
                 break
 
@@ -227,7 +232,23 @@ class Mistral3TextEncoderTransformer(Module):
         stacked = ops.unsqueeze(stacked, axis=0)
         stacked = ops.permute(stacked, [0, 2, 1, 3])
         seq_len = stacked.shape[1]
-        return ops.reshape(
+        embeds = ops.reshape(
             stacked,
             [1, seq_len, stacked.shape[2] * stacked.shape[3]],
         )
+
+        # If output_seq_len is not none then left-pad the result to the
+        # requested length.
+        if self._output_seq_len is not None:
+            pad_count = self._output_seq_len - seq_len
+            zero = ops.constant(0, dtype=embeds.dtype, device=self.device)
+            zero = ops.reshape(zero, [1, 1, 1])
+            # Prompts longer than output_seq_len should be rejected before ever
+            # starting the request. If somehow we get such a prompt in the graph,
+            # then pad_count will be negative here and we'll crash.
+            zeros = ops.broadcast_to(
+                zero, shape=[1, pad_count, embeds.shape[2]]
+            )
+            embeds = ops.concat([zeros, embeds], axis=1)
+
+        return embeds

@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx, warp_id, WARP_SIZE
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
-from std.gpu.primitives.warp import shuffle_down
+from max.gpu import thread_idx, warp_id, WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
+from max.gpu.primitives.warp import shuffle_down
 from std.random import random_float64
 from std.math import abs
 from std.bit import log2_floor
@@ -47,8 +48,8 @@ def warp_reduce(val: Float32) -> Float32:
 
 
 def warp_level_sum_reduction_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Warp-level sum reduction kernel.
 
@@ -57,15 +58,15 @@ def warp_level_sum_reduction_kernel(
         output: Output scalar for the sum result.
     """
     # Allocate shared memory
-    var input_s = stack_allocation[
+    var input_s = unsafe_stack_allocation[
         BLOCK_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
-    var t = UInt32(thread_idx.x)
+    var t = thread_idx.x
     # Load data into shared memory with initial reduction
-    input_s[Int(t)] = input[Int(t)] + input[Int(t + BLOCK_DIM)]
+    input_s[t] = input[t] + input[t + BLOCK_DIM]
 
     # Unrolled reduction in shared memory until we reach warp level
     comptime LOG2_BLOCK_DIM = log2_floor(BLOCK_DIM)
@@ -75,15 +76,15 @@ def warp_level_sum_reduction_kernel(
     comptime for s in range(NUM_SHARED_ITERATIONS):
         comptime stride = BLOCK_DIM >> (s + 1)
         barrier()
-        if UInt32(thread_idx.x) < UInt32(stride):
-            input_s[Int(t)] += input_s[Int(t + UInt32(stride))]
+        if thread_idx.x < stride:
+            input_s[t] += input_s[t + stride]
 
     barrier()
 
     # Warp 0 does the final reduction using shuffle
     var warp_idx = warp_id()
     if warp_idx == 0:
-        var partial_sum = input_s[Int(t)]
+        var partial_sum = input_s[t]
         partial_sum = warp_reduce(partial_sum)
         if thread_idx.x == 0:
             output[0] = partial_sum
@@ -91,8 +92,8 @@ def warp_level_sum_reduction_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.
@@ -113,13 +114,13 @@ def main() raises:
     comptime N = BLOCK_DIM * 2
 
     # Host memory allocation
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](1)
-    var h_ref = alloc[Float32](1)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](1)
+    var h_ref = unsafe_alloc[Float32](1)
 
     # Initialize input with random values
     for i in range(N):
-        h_input[i] = random_float64().cast[DType.float32]()
+        h_input[i] = random_float64().cast[.float32]()
 
     print(
         (
@@ -133,14 +134,14 @@ def main() raises:
 
     with DeviceContext() as ctx:
         # Device memory allocation
-        var d_input = ctx.enqueue_create_buffer[DType.float32](N)
-        var d_output = ctx.enqueue_create_buffer[DType.float32](1)
+        var d_input = ctx.enqueue_create_buffer[.float32](N)
+        var d_output = ctx.enqueue_create_buffer[.float32](1)
 
         # Copy data to device
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block)
-        ctx.enqueue_function_experimental[warp_level_sum_reduction_kernel](
+        ctx.enqueue_function[warp_level_sum_reduction_kernel](
             d_input,
             d_output,
             grid_dim=(1, 1, 1),
@@ -173,6 +174,6 @@ def main() raises:
         print("SUCCESS: CPU=", h_ref[0], ", GPU=", h_output[0], "match!")
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()

@@ -13,11 +13,12 @@
 
 # Functional tests for dynamic external memory (mainly for Apple Silicon).
 
-from std.gpu import block_idx
-from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import external_memory
-from std.gpu.sync import barrier
+from max.gpu import block_idx
+from max.gpu import thread_idx
+from max.gpu.host import DeviceContext
+from max.gpu.memory import external_memory
+from max.gpu.sync import barrier
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 comptime BLOCK_SIZE = 64
@@ -27,19 +28,19 @@ comptime EXPECTED_SUM = BLOCK_SIZE * (BLOCK_SIZE - 1) // 2
 
 # ── Pattern 1: helper (not the kernel) owns the external_memory reference ─────
 #
-# @no_inline keeps the helper as a distinct function in the IR so the compiler
+# @inline(.never) keeps the helper as a distinct function in the IR so the compiler
 # must handle the callee-uses-extern-shared case.
 
 
-@no_inline
+@inline(.never)
 def _callee_fill_and_reduce(
-    data: UnsafePointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
+    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
 ):
     """Each thread writes its index into shared memory; thread 0 reduces to sum.
     """
     var smem = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=4,
         name="callee_ext",
     ]()
@@ -56,12 +57,12 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
     """Verify that external_memory used only in a callee works correctly."""
     print("== test_external_memory_in_callee")
 
-    def callee_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+    def callee_kernel(data: MutPointer[Float32, MutAnyOrigin]):
         # Kernel itself does NOT call external_memory; the callee does.
         _callee_fill_and_reduce(data, thread_idx.x, block_idx.x)
 
-    var host_buf = alloc[Float32](NUM_BLOCKS)
-    var dev_buf = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS)
+    var host_buf = unsafe_alloc[Float32](NUM_BLOCKS)
+    var dev_buf = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS)
 
     for i in range(NUM_BLOCKS):
         host_buf[i] = -1.0
@@ -69,7 +70,7 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
     ctx.enqueue_copy(dev_buf, host_buf)
 
     comptime kernel = callee_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         dev_buf,
         grid_dim=NUM_BLOCKS,
         block_dim=BLOCK_SIZE,
@@ -83,7 +84,7 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
         assert_equal(host_buf[i], Float32(EXPECTED_SUM))
 
     _ = dev_buf
-    host_buf.free()
+    host_buf.unsafe_free()
 
 
 # ── Pattern 2: external_memory used 2 levels below the kernel ─────────────────
@@ -92,14 +93,14 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
 # external_memory.  _deep_bar is a pure pass-through.
 
 
-@no_inline
+@inline(.never)
 def _deep_baz(
-    data: UnsafePointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
+    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
 ):
     """Innermost callee — owns the external_memory reference."""
     var smem = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=4,
         name="deep_ext",
     ]()
@@ -112,9 +113,9 @@ def _deep_baz(
         data[blk_idx] = s
 
 
-@no_inline
+@inline(.never)
 def _deep_bar(
-    data: UnsafePointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
+    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
 ):
     """Pass-through callee — does NOT reference external_memory."""
     _deep_baz(data, local_idx, blk_idx)
@@ -124,12 +125,12 @@ def test_external_memory_deep_callgraph(ctx: DeviceContext) raises:
     """Verify that external_memory 2 levels below the kernel works correctly."""
     print("== test_external_memory_deep_callgraph")
 
-    def deep_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+    def deep_kernel(data: MutPointer[Float32, MutAnyOrigin]):
         # Kernel calls _deep_bar which calls _deep_baz (the only ext_memory user).
         _deep_bar(data, thread_idx.x, block_idx.x)
 
-    var host_buf = alloc[Float32](NUM_BLOCKS)
-    var dev_buf = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS)
+    var host_buf = unsafe_alloc[Float32](NUM_BLOCKS)
+    var dev_buf = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS)
 
     for i in range(NUM_BLOCKS):
         host_buf[i] = -1.0
@@ -137,7 +138,7 @@ def test_external_memory_deep_callgraph(ctx: DeviceContext) raises:
     ctx.enqueue_copy(dev_buf, host_buf)
 
     comptime kernel = deep_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         dev_buf,
         grid_dim=NUM_BLOCKS,
         block_dim=BLOCK_SIZE,
@@ -151,7 +152,7 @@ def test_external_memory_deep_callgraph(ctx: DeviceContext) raises:
         assert_equal(host_buf[i], Float32(EXPECTED_SUM))
 
     _ = dev_buf
-    host_buf.free()
+    host_buf.unsafe_free()
 
 
 def main() raises:

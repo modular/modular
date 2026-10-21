@@ -13,57 +13,54 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
-import argparse
-import logging
-import tempfile
-import types
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import (
-    Any,
-    ClassVar,
-    Literal,
-    Union,
-    get_args,
-    get_origin,
-    get_type_hints,
-)
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import Field
+from cyclopts import Parameter
+from max.config import ConfigFileModel
+from openai.types.chat import ChatCompletionToolParam
+from openai.types.chat.completion_create_params import ResponseFormat
+from pydantic import (
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-from .datasets import DatasetMode, DistributionParameter
+from .backend_names import Backend
+from .datasets import (
+    DatasetMode,
+    DistributionParameter,
+    TurnSelector,
+)
+from .utils import int_or_none, parse_comma_separated
 
-logger = logging.getLogger(__name__)
-
-from max.config import ConfigFileModel, deep_merge_max_configs
-
-BaseBackend = Literal[
-    "modular",
-    "sglang",
-    "trtllm",
-    "vllm",
-]
-
-Backend = Literal[
-    "modular",
-    "modular-chat",
-    "sglang",
-    "sglang-chat",
-    "trtllm",
-    "trtllm-chat",
-    "vllm",
-    "vllm-chat",
-]
+# Fixed default seed for the workload generator and request sampling. Scheduled
+# and repeated benchmark runs pin this so run-to-run deltas reflect the change
+# under test rather than workload-draw variance. Pass ``--seed none`` (or
+# ``seed: null`` in YAML) to draw a fresh random seed instead.
+DEFAULT_BENCHMARK_SEED = 0x5EED  # spells "SEED" (= 24301)
 
 Endpoint = Literal[
     "/v1/completions",
     "/v1/chat/completions",
     "/v2/models/ensemble/generate_stream",
     "/v1/responses",
+    "/v1/images/generations",
+    "/v1/videos/sync",
+    "/v1/videos",
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
+    "atom": "/reset_prefix_cache",
+    "atom-chat": "/reset_prefix_cache",
+    "mach": "/reset_prefix_cache",
     "modular": "/reset_prefix_cache",
     "modular-chat": "/reset_prefix_cache",
     "vllm": "/reset_prefix_cache",
@@ -76,143 +73,90 @@ BenchmarkTask = Literal[
     "text-generation",
     "text-to-image",
     "image-to-image",
+    "text-to-video",
+    "image-to-video",
 ]
 
 PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
     "text-to-image",
     "image-to-image",
+    "text-to-video",
+    "image-to-video",
+)
+
+# Pixel-generation tasks that emit video. These route to the dedicated video
+# endpoints on backends that have one (see VIDEO_GEN_DEFAULT_ENDPOINT).
+VIDEO_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
+    "text-to-video",
+    "image-to-video",
+)
+
+# Default endpoint per backend for pixel generation tasks.
+# Backends not listed here do not support pixel generation.
+# NOTE: Each endpoint value here is coupled to a specific request driver in
+# get_request_driver_class() in request.py. Adding a new backend that reuses
+# an existing endpoint will route to that endpoint's existing driver.
+PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
+    "modular": "/v1/responses",
+    "modular-chat": "/v1/responses",
+    "mcloud": "/v1/responses",
+    "sglang": "/v1/images/generations",
+    "sglang-chat": "/v1/images/generations",
+    "vllm": "/v1/chat/completions",
+    "vllm-chat": "/v1/chat/completions",
+}
+
+# Override endpoint per backend for video tasks (text-to-video and
+# image-to-video). For vllm-omni use the dedicated /v1/videos/sync endpoint.
+VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
+    "vllm": "/v1/videos/sync",
+    "vllm-chat": "/v1/videos/sync",
+    "sglang": "/v1/videos",
+    "sglang-chat": "/v1/videos",
+}
+
+# Valid endpoints for pixel generation tasks (union of all backend defaults).
+PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
+    set(PIXEL_GEN_DEFAULT_ENDPOINT.values())
+    | set(VIDEO_GEN_DEFAULT_ENDPOINT.values())
+)
+
+# Endpoints whose request drivers actually put input images on the wire.
+# Mixing images into a workload aimed anywhere else would inflate num_tokens
+# and --dry-run image stats for content the server never receives.
+IMAGE_MIXING_ENDPOINTS: frozenset[Endpoint] = frozenset(
+    {"/v1/chat/completions"}
 )
 
 
-def _add_config_file_arg_to_parser(
-    parser: argparse.ArgumentParser,
-) -> argparse.ArgumentParser:
-    """Add the --config-file argument to a parser.
-
-    Args:
-        parser: The parser to add the argument to.
-    """
-    parser.add_argument(
-        "--config-file",
-        type=Path,
-        help="Path to configuration file. If provided, this config will inherit from the default config and override its values.",
+def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
+    """Return the pixel-generation endpoint for a given backend and task."""
+    if task in VIDEO_GENERATION_TASKS and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
+        return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
+    if backend in PIXEL_GEN_DEFAULT_ENDPOINT:
+        return PIXEL_GEN_DEFAULT_ENDPOINT[backend]
+    raise ValueError(
+        f"Backend {backend!r} does not have a default"
+        " pixel-generation endpoint."
     )
-    return parser
-
-
-def _resolve_user_provided_config_file_cli_arg(
-    args: Sequence[str] | None = None,
-) -> tuple[Path | None, list[str]]:
-    """Resolve the user-provided --config-file argument from command line arguments.
-
-    This utility function extracts the config file path from command line arguments
-    before the main argument parsing, allowing the config file to be loaded and used
-    as defaults for the main parser.
-
-    Args:
-        args: Command line arguments to parse. If None, parse from sys.argv.
-
-    Returns:
-        Tuple of (config_file_path, remaining_args) where:
-        - config_file_path: Path to the config file if provided, None otherwise
-        - remaining_args: List of remaining arguments after removing --config-file
-    """
-    # Create a preliminary parser to get the config file path
-    preliminary_parser = argparse.ArgumentParser(add_help=False)
-    preliminary_parser = _add_config_file_arg_to_parser(preliminary_parser)
-
-    # Parse preliminary args to get config file path
-    preliminary_args, remaining_args = preliminary_parser.parse_known_args(
-        args=args
-    )
-    return preliminary_args.config_file, remaining_args
-
-
-def _resolve_argparse_type(
-    field_type: Any,
-) -> tuple[Any, str | type[argparse.Action] | None]:
-    """Determine the appropriate argparse type and action for a type annotation.
-
-    Args:
-        field_type: The type annotation to analyze.
-
-    Returns:
-        Tuple of (type_func, action) for argparse.add_argument().
-    """
-    origin = get_origin(field_type)
-    type_args = get_args(field_type)
-
-    is_union = origin is Union
-    if not is_union and origin is not None and hasattr(types, "UnionType"):
-        is_union = origin is types.UnionType
-
-    if is_union:
-        non_none = [a for a in type_args if a is not type(None)]
-        if len(non_none) == 1:
-            return _resolve_argparse_type(non_none[0])
-        return str, None
-
-    if origin is list:
-        if type_args and type_args[0] in (int, float, str):
-            return type_args[0], None
-        return str, None
-
-    if field_type in (int, float, str):
-        return field_type, None
-
-    if field_type is bool:
-        return None, argparse.BooleanOptionalAction
-
-    return str, None
-
-
-class HardwareConfig(ConfigFileModel):
-    """Configuration class for hardware options."""
-
-    devices: str | None = Field(default=None)
-    """Hardware device on which model will be executed. Valid values: 'cpu', 'gpu', 'gpu:0,1,2'."""
 
 
 class SamplingConfig(ConfigFileModel):
     """Configuration class for sampling options."""
 
+    temperature: float | None = Field(default=None)
+    """Sampling temperature. Default: None (use model / pipeline defaults)."""
+
+    thinking_temperature: float | None = Field(default=None)
+    """Sampling temperature override for tokens inside a ``<think>...</think>``
+    block. MAX-only OpenAI extension; other backends will ignore or reject
+    the field. Default: None (request omits the field)."""
+
+    top_p: float | None = Field(default=None)
+    """Nucleus sampling cumulative probability threshold. Default: None (use defaults)."""
+
     top_k: int | None = Field(default=None)
     """Limits the sampling to the K most probable tokens. Default: None (no sampling)."""
-
-
-class BenchmarkCommonConfig(ConfigFileModel):
-    tokenizer: str | None = None
-    """Name or path of the tokenizer, if not using the default tokenizer."""
-
-    model_max_length: int | None = None
-    """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
-
-    trust_remote_code: bool = False
-    """Trust remote code from huggingface."""
-
-    # Dataset configuration (common across all benchmark types)
-    dataset_name: str | None = None
-    """Name of the dataset to benchmark on."""
-
-    dataset_path: str | None = None
-    """Path to the dataset."""
-
-    dataset_mode: DatasetMode = "huggingface"
-    """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
-
-    # Basic workload parameters
-    num_prompts: int | None = None
-    """Number of prompts to process."""
-
-    seed: int = 0
-    """Random seed for reproducibility."""
-
-    # Control flags
-    disable_tqdm: bool = False
-    """Specify to disable tqdm progress bar."""
-
-    print_inputs_and_outputs: bool = False
-    """Print all input and outputs to console."""
 
 
 class BaseBenchmarkConfig(ConfigFileModel):
@@ -226,9 +170,6 @@ class BaseBenchmarkConfig(ConfigFileModel):
     - Result saving configuration
     - Common control flags
     """
-
-    _config_file_section_name: ClassVar[str] = "benchmark_config"
-    """The section name to use when loading this config from a config file."""
 
     section_name: str | None = Field(default="benchmark_config", exclude=True)
     """Default section name for benchmark config files.
@@ -245,6 +186,26 @@ class BaseBenchmarkConfig(ConfigFileModel):
     tokenizer: str | None = Field(
         default=None,
         description="Name or path of the tokenizer, if not using the default tokenizer.",
+    )
+
+    tokenizer_local_files_only: bool = Field(
+        default=False,
+        description=(
+            "Load the tokenizer from the local HF cache only. Set this for a"
+            " checkpoint the Hub will not serve this caller, where the remote"
+            " chat-template probe fails instead of degrading."
+        ),
+    )
+
+    tokenizer_revision: str | None = Field(
+        default=None,
+        description=(
+            "Commit revision to load the tokenizer at. Set this for a"
+            " checkpoint whose revision cannot be looked up on the Hub (a"
+            " private repo, or one staged into the cache with no branch ref),"
+            " where the default lookup returns nothing and the load falls back"
+            " to ``main``."
+        ),
     )
 
     model_max_length: int | None = Field(
@@ -279,9 +240,17 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Number of prompts to process.",
     )
 
-    seed: int = Field(
-        default=0,
-        description="Random seed for reproducibility.",
+    seed: int | None = Field(
+        default=DEFAULT_BENCHMARK_SEED,
+        description=(
+            "Random seed for the workload generator and request sampling. "
+            "Defaults to a fixed value so repeated and scheduled runs are "
+            "reproducible and run-to-run deltas reflect the change under test "
+            "rather than workload-draw variance. Pass ``--seed none`` (or "
+            "``seed: null`` in YAML) to draw a fresh random seed instead; the "
+            "drawn seed is logged and recorded with the results so the run "
+            "stays reproducible after the fact."
+        ),
     )
 
     # Control flags
@@ -295,208 +264,157 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Print all input and outputs to console.",
     )
 
-    # TODO: This can be removed once we're on cyclopts.
+    verbose: bool = Field(
+        default=False,
+        description="Enable detailed DEBUG logging.",
+    )
+
+    @field_validator("seed", mode="before")
     @classmethod
-    def help(cls) -> dict[str, str]:
-        """Build help dictionary from pydantic field descriptions.
+    def _parse_seed_cli_string(cls, value: object) -> object:
+        """Map the CLI/YAML string ``none`` to ``None`` (draw a random seed)."""
+        if isinstance(value, str):
+            return int_or_none(value)
+        return value
 
-        Returns:
-            Dictionary of config options and their descriptions.
-        """
-        return {
-            name: field_info.description
-            for name, field_info in cls.model_fields.items()
-            if field_info.description
-        }
 
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the benchmark config."""
-        return {"model"}
+# response_format and tools are typed as plain JSON containers because
+# cyclopts cannot take a union of TypedDicts as a flag; their validators check
+# the OpenAI shapes with these.
+_RESPONSE_FORMAT_ADAPTER: TypeAdapter[ResponseFormat] = TypeAdapter(
+    ResponseFormat
+)
+_TOOLS_ADAPTER: TypeAdapter[list[ChatCompletionToolParam]] = TypeAdapter(
+    list[ChatCompletionToolParam]
+)
 
-    @classmethod
-    def from_config_file(
-        cls,
-        config_path: str | Path,
-        section_name: str | None = None,
-    ) -> "BaseBenchmarkConfig":
-        """Load configuration from a YAML file.
 
-        Args:
-            config_path: Path to the YAML configuration file.
-            section_name: Optional section name override.
+def _json_from_argument(value: object, field: str, inline_start: str) -> object:
+    """Resolve one argument into parsed JSON, from any of its spellings.
 
-        Returns:
-            An instance of this config class populated from the file.
-        """
-        config_path = Path(config_path)
-        if not config_path.exists():
-            raise FileNotFoundError(
-                f"Configuration file not found: {config_path}"
-            )
+    A string is inline JSON when it starts with ``inline_start``, and
+    otherwise a path to a JSON/YAML file.
+    Anything else is already parsed, as from a config or workload YAML, and
+    passes through for the field's type to check.
 
-        with open(config_path, encoding="utf-8") as f:
-            config_dict = yaml.safe_load(f)
+    Args:
+        value: The raw argument.
+        field: The field's name, for error messages.
+        inline_start: The character an inline value starts with.
 
-        if not isinstance(config_dict, dict):
-            raise ValueError(
-                "Configuration file must contain a dictionary at the top level"
-            )
+    Returns:
+        The parsed value.
 
-        section = section_name or cls._config_file_section_name
-        if section in config_dict:
-            config_data = config_dict[section]
-            if not isinstance(config_data, dict):
-                config_data = {}
-        else:
-            config_data = config_dict
-
-        valid_fields = set(cls.model_fields.keys())
-        filtered = {
-            k: v
-            for k, v in config_data.items()
-            if k in valid_fields and v is not None
-        }
-        unknown = [k for k in config_data if k not in valid_fields]
-        if unknown:
-            logger.warning(
-                f"Ignoring unknown configuration keys for {cls.__name__}: {unknown}"
-            )
-
-        return cls(**filtered)
-
-    def cli_arg_parsers(
-        self,
-        choices_provider: dict[str, list[str]] | None = None,
-        description: str | None = None,
-        formatter_class: type[argparse.HelpFormatter] | None = None,
-        required_params: set[str] | None = None,
-    ) -> argparse.ArgumentParser:
-        """Create an ArgumentParser populated with all config fields.
-
-        Args:
-            choices_provider: Dictionary mapping field names to valid choices.
-            description: Description for the argument parser.
-            formatter_class: Formatter class for the argument parser.
-            required_params: Set of field names that should be required.
-
-        Returns:
-            A configured ArgumentParser.
-        """
-        extra_kwargs: dict[str, Any] = {}
-        if formatter_class is not None:
-            extra_kwargs["formatter_class"] = formatter_class
-
-        parser = argparse.ArgumentParser(
-            description=description, **extra_kwargs
-        )
-        choices_provider = choices_provider or {}
-        required_params = (
-            required_params
-            if required_params is not None
-            else self.get_default_required_fields()
-        )
-
+    Raises:
+        ValueError: If the string is neither inline JSON nor a readable
+            file, or the content fails to parse or is empty.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if text.startswith(inline_start):
+        source, origin = text, "inline JSON"
+    else:
+        path = Path(text)
         try:
-            type_hints = get_type_hints(self.__class__)
-        except (NameError, AttributeError):
-            type_hints = {}
-
-        _internal_fields = {"config_file", "section_name"}
-        groups: dict[str, list[tuple[str, Any]]] = {}
-        ungrouped: list[tuple[str, Any]] = []
-
-        for name, field_info in self.model_fields.items():
-            if name.startswith("_") or name in _internal_fields:
-                continue
-            extra = field_info.json_schema_extra
-            raw_group = extra.get("group") if isinstance(extra, dict) else None
-            group_name = raw_group if isinstance(raw_group, str) else None
-            if group_name:
-                groups.setdefault(group_name, []).append((name, field_info))
-            else:
-                ungrouped.append((name, field_info))
-
-        for group_name, group_fields in groups.items():
-            group_desc = None
-            for _, fi in group_fields:
-                ex = fi.json_schema_extra
-                if isinstance(ex, dict) and "group_description" in ex:
-                    group_desc = ex["group_description"]
-                    break
-            group = parser.add_argument_group(group_name, group_desc)
-            for name, fi in group_fields:
-                self._add_field_as_cli_argument(
-                    group,
-                    name,
-                    fi,
-                    type_hints,
-                    choices_provider,
-                    required_params,
-                )
-
-        for name, fi in ungrouped:
-            self._add_field_as_cli_argument(
-                parser, name, fi, type_hints, choices_provider, required_params
-            )
-
-        return parser
-
-    def _add_field_as_cli_argument(
-        self,
-        parser_or_group: argparse.ArgumentParser | argparse._ArgumentGroup,
-        name: str,
-        field_info: Any,
-        type_hints: dict[str, Any],
-        choices_provider: dict[str, list[str]],
-        required_params: set[str],
-    ) -> None:
-        """Add a single pydantic field as an argparse argument."""
-        field_name = name.replace("_", "-")
-        arg_name = f"--{field_name}"
-
-        field_type = type_hints.get(name, field_info.annotation)
-        arg_type, action = _resolve_argparse_type(field_type)
-
-        field_value = getattr(self, name)
-        arg_kwargs: dict[str, Any] = {"default": field_value}
-
-        if name in choices_provider:
-            arg_kwargs["choices"] = choices_provider[name]
-
-        if field_info.description:
-            arg_kwargs["help"] = field_info.description
-
-        if name in required_params:
-            arg_kwargs["required"] = True
-
-        if action:
-            arg_kwargs["action"] = action
-            parser_or_group.add_argument(arg_name, **arg_kwargs)
-        elif get_origin(field_type) is list:
-            arg_kwargs.update({"type": arg_type, "nargs": "*"})
-            parser_or_group.add_argument(arg_name, **arg_kwargs)
-        else:
-            arg_kwargs["type"] = arg_type
-            parser_or_group.add_argument(arg_name, **arg_kwargs)
+            source = path.read_text()
+        except OSError as e:
+            raise ValueError(
+                f"{field} {text!r} is not a readable file path; an inline "
+                f"value must start with {inline_start!r}: {e}"
+            ) from e
+        origin = f"file {str(path)!r}"
+    try:
+        parsed = yaml.safe_load(source)
+    except yaml.YAMLError as e:
+        raise ValueError(f"Failed to parse {field} ({origin}): {e}") from e
+    # An empty or null-only file loads as None, which would silently unset
+    # the field.
+    if parsed is None:
+        raise ValueError(f"{field} ({origin}) is empty.")
+    return parsed
 
 
-class ServingBenchmarkConfig(BaseBenchmarkConfig):
+class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
+    """Fields shared by every serving-style benchmark.
+
+    Sits between :class:`BaseBenchmarkConfig` and the concrete
+    :class:`ServingBenchmarkConfig` class. Holds fields whose type and default
+    align across serving codepaths so downstream configs can opt into shared
+    behavior without per-codepath overrides.
+    """
+
+    burstiness: float = Field(
+        default=1.0,
+        description="Burstiness factor (1.0 = Poisson process).",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    skip_test_prompt: bool = Field(
+        default=False,
+        description="Skip the test prompt. Useful when doing external profiling.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    collect_gpu_stats: bool = Field(
+        default=True,
+        description="Enable GPU stats collection (NVIDIA only).",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    lora_paths: list[str] = Field(
+        default_factory=list,
+        description="Paths to existing LoRA adapters. Format: 'path' or 'name=path'.",
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    lora_uniform_traffic_ratio: float = Field(
+        default=0.0,
+        description=(
+            "Probability of selecting any LoRA uniformly at random (vs base model). "
+            "Only used when per_lora_traffic_ratio is not specified. Range: 0.0-1.0."
+        ),
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    per_lora_traffic_ratio: list[float] = Field(
+        default_factory=list,
+        description=(
+            "Traffic percentages for each LoRA adapter in the benchmark. "
+            "Must have same length as lora_paths. Sum must not exceed 1.0. "
+            "Remainder goes to base model requests. "
+            "If specified, overrides lora_uniform_traffic_ratio."
+        ),
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+
+class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     """Configuration class for serving benchmarks (benchmark_serving.py).
 
-    Inherits from BaseBenchmarkConfig and adds serving-specific parameters:
+    Inherits shared serving fields (burstiness, LoRA traffic, GPU stats,
+    skip_test_prompt) from :class:`BaseServingBenchmarkConfig` and adds
+    serving-specific parameters:
+
     - Backend and API configuration
-    - Request configuration (concurrency, LoRA)
-    - Traffic control (request rate, burstiness, TTFT)
+    - Request configuration (concurrency, sweeps)
+    - Traffic control (request rate, TTFT)
     - Chat session configuration
     - Serving-specific dataset parameters
-    - GPU stats collection
+    - CPU and server stats collection
     """
+
+    # TODO(MXTOOLS-166): The validate_assignment here is only because workload
+    # YAMLs are not themselves parsed with Pydantic, and when we set fields via
+    # _apply_workload_to_config, we rely on re-running the validators.
+    # Workload YAMLs should probably be parsed with Pydantic too, and then
+    # values need not be re-validated, and validate_assignment can be removed.
+    model_config = ConfigDict(strict=False, validate_assignment=True)
 
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
-        description="Backend to use for benchmarking. Choices: modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
+        description="Backend to use for benchmarking. Choices: atom, atom-chat, mach, mcloud, modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
         json_schema_extra={
             "group": "Backend and API Configuration",
             "group_description": "Configuration for backend selection and API endpoints",
@@ -523,30 +441,61 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 
     endpoint: Endpoint = Field(
         default="/v1/chat/completions",
-        description="API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream",
+        description="API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v1/images/generations, /v2/models/ensemble/generate_stream. For pixel generation tasks, auto-selected from backend if not specified.",
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
     benchmark_task: BenchmarkTask = Field(
         default="text-generation",
-        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image",
+        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video, image-to-video",
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
     # Request configuration (serving-specific)
-    max_concurrency: str | None = Field(
-        default=None,
-        description="Maximum concurrent requests (optimized for serving benchmarks). Can be a single integer, 'None', or comma-separated string for sweep configs.",
+    max_concurrency: Sequence[int | None] = Field(
+        default=[None],
+        description=(
+            "Maximum concurrent requests per sweep step. Parsed from a single "
+            "value or comma-separated string (e.g. ``1,none,8``); ``none`` means "
+            "unbounded."
+        ),
         json_schema_extra={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
-            "sweepable_type": "int",
         },
     )
 
     lora: str | None = Field(
         default=None,
         description="Optional LoRA name.",
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
+    max_concurrent_conversations: int | None = Field(
+        default=None,
+        description=(
+            "Maximum conversation workers active at once for KV-cache stress "
+            "benchmarking. When set, runs run_kv_cache_stress_benchmark "
+            "instead of run_multiturn_benchmark: each worker drives one chat "
+            "session to completion before picking up the next, keeping all "
+            "session KV caches resident simultaneously. "
+            "--max-concurrency caps in-flight turn requests and must be <= "
+            "--max-concurrent-conversations to stress the server's KV-cache: "
+            "more open sessions than active turns grows the footprint and "
+            "increases the likelihood of offloading or dropping pre-computed "
+            "historical KV data."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
+    kv_block_size: int = Field(
+        default=128,
+        description=(
+            "KV cache block (page) size in tokens, used to block-align the "
+            "per-turn cache retention metric. Should match the server's "
+            "--kv-cache-page-size so retention reflects true block-aligned "
+            "cache reuse."
+        ),
         json_schema_extra={"group": "Request Configuration"},
     )
 
@@ -576,8 +525,19 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Workload Configuration"},
     )
 
+    force_unique_runs: bool = Field(
+        default=False,
+        description=(
+            "Prepend a single run-level UUID prefix to every prompt in this run. "
+            "All requests in the same run share the same prefix, preserving "
+            "within-run system-prompt prefix caching while preventing KV-cache "
+            "reuse across benchmark runs."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
+    )
+
     # Output control (serving-specific extensions)
-    output_lengths: str | None = Field(
+    output_lengths: str | int | None = Field(
         default=None,
         description="Path to YAML file with output lengths or int.",
         json_schema_extra={
@@ -592,9 +552,32 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    disable_ignore_eos: bool = Field(
+        default=False,
+        description=(
+            "Let requests stop at EOS. By default requests ignore EOS and "
+            "generate their full target length, so every backend generates "
+            "the same number of tokens. With this flag the target length only "
+            "caps generation, which speculative decoding needs: a drafter "
+            "cannot predict tokens past a forced EOS. Matches SGLang's "
+            "--disable-ignore-eos."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
     temperature: float | None = Field(
         default=None,
         description="Temperature for sampling.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    thinking_temperature: float | None = Field(
+        default=None,
+        description=(
+            "Temperature override for tokens inside a ``<think>...</think>`` "
+            "block. MAX-only OpenAI extension; other backends will ignore or "
+            "reject the field."
+        ),
         json_schema_extra={"group": "Output Control"},
     )
 
@@ -608,6 +591,116 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=None,
         description="Top-k for sampling.",
         json_schema_extra={"group": "Output Control"},
+    )
+
+    # accepts_keys=False for the same reason extra_body needs it.
+    response_format: Annotated[
+        dict[str, Any] | None, Parameter(accepts_keys=False)
+    ] = Field(
+        default=None,
+        description=(
+            "JSON response format for structured output. Can be a JSON string, "
+            "or a path to a JSON/YAML file ('path/to/schema.json'); in a "
+            "--workload-config YAML, a relative path resolves against the "
+            "YAML's directory, or the cwd when nothing is there. "
+            'Example: \'{"type": "json_schema", "json_schema": {...}}\'. '
+            "Applied to the share of traffic --response-format-fraction "
+            "selects, except chat-judge workloads, whose driver builds its "
+            "own requests. Constrained requests run without ignore_eos, so a "
+            "drawn output length caps them rather than pinning them."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    response_format_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or of eligible user "
+            "turns (multi-turn) that --response-format constrains. Drawn per "
+            "request/turn, so at the default --response-format-turn every it "
+            "lands directly on the share of requests that set response_format "
+            "-- the quantity production reports. 'first' and 'last' narrow "
+            "eligibility to one turn per session, so the realized request "
+            "share is correspondingly lower. Defaults to 1.0, so "
+            "--response-format alone still constrains everything."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    response_format_turn: TurnSelector = Field(
+        default="every",
+        description=(
+            "Which user turns of a multi-turn chat session "
+            "--response-format-fraction may constrain: 'every', 'first', or "
+            "'last'. Ignored for single-turn requests."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    tools: Annotated[
+        list[dict[str, Any]] | None,
+        Parameter(accepts_keys=False),
+    ] = Field(
+        default=None,
+        description=(
+            "OpenAI chat-completions tool definitions to send, as a JSON list "
+            "or a path to a JSON/YAML file ('path/to/tools.json'); in a "
+            "--workload-config YAML, a relative path resolves against the "
+            "YAML's directory, or the cwd when nothing is there. Applied to "
+            "the share "
+            "of traffic --tools-fraction selects, except chat-judge "
+            "workloads, whose driver builds its own requests, and requests "
+            "whose dataset already attached tools. The rendered definitions "
+            "are carved out of a chat session's first turn or a single-turn "
+            "string prompt, so the drawn input length still describes the "
+            "whole prompt. Unrelated to --agentic-tool-profiles, which shapes "
+            "agent-loop load and sends no tools."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    tools_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or of chat sessions "
+            "(multi-turn) that carry --tools. A selected session carries them "
+            "on every turn, as a real agent does, so the realized request "
+            "share tracks the fraction but is weighted by session length. "
+            "Defaults to 1.0, so --tools alone applies to everything."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    # cyclopts wants scalar key=value pairs by default and can't take a single
+    # nested-JSON object or file path as one value. accepts_keys=False passes
+    # the raw token through for the validator to parse.
+    extra_body: Annotated[dict[str, Any], Parameter(accepts_keys=False)] = (
+        Field(
+            default_factory=dict,
+            description=(
+                "Extra top-level fields to add to every text-generation request "
+                "body, for fields without a dedicated flag (e.g. stop, "
+                "chat_template_kwargs). On the CLI, pass an inline JSON object "
+                '(e.g. \'{"stop": ["}"], "chat_template_kwargs": '
+                '{"reasoning_effort": "low"}}\') or a path to a YAML/JSON file; '
+                "it can also be set as a field in a --config-file YAML. Nested "
+                "objects and "
+                "arrays are kept verbatim. Applied after the dedicated flags "
+                "(--temperature, --max-output-len, --response-format, etc.), so a "
+                "key that collides with one overrides it (last-writer-wins, and "
+                "the collision is logged). Currently applied only to "
+                "text-generation requests (the chat/completions, completions, "
+                "and TensorRT-LLM generate_stream endpoints); ignored for "
+                "image/video generation tasks."
+            ),
+            json_schema_extra={"group": "Output Control"},
+        )
     )
 
     # Image generation options (serving-specific)
@@ -647,21 +740,23 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    num_frames: int | None = Field(
+        default=None,
+        description="Number of frames to generate. Required for text-to-video.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
     # Traffic control (serving-specific)
-    request_rate: str = Field(
-        default="inf",
-        description="Requests per second (finite rate for realistic benchmarking). Can be a single float value or comma-separated string for sweep configs.",
+    request_rate: Sequence[float] = Field(
+        default=[float("inf")],
+        description=(
+            "Requests per second per sweep step. Parsed from a single value or "
+            "comma-separated string (use ``inf`` for unlimited)."
+        ),
         json_schema_extra={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
-            "sweepable_type": "float",
         },
-    )
-
-    burstiness: float = Field(
-        default=1.0,
-        description="Burstiness factor (1.0 = Poisson process).",
-        json_schema_extra={"group": "Traffic Control"},
     )
 
     skip_first_n_requests: int | None = Field(
@@ -688,15 +783,45 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    randomize_starting_turn: bool = Field(
+    use_session_id_as_cache_salt: bool = Field(
         default=False,
-        description="Start each multi-turn session at a random turn offset. Prefix turns run densely (no inter-turn delay) to build KV cache context and are excluded from benchmark results.",
+        description="Send each multi-turn chat session's id as the X-Cache-Salt header on every request in that session, so MAX Serve's per-session KV-cache isolation can be measured. Same salt across a session's turns; distinct salt per session. No-op against servers that ignore the header.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    randomize_session_start: bool = Field(
+    warmup_to_steady_state: bool = Field(
+        default=True,
+        description="Attempt to start the benchmark in steady state by starting with a later turn distribution. Disable to start every session at turn 0.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_oversample_factor: int = Field(
+        default=8,
+        description="Warmup-candidate pool multiplier (sessions per warmup slot). 0 disables length-biased warmup; 1 = uniform random turn warmup; >=2 = length-biased warmup.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_delay_biased: bool = Field(
         default=False,
-        description="Add a random sleep (0 to inter-turn delay) before each session's first measured query to spread out the initial wave of requests.",
+        description="Bias warmup session/turn selection by inter-turn think time (sum of delays) instead of turn count. Requires delays to be configured; falls back to turn-based when none are present.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_delay_estimated_ttft_ms: float = Field(
+        default=0.0,
+        description="Estimated time-to-first-token in milliseconds per turn. When set (with --warmup-delay-biased), warmup weights each turn by its occupancy (estimated generation time + inter-turn delay) instead of delay alone, better matching steady state for high-TPOT / long-output workloads. 0 = off.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_delay_estimated_tpot_ms: float = Field(
+        default=0.0,
+        description="Estimated time-per-output-token in milliseconds, used with --warmup-delay-estimated-ttft-ms to weight warmup by per-turn generation time (ttft + tpot * output_len). Only valid with --warmup-delay-biased. 0 = off.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_concurrency: int = Field(
+        default=128,
+        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -744,9 +869,65 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         description="Size of random images to generate.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
+    image_fraction: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or chat sessions "
+            "(multi-turn) that get at least one generated image mixed in, on "
+            "top of whatever dataset is selected via --dataset-name. Drawn "
+            "per session in multi-turn rather than per request, because the "
+            "chat driver resends history: with --image-turn every and "
+            "--image-count 1 it equals both newly-encoded images per request "
+            "and the share of requests carrying one, whereas 'first'/'last' "
+            "encode once per session and so cut the encoder rate by roughly "
+            "the session's turn count. Only the image turn and later turns "
+            "resend it, so 'first' keeps the share of requests carrying one "
+            "at the fraction while 'last' cuts it like the encoder rate. "
+            "Mutually exclusive with "
+            "--random-image-count/--random-image-size."
+        ),
+        json_schema_extra={"group": "Multimodal"},
+    )
+    image_count: DistributionParameter = Field(
+        default=1,
+        description="Distribution for the number of images on a request/turn selected to have images (used with --image-fraction). E.g. 'DU(1,4)'.",
+        json_schema_extra={"group": "Multimodal"},
+    )
+    image_long_side: DistributionParameter = Field(
+        default=512,
+        description="Distribution for each generated image's longer side, in pixels (used with --image-fraction). E.g. 'U(224,1024)'.",
+        json_schema_extra={"group": "Multimodal"},
+    )
+    image_aspect_ratio: DistributionParameter = Field(
+        default=1.0,
+        description="Distribution for each generated image's width/height ratio (used with --image-fraction). 1.0 produces square images.",
+        json_schema_extra={"group": "Multimodal"},
+    )
+    image_turn: TurnSelector = Field(
+        default="first",
+        description=(
+            "Which user turn(s) in a multi-turn chat session get images when "
+            "selected: 'first', 'last', or 'every'. Ignored for single-turn "
+            "requests."
+        ),
+        json_schema_extra={"group": "Multimodal"},
+    )
+    image_num_turns: DistributionParameter | None = Field(
+        default=None,
+        description=(
+            "Distribution for the number of user turns in a chat session "
+            "selected for images (used with --image-fraction). A longer "
+            "session is cut to the drawn length; a shorter one is kept. "
+            "Unset leaves image sessions as sampled."
+        ),
+        json_schema_extra={"group": "Multimodal"},
+    )
     random_input_len: DistributionParameter = Field(
         default=1024,
-        description="Number of input tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of input tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_max_num_unique_sys_prompt: int = Field(
@@ -761,13 +942,54 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     random_output_len: DistributionParameter = Field(
         default=128,
-        description="Number of output tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of output tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_sys_prompt_ratio: float = Field(
         default=0.0,
         description="Ratio to determine the system prompt length, used only for random sampling.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
+    )
+    # accepts_keys=False for the same reason extra_body needs it: cyclopts
+    # would otherwise want scalar key=value pairs rather than one token.
+    agentic_tool_profiles: Annotated[
+        dict[str, Any] | None, Parameter(accepts_keys=False)
+    ] = Field(
+        default=None,
+        description=(
+            "Load shapes for the agent-loop rounds that follow each human"
+            " turn, synthesized rather than replayed. These are not tool"
+            " definitions: nothing here is sent as the OpenAI 'tools' field."
+            " A path to a YAML file, or an inline YAML/JSON mapping holding"
+            " a 'tools' list, e.g."
+            ' \'{"tools":[{"input-len":"N(200,80)",'
+            '"output-len":"N(190,60)"}]}\'; it can also be nested directly'
+            " in a --workload-config YAML. Each round is one request"
+            " carrying one tool result. Requires --fit-distributions and"
+            " --agentic-rounds-per-turn, on a multiturn dataset that"
+            " supports fitting."
+        ),
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
+    )
+    agentic_rounds_per_turn: DistributionParameter | None = Field(
+        default=None,
+        description=(
+            "Number of agent-loop rounds following each human turn,"
+            " sampled once per turn. Accepts a constant or a distribution"
+            " string (same format as --random-input-len). Requires"
+            " --agentic-tool-profiles."
+        ),
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
+    )
+    fit_distributions: bool = Field(
+        default=False,
+        description=(
+            "With --num-chat-sessions on instruct-coder or agentic-code, reshape "
+            "workloads to match random_* and delay_between_chat_turns (same "
+            "semantics as random multiturn). Unsupported for code-debug multiturn. "
+            "Random/synthetic datasets already follow these distributions."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
     )
     sonnet_input_len: int = Field(
         default=550,
@@ -781,23 +1003,35 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
 
     # Control flags (serving-specific)
-    skip_test_prompt: bool = Field(
+    warm_shared_prefix: bool = Field(
         default=False,
-        description="Skip the test prompt. Useful when doing external profiling.",
+        description=(
+            "Send each unique shared prefix once (max_tokens=1) before the"
+            " benchmark run to prime prefix-cache KV entries. Supported for"
+            " random/synthetic datasets, or instruct-coder/agentic-code with"
+            " --fit-distributions; in all cases requires"
+            " --random-sys-prompt-ratio > 0."
+        ),
         json_schema_extra={
             "group": "Control Flags",
             "group_description": "Boolean flags controlling benchmark behavior",
         },
     )
-    collect_gpu_stats: bool = Field(
-        default=False,
-        description="Enable GPU stats collection for serving benchmarks.",
-        json_schema_extra={"group": "Control Flags"},
-    )
-
     collect_cpu_stats: bool = Field(
         default=True,
         description="Enable CPU stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    server_pids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Explicit PIDs to monitor for CPU stats, including their children."
+            " Bypasses automatic port-based PID detection. Useful when the"
+            " server runs inside a container."
+            " Example: --server-pids $(docker inspect -f '{{.State.Pid}}'"
+            " <container_name>)"
+        ),
         json_schema_extra={"group": "Control Flags"},
     )
 
@@ -807,9 +1041,76 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Control Flags"},
     )
 
+    # `dict[str, str]` (not `Mapping`) so cyclopts 3.24 accepts the
+    # `--metrics-urls.<label>=<url>` syntax for nested keys.
+    metrics_urls: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Explicit Prometheus metrics endpoint URLs, keyed by label "
+            "(e.g. '--metrics-urls.orchestrator=http://host:8001/metrics "
+            "--metrics-urls.engine-0=http://host2:8001/metrics'). "
+            "When empty, a single endpoint is auto-derived from --host/--port."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    gpu_metrics_prometheus_url: str = Field(
+        default="",
+        description=(
+            "Base URL of a Prometheus that scrapes the engine nodes' DCGM "
+            "exporter with Kubernetes pod mapping (e.g. "
+            "'http://kps-prometheus.kube-prometheus-stack.svc:9090'). When "
+            "set with --gpu-metrics-selector, --collect-gpu-stats reports "
+            "each GPU's aggregates over the measured window from Prometheus, "
+            "ahead of --gpu-metrics-host and local NVML."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    gpu_metrics_selector: str = Field(
+        default="",
+        description=(
+            "PromQL label matchers, without braces, that select the engine's "
+            "GPUs in --gpu-metrics-prometheus-url (e.g. "
+            '\'namespace="bench",pod=~"engine-.*"\'). Required with '
+            "--gpu-metrics-prometheus-url, so idle GPUs elsewhere stay out "
+            "of the mean."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    gpu_metrics_host: str = Field(
+        default="",
+        description=(
+            "DCGM-exporter host, 'host:port', or full URL to scrape GPU "
+            "utilization from when the benchmark runs off the accelerator "
+            "node and no Prometheus scrapes it (Mammoth uses "
+            "--gpu-metrics-prometheus-url instead). When set, "
+            "--collect-gpu-stats reads this remote endpoint instead of local "
+            "NVML; --gpu-metrics-prometheus-url takes precedence. A bare host "
+            "expands to 'http://<host>:9400/metrics'. "
+            "Accepts a comma-separated list of endpoints (one exporter pod "
+            "per accelerator node) for multi-node engines; every endpoint is "
+            "scraped each interval and merged into one snapshot."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     print_workload_stats: bool = Field(
         default=False,
         description="Print workload distribution statistics (input/output lengths, num turns, delays).",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    dry_run: bool = Field(
+        default=False,
+        description="Build the dataset and print workload stats + warmup-sampling preview, then exit without contacting the server.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    workload_stats_json: str | None = Field(
+        default=None,
+        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-to-steady-state, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported.",
         json_schema_extra={"group": "Control Flags"},
     )
 
@@ -838,101 +1139,64 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Result Saving"},
     )
 
+    record_request_text: bool = Field(
+        default=False,
+        description=(
+            "Include each request's generated text in the per-request"
+            " records. Needed to compare two runs' outputs; off by default"
+            " because it grows the result file by the size of the run's own"
+            " output."
+        ),
+        json_schema_extra={"group": "Result Saving"},
+    )
+
     result_filename: str | None = Field(
         default=None,
         description="JSON filename for results. If None, no results are saved. Can include directory path.",
         json_schema_extra={"group": "Result Saving"},
     )
 
-    metadata: list[str] = Field(
-        default_factory=list,
-        description='Key-value pairs for metadata (format: ["key=value", ...]).',
+    always_save_result: bool = Field(
+        default=False,
+        description="Save result files even when benchmark validation fails (e.g. some requests errored). The process still exits with code 1 on failure.",
         json_schema_extra={"group": "Result Saving"},
     )
 
-    lora_paths: list[str] = Field(
+    metadata: list[str] = Field(
         default_factory=list,
-        description="Paths to existing LoRA adapters. Format: 'path' or 'name=path'.",
-        json_schema_extra={"group": "LoRA Configuration"},
+        description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
+        json_schema_extra={"group": "Result Saving"},
     )
 
-    lora_uniform_traffic_ratio: float = Field(
-        default=0.0,
-        description=(
-            "Probability of selecting any LoRA uniformly at random (vs base model). "
-            "Only used when per_lora_traffic_ratio is not specified. Range: 0.0-1.0."
-        ),
-        json_schema_extra={"group": "LoRA Configuration"},
+    server_ready_timeout_s: int = Field(
+        default=0,
+        description="Maximum seconds to wait for the server to become ready (HTTP-poll) after sample generation finishes.",
     )
 
-    per_lora_traffic_ratio: list[float] = Field(
-        default_factory=list,
-        description=(
-            "Traffic percentages for each LoRA adapter in the benchmark. "
-            "Must have same length as lora_paths. Sum must not exceed 1.0. "
-            "Remainder goes to base model requests. "
-            "If specified, overrides lora_uniform_traffic_ratio."
-        ),
-        json_schema_extra={"group": "LoRA Configuration"},
-    )
-
-    max_concurrent_lora_ops: int = Field(
-        default=1,
-        description="Maximum concurrent LoRA loading/unloading operations.",
-        json_schema_extra={"group": "LoRA Configuration"},
-    )
-
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the benchmark config."""
-        return super().get_default_required_fields().union({"dataset_name"})
-
-
-class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
-    """Configuration class for sweep serving benchmarks (sweep-benchmark-serving.py).
-
-    Inherits from ServingBenchmarkConfig and adds sweep-specific parameters:
-    - Workload configuration
-    - Logging and debugging options
-    - Result upload configuration
-    - Sweep-specific concurrency and duration parameters
-    - Metadata and result tracking
-    """
-
-    # Workload configuration (sweep-specific)
-    workload_config: str = Field(
-        default="",
-        description="YAML file specifying the workload to benchmark.",
-        json_schema_extra={
-            "group": "Workload Configuration",
-            "group_description": "Parameters controlling workload and dataset configuration",
-        },
-    )
-
-    # Logging and debugging (sweep-specific)
     log_dir: str | None = Field(
         default=None,
-        description="Path to save logs (in event of command failure only). Default: <backend>-latency-Y.m.d-H.M.S",
-        json_schema_extra={
-            "group": "Logging and Debugging",
-            "group_description": "Parameters controlling logging and debugging behavior",
-        },
+        description="Path to save logs. Default: <backend>-latency-Y.m.d-H.M.S",
+        json_schema_extra={"group": "Result Saving"},
     )
 
-    dry_run: bool = Field(
-        default=False,
-        description="Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed.",
-        json_schema_extra={"group": "Logging and Debugging"},
+    latency_percentiles: str = Field(
+        default="50,90,95,99",
+        description="Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported.",
+        json_schema_extra={"group": "Result Saving"},
     )
 
-    # Result upload configuration (sweep-specific)
+    # Workload config file
+    workload_config: str | None = Field(
+        default=None,
+        description="YAML file specifying the workload to benchmark.",
+        json_schema_extra={"group": "Workload Configuration"},
+    )
+
+    # Result upload configuration
     upload_results: bool = Field(
         default=False,
         description="Upload results to BigQuery.",
-        json_schema_extra={
-            "group": "Result Upload Configuration",
-            "group_description": "Parameters controlling result upload to BigQuery",
-        },
+        json_schema_extra={"group": "Result Upload Configuration"},
     )
 
     benchmark_sha: str | None = Field(
@@ -953,30 +1217,11 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
         json_schema_extra={"group": "Result Upload Configuration"},
     )
 
-    # Metadata and result tracking (sweep-specific)
-    metadata: list[str] = Field(
-        default_factory=list,
-        description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
-        json_schema_extra={
-            "group": "Metadata and Result Tracking",
-            "group_description": "Parameters for metadata and result tracking",
-        },
-    )
-
-    latency_percentiles: str = Field(
-        default="50,90,95,99",
-        description="Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported (default: 50,90,95,99).",
-        json_schema_extra={"group": "Metadata and Result Tracking"},
-    )
-
-    # Sweep-specific concurrency and duration parameters
+    # Sweep configuration
     num_iters: int = Field(
         default=1,
         description="Number of iterations to run per configuration.",
-        json_schema_extra={
-            "group": "Sweep Configuration",
-            "group_description": "Parameters controlling sweep behavior and iteration",
-        },
+        json_schema_extra={"group": "Sweep Configuration"},
     )
 
     flush_prefix_cache: bool = Field(
@@ -989,172 +1234,220 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
         default=None,
         description=(
             "When set, num_prompts is computed as num_prompts_multiplier * max_concurrency "
-            "for each concurrency level, replacing the default 300s duration timeout."
+            "for each concurrency level. Mutually exclusive with --num-prompts. Each level "
+            "still stops at --max-benchmark-duration-s, which defaults to 300s."
         ),
-        json_schema_extra={
-            "group": "Sweep Configuration",
-            "cli_flag": "--num-prompts-multiplier",
-        },
+        json_schema_extra={"group": "Sweep Configuration"},
     )
 
+    max_concurrent_lora_ops: int = Field(
+        default=1,
+        description="Maximum concurrent LoRA loading/unloading operations.",
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    @field_validator("max_concurrency", mode="before")
     @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the sweep benchmark config."""
+    def _parse_max_concurrency_cli_strings(cls, value: object) -> object:
+        """Expand comma-separated CLI/env strings (and cyclopts ``['sweep']``)."""
+        if isinstance(value, int):
+            return [value]
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], str)
+        ):
+            value = value[0]
+        if isinstance(value, str):
+            return parse_comma_separated(value, int_or_none)
+        return value
 
-        # TODO: This is really lame. dataset_name is a required flag in benchmark_serving.py,
-        # so you'd think it would also be required here, but it's not. This is
-        # because we only parse dataset_name from the workload config file and not
-        # through the command line in sweep-benchmark-serving.py. Turns out we
-        # also can't quite easily pull that apart trivially when we roll this
-        # part. Will circle back in a follow up PR. the --dataset-name flag
-        # is set to optional here and is a no-op.
-        parent_required_fields = super().get_default_required_fields()
-        parent_required_fields.remove("dataset_name")
-        return parent_required_fields.union({"workload_config"})
+    @field_validator("request_rate", mode="before")
+    @classmethod
+    def _parse_request_rate_cli_strings(cls, value: object) -> object:
+        """Expand comma-separated CLI/env strings (and cyclopts ``['sweep']``)."""
+        if isinstance(value, (int, float)):
+            return [value]
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], str)
+        ):
+            value = value[0]
+        if isinstance(value, str):
+            return parse_comma_separated(value, float)
+        return value
 
+    @field_validator("agentic_tool_profiles", mode="before")
+    @classmethod
+    def _parse_agentic_tool_profiles(cls, value: object) -> object:
+        """Parse the flag from a mapping, inline JSON, or a file path.
 
-def _load_user_provided_config(
-    user_config_path: Path,
-    default_config_path: Path,
-    config_class: type[BaseBenchmarkConfig],
-) -> BaseBenchmarkConfig:
-    """Load user-provided config file with inheritance from default config file.
+        Raises:
+            ValueError: If a string is neither inline JSON nor a readable file.
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        return _json_from_argument(value, "agentic_tool_profiles", "{")
 
-    This function ensures that a user-provided config file inherits from a default
-    config file, allowing users to override only the parameters they need
-    while keeping all the default values from the base configuration.
+    @field_validator("response_format", mode="before")
+    @classmethod
+    def _parse_response_format(cls, value: object) -> object:
+        """Parse ``response_format`` from a mapping, inline JSON, or a file.
 
-    Args:
-        user_config_path: Path to the user-provided configuration file
-        default_config_path: Path to the default configuration file
-        config_class: The benchmark config class to instantiate (e.g., ServingBenchmarkConfig)
+        Raises:
+            ValueError: If a string is neither inline JSON nor a readable file.
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        return _json_from_argument(value, "response_format", "{")
 
-    Returns:
-        Config instance with inherited and overridden values
-    """
-    # Load the user config file
-    with open(user_config_path, encoding="utf-8") as f:
-        user_config_dict = yaml.safe_load(f)
+    @field_validator("tools", mode="before")
+    @classmethod
+    def _parse_tools(cls, value: object) -> object:
+        """Parse ``tools`` from a list, inline JSON, or a file.
 
-    if not isinstance(user_config_dict, dict):
-        raise ValueError(
-            f"User configuration file {user_config_path} must contain a dictionary at the top level"
-        )
-    elif config_class._config_file_section_name not in user_config_dict:
-        logger.warning(
-            f"Cannot find {config_class._config_file_section_name} section in user configuration file {user_config_path}"
-            f"Will not override benchmark config values from default config"
-        )
+        Raises:
+            ValueError: If a string is neither inline JSON nor a readable file.
+        """
+        # cyclopts hands a list-typed flag over as a list of its one token,
+        # which it has already JSON-decoded when it could.
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], (str, list))
+        ):
+            value = value[0]
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        return _json_from_argument(value, "tools", "[")
 
-    # Load the default config file
-    with open(default_config_path, encoding="utf-8") as f:
-        default_config_dict = yaml.safe_load(f)
+    @field_validator("response_format")
+    @classmethod
+    def _check_response_format(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Check ``response_format`` against the OpenAI response formats.
 
-    if not isinstance(default_config_dict, dict):
-        raise ValueError(
-            f"Default configuration file {default_config_path} must contain a dictionary at the top level"
-        )
+        Raises:
+            ValueError: If it matches none of them.
+        """
+        if value is None:
+            return None
+        # pydantic collects only ValueError and AssertionError from a
+        # validator.
+        try:
+            return dict(_RESPONSE_FORMAT_ADAPTER.validate_python(value))
+        except ValidationError as e:
+            raise ValueError(f"Invalid response_format: {e}") from e
 
-    # Merge the configs: user config overrides default config
-    merged_config_dict = deep_merge_max_configs(
-        default_config_dict, user_config_dict
-    )
+    @field_validator("tools")
+    @classmethod
+    def _check_tools(
+        cls, value: list[dict[str, Any]] | None
+    ) -> list[dict[str, Any]] | None:
+        """Check ``tools`` against the OpenAI tool definition.
 
-    # Resolve any depends_on paths relative to the default config file location
-    # This is necessary because user provided configs may not have context on where
-    # the "base" configs are located. This reference is only held in the default config file.
-    if "depends_on" in merged_config_dict:
-        depends_on_path = Path(merged_config_dict["depends_on"])
-        if not depends_on_path.is_absolute():
-            # Resolve relative to the default config file location
-            merged_config_dict["depends_on"] = str(
-                default_config_path.parent / depends_on_path
+        Raises:
+            ValueError: If the list is empty, which would select requests
+                and send them no tools, or holds an invalid definition.
+        """
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("tools must hold at least one tool definition.")
+        try:
+            tools = _TOOLS_ADAPTER.validate_python(value)
+        except ValidationError as e:
+            raise ValueError(f"Invalid tools: {e}") from e
+        return [dict(tool) for tool in tools]
+
+    @property
+    def openai_response_format(self) -> ResponseFormat | None:
+        """``response_format`` as the OpenAI type its validator checked."""
+        if self.response_format is None:
+            return None
+        return _RESPONSE_FORMAT_ADAPTER.validate_python(self.response_format)
+
+    @field_validator("extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value: object) -> object:
+        """Parse ``extra_body`` from a mapping, inline JSON, or a file path.
+
+        Raises:
+            ValueError: If a string is neither inline JSON nor a readable file.
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return {}
+        return _json_from_argument(value, "extra_body", "{")
+
+    @model_validator(mode="after")
+    def _check_warmup_runtime_estimates(self) -> ServingBenchmarkConfig:
+        """Runtime estimates only refine delay-biased warmup."""
+        if (
+            self.warmup_delay_estimated_ttft_ms > 0.0
+            or self.warmup_delay_estimated_tpot_ms > 0.0
+        ) and not self.warmup_delay_biased:
+            raise ValueError(
+                "--warmup-delay-estimated-ttft-ms /"
+                " --warmup-delay-estimated-tpot-ms require"
+                " --warmup-delay-biased to be set."
             )
+        return self
 
-    # Create a temporary config file with the merged content
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    ) as temp_file:
-        yaml.dump(merged_config_dict, temp_file)
-        temp_config_path = temp_file.name
+    @model_validator(mode="after")
+    def _check_gpu_metrics_selector(self) -> ServingBenchmarkConfig:
+        """A Prometheus source needs a selector, or the mean spans the cluster.
 
-    try:
-        config = config_class.from_config_file(temp_config_path)
-        return config
-    finally:
-        # Clean up the temporary file
-        Path(temp_config_path).unlink(missing_ok=True)
+        Checked at parse time so a missing selector fails before warmup
+        rather than after it.
+        """
+        if (
+            self.gpu_metrics_prometheus_url
+            and not self.gpu_metrics_selector.strip()
+        ):
+            raise ValueError(
+                "--gpu-metrics-prometheus-url requires --gpu-metrics-selector."
+            )
+        return self
 
+    @model_validator(mode="after")
+    def _check_image_flags_mutually_exclusive(self) -> ServingBenchmarkConfig:
+        """--image-fraction and --random-image-* are separate mechanisms."""
+        if self.image_fraction > 0 and (
+            self.random_image_count or self.random_image_size
+        ):
+            raise ValueError(
+                "--image-fraction cannot be combined with"
+                " --random-image-count/--random-image-size; use one"
+                " mechanism or the other."
+            )
+        if (
+            self.image_fraction > 0
+            and self.endpoint not in IMAGE_MIXING_ENDPOINTS
+        ):
+            raise ValueError(
+                f"--image-fraction requires an image-capable endpoint"
+                f" ({', '.join(sorted(IMAGE_MIXING_ENDPOINTS))}); got"
+                f" {self.endpoint!r}, whose driver sends text only."
+            )
+        if self.image_fraction > 0 and self.benchmark_task in (
+            PIXEL_GENERATION_TASKS + VIDEO_GENERATION_TASKS
+        ):
+            raise ValueError(
+                "--image-fraction mixes generated images into text prompts and"
+                f" does not apply to the {self.benchmark_task!r} task."
+            )
+        return self
 
-def parse_benchmark_args(
-    config_class: type[BaseBenchmarkConfig],
-    default_config_path: Path,
-    description: str,
-    args: Sequence[str] | None = None,
-) -> argparse.Namespace:
-    """Parse command line arguments for benchmark entrypoints with config file inheritance.
-
-    This function first parses a preliminary argument to get the config file path,
-    then loads the appropriate configuration and re-parses with the loaded config as defaults.
-
-    Its main purpose is to handle user provided config files which override params
-    of a particular benchmark entrypoint.
-
-    Args:
-        config_class: The benchmark config class to instantiate (e.g., ServingBenchmarkConfig)
-        default_config_path: Path to the default configuration file. For benchmark_serving.py,
-        this should be the path to the serving_config.yaml file.
-        description: Description for the argument parser
-        args: Command line arguments to parse. If None, parse from sys.argv.
-
-    Returns:
-        Parsed arguments namespace with config file values as defaults
-    """
-
-    # Parse the config file argument first
-    config_file_path, remaining_args = (
-        _resolve_user_provided_config_file_cli_arg(args=args)
-    )
-
-    if config_file_path is None:
-        logger.info(
-            f"No configuration file path provided, using default {default_config_path} file"
+    @property
+    def sampling(self) -> SamplingConfig:
+        """OpenAI-style completion sampling from flat ``temperature`` / ``top_p`` / ``top_k`` / ``thinking_temperature``."""
+        # TODO: We should just embed SamplingConfig directly.  This may change
+        # the CLI interface, so we'd need to find all callers to update them.
+        return SamplingConfig(
+            temperature=self.temperature,
+            thinking_temperature=self.thinking_temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
         )
-        benchmark_config = config_class.from_config_file(default_config_path)
-    else:
-        # Check if user provided the same file as default
-        if config_file_path.resolve() == default_config_path.resolve():
-            logger.info(f"Using default configuration file: {config_file_path}")
-            benchmark_config = config_class.from_config_file(config_file_path)
-        else:
-            logger.info(
-                f"Using user-provided configuration file: {config_file_path} (will inherit from {default_config_path})"
-            )
-            # Load the user config file and ensure it inherits from default config
-            benchmark_config = _load_user_provided_config(
-                config_file_path, default_config_path, config_class
-            )
-
-    # Create parser using the enhanced config functionality
-    # When a config file is loaded, only require parameters that are not provided in the config
-    required_fields = config_class.get_default_required_fields()
-    provided_required_fields = set()
-
-    for field_name in required_fields:
-        if hasattr(benchmark_config, field_name):
-            field_value = getattr(benchmark_config, field_name)
-            # Consider a field as "provided" if it has a non-None, non-empty value
-            if field_value is not None and field_value != "":
-                provided_required_fields.add(field_name)
-
-    # Only require fields that are not provided in the config
-    still_required_fields = required_fields - provided_required_fields
-
-    parser = benchmark_config.cli_arg_parsers(
-        description=description, required_params=still_required_fields
-    )
-    # This is added only for its help message. It's a no-op and not actually used for parsing
-    # since it's done in the section above.
-    parser = _add_config_file_arg_to_parser(parser)
-    # Parse the remaining arguments with the loaded config as defaults
-    return parser.parse_args(args=remaining_args)

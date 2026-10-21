@@ -89,7 +89,7 @@ def run_smoke_test(model: str, output_path: Path) -> bool | None:
 
 def parse_results(output_path: Path, model: str) -> dict[str, float] | None:
     """Extract accuracy metrics from smoke test output for threshold comparison."""
-    model_dir = output_path / model.lower().strip().replace("/", "__")
+    model_dir = output_path / model.strip().replace("/", "__")
     metrics_file = model_dir / "eval_metrics.json"
 
     if not metrics_file.exists():

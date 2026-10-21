@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import argv, size_of
@@ -24,10 +24,11 @@ from std.ffi import (
 )
 from std.sys.info import CompilationTarget, is_nvidia_gpu
 
-from std.gpu.host import DeviceContext
-from std.gpu.host._nvidia_cuda import CUmodule, CUstream
+from max.gpu.host import DeviceContext
+from max.gpu.host._nvidia_cuda import CUmodule, CUstream
 
 from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
+from .shmem_api import SHMEMScope
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -55,7 +56,8 @@ def _init_nvshmem_dylib() -> OwnedDLHandle:
     #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
     # will dlopen the library from:
     #   /path/to/venv/lib/libnvshmem_host.so.3
-    if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
+    var dir_name = getenv("MODULAR_SHMEM_LIB_DIR")
+    if dir_name:
         lib = String(Path(dir_name) / lib)
     try:
         return OwnedDLHandle(path=lib)
@@ -63,7 +65,7 @@ def _init_nvshmem_dylib() -> OwnedDLHandle:
         abort(t"failed to load NVSHMEM library: {e}")
 
 
-@always_inline
+@inline(.always)
 def _get_nvshmem_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() -> result_type:
@@ -149,16 +151,17 @@ comptime NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
 
 
 # Structs
-struct NVSHMEMXInitAttr:
+struct NVSHMEMXInitAttr[origin: MutOrigin]:
     var version: c_int
-    var mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]
+
+    var mpi_comm: MutPointer[MPIComm, Self.origin]
     var args: NVSHMEMXInitArgs
 
-    def __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
+    def __init__(out self, mpi_comm: MutPointer[MPIComm, Self.origin]):
         comptime assert (
             size_of[Self]() == 144
         ), "NVSHMEMXInitAttr must be 144 bytes"
-        self.version = c_int((1 << 16) + size_of[NVSHMEMXInitAttr]())
+        self.version = c_int((1 << 16) + size_of[Self]())
         self.mpi_comm = mpi_comm
         self.args = NVSHMEMXInitArgs()
 
@@ -166,7 +169,7 @@ struct NVSHMEMXInitAttr:
 struct NVSHMEMXInitArgs:
     var version: c_int
     var uid_args: NVSHMEMXUniqueIDArgs
-    var content: InlineArray[Byte, 96]
+    var content: Array[Byte, 96]
 
     def __init__(out self):
         comptime assert (
@@ -174,12 +177,13 @@ struct NVSHMEMXInitArgs:
         ), "NVSHMEMXInitArgs must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXInitArgs]())
         self.uid_args = NVSHMEMXUniqueIDArgs()
-        self.content = InlineArray[Byte, 96](fill=0)
+        self.content = Array[Byte, 96](fill=0)
 
 
 struct NVSHMEMXUniqueIDArgs:
     var version: c_int
-    var id: UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]
+
+    var id: Optional[MutPointer[NVSHMEMXUniqueID, MutUntrackedOrigin]]
     var myrank: c_int
     var nranks: c_int
 
@@ -188,21 +192,21 @@ struct NVSHMEMXUniqueIDArgs:
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueIDArgs]())
-        self.id = {_unsafe_null = ()}
+        self.id = None
         self.myrank = 0
         self.nranks = 0
 
 
 struct NVSHMEMXUniqueID:
     var version: c_int
-    var internal: InlineArray[Byte, 124]
+    var internal: Array[Byte, 124]
 
     def __init__(out self):
         comptime assert (
             size_of[Self]() == 128
         ), "nvshmemx_uniqueid_t must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueID]())
-        self.internal = InlineArray[Byte, 124](fill=0)
+        self.internal = Array[Byte, 124](fill=0)
 
 
 def _get_prefix[scope: SHMEMScope]() -> StaticString:
@@ -256,36 +260,37 @@ def _dtype_to_nvshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    comptime if dtype == DType.float16:
-        return get_static_string[prefix, "half", suffix, scope]()
-    elif dtype == DType.bfloat16:
-        return get_static_string[prefix, "bfloat16", suffix, scope]()
-    elif dtype == DType.float32:
-        return get_static_string[prefix, "float", suffix, scope]()
-    elif dtype == DType.float64:
-        return get_static_string[prefix, "double", suffix, scope]()
-    elif dtype == DType.int8:
-        return get_static_string[prefix, "int8", suffix, scope]()
-    elif dtype == DType.uint8:
-        return get_static_string[prefix, "uint8", suffix, scope]()
-    elif dtype == DType.int16:
-        return get_static_string[prefix, "int16", suffix, scope]()
-    elif dtype == DType.uint16:
-        return get_static_string[prefix, "uint16", suffix, scope]()
-    elif dtype == DType.int32:
-        return get_static_string[prefix, "int32", suffix, scope]()
-    elif dtype == DType.uint32:
-        return get_static_string[prefix, "uint32", suffix, scope]()
-    elif dtype == DType.int64:
-        return get_static_string[prefix, "int64", suffix, scope]()
-    elif dtype == DType.uint64:
-        return get_static_string[prefix, "uint64", suffix, scope]()
-    elif dtype == DType.int:
-        return get_static_string[prefix, "size", suffix, scope]()
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+    comptime match dtype:
+        case .float16:
+            return get_static_string[prefix, "half", suffix, scope]()
+        case .bfloat16:
+            return get_static_string[prefix, "bfloat16", suffix, scope]()
+        case .float32:
+            return get_static_string[prefix, "float", suffix, scope]()
+        case .float64:
+            return get_static_string[prefix, "double", suffix, scope]()
+        case .int8:
+            return get_static_string[prefix, "int8", suffix, scope]()
+        case .uint8:
+            return get_static_string[prefix, "uint8", suffix, scope]()
+        case .int16:
+            return get_static_string[prefix, "int16", suffix, scope]()
+        case .uint16:
+            return get_static_string[prefix, "uint16", suffix, scope]()
+        case .int32:
+            return get_static_string[prefix, "int32", suffix, scope]()
+        case .uint32:
+            return get_static_string[prefix, "uint32", suffix, scope]()
+        case .int64:
+            return get_static_string[prefix, "int64", suffix, scope]()
+        case .uint64:
+            return get_static_string[prefix, "uint64", suffix, scope]()
+        case .int:
+            return get_static_string[prefix, "size", suffix, scope]()
+        case _:
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -304,19 +309,20 @@ def nvshmemx_init() raises:
     var rank = c_int(0)
     var mpi_comm = get_mpi_comm_world()
 
-    _ = MPI_Comm_rank(mpi_comm, UnsafePointer(to=rank))
+    _ = MPI_Comm_rank(mpi_comm, Pointer(to=rank).as_unsafe_any_origin())
     # Set CUDA device early - needed for CUDA-related NVSHMEM initialization
     var ctx = DeviceContext(device_id=Int(rank))
     ctx.set_as_current()
 
     # Initialize NVSHMEM with MPI
-    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    var attr = NVSHMEMXInitAttr(Pointer(to=mpi_comm))
     # For single process per GPU, fallback to one device per process per node.
     attr.args.uid_args.myrank = 0
     attr.args.uid_args.nranks = 1
 
     _ = nvshmemx_hostlib_init_attr(
-        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
+        NVSHMEMX_INIT_WITH_MPI_COMM,
+        Pointer(to=attr).as_unsafe_any_origin(),
     )
 
     # Check initialization status
@@ -333,12 +339,13 @@ def nvshmemx_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
 
     # Initialize NVSHMEM with MPI
     var mpi_comm = get_mpi_comm_world()
-    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    var attr = NVSHMEMXInitAttr(Pointer(to=mpi_comm))
     attr.args.uid_args.myrank = Int32(ctx.id())
     attr.args.uid_args.nranks = c_int(nranks)
 
     var status = nvshmemx_hostlib_init_attr(
-        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
+        NVSHMEMX_INIT_WITH_MPI_COMM,
+        Pointer(to=attr).as_unsafe_any_origin(),
     )
     if status:
         raise Error("failed to initialize NVSHMEM with status:", status)
@@ -348,41 +355,43 @@ def nvshmemx_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
         raise Error("failed to initialize NVSHMEM with status:", status)
 
 
-def nvshmemx_hostlib_init_attr(
+def nvshmemx_hostlib_init_attr[
+    origin: MutOrigin, //
+](
     flags: UInt32,
-    attr: UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin],
+    attr: MutPointer[NVSHMEMXInitAttr[origin], MutAnyOrigin],
 ) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_hostlib_init_attr",
-        def(UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]) -> c_int,
+        def(UInt32, type_of(attr)) thin -> c_int,
     ]()(flags, attr)
 
 
 def nvshmemx_hostlib_finalize():
     _get_nvshmem_function[
         "nvshmemx_hostlib_finalize",
-        def() -> NoneType,
+        def() thin -> NoneType,
     ]()()
 
 
 def nvshmemx_cumodule_init(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_init",
-        def(CUmodule) -> c_int,
+        def(CUmodule) thin -> c_int,
     ]()(module)
 
 
 def nvshmemx_cumodule_finalize(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_finalize",
-        def(CUmodule) -> c_int,
+        def(CUmodule) thin -> c_int,
     ]()(module)
 
 
 def nvshmemx_init_status() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_init_status",
-        def() -> c_int,
+        def() thin -> c_int,
     ]()()
 
 
@@ -392,7 +401,7 @@ def nvshmem_my_pe() -> c_int:
     else:
         return _get_nvshmem_function[
             "nvshmem_my_pe",
-            def() -> c_int,
+            def() thin -> c_int,
         ]()()
 
 
@@ -402,7 +411,7 @@ def nvshmem_n_pes() -> c_int:
     else:
         return _get_nvshmem_function[
             "nvshmem_n_pes",
-            def() -> c_int,
+            def() thin -> c_int,
         ]()()
 
 
@@ -414,32 +423,32 @@ def nvshmem_n_pes() -> c_int:
 
 def nvshmem_malloc[
     dtype: DType
-](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](size: c_size_t) -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
     return _get_nvshmem_function[
         "nvshmem_malloc",
-        def(c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        def(c_size_t) thin -> MutPointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(size)
 
 
 def nvshmem_calloc[
     dtype: DType
-](count: c_size_t, size: c_size_t) -> UnsafePointer[
-    Scalar[dtype], MutExternalOrigin
+](count: c_size_t, size: c_size_t) -> MutPointer[
+    Scalar[dtype], MutUntrackedOrigin
 ]:
     return _get_nvshmem_function[
         "nvshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        ) thin -> MutPointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(count, size)
 
 
 def nvshmem_free[
     dtype: DType, //
-](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
+](ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin]):
     _get_nvshmem_function[
         "nvshmem_free",
-        def(type_of(ptr)) -> NoneType,
+        def(type_of(ptr)) thin -> NoneType,
     ]()(ptr)
 
 
@@ -452,14 +461,14 @@ def nvshmem_free[
 def nvshmem_team_my_pe(team: c_int) -> c_int:
     return _get_nvshmem_function[
         "nvshmem_team_my_pe",
-        def(c_int) -> c_int,
+        def(c_int) thin -> c_int,
     ]()(team)
 
 
 def nvshmemx_team_init() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_team_init",
-        def() -> c_int,
+        def() thin -> c_int,
     ]()()
 
 
@@ -474,8 +483,8 @@ def nvshmem_put[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -490,8 +499,8 @@ def nvshmem_put_nbi[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -503,7 +512,7 @@ def nvshmem_put_nbi[
 
 def nvshmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype], _], value: Scalar[dtype], pe: c_int,):
+](dest: Pointer[Scalar[dtype], _], value: Scalar[dtype], pe: c_int,):
     comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
     external_call[symbol, NoneType](dest, value, pe)
 
@@ -513,8 +522,8 @@ def nvshmem_get[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -529,8 +538,8 @@ def nvshmem_get_nbi[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -542,7 +551,7 @@ def nvshmem_get_nbi[
 
 def nvshmem_g[
     dtype: DType
-](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
+](source: Pointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
     return external_call[symbol, Scalar[dtype]](source, pe)
 
@@ -555,21 +564,21 @@ def nvshmem_g[
 
 @extern("nvshmemx_signal_op")
 def nvshmemx_signal_op(
-    sig_addr: UnsafePointer[UInt64, MutAnyOrigin],
+    sig_addr: MutPointer[UInt64, MutAnyOrigin],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
-):
+) abi("C"):
     ...
 
 
 def nvshmem_put_signal_nbi[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: Int,
-    sig_addr: UnsafePointer[UInt64, _],
+    sig_addr: Pointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -591,7 +600,7 @@ def nvshmem_put_signal_nbi[
 def nvshmem_sync_all():
     _get_nvshmem_function[
         "nvshmem_sync_all",
-        def() -> NoneType,
+        def() thin -> NoneType,
     ]()()
 
 
@@ -601,14 +610,14 @@ def nvshmem_barrier_all():
     else:
         _get_nvshmem_function[
             "nvshmem_barrier_all",
-            def() -> NoneType,
+            def() thin -> NoneType,
         ]()()
 
 
 def nvshmemx_barrier_all_on_stream(stream: CUstream):
     _get_nvshmem_function[
         "nvshmemx_barrier_all_on_stream",
-        def(CUstream) -> NoneType,
+        def(CUstream) thin -> NoneType,
     ]()(stream)
 
 
@@ -620,8 +629,8 @@ def nvshmemx_barrier_all_on_stream(stream: CUstream):
 
 @extern("nvshmem_signal_wait_until")
 def nvshmem_signal_wait_until(
-    sig_addr: UnsafePointer[UInt64, MutAnyOrigin], cmp: c_int, cmp_value: UInt64
-):
+    sig_addr: MutPointer[UInt64, MutAnyOrigin], cmp: c_int, cmp_value: UInt64
+) abi("C"):
     ...
 
 
@@ -632,5 +641,5 @@ def nvshmem_signal_wait_until(
 
 
 @extern("nvshmem_fence")
-def nvshmem_fence():
+def nvshmem_fence() abi("C"):
     ...

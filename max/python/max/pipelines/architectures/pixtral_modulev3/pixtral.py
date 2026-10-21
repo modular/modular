@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from max import tree
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.attention import AttentionWithRope
@@ -23,8 +24,11 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.kv_cache.input_types import unflatten_ragged_attention_inputs
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    KVCacheParams,
+)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
@@ -185,9 +189,10 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
         assert self.kv_params is not None
-        kv_collection = unflatten_ragged_attention_inputs(
-            [t._graph_value for t in variadic_args],
-            n_devices=self.kv_params.n_devices,
+        kv_inputs = iter(x._graph_value for x in variadic_args)
+        symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
+        kv_collections = tree.leaves(
+            symbolic_inputs, leaf=KVCacheInputsPerDevice
         )
 
         inputs_embeds = self.language_model.embed_tokens(input_ids)
@@ -201,7 +206,7 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
         merged = Tensor.from_graph_value(merged_value)
 
         return self.language_model(
-            merged, kv_collection[0], return_n_logits, input_row_offsets
+            merged, kv_collections[0], return_n_logits, input_row_offsets
         )
 
     @staticmethod
@@ -216,6 +221,9 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
             interleaved=False,
         )
 
+        kv_params = config.kv_params
+        assert isinstance(kv_params, KVCacheParams)
+
         layers = [
             LlamaTransformerBlock(
                 attention=AttentionWithRope(
@@ -223,7 +231,7 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
-                    kv_params=config.kv_params,
+                    kv_params=kv_params,
                     layer_idx=i,
                     scale=config.attention_multiplier,
                     stacked_qkv=False,
@@ -265,6 +273,6 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
             ),
             output=output,
             embedding=embedding_layer,
-            kv_params=config.kv_params,
+            kv_params=kv_params,
             return_logits=config.return_logits,
         )

@@ -13,18 +13,13 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys import argv, size_of
+from std.sys import argv
 from std.sys.defines import get_defined_int
 
-from std.gpu import *
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, H100, _is_sm10x_gpu
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
-from layout import Layout, LayoutTensor
+from max.gpu import *
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import A100, H100, _is_sm10x_gpu
+from layout import ComptimeInt, Idx, RowMajorLayout, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import (
     CausalMask,
@@ -32,7 +27,6 @@ from nn.attention.mha_mask import (
     MHAMask,
     SlidingWindowCausalMask,
 )
-from nn.attention.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from std.testing import assert_almost_equal, assert_equal
 
 
@@ -89,27 +83,26 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    # Q is randomly initialized.
+    rand(q_ptr.as_span())
 
-    # Q, K, V are randomly initialized.
-    rand[qkv_type](q_ptr, q_size)
-    # rand[qkv_type](k_ptr, k_size)
-    # rand[qkv_type](v_ptr, v_size)
-    for i in range(v_size):
-        v_ptr[i] = 0.5
-    # for i in range(q_size):
-    #     q_ptr[i] = 1.0
-    for i in range(k_size):
-        k_ptr[i] = 0.25
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+
+    # K and V are filled with uniform constants for this test instead of being
+    # randomly initialized.
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    rand(k_ptr.as_span())
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    rand(v_ptr.as_span())
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
@@ -119,45 +112,27 @@ def test[
 
     # Construct device buffers.
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        q_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        k_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        v_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        output_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime config = MHAConfig[qkv_type](
-        UInt(num_heads),
-        UInt(depth),
-        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
-        num_pipeline_stages=UInt(4) if (
-            ctx.default_device_info == H100
-            or _is_sm10x_gpu(ctx.default_device_info)
-        ) else 2,
-    )
-
-    @parameter
-    @always_inline
-    @__copy_capture(q_device, k_device, v_device, output_device)
-    def kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[config=config](
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
+        flash_attention(
             output_device,
             q_device,
             k_device,
@@ -174,7 +149,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -188,22 +163,11 @@ def test[
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-    ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
-
     var output_device_ref = TileTensor(
-        output_ref_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime config_baseline = MHAConfig[qkv_type](
-        UInt(num_heads),
-        UInt(depth),
-        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
-        num_pipeline_stages=2,
-        algorithm=FlashAttentionAlgorithm(2),
-    )
     mha_gpu_naive(
         q_device,
         k_device,
@@ -222,27 +186,28 @@ def test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+    ctx.synchronize()
 
     var rtol = 1e-2
     for s in range(seq_len):
         for h in range(num_heads):
             for d in range(depth):
-                var expect = output_ptr.load(
+                var expect = output_ptr[d + depth * (h + s * num_heads)].cast[
+                    DType.float64
+                ]()
+                var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
+                ].cast[.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var next_expect = 0 * expect
                     var next_actual = 0 * actual
                     if h < num_heads and s < seq_len and d < depth - 1:
-                        next_expect = output_ptr.load(
+                        next_expect = output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ).cast[DType.float64]()
-                        next_actual = flash_output_ptr.load(
+                        ].cast[.float64]()
+                        next_actual = flash_output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ).cast[DType.float64]()
+                        ].cast[.float64]()
                     var rerr = abs((actual - expect) / expect)
                     print(
                         "s, h, d = ",
@@ -265,7 +230,7 @@ def test[
 
     for repeat in range(16):
         # test reproducibility
-        flash_attention[config=config](
+        flash_attention(
             output_device_ref,
             q_device,
             k_device,
@@ -280,26 +245,18 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    orig = flash_output_ptr.load(
-                        d + depth * (h + s * num_heads)
-                    )
-                    rep = output_ptr.load(d + depth * (h + s * num_heads))
+                    var orig = flash_output_ptr[d + depth * (h + s * num_heads)]
+                    var rep = output_ptr[d + depth * (h + s * num_heads)]
                     if rep != orig:
                         print("repeat s h d =", repeat, s, h, d)
                     assert_equal(rep, orig)
-                    output_ptr.store(d + depth * (h + s * num_heads), 123.4567)
+                    output_ptr[d + depth * (h + s * num_heads)] = 123.4567
 
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
     _ = output_device_ptr
     _ = output_ref_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
 
 
 def main() raises:
@@ -308,7 +265,7 @@ def main() raises:
 
         comptime if depth <= 128:
             # fp32 tf32-fp32 mma
-            test[DType.float32, depth, 1](
+            test[.float32, depth, 1](
                 128, 128, CausalMask(), ctx, is_benchmark=is_benchmark()
             )
 
@@ -341,14 +298,14 @@ def main() raises:
             DType.bfloat16,
             depth,
             24,
-            group=3,
+            group=8,
         ](1024, 1024, CausalMask(), ctx)
 
         test[
             DType.bfloat16,
             depth,
             24,
-            group=3,
+            group=8,
         ](1024, 1024, SlidingWindowCausalMask[128](), ctx)
 
         # BF16 with sequence length not multiple of 128
@@ -526,60 +483,95 @@ def main() raises:
                 group=16,
             ](1, 2008, CausalMask(), ctx)
 
+        # Regression: window=512 over 1025 keys has visible window <= window
+        # size, which previously picked a decode split-K partition count
+        # based on the raw cache length (1025 > 512 -> 2 partitions) and
+        # produced NaNs. Using the visible-window key count instead picks
+        # a single partition and keeps the output finite.
+        comptime if depth == 128:
+            test[
+                DType.bfloat16,
+                depth,
+                96,
+                group=12,
+            ](1, 1025, SlidingWindowCausalMask[512](), ctx)
+
         # CausalPaddingMask tests: allocate valid_lengths on device.
-        @parameter
-        def make_vl(
+        #
+        # `CausalPaddingMask` stores only a raw device pointer, so the buffer
+        # backing it has to stay alive across the whole launch, and TWO things
+        # are needed for that. Returning the view alone would destroy the
+        # buffer at the helper's return, so the helper hands back the
+        # `DeviceBuffer` and the view is built at the call site. That is not
+        # sufficient on its own: `MutUntrackedOrigin` opts the view out of
+        # origin tracking, so the buffer's last use is the `vl_view(...)`
+        # argument expression, and ASAP destruction is free to free it before
+        # `test` has launched anything. Each call site therefore consumes its
+        # buffer with `_ = ...^` AFTER the `test` call, which is what actually
+        # pins the allocation across the kernel. `test` synchronizes before it
+        # returns, so that is the full extent of the launch.
+        def vl_buffer(
             val: UInt32, ctx: DeviceContext
-        ) raises -> LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutAnyOrigin
+        ) raises -> DeviceBuffer[.uint32]:
+            var dev_buf = ctx.enqueue_create_buffer[.uint32](1)
+            ctx.enqueue_memset(dev_buf, val)
+            return dev_buf
+
+        # `mut buf`: `unsafe_origin_cast` can only retarget an origin of the
+        # same mutability, so the pointer has to come from a mutable borrow.
+        def vl_view(
+            mut buf: DeviceBuffer[.uint32],
+        ) -> TileTensor[
+            .uint32, RowMajorLayout[ComptimeInt[1]], MutUntrackedOrigin
         ]:
-            var host_ptr = alloc[Scalar[DType.uint32]](1)
-            host_ptr[] = val
-            var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
-            ctx.enqueue_copy(dev_buf, host_ptr)
-            host_ptr.free()
-            return LayoutTensor[
-                DType.uint32, Layout.row_major(1), MutAnyOrigin
-            ](dev_buf.unsafe_ptr())
+            return {
+                ptr = buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+                layout = row_major[1](),
+            }
 
         # valid_length == num_keys (equivalent to CausalMask).
-        var vl_128_t = make_vl(128, ctx)
+        var vl_128_buf = vl_buffer(128, ctx)
         test[
             DType.bfloat16,
             depth,
             1,
-        ](128, 128, CausalPaddingMask(vl_128_t), ctx)
+        ](128, 128, CausalPaddingMask(vl_view(vl_128_buf)), ctx)
+        _ = vl_128_buf^
 
         # valid_length < num_keys (padding active).
-        var vl_100_t = make_vl(100, ctx)
+        var vl_100_buf = vl_buffer(100, ctx)
         test[
             DType.bfloat16,
             depth,
             1,
-        ](128, 128, CausalPaddingMask(vl_100_t), ctx)
+        ](128, 128, CausalPaddingMask(vl_view(vl_100_buf)), ctx)
+        _ = vl_100_buf^
 
         # CausalPaddingMask with GQA.
-        var vl_384_t = make_vl(384, ctx)
+        var vl_384_buf = vl_buffer(384, ctx)
         test[
             DType.bfloat16,
             depth,
             24,
             group=3,
-        ](384, 384, CausalPaddingMask(vl_384_t), ctx)
+        ](384, 384, CausalPaddingMask(vl_view(vl_384_buf)), ctx)
+        _ = vl_384_buf^
 
         # CausalPaddingMask with padding and GQA.
-        var vl_300_t = make_vl(300, ctx)
+        var vl_300_buf = vl_buffer(300, ctx)
         test[
             DType.bfloat16,
             depth,
             24,
             group=3,
-        ](384, 384, CausalPaddingMask(vl_300_t), ctx)
+        ](384, 384, CausalPaddingMask(vl_view(vl_300_buf)), ctx)
+        _ = vl_300_buf^
 
         # CausalPaddingMask: token gen with padding.
-        var vl_400_t = make_vl(400, ctx)
+        var vl_400_buf = vl_buffer(400, ctx)
         test[
             DType.bfloat16,
             depth,
             32,
-        ](1, 512, CausalPaddingMask(vl_400_t), ctx)
+        ](1, 512, CausalPaddingMask(vl_view(vl_400_buf)), ctx)
+        _ = vl_400_buf^

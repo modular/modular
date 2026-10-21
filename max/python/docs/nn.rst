@@ -11,6 +11,32 @@ max.nn
 
 .. currentmodule:: max.nn
 
+Submodules
+----------
+
+.. autosummary::
+   :nosignatures:
+
+   max.nn.attention
+   max.nn.comm
+   max.nn.kernels
+   max.nn.kv_cache
+   max.nn.moe
+   max.nn.sampling
+   max.nn.state_space
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   nn.attention
+   nn.comm
+   nn.kernels
+   nn.kv_cache
+   nn.moe
+   nn.sampling
+   nn.state_space
+
 Base classes
 ------------
 
@@ -22,6 +48,7 @@ Base classes
    Identity
    Layer
    LayerList
+   MissingLayer
    Module
    Sequential
    Shardable
@@ -39,8 +66,8 @@ Linear layers
    Embedding
    GPTQLinear
    Linear
-   LinearLoRA
    MLP
+   StackedLinear
    VocabParallelEmbedding
 
 Normalization
@@ -55,17 +82,6 @@ Normalization
    GroupNorm
    LayerNorm
    RMSNorm
-
-LoRA
-----
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   AttentionWithRopeAndLoRA
-   SupportsLoRA
 
 Rotary embeddings
 -----------------
@@ -95,10 +111,22 @@ Transformer
 
    DistributedTransformer
    DistributedTransformerBlock
+   HyperConnection
    ReturnHiddenStates
    ReturnLogits
    Transformer
    TransformerBlock
+   ~max.nn.transformer.DistributedLogitsPostprocessMixin
+   ~max.nn.transformer.LogitsPostprocessMixin
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.nn.transformer.distributed_logits_postprocess
+   ~max.nn.transformer.forward_sequential_layers
+   ~max.nn.transformer.logits_postprocess
 
 Convolution
 -----------
@@ -123,9 +151,20 @@ Mixture of experts
    :template: autosummary/class.rst
 
    Allreduce
+   ~max.nn.comm.ep.EPCommBuffers
    MoE
    MoEGate
    MoEQuantized
+
+Parallelism
+-----------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.nn.parallel.ParallelArrayOps
 
 Sampling
 --------
@@ -148,6 +187,7 @@ Quantization
    :template: autosummary/class.rst
 
    QuantConfig
+   QuantFormat
    InputScaleSpec
    ScaleGranularity
    ScaleOrigin
@@ -163,6 +203,14 @@ Hooks
 
    ~max.nn.hooks.PrintHook
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.nn.layer.add_layer_hook
+   ~max.nn.layer.clear_hooks
+
 Functions
 ---------
 
@@ -171,17 +219,9 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   build_max_lengths_tensor
+   build_max_lengths_tensors
    clamp
+   forward_moe_sharded_layers
    split_batch
    split_batch_replicated
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   nn.attention
-   nn.kernels
-   nn.kv_cache

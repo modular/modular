@@ -1,0 +1,290 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""The DeepSeek-V4 lightning indexer.
+
+Reference: ``inference/model.py`` class ``Indexer``. Only ``compress_ratio == 4``
+layers have one. It decides *which* compressed KV entries a query is allowed to
+see; ``compress_ratio == 128`` layers skip it and take every entry that closed
+before them.
+
+It is a second, much narrower attention that scores queries against its own
+compressed KV:
+
+* 64 heads of width 128, against the main block's 128 heads of width 512.
+* Its own ``Compressor`` over the same ``x``, at the same ratio, but built with
+  ``rotate=True`` -- Hadamard rotation and FP4 instead of the main path's FP8.
+  Its entries live in their own pair of cache leaves; the attention layer runs
+  that stream and hands the indexer the candidate table.
+* The query side gets the same treatment: RoPE on the trailing 64 dims, then
+  Hadamard, then FP4. The rotation is what makes 4-bit survivable -- it spreads
+  a single outlier dim across the whole 128-wide vector before the e2m1 grid,
+  whose eight magnitudes would otherwise let that outlier set its block's scale
+  alone.
+* Scores are ``relu``'d, weighted per head by a learned ``weights_proj`` over
+  the block input, and summed across heads into one score per (query, entry).
+  Nothing is normalized -- these are ranking scores, never a distribution, which
+  is why FP4 is enough.
+
+Causality is enforced twice, and the two are not the same rule:
+
+1. Before the top-k, entries that had not closed yet are ``-inf``'d so they
+   cannot be selected.
+2. After the top-k, any slot without a finite score becomes ``-1``. The
+   top-k asks each query for no more picks than it has closed entries and
+   pads the rest of its ``k`` slots with ``-1`` itself, so this only drops a
+   pick whose score was not finite. ``-1`` is what ``sparse_attention`` reads
+   as "no such position".
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from max.dtype import DType
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    ops,
+)
+from max.nn.kernels import indexer_score_ragged, top_k_per_row
+from max.nn.layer import Module
+from max.nn.linear import Linear
+
+from ..model_config import DeepseekV4Config
+from .compressor import DeepseekV4Compressor
+from .csa import CompressedStream
+from .hadamard import hadamard_rotate
+from .quantization import fp4_qat_quantize, linear_for
+from .rope import apply_rope_tail
+
+
+class DeepseekV4Indexer(Module):
+    """Picks the compressed entries a ``compress_ratio == 4`` query attends to."""
+
+    def __init__(
+        self,
+        config: DeepseekV4Config,
+        compress_ratio: int,
+        device: DeviceRef,
+    ) -> None:
+        super().__init__()
+        self.compress_ratio = compress_ratio
+        self.n_heads = config.index_n_heads
+        self.head_dim = config.index_head_dim
+        self.rope_head_dim = config.qk_rope_head_dim
+        self.index_topk = config.index_topk
+        # Note this is the *indexer's* head width, 128, not the block's 512.
+        self.softmax_scale = self.head_dim**-0.5
+        # Both softmax scales the reference folds into the head weights. The
+        # head count is the full one even when this device scores only its
+        # share of the heads: the reference divides by ``args.index_n_heads``.
+        self.weights_scale = self.softmax_scale * self.n_heads**-0.5
+
+        self.wq_b = linear_for(
+            config, config.q_lora_rank, self.n_heads * self.head_dim, device
+        )
+        # The reference pins this one to bf16 explicitly
+        # (``dtype=torch.bfloat16`` on the ColumnParallelLinear), which for this
+        # checkpoint is what ``config.dtype`` already is.
+        self.weights_proj = Linear(
+            config.hidden_size, self.n_heads, config.dtype, device
+        )
+        self.compressor = DeepseekV4Compressor(
+            config, compress_ratio, self.head_dim, device, rotate=True
+        )
+
+    def shard_heads(self, num_devices: int) -> None:
+        """Declares the reference's tensor-parallel split: ``wq_b`` and
+        ``weights_proj`` per head. The compressor is shared and stays whole.
+        """
+        if self.n_heads % num_devices:
+            raise ValueError(
+                f"{self.n_heads} indexer heads do not split across "
+                f"{num_devices} devices"
+            )
+        self.wq_b.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+        self.weights_proj.sharding_strategy = ShardingStrategy.rowwise(
+            num_devices
+        )
+
+    def keep_local_heads(self, num_devices: int) -> None:
+        """Makes this replica score only its share of :meth:`shard_heads`."""
+        self.n_heads //= num_devices
+
+    @staticmethod
+    def select_tensor_parallel(
+        indexers: Sequence[DeepseekV4Indexer],
+        scores: Sequence[TensorValue],
+        valid: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """:meth:`select` on every device over the all-reduced scores.
+
+        Each device's :meth:`score` covers its share of the heads; the sum
+        over heads is completed before the top-k, so every device ranks the
+        same scores and picks the same entries.
+        """
+        reduced = ops.allreduce.sum(list(scores), signal_buffers)
+        return [
+            indexer.select(score, v)
+            for indexer, score, v in zip(indexers, reduced, valid, strict=True)
+        ]
+
+    def __call__(
+        self,
+        x: TensorValue,
+        qr: TensorValue,
+        freqs_cis: TensorValue,
+        candidates: TensorValue,
+        valid: TensorValue,
+    ) -> TensorValue:
+        """Select compressed entries for every query in a ragged batch.
+
+        :meth:`score` then :meth:`select`.
+
+        Args:
+            x: ``[T, hidden_size]``, the block input the main attention also
+                consumes.
+            qr: ``[T, q_lora_rank]``, the attention's ``q_norm(wq_a(x))``.
+                Shared, not recomputed -- the indexer reads the same low-rank
+                query the block does.
+            freqs_cis: ``[T, rope_head_dim // 2, 2]``, the rotary rows at the
+                tokens' positions.
+            candidates: ``[T, n, index_head_dim]`` each token's candidate
+                table: the indexer's own compressed entries in candidate order
+                (closed entries from the cache, then its request's fresh
+                windows).
+            valid: ``[T, n]`` bool, which candidates each query may see -- the
+                same mask the attention applies.
+
+        Returns:
+            ``[T, k]`` int32 candidate numbers (rows of ``candidates``), with
+            ``-1`` in unusable slots. ``k = min(index_topk, n)``.
+        """
+        return self.select(self.score(x, qr, freqs_cis, candidates), valid)
+
+    def score(
+        self,
+        x: TensorValue,
+        qr: TensorValue,
+        freqs_cis: TensorValue,
+        candidates: TensorValue,
+    ) -> TensorValue:
+        """``[T, n]`` float32 scores, summed over this module's heads.
+
+        The arguments are :meth:`__call__`'s. Nothing is masked yet.
+        """
+        q, weights = self._query(x, qr, freqs_cis)
+        q32 = ops.cast(q, DType.float32)
+        # "thd,tnd->thn": one rank-3 batched matmul with the tokens as the
+        # batch. Rank 3 also keeps this off the batched-matmul path whose
+        # fused epilogue (the relu) cannot instantiate for rank-4 outputs once
+        # n is a multiple of 128 (ISSUES.md Issue 32).
+        kv_t = ops.transpose(ops.cast(candidates, DType.float32), -1, -2)
+        scores = ops.relu(ops.matmul(q32, kv_t))
+        return ops.squeeze(
+            ops.sum(scores * ops.unsqueeze(weights, -1), axis=1), axis=1
+        )
+
+    def score_cached(
+        self,
+        x: TensorValue,
+        qr: TensorValue,
+        freqs_cis: TensorValue,
+        stream: CompressedStream,
+        cutoff: TensorValue,
+    ) -> TensorValue:
+        """:meth:`score` over ``stream``'s zone leaf, in candidate order.
+
+        The fused kernel reads each live entry out of the leaf, so the
+        ``[T, n, head_dim]`` candidate table :meth:`score` takes is never
+        built. Columns ``valid`` rules out are 0 rather than a score.
+
+        Args:
+            x: As in :meth:`__call__`.
+            qr: As in :meth:`__call__`.
+            freqs_cis: As in :meth:`__call__`.
+            stream: The indexer's compressed stream; its fresh entries are
+                already stored in its zone leaf.
+            cutoff: ``[T]`` int32, ``(position + 1) // ratio`` per query.
+        """
+        assert stream.zone_leaf is not None
+        q, weights = self._query(x, qr, freqs_cis)
+        return indexer_score_ragged(
+            q,
+            weights,
+            stream.rows.offsets,
+            stream.windows.base,
+            cutoff,
+            stream.zone_leaf.values,
+            stream.layer,
+            num_candidates=stream.n_cand,
+        )
+
+    def _query(
+        self, x: TensorValue, qr: TensorValue, freqs_cis: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        """``[T, heads, head_dim]`` queries and ``[T, heads]`` float32 weights."""
+        t = x.shape[0]
+
+        # ``apply_rope_tail`` wants the sequence on axis 1.
+        q = ops.reshape(self.wq_b(qr), [1, t, self.n_heads, self.head_dim])
+        q = apply_rope_tail(q, freqs_cis, self.rope_head_dim)
+        # Rotate first, then quantize: the rotation is there to make the FP4
+        # grid tolerable, so the order is not interchangeable.
+        q = fp4_qat_quantize(hadamard_rotate(q))
+        q = ops.reshape(q, [t, self.n_heads, self.head_dim])
+
+        # One learned weight per head per query, folded with both softmax
+        # scales the reference applies here rather than to the scores.
+        weights = (
+            ops.cast(self.weights_proj(x), DType.float32) * self.weights_scale
+        )
+        return q, weights
+
+    def select(
+        self, index_score: TensorValue, valid: TensorValue
+    ) -> TensorValue:
+        """The top-k of :meth:`score`'s ``[T, n]`` under ``valid``.
+
+        Returns what :meth:`__call__` returns.
+        """
+        n = int(index_score.shape[1])
+
+        # Rule 1: an entry that had not closed by the query cannot be selected.
+        # Neither can a NaN score, which the top-k does not accept.
+        index_score = ops.where(
+            valid & ~ops.is_nan(index_score),
+            index_score,
+            float("-inf"),
+        )
+
+        k = min(self.index_topk, n)
+        # Until more than ``k`` entries have closed a query selects all of
+        # them, so it asks for no more picks than it has candidates.
+        live = ops.squeeze(
+            ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
+        )
+        picks = ops.min(live, k)
+        topk_scores, topk_idxs = top_k_per_row(index_score, picks, k)
+        topk_idxs = ops.cast(topk_idxs, DType.int32)
+
+        # Rule 2: drop any pick whose score was not finite.
+        return ops.where(
+            topk_scores > float("-inf"),
+            topk_idxs,
+            -1,
+        )

@@ -17,8 +17,17 @@ import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.model_config import (
+    _select_dtype_cast,
+    _select_quantization_encoding,
+)
+from max.pipelines.modeling.config_enums import (
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+)
 from transformers import LlamaConfig
+
+from .model_config import Llama3Config
 
 # Maps from Safetensor to MAX weight names.
 LLAMA_SAFETENSOR_MAPPING = {
@@ -36,6 +45,13 @@ def _convert_safetensor_with_model_config(
 
     This allows the same conversion logic to be used for both target and draft models.
     """
+    # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
+    resolved_encoding = _select_quantization_encoding(
+        model_config, Llama3Config.DEFAULT_ENCODING
+    )
+    cast_from, cast_to = _select_dtype_cast(
+        model_config, Llama3Config.DEFAULT_ENCODING
+    )
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.
     for safetensor_name, value in state_dict.items():
@@ -43,15 +59,15 @@ def _convert_safetensor_with_model_config(
         for before, after in LLAMA_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
-    if model_config._quant:
+    if resolved_encoding == "gptq":
         # hack: argsort the perm_idx array
         for key, weight_data in new_state_dict.items():
-            np_array = np.from_dlpack(weight_data.data)  # type: ignore
+            np_array = np.from_dlpack(weight_data.data)
             if key.endswith("perm_idx"):
                 new_state_dict[key] = WeightData.from_numpy(
                     np.argsort(np_array).astype(np.int32), key
                 )
-    if model_config.quantization_encoding == "gptq":
+    if resolved_encoding == "gptq":
         for key, weight_data in new_state_dict.items():
             # TODO(E2EOPT-243): gptq models actually have a dtype of float16
             # not bfloat16. Sadly, MMA does not support float16 currently, so
@@ -59,15 +75,13 @@ def _convert_safetensor_with_model_config(
             # That said, leave scale and bias in float16 (apparently that is
             # needed for correctness). The rest must be converted to bfloat16.
             if weight_data.dtype == DType.float16 and not (
-                key.endswith("bias") or key.endswith("scales")
+                key.endswith(("bias", "scales"))
             ):
                 new_state_dict[key] = weight_data.astype(DType.bfloat16)
 
-    if model_config._applied_dtype_cast_from:
-        cast_from = model_config._applied_dtype_cast_from
-        cast_to = model_config._applied_dtype_cast_to
+    if cast_from:
         assert cast_to, (
-            "Invalid configuration: _applied_dtype_cast_to is not set but _applied_dtype_cast_from is set. "
+            "Invalid configuration: cast_to is not set but cast_from is set. "
             "This should not happen."
         )
         for key, weight_data in new_state_dict.items():
@@ -84,8 +98,7 @@ def _convert_safetensor_with_model_config(
     if hasattr(huggingface_config, "quantization_config"):
         UNUSED_KEYS = [".bias", ".qzeros"]
         if huggingface_config.quantization_config.get("desc_act") is True:
-            UNUSED_KEYS.append("v_proj.perm_idx")
-            UNUSED_KEYS.append("k_proj.perm_idx")
+            UNUSED_KEYS.extend(["v_proj.perm_idx", "k_proj.perm_idx"])
         else:
             UNUSED_KEYS.append("perm_idx")
         keys_to_remove = [
@@ -111,7 +124,7 @@ def convert_safetensor_state_dict(
 
 
 # Maps from GGUF to MAX weight names.
-LLAMA_GGUF_MAPPING = {
+LLAMA_GGUF_UNFUSED_QKV_MAPPING = {
     "token_embd": "embed_tokens",
     "blk": "layers",
     "ffn_up": "mlp.up_proj",
@@ -127,15 +140,28 @@ LLAMA_GGUF_MAPPING = {
     "output_norm": "norm",
 }
 
+LLAMA_GGUF_QUANTIZED_MAPPING = LLAMA_GGUF_UNFUSED_QKV_MAPPING
+
 
 def convert_gguf_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
+    state_dict: dict[str, Weights],
+    pipeline_config: PipelineConfig | None = None,
+    **unused_kwargs,
 ) -> dict[str, WeightData]:
+    gguf_mapping = LLAMA_GGUF_UNFUSED_QKV_MAPPING
+    if pipeline_config is not None:
+        # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
+        resolved_encoding = _select_quantization_encoding(
+            pipeline_config.model, Llama3Config.DEFAULT_ENCODING
+        )
+        if supported_encoding_quantization(resolved_encoding) is not None:
+            gguf_mapping = LLAMA_GGUF_QUANTIZED_MAPPING
+
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.
     for gguf_name, value in state_dict.items():
         max_name = gguf_name
-        for before, after in LLAMA_GGUF_MAPPING.items():
+        for before, after in gguf_mapping.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
 

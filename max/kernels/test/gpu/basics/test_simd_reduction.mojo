@@ -14,8 +14,8 @@
 # on GPUs.
 
 
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 comptime buffer_size = 1024
@@ -24,21 +24,23 @@ comptime simd_width = 4
 
 
 def test_simd_reduction(ctx: DeviceContext) raises:
-    var input_host = alloc[Scalar[DType.int]](buffer_size)
-    var output_host = alloc[Scalar[DType.int]](buffer_size // simd_width)
+    var input_host = ctx.enqueue_create_host_buffer[.int](buffer_size)
+    var output_host = ctx.enqueue_create_host_buffer[.int](
+        buffer_size // simd_width
+    )
 
     for i in range(0, buffer_size, simd_width):
         for j in range(simd_width):
             # Fill with sensible values, but make sure the addition does not
             # blow up.
             if j == 0:
-                input_host[i + j] = Scalar[DType.int](i)
+                input_host[i + j] = Int(i)
             else:
-                input_host[i + j] = Scalar[DType.int](j)
+                input_host[i + j] = Int(j)
 
-    var input_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
+    var input_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
 
-    var output_buffer = ctx.enqueue_create_buffer[DType.int](
+    var output_buffer = ctx.enqueue_create_buffer[.int](
         buffer_size // simd_width
     )
     output_buffer.enqueue_fill(9)
@@ -46,14 +48,14 @@ def test_simd_reduction(ctx: DeviceContext) raises:
     ctx.enqueue_copy(input_buffer, input_host)
 
     def kernel(
-        output: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
-        input: UnsafePointer[Scalar[DType.int], ImmutAnyOrigin],
+        output: MutPointer[Int, MutAnyOrigin],
+        input: ImmPointer[Int, ImmutAnyOrigin],
     ):
-        output[global_idx.x] = input.load[width=simd_width](
+        output[global_idx.x] = input.unsafe_load[width=simd_width](
             simd_width * global_idx.x
         ).reduce_add()
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_buffer,
         input_buffer,
         grid_dim=buffer_size // (block_dim * simd_width),
@@ -68,12 +70,7 @@ def test_simd_reduction(ctx: DeviceContext) raises:
         simd_sum += i
 
     for i in range(buffer_size // simd_width):
-        assert_equal(
-            output_host[i], Scalar[DType.int](i * simd_width + simd_sum)
-        )
-
-    input_host.free()
-    output_host.free()
+        assert_equal(output_host[i], Int(i * simd_width + simd_sum))
 
 
 def main() raises:

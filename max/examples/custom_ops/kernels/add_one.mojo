@@ -11,16 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/build-custom-ops.mdx
+# DOC: develop/build-custom-ops.mdx
 
-import compiler
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor, foreach
+import extensibility
 
+from max.gpu.host import DeviceContext
+
+from extensibility import (
+    ElementwiseUnaryOp,
+    InputTensor,
+    OutputTensor,
+    Tensor,
+    foreach,
+)
+
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
-@compiler.register("add_one")
+@extensibility.register("add_one")
 struct AddOne:
     @staticmethod
     def execute[
@@ -30,21 +39,32 @@ struct AddOne:
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
-        @parameter
-        @always_inline
+        @inline(.always)
         def elementwise_add_one[
             width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        ](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[elementwise_add_one, target=target](output, ctx)
+        foreach[target=target](elementwise_add_one, output, ctx)
 
-    # You only need to implement this if you do not manually annotate
-    # output shapes in the graph.
+
+# You only need to implement this if you do not manually annotate
+# output shapes in the graph.
+@extensibility.register_shape_function("add_one")
+def add_one_shape(
+    x: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
+    raise Error("NotImplemented")
+
+
+# The graph compiler can fuse this op with the ops around it.
+@extensibility.register("add_one_elementwise")
+struct AddOneElementwise(ElementwiseUnaryOp):
     @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise Error("NotImplemented")
+    def elementwise[
+        dtype: DType,
+        width: SIMDLength,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return x + 1

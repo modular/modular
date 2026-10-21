@@ -18,29 +18,27 @@ Implementation is based on BertModel from the transformers library.
 from __future__ import annotations
 
 import logging
-import time
-from collections.abc import Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
-from max.pipelines.dataprocessing import collate_batch
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    upper_bounded_default,
 )
-from transformers import AutoConfig
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
-from .graph import build_graph
+from .batch_processor import BertBatchProcessor
+from .graph import BertModel
 from .model_config import BertModelConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -52,7 +50,13 @@ class BertInputs(ModelInputs):
     attention_mask: Buffer
 
 
-class BertPipelineModel(PipelineModel[TextContext]):
+class BertPipelineModel(PipelineModel[TextContext, BertModelConfig, Model]):
+    batch_processor_cls: ClassVar[type[BertBatchProcessor]] = BertBatchProcessor
+    model_config_cls: ClassVar[type[BertModelConfig]] = BertModelConfig
+
+    state_dict: dict[str, Any]
+    """The weights, kept for :meth:`graph_specs`."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -60,8 +64,11 @@ class BertPipelineModel(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -69,99 +76,42 @@ class BertPipelineModel(PipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Bert, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized encoder."""
+        return self._models[GraphRole.ENCODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, BertInputs)
         model_outputs = self.model.execute(
             model_inputs.next_tokens_batch, model_inputs.attention_mask
         )
-        assert isinstance(model_outputs[0], Buffer)
+        assert self.batch_processor is not None
+        return self.batch_processor.process_outputs(model_outputs)
 
-        return ModelOutputs(logits=model_outputs[0])
+    def _load_state_dict(self) -> dict[str, Any]:
+        self.state_dict = super()._load_state_dict()
+        return self.state_dict
 
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> BertInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> BertModelConfig:
+        del state_dict
+        return self.arch_config_as(BertModelConfig)
 
-        context_batch = replica_batches[0]
-
-        tokens = [ctx.tokens.active for ctx in context_batch]
-
-        pad_value = getattr(self.huggingface_config, "pad_token_id", 0)
-        next_tokens_batch, _ = collate_batch(
-            tokens,
-            pad_value=pad_value,
-            batch_size=len(tokens),
-        )
-
-        attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
-
-        return BertInputs(
-            next_tokens_batch=Buffer.from_numpy(next_tokens_batch).to(
-                self.devices[0]
-            ),
-            attention_mask=Buffer.from_numpy(attention_mask).to(
-                self.devices[0]
-            ),
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> BertInputs:
-        raise NotImplementedError(
-            "Bert does not support preparing next tokens inputs."
-        )
-
-    def load_model(self, session: InferenceSession) -> Model:
-        logger.info("Building and compiling model...")
-        before = time.perf_counter()
-        if self.adapter:
-            state_dict = self.adapter(dict(self.weights.items()))
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        config = BertModelConfig.initialize(self.pipeline_config)
-        graph = build_graph(config, state_dict)
-        after_build = time.perf_counter()
-
-        logger.info(f"Building graph took {after_build - before:.6f} seconds")
-
-        before_compile = time.perf_counter()
-        model = session.load(graph, weights_registry=state_dict)
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling model took {after - before:.6f} seconds"
-        )
-        return model
+    def graph_specs(
+        self, model_config: BertModelConfig
+    ) -> Mapping[str, GraphSpec]:
+        """Returns the encoder graph."""
+        model = BertModel(model_config)
+        model.load_state_dict(self.state_dict)
+        return {
+            GraphRole.ENCODER: GraphSpec(model, "bert", model.input_types())
+        }

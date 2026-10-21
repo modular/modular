@@ -15,37 +15,37 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import os
-import signal
 import socket
+import tempfile
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, cast
+from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from max.interfaces import (
-    AudioGenerationOutput,
-    BaseContext,
+from max.pipelines.context import BaseContext
+from max.pipelines.lib import PIPELINE_REGISTRY, MemoryPlan, PipelineConfig
+from max.pipelines.modeling.types import (
     PipelineOutput,
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
 )
-from max.pipelines.core import TTSContext
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    AudioGenerationConfig,
-    PipelineConfig,
-)
+from max.serve._body_size_limit import RequestBodySizeLimitMiddleware
+from max.serve._error_envelope import openai_error_body
 from max.serve.config import APIType, MetricRecordingMethod, Settings
-from max.serve.pipelines.general_handler import GeneralPipelineHandler
-from max.serve.pipelines.llm import (
-    AudioGeneratorPipeline,
-    TokenGeneratorPipeline,
+from max.serve.media import GeneratedMediaStore
+from max.serve.pipelines.eplb_stats_rpc import (
+    EplbStatsFrontend,
+    EplbStatsResetFrontend,
 )
+from max.serve.pipelines.general_handler import GeneralPipelineHandler
+from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheFrontend
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
@@ -53,23 +53,34 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import (
+    _decisions_routes,
+    _systemone_routes,
     kserve_routes,
     openai_routes,
     openresponses_routes,
     sagemaker_routes,
 )
-from max.serve.telemetry.common import send_telemetry_log
+from max.serve.router._decision_format import detect_decision_format
+from max.serve.router._image_resolution import fetch_media_data_uri
+from max.serve.telemetry.common import (
+    _telemetry_disabled,
+    send_telemetry_log,
+)
 from max.serve.telemetry.metrics import METRICS
-from max.serve.worker_interface import ModelWorkerProxy
+from max.serve.telemetry.ttft_join import announce_enabled
+from max.serve.worker_interface import RequestQueueFull
+from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from uvicorn import Config
 
+# /v1/decisions and /v1/systemone are OpenAI-style extensions served beside
+# /v1/chat/*.
 ROUTES = {
-    APIType.KSERVE: kserve_routes,
-    APIType.OPENAI: openai_routes,
-    APIType.SAGEMAKER: sagemaker_routes,
-    APIType.OPENRESPONSES: openresponses_routes,
+    APIType.KSERVE: (kserve_routes,),
+    APIType.OPENAI: (openai_routes, _decisions_routes, _systemone_routes),
+    APIType.SAGEMAKER: (sagemaker_routes,),
+    APIType.OPENRESPONSES: (openresponses_routes,),
 }
 
 logger = logging.getLogger("max.serve")
@@ -94,8 +105,13 @@ class ServingTokenGeneratorSettings:
     model_factory: PipelinesFactory  # type: ignore
     pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer[Any, Any, Any]
-    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
+    task: PipelineTask = PipelineTask.TEXT_GENERATION
     reasoning_parser_name: str | None = None
+    temperature: float | None = None
+    thinking_temperature: float | None = None
+    memory_plan: MemoryPlan | None = None
+    """Memory plan the pipeline was sized against; ``None`` only for test
+    servers built without one (e.g. echo pipelines)."""
 
 
 @asynccontextmanager
@@ -103,9 +119,10 @@ async def lifespan(
     app: FastAPI,
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
+    zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
     try:
-        if not settings.disable_telemetry:
+        if not _telemetry_disabled(settings):
             send_telemetry_log(
                 serving_settings.pipeline_config.models.model_name
             )
@@ -118,35 +135,45 @@ async def lifespan(
         )
 
     logger.info("Starting server...")
+    announce_enabled()
 
     async with AsyncExitStack() as exit_stack:
+        media_root = Path(
+            exit_stack.enter_context(
+                tempfile.TemporaryDirectory(prefix="max_serve_media_")
+            )
+        )
+        app.state.media_store = GeneratedMediaStore(
+            media_root,
+            max_storage_bytes=(
+                settings.generated_media_storage_mb * 1024 * 1024
+            ),
+        )
+
         # start telemetry worker and configure Metrics to use it
 
         metric_client = await exit_stack.enter_async_context(
             start_telemetry_consumer(settings)
         )
         METRICS.configure(client=metric_client)
+        METRICS.export_zero_client_disconnect_cancellations()
 
         # start model worker
 
         override_architecture: str | None = None
-        if serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
-            if isinstance(
-                serving_settings.pipeline_config, AudioGenerationConfig
-            ):
-                override_architecture = (
-                    serving_settings.pipeline_config.audio_decoder
-                )
 
         model_worker_interface = ZmqModelWorkerInterface[
             BaseContext, PipelineOutput
         ](
-            serving_settings.pipeline_task,
+            serving_settings.task,
             PIPELINE_REGISTRY.retrieve_context_type(
                 serving_settings.pipeline_config,
                 override_architecture=override_architecture,
-                task=serving_settings.pipeline_task,
+                task=serving_settings.task,
             ),
+            # Cap the in-transit request backlog to the model worker (HTTP 429
+            # when full). ``None`` keeps the queue unbounded.
+            request_queue_size=settings.max_queue_size,
         )
         model_worker = await exit_stack.enter_async_context(
             start_model_worker(
@@ -155,12 +182,14 @@ async def lifespan(
                 settings,
                 metric_client,
                 model_worker_interface=model_worker_interface,
+                zmq_endpoint_base=zmq_endpoint_base,
+                memory_plan=serving_settings.memory_plan,
             )
         )
 
         lora_queue: LoRAQueue | None = (
             LoRAQueue(
-                serving_settings.pipeline_config.runtime.zmq_endpoint_base,
+                zmq_endpoint_base,
                 serving_settings.pipeline_config.lora.lora_paths,
             )
             if serving_settings.pipeline_config.lora
@@ -178,21 +207,13 @@ async def lifespan(
                 lora_queue=lora_queue,
                 model_worker=model_worker,
                 reasoning_parser_name=serving_settings.reasoning_parser_name,
+                min_chunk_tokens=settings.stream_min_chunk_tokens,
             ),
             PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
                 model_name=serving_settings.pipeline_config.models.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 model_worker=model_worker,
-            ),
-            PipelineTask.AUDIO_GENERATION: lambda: AudioGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.models.model_name,
-                tokenizer=serving_settings.tokenizer,
-                lora_queue=lora_queue,
-                model_worker=cast(
-                    ModelWorkerProxy[TTSContext, AudioGenerationOutput],
-                    model_worker,
-                ),
             ),
             # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
             PipelineTask.PIXEL_GENERATION: lambda: GeneralPipelineHandler(
@@ -201,18 +222,41 @@ async def lifespan(
                 model_worker=model_worker,
                 lora_queue=lora_queue,
             ),
-        }[serving_settings.pipeline_task]()
+            # Audio generation serves /v1/audio/speech and /v1/responses, both
+            # of which go through GeneralPipelineHandler.
+            PipelineTask.AUDIO_GENERATION: lambda: GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.models.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            ),
+        }[serving_settings.task]()
 
         # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
         # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
+        app.state.memory_plan = serving_settings.memory_plan
+        # The served task, for routes that only mean something for one of them:
+        # every API type is mounted regardless, so a route with no counterpart
+        # in the served model has to refuse the request itself.
+        app.state.task = serving_settings.task
+        if serving_settings.task == PipelineTask.TEXT_GENERATION:
+            # Probes the checkpoint (a Hub request for a repo id), so keep it
+            # off the event loop.
+            app.state.decision_format = await asyncio.to_thread(
+                detect_decision_format,
+                serving_settings.pipeline_config.models["main"].model_path,
+            )
 
         # Also store as handler for OpenResponses API route compatibility
-        # For pixel generation, this is the same as pipeline
+        # For the media tasks, this is the same as pipeline
         # For other tasks, we also create a separate handler instance
-        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+        if serving_settings.task in (
+            PipelineTask.PIXEL_GENERATION,
+            PipelineTask.AUDIO_GENERATION,
+        ):
             app.state.handler = pipeline
         else:
             app.state.handler = GeneralPipelineHandler(
@@ -257,34 +301,73 @@ def make_metrics_app() -> Callable[..., Any]:
     return make_asgi_app()
 
 
+async def _openai_http_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    assert isinstance(exc, HTTPException)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=openai_error_body(exc.status_code, str(exc.detail)),
+        headers=getattr(exc, "headers", None),
+    )
+
+
+async def _openai_validation_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content=openai_error_body(422, str(exc))
+    )
+
+
+async def _request_queue_full_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Map a full model-worker request queue to HTTP 429.
+
+    ``RequestQueueFull`` is raised at admission (the push to the worker, awaited
+    before any response status is committed) by any endpoint that submits to the
+    worker, so it is handled centrally here rather than per route. Returns the
+    OpenAI ``rate_limit_error`` envelope with a ``Retry-After`` hint; the
+    rejection rate is observable via ``maxserve.request_count{code="429"}``.
+    """
+    assert isinstance(exc, RequestQueueFull)
+    request_id = getattr(request.state, "request_id", "<unknown>")
+    logger.warning("Request queue full for request %s", request_id)
+    return JSONResponse(
+        status_code=429,
+        content=openai_error_body(
+            429, "Server is at capacity. Please retry later."
+        ),
+        headers={"Retry-After": "1"},
+    )
+
+
 def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
+    zmq_endpoint_base = generate_zmq_ipc_path()
+
     @asynccontextmanager
     async def lifespan_wrap(app: FastAPI) -> AsyncGenerator[None, None]:
-        try:
-            async with lifespan(app, settings, serving_settings):
-                yield
-        except BaseException as e:
-            # Worker already logs the detailed traceback, so we use
-            # error (not exception) here to avoid duplicating it.
-            logger.error("Worker exception, shutting down: %s", e)
-            # Caught by uvicorn to shutdown the server
-            os.kill(os.getpid(), signal.SIGINT)
-            # After first SIGINT uvicorn waits for pending requests to complete
-            # In our case, they would hang forever due to waiting on worker queues
-            # Uvicorn listens for a second SIGINT to cancel this waiting phase and
-            # close all remaining connections with "Internal Server Error" status
-            os.kill(os.getpid(), signal.SIGINT)
-            # Ideally we'd just rethrow here, which is caught by
-            # starlette Router.lifespan() and converted into ASGI
-            # lifespan.shutdown.failed event. However uvicorn only
-            # listens for this event if it's already initiated the
-            # shutdown sequence.
-            # See https://github.com/Kludex/uvicorn/discussions/2298
+        # Binds the extra arguments so this matches the FastAPI lifespan
+        # signature. Used by ASGI test clients (e.g. starlette TestClient).
+        # The production entrypoint instead enters `lifespan` directly around
+        # `uvicorn` running with `lifespan="off"` (see
+        # `serve_api_server_and_model_worker`), so a worker crash tears down
+        # the server via task cancellation rather than fragile signal handling.
+        async with lifespan(app, settings, serving_settings, zmq_endpoint_base):
+            yield
 
     app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
+    app.state.zmq_endpoint_base = zmq_endpoint_base
+
+    if settings.max_request_bytes > 0:
+        app.add_middleware(
+            RequestBodySizeLimitMiddleware,
+            max_bytes=settings.max_request_bytes,
+        )
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
@@ -296,6 +379,8 @@ def fastapi_app(
             include_responses=settings.transaction_recording_include_responses,
         )
 
+    # Deliberately the raw setting, not _telemetry_disabled: /metrics is a
+    # local pull surface, not egress, so OTEL_SDK_DISABLED must not remove it.
     if (
         not settings.disable_telemetry
         and settings.metric_recording == MetricRecordingMethod.ASYNCIO
@@ -305,13 +390,18 @@ def fastapi_app(
     app.add_api_route("/version", version)
     app.add_api_route("/health", health)
 
-    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
-        serving_settings.pipeline_config.runtime.zmq_endpoint_base
-    )
+    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(zmq_endpoint_base)
 
     async def reset_prefix_cache() -> Response:
         """Reset the prefix cache."""
-        if not serving_settings.pipeline_config.model.kv_cache.enable_prefix_caching:
+        try:
+            model_config = serving_settings.pipeline_config.model
+        except ValueError:
+            return Response(
+                status_code=400,
+                content="No main model configured (diffusion pipeline). Ignoring request",
+            )
+        if not model_config.kv_cache.enable_prefix_caching:
             return Response(
                 status_code=400,
                 content="Prefix caching is not enabled. Ignoring request",
@@ -324,11 +414,67 @@ def fastapi_app(
         "/reset_prefix_cache", reset_prefix_cache, methods=["POST"]
     )
 
+    eplb_stats_frontend = EplbStatsFrontend(zmq_endpoint_base)
+
+    async def eplb_stats() -> Response:
+        """Get the EPLB stats snapshot."""
+        if not settings.eplb_profile:
+            return Response(
+                status_code=404,
+                content="EPLB stats profiling is not enabled.",
+            )
+        try:
+            snap = await eplb_stats_frontend.fetch_snapshot()
+        except TimeoutError:
+            return Response(
+                status_code=504,
+                content="EPLB stats fetch timed out.",
+            )
+        return JSONResponse(snap.to_dict())
+
+    app.add_api_route("/max_internal/eplb_stats", eplb_stats, methods=["GET"])
+
+    # reset eplb stat endpoint
+    eplb_stats_reset_frontend = EplbStatsResetFrontend(zmq_endpoint_base)
+
+    async def eplb_stats_reset() -> Response:
+        """Reset the EP stats accumulator on the worker."""
+        if not settings.eplb_profile:
+            return Response(
+                status_code=404,
+                content="EP stats profiling is not enabled.",
+            )
+        eplb_stats_reset_frontend.enqueue_reset()
+        return Response(status_code=200, content="Success")
+
+    app.add_api_route(
+        "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
+    )
     for api_type in settings.api_types:
-        app.include_router(ROUTES[api_type].router)
+        for route_module in ROUTES[api_type]:
+            app.include_router(route_module.router)
 
     app.state.settings = settings
-    register_request(app)
+
+    # The /v1/responses input schema takes data: URIs only, so a client-supplied
+    # http(s) image must be fetched and inlined before the body validates. The
+    # request library cannot do that itself (it does not depend on max.serve, and
+    # a second downloader there would be a second SSRF surface), so hand it the
+    # shared resolver, which carries the byte caps and host validation.
+    async def fetch_media_data_uri_for_app(url: str) -> str:
+        return await fetch_media_data_uri(url, settings)
+
+    app.state.media_data_uri_fetcher = fetch_media_data_uri_for_app
+
+    register_request(app, structured_logging=settings.structured_logging)
+
+    app.add_exception_handler(HTTPException, _openai_http_exception_handler)
+    app.add_exception_handler(
+        RequestValidationError, _openai_validation_exception_handler
+    )
+    app.add_exception_handler(
+        RequestQueueFull, _request_queue_full_exception_handler
+    )
 
     return app
 
@@ -340,7 +486,16 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
         loop="uvloop",
         host=server_settings.host,
         port=server_settings.port,
-        timeout_graceful_shutdown=5,
+        timeout_graceful_shutdown=server_settings.graceful_shutdown_timeout_s,
+        # uvicorn defaults to closing idle connections after 5s, far below the
+        # idle timeout of a pooling client, which makes the server the side
+        # that closes and turns the race into client-visible TCP resets.
+        timeout_keep_alive=server_settings.http_keepalive_timeout_s,
+        # The serving lifespan (model worker, pipeline, telemetry) is entered
+        # explicitly by the entrypoint around `server.serve()` so that a worker
+        # crash cancels the serving task directly. Keep uvicorn out of the
+        # lifespan business to avoid the previous double-SIGINT shutdown hack.
+        lifespan="off",
     )
 
     for route in app.routes:

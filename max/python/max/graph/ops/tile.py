@@ -20,38 +20,50 @@ from .. import dtype_promotion
 from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
 from ..shape import Shape
-from ..type import DeviceRef, TensorType
+from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
-from .transfer_to import transfer_to
-from .validation import _check_device_placement
 
 
 def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
-    """Returns a new tensor by tiling the input along each dimension.
+    """Repeats a tensor along each of its dimensions.
 
-    The input is copied ``N_i`` times on the i-th dimension, where
-    ``N_i = repeats[i]``. The i-th dimension of the output shape is the
-    i-th dimension of the input shape multiplied by ``N_i``.
+    Each dimension ``i`` is copied ``repeats[i]`` times, so its output size is
+    ``x.shape[i] * repeats[i]``.
+
+    The op runs on ``x``'s device; only ``repeats`` are host values.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("tile_example") as graph:
+            x = ops.constant([[1, 2], [3, 4]], DType.int32, device=device)
+
+            # Repeat the columns twice, leaving the rows unchanged.
+            graph.output(ops.tile(x, [1, 2]))  # [[1, 2, 1, 2], [3, 4, 3, 4]]
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
     Args:
-        x: The input symbolic tensor to tile.
-        repeats: An iterable of repeat counts, one per dimension of ``x``.
-            All values must be positive. The length must equal the rank of
-            ``x``.
+        x: The tensor to tile.
+        repeats: The number of copies for each dimension, one positive value per
+            dimension of ``x``.
 
     Returns:
-        A symbolic tensor whose i-th dimension size equals
-        ``x.shape[i] * repeats[i]``.
+        A ``TensorValue`` representing the tiled input.
 
     Raises:
-        ValueError: If the length of ``repeats`` does not match the rank of
-            ``x``, or if any repeat value is not positive. Also raised for
-            GPU inputs when ``strict_device_placement=DevicePlacementPolicy.Error``.
+        ValueError: If ``repeats`` doesn't have one value per dimension, or if a
+            statically-known repeat isn't positive.
     """
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     shape = x.shape
 
-    repeats = list(Dim(d) for d in repeats)
+    repeats = [Dim(d) for d in repeats]
     if len(shape) != len(repeats):
         raise ValueError(
             "Input rank and number of elements in repeats must match:"
@@ -65,18 +77,10 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
         dim * count for dim, count in zip(shape, repeats, strict=True)
     ]
 
-    old_device = x.device if not x.device.is_cpu() else None
-    if old_device is not None:
-        _check_device_placement("ops.tile", "TODO(GEX-2056).")
-        x = transfer_to(x, DeviceRef.CPU())
-    # TODO(GEX-2056): Add GPU kernel support for tile.
-    result = Graph.current._add_op_generated(
+    return Graph.current._add_op_generated(
         rmo.MoTileOp,
         TensorType(dtype=x.dtype, shape=output_dims, device=x.device),
         x,
         TensorValue(Shape(repeats)),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    if old_device is not None:
-        return transfer_to(result, old_device)
-    return result

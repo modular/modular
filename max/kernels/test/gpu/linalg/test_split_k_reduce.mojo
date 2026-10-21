@@ -14,17 +14,10 @@
 from std.math import isclose
 from std.random import rand
 
-from std.gpu.host import DeviceContext
-from layout import (
-    TileTensor,
-    Coord,
-    Idx,
-    row_major,
-)
+from max.gpu.host import DeviceContext
+from layout import TileTensor, Coord, row_major
 from linalg.matmul.gpu import split_k_reduce
 from std.testing import assert_almost_equal
-
-from std.utils import IndexList
 
 
 def test_split_k_reduce_rank3[
@@ -41,24 +34,26 @@ def test_split_k_reduce_rank3[
         N,
     )
 
-    var c_host = alloc[Scalar[c_type]](M * N)
-    var c_host_ref = alloc[Scalar[c_type]](M * N)
+    var c_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[c_type](M * N)
 
     # Random buffer for host computation.
-    var epilogue_data_host = alloc[Scalar[c_type]](M * N)
-    rand[c_type](epilogue_data_host, M * N)
+    var epilogue_data_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+    rand[c_type](epilogue_data_host.unsafe_ptr(), M * N)
 
     var work_space_size = num_partitions * M * N
-    var work_space_host = alloc[Scalar[work_space_type]](work_space_size)
-    rand[work_space_type](work_space_host, work_space_size)
+    var work_space_host = ctx.enqueue_create_host_buffer[work_space_type](
+        work_space_size
+    )
+    rand[work_space_type](work_space_host.unsafe_ptr(), work_space_size)
 
     # Naive host reduction. The accumulation is in FP32 since CPU may not have
     # native BF16 instructions.
     for i in range(M * N):
-        var sum = work_space_host[i].cast[DType.float32]()
+        var sum = work_space_host[i].cast[.float32]()
         for j in range(1, num_partitions):
-            sum += work_space_host[i + j * M * N].cast[DType.float32]()
-        sum += epilogue_data_host[i].cast[DType.float32]()
+            sum += work_space_host[i + j * M * N].cast[.float32]()
+        sum += epilogue_data_host[i].cast[.float32]()
         c_host_ref[i] = sum.cast[c_type]()
 
     var work_space_device = ctx.enqueue_create_buffer[work_space_type](
@@ -73,34 +68,31 @@ def test_split_k_reduce_rank3[
     # Create TileTensors
     var c = TileTensor(
         c_device,
-        row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
+        row_major(M, N),
     )
     var work_space = TileTensor(
         work_space_device,
-        row_major(Coord(Idx(Int(num_partitions)), Idx(Int(M)), Idx(Int(N)))),
+        row_major(num_partitions, M, N),
     )
     var epilogue_buffer = TileTensor(
-        epilogue_data_device.unsafe_ptr(),
-        row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
+        epilogue_data_device,
+        row_major(M, N),
     )
 
-    @parameter
-    @always_inline
-    @__copy_capture(c, epilogue_buffer)
-    def epilogue_fn[
-        _dtype: DType, _width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, _width]) capturing -> None:
-        var another_val = rebind[SIMD[_dtype, _width]](
-            epilogue_buffer.load[width=_width](Coord(Idx(idx[0]), Idx(idx[1])))
-        )
-        c.store(
-            Coord(Idx(idx[0]), Idx(idx[1])),
-            rebind[SIMD[c_type, _width]](val + another_val),
+    def add_epilogue_data[
+        _dtype: DType, _width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, _width]) {var epilogue_buffer} -> SIMD[
+        _dtype, _width
+    ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val + rebind[SIMD[_dtype, _width]](
+            epilogue_buffer.load[width=_width](idx)
         )
 
-    split_k_reduce[elementwise_lambda_fn=epilogue_fn](c, work_space, ctx)
+    split_k_reduce(c, work_space, add_epilogue_data, ctx)
 
     ctx.enqueue_copy(c_host, c_device)
+    ctx.synchronize()
 
     comptime rtol = 1e-4 if c_type == DType.float32 else 1e-2
     for i in range(M * N):
@@ -113,17 +105,10 @@ def test_split_k_reduce_rank3[
             )
         assert_almost_equal(c_host[i], c_host_ref[i], rtol=rtol)
 
-    c_host.free()
-    c_host_ref.free()
-    epilogue_data_host.free()
-    work_space_host.free()
-
 
 def main() raises:
     with DeviceContext() as ctx:
         # Rank-3 work space.
-        test_split_k_reduce_rank3[DType.bfloat16, DType.bfloat16](
-            64, 64, 2, ctx
-        )
-        test_split_k_reduce_rank3[DType.bfloat16, DType.float32](32, 32, 5, ctx)
-        test_split_k_reduce_rank3[DType.float32, DType.float32](32, 64, 3, ctx)
+        test_split_k_reduce_rank3[.bfloat16, .bfloat16](64, 64, 2, ctx)
+        test_split_k_reduce_rank3[.bfloat16, .float32](32, 32, 5, ctx)
+        test_split_k_reduce_rank3[.float32, .float32](32, 64, 3, ctx)

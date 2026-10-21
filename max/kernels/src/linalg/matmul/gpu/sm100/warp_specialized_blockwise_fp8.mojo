@@ -11,44 +11,48 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements a warp-specialized blockwise FP8 matrix multiplication kernel for NVIDIA SM100 (Blackwell) GPUs."""
+
 from std.math import align_up, ceildiv, gcd
+from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
 
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
+from max.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
-from std.gpu import block_id_in_cluster, lane_id_uint as lane_id
-from std.gpu import warp_id_uint as get_warp_id
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
+from max.gpu import block_id_in_cluster, lane_id, warp_id as get_warp_id
+from max.gpu.memory import (
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
+    Coord,
     Layout,
-    LayoutTensor,
     TensorLayout,
+    TensorEngine,
     TileTensor,
-    lt_to_tt,
+    coord,
+    row_major,
+    stack_allocation,
 )
-from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
@@ -70,11 +74,12 @@ from .tile_scheduler import TileScheduler
 from .pipeline import ProducerConsumerPipeline
 from structured_kernels.tile_types import (
     SMemTileArray2D,
+    SMemTileArray2DRowMajor,
     swizzle_mode_to_bytes,
 )
 
 
-@always_inline
+@inline(.always)
 def _get_accumulator_size[
     *,
     c_smem_layout: Layout,
@@ -109,20 +114,17 @@ def _get_accumulator_size[
     return Index(num_stages, num_elements)
 
 
-@always_inline
+@inline(.always)
 def load_AB[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    a_rank: Int,
-    a_tile_shape: IndexList[a_rank],
-    a_desc_shape: IndexList[a_rank],
-    b_rank: Int,
-    b_tile_shape: IndexList[b_rank],
-    b_desc_shape: IndexList[b_rank],
-    a_scales_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_rank],
-    a_scales_desc_shape: IndexList[a_scales_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
     a_dim0: Int,
     a_dim1: Int,
     a_num_tiles: Int,
@@ -131,7 +133,9 @@ def load_AB[
     b_dim1: Int,
     b_num_tiles: Int,
     b_swizzle_bytes: Int,
-    a_scales_smem_layout: Layout,
+    a_scales_dim0: Int,
+    a_scales_dim1: Int,
+    a_scales_num_tiles: Int,
     num_pipeline_stages: Int,
     /,
     *,
@@ -139,10 +143,10 @@ def load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_rank, a_scales_tile_shape, a_scales_desc_shape
+        a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
     a_smem_tiles: SMemTileArray2D[
         a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
@@ -150,21 +154,79 @@ def load_AB[
     b_smem_tiles: SMemTileArray2D[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
-    a_scales_smem: LayoutTensorIter[
-        a_scales_type,
-        a_scales_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
+    a_scales_smem_tiles: SMemTileArray2DRowMajor[
+        a_scales_type, a_scales_dim0, a_scales_dim1, a_scales_num_tiles, 128
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
-    peer_cta_coord: Tuple[UInt, UInt, UInt],
-    work_tile_coord: Tuple[UInt, UInt],
+    peer_cta_coord: Tuple[Int, Int, Int],
+    work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
-    iter_idx: UInt,
+    iter_idx: Int,
     elect_one_cta: Bool,
 ):
+    """Loads A, B, and A-scales tiles into shared memory via multicast TMA for one pipeline stage.
+
+    Parameters:
+        a_type: FP8 element type of the A operand matrix.
+        b_type: FP8 element type of the B operand matrix.
+        a_scales_type: Element type of the A blockwise scales (`float32`).
+        a_tile_shape: Shared-memory tile shape for each A TMA load.
+        a_desc_shape: Copy box shape governing bytes per A TMA load.
+        b_tile_shape: Shared-memory tile shape for each B TMA load.
+        b_desc_shape: Copy box shape governing bytes per B TMA load.
+        a_scales_tile_shape: Shared-memory tile shape for each A scales
+            TMA load.
+        a_scales_desc_shape: Copy box shape governing bytes per A scales
+            TMA load.
+        a_dim0: Row extent of each A shared-memory tile.
+        a_dim1: Column extent of each A shared-memory tile.
+        a_num_tiles: Number of A tiles in the shared-memory tile array.
+        a_swizzle_bytes: Swizzle stride in bytes for the A shared-memory
+            tile.
+        b_dim0: Row extent of each B shared-memory tile.
+        b_dim1: Column extent of each B shared-memory tile.
+        b_num_tiles: Number of B tiles in the shared-memory tile array.
+        b_swizzle_bytes: Swizzle stride in bytes for the B shared-memory
+            tile.
+        a_scales_dim0: Row extent of each A scales shared-memory tile.
+        a_scales_dim1: Column extent of each A scales shared-memory tile.
+        a_scales_num_tiles: Number of A scales tiles in the shared-memory
+            tile array.
+        num_pipeline_stages: Number of double-buffered stages for A, B,
+            and A scales TMA loads.
+        block_tile_shape: GEMM block tile shape `(BM, BN, BK)`.
+        mma_shape: Tensor-core MMA shape `(MMA_M, MMA_N, MMA_K)`.
+        cta_group: Number of CTAs cooperating per MMA group (defaults to
+            1).
+
+    Args:
+        a_tma_op: TMA descriptor for async multicast loads of A tiles
+            from global memory.
+        b_tma_op: TMA descriptor for async multicast loads of B tiles
+            from global memory.
+        a_scales_tma_op: TMA descriptor for async loads of A blockwise
+            scales from global memory.
+        a_smem_tiles: Shared-memory tile array holding A tiles across
+            pipeline stages.
+        b_smem_tiles: Shared-memory tile array holding B tiles across
+            pipeline stages.
+        a_scales_smem_tiles: Shared-memory tile array holding A blockwise
+            scales across pipeline stages.
+        load_mma_pipeline: Producer/consumer pipeline synchronizing TMA
+            loads with MMA consumption.
+        peer_cta_coord: Peer CTA coordinate `(peer_id, m_coord, n_coord)`
+            within the cluster.
+        work_tile_coord: Work tile coordinate `(m, n)` of the current
+            output tile.
+        a_multicast_mask: Multicast mask selecting CTAs that receive A
+            tile broadcasts.
+        b_multicast_mask: Multicast mask selecting CTAs that receive B
+            tile broadcasts.
+        iter_idx: K-dimension iteration index for the current TMA load.
+        elect_one_cta: Whether this CTA is the elected leader for
+            multicast TMA setup.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -174,21 +236,19 @@ def load_AB[
 
     comptime a_expected_bytes = a_dim0 * a_dim1 * size_of[a_type]()
     comptime b_expected_bytes = b_dim0 * b_dim1 * size_of[b_type]()
-    comptime a_scales_expected_bytes = a_scales_smem_layout.size() * size_of[
-        a_scales_type
-    ]()
+    comptime a_scales_expected_bytes = (
+        a_scales_dim0 * a_scales_dim1 * size_of[a_scales_type]()
+    )
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = cta_group * (
         a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
     )
 
-    comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
-    comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
-    comptime a_scales_tma_load_size = _idx_product[
-        a_scales_rank, a_scales_desc_shape
-    ]()
-    comptime a_tma_rows = a_desc_shape[0]
-    comptime b_tma_rows = b_desc_shape[0]
+    comptime a_tma_load_size = _idx_product[a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_desc_shape]()
+    comptime a_scales_tma_load_size = _idx_product[a_scales_desc_shape]()
+    comptime a_tma_rows = a_desc_shape.element_types[0].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[0].static_value
 
     var stage = load_mma_pipeline.producer_stage()
 
@@ -196,24 +256,24 @@ def load_AB[
     load_mma_pipeline.wait_consumer()
 
     var a_gmem_slice_coord = (
-        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+        peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
     )
     var b_gmem_slice_coord = (
-        Int(peer_cta_coord[1]) * b_tma_rows
-        + Int(peer_cta_coord[0]) * BN
-        + Int(work_tile_coord[1]) * MMA_N
+        peer_cta_coord[1] * b_tma_rows
+        + peer_cta_coord[0] * BN
+        + work_tile_coord[1] * MMA_N
     )
 
     var a_smem_tile = a_smem_tiles[stage]
     var b_smem_tile = b_smem_tiles[stage]
-    var a_scales_smem_tile = a_scales_smem.next(stage)[]
+    var a_scales_smem_tile = a_scales_smem_tiles[stage]
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size),
+        a_smem_tile.ptr.unsafe_offset(peer_cta_coord[2] * a_tma_load_size),
         a_smem_tile.layout,
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size),
+        b_smem_tile.ptr.unsafe_offset(peer_cta_coord[1] * b_tma_load_size),
         b_smem_tile.layout,
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -225,32 +285,30 @@ def load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (Int(iter_idx) * BK, a_gmem_slice_coord),
+            (iter_idx * BK, a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (Int(iter_idx) * BK, b_gmem_slice_coord),
+            (iter_idx * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[0],
-            (Int(work_tile_coord[0]) * BM, Int(iter_idx)),
+            (work_tile_coord[0] * BM, iter_idx),
         )
 
 
-@always_inline
+@inline(.always)
 def multi_stage_reg_epilogue[
-    c_smem_layout: Layout,
-    c_rank: Int,
-    c_tile_shape: IndexList[c_rank],
-    c_desc_shape: IndexList[c_rank],
+    c_tile_shape: Coord,
+    c_desc_shape: Coord,
     accum_type: DType,
-    accum_layout: Layout,
+    accum_layout: TensorLayout,
     /,
     *,
     c_type: DType,
@@ -261,31 +319,56 @@ def multi_stage_reg_epilogue[
     num_output_warps: Int,
     c_swizzle: TensorMapSwizzle,
 ](
-    c_upper_main_tile: LayoutTensor[
+    c_upper_main_tile: TileTensor[
+        mut=True,
         accum_type,
-        accum_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        LayoutType=accum_layout,
+        address_space=.LOCAL,
         ...,
     ],
-    c_lower_main_tile: LayoutTensor[
+    c_lower_main_tile: TileTensor[
+        mut=True,
         accum_type,
-        accum_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        LayoutType=accum_layout,
+        address_space=.LOCAL,
         ...,
     ],
-    c_iter: LayoutTensorIter[
-        c_type,
-        c_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
-    c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
-    c_coord: Tuple[UInt, UInt],
+    c_tiles: SMemTileArray2DRowMajor[c_type, ...],
+    c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
+    c_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
 ):
+    """Casts register accumulators to the output type and stores each stage to global memory via TMA.
+
+    Parameters:
+        c_tile_shape: Shared-memory tile shape for each C TMA store.
+        c_desc_shape: Copy box shape governing bytes per C TMA store.
+        accum_type: Element type of the register accumulators before
+            casting.
+        accum_layout: Memory layout of the accumulator `TileTensor`.
+        c_type: Element type of the C output matrix.
+        block_tile_shape: GEMM block tile shape `(BM, BN, BK)`.
+        mma_shape: Tensor-core MMA shape `(MMA_M, MMA_N, MMA_K)`.
+        is_lower_frag_required: Whether the lower accumulator fragment must
+            be processed and stored.
+        cta_group: Number of CTAs cooperating per MMA group.
+        num_output_warps: Number of warps participating in the epilogue
+            store.
+        c_swizzle: Swizzle mode for the C shared-memory tile.
+
+    Args:
+        c_upper_main_tile: Upper accumulator fragment holding scaled MMA
+            results to be cast and stored.
+        c_lower_main_tile: Lower accumulator fragment holding scaled MMA
+            results to be cast and stored.
+        c_tiles: Shared-memory tile array for staging C output tiles before
+            TMA store.
+        c_tma_op: TMA descriptor for async stores of C tiles to global
+            memory.
+        c_coord: Work tile coordinate `(m, n)` of the current output tile.
+        elect_one_warp: Whether this warp is the elected leader for issuing
+            TMA stores.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -298,8 +381,8 @@ def multi_stage_reg_epilogue[
 
     comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
-    comptime num_stages = accum_layout.shape[0].value()
-    comptime num_elements = accum_layout.shape[1].value()
+    comptime num_stages = accum_layout.static_shape[0]
+    comptime num_elements = accum_layout.static_shape[1]
 
     comptime data_paths = 16
     comptime bits = 256
@@ -314,20 +397,20 @@ def multi_stage_reg_epilogue[
     var warp_id = get_warp_id()
 
     comptime for stage in range(num_stages):
-        var upper_frag = c_upper_main_tile.load[fragments_per_stage](stage, 0)
-        var lower_frag = c_lower_main_tile.load[fragments_per_stage](stage, 0)
+        var upper_frag = c_upper_main_tile.load[fragments_per_stage]((stage, 0))
+        var lower_frag = c_lower_main_tile.load[fragments_per_stage]((stage, 0))
 
         # Assume double-buffer for shared memory packing
-        var c_smem_tile = c_iter.next(stage % 2)[]
+        var c_smem_tile = c_tiles[stage % 2]
         comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
-        var c_smem_warp_tt = lt_to_tt(c_smem_tile).tile[c_smem_tile_m, stageN](
-            Int(warp_id), 0
+        var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
+            warp_id, 0
         )
 
-        var c_smem_warp_tile_upper = c_smem_warp_tt.tile[data_paths, stageN](
+        var c_smem_warp_tile_upper = c_smem_warp_tile.tile[data_paths, stageN](
             0, 0
         )
-        var upper_st = InlineArray[Scalar[c_type], fragments_per_stage](
+        var upper_st = Array[Scalar[c_type], fragments_per_stage](
             uninitialized=True
         )
 
@@ -342,12 +425,12 @@ def multi_stage_reg_epilogue[
                 upper_st[offset + _j] = casted[_j]
         stsm_helper[swizzle, stageN](upper_st, c_smem_warp_tile_upper)
 
-        var c_smem_warp_tile_lower = c_smem_warp_tt.tile[data_paths, stageN](
+        var c_smem_warp_tile_lower = c_smem_warp_tile.tile[data_paths, stageN](
             1, 0
         )
 
         comptime if is_lower_frag_required:
-            var lower_st = InlineArray[Scalar[c_type], fragments_per_stage](
+            var lower_st = Array[Scalar[c_type], fragments_per_stage](
                 uninitialized=True
             )
 
@@ -366,40 +449,36 @@ def multi_stage_reg_epilogue[
 
         var lane = lane_id()
 
-        comptime CG2_TMA_BM = c_smem_tile.layout.shape[
+        comptime CG2_TMA_BM = type_of(c_smem_tile).static_shape[
             0
-        ].value() if MMA_M == 256 else BM
-        comptime CG1_TMA_BM = c_smem_tile.layout.shape[0].value()
+        ] if MMA_M == 256 else BM
+        comptime CG1_TMA_BM = type_of(c_smem_tile).static_shape[0]
         comptime TMA_BM = CG2_TMA_BM if cta_group == 2 else CG1_TMA_BM
 
         var cg2_elect_one_warp = (
-            warp_id == 0 if MMA_M == 256 else warp_id % 2 == 0
+            warp_id == 0 if MMA_M == 256 else umod(warp_id, 2) == 0
         )
         var cg1_elect_one_warp = warp_id == 0
         var elect_one_warp = (
             cg2_elect_one_warp if cta_group == 2 else cg1_elect_one_warp
         )
 
-        var coord_n_mma_m256 = c_coord[1] * UInt(MMA_N) + UInt(stage * stageN)
+        var coord_n_mma_m256 = c_coord[1] * MMA_N + stage * stageN
         var coord_n_mma_m128 = (
-            c_coord[1] * UInt(MMA_N)
-            + UInt(stage * stageN)
-            + UInt(BN * Int(warp_id // 2))
+            c_coord[1] * MMA_N + (stage * stageN) + (BN * ufloordiv(warp_id, 2))
         )
 
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
         var cg1_coord_n = coord_n_mma_m256
-        var coord_n = Int(cg2_coord_n if cta_group == 2 else cg1_coord_n)
-        var coord_m = Int(c_coord[0] * UInt(BM))
+        var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
+        var coord_m = c_coord[0] * BM
 
-        var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
-        var cg1_c_smem_coord_m = UInt(0)
+        var cg2_c_smem_coord_m = 0 if MMA_M == 256 else ufloordiv(warp_id, 2)
+        var cg1_c_smem_coord_m = 0
         var c_smem_coord_m = (
             cg2_c_smem_coord_m if cta_group == 2 else cg1_c_smem_coord_m
         )
-        var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
-            Int(c_smem_coord_m), 0
-        )
+        var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](c_smem_coord_m, 0)
 
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
@@ -424,16 +503,15 @@ def multi_stage_reg_epilogue[
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
-@always_inline
+@inline(.always)
 def promote_accumulators[
     pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     accum_type: DType,
-    accum_layout: Layout,
+    accum_layout: TensorLayout,
     a_scales_type: DType,
     b_scales_type: DType,
-    b_scales_layout: Layout,
-    a_scales_smem_layout: Layout,
+    b_scales_layout: TensorLayout,
     /,
     *,
     block_tile_shape: IndexList[3],
@@ -443,37 +521,75 @@ def promote_accumulators[
     is_lower_frag_required: Bool,
     num_output_warps: Int,
 ](
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
-    a_scales_smem_iter: LayoutTensorIter[
-        a_scales_type,
-        a_scales_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
-    c_upper_main_tile: LayoutTensor[
+    b_scales: TileTensor[mut=False, b_scales_type, b_scales_layout, ...],
+    a_scales_smem_tiles: SMemTileArray2DRowMajor[a_scales_type, ...],
+    c_upper_main_tile: TileTensor[
+        mut=True,
         accum_type,
-        accum_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        LayoutType=accum_layout,
+        address_space=.LOCAL,
         ...,
     ],
-    c_lower_main_tile: LayoutTensor[
+    c_lower_main_tile: TileTensor[
+        mut=True,
         accum_type,
-        accum_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        LayoutType=accum_layout,
+        address_space=.LOCAL,
         ...,
     ],
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
-    work_tile_coord: Tuple[UInt, UInt],
+    work_tile_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
-    stage_stride_cols: UInt,
-    k_iter: UInt,
+    stage_stride_cols: Int,
+    k_iter: Int,
     problem_shape: StaticTuple[Int32, 3],
 ):
+    """Promotes FP8 MMA partial products by applying blockwise A and B scales to the tensor-memory accumulators.
+
+    Parameters:
+        pipeline_stages: Number of double-buffered stages in the load-MMA
+            pipeline.
+        num_accum_pipeline_stages: Number of double-buffered stages in the
+            MMA-output pipeline.
+        accum_type: Element type of the accumulators (`float32`).
+        accum_layout: Memory layout of the accumulator `TileTensor`.
+        a_scales_type: Element type of the A blockwise scales (`float32`).
+        b_scales_type: Element type of the B blockwise scales (`float32`).
+        b_scales_layout: Memory layout of the B scales `TileTensor`.
+        block_tile_shape: GEMM block tile shape `(BM, BN, BK)`.
+        mma_shape: Tensor-core MMA shape `(MMA_M, MMA_N, MMA_K)`.
+        cta_group: Number of CTAs cooperating per MMA group.
+        CLUSTER_SIZE: Total number of CTAs in the cluster.
+        is_lower_frag_required: Whether the lower accumulator fragment must
+            be processed.
+        num_output_warps: Number of warps participating in the epilogue.
+
+    Args:
+        b_scales: B blockwise scales used to rescale FP8 partial products.
+        a_scales_smem_tiles: Shared-memory tile array holding A blockwise
+            scales loaded for the current pipeline stage.
+        c_upper_main_tile: Upper accumulator fragment to accumulate scaled
+            results into.
+        c_lower_main_tile: Lower accumulator fragment to accumulate scaled
+            results into.
+        mma_output_pipeline: Producer/consumer pipeline synchronizing MMA
+            production with accumulator consumption.
+        tmem_addr: Base tensor-memory address for loading accumulator
+            fragments.
+        load_mma_pipeline: Producer/consumer pipeline synchronizing TMA
+            loads with MMA consumption.
+        work_tile_coord: Work tile coordinate `(m, n)` of the current
+            output tile.
+        elect_one_warp: Whether this warp is the elected leader for
+            barrier signaling.
+        stage_stride_cols: Column stride between accumulator pipeline
+            stages in tensor memory.
+        k_iter: K-dimension iteration index for the current scale
+            application.
+        problem_shape: Full GEMM problem dimensions `(M, N, K)`.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -487,7 +603,7 @@ def promote_accumulators[
     comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime assert (
-        a_scales_type == b_scales_type and accum_type == DType.float32
+        a_scales_type == b_scales_type and accum_type == .float32
     ), "Only support float32 for a_scales, b_scales, and accum_type"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
@@ -499,8 +615,8 @@ def promote_accumulators[
     var N = problem_shape[1]
     var K = problem_shape[2]
 
-    comptime num_stages = accum_layout.shape[0].value()
-    comptime num_elements = accum_layout.shape[1].value()
+    comptime num_stages = accum_layout.static_shape[0]
+    comptime num_elements = accum_layout.static_shape[1]
     comptime data_paths = 16
     comptime bits = 256
     comptime num_elements_per_load = bits // 32  # each element in tmem is 4 bytes, 32 bits
@@ -530,15 +646,15 @@ def promote_accumulators[
             " accordingly"
         )
 
-        var global_bn_start = bn * UInt(MMA_N)
+        var global_bn_start = bn * MMA_N
         var begin_n = min(
-            Int32(BK) - Int32(global_bn_start % UInt(BK)), Int32(MMA_N)
+            Int32(BK) - Int32(umod(global_bn_start, BK)), Int32(MMA_N)
         )
         var end_n = min(N - Int32(global_bn_start), Int32(MMA_N))
 
         # find the first b_scale index just by dividing by block size (128)
         # we use `b_scale_next_n` to find the second b_scale index later
-        b_scale_idx0 = Int(global_bn_start // UInt(BK))
+        b_scale_idx0 = ufloordiv(global_bn_start, BK)
         # If MMA_N > BK (128) then we should use two scales_b in each block. `next_n` determines the border between the two scales_b.
         # Example: N = 960, MMA_N = 192, num_of_b_scales: ceildiv(960, BK) = 8
         # <------------------------------------ MMA_N (192) ------------------------------------>
@@ -563,52 +679,50 @@ def promote_accumulators[
         #                                                           next_n(128)
 
         # prefetch b scales
-        b_scale_0 = rebind[Scalar[accum_type]](
-            b_scales[b_scale_idx0, k_iter].cast[accum_type]()
-        )
+        b_scale_0 = b_scales.load[width=1]((b_scale_idx0, k_iter)).cast[
+            accum_type
+        ]()
         # this mean in this block we have two scale_b
         if b_scale_next_n < MMA_N:
-            b_scale_1 = rebind[Scalar[accum_type]](
-                b_scales[b_scale_idx0 + 1, k_iter].cast[accum_type]()
-            )
+            b_scale_1 = b_scales.load[width=1]((b_scale_idx0 + 1, k_iter)).cast[
+                accum_type
+            ]()
         else:
             b_scale_1 = 0.0
 
     else:
         # when MMA_N == BK == 128 we only have one scale_b per block
-        b_scale_0 = rebind[Scalar[accum_type]](
-            b_scales[bn, k_iter].cast[accum_type]()
-        )
+        b_scale_0 = b_scales.load[width=1]((bn, k_iter)).cast[accum_type]()
         b_scale_1 = 0.0
 
     var warp_id = get_warp_id()
 
     # we update the column offset to include the current stage
-    var staged_c_row: UInt
-    var staged_c_col: UInt
+    var staged_c_row: Int
+    var staged_c_col: Int
 
     comptime if MMA_M == 256 or (MMA_M == 128 and cta_group == 1):
         # based on layout A/D (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-a)
-        staged_c_row = warp_id * UInt(WARP_SIZE)
-        staged_c_col = UInt(0)
+        staged_c_row = warp_id * WARP_SIZE
+        staged_c_col = 0
     elif MMA_M == 64 and cta_group == 1:
         # based on layout F (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-f)
-        staged_c_row = warp_id * UInt(WARP_SIZE // 2)
-        staged_c_col = UInt(0)
+        staged_c_row = warp_id * (WARP_SIZE // 2)
+        staged_c_col = 0
     else:
         # based on layout B (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-b)
-        staged_c_row = (warp_id % 2) * UInt(WARP_SIZE)
-        staged_c_col = UInt(BN) * (warp_id // 2)
+        staged_c_row = umod(warp_id, 2) * WARP_SIZE
+        staged_c_col = BN * ufloordiv(warp_id, 2)
 
     # this is the tensor memory layout
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-matrix-fragments-shape-16256b
     # we use it to figure out the starting coordinate
-    comptime threads_per_row = UInt(
+    comptime threads_per_row = (
         stageN // repeats // load_width
     )  # 4 threads per row
     var top_frag_upper_coord = StaticTuple[UInt32, 2](
-        UInt32(lane_id() // threads_per_row),
-        UInt32(lane_id() % threads_per_row * load_width),
+        UInt32(ufloordiv(lane_id(), threads_per_row)),
+        UInt32(umod(lane_id(), threads_per_row * load_width)),
     )
 
     # getting the other 3 coordinates is straightforward. Each fragment is spaced out by 16 rows
@@ -629,7 +743,7 @@ def promote_accumulators[
     var tmem_offset = mma_output_stage * UInt32(stage_stride_cols) + tmem_addr
     mma_output_pipeline.wait_producer()
 
-    var a_scales_smem = a_scales_smem_iter.next(tma_load_stage_index)[]
+    var a_scales_smem = a_scales_smem_tiles[tma_load_stage_index]
     # load a_scales from SMEM
     var upper_sfa0_smem = a_scales_smem[
         0, UInt32(staged_c_row) + top_frag_upper_coord[0]
@@ -642,25 +756,21 @@ def promote_accumulators[
     var lower_sfa1_smem = Scalar[accum_type]()
 
     comptime if is_lower_frag_required:
-        lower_sfa0_smem = rebind[Scalar[accum_type]](
-            a_scales_smem[
-                0, UInt32(staged_c_row) + top_frag_lower_coord[0]
-            ].cast[accum_type]()
-        )
-        lower_sfa1_smem = rebind[Scalar[accum_type]](
-            a_scales_smem[
-                0, UInt32(staged_c_row) + bottom_frag_lower_coord[0]
-            ].cast[accum_type]()
-        )
+        lower_sfa0_smem = a_scales_smem[
+            0, UInt32(staged_c_row) + top_frag_lower_coord[0]
+        ].cast[accum_type]()
+        lower_sfa1_smem = a_scales_smem[
+            0, UInt32(staged_c_row) + bottom_frag_lower_coord[0]
+        ].cast[accum_type]()
 
     syncwarp()
-    if lane_id() < UInt(CLUSTER_SIZE):
+    if lane_id() < Int(CLUSTER_SIZE):
         _ = load_mma_pipeline.consumer_mbar(tma_load_stage_index)[0].arrive()
     syncwarp()
 
     comptime rep_frag_size = repeats * fragment_size
-    var upper_frag: InlineArray[Scalar[accum_type], rep_frag_size]
-    var lower_frag = InlineArray[Scalar[accum_type], rep_frag_size](
+    var upper_frag: Array[Scalar[accum_type], rep_frag_size]
+    var lower_frag = Array[Scalar[accum_type], rep_frag_size](
         uninitialized=True
     )
 
@@ -702,7 +812,7 @@ def promote_accumulators[
         comptime if MMA_N != BK:
             # check if we cross the border between the two scale_b
             b_scale = (
-                b_scale_0 if (stage * stageN + Int(staged_c_col))
+                b_scale_0 if (stage * stageN + staged_c_col)
                 < b_scale_next_n else b_scale_1
             )
         else:
@@ -722,24 +832,36 @@ def promote_accumulators[
                 var upper_scale = upper_a_scale * b_scale
                 var lower_scale = lower_a_scale * b_scale
 
-                c_upper_main_tile[stage, offset] += rebind[Scalar[accum_type]](
-                    upper_frag[offset]
-                ) * rebind[Scalar[accum_type]](upper_scale)
-                c_upper_main_tile[stage, offset + 1] += rebind[
+                c_upper_main_tile[stage, offset] = c_upper_main_tile[
+                    stage, offset
+                ] + rebind[Scalar[accum_type]](upper_frag[offset]) * rebind[
                     Scalar[accum_type]
-                ](upper_frag[offset + 1]) * rebind[Scalar[accum_type]](
+                ](
+                    upper_scale
+                )
+                c_upper_main_tile[stage, offset + 1] = c_upper_main_tile[
+                    stage, offset + 1
+                ] + rebind[Scalar[accum_type]](upper_frag[offset + 1]) * rebind[
+                    Scalar[accum_type]
+                ](
                     upper_scale
                 )
 
                 comptime if is_lower_frag_required:
-                    c_lower_main_tile[stage, offset] += rebind[
+                    c_lower_main_tile[stage, offset] = c_lower_main_tile[
+                        stage, offset
+                    ] + rebind[Scalar[accum_type]](lower_frag[offset]) * rebind[
                         Scalar[accum_type]
-                    ](lower_frag[offset]) * rebind[Scalar[accum_type]](
+                    ](
                         lower_scale
                     )
-                    c_lower_main_tile[stage, offset + 1] += rebind[
+                    c_lower_main_tile[stage, offset + 1] = c_lower_main_tile[
+                        stage, offset + 1
+                    ] + rebind[Scalar[accum_type]](
+                        lower_frag[offset + 1]
+                    ) * rebind[
                         Scalar[accum_type]
-                    ](lower_frag[offset + 1]) * rebind[Scalar[accum_type]](
+                    ](
                         lower_scale
                     )
 
@@ -749,60 +871,93 @@ def promote_accumulators[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+@__name(
+    t"blackwell_warp_specialized_blockwise_fp8_{a_type}_{b_type}_{c_type}_{transpose_b}_s{num_pipeline_stages}",
+)
 def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_rank: Int,
-    a_tile_shape: IndexList[a_rank],
-    a_desc_shape: IndexList[a_rank],
-    b_rank: Int,
-    b_tile_shape: IndexList[b_rank],
-    b_desc_shape: IndexList[b_rank],
-    c_rank: Int,
-    c_tile_shape: IndexList[c_rank],
-    c_desc_shape: IndexList[c_rank],
-    a_scales_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_rank],
-    a_scales_desc_shape: IndexList[a_scales_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    c_tile_shape: Coord,
+    c_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
     a_scales_type: DType,
     b_scales_type: DType,
     b_scales_layout: TensorLayout,
+    b_scales_engine: TensorEngine,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
     cluster_shape: StaticTuple[Int32, 3],
 ](
-    a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
-    c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_rank, a_scales_tile_shape, a_scales_desc_shape
+        a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: UInt,
-    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    num_iters: Int32,
+    b_scales: TileTensor[
+        b_scales_type, b_scales_layout, ImmutAnyOrigin, Engine=b_scales_engine
+    ],
     problem_shape: StaticTuple[Int32, 3],
 ):
+    """Implements the warp-specialized blockwise FP8 GEMM kernel for SM100 using TMA loads, UMMA tensor-core MMA, and a CLC tile scheduler.
+
+    Parameters:
+        a_type: FP8 element type of the A operand matrix.
+        b_type: FP8 element type of the B operand matrix.
+        c_type: Element type of the C output matrix.
+        a_tile_shape: Shared-memory tile shape for each A TMA load.
+        a_desc_shape: Copy box shape governing bytes per A TMA load.
+        b_tile_shape: Shared-memory tile shape for each B TMA load.
+        b_desc_shape: Copy box shape governing bytes per B TMA load.
+        c_tile_shape: Shared-memory tile shape for each C TMA store.
+        c_desc_shape: Copy box shape governing bytes per C TMA store.
+        a_scales_tile_shape: Shared-memory tile shape for each A scales TMA
+            load.
+        a_scales_desc_shape: Copy box shape governing bytes per A scales TMA
+            load.
+        a_scales_type: Element type of the A blockwise scales (`float32`).
+        b_scales_type: Element type of the B blockwise scales (`float32`).
+        b_scales_layout: Memory layout of the B scales `TileTensor`.
+        b_scales_engine: Engine of the B scales `TileTensor`.
+        transpose_b: Whether B is k-major (transposed); must be `True`.
+        config: Static GEMM configuration holding tile, MMA, cluster,
+            pipeline, and swizzle parameters.
+        num_pipeline_stages: Number of double-buffered stages for A, B, and
+            A scales TMA loads.
+        cluster_shape: Thread cluster shape `(x, y, z)` for the launch.
+
+    Args:
+        a_tma_op: TMA descriptor for async multicast loads of A tiles from
+            global memory.
+        b_tma_op: TMA descriptor for async multicast loads of B tiles from
+            global memory.
+        c_tma_op: TMA descriptor for async stores of C tiles to global
+            memory.
+        a_scales_tma_op: TMA descriptor for async loads of A blockwise
+            scales from global memory.
+        cluster_dim: Number of clusters along each grid axis `(x, y, z)`.
+        num_iters: Number of K-dimension iterations, equal to `ceil(K, BK)`.
+        b_scales: B blockwise scales used to rescale FP8 partial products.
+        problem_shape: Full GEMM problem dimensions `(M, N, K)`.
+    """
+    var _num_iters = Int(num_iters)
     comptime num_output_warps = 4
 
     comptime accum_type = get_accum_type[a_type]()
 
     comptime assert (
-        b_scales_type == a_scales_type and accum_type == DType.float32
+        b_scales_type == a_scales_type and accum_type == .float32
     ), "Only support float32 for a_scales and b_scales"
     comptime assert transpose_b, "only support k-major B"
-
-    # Convert b_scales TileTensor to LayoutTensor for promote_accumulators,
-    # which still uses LayoutTensor indexing internally. Rebind from
-    # immutable to MutAnyOrigin to satisfy the device-side pointer boundary.
-    var _b_scales_immut = b_scales.to_layout_tensor()
-    comptime _BScalesLTType = LayoutTensor[
-        b_scales_type,
-        type_of(_b_scales_immut).layout,
-        MutAnyOrigin,
-    ]
-    var b_scales_lt = rebind[_BScalesLTType](_b_scales_immut)
 
     comptime SCHEDULER_THREADS = WARP_SIZE
     comptime TMA_LOAD_THREADS = WARP_SIZE
@@ -831,7 +986,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime MMA_N = config.mma_shape[1]
     comptime MMA_K = config.mma_shape[2]
 
-    comptime assert BK == 128, "Only support BK = 128"
+    comptime assert BK in (64, 128), "Only support BK in (64, 128)"
     comptime assert MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK, (
         "MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK. MMA_N="
         + String(MMA_N)
@@ -846,17 +1001,17 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime CLUSTER_M: Int = config.cluster_shape[0]
     comptime CLUSTER_N: Int = config.cluster_shape[1]
 
-    comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
-    comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
-    comptime a_tma_rows = a_desc_shape[0]
-    comptime b_tma_rows = b_desc_shape[0]
+    comptime a_tma_load_size = _idx_product[a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape.element_types[0].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[0].static_value
     comptime c_smem_layout = Layout.row_major(BM, MMA_N)
 
     comptime a_scales_smem_layout = Layout.row_major(1, BM)
 
-    base_ptr_smem = external_memory[
+    var base_ptr_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]()
 
@@ -873,66 +1028,80 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime a_scales_smem_size = a_scales_smem_layout.size() * num_pipeline_stages
 
     var a_smem_base = base_ptr_smem
-    var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
-    var a_scales_smem_base = (c_smem_base + c_smem_size).bitcast[
-        Scalar[a_scales_type]
+    var b_smem_base = a_smem_base.unsafe_offset(a_smem_size).unsafe_bitcast[
+        Scalar[b_type]
     ]()
+    var c_smem_base = b_smem_base.unsafe_offset(b_smem_size).unsafe_bitcast[
+        Scalar[c_type]
+    ]()
+    var a_scales_smem_base = c_smem_base.unsafe_offset(
+        c_smem_size
+    ).unsafe_bitcast[Scalar[a_scales_type]]()
 
     # TileTensor views of shared memory for both TMA producer and MMA consumer.
-    var a_smem_tt = SMemTileArray2D[
+    # The size guards make the TileTensor array boundary explicit: pointer
+    # partitioning still follows tile_layout_k_major_typed, while consumers use
+    # the matching SMemTileArray2D TileTensor view.
+    comptime ASMemTiles = SMemTileArray2D[
         a_type,
         BM,
         BK,
         num_pipeline_stages,
         swizzle_mode_to_bytes[config.a_swizzle],
-    ](a_smem_base)
-    var b_smem_tt = SMemTileArray2D[
+    ]
+    comptime BSMemTiles = SMemTileArray2D[
         b_type,
         BN,
         BK,
         num_pipeline_stages,
         swizzle_mode_to_bytes[config.b_swizzle],
-    ](b_smem_base)
+    ]
+    comptime assert (
+        ASMemTiles.tile_size * num_pipeline_stages == a_smem_size
+    ), "A SMEM tile array size mismatch"
+    comptime assert (
+        BSMemTiles.tile_size * num_pipeline_stages == b_smem_size
+    ), "B SMEM tile array size mismatch"
+    var a_smem_tt = ASMemTiles(a_smem_base)
+    var b_smem_tt = BSMemTiles(b_smem_base)
 
-    var c_smem_iter = LayoutTensorIter[
+    var c_tiles = SMemTileArray2DRowMajor[
         c_type,
-        Layout.row_major(
-            config.output_tile_shape[0], config.output_tile_shape[1]
-        ),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](c_smem_base, c_smem_size)
+        config.output_tile_shape[0],
+        config.output_tile_shape[1],
+        config.num_output_stages,
+        128,
+    ](c_smem_base)
 
-    var a_scales_smem = LayoutTensorIter[
+    var a_scales_smem = SMemTileArray2DRowMajor[
         a_scales_type,
-        a_scales_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](
-        a_scales_smem_base,
-        a_scales_smem_size,
-    )
-    var load_mma_mbar_ptr = (a_scales_smem_base + a_scales_smem_size).bitcast[
-        SharedMemBarrier
-    ]()
+        1,
+        BM,
+        num_pipeline_stages,
+        128,
+    ](a_scales_smem_base)
+    var load_mma_mbar_ptr = (
+        a_scales_smem_base.unsafe_offset(a_scales_smem_size)
+    ).unsafe_bitcast[SharedMemBarrier]()
 
     # Load warp as producer and mma warp as consumer
     var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
         load_mma_mbar_ptr
     )
 
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
+    var mma_output_mbar_ptr = load_mma_mbar_ptr.unsafe_offset(
+        2 * num_pipeline_stages
+    )
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
     ](mma_output_mbar_ptr)
 
-    var clc_full_mbar_ptr = (
-        mma_output_mbar_ptr + 2 * config.num_accum_pipeline_stages
+    var clc_full_mbar_ptr = mma_output_mbar_ptr.unsafe_offset(
+        2 * config.num_accum_pipeline_stages
     )
-    var clc_empty_mbar_ptr = clc_full_mbar_ptr + config.num_clc_pipeline_stages
+    var clc_empty_mbar_ptr = clc_full_mbar_ptr.unsafe_offset(
+        config.num_clc_pipeline_stages
+    )
 
     # Load warp as producer and scheduler warp as consumer.
     # No data dependence. Introduce dependence to prevent CLC goes too ahead.
@@ -940,22 +1109,26 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     # there will be no guarantee they get balanced number of tiles.
     var load_clc_pipeline = ProducerConsumerPipeline[
         config.num_clc_pipeline_stages
-    ](clc_empty_mbar_ptr + config.num_clc_pipeline_stages)
+    ](clc_empty_mbar_ptr.unsafe_offset(config.num_clc_pipeline_stages))
 
     var clc_response_ptr = (
-        clc_empty_mbar_ptr + 3 * config.num_clc_pipeline_stages
-    ).bitcast[Int128]()
+        clc_empty_mbar_ptr.unsafe_offset(3 * config.num_clc_pipeline_stages)
+    ).unsafe_bitcast[Int128]()
 
     var tmem_dealloc_mbar_ptr = (
-        clc_response_ptr + config.num_clc_pipeline_stages
-    ).bitcast[Int64]()
+        clc_response_ptr.unsafe_offset(config.num_clc_pipeline_stages)
+    ).unsafe_bitcast[Int64]()
 
-    var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
+    var ptr_tmem_addr = tmem_dealloc_mbar_ptr.unsafe_offset(1).unsafe_bitcast[
+        UInt32
+    ]()
 
-    clc_response = clc_response_ptr.bitcast[UInt128]()
-    clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_response = clc_response_ptr.unsafe_bitcast[UInt128]()
+    var clc_full_mbar = clc_full_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var clc_empty_mbar = clc_empty_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -1039,8 +1212,8 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % UInt(config.cta_group),
-        rank_m // UInt(config.cta_group),
+        umod(rank_m, config.cta_group),
+        ufloordiv(rank_m, config.cta_group),
         rank_n,
     )  # v,m,n
 
@@ -1057,7 +1230,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
-    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
+    b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1078,7 +1251,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
             # DO TMA LOAD
 
-            for i in range(num_iters):
+            for i in range(_num_iters):
                 load_AB[
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -1092,7 +1265,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     a_scales_smem,
                     load_mma_pipeline,
                     peer_cta_coord,
-                    (UInt(work_info.m), UInt(work_info.n)),
+                    (Int(work_info.m), Int(work_info.n)),
                     a_multicast_mask,
                     b_multicast_mask,
                     i,
@@ -1129,7 +1302,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 )
 
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
 
@@ -1149,17 +1322,17 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         # non blocking, arrives and proceeds
         named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         while work_info.is_valid():
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
             clc_pipe_consumer_state.step()
             # DO MMA
             if elect_one_cta:
-                for i in range(num_iters):
+                for _ in range(_num_iters):
                     var mma_output_mma_stage = (
                         mma_output_pipeline.producer_stage()
                     )
@@ -1213,11 +1386,13 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     if WarpRole.is_epilogue():
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         while work_info.is_valid():
             comptime reg_info = _get_accumulator_size[
-                c_smem_layout=c_smem_iter.layout,
+                c_smem_layout=Layout.row_major(
+                    config.output_tile_shape[0], config.output_tile_shape[1]
+                ),
                 block_tile_shape=config.block_tile_shape,
                 mma_shape=config.mma_shape,
                 cta_group=config.cta_group,
@@ -1227,26 +1402,20 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 config.cta_group == 1 and config.block_tile_shape[0] == 64
             )
             # final results accumulator regs for C
-            var c_upper_main_tile = LayoutTensor[
-                accum_type,
-                Layout.row_major(reg_info[0], reg_info[1]),
-                MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
-            ].stack_allocation()
+            var c_upper_main_tile = stack_allocation[
+                dtype=accum_type, address_space=.LOCAL
+            ](row_major[reg_info[0], reg_info[1]]())
 
-            var c_lower_main_tile = LayoutTensor[
-                accum_type,
-                Layout.row_major(reg_info[0], reg_info[1]),
-                MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
-            ].stack_allocation()
+            var c_lower_main_tile = stack_allocation[
+                dtype=accum_type, address_space=.LOCAL
+            ](row_major[reg_info[0], reg_info[1]]())
 
             _ = c_upper_main_tile.fill(0.0)
 
             comptime if is_lower_frag_required:
                 _ = c_lower_main_tile.fill(0.0)
 
-            for k_iter in range(num_iters):
+            for k_iter in range(_num_iters):
                 promote_accumulators[
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -1255,7 +1424,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     is_lower_frag_required=is_lower_frag_required,
                     num_output_warps=num_output_warps,
                 ](
-                    b_scales_lt,
+                    b_scales,
                     a_scales_smem,
                     c_upper_main_tile,
                     c_lower_main_tile,
@@ -1263,9 +1432,9 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     mma_output_pipeline,
                     tmem_addr,
                     load_mma_pipeline,
-                    work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
+                    work_tile_coord=(Int(work_info.m), Int(work_info.n)),
                     elect_one_warp=elect_one_warp,
-                    stage_stride_cols=UInt(stage_stride_cols),
+                    stage_stride_cols=stage_stride_cols,
                     k_iter=k_iter,
                     problem_shape=problem_shape,
                 )
@@ -1287,13 +1456,13 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             ](
                 c_upper_main_tile,
                 c_lower_main_tile,
-                c_smem_iter,
+                c_tiles,
                 c_tma_op,
-                c_coord=(UInt(work_info.m), UInt(work_info.n)),
+                c_coord=(Int(work_info.m), Int(work_info.n)),
                 elect_one_warp=elect_one_warp,
             )
 
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
             work_info = next_work_info
@@ -1318,6 +1487,8 @@ def sm100_warp_specialized_blockwise_fp8[
     b_scales: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
+    """Sets up TMA descriptors, shared-memory layouts, and pipeline barriers, then launches the blockwise FP8 GEMM kernel on SM100.
+    """
     comptime a_type = config.a_type
     comptime b_type = config.b_type
     comptime c_type = config.c_type
@@ -1325,7 +1496,7 @@ def sm100_warp_specialized_blockwise_fp8[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime assert (
@@ -1352,31 +1523,33 @@ def sm100_warp_specialized_blockwise_fp8[
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]())
 
-    a_tma_op = create_tensor_tile[
-        Index(BM // config.cluster_shape[1], BK),
+    var a_tma_op = create_tensor_tile[
+        coord[BM // config.cluster_shape[1], BK],
         swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
+    comptime wsb_n = BN // (config.cluster_shape[0] // config.cta_group)
+    comptime wsb_m = wsb_n if transpose_b else BK
+    comptime wsb_n2 = BK if transpose_b else wsb_n
+    var b_tma_op = create_tensor_tile[
+        coord[wsb_m, wsb_n2],
         swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
-    a_scales_tma_op = create_tensor_tile[
-        Index(1, BM),
-        __desc_shape=Index(1, BM),
+    var a_scales_tma_op = create_tensor_tile[
+        coord[1, BM],
+        __desc_shape=coord[1, BM],
     ](ctx, a_scales)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
-    comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
+    comptime ws_c_m = (
+        config.output_tile_shape[0] if (
+            MMA_M == 256 or config.cta_group == 1
+        ) else 64
+    )
+    comptime ws_c_n = config.output_tile_shape[1]
+    comptime c_tma_tile_shape = coord[ws_c_m, ws_c_n]
 
     var c_tma_op = create_tensor_tile[
         c_tma_tile_shape,
@@ -1436,7 +1609,7 @@ def sm100_warp_specialized_blockwise_fp8[
         + mma_mbar_bytes_per_stage
     )
 
-    comptime max_pipeline_stages = UInt(
+    comptime max_pipeline_stages: Int = (
         smem_leftover // producer_consumer_smem_per_stage
     )
 
@@ -1444,9 +1617,7 @@ def sm100_warp_specialized_blockwise_fp8[
         max_pipeline_stages >= 1
     ), "not enough smem even for one pipeline stage!"
 
-    comptime producer_consumer_smem = producer_consumer_smem_per_stage * Int(
-        max_pipeline_stages
-    )
+    comptime producer_consumer_smem = producer_consumer_smem_per_stage * max_pipeline_stages
 
     comptime smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
@@ -1456,24 +1627,21 @@ def sm100_warp_specialized_blockwise_fp8[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(c_tma_op).rank,
         type_of(c_tma_op).tile_shape,
         type_of(c_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         a_scales_type,
         b_scales_type,
         type_of(b_scales).LayoutType,
+        type_of(b_scales).Engine,
         transpose_b=transpose_b,
         config=config,
-        num_pipeline_stages=Int(max_pipeline_stages),
+        num_pipeline_stages=max_pipeline_stages,
         cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
@@ -1495,13 +1663,13 @@ def sm100_warp_specialized_blockwise_fp8[
 
     var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
-    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        UInt(ceildiv(K, BK)),
+        Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

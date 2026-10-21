@@ -67,12 +67,12 @@ def round_by_factor(number: int, factor: int) -> int:
     return round(number / factor) * factor
 
 
-def ceil_by_factor(number: int | float, factor: int) -> int:
+def ceil_by_factor(number: float, factor: int) -> int:
     """Returns the smallest integer greater than or equal to 'number' that is divisible by 'factor'."""
     return math.ceil(number / factor) * factor
 
 
-def floor_by_factor(number: int | float, factor: int) -> int:
+def floor_by_factor(number: float, factor: int) -> int:
     """Returns the largest integer less than or equal to 'number' that is divisible by 'factor'."""
     return math.floor(number / factor) * factor
 
@@ -111,6 +111,11 @@ def smart_resize(
 
 
 def to_rgb(pil_image: Image.Image) -> Image.Image:
+    if pil_image.mode == "RGB":
+        # ``convert("RGB")`` on an RGB image copies every pixel to produce an
+        # identical image. On a 1920x1080 screenshot that copy is pure waste,
+        # and a vision request carries tens of them.
+        return pil_image
     if pil_image.mode == "RGBA":
         white_background = Image.new("RGB", pil_image.size, (255, 255, 255))
         white_background.paste(
@@ -140,7 +145,7 @@ def fetch_image(
         image_obj = image
     elif isinstance(image, bytes):
         image_obj = Image.open(io.BytesIO(image))
-    elif image.startswith("http://") or image.startswith("https://"):
+    elif image.startswith(("http://", "https://")):
         # fix memory leak issue while using BytesIO
         with requests.get(image, stream=True) as response:
             response.raise_for_status()
@@ -188,19 +193,19 @@ def fetch_image(
 def smart_nframes(
     ele: dict[str, Any],
     total_frames: int,
-    video_fps: int | float,
+    video_fps: float,
 ) -> int:
     """calculate the number of frames for video used for model inputs.
 
     Args:
-        ele (dict): a dict contains the configuration of video.
+        ele: a dict contains the configuration of video.
             support either `fps` or `nframes`:
                 - nframes: the number of frames to extract for model inputs.
                 - fps: the fps to extract frames for model inputs.
                     - min_frames: the minimum number of frames of the video, only used when fps is provided.
                     - max_frames: the maximum number of frames of the video, only used when fps is provided.
-        total_frames (int): the original total number of frames of the video.
-        video_fps (int | float): the original fps of the video.
+        total_frames: the original total number of frames of the video.
+        video_fps: the original fps of the video.
 
     Raises:
         ValueError: nframes should in interval [FRAME_FACTOR, total_frames].
@@ -229,7 +234,7 @@ def smart_nframes(
             )
         nframes = min(min(max(nframes, min_frames), max_frames), total_frames)
         nframes = floor_by_factor(nframes, FRAME_FACTOR)
-    if not (FRAME_FACTOR <= nframes and nframes <= total_frames):
+    if not (FRAME_FACTOR <= nframes <= total_frames):
         raise ValueError(
             f"nframes should in interval [{FRAME_FACTOR}, {total_frames}], but got {nframes}."
         )
@@ -251,9 +256,9 @@ def calculate_video_frame_range(
     Calculate the start and end frame indices based on the given time range.
 
     Args:
-        ele (dict): A dictionary containing optional 'video_start' and 'video_end' keys (in seconds).
-        total_frames (int): Total number of frames in the video.
-        video_fps (float): Frames per second of the video.
+        ele: A dictionary containing optional 'video_start' and 'video_end' keys (in seconds).
+        total_frames: Total number of frames in the video.
+        video_fps: Frames per second of the video.
 
     Returns:
         tuple: A tuple containing (start_frame, end_frame, frame_count).
@@ -308,7 +313,7 @@ def _read_video_decord(
     """read video using decord.VideoReader
 
     Args:
-        ele (dict): a dict contains the configuration of video.
+        ele: a dict contains the configuration of video.
         support keys:
             - video: the path of video. support "file://", "http://", "https://" and local path.
             - video_start: the start time of video.

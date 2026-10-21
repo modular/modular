@@ -218,10 +218,6 @@ class Qwen3AttentionNoCache(Module):
         # Expand and reshape to repeat KV heads
         # [seq_len, n_kv_heads, head_dim] -> [seq_len, n_kv_heads, n_rep, head_dim]
         x_expanded = ops.unsqueeze(x, 2)
-        # Tile along the n_rep dimension
-        # TODO: Use ops.tile when available, for now we'll use a workaround
-        # by concatenating n_rep times
-        tensors_to_concat = [x_expanded] * n_rep
-        x_repeated = ops.concat(tensors_to_concat, axis=2)
+        x_repeated = ops.tile(x_expanded, [1, 1, n_rep, 1])
         # Reshape to [seq_len, n_kv_heads * n_rep, head_dim]
         return x_repeated.reshape((-1, self.n_kv_heads * n_rep, self.head_dim))

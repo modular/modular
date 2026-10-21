@@ -35,16 +35,19 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.interfaces import (
+from max.pipelines.context import (
     LogitsProcessor,
-    PipelineTokenizer,
-    PixelGenerationInputs,
     ProcessorInputs,
-    RequestID,
     SamplingParams,
-    TextGenerationRequest,
 )
 from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.generate import GenerateIterator
+from max.pipelines.modeling.types import (
+    PipelineTokenizer,
+    PixelGenerationInputs,
+    RequestID,
+    TextGenerationRequest,
+)
 from max.support import fetch_bytes_from_s3
 from PIL import Image
 from transformers import PreTrainedTokenizerBase
@@ -185,7 +188,13 @@ def run_model(
             reference_by_id,
             logits_processors,
         )
-        outputs = pipeline.generate(batch)
+        contexts = [
+            asyncio.run(pipeline.tokenizer.new_context(request))
+            for request in batch
+        ]
+        with GenerateIterator.from_contexts(pipeline, contexts) as generation:
+            while not generation.done:
+                generation.step()
         if print_outputs:
             for j in range(len(batch)):
                 request = requests_in_batch[j]
@@ -199,7 +208,10 @@ def run_model(
                 print(
                     "Output:",
                     tokenizer.delegate.decode(
-                        outputs[j].tokens, skip_special_tokens=True
+                        generation.sequences[j][
+                            contexts[j].tokens.prompt_length :
+                        ],
+                        skip_special_tokens=True,
                     ),
                 )
 

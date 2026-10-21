@@ -107,7 +107,7 @@ def test_io_device_output_errors() -> None:
             r" in InferenceSession"
         ),
     ):
-        compiled = session.load(graph)
+        session.load(graph)
 
 
 @pytest.mark.skipif(

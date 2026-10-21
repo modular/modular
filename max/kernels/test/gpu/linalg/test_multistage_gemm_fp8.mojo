@@ -13,10 +13,9 @@
 
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import grid_dim
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu import grid_dim
+from max.gpu.host import DeviceContext, FuncAttribute
 from internal_utils import assert_almost_equal
-from layout import LTToTTLayout, lt_to_tt
 from layout.layout import *
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
@@ -40,10 +39,10 @@ def test_fp8_multistage_gemm[
     comptime b_size = b_size_0 * b_size_1
     comptime c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[DType.float32]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[.float32](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[.float32](c_size)
 
     var a_host = TileTensor(a_host_ptr, row_major[M, K]())
     var b_host = TileTensor(
@@ -66,8 +65,8 @@ def test_fp8_multistage_gemm[
 
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     var b_device = ctx.enqueue_create_buffer[dtype](b_size)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](c_size)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](c_size)
+    var c_device = ctx.enqueue_create_buffer[.float32](c_size)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](c_size)
 
     var a_device_nd = TileTensor(a_device, a_host.layout)
     var b_device_nd = TileTensor(b_device, b_host.layout)
@@ -77,39 +76,38 @@ def test_fp8_multistage_gemm[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    var c_tensor = c_device_nd.to_layout_tensor()
-    var a_tensor = a_device_nd.to_layout_tensor()
-    var b_tensor = b_device_nd.to_layout_tensor()
+    var c_tt = c_device_nd
+    var a_tt = a_device_nd.as_imm()
+    var b_tt = b_device_nd.as_imm()
 
-    var c_tt = lt_to_tt(c_tensor)
-    var a_tt = lt_to_tt(a_tensor).as_immut()
-    var b_tt = lt_to_tt(b_tensor).as_immut()
-
-    comptime kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
+    comptime kernels = MatmulKernels[dtype, dtype, .float32, transpose_b]()
     comptime config = kernels.hopper_128x128_4
 
     comptime kernel = multistage_gemm_kernel[
-        DType.float32,  # c_type
-        LTToTTLayout[c_tensor.layout],
+        .float32,  # c_type
+        c_tt.LayoutType,
         dtype,  # a_type
-        LTToTTLayout[a_tensor.layout],
+        a_tt.LayoutType,
         dtype,  # b_type
-        LTToTTLayout[b_tensor.layout],
+        b_tt.LayoutType,
         transpose_b,
-        c_linear_idx_type=c_tensor.linear_idx_type,
-        a_linear_idx_type=a_tensor.linear_idx_type,
-        b_linear_idx_type=b_tensor.linear_idx_type,
+        c_linear_idx_type=c_tt.linear_idx_type,
+        a_linear_idx_type=a_tt.linear_idx_type,
+        b_linear_idx_type=b_tt.linear_idx_type,
+        c_engine=c_tt.Engine,
+        a_engine=a_tt.Engine,
+        b_engine=b_tt.Engine,
         config=config,
     ]
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_tt,
         a_tt,
         b_tt,
-        grid_dim=config.grid_dim(UInt(M), UInt(N)),
+        grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -132,7 +130,9 @@ def test_fp8_multistage_gemm[
     else:
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
         comptime b_col_major_size = N * K
-        var b_host_col_major_ptr = alloc[Scalar[dtype]](b_col_major_size)
+        var b_host_col_major_ptr = ctx.enqueue_create_host_buffer[dtype](
+            b_col_major_size
+        )
         var b_host_col_major = TileTensor(
             b_host_col_major_ptr, row_major[N, K]()
         )
@@ -158,7 +158,6 @@ def test_fp8_multistage_gemm[
             transpose_b=True,
         )
 
-        b_host_col_major_ptr.free()
         _ = b_device_col_major^
 
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
@@ -166,32 +165,27 @@ def test_fp8_multistage_gemm[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=0.01,
     )
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-
 
 def main() raises:
     with DeviceContext() as ctx:
         test_fp8_multistage_gemm[
-            DType.float8_e4m3fn, 128, 128, 64, transpose_b=True
+            .float8_e4m3fn, 128, 128, 64, transpose_b=True
         ](ctx)
         test_fp8_multistage_gemm[
-            DType.float8_e4m3fn, 128, 128, 128, transpose_b=True
+            .float8_e4m3fn, 128, 128, 128, transpose_b=True
         ](ctx)
 
     # FIXME: KERN-1480
     # test_fp8_multistage_gemm[
-    # DType.float8_e4m3fn, 128, 128, 64, transpose_b=False
+    # .float8_e4m3fn, 128, 128, 64, transpose_b=False
     # ](ctx)
     # test_fp8_multistage_gemm[
-    # DType.float8_e4m3fn, 128, 128, 128, transpose_b=False
+    # .float8_e4m3fn, 128, 128, 128, transpose_b=False
     # ](ctx)

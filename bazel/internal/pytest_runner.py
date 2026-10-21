@@ -75,6 +75,7 @@ def __set_torch_memory_limit() -> None:
 def run():  # noqa: ANN201
     # Allow opt-out of using $TEST_TMPDIR for HF_HOME for performance reasons in
     # special cases
+    os.environ["HF_MODULES_CACHE"] = os.environ["TEST_TMPDIR"]
     if os.environ.get("HF_ESCAPES_SANDBOX") != "1":
         os.environ["HF_HOME"] = os.environ["TEST_TMPDIR"]
 
@@ -109,7 +110,7 @@ if [[ "${{MODULAR_SYSTEM_LLDB:-}}" == "1" ]]; then
 fi
 
 if [[ "${{MODULAR_VSCODE_DEBUG:-}}" == "1" ]]; then
-  env {pairs} MODULAR_HOME=$PWD/.derived bazel-bin/KGEN/tools/mojo/mojo debug --vscode -- {args}
+  env {pairs} MODULAR_HOME=$PWD/.derived bazel-bin/Mojo/tools/mojo/mojo debug --vscode -- {args}
 elif [[ "${{MODULAR_GDB:-}}" == "1" || "${{MODULAR_ROCGDB:-}}" == "1" ]]; then
   exe=/usr/bin/rocgdb
   if [[ "${{MODULAR_GDB:-}}" == "1" ]]; then
@@ -130,7 +131,7 @@ elif [[ "${{MODULAR_RR:-}}" == "1" ]]; then
 else
   env {pairs} \
       "$lldb_bin" \
-      --one-line-before-file 'plugin load bazel-bin/KGEN/libMojoLLDB.{extension}' \
+      --one-line-before-file 'plugin load bazel-bin/Mojo/libMojoLLDB.{extension}' \
       --one-line-before-file 'settings set target.launch-working-dir {pwd}' \
       -- {args}
 fi
@@ -155,8 +156,11 @@ fi
 
     __set_torch_memory_limit()
     namespace, unknown_args = __build_parser().parse_known_args(args)
+    xml_file = os.environ["XML_OUTPUT_FILE"]
+    if Path(xml_file).exists():
+        os.chmod(xml_file, mode=0o600)
     pytest_args = [
-        f"--junitxml={os.environ['XML_OUTPUT_FILE']}",
+        f"--junitxml={xml_file}",
         "-o",
         "xfail_strict=true",
         "-o",
@@ -164,6 +168,16 @@ fi
         "-o",
         f"junit_suite_name={os.environ['TEST_TARGET']}",
     ]
+
+    if total_shards := os.environ.get("TEST_TOTAL_SHARDS"):
+        Path(os.environ["TEST_SHARD_STATUS_FILE"]).touch()
+        shard_id = os.environ["TEST_SHARD_INDEX"]
+        pytest_args.extend(
+            [
+                f"--shard-id={shard_id}",
+                f"--num-shards={total_shards}",
+            ]
+        )
 
     if importlib.util.find_spec("pytest_asyncio"):
         pytest_args.append("--asyncio-mode=auto")

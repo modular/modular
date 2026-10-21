@@ -11,16 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx, block_dim, WARP_SIZE
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
-from std.gpu.primitives.warp import shuffle_down
-from std.gpu.primitives.id import (
+from max.gpu import block_idx, thread_idx, block_dim, WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
+from max.gpu.primitives.warp import shuffle_down
+from max.gpu.primitives.id import (
     lane_id,
     warp_id,
 )
-from std.os import Atomic
+from std.atomic import Atomic
 from std.random import random_float64
 from std.math import abs, ceildiv
 from std.bit import log2_floor
@@ -52,8 +53,8 @@ def warp_reduce(val: Float32) -> Float32:
 
 
 def reduce_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
     """Multi-block sum reduction kernel using atomics.
@@ -63,18 +64,18 @@ def reduce_kernel(
         output: Output scalar for the sum result.
         N: Total number of elements.
     """
-    var segment = 2 * UInt32(block_dim.x) * UInt32(block_idx.x)
-    var i = segment + UInt32(thread_idx.x)
+    var segment = 2 * block_dim.x * block_idx.x
+    var i = segment + thread_idx.x
 
     # Each thread loads and does initial reduction
-    var partial_sum = input[Int(i)] + input[Int(i + BLOCK_DIM)]
+    var partial_sum = input[i] + input[i + BLOCK_DIM]
     partial_sum = warp_reduce(partial_sum)
 
     # Allocate shared memory for partial sums from each warp
-    var partial_sums_s = stack_allocation[
+    var partial_sums_s = unsafe_stack_allocation[
         BLOCK_DIM // WARP_SIZE,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Store warp results to shared memory
@@ -84,7 +85,7 @@ def reduce_kernel(
     barrier()
 
     # First warp reduces and atomically adds to output
-    if UInt32(thread_idx.x) < UInt32(WARP_SIZE):
+    if thread_idx.x < WARP_SIZE:
         partial_sum = partial_sums_s[thread_idx.x]
         partial_sum = warp_reduce(partial_sum)
         if thread_idx.x == 0:
@@ -93,8 +94,8 @@ def reduce_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.
@@ -115,13 +116,13 @@ def main() raises:
     comptime N = 65536  # Large array
 
     # Host memory allocation
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](1)
-    var h_ref = alloc[Float32](1)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](1)
+    var h_ref = unsafe_alloc[Float32](1)
 
     # Initialize input with random values
     for i in range(N):
-        h_input[i] = random_float64().cast[DType.float32]()
+        h_input[i] = random_float64().cast[.float32]()
 
     # Initialize output to zero
     h_output[0] = 0.0
@@ -140,15 +141,15 @@ def main() raises:
 
     with DeviceContext() as ctx:
         # Device memory allocation
-        var d_input = ctx.enqueue_create_buffer[DType.float32](N)
-        var d_output = ctx.enqueue_create_buffer[DType.float32](1)
+        var d_input = ctx.enqueue_create_buffer[.float32](N)
+        var d_output = ctx.enqueue_create_buffer[.float32](1)
 
         # Copy data to device
         ctx.enqueue_copy(d_input, h_input)
         ctx.enqueue_copy(d_output, h_output)
 
         # Launch kernel (multiple blocks)
-        ctx.enqueue_function_experimental[reduce_kernel](
+        ctx.enqueue_function[reduce_kernel](
             d_input,
             d_output,
             UInt32(N),
@@ -182,6 +183,6 @@ def main() raises:
         print("SUCCESS: CPU=", h_ref[0], ", GPU=", h_output[0], "match!")
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()

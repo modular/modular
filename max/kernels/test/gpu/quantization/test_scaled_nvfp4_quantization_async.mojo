@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
+from std.memory.alloc import unsafe_alloc
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from layout._fillers import random
@@ -24,7 +25,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     cast_uint_to_fp4e2m1,
 )
-from linalg.fp4_quantization import (
+from linalg.block_scaled_quantization import (
     quantize_dynamic_scaled_fp4fp8,
     quantize_dynamic_scaled_fp4_async,
 )
@@ -47,19 +48,19 @@ def test_nvfp4_quantization[
 ) raises:
     comptime out_dtype = DType.uint8
 
-    var B = batch.value()
-    var M = m.value()
-    var N = n.value()
+    var _B = Int(batch)
+    var M = Int(m)
+    var N = Int(n)
 
     var input_shape = Coord(m, n)
     comptime output_n = ceildiv(NType.static_value, 2)
-    var output_shape = Coord(m, Idx[output_n]())
+    var output_shape = Coord(m, Idx[output_n])
 
-    var host_ptr = alloc[Scalar[dtype]](M * N)
+    var host_ptr = unsafe_alloc[Scalar[dtype]](M * N)
     var host_tensor = TileTensor(host_ptr, row_major(input_shape))
 
-    var host_ptr_output = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
-    var host_ptr_output_ref = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_ptr_output = unsafe_alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_ptr_output_ref = unsafe_alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
 
     var device_buffer = ctx.enqueue_create_buffer[dtype](M * N)
 
@@ -76,11 +77,11 @@ def test_nvfp4_quantization[
     ctx.enqueue_copy(device_buffer, host_ptr)
 
     var scales_shape = Coord(
-        Idx(ceildiv(M, SF_MN_GROUP_SIZE)),
-        Idx(ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(M, SF_MN_GROUP_SIZE),
+        ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var scales_total = (
@@ -91,28 +92,24 @@ def test_nvfp4_quantization[
         * SF_ATOM_K
     )
 
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_total)
-    var scales_host_ptr_ref = alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host_ptr_ref = unsafe_alloc[Scalar[scales_dtype]](scales_total)
 
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_total)
     var scales_device_ref = ctx.enqueue_create_buffer[scales_dtype](
         scales_total
     )
 
-    var input_tensor = TileTensor(
-        device_buffer.unsafe_ptr(), row_major(input_shape)
-    )
+    var input_tensor = TileTensor(device_buffer, row_major(input_shape))
     var output_tensor = TileTensor(
-        device_buffer_output.unsafe_ptr(), row_major(output_shape)
+        device_buffer_output, row_major(output_shape)
     )
-    var scales_tensor = TileTensor(
-        scales_device.unsafe_ptr(), row_major(scales_shape)
-    )
+    var scales_tensor = TileTensor(scales_device, row_major(scales_shape))
     var output_tensor_ref = TileTensor(
-        device_buffer_output_ref.unsafe_ptr(), row_major(output_shape)
+        device_buffer_output_ref, row_major(output_shape)
     )
     var scales_tensor_ref = TileTensor(
-        scales_device_ref.unsafe_ptr(), row_major(scales_shape)
+        scales_device_ref, row_major(scales_shape)
     )
 
     quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
@@ -154,12 +151,10 @@ def test_nvfp4_quantization[
             for k in range(SF_ATOM_M[0]):
                 for l in range(SF_ATOM_M[1]):
                     for m in range(SF_ATOM_K):
-                        var coord = Coord(
-                            Idx(i), Idx(j), Idx(k), Idx(l), Idx(m)
-                        )
+                        var coord = Coord(i, j, k, l, m)
                         assert_equal(
-                            scales_tensor_host_ref[coord].cast[DType.float64](),
-                            scales_tensor_host[coord].cast[DType.float64](),
+                            scales_tensor_host_ref[coord].cast[.float64](),
+                            scales_tensor_host[coord].cast[.float64](),
                         )
 
     var output_tensor_host_ref = TileTensor(
@@ -175,10 +170,10 @@ def test_nvfp4_quantization[
             comptime assert output_tensor_host.flat_rank >= 2
             var output_vector = output_tensor_host.load[
                 width=SF_VECTOR_SIZE // 2
-            ](Coord(Idx(row_idx), Idx(col_idx)))
+            ](Coord(row_idx, col_idx))
             var output_vector_ref = output_tensor_host_ref.load[
                 width=SF_VECTOR_SIZE // 2
-            ](Coord(Idx(row_idx), Idx(col_idx)))
+            ](Coord(row_idx, col_idx))
 
             var output_fp32 = cast_uint_to_fp4e2m1[
                 out_dtype=DType.float32,
@@ -194,9 +189,9 @@ def test_nvfp4_quantization[
                 output_fp32_ref,
             )
 
-    host_ptr.free()
-    host_ptr_output.free()
-    scales_host_ptr.free()
+    host_ptr.unsafe_free()
+    host_ptr_output.unsafe_free()
+    scales_host_ptr.unsafe_free()
 
 
 def main() raises:
@@ -207,9 +202,9 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(2 * 128),
-            Idx[11 * 64](),
+            Idx[1],
+            2 * 128,
+            Idx[11 * 64],
             tensor_sf=1.0,
         )
         test_nvfp4_quantization[
@@ -218,9 +213,9 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(999),
-            Idx[576](),
+            Idx[1],
+            Idx[999],
+            Idx[576],
             tensor_sf=1.0,
         )
         test_nvfp4_quantization[
@@ -229,9 +224,9 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(129),
-            Idx[23 * 128](),
+            Idx[1],
+            Idx[129],
+            Idx[23 * 128],
             tensor_sf=1.0,
         )
         test_nvfp4_quantization[
@@ -240,9 +235,9 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(27 * 128),
-            Idx[23 * 128](),
+            Idx[1],
+            27 * 128,
+            Idx[23 * 128],
             tensor_sf=0.43,
         )
         test_nvfp4_quantization[
@@ -251,8 +246,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(13),
-            Idx[17 * 128](),
+            Idx[1],
+            Idx[13],
+            Idx[17 * 128],
             tensor_sf=0.5,
         )

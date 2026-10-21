@@ -17,110 +17,163 @@
 
 import json
 import re
+from collections.abc import Mapping
 
 import click
 
 RUNNERS = {
-    "H100": "modrunner-h100",
-    "B200": "modrunner-b200",
+    "B200": "modrunner-b200-efa",
     "MI355": "modrunner-mi355",
-    "2xH100": "modrunner-h100-2x",
-    "8xB200": "modrunner-b200-8x",
+    "2xB200": "modrunner-b200-efa-2x",
+    "2xMI355": "modrunner-mi355-2x",
+    "4xB200": "modrunner-b200-4x",
+    "4xMI355": "modrunner-mi355-4x",
+    "8xB200": "modrunner-b200-efa-8x",
     "8xMI355": "modrunner-mi355-8x",
 }
 
-# Framework → GPUs that framework cannot run on.
-HW_EX = {"vllm": {"MI355", "8xMI355"}, "sglang": {"MI355", "8xMI355"}}
+_1xB200 = {"B200"}
+_1xMI355 = {"MI355"}
+_2xB200 = {"2xB200"}
+_2xMI355 = {"2xMI355"}
+_4xB200 = {"4xB200"}
+_4xMI355 = {"4xMI355"}
+_8xB200 = {"8xB200"}
+_8xMI355 = {"8xMI355"}
+DISABLE: set[str] = set()
+NIGHTLY = {"NIGHTLY"}
+VARIANT = {"VARIANT"}
+PRIVATE = {"PRIVATE"}
 
-# Tags: skip model on multi-GPU runners.
-XL = {"8xB200", "8xMI355"}
-MULTI = {"2xH100"} | XL
-NON_XL = set(RUNNERS) - XL
-DISABLE = set(RUNNERS)
-
-# Model → set of exclusion tags:
-#   - framework        (e.g. "max")
-#   - gpu              (e.g. "MI355")
-#   - framework@gpu    (e.g. "sglang@B200")
-#   - use XL           to skip on 8xB200 and 8xMI355
-#   - use MULTI        to skip on all multi-GPU runners
-#   - use NON_XL       to skip on everything except 8xB200 and 8xMI355
-#   - use DISABLE      to skip on all runners (temporarily disable a model)
+# Model → HW it runs on. DISABLE runs nowhere. NIGHTLY adds the model to the
+# scheduled nightly run (`--tier nightly`) on the HW it lists; without it the
+# model runs only on manual dispatch. VARIANT marks a `<hf-repo>__<variant>` key
+# that runs a recipe from MODEL_RECIPES in smoke_test.py; PRIVATE marks one
+# whose recipe ships with a private arch and resolves from private hw_recipes.
 #
-# If you want to add a model to the smoke test:
-#   1. Trigger the smoke test job with the model name you want to add:
-#   https://github.com/modularml/modular/actions/workflows/pipelineVerification.yaml
-#   2. Review the results, and the need for framework/GPU exclusions (if any)
-#   3. Add the model to the dictionary below, with the appropriate exclusions
-#    3a) For VLMs, add it to the is_vision_model check in smoke_test.py
-#    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
+# To add a model, trigger the smoke test with it first:
+# https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
+# then list it below with the HW it passed on. VLMs also go in is_vision_model
+# in smoke_test.py.
+# Every entry is exactly one line, sorted by key, with tags in the order
+# NIGHTLY, VARIANT, PRIVATE, HW. The only comment allowed is an existing
+# Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off
-HF_MODELS: dict[str, set[str]] = {
-    "allenai/olmo-3-7b-instruct": MULTI | {"max"},
-    "allenai/olmocr-2-7b-1025-fp8": MULTI | {"sglang"},
-    "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
-    "deepseek-ai/deepseek-r1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
-    "deepseek-ai/deepseek-v2-lite-chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120
-    "deepseek-ai/deepseek-v3.1-terminus": NON_XL | {"8xMI355"},
-    "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
-    "google/gemma-3-12b-it": MULTI,
-    "google/gemma-3-27b-it": MULTI | {"max-ci@H100"},  # TODO(MODELS-1021) and GEX-3248
-    "meta-llama/llama-3.1-8b-instruct": MULTI,
-    "meta-llama/llama-3.2-1b-instruct": MULTI,
-    "microsoft/phi-3.5-mini-instruct": MULTI,
-    "microsoft/phi-4": MULTI,
-    "mistralai/mistral-nemo-instruct-2407": MULTI | {"vllm"},
-    "mistralai/mistral-small-3.1-24b-instruct-2503": MULTI | {"vllm"},
-    "nvidia/deepseek-v3.1-nvfp4": NON_XL | {"8xMI355"},
-    "nvidia/kimi-k2.5-nvfp4": NON_XL | {"8xMI355"},
-    "opengvlab/internvl3-8b-instruct": MULTI | {"sglang"},
-    "opengvlab/internvl3_5-8b-instruct": MULTI | {"max", "sglang"},
-    "qwen/qwen2.5-7b-instruct": MULTI,
-    "qwen/qwen2.5-vl-3b-instruct": MULTI,
-    "qwen/qwen2.5-vl-7b-instruct": MULTI,
-    "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@H100"},  # MODELS-1020
-    "qwen/qwen3-8b": MULTI,
-    "qwen/qwen3-vl-4b-instruct": XL | {"max-ci@H100", "vllm@B200"},  # MODELS-1020
-    "qwen/qwen3-vl-4b-instruct-fp8": XL | {"MI355", "max-ci@2xH100", "max-ci@H100"},  # MI355: no FP8
-    "qwen/qwen3-vl-30b-a3b-instruct": XL | {"max-ci@2xH100", "max-ci@H100", "max@2xH100", "max@H100"},
-    "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"MI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
-    "qwen/qwen3-vl-30b-a3b-thinking": XL | {"max", "max-ci@2xH100", "max-ci@H100"},
-    "redhatai/gemma-3-27b-it-fp8-dynamic": MULTI,  # TODO(MODELS-1021)
-    "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
-    "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": NON_XL,
-    "openai/gpt-oss-20b": XL | {"max@H100"},
-    "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},
+MODELS: Mapping[str, set[str]] = {
+    "allenai/Olmo-3-7B-Instruct": _1xB200 | _1xMI355,
+    "allenai/olmOCR-2-7B-1025-FP8": _1xB200 | _1xMI355,
+    "amd/Kimi-K2.7-Code-MXFP4": NIGHTLY | _4xMI355,
+    "amd/MiniMax-M3-MXFP4": NIGHTLY | _4xMI355,
+    "ByteDance-Seed/academic-ds-9B": DISABLE,  # TODO(SERVOPT-1120)
+    "deepseek-ai/DeepSeek-V2-Lite-Chat": DISABLE,  # TODO(SERVOPT-1120)
+    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": VARIANT | _1xB200 | _1xMI355,
+    "deepseek-ai/DeepSeek-V3.1-Terminus": _8xB200,
+    "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": NIGHTLY | VARIANT | _2xB200,
+    "google/diffusiongemma-26B-A4B-it": DISABLE,
+    "google/gemma-3-1b-it": _1xB200,  # TODO(KERN-3014)
+    "google/gemma-3-27b-it": _1xB200 | _1xMI355,
+    "google/gemma-3-27b-it__modulev3": VARIANT | _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
+    "google/gemma-4-12B-it__device_graph_synthesis": VARIANT | _1xB200 | _1xMI355,
+    "google/gemma-4-12B-it__dspark": NIGHTLY | VARIANT | _1xB200 | _1xMI355,
+    "google/gemma-4-26B-A4B-it": NIGHTLY | _1xB200 | _1xMI355,
+    "google/gemma-4-26B-A4B-it__tuned": NIGHTLY | VARIANT | _1xB200,
+    "google/gemma-4-31B-it": NIGHTLY | _1xB200 | _1xMI355,
+    "google/gemma-4-31B-it__cascade": NIGHTLY | VARIANT | _1xB200,
+    "google/gemma-4-31B-it__modulev3": VARIANT | _1xB200 | _1xMI355,
+    "google/gemma-4-31B-it__tuned": NIGHTLY | VARIANT | _1xB200,
+    "meta-llama/Llama-3.1-8B-Instruct": _1xB200 | _1xMI355,
+    "meta-llama/Llama-3.1-8B-Instruct__dflash": VARIANT | _1xB200 | _1xMI355,  # TODO(SERVOPT-1168)
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": VARIANT | _1xB200 | _1xMI355,  # TODO(SERVOPT-1168)
+    "meta-llama/Llama-3.1-8B-Instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
+    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": VARIANT | _1xB200,
+    "meta-models/Muse-Glimmer-30B": NIGHTLY | _1xB200,
+    "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
+    "microsoft/Phi-3.5-mini-instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
+    "microsoft/phi-4": _1xB200 | _1xMI355,
+    "microsoft/phi-4__modulev3": VARIANT | _1xB200 | _1xMI355,
+    "MiniMaxAI/MiniMax-M3-MXFP8": NIGHTLY | _8xMI355,  # TODO(MODELS-1611)
+    "MiniMaxAI/MiniMax-M3-MXFP8__mtp": NIGHTLY | VARIANT | PRIVATE | _8xB200,
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": _1xB200 | _1xMI355,
+    "modularai/Llama-3.1-405B-Instruct-autofp8": _4xMI355 | _8xB200,
+    "modularai/MiniMax-M3-MXFP6": NIGHTLY | _4xMI355 | _8xMI355,
+    "nvidia/DeepSeek-V3.1-NVFP4": _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": VARIANT | _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp": VARIANT | _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": VARIANT | _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep": VARIANT | _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": VARIANT | _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__tptp": VARIANT | _8xB200,
+    "nvidia/DeepSeek-V4.1-Flash-NVFP4": _4xB200,
+    "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
+    "nvidia/Gemma-4-26B-A4B-NVFP4": NIGHTLY | _1xB200,
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": NIGHTLY | VARIANT | _1xB200,
+    "nvidia/Gemma-4-31B-IT-NVFP4": NIGHTLY | _1xB200 | _2xB200,
+    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": NIGHTLY | VARIANT | _1xB200,
+    "nvidia/GLM-5.2-NVFP4__mtp_tpep": NIGHTLY | VARIANT | _8xB200,
+    "nvidia/Kimi-K2.7-Code-NVFP4": NIGHTLY | _8xB200,
+    "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": VARIANT | _8xB200,
+    "nvidia/Llama-3.1-405B-Instruct-NVFP4": _8xB200,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": NIGHTLY | VARIANT | _1xMI355 | _2xMI355,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": NIGHTLY | VARIANT | _1xB200 | _2xB200,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": NIGHTLY | VARIANT | _1xB200 | _2xB200,
+    "openai/gpt-oss-20b": _1xB200 | _1xMI355 | _2xB200,
+    "OpenGVLab/InternVL3_5-8B-Instruct": _1xB200 | _1xMI355,
+    "Qwen/Qwen2.5-7B-Instruct": _1xB200 | _1xMI355,
+    "Qwen/Qwen2.5-VL-7B-Instruct": _1xB200 | _1xMI355,
+    "Qwen/Qwen3-8B": _1xB200 | _1xMI355,
+    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": _1xB200 | _2xB200,
+    "Qwen/Qwen3-VL-4B-Instruct-FP8": _1xB200 | _2xB200,
+    "Qwen/Qwen3.5-9B": _1xB200,
+    "Qwen/Qwen3.6-27B": _1xB200,
+    "Qwen/Qwen3.8-27B": NIGHTLY | _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
+    "RadixArk/GLM-5.3-NVFP4__mtp_tpep": NIGHTLY | VARIANT | _8xB200,
+    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": NIGHTLY | VARIANT | _1xB200,
+    "RadixArk/Qwen3.8-27B-NVFP4__mtp": NIGHTLY | VARIANT | _1xB200,
+    "RedHatAI/gemma-3-27b-it-FP8-dynamic": _1xB200 | _1xMI355,  # TODO(MODELS-1021)
+    "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": _4xMI355 | _8xB200,
+    "tencent/Hy4-preview-FP8": NIGHTLY | _8xB200,
+    "tencent/Hy4-preview-FP8__mtp": NIGHTLY | VARIANT | _8xB200,
+    "thinkingmachines/Inkling-Small-NVFP4": NIGHTLY | _2xB200,
+    "thinkingmachines/Inkling-Small-NVFP4__mtp": NIGHTLY | VARIANT | _2xB200,
+    "zai-org/GLM-5.3-Flash__tpep": NIGHTLY | VARIANT | _8xB200,
+    "zai-org/GLM-5.3-Flash__tpep_mi355": NIGHTLY | VARIANT | _2xMI355,
+    "zai-org/GLM-5.3-Flash__tpep_mi355_modulev3": NIGHTLY | VARIANT | _2xMI355,
+    "zai-org/GLM-5.3__fp8_tpep_mi355": NIGHTLY | VARIANT | _8xMI355,
 }
-
-# Models tested with custom MAX serve flags. MODEL_ALIASES in
-# smoke_test.py maps each alias back to the real HuggingFace model
-# path and injects the appropriate serve args.
-CUSTOM_MODELS: dict[str, set[str]] = {
-    "meta-llama/llama-3.1-8b-instruct__modulev3": MULTI,
-    "meta-llama/llama-3.2-1b-instruct__modulev3": MULTI,
-    "unsloth/gpt-oss-20b-bf16__modulev3": DISABLE,  # TODO(MXF-121)
-    "microsoft/phi-3.5-mini-instruct__modulev3": MULTI,
-    "microsoft/phi-4__modulev3": MULTI,
-    "nvidia/deepseek-v3.1-nvfp4__fp8kv": NON_XL | {"8xMI355"},
-    "nvidia/deepseek-v3.1-nvfp4__tpep": NON_XL | {"8xMI355"},
-    "nvidia/kimi-k2.5-nvfp4__no_vision": NON_XL | {"8xMI355"},
-    # TODO(SERVOPT-1168): Support multi-GPU eagle llama
-    "meta-llama/llama-3.1-8b-instruct__eagle": MULTI | {"vllm", "sglang"},
-    "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": MULTI | {"vllm", "sglang"},
-    "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
-    "nvidia/kimi-k2.5-nvfp4__eagle": NON_XL | {"8xMI355"},
-}
-
-MODELS = {**HF_MODELS, **CUSTOM_MODELS}
 # fmt: on
+
+NIGHTLY_MODELS = frozenset(
+    model for model, tags in MODELS.items() if "NIGHTLY" in tags
+)
+
+TIERS = ("nightly", "all")
+
+
+def tier_models(tier: str) -> list[str]:
+    """Lists the models a tier schedules, before framework/GPU filtering.
+
+    Args:
+        tier: Either ``"nightly"`` for the deployed families or ``"all"`` for
+            every entry in ``MODELS``.
+
+    Returns:
+        The model keys the tier covers.
+    """
+    if tier == "all":
+        return list(MODELS)
+    return [model for model in MODELS if model in NIGHTLY_MODELS]
 
 
 def excluded(framework: str, gpu: str, model: str) -> bool:
-    """Check if a model is excluded from a given framework and/or GPU."""
-    if gpu in HW_EX.get(framework, set()):
-        return True
+    """Check if a model is excluded from a given framework and/or GPU.
+
+    A model only runs on the HW listed for it in ``MODELS``.
+    """
     tags = MODELS.get(model, set())
-    return framework in tags or gpu in tags or f"{framework}@{gpu}" in tags
+    # Variants run MAX recipes; vLLM/SGLang have no equivalent.
+    if "VARIANT" in tags and framework in {"vllm", "sglang"}:
+        return True
+    return gpu not in tags
 
 
 def parse_override(raw: str | None) -> list[str]:
@@ -128,7 +181,7 @@ def parse_override(raw: str | None) -> list[str]:
     if not raw:
         return []
     parts = re.split(r"[, \n\r]+", raw)
-    return [p.strip().lower() for p in parts if p.strip()]
+    return [p.strip() for p in parts if p.strip()]
 
 
 @click.command()
@@ -140,34 +193,48 @@ def parse_override(raw: str | None) -> list[str]:
 @click.option(
     "--models-override",
     default=None,
-    help="Comma list of models; skips exclusions.",
+    help="Comma list of models; ignores the per-model HW list.",
 )
-@click.option("--run-on-h100", is_flag=True)
+@click.option(
+    "--tier",
+    type=click.Choice(TIERS),
+    default="all",
+    show_default=True,
+    help="Model set: 'nightly' for the deployed families, 'all' for every model.",
+)
 @click.option("--run-on-b200", is_flag=True)
 @click.option("--run-on-mi355", is_flag=True)
-@click.option("--run-on-2xh100", is_flag=True)
+@click.option("--run-on-2xb200", is_flag=True)
+@click.option("--run-on-2xmi355", is_flag=True)
+@click.option("--run-on-4xb200", is_flag=True)
+@click.option("--run-on-4xmi355", is_flag=True)
 @click.option("--run-on-8xb200", is_flag=True)
 @click.option("--run-on-8xmi355", is_flag=True)
 def main(
     framework: str,
     models_override: str | None,
-    run_on_h100: bool,
+    tier: str,
     run_on_b200: bool,
     run_on_mi355: bool,
-    run_on_2xh100: bool,
+    run_on_2xb200: bool,
+    run_on_2xmi355: bool,
+    run_on_4xb200: bool,
+    run_on_4xmi355: bool,
     run_on_8xb200: bool,
     run_on_8xmi355: bool,
 ) -> None:
     flags = {
-        "H100": run_on_h100,
         "B200": run_on_b200,
         "MI355": run_on_mi355,
-        "2xH100": run_on_2xh100,
+        "2xB200": run_on_2xb200,
+        "2xMI355": run_on_2xmi355,
+        "4xB200": run_on_4xb200,
+        "4xMI355": run_on_4xmi355,
         "8xB200": run_on_8xb200,
         "8xMI355": run_on_8xmi355,
     }
     gpus = [gpu for gpu, ok in flags.items() if ok]
-    models = parse_override(models_override) or list(MODELS)
+    models = parse_override(models_override) or tier_models(tier)
     ignore_exclusions = models_override is not None
 
     job = []
@@ -176,7 +243,7 @@ def main(
             if ignore_exclusions or not excluded(framework, gpu, model):
                 job.append(
                     {
-                        "model": model.lower(),
+                        "model": model,
                         "runs_on": RUNNERS[gpu],
                         "display_name": f"{gpu} - {model}",
                     }

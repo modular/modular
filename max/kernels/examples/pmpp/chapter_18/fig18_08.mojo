@@ -18,10 +18,12 @@ incoming neighbors were visited in the previous level. If so, the vertex
 marks itself as visited at the current level.
 """
 
-from std.gpu import block_dim, block_idx, grid_dim, thread_idx
-from std.gpu.host import DeviceContext
-from std.os import Atomic
+from max.gpu import block_dim, block_idx, grid_dim, thread_idx
+from max.gpu.host import DeviceContext
+from std.atomic import Atomic
 from std.collections import List
+from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 from graph_utils import (
     UNVISITED,
@@ -35,14 +37,16 @@ comptime BLOCK_SIZE = 256
 
 
 def bfs_kernel(
-    dst_ptrs: UnsafePointer[UInt32, MutAnyOrigin],
-    src: UnsafePointer[UInt32, MutAnyOrigin],
-    num_vertices: Int,
-    level: UnsafePointer[UInt32, MutAnyOrigin],
-    new_vertex_visited: UnsafePointer[UInt32, MutAnyOrigin],
+    dst_ptrs: MutPointer[UInt32, MutAnyOrigin],
+    src: MutPointer[UInt32, MutAnyOrigin],
+    num_vertices_dev: Int32,
+    level: MutPointer[UInt32, MutAnyOrigin],
+    new_vertex_visited: MutPointer[UInt32, MutAnyOrigin],
     curr_level: UInt32,
 ):
     """BFS kernel: vertex-centric pull-based traversal using CSC graph."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_vertices = Int(num_vertices_dev)
     var vertex = block_idx.x * block_dim.x + thread_idx.x
 
     if vertex < num_vertices:
@@ -77,20 +81,20 @@ def main() raises:
     var num_edges = len(src)
     print("Graph has", num_edges, "edges")
 
-    var h_level = alloc[UInt32](NUM_VERTICES)
+    var h_level = unsafe_alloc[UInt32](NUM_VERTICES)
     for i in range(NUM_VERTICES):
         h_level[i] = UNVISITED
 
     var start_vertex = 0
     h_level[start_vertex] = 0
 
-    var d_dst_ptrs = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES + 1)
-    var d_src = ctx.enqueue_create_buffer[DType.uint32](num_edges)
-    var d_level = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES)
-    var d_new_vertex_visited = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_dst_ptrs = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES + 1)
+    var d_src = ctx.enqueue_create_buffer[.uint32](num_edges)
+    var d_level = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES)
+    var d_new_vertex_visited = ctx.enqueue_create_buffer[.uint32](1)
 
-    var h_dst_ptrs = alloc[UInt32](NUM_VERTICES + 1)
-    var h_src = alloc[UInt32](num_edges)
+    var h_dst_ptrs = unsafe_alloc[UInt32](NUM_VERTICES + 1)
+    var h_src = unsafe_alloc[UInt32](num_edges)
     for i in range(NUM_VERTICES + 1):
         h_dst_ptrs[i] = dst_ptrs[i]
     for i in range(num_edges):
@@ -101,18 +105,18 @@ def main() raises:
     ctx.enqueue_copy(d_level, h_level)
 
     var curr_level: UInt32 = 1
-    var grid_size = (NUM_VERTICES + BLOCK_SIZE - 1) // BLOCK_SIZE
+    var grid_size = ceildiv(NUM_VERTICES, BLOCK_SIZE)
 
     print("Running BFS...")
     while True:
-        var h_flag = alloc[UInt32](1)
+        var h_flag = unsafe_alloc[UInt32](1)
         h_flag[0] = 0
         ctx.enqueue_copy(d_new_vertex_visited, h_flag)
 
-        ctx.enqueue_function_experimental[bfs_kernel](
+        ctx.enqueue_function[bfs_kernel](
             d_dst_ptrs,
             d_src,
-            NUM_VERTICES,
+            Int32(NUM_VERTICES),
             d_level,
             d_new_vertex_visited,
             curr_level,
@@ -125,10 +129,10 @@ def main() raises:
         ctx.synchronize()
 
         if h_flag[0] == 0:
-            h_flag.free()
+            h_flag.unsafe_free()
             break
 
-        h_flag.free()
+        h_flag.unsafe_free()
         curr_level += 1
 
     print("BFS completed at level", curr_level - 1)
@@ -145,6 +149,6 @@ def main() raises:
     else:
         print("Figure 18.8 BFS Failed!")
 
-    h_level.free()
-    h_dst_ptrs.free()
-    h_src.free()
+    h_level.unsafe_free()
+    h_dst_ptrs.unsafe_free()
+    h_src.unsafe_free()

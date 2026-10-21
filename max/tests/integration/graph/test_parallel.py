@@ -28,11 +28,13 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def _gpu_device_configs() -> list[tuple[str, list[int]]]:
-    """Parametrize configs: (test_id, list of gpu ids)."""
-    configs = [("same_device", [0, 0])]
-    if accelerator_count() >= 2:
-        configs.append(("cross_device", [0, 1]))
-    return configs
+    """Parametrize configs: (test_id, list of gpu ids).
+
+    Fixed rather than derived from the GPUs present: the precompile record run
+    sees virtual devices, and both runs have to collect the same tests. Each
+    test skips a config the host has too few GPUs for.
+    """
+    return [("same_device", [0, 0]), ("cross_device", [0, 1])]
 
 
 @pytest.mark.parametrize(
@@ -61,8 +63,13 @@ def test_parallel_relu(
         ],
     ) as graph:
         inputs = [inp.tensor for inp in graph.inputs]
-        results = ops.parallel(inputs, lambda x: ops.relu(x))
-        assert isinstance(results, list)
+        bundles = ops.parallel(
+            [inputs],
+            lambda x: ops.relu(x),
+            result_types=[[t.type for t in inputs]],
+        )
+        assert isinstance(bundles, list)
+        [results] = bundles
         graph.output(*[r.to(DeviceRef.CPU()) for r in results])
 
     compiled = session.load(graph)
@@ -107,8 +114,13 @@ def test_parallel_relu_symbolic_dim(
         ],
     ) as graph:
         inputs = [inp.tensor for inp in graph.inputs]
-        results = ops.parallel(inputs, lambda x: ops.relu(x))
-        assert isinstance(results, list)
+        bundles = ops.parallel(
+            [inputs],
+            lambda x: ops.relu(x),
+            result_types=[[t.type for t in inputs]],
+        )
+        assert isinstance(bundles, list)
+        [results] = bundles
         graph.output(*[r.to(DeviceRef.CPU()) for r in results])
 
     compiled = session.load(graph)

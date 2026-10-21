@@ -13,31 +13,31 @@
 
 from std.io.io import _printf
 
-from std.gpu.host import DeviceContext
-from std.gpu import thread_idx
-from std.gpu.compute.mma import mma
+from max.gpu.host import DeviceContext
+from max.gpu import thread_idx
+from max.gpu.compute.mma import mma
 
 
 def mma_sync_16x8x32_E4M3():
-    a = SIMD[DType.float8_e4m3fn, 16](1.0)
-    b = SIMD[DType.float8_e4m3fn, 8](2.0)
-    c = SIMD[DType.float32, 4](0.0)
-    d = SIMD[DType.float32, 4](0.0)
+    var a = SIMD[.float8_e4m3fn, 16](1.0)
+    var b = SIMD[.float8_e4m3fn, 8](2.0)
+    var c = SIMD[.float32, 4](0.0)
+    var d = SIMD[.float32, 4](0.0)
     mma(d, a, b, c)
 
     _printf["thread %d : %g %g %g %g\n"](
         thread_idx.x,
-        d[0].cast[DType.float64](),
-        d[1].cast[DType.float64](),
-        d[2].cast[DType.float64](),
-        d[3].cast[DType.float64](),
+        d[0].cast[.float64](),
+        d[1].cast[.float64](),
+        d[2].cast[.float64](),
+        d[3].cast[.float64](),
     )
 
 
 def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext) raises:
     print("== test_mma_sync_16x8x32_E4M3")
     comptime kernel = mma_sync_16x8x32_E4M3
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         grid_dim=(1),
         block_dim=(32),
     )
@@ -45,25 +45,25 @@ def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext) raises:
 
 
 def mma_sync_16x8x32_E4M2():
-    a = SIMD[DType.float8_e5m2, 16](2.0)
-    b = SIMD[DType.float8_e5m2, 8](3.0)
-    c = SIMD[DType.float32, 4](0.0)
-    d = SIMD[DType.float32, 4](0.0)
+    var a = SIMD[.float8_e5m2, 16](2.0)
+    var b = SIMD[.float8_e5m2, 8](3.0)
+    var c = SIMD[.float32, 4](0.0)
+    var d = SIMD[.float32, 4](0.0)
     mma(d, a, b, c)
 
     _printf["thread %d : %g %g %g %g\n"](
         thread_idx.x,
-        d[0].cast[DType.float64](),
-        d[1].cast[DType.float64](),
-        d[2].cast[DType.float64](),
-        d[3].cast[DType.float64](),
+        d[0].cast[.float64](),
+        d[1].cast[.float64](),
+        d[2].cast[.float64](),
+        d[3].cast[.float64](),
     )
 
 
 def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext) raises:
     print("== test_mma_sync_16x8x32_E5M2")
     comptime kernel = mma_sync_16x8x32_E4M2
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         grid_dim=(1),
         block_dim=(32),
     )

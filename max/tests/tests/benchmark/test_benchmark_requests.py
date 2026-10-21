@@ -14,22 +14,52 @@
 """Unit tests for benchmark_shared.request module."""
 
 import concurrent.futures
+import json
+import logging
 import os
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
+from max.benchmark.benchmark_serving import validate_task_and_endpoint
+from max.benchmark.benchmark_shared.config import SamplingConfig
+from max.benchmark.benchmark_shared.datasets.types import (
+    ChatMessage,
+    ImageContentBlock,
+    ImageURLDetail,
+    OpenAIImage,
+    PixelGenerationImageOptions,
+    TextContentBlock,
+)
 from max.benchmark.benchmark_shared.request import (
     OpenAIChatCompletionsRequestDriver,
     OpenAICompletionsRequestDriver,
+    OpenAIStreamRecorder,
+    OpenResponsesRequestDriver,
+    PixelGenerationRequestFuncInput,
     ProgressBarRequestDriver,
     RequestCounter,
     RequestFuncInput,
     RequestFuncOutput,
+    SglangPixelGenerationRequestDriver,
+    SglangVideoRequestDriver,
     TRTLLMRequestDriver,
+    VllmOmniPixelGenerationRequestDriver,
+    VllmOmniVideoRequestDriver,
+    _attach_images_to_first_user_message,
+    _build_final_payload,
+    _build_sglang_pixel_generation_payload,
+    _build_sglang_video_payload,
+    _build_vllm_omni_pixel_generation_payload,
+    _build_vllm_omni_video_payload,
+    _count_generated_media,
     async_request_lora_load,
     async_request_lora_unload,
     get_request_driver_class,
+    mark_cancelled_if_past_deadline,
+    tag_lora_route,
+    tag_response_format_outcome,
 )
 from pytest_mock import MockerFixture
 from tqdm.asyncio import tqdm
@@ -75,9 +105,7 @@ class TestRequestFuncInput:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/completions",
@@ -94,18 +122,16 @@ class TestRequestFuncInput:
         assert request_input.ignore_eos is False
         assert request_input.model == "test-model"
         assert request_input.session_id is None
-        assert request_input.temperature is None
-        assert request_input.top_p is None
-        assert request_input.top_k is None
+        assert request_input.sampling.temperature is None
+        assert request_input.sampling.top_p is None
+        assert request_input.sampling.top_k is None
 
     def test_request_func_input_with_optional_fields(self) -> None:
         """Test creating a RequestFuncInput with optional fields."""
         request_input = RequestFuncInput(
             model="test-model",
             session_id="session-123",
-            temperature=0.7,
-            top_p=0.9,
-            top_k=50,
+            sampling=SamplingConfig(temperature=0.7, top_p=0.9, top_k=50),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/completions",
@@ -115,26 +141,27 @@ class TestRequestFuncInput:
         )
 
         assert request_input.session_id == "session-123"
-        assert request_input.temperature == 0.7
-        assert request_input.top_p == 0.9
-        assert request_input.top_k == 50
+        assert request_input.sampling.temperature == 0.7
+        assert request_input.sampling.top_p == 0.9
+        assert request_input.sampling.top_k == 50
 
     def test_request_func_input_with_chat_messages(self) -> None:
         """Test creating a RequestFuncInput with chat messages."""
         messages = [
-            {"role": "user", "content": [{"type": "text", "text": "Hello"}]},
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": "Hi there!"}],
-            },
+            ChatMessage(
+                role="user",
+                content=[TextContentBlock(type="text", text="Hello")],
+            ),
+            ChatMessage(
+                role="assistant",
+                content=[TextContentBlock(type="text", text="Hi there!")],
+            ),
         ]
 
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt=messages,
             images=[],
             api_url="http://localhost:8000/chat/completions",
@@ -315,6 +342,126 @@ class TestAsyncRequestFunctions:
         assert unload_time >= 0
 
 
+class TestOpenAIStreamRecorder:
+    def test_records_ttft_itl_and_generated_text_for_chat_chunks(self) -> None:
+        """The first content chunk sets ttft; later chunks add itl entries."""
+        recorder = OpenAIStreamRecorder(prompt_len=10, chat=True)
+
+        assert (
+            recorder.on_event(
+                json.dumps({"choices": [{"delta": {"content": "Hello"}}]})
+            )
+            is None
+        )
+        assert recorder.output.ttft > 0.0
+        assert recorder.output.itl == []
+
+        assert (
+            recorder.on_event(
+                json.dumps({"choices": [{"delta": {"content": " world"}}]})
+            )
+            is None
+        )
+        assert len(recorder.output.itl) == 1
+
+        assert recorder.on_event("[DONE]") is None
+
+        output = recorder.finish()
+        assert output is recorder.output
+        assert output.success is True
+        assert output.generated_text == "Hello world"
+        assert output.latency > 0.0
+        assert output.prompt_len == 10
+
+    def test_records_text_for_completion_chunks(self) -> None:
+        """``chat=False`` reads the completions schema's ``text`` field."""
+        recorder = OpenAIStreamRecorder(prompt_len=5, chat=False)
+
+        recorder.on_event(json.dumps({"choices": [{"text": "Hi"}]}))
+        output = recorder.finish()
+
+        assert output.success is True
+        assert output.generated_text == "Hi"
+
+    def test_on_event_returns_output_and_stops_on_error_chunk(self) -> None:
+        """An error chunk ends the stream immediately with the failed output."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        result = recorder.on_event(
+            json.dumps({"choices": [], "error": {"message": "boom"}})
+        )
+
+        assert result is recorder.output
+        assert result.success is False
+        assert result.error == "boom"
+
+    def test_usage_chunk_is_recorded_as_server_token_stats(self) -> None:
+        """A usage-bearing chunk populates ``server_token_stats``."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        recorder.on_event(
+            json.dumps(
+                {
+                    "choices": [{"delta": {"content": "x"}}],
+                    "usage": {
+                        "prompt_tokens": 3,
+                        "completion_tokens": 1,
+                        "total_tokens": 4,
+                        "prompt_tokens_details": {"cached_tokens": 2},
+                    },
+                }
+            )
+        )
+
+        stats = recorder.output.server_token_stats
+        assert stats.prompt_tokens == 3
+        assert stats.completion_tokens == 1
+        assert stats.total_tokens == 4
+        assert stats.cached_tokens == 2
+
+    def test_finish_without_content_fails(self) -> None:
+        """Choices present but no modeled text field must fail."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        recorder.on_event(
+            json.dumps({"choices": [{"delta": {"role": "assistant"}}]})
+        )
+        output = recorder.finish()
+
+        assert output.success is False
+        assert "No text content" in output.error
+
+    def test_fail_marks_output_unsuccessful(self) -> None:
+        """``fail`` sets the error and marks the request unsuccessful."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        output = recorder.fail("connection reset")
+
+        assert output is recorder.output
+        assert output.success is False
+        assert output.error == "connection reset"
+
+    def test_arrival_times_override_the_clock(self) -> None:
+        """Given arrival times, TTFT, ITL and latency come from them."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+        start = recorder._st
+
+        recorder.on_event(
+            json.dumps({"choices": [{"delta": {"content": "a"}}]}),
+            arrived=start + 0.5,
+        )
+        recorder.on_event(
+            json.dumps({"choices": [{"delta": {"content": "b"}}]}),
+            arrived=start + 0.75,
+        )
+        recorder.on_event("[DONE]", arrived=start + 1.0)
+        output = recorder.finish()
+
+        assert output.ttft == pytest.approx(0.5)
+        assert output.itl == [pytest.approx(0.25)]
+        assert output.latency == pytest.approx(1.0)
+
+
 class TestRequestDriver:
     """Test cases for RequestDriver classes."""
 
@@ -329,9 +476,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/completions",
@@ -342,10 +487,10 @@ class TestRequestDriver:
 
         # Mock response data
         mock_response_data = [
-            b'data: {"choices": [{"text": "Hello"}]}',
-            b'data: {"choices": [{"text": " world"}]}',
-            b'data: {"choices": [{"text": "!"}]}',
-            b"data: [DONE]",
+            b'data: {"choices": [{"text": "Hello"}]}\n\n',
+            b'data: {"choices": [{"text": " world"}]}\n\n',
+            b'data: {"choices": [{"text": "!"}]}\n\n',
+            b"data: [DONE]\n\n",
         ]
 
         # Create async iterator for response.content
@@ -378,9 +523,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/chat/completions",
@@ -391,10 +534,10 @@ class TestRequestDriver:
 
         # Mock response data
         mock_response_data = [
-            b'data: {"choices": [{"delta": {"content": "Hello"}}]}',
-            b'data: {"choices": [{"delta": {"content": " world"}}]}',
-            b'data: {"choices": [{"delta": {"content": "!"}}]}',
-            b"data: [DONE]",
+            b'data: {"choices": [{"delta": {"content": "Hello"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"content": " world"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"content": "!"}}]}\n\n',
+            b"data: [DONE]\n\n",
         ]
 
         # Create async iterator for response.content
@@ -416,6 +559,195 @@ class TestRequestDriver:
         assert result.generated_text == "Hello world!"
         assert result.prompt_len == 10
 
+    async def test_openai_chat_completions_choices_but_no_text_is_failure(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Choices present but no modeled text field must fail, not succeed with ttft=0.
+
+        Regression test for PERF-2615: gpt-oss streamed chunks that had
+        ``choices`` but carried text in a delta field this client does not
+        model, so ``reasoning``/``reasoning_content``/``content`` were all
+        empty. Those runs were marked success with ttft=0 and no tokens, which
+        zeroed out TTFT/TPOT for the whole run and produced a misleading
+        "0 valid requests" steady-state warning. Such a response must now be a
+        failure.
+        """
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        # Chunks have choices but the text is in an unmodeled delta field;
+        # reasoning/reasoning_content/content are all absent, so no text is
+        # captured.
+        mock_response_data = [
+            b'data: {"choices": [{"delta": {"role": "assistant"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"unmodeled_channel": "hi"}}]}\n\n',
+            b'data: {"choices": [{"delta": {}, "finish_reason": "stop"}]}\n\n',
+            b"data: [DONE]\n\n",
+        ]
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            for item in mock_response_data:
+                yield item
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is False
+        assert result.ttft == 0.0
+        assert result.generated_text == ""
+        assert result.error is not None
+        assert "No text content" in result.error
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_completions_tool_call_only_response_is_success(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """A pure tool-call turn is a successful, content-bearing response.
+
+        Regression test for the nemotron-opencode "No text content captured"
+        failures: an agentic response can consist entirely of ``tool_calls``
+        deltas (no ``content``/``reasoning`` at all). The client must model
+        the ``tool_calls`` field and treat those chunks as content-bearing
+        rather than reporting the request as failed.
+        """
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Write a file",
+            images=[],
+            api_url="http://localhost:8000/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        # Mirrors the server's streaming shape for a tool-call-only turn:
+        # an opener chunk with id + name, then argument fragments.
+        mock_response_data = [
+            (
+                b'data: {"choices": [{"delta": {"role": "assistant", '
+                b'"tool_calls": [{"index": 0, "id": "write:fa3c5398", '
+                b'"type": "function", '
+                b'"function": {"name": "write", "arguments": "{\\""}}]}}]}\n\n'
+            ),
+            (
+                b'data: {"choices": [{"delta": {"tool_calls": [{"index": 0, '
+                b'"function": {"arguments": "content\\": \\"hi\\"}"}}]}}]}\n\n'
+            ),
+            (
+                b'data: {"choices": [{"delta": {}, '
+                b'"finish_reason": "length"}]}\n\n'
+            ),
+            b"data: [DONE]\n\n",
+        ]
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            for item in mock_response_data:
+                yield item
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+        assert result.error == ""
+        assert result.ttft > 0.0
+        # The tool name and argument bytes are the generated text.
+        assert result.generated_text == 'write{"content": "hi"}'
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_completions_content_before_tool_call_is_not_double_counted(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Content and tool_calls deltas are additive, never overlapping.
+
+        Regression guard for double-counting: a turn that streams prose
+        before deciding to call a tool must count that prose exactly once,
+        even though ``_extract_chat_delta_text`` sums ``content`` and
+        ``tool_calls`` text from the same delta object. The server only ever
+        populates one of the two per ``ParsedToolCallDelta``, so summing them
+        is additive by construction -- this test pins that with an exact
+        length/text check rather than relying on that invariant by
+        inspection alone.
+        """
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="What's the weather, then check the time",
+            images=[],
+            api_url="http://localhost:8000/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        mock_response_data = [
+            (
+                b'data: {"choices": [{"delta": {"role": "assistant", '
+                b'"content": "Let me check that for you."}}]}\n\n'
+            ),
+            (
+                b'data: {"choices": [{"delta": {'
+                b'"tool_calls": [{"index": 0, "id": "get_weather:1", '
+                b'"type": "function", '
+                b'"function": {"name": "get_weather", "arguments": "{}"}}]}}]}\n\n'
+            ),
+            (
+                b'data: {"choices": [{"delta": {}, '
+                b'"finish_reason": "tool_calls"}]}\n\n'
+            ),
+            b"data: [DONE]\n\n",
+        ]
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            for item in mock_response_data:
+                yield item
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+        # The prose and the tool call are disjoint deltas; the total is
+        # their concatenation, not double the prose or double the call.
+        assert (
+            result.generated_text == "Let me check that for you.get_weather{}"
+        )
+        assert result.generated_text.count("Let me check that for you.") == 1
+
     @pytest.mark.asyncio
     async def test_openai_chat_completions_merges_reasoning_reasoning_content_and_content(
         self,
@@ -427,9 +759,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Think step by step",
             images=[],
             api_url="http://localhost:8000/chat/completions",
@@ -445,9 +775,9 @@ class TestRequestDriver:
                 b'"content": " The answer is 42.", '
                 b'"reasoning": "Let me think.", '
                 b'"reasoning_content": " chain-of-thought."'
-                b"}}]}"
+                b"}}]}\n\n"
             ),
-            b"data: [DONE]",
+            b"data: [DONE]\n\n",
         ]
 
         async def async_iter() -> AsyncIterator[bytes]:
@@ -480,9 +810,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test",
             images=[],
             api_url="http://localhost:8000/chat/completions",
@@ -493,11 +821,11 @@ class TestRequestDriver:
 
         # Chunks with only some keys present or None; no "reasoning" or "reasoning_content"
         mock_response_data = [
-            b'data: {"choices": [{"delta": {"reasoning": "Let me "}}]}',
-            b'data: {"choices": [{"delta": {"reasoning": "think.", "content": " The"}}]}',
-            b'data: {"choices": [{"delta": {"reasoning": null, "content": " answer"}}]}',
-            b'data: {"choices": [{"delta": {"content": " is 42."}}]}',
-            b"data: [DONE]",
+            b'data: {"choices": [{"delta": {"reasoning": "Let me "}}]}\n\n',
+            b'data: {"choices": [{"delta": {"reasoning": "think.", "content": " The"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"reasoning": null, "content": " answer"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"content": " is 42."}}]}\n\n',
+            b"data: [DONE]\n\n",
         ]
 
         async def async_iter() -> AsyncIterator[bytes]:
@@ -519,6 +847,219 @@ class TestRequestDriver:
         assert result.prompt_len == 1
 
     @pytest.mark.asyncio
+    async def test_openai_chat_completions_error_chunk_reports_server_message(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Regression test for MXTOOLS-203: server error message is surfaced in output.error."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="A very long prompt",
+            images=[],
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=264408,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        error_msg = "Input string is larger than tokenizer's max length (264823 > 262144)."
+        error_json = json.dumps(
+            {
+                "error": {
+                    "code": "500",
+                    "message": error_msg,
+                    "param": "",
+                    "type": "",
+                }
+            }
+        )
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            yield f"data: {error_json}\n\n".encode()
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is False
+        assert result.error == error_msg
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_completions_forwards_tools(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """``tools`` on RequestFuncInput is forwarded as the chat ``tools`` field."""
+        tool_schemas = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "bash",
+                    "description": "Run a shell command",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"cmd": {"type": "string"}},
+                        "required": ["cmd"],
+                    },
+                },
+            },
+        ]
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Run ls",
+            images=[],
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=5,
+            max_tokens=50,
+            ignore_eos=False,
+            tools=tool_schemas,
+        )
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            yield b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
+            yield b"data: [DONE]\n\n"
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+        # Inspect the POST payload to confirm the tools made it through.
+        _, post_kwargs = mock_aiohttp_session.post.call_args
+        assert post_kwargs["json"]["tools"] == tool_schemas
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_completions_omits_tools_when_none(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """No ``tools`` field is sent when SampledRequest.tools is None/empty."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="hi",
+            images=[],
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=1,
+            max_tokens=8,
+            ignore_eos=False,
+            tools=None,
+        )
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            yield b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
+            yield b"data: [DONE]\n\n"
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+        _, post_kwargs = mock_aiohttp_session.post.call_args
+        assert "tools" not in post_kwargs["json"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("prompt", "images", "expected"),
+        [
+            pytest.param("hi", [], False, id="text-only"),
+            pytest.param(
+                "hi",
+                [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/jpeg;base64,AAA"},
+                    }
+                ],
+                True,
+                id="attached",
+            ),
+            pytest.param(
+                [
+                    ChatMessage(
+                        role="user",
+                        content=[
+                            TextContentBlock(text="what is this?"),
+                            ImageContentBlock(
+                                image_url=ImageURLDetail(
+                                    url="data:image/jpeg;base64,AAA"
+                                )
+                            ),
+                        ],
+                    ),
+                    ChatMessage(role="assistant", content="a cat"),
+                    ChatMessage(
+                        role="user", content=[TextContentBlock(text="and?")]
+                    ),
+                ],
+                [],
+                True,
+                id="resent-with-history",
+            ),
+        ],
+    )
+    async def test_openai_chat_completions_records_whether_the_payload_carries_an_image(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+        prompt: str | list[ChatMessage],
+        images: list[OpenAIImage],
+        expected: bool,
+    ) -> None:
+        """A turn that only resends an earlier image still carries one."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt=prompt,
+            images=images,
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=1,
+            max_tokens=8,
+            ignore_eos=False,
+        )
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            yield b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
+            yield b"data: [DONE]\n\n"
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        result = await OpenAIChatCompletionsRequestDriver().request(
+            request_input
+        )
+
+        assert result.success is True
+        assert result.carries_image is expected
+
+    @pytest.mark.asyncio
     async def test_openai_completions_request_driver_no_content(
         self,
         mock_aiohttp_session: Any,
@@ -529,9 +1070,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/completions",
@@ -541,7 +1080,7 @@ class TestRequestDriver:
         )
 
         mock_response_data = [
-            b"data: [DONE]",
+            b"data: [DONE]\n\n",
         ]
 
         async def async_iter() -> AsyncIterator[bytes]:
@@ -558,7 +1097,7 @@ class TestRequestDriver:
         result = await driver.request(request_input)
 
         assert result.success is False
-        assert "No content returned" in result.error
+        assert "No text content" in result.error
 
     @pytest.mark.asyncio
     async def test_request_driver_with_progress_bar(
@@ -568,9 +1107,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/generate_stream",
@@ -584,7 +1121,7 @@ class TestRequestDriver:
 
         # Create async iterator for response.content
         async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data:{"text_output": "Hello"}'
+            yield b'data: {"text_output": "Hello"}\n\n'
 
         # Setup the response object
         mock_response = mocker.AsyncMock()
@@ -609,9 +1146,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/generate_stream",
@@ -622,7 +1157,7 @@ class TestRequestDriver:
 
         # Create async iterator for response.content
         async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data:{"text_output": "Hello"}'
+            yield b'data: {"text_output": "Hello"}\n\n'
 
         # Setup the response object
         mock_response = mocker.AsyncMock()
@@ -635,6 +1170,150 @@ class TestRequestDriver:
         result = await driver.request(request_input)
 
         assert result.success is True
+
+
+class TestBuildFinalPayload:
+    """Unit tests for the ``_build_final_payload`` payload helper."""
+
+    def test_none_and_empty_return_copy_unchanged(self) -> None:
+        payload = {"model": "m"}
+        assert _build_final_payload(payload, None) == {"model": "m"}
+        assert _build_final_payload(payload, {}) == {"model": "m"}
+        # The helper returns a fresh dict; the caller's payload is not mutated.
+        assert _build_final_payload(payload, {"x": 1}) is not payload
+        assert "x" not in payload
+
+    def test_adds_new_keys_with_nested_verbatim(self) -> None:
+        payload: dict[str, Any] = {"model": "m"}
+        extra = {
+            "vendor_ext": {"flags": ["a", "b"]},
+            "stop": ["}"],
+        }
+        body = _build_final_payload(payload, extra)
+        assert body["vendor_ext"] == {"flags": ["a", "b"]}
+        assert body["stop"] == ["}"]
+
+    def test_collision_overwrites_and_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        payload = {"max_tokens": 100, "stream": True}
+        with caplog.at_level(
+            logging.WARNING, logger="max.benchmark.benchmark_shared.request"
+        ):
+            body = _build_final_payload(payload, {"max_tokens": 15})
+        # last-writer-wins
+        assert body["max_tokens"] == 15
+        assert body["stream"] is True
+        # collision is surfaced
+        assert any(
+            "overwrites managed request field" in rec.message
+            and "max_tokens" in rec.message
+            for rec in caplog.records
+        )
+
+
+class TestDriverExtraBody:
+    """End-to-end: extra_body reaches the POST payload of text-gen drivers."""
+
+    _EXTRA = {
+        "stop": ["}"],
+        "chat_template_kwargs": {"reasoning_effort": "low"},
+        # Synthetic vendor extension: a nested object holding an array, to
+        # confirm arbitrary nested structures pass through verbatim.
+        "vendor_ext": {"flags": ["a", "b"]},
+    }
+
+    @staticmethod
+    async def _single_chunk(chunk: bytes) -> AsyncIterator[bytes]:
+        yield chunk
+        yield b"data: [DONE]\n\n"
+
+    def _make_input(self, api_url: str) -> RequestFuncInput:
+        return RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="hi",
+            images=[],
+            api_url=api_url,
+            prompt_len=1,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_chat_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = self._single_chunk(
+            b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
+        )
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input("http://localhost:8000/v1/chat/completions")
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["chat_template_kwargs"] == {"reasoning_effort": "low"}
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
+
+    @pytest.mark.asyncio
+    async def test_completions_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = self._single_chunk(
+            b'data: {"choices": [{"text": "ok"}]}\n\n'
+        )
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAICompletionsRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input("http://localhost:8000/v1/completions")
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
+
+    @pytest.mark.asyncio
+    async def test_trtllm_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        async def trtllm_chunk() -> AsyncIterator[bytes]:
+            # The TRT-LLM driver validates every event as a chunk and has no
+            # ``[DONE]`` sentinel, so emit only a single data line.
+            yield b'data: {"text_output": "ok"}\n\n'
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = trtllm_chunk()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = TRTLLMRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input(
+                "http://localhost:8000/v2/models/ensemble/generate_stream"
+            )
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
 
 
 class TestRequestDriverSelection:
@@ -669,3 +1348,616 @@ class TestRequestDriverSelection:
     def test_get_request_driver_class_invalid_url(self) -> None:
         with pytest.raises(ValueError, match="Unsupported API URL"):
             get_request_driver_class("http://localhost:8000/unsupported")
+
+    # Pixel generation driver selection tests
+
+    def test_get_request_driver_class_pixel_gen_responses(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/responses",
+                task="text-to-image",
+            )
+            is OpenResponsesRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_sglang(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/images/generations",
+                task="text-to-image",
+            )
+            is SglangPixelGenerationRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_vllm_omni(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/chat/completions",
+                task="text-to-image",
+            )
+            is VllmOmniPixelGenerationRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_image_to_image(self) -> None:
+        """image-to-image task should also dispatch to pixel gen drivers."""
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/images/generations",
+                task="image-to-image",
+            )
+            is SglangPixelGenerationRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_vllm_omni_video(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/videos/sync",
+                task="text-to-video",
+            )
+            is VllmOmniVideoRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_sglang_video(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/videos",
+                task="text-to-video",
+            )
+            is SglangVideoRequestDriver
+        )
+
+    def test_get_request_driver_class_pixel_gen_invalid_url(self) -> None:
+        with pytest.raises(ValueError, match="pixel-generation"):
+            get_request_driver_class(
+                "http://localhost:8000/v1/completions",
+                task="text-to-image",
+            )
+
+    def test_get_request_driver_class_text_gen_videos_sync_rejected(
+        self,
+    ) -> None:
+        """text-generation + /v1/videos/sync should raise, not return the
+        video driver."""
+        with pytest.raises(ValueError, match="Unsupported API URL"):
+            get_request_driver_class(
+                "http://localhost:8000/v1/videos/sync",
+                task="text-generation",
+            )
+
+    def test_get_request_driver_class_text_gen_videos_rejected(self) -> None:
+        """text-generation + /v1/videos should raise."""
+        with pytest.raises(ValueError, match="Unsupported API URL"):
+            get_request_driver_class(
+                "http://localhost:8000/v1/videos",
+                task="text-generation",
+            )
+
+    def test_get_request_driver_class_text_gen_chat_not_pixel(self) -> None:
+        """text-generation + /v1/chat/completions should return chat driver,
+        not VllmOmniPixelGenerationRequestDriver."""
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/chat/completions",
+                task="text-generation",
+            )
+            is OpenAIChatCompletionsRequestDriver
+        )
+
+
+class TestPixelGenerationPayloadBuilders:
+    """Tests for sglang and vllm omni pixel generation payload builders."""
+
+    def _make_input(
+        self,
+        image_options: PixelGenerationImageOptions | None = None,
+    ) -> PixelGenerationRequestFuncInput:
+        return PixelGenerationRequestFuncInput(
+            model="black-forest-labs/FLUX.2-dev",
+            session_id=None,
+            prompt="A beautiful sunset",
+            input_image_paths=None,
+            api_url="http://localhost:8000/v1/images/generations",
+            image_options=image_options,
+        )
+
+    def test_sglang_payload_all_options(self) -> None:
+        opts = PixelGenerationImageOptions(
+            width=1024,
+            height=768,
+            steps=28,
+            guidance_scale=3.5,
+            seed=42,
+            negative_prompt="blurry",
+        )
+        payload = _build_sglang_pixel_generation_payload(self._make_input(opts))
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert payload["prompt"] == "A beautiful sunset"
+        assert payload["size"] == "1024x768"
+        assert payload["num_inference_steps"] == 28
+        assert payload["guidance_scale"] == 3.5
+        assert payload["seed"] == 42
+        assert payload["n"] == 1
+        assert payload["response_format"] == "b64_json"
+        # negative_prompt is intentionally not supported
+        assert "negative_prompt" not in payload
+
+    def test_sglang_payload_no_options(self) -> None:
+        payload = _build_sglang_pixel_generation_payload(self._make_input(None))
+        assert payload["prompt"] == "A beautiful sunset"
+        assert "size" not in payload
+        assert "num_inference_steps" not in payload
+
+    def test_sglang_payload_partial_options(self) -> None:
+        opts = PixelGenerationImageOptions(steps=20)
+        payload = _build_sglang_pixel_generation_payload(self._make_input(opts))
+        assert payload["num_inference_steps"] == 20
+        # size requires both width and height
+        assert "size" not in payload
+        assert "guidance_scale" not in payload
+
+    def test_vllm_omni_payload_all_options(self) -> None:
+        opts = PixelGenerationImageOptions(
+            width=1024,
+            height=768,
+            steps=28,
+            guidance_scale=3.5,
+            seed=42,
+            negative_prompt="blurry",
+        )
+        payload = _build_vllm_omni_pixel_generation_payload(
+            self._make_input(opts)
+        )
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert payload["messages"] == [
+            {"role": "user", "content": "A beautiful sunset"}
+        ]
+        extra = payload["extra_body"]
+        assert extra["height"] == 768
+        assert extra["width"] == 1024
+        assert extra["num_inference_steps"] == 28
+        assert extra["guidance_scale"] == 3.5
+        assert extra["seed"] == 42
+        # negative_prompt is intentionally not supported
+        assert "negative_prompt" not in extra
+
+    def test_vllm_omni_payload_no_options(self) -> None:
+        payload = _build_vllm_omni_pixel_generation_payload(
+            self._make_input(None)
+        )
+        assert "extra_body" not in payload
+        assert payload["messages"][0]["content"] == "A beautiful sunset"
+
+    def test_vllm_omni_payload_partial_options(self) -> None:
+        opts = PixelGenerationImageOptions(height=512, width=512)
+        payload = _build_vllm_omni_pixel_generation_payload(
+            self._make_input(opts)
+        )
+        extra = payload["extra_body"]
+        assert extra["height"] == 512
+        assert extra["width"] == 512
+        assert "num_inference_steps" not in extra
+
+    def test_vllm_omni_video_payload_all_options(self) -> None:
+        opts = PixelGenerationImageOptions(
+            width=832,
+            height=480,
+            steps=50,
+            guidance_scale=4.0,
+            seed=42,
+            negative_prompt="blurry",
+            num_frames=81,
+        )
+        payload = _build_vllm_omni_video_payload(self._make_input(opts))
+        assert payload["prompt"] == "A beautiful sunset"
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert payload["width"] == "832"
+        assert payload["height"] == "480"
+        assert payload["num_inference_steps"] == "50"
+        assert payload["guidance_scale"] == "4.0"
+        assert payload["seed"] == "42"
+        assert payload["negative_prompt"] == "blurry"
+        assert payload["num_frames"] == "81"
+
+    def test_vllm_omni_video_payload_no_options(self) -> None:
+        payload = _build_vllm_omni_video_payload(self._make_input(None))
+        assert payload["prompt"] == "A beautiful sunset"
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert len(payload) == 2
+
+    def test_vllm_omni_video_payload_partial_options(self) -> None:
+        opts = PixelGenerationImageOptions(width=480, height=480, num_frames=33)
+        payload = _build_vllm_omni_video_payload(self._make_input(opts))
+        assert payload["width"] == "480"
+        assert payload["height"] == "480"
+        assert payload["num_frames"] == "33"
+        assert "num_inference_steps" not in payload
+        assert "guidance_scale" not in payload
+
+    def test_sglang_video_payload_all_options(self) -> None:
+        opts = PixelGenerationImageOptions(
+            width=832,
+            height=480,
+            steps=50,
+            guidance_scale=4.0,
+            seed=42,
+            negative_prompt="blurry",
+            num_frames=81,
+        )
+        payload = _build_sglang_video_payload(self._make_input(opts))
+        assert payload["prompt"] == "A beautiful sunset"
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert payload["width"] == 832
+        assert payload["height"] == 480
+        assert payload["num_inference_steps"] == 50
+        assert payload["guidance_scale"] == 4.0
+        assert payload["seed"] == 42
+        assert payload["negative_prompt"] == "blurry"
+        assert payload["num_frames"] == 81
+        assert "n" not in payload
+        assert "response_format" not in payload
+
+    def test_sglang_video_payload_no_options(self) -> None:
+        payload = _build_sglang_video_payload(self._make_input(None))
+        assert payload["prompt"] == "A beautiful sunset"
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert len(payload) == 2
+
+    def test_sglang_video_payload_partial_options(self) -> None:
+        opts = PixelGenerationImageOptions(width=832, height=480, num_frames=81)
+        payload = _build_sglang_video_payload(self._make_input(opts))
+        assert payload["width"] == 832
+        assert payload["height"] == 480
+        assert payload["num_frames"] == 81
+        assert "num_inference_steps" not in payload
+        assert "guidance_scale" not in payload
+
+
+class TestCountGeneratedMedia:
+    """Tests for _count_generated_media (OpenResponses response parser)."""
+
+    @staticmethod
+    def _wrap(content: list[dict[str, Any]]) -> dict[str, Any]:
+        """Wrap content items in the OpenResponses message envelope."""
+        return {
+            "output": [
+                {
+                    "id": "msg_test_0",
+                    "role": "assistant",
+                    "content": content,
+                    "status": "completed",
+                }
+            ]
+        }
+
+    def test_counts_output_image(self) -> None:
+        body = self._wrap(
+            [{"type": "output_image", "image_url": "http://x/img.png"}]
+        )
+        assert _count_generated_media(body) == 1
+
+    def test_counts_output_video(self) -> None:
+        # Regression: video responses were previously miscounted as 0, causing
+        # every text-to-video request to fail with "No output_image content
+        # found in OpenResponses response body." (PERF-2518).
+        body = self._wrap(
+            [
+                {
+                    "type": "output_video",
+                    "video_url": "http://x/vid.mp4",
+                    "format": "mp4",
+                    "frames_per_second": 16,
+                    "num_frames": 81,
+                }
+            ]
+        )
+        assert _count_generated_media(body) == 1
+
+    def test_counts_mixed_image_and_video(self) -> None:
+        body = self._wrap(
+            [
+                {"type": "output_image", "image_url": "http://x/a.png"},
+                {"type": "output_video", "video_url": "http://x/b.mp4"},
+                {"type": "output_image", "image_url": "http://x/c.png"},
+            ]
+        )
+        assert _count_generated_media(body) == 3
+
+    def test_ignores_non_media_content_types(self) -> None:
+        body = self._wrap(
+            [
+                {"type": "output_text", "text": "hello"},
+                {"type": "refusal", "refusal": "no"},
+                {"type": "reasoning_summary", "summary": "thinking"},
+            ]
+        )
+        assert _count_generated_media(body) == 0
+
+    def test_empty_output(self) -> None:
+        assert _count_generated_media({"output": []}) == 0
+
+    def test_missing_output_key(self) -> None:
+        assert _count_generated_media({}) == 0
+
+    def test_malformed_output_not_a_list(self) -> None:
+        assert _count_generated_media({"output": "not a list"}) == 0
+
+
+class TestValidateTaskAndEndpoint:
+    """Tests for validate_task_and_endpoint."""
+
+    def test_text_gen_modular_chat_ok(self) -> None:
+        validate_task_and_endpoint("text-generation", "/v1/chat/completions")
+
+    def test_text_gen_modular_completions_ok(self) -> None:
+        validate_task_and_endpoint("text-generation", "/v1/completions")
+
+    def test_text_gen_responses_rejected(self) -> None:
+        with pytest.raises(ValueError, match="does not support"):
+            validate_task_and_endpoint("text-generation", "/v1/responses")
+
+    def test_text_gen_images_rejected(self) -> None:
+        with pytest.raises(ValueError, match="does not support"):
+            validate_task_and_endpoint(
+                "text-generation", "/v1/images/generations"
+            )
+
+    def test_pixel_gen_responses_ok(self) -> None:
+        validate_task_and_endpoint("text-to-image", "/v1/responses")
+
+    def test_pixel_gen_images_ok(self) -> None:
+        validate_task_and_endpoint("text-to-image", "/v1/images/generations")
+
+    def test_pixel_gen_chat_ok(self) -> None:
+        validate_task_and_endpoint("text-to-image", "/v1/chat/completions")
+
+    def test_pixel_gen_completions_rejected(self) -> None:
+        with pytest.raises(ValueError, match="requires --endpoint"):
+            validate_task_and_endpoint("text-to-image", "/v1/completions")
+
+    def test_pixel_gen_videos_sync_ok(self) -> None:
+        validate_task_and_endpoint("text-to-video", "/v1/videos/sync")
+
+    def test_image_to_video_videos_sync_ok(self) -> None:
+        # i2v is a video task and may use the video endpoints.
+        validate_task_and_endpoint("image-to-video", "/v1/videos/sync")
+
+    def test_text_gen_videos_sync_rejected(self) -> None:
+        with pytest.raises(ValueError, match="does not support"):
+            validate_task_and_endpoint("text-generation", "/v1/videos/sync")
+
+    def test_text_to_image_videos_sync_rejected(self) -> None:
+        with pytest.raises(ValueError, match="only valid for"):
+            validate_task_and_endpoint("text-to-image", "/v1/videos/sync")
+
+    def test_image_to_image_videos_sync_rejected(self) -> None:
+        with pytest.raises(ValueError, match="only valid for"):
+            validate_task_and_endpoint("image-to-image", "/v1/videos/sync")
+
+    def test_pixel_gen_videos_ok(self) -> None:
+        validate_task_and_endpoint("text-to-video", "/v1/videos")
+
+    def test_image_to_video_videos_ok(self) -> None:
+        validate_task_and_endpoint("image-to-video", "/v1/videos")
+
+    def test_text_gen_videos_rejected(self) -> None:
+        with pytest.raises(ValueError, match="does not support"):
+            validate_task_and_endpoint("text-generation", "/v1/videos")
+
+    def test_text_to_image_videos_rejected(self) -> None:
+        with pytest.raises(ValueError, match="only valid for"):
+            validate_task_and_endpoint("text-to-image", "/v1/videos")
+
+    def test_image_to_image_videos_rejected(self) -> None:
+        with pytest.raises(ValueError, match="only valid for"):
+            validate_task_and_endpoint("image-to-image", "/v1/videos")
+
+    def test_image_to_image_responses_ok(self) -> None:
+        validate_task_and_endpoint("image-to-image", "/v1/responses")
+
+
+class TestMarkCancelledIfPastDeadline:
+    """Tests for ``mark_cancelled_if_past_deadline``.
+
+    A request cut off by benchmark end (its non-success result surfaces after
+    the deadline) should be reclassified as cancelled rather than failed.
+    """
+
+    def test_failed_past_deadline_becomes_cancelled(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        past = time.perf_counter_ns() - int(1e9)
+        out = RequestFuncOutput(success=False, error="swallowed timeout")
+        with caplog.at_level(
+            logging.INFO, logger="max.benchmark.benchmark_shared.request"
+        ):
+            result = mark_cancelled_if_past_deadline(out, past)
+        assert result is out
+        assert out.cancelled is True
+        # The reclassification is logged so the user is aware the request was
+        # cut off by benchmark end rather than silently dropped.
+        assert any(
+            "cut off by benchmark end" in rec.message for rec in caplog.records
+        )
+
+    def test_failed_before_deadline_stays_failed(self) -> None:
+        future = time.perf_counter_ns() + int(60 * 1e9)
+        out = RequestFuncOutput(success=False, error="real failure")
+        mark_cancelled_if_past_deadline(out, future)
+        assert out.cancelled is False
+
+    def test_failed_unbounded_deadline_stays_failed(self) -> None:
+        out = RequestFuncOutput(success=False, error="real failure")
+        mark_cancelled_if_past_deadline(out, None)
+        assert out.cancelled is False
+
+    def test_success_past_deadline_untouched(self) -> None:
+        past = time.perf_counter_ns() - int(1e9)
+        out = RequestFuncOutput(success=True)
+        mark_cancelled_if_past_deadline(out, past)
+        assert out.cancelled is False
+
+
+def test_attach_images_targets_first_user_message() -> None:
+    """A leading system message must not receive the images."""
+    img: OpenAIImage = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64,AAA"},
+    }
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": [{"type": "text", "text": "sys"}]},
+        {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+    ]
+    _attach_images_to_first_user_message(messages, [img])
+    assert messages[0]["content"] == [{"type": "text", "text": "sys"}]
+    assert messages[1]["content"][-1] == img
+
+
+def test_attach_images_normalizes_string_content() -> None:
+    """agentic-code passes plain-string content through, which used to raise
+    AttributeError on append."""
+    img: OpenAIImage = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64,AAA"},
+    }
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "plain string"}
+    ]
+    _attach_images_to_first_user_message(messages, [img])
+    assert messages[0]["content"] == [
+        {"type": "text", "text": "plain string"},
+        img,
+    ]
+
+
+def test_attach_images_without_user_message_is_a_noop() -> None:
+    img: OpenAIImage = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64,AAA"},
+    }
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": [{"type": "text", "text": "sys"}]}
+    ]
+    _attach_images_to_first_user_message(messages, [img])
+    assert messages[0]["content"] == [{"type": "text", "text": "sys"}]
+
+
+def _chat_input(response_format: object) -> RequestFuncInput:
+    return RequestFuncInput(
+        model="m",
+        session_id=None,
+        sampling=SamplingConfig(),
+        prompt="hi",
+        images=[],
+        api_url="http://localhost:8000/v1/chat/completions",
+        prompt_len=1,
+        max_tokens=16,
+        ignore_eos=False,
+        response_format=response_format,  # type: ignore[arg-type]
+    )
+
+
+_PERSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "person",
+        "schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+def test_tag_lora_route_copies_the_adapter() -> None:
+    routed = _chat_input(None)
+    routed.lora_id = "adapter-a"
+    output = RequestFuncOutput()
+    tag_lora_route(output, routed)
+    assert output.lora_id == "adapter-a"
+
+    tag_lora_route(output, _chat_input(None))
+    assert output.lora_id is None
+
+
+@pytest.mark.parametrize(
+    ("text", "conformed"),
+    [
+        ('{"name": "ada"}', True),
+        # Well-formed JSON that the schema rejects.
+        ('{"name": 7}', False),
+        # A backend that ignored response_format and answered in prose. This
+        # is the case the metric exists to catch.
+        ("Sure! The name is Ada.", False),
+        ("", False),
+    ],
+)
+def test_tag_response_format_outcome_judges_the_response(
+    text: str, conformed: bool
+) -> None:
+    output = RequestFuncOutput(success=True, generated_text=text)
+    tag_response_format_outcome(output, _chat_input(_PERSON_SCHEMA))
+    assert output.response_format_constrained
+    assert output.response_format_conformed is conformed
+
+
+def test_tag_response_format_outcome_leaves_unconstrained_unjudged() -> None:
+    output = RequestFuncOutput(success=True, generated_text="anything at all")
+    tag_response_format_outcome(output, _chat_input(None))
+    assert not output.response_format_constrained
+    assert output.response_format_conformed is None
+
+
+@pytest.mark.parametrize(
+    ("text", "conformed"), [('{"any": 1}', True), ("[1, 2]", False)]
+)
+def test_tag_response_format_outcome_holds_json_object_to_an_object(
+    text: str, conformed: bool
+) -> None:
+    """json_object means any JSON *object*, which is what the server's
+    permissive schema encodes -- a bare array does not satisfy it."""
+    output = RequestFuncOutput(success=True, generated_text=text)
+    tag_response_format_outcome(output, _chat_input({"type": "json_object"}))
+    assert output.response_format_conformed is conformed
+
+
+def test_tag_response_format_outcome_leaves_an_unusable_schema_unjudged() -> (
+    None
+):
+    """The conformance checker fails open, so an uncompilable schema scores
+    ``valid``. Counting that as conforming would report a perfect rate for a
+    schema that was never enforced, so it has to stay unjudged."""
+    broken = {
+        "type": "json_schema",
+        "json_schema": {"name": "broken", "schema": {"type": "not-a-type"}},
+    }
+    output = RequestFuncOutput(success=True, generated_text="prose, not json")
+    tag_response_format_outcome(output, _chat_input(broken))
+    assert output.response_format_constrained
+    assert output.response_format_conformed is None
+
+
+def test_tag_response_format_outcome_ignores_a_text_format() -> None:
+    """``text`` constrains nothing, so there is no schema to judge against."""
+    output = RequestFuncOutput(success=True, generated_text="prose")
+    tag_response_format_outcome(output, _chat_input({"type": "text"}))
+    assert output.response_format_constrained
+    assert output.response_format_conformed is None
+
+
+def test_stream_recorder_cancel_discards_partial_measurement() -> None:
+    recorder = OpenAIStreamRecorder(prompt_len=12, chat=True)
+    recorder.on_event('{"choices": [{"delta": {"content": "Hello"}}]}')
+    recorder.on_event('{"choices": [{"delta": {"content": " world"}}]}')
+
+    output = recorder.cancel()
+
+    assert recorder.done
+    assert output is recorder.output
+    assert output.cancelled
+    assert not output.success
+    assert output.prompt_len == 0
+    assert output.ttft == 0.0
+    assert output.itl == []
+    assert output.request_submit_time is not None

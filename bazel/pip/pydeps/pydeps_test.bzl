@@ -40,19 +40,10 @@ def _pydeps_test_impl(ctx):
         raw_sources = raw_py_sources + raw_non_py_sources
 
         if not raw_sources:
-            # FIXME: This is an odd special case, it is used as a "I just want to use MAX" dependency,
-            # so it sort of goes against the point of this test in the first place.
-            if str(dep.label) == "@@//max/python/max:max":
-                env["DEP_SOURCES"][label] = []
-                continue
-            elif str(dep.label) in [
-                "@@//max/tests/integration/tools:transformers_v4",
-                "@@//max/tests/integration/tools:huggingface_hub_v0",
-            ]:
-                # Silently ignore these, temporary hack
-                continue
-
             fail("Error: Dependency {} has no source files.".format(dep.label))
+
+        # Whether we like it or not, //foo/bar:baz.py is always importable as foo.bar.baz
+        srcs = raw_sources
 
         # PyInfo doesn't give us the import paths directly, just a list of all of them. Try to
         # infer the correct one by looking for one that is a prefix of one of the source files.
@@ -69,15 +60,8 @@ def _pydeps_test_impl(ctx):
                         import_path = path
                 else:
                     import_path = path
-        if not import_path:
-            # FIXME: Can't find the import path. Many of these cases can likely be fixed internally. There is at least
-            # one case where this is intentional, in max/examples/internal/transfer_engine/send_recv.py, which expects
-            # to import a file from the repo root (`from max.examples.internal.transfer_engine.common import main`)
-            # For that case at least we can set the import path to `""`, we should resolve the other cases and only
-            # do this when necessary.
-            import_path = ""
-
-        srcs = [path.removeprefix(import_path + "/") for path in raw_sources]
+        if import_path:
+            srcs += [path.removeprefix(import_path + "/") for path in raw_sources]
 
         env["DEP_SOURCES"][label] = srcs
 
@@ -141,11 +125,14 @@ def _split_third_party_deps(name, **kwargs):
                 new_select[key] = new_select_deps
             new_deps += select(new_select)
         else:
+            # new_deps may already be a select() by now, which has no append().
+            plain_deps = []
             for dep in elements:
                 if "pycross" in dep.repo_name:
                     pycross_deps.append(str(dep))
                 else:
-                    new_deps.append(dep)
+                    plain_deps.append(dep)
+            new_deps += plain_deps
 
     return kwargs | {
         "deps": new_deps,

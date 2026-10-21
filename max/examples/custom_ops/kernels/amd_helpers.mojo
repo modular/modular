@@ -12,41 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.sys import align_of
-
-# AMD Helper functions and structs for Tensor Core MMA operations
+from std.sys import size_of
 from std.sys.info import simd_width_of
 
-from std.gpu import (
-    barrier,
-    block_dim,
-    block_idx_int as block_idx,
-    global_idx_uint as global_idx,
-    lane_id_int as lane_id,
-    thread_idx_int as thread_idx,
-)
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import AddressSpace
-from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
-from layout import Layout
-from layout._utils import make_amd_buffer_resource
-from layout.element import Element
-from layout.layout_tensor import (
-    LayoutTensor,
-    ThreadScope,
-    copy_dram_to_local,
-    copy_local_to_shared,
-)
-from layout.swizzle import Swizzle
-from layout.tensor_core import TiledTensorCore
-from std.memory import Pointer
+from max.gpu import block_dim, block_idx, global_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
+from layout import TensorLayout, TileTensor, row_major
 
 from std.utils.index import IndexList
 
 
-# Function to handle AMD-specific scheduling
-@always_inline
-# @parameter
+@inline(.always)
+# @__parameter
 def amd_scheduling_hints[
     input_type: DType,
     output_type: DType,
@@ -130,314 +109,17 @@ def amd_scheduling_hints[
         )
 
 
-@always_inline("nodebug")
-def copy_local_to_dram_32_32_8[
-    dst_thread_layout: Layout,
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
-    # TODO: use copy_local_to_dram instead once fixed. This is a workaround for now.
-
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
-    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
-
-    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
-    var buffer = make_amd_buffer_resource(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + Scalar[
-        dst.linear_idx_type
-    ](offset)
-    comptime num_stores_per_thread = dst_fragments.layout.size()
-
-    comptime M = src.layout.shape[0].value()
-    comptime N = src.layout.shape[1].value()
-
-    comptime for n in range(N):
-        comptime for m in range(M):
-            comptime src_idx = 4 * n + 16 * m
-            comptime i = 4 * n + m + ((m // 4) * 12)
-
-            comptime dst_static_idx = dst_fragments.layout(i)
-            var dst_idx = dst_frag_offset
-
-            comptime if dst_fragments.layout.all_dims_known():
-                dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
-            else:
-                dst_idx += dst_fragments.runtime_layout(i)
-
-            var src_element = Element[index_type=src.linear_idx_type].load(
-                src.ptr + src_idx,
-                src.runtime_element_layout,
-            )
-
-            comptime element_stride = dst_fragments.element_layout.stride[
-                1
-            ].value()
-
-            comptime if element_stride == 1:
-                buffer.store(
-                    Int32(dst_idx),
-                    src_element.element_data.cast[dst.dtype](),
-                )
-            else:
-                comptime for i in range(dst_fragments.element_layout.size()):
-                    comptime element_offset = dst_fragments.element_layout(i)
-                    var src = src_element.element_data[i].cast[dst.dtype]()
-                    buffer.store(
-                        Int32(
-                            dst_idx
-                            + Scalar[dst.linear_idx_type](element_offset)
-                        ),
-                        src,
-                    )
-
-
-struct AMD_MMA[
-    out_type: DType,
-    in_type: DType,
-    shape: IndexList[3],
-    transpose_b: Bool,
-    k_group_size: Int,
-    num_k_tiles: Int,
-    num_m_mmas: Int,
-    num_n_mmas: Int,
-    simd_width: Int,
-    swizzle: Swizzle,
-    BK: Int,
-    WK: Int,
-]:
-    comptime type_alignment = align_of[SIMD[Self.in_type, Self.simd_width]]()
-    comptime tensor_core_mma = TiledTensorCore[
-        Self.out_type,
-        Self.in_type,
-        Self.shape,
-        Self.k_group_size,
-        Self.transpose_b,
-    ]()
-
-    comptime SharedMemTileType[smem_layout: Layout] = LayoutTensor[
-        Self.in_type,
-        smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=Self.type_alignment,
-    ]
-
-    comptime MMARegTileType[num_mmas: Int] = LayoutTensor[
-        Self.in_type,
-        Layout.row_major(num_mmas * Self.num_k_tiles, Self.simd_width),
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
-        alignment=Self.type_alignment,
-    ]
-
-    comptime SharedMemWarpTileType[
-        warp_rows: Int, smem_layout: Layout
-    ] = Self.SharedMemTileType[smem_layout].TileType[warp_rows, Self.WK]
-
-
-@always_inline
-def mma[
-    k_tile_idx: Int,
-    swap_a_b: Bool,
-    MMAType: type_of(AMD_MMA),
-](
-    a_tiles: MMATileBuffers[mma_type=MMAType, ...],
-    b_tiles: MMATileBuffers[mma_type=MMAType, ...],
-    c_reg_tile: LayoutTensor[mut=True, ...],
-):
-    """
-    AMD-style MMA operation wrapper for the AMD_MMA struct.
-
-    Parameters:
-        k_tile_idx: The K-dimension tile index.
-        swap_a_b: Whether to swap A and B.
-        MMAType: The type of MMA operation.
-
-    Args:
-        a_tiles: The A-dimension tile buffers.
-        b_tiles: The B-dimension tile buffers.
-        c_reg_tile: The C-dimension register tile.
-
-    This function is used to perform the MMA operation for the AMD_MMA struct.
-    """
-    var a_reg_tile = a_tiles.get_reg_tile[k_tile_idx]()
-    var b_reg_tile = b_tiles.get_reg_tile[k_tile_idx]()
-
-    a_tiles.mma_type.tensor_core_mma.mma[swap_a_b=swap_a_b](
-        a_reg_tile,
-        b_reg_tile,
-        c_reg_tile,
-    )
-
-
-struct MMATileBuffers[
-    tensor_origin: ImmutOrigin,
-    //,
-    smem_layout: Layout,
-    /,
-    tensor_type: type_of(LayoutTensor),
-    thread_layout: Layout,
-    block_rows: Int,
-    warp_rows: Int,
-    stride: Int,
-    num_mmas: Int,
-    mma_type: type_of(AMD_MMA),
-]:
-    """Manages memory for a single matrix (A or B) in GEMM computation.
-
-    This struct encapsulates all memory handling for a matrix, including:
-    - Shared memory allocation and tiling
-    - Register buffer allocation
-    - Data movement between memory levels (DRAM→local→shared)
-    """
-
-    # Tensor types for different memory regions
-
-    # Shared memory allocation for matrix data shared across the block
-    comptime SharedMemTileType = Self.mma_type.SharedMemTileType[
-        Self.smem_layout
-    ]
-    var shared_mem_tile: Self.SharedMemTileType
-
-    # Tile view optimized for matrix multiplication acceleration (MMA) operations
-    var shared_mem_warp_tile: Self.mma_type.SharedMemWarpTileType[
-        Self.warp_rows, Self.smem_layout
-    ]
-
-    # Buffer for loading data from global memory before transferring to shared memory
-    comptime MMARegTileType = Self.mma_type.MMARegTileType[Self.num_mmas]
-    var load_reg_tile: Self.MMARegTileType
-
-    # Register-level storage for matrix data during computation
-    var mma_reg_tile: Self.MMARegTileType.StaticSplitType[
-        Self.mma_type.num_k_tiles
-    ]
-
-    # Global memory iterator for input tensor
-    comptime iter_type = Self.tensor_type.TileType[
-        Self.block_rows, Self.stride
-    ].TiledIteratorType[Self.block_rows, Self.mma_type.BK, axis=1]
-    var gmem_iter: Self.iter_type
-
-    var global_offset: UInt
-
-    var tensor: Pointer[Self.tensor_type, Self.tensor_origin]
-
-    @always_inline
-    def __init__(
-        out self,
-        ref[Self.tensor_origin] tensor: Self.tensor_type,
-        warp_idx: Int,
-        warp_k_idx: Int,
-        block_idx: Int,
-    ):
-        """Initialize memory regions for a matrix based on warp coordinates.
-
-        Args:
-            tensor: The tensor to load from global memory.
-            warp_idx: The warp index within the computation grid (used for MMA operations).
-            warp_k_idx: The warp index within the computation grid (used for MMA operations).
-            block_idx: The block index within the computation grid (used for warp tiling).
-        """
-        self.shared_mem_tile = Self.SharedMemTileType.stack_allocation()
-        self.shared_mem_warp_tile = self.shared_mem_tile.tile[
-            Self.warp_rows, Self.mma_type.WK
-        ](warp_idx, warp_k_idx)
-        self.load_reg_tile = Self.MMARegTileType.stack_allocation()
-        self.mma_reg_tile = Self.MMARegTileType.stack_allocation().split[
-            Self.mma_type.num_k_tiles
-        ]()
-        self.gmem_iter = tensor.tile[Self.block_rows, Self.stride](
-            block_idx, 0
-        ).tiled_iterator[Self.block_rows, Self.mma_type.BK, axis=1](0, 0)
-        self.global_offset = UInt(Self.stride * (Self.block_rows * block_idx))
-        # TODO: remove rebind once MOCO-1905 is fixed
-        self.tensor = rebind[Pointer[Self.tensor_type, Self.tensor_origin]](
-            Pointer(to=tensor)
-        )
-
-    @always_inline
-    def copy_to_shared(self):
-        """Copy data from thread-local memory to shared memory.
-
-        Uses structured thread cooperation to efficiently transfer data.
-        """
-        copy_local_to_shared[
-            thread_layout=Self.thread_layout,
-            swizzle=Self.mma_type.swizzle,
-            thread_scope=ThreadScope.BLOCK,
-            row_major=True,
-        ](
-            self.shared_mem_tile.vectorize[1, Self.mma_type.simd_width](),
-            self.load_reg_tile.vectorize[1, Self.mma_type.simd_width](),
-        )
-
-    @always_inline
-    def load_from_dram(mut self) -> None:
-        """Load data from global memory (DRAM) to thread-local memory."""
-        copy_dram_to_local[
-            src_thread_layout=Self.thread_layout,
-            thread_scope=ThreadScope.BLOCK,
-        ](
-            self.load_reg_tile.vectorize[1, Self.mma_type.simd_width](),
-            self.gmem_iter[].vectorize[1, Self.mma_type.simd_width](),
-            self.tensor[],
-            self.global_offset,
-        )
-
-        self.global_offset += UInt(Self.mma_type.BK)
-        self.gmem_iter._incr()
-
-    @always_inline
-    def get_reg_tile[
-        k_tile_idx: Int
-    ](self) -> Self.MMARegTileType.SplitElementType[Self.mma_type.num_k_tiles]:
-        """Get a specific K-dimension tile from the register buffer.
-
-        Parameters:
-            k_tile_idx: The K-dimension tile index.
-
-        Returns:
-            A tile view for the specified location in the register buffer.
-        """
-        return self.mma_reg_tile[k_tile_idx]
-
-    @always_inline
-    def load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
-        comptime if is_a:
-            Self.mma_type.tensor_core_mma.mma_op.load_a[
-                swizzle=Self.mma_type.swizzle
-            ](
-                self.shared_mem_warp_tile,
-                self.mma_reg_tile[k_tile_idx]
-                .tile[Self.num_mmas, Self.mma_type.simd_width](k_tile_idx, 0)
-                .vectorize[1, Self.mma_type.simd_width](),
-                UInt(k_tile_idx),
-            )
-        else:
-            Self.mma_type.tensor_core_mma.mma_op.load_b[
-                swizzle=Self.mma_type.swizzle
-            ](
-                self.shared_mem_warp_tile,
-                self.mma_reg_tile[k_tile_idx]
-                .tile[Self.num_mmas, Self.mma_type.simd_width](k_tile_idx, 0)
-                .vectorize[1, Self.mma_type.simd_width](),
-                UInt(k_tile_idx),
-            )
-
-
-@always_inline
+@inline(.always)
 def compute_relative_error_kernel[
     dtype: DType,
-    layout: Layout,
+    layout: TensorLayout,
 ](
-    reference: LayoutTensor[dtype, layout, MutAnyOrigin],
-    computed: LayoutTensor[dtype, layout, MutAnyOrigin],
-    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    reference: TileTensor[dtype, layout, MutAnyOrigin],
+    computed: TileTensor[dtype, layout, MutAnyOrigin],
+    output: TileTensor[dtype, layout, MutAnyOrigin],
 ):
     """
-    GPU kernel that computes element-wise relative error between two LayoutTensors.
+    GPU kernel that computes element-wise relative error between two TileTensors.
 
     Relative error is computed as: |computed - reference| / max(|reference|, epsilon)
     where epsilon prevents division by zero.
@@ -451,13 +133,18 @@ def compute_relative_error_kernel[
         computed: The computed (test) tensor.
         output: Output tensor to store relative errors (same shape as inputs).
     """
+    # Evidence that the (symbolic `TensorLayout`) tensors are flat rank-2, so
+    # the 2-index `__setitem__` / `__getitem__` constraints can be proven.
+    comptime assert output.flat_rank == 2
+
     # Get global thread indices
     var idx = global_idx.x
     var idy = global_idx.y
 
-    # Get tensor dimensions
-    var rows = UInt(reference.dim[0]())
-    var cols = UInt(reference.dim[1]())
+    # Get tensor dimensions (`TileTensor.dim` returns a `Scalar`; the bounds
+    # comparison and indexing below want `Int`).
+    var rows = Int(reference.dim[0]())
+    var cols = Int(reference.dim[1]())
 
     # Check bounds
     if idx >= rows or idy >= cols:
@@ -483,15 +170,15 @@ def compute_relative_error_kernel[
     output[idx, idy] = rel_error
 
 
-@always_inline
+@inline(.always)
 def max_reduce_kernel[
     dtype: DType,
-    layout: Layout,
+    layout: TensorLayout,
 ](
-    relative_error: LayoutTensor[dtype, layout, MutAnyOrigin],
-    elements: Int,
-    offset: Int,
-    max_idx: Int,
+    relative_error: TileTensor[dtype, layout, MutAnyOrigin],
+    elements_dev: Int32,
+    offset_dev: Int32,
+    max_idx_dev: Int32,
 ):
     """
     GPU kernel that computes the maximum relative error in a subset of a tensor.
@@ -502,16 +189,22 @@ def max_reduce_kernel[
 
     Args:
         relative_error: The relative error tensor to reduce.
-        elements: The number of elements per block to reduce.
-        offset: The stride/offset for accessing elements.
-        max_idx: Maximum valid index to prevent out-of-bounds access.
+        elements_dev: The number of elements per block to reduce.
+        offset_dev: The stride/offset for accessing elements.
+        max_idx_dev: Maximum valid index to prevent out-of-bounds access.
     """
+
+    var elements = Int(elements_dev)
+    var offset = Int(offset_dev)
+    var max_idx = Int(max_idx_dev)
 
     # Get thread and block indices
     var tid = thread_idx.x
     var bid = block_idx.x
 
-    var local_relative_error = relative_error.ptr[offset * elements * bid]
+    var local_relative_error = relative_error._storage[
+        unsafe_offset=offset * elements * bid
+    ]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
     var i = elements >> 1
@@ -534,10 +227,10 @@ def max_reduce_kernel[
 
 def compare_equal[
     dtype: DType,
-    layout: Layout,
+    layout: TensorLayout,
 ](
-    reference: LayoutTensor[dtype, layout, MutAnyOrigin],
-    computed: LayoutTensor[dtype, layout, MutAnyOrigin],
+    reference: TileTensor[dtype, layout, MutAnyOrigin],
+    computed: TileTensor[dtype, layout, MutAnyOrigin],
     print_results: Bool,
 ) raises:
     """
@@ -555,20 +248,22 @@ def compare_equal[
 
     var gpu_ctx = DeviceContext()
 
-    var m = reference.dim[0]()
-    var n = reference.dim[1]()
+    # `TileTensor.dim` returns a `Scalar`; `Int` is needed for buffer sizes and
+    # the host-side loops below.
+    var m = Int(reference.dim[0]())
+    var n = Int(reference.dim[1]())
 
-    # Allocate a new LayoutTensor on device with same dtype and shape as reference
+    # Allocate a new TileTensor on device with same dtype and shape as reference
     var max_relative_error_buf = gpu_ctx.enqueue_create_buffer[dtype](m * n)
-    var max_relative_error = LayoutTensor[
-        dtype, reference.layout, MutAnyOrigin
-    ](max_relative_error_buf.unsafe_ptr())
+    var max_relative_error = TileTensor(
+        max_relative_error_buf, reference.layout
+    ).as_unsafe_any_origin()
 
     # Zero out the memory in the max relative error tensor.
     gpu_ctx.enqueue_memset(
         DeviceBuffer[max_relative_error.dtype](
             gpu_ctx,
-            max_relative_error.ptr,
+            max_relative_error._storage,
             m * n,
             owning=False,
         ),
@@ -577,7 +272,7 @@ def compare_equal[
 
     # Compute the relative error between the reference and computed tensors
     comptime rel_error_kernel = compute_relative_error_kernel[dtype, layout]
-    gpu_ctx.enqueue_function_experimental[rel_error_kernel](
+    gpu_ctx.enqueue_function[rel_error_kernel](
         reference,
         computed,
         max_relative_error,
@@ -595,11 +290,11 @@ def compare_equal[
         var num_elements = i if i < 1024 else 1024
 
         comptime reduce_kernel = max_reduce_kernel[dtype, layout]
-        gpu_ctx.enqueue_function_experimental[reduce_kernel](
+        gpu_ctx.enqueue_function[reduce_kernel](
             max_relative_error,
-            num_elements,
-            offset,
-            m * n,
+            Int32(num_elements),
+            Int32(offset),
+            Int32(m * n),
             grid_dim=(num_threadblocks, 1),
             block_dim=(512, 1),
         )
@@ -621,7 +316,7 @@ def compare_equal[
     gpu_ctx.synchronize()
 
     # Access the result from the host buffer
-    var host_max_relative_error = host_buffer.unsafe_ptr()[0]
+    var host_max_relative_error = host_buffer[0]
     print("Maximum relative error:", host_max_relative_error)
 
     # Print the two tensors if print_results is True
@@ -636,23 +331,23 @@ def compare_equal[
 
         gpu_ctx.enqueue_copy(
             reference_host_buf,
-            reference.ptr,
+            reference._storage,
         )
         gpu_ctx.enqueue_copy(
             computed_host_buf,
-            computed.ptr,
+            computed._storage,
         )
 
         var diff_buf = gpu_ctx.enqueue_create_host_buffer[dtype](m * n)
-        var diff = LayoutTensor[dtype, layout, MutAnyOrigin](
-            diff_buf.unsafe_ptr()
-        )
+        var diff = TileTensor(diff_buf, reference.layout).as_unsafe_any_origin()
+        # Evidence that `diff` is flat rank-2 for the 2-index `__setitem__`.
+        comptime assert diff.flat_rank == 2
         var max_diff: Float64 = 0.0
         for i in range(m):
             for j in range(n):
                 var diff_val = abs(reference[i, j] - computed[i, j])
                 diff[i, j] = diff_val
-                var diff_f64 = diff_val.cast[DType.float64]()[0]
+                var diff_f64 = diff_val.cast[.float64]()[0]
                 if diff_f64 > max_diff:
                     max_diff = diff_f64
                 # diff[i, j] = reference[i, j] - computed[i, j]

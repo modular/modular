@@ -15,20 +15,29 @@
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
     Dim,
+    Graph,
     ShardingStrategy,
     StaticDim,
+    TensorType,
     TensorValue,
+    Type,
+    Value,
     Weight,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
@@ -40,7 +49,11 @@ from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.comm import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kernels import flash_attention_gpu
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import LayerNorm, RMSNorm
@@ -48,11 +61,18 @@ from max.nn.rotary_embedding import DynamicRotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
+from max.nn.transformer.transformer import forward_sequential_layers
 from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+    vision_merge_inputs,
+)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tree import Tree
 
 from .layers.attention import InternVLMultiheadAttention
 from .model_config import InternVLConfig
@@ -166,11 +186,11 @@ class InternVLDecoderLayer(Module):
     def __call__(
         self,
         layer_idx: TensorValue,
-        xs: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
-        kv_collections: Sequence[PagedCacheValues],
-        freqs_cis: Sequence[TensorValue],
-        input_row_offsets: Sequence[TensorValue],
+        xs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+        kv_collections: list[PagedCacheValues],
+        freqs_cis: list[TensorValue],
+        input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
         """Processes input through the decoder layer.
 
@@ -178,7 +198,8 @@ class InternVLDecoderLayer(Module):
             layer_idx: The index of this layer in the model.
             xs: The input hidden states, one per device.
             signal_buffers: Communication buffers for distributed execution.
-            kv_collections: Key-value cache collections for each device.
+            kv_collections: Per-device paged KV cache values.
+            freqs_cis: Per-device RoPE frequencies.
             input_row_offsets: Offsets for flattened input sequences.
 
         Returns:
@@ -261,6 +282,9 @@ class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
         super().__init__()
         llm_config = config.llm_config
         self.devices = config.devices
+        self.kv_params = llm_config.kv_params
+        self._embedding_dtype = llm_config.dtype
+        self._hidden_size = llm_config.hidden_size
 
         if llm_config.tie_word_embeddings:
             raise ValueError("tied embeddings unsupported by InternVL")
@@ -319,6 +343,108 @@ class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
         # Store image context token ID.
         self.image_context_token_id = image_context_token_id
 
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; its leaves are its inputs.
+
+        Image embeddings are always inputs: a text-only batch feeds zero rows.
+
+        Args:
+            kv_params: The KV cache parameters.
+
+        Returns:
+            The input types under ``batch``, ``row_offsets``, ``vision``,
+            ``signals`` and ``kv``, in graph order.
+        """
+        return OrderedDict(
+            batch=ragged_batch_inputs(
+                self.devices[0], ("tokens", "return_n_logits")
+            ),
+            row_offsets=tuple(
+                TensorType(
+                    DType.uint32,
+                    shape=["input_row_offsets_len"],
+                    device=device,
+                )
+                for device in self.devices
+            ),
+            vision=vision_merge_inputs(
+                self.devices,
+                self._embedding_dtype,
+                self._hidden_size,
+                rows_dim="num_image_tokens",
+            ),
+            signals=signal_inputs(list(self.devices)),
+            kv=kv_params.get_symbolic_inputs(),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        # The KV cache comes last, and unflattens through the KV params.
+        head = OrderedDict(
+            (key, types)
+            for key, types in self.input_tree(self.kv_params).items()
+            if key != "kv"
+        )
+        head_treedef = tree.flatten(head)[1]
+
+        def forward(*inputs: Value[Any]) -> tuple[TensorValue, ...]:
+            # Stages the RoPE frequencies before anything else, where building
+            # the module inside the graph used to put them.
+            _ = self.rope.original_inv_freq
+            remaining = iter(inputs)
+            named = tree.unflatten(head_treedef, remaining, exact=False)
+            assert isinstance(named, OrderedDict)
+            batch, vision = named["batch"], named["vision"]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(remaining),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens=batch["tokens"].tensor,
+                signal_buffers=[v.buffer for v in named["signals"]["signal"]],
+                kv_collections=kv_collections,
+                return_n_logits=batch["return_n_logits"].tensor,
+                input_row_offsets=[v.tensor for v in named["row_offsets"]],
+                image_embeddings=[v.tensor for v in vision["image_embeddings"]],
+                image_token_indices=[
+                    v.tensor for v in vision["image_token_indices"]
+                ],
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def __call__(
         self,
         tokens: TensorValue,
@@ -363,16 +489,30 @@ class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
         # Create position embeddings shared across the decoder layers.
         freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
-        # Run through decoder layers.
-        for idx, layer in enumerate(self.layers):
-            h = layer(
+        signal_buffers_list = list(signal_buffers)
+        input_row_offsets_list = list(input_row_offsets)
+        kv_collections_list = list(kv_collections)
+
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            return [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
-                signal_buffers,
-                kv_collections,
-                freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
-            )
+                signal_buffers_list,
+                kv_collections_list,
+                freqs_cis,
+                input_row_offsets_list,
+            ]
+
+        # All decoder layers share a single compiled subgraph, reducing compile
+        # time from O(N) to O(1).
+        h = forward_sequential_layers(
+            list(self.layers),
+            inputs_for_layer=inputs_for_layer,
+            initial_hidden_states=h,
+            weight_prefix_for_layer=lambda i: f"layers.{i}.",
+            subgraph_layer_groups=[list(range(len(self.layers)))],
+            name_for_subgraph=lambda _: "internvl_decoder_block",
+        )
 
         return self._postprocess_logits(
             h, input_row_offsets, return_n_logits, signal_buffers
@@ -1090,7 +1230,7 @@ class InternVisionEncoderLayer(Module):
         return q_partials, k_partials, v_partials
 
     def __call__(
-        self, xs: Sequence[TensorValue], signal_buffers: Sequence[BufferValue]
+        self, xs: list[TensorValue], signal_buffers: list[BufferValue]
     ) -> list[TensorValue]:
         """Process input through the encoder layer.
 
@@ -1115,9 +1255,7 @@ class InternVisionEncoderLayer(Module):
         for i, norm_out in enumerate(norm1_outs):
             attn = self.attn_per_device[i]
             # Rowwise QKV projection - each device computes partial QKV
-            qkv = norm_out @ attn.wqkv.T
-            if attn.wqkv_bias is not None:
-                qkv += attn.wqkv_bias
+            qkv = attn.qkv_proj(norm_out)
             qkv_outs.append(qkv)
 
         # Split QKV into components per device
@@ -1360,6 +1498,89 @@ class InternVLVisionModel(Module):
 
         return x
 
+    def input_types(self) -> tuple[Type[Any], ...]:
+        """Returns the vision graph's input types: the leaves of
+        :meth:`input_tree`."""
+        return tuple(tree.leaves(self.input_tree()))
+
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
+        arguments.
+
+        Each device takes the pre-extracted patches, in bfloat16 to match the
+        tokenizer's output, then each device's allreduce signal buffer.
+
+        Returns:
+            The input types under ``pixel_values`` and ``signal_buffers``, in
+            graph order.
+        """
+        vision_config = self.config.vision_config
+        patch_size = vision_config.patch_size
+        patches_per_side = vision_config.image_size // patch_size
+        return OrderedDict(
+            pixel_values=tuple(
+                TensorType(
+                    DType.bfloat16,
+                    shape=[
+                        "batch_size",
+                        patches_per_side,
+                        patches_per_side,
+                        3,
+                        patch_size,
+                        patch_size,
+                    ],
+                    device=device,
+                )
+                for device in self.devices
+            ),
+            signal_buffers=signal_inputs(list(self.devices))["signal"],
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the vision graph, whose inputs are :meth:`input_types`.
+
+        Groups the flat graph inputs into :meth:`__call__`'s per-device
+        arguments by :meth:`input_tree`.
+
+        Args:
+            *input_types: The graph's input types, :meth:`input_types`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        treedef = tree.flatten(self.input_tree())[1]
+
+        def forward(*inputs: Value[Any]) -> Sequence[TensorValue]:
+            named = tree.unflatten(treedef, iter(inputs))
+            assert isinstance(named, OrderedDict)
+            return self(
+                pixel_values=[v.tensor for v in named["pixel_values"]],
+                signal_buffers=[v.buffer for v in named["signal_buffers"]],
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def __call__(
         self,
         pixel_values: Sequence[TensorValue],
@@ -1382,15 +1603,23 @@ class InternVLVisionModel(Module):
             )
         ]
 
-        # Pass through encoder layers on all devices
-        hidden_states_list = vit_embeds
-        for encoder_layer in self.encoder_layers:
-            # Process the list of tensors through the encoder layer
-            hidden_states_list = encoder_layer(
-                hidden_states_list, signal_buffers
-            )
+        signal_buffers_list = list(signal_buffers)
 
-        vit_embeds_processed = hidden_states_list
+        def inputs_for_layer(
+            _idx: int, h: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            return [h, signal_buffers_list]
+
+        # All vision encoder layers share a single compiled subgraph, reducing
+        # compile time from O(N) to O(1).
+        vit_embeds_processed = forward_sequential_layers(
+            list(self.encoder_layers),
+            inputs_for_layer=inputs_for_layer,
+            initial_hidden_states=list(vit_embeds),
+            weight_prefix_for_layer=lambda i: f"encoder_layers.{i}.",
+            subgraph_layer_groups=[list(range(len(self.encoder_layers)))],
+            name_for_subgraph=lambda _: "internvl_vision_block",
+        )
 
         # Remove CLS token (first token) from each device's embeddings.
         # Shape: [batch, num_positions, embed_dim] -> [batch, num_positions-1, embed_dim]

@@ -27,46 +27,30 @@ from max._core.dialects import builtin, kgen
 class Dim:
     """A tensor dimension.
 
-    Tensor dimensions can be one of three types:
-
-    - **Static**: Known size
-    - **Symbolic**: Unknown size but named
-    - **Algebraic**: Unknown size has an algebraic expression
-
-
-    In most cases, you don't need to work with a ``Dim`` directly.
-    Instead, use conversion constructors:
-
+    Dims describe the shape of tensors in a :class:`Graph`. In most cases, you don't
+    need to construct a ``Dim`` directly. Instead, you pass dimension values
+    directly to :class:`TensorType` or :class:`BufferType` constructors:
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.graph import Dim, TensorType, DeviceRef
 
+        # Create a TensorType with a symbolic "batch" dimension and a static dimension of size 10
         tensor_type = TensorType(DType.int64, ("batch", 10), device=DeviceRef.CPU())
 
-    This creates a tensor type with two dimensions:
 
-    - A symbolic "batch" dimension
-    - A static dimension of size 10
+    A tensor dimension can be one of three types:
 
-    For explicit dimension construction, use the following helpers:
+    - **Static**: A known size. See :class:`StaticDim`.
+    - **Symbolic**: An unknown size identified by name. See :class:`SymbolicDim`.
+    - **Algebraic**: An expression derived from symbolic dimensions. See :class:`AlgebraicDim`.
 
-    .. code-block:: python
-
-        from max.graph import Dim
-
-        some_dims = [
-            SymbolicDim("batch"),
-            StaticDim(5),
-            AlgebraicDim(Dim("batch") + 1),
-        ]
-
-    Constraining tensor dimensions is one important way to improve model
-    performance. If tensors have unknown dimensions, we can't optimize them
-    as aggressively. Symbolic tensors allow the compiler to learn constraints
-    on a specific dimension (eg. if 2 inputs have the same `batch` dimension),
-    but static dims are the easiest to optimize and therefore the easiest to
-    create and work with.
+    Static dimensions let the graph compiler resolve shapes at compile time.
+    This enables more aggressive optimizations than symbolic or algebraic
+    dimensions allow. That said, when tensors share a named symbolic dimension,
+    the compiler can leverage the implied shape equality to optimize some
+    operations.
     """
 
     def __new__(cls, value: DimLike):
@@ -79,7 +63,9 @@ class Dim:
         if isinstance(value, Dim):
             # For base Dim constructor, pass through any existing Dim.
             return value
-        if isinstance(value, int | np.integer | builtin.IntegerAttr):
+        if isinstance(
+            value, int | np.integer | builtin.IntegerAttr | kgen.SIMDAttr
+        ):
             return super().__new__(StaticDim)
         if isinstance(value, str | kgen.ParamDeclRefAttr):
             return super().__new__(SymbolicDim)
@@ -111,7 +97,7 @@ class Dim:
             f"int({self!r}): Int conversions only supported for static dims"
         )
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Checks whether two dimensions are equal.
 
         Dimensions are equal if they are the same dimension type
@@ -127,7 +113,7 @@ class Dim:
         """
         raise NotImplementedError
 
-    def __ne__(self, other: Any) -> bool:
+    def __ne__(self, other: object) -> bool:
         """Checks whether two dimensions are not equal.
 
         The inverse of __eq__.
@@ -141,32 +127,48 @@ class Dim:
         return not self == other
 
     def __add__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return AlgebraicDim.apply(kgen.POC.add, self, rhs)
 
     def __radd__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return Dim(lhs) + self
 
     def __mul__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return AlgebraicDim.apply(kgen.POC.mul_no_wrap, self, rhs)
 
     def __rmul__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return Dim(lhs) * self
 
     def __neg__(self) -> Dim:
         return -1 * self
 
     def __sub__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return self + -Dim(rhs)
 
     def __rsub__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return lhs + -self
 
     def __floordiv__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         if isinstance(rhs, int | StaticDim) and int(rhs) == 0:
             raise ZeroDivisionError
         return AlgebraicDim.apply(kgen.POC.div, self, rhs)
 
     def __rfloordiv__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return lhs // self
 
     def to_mlir(self) -> builtin.TypedAttr:
@@ -189,7 +191,7 @@ class Dim:
         Returns:
             Dim: The dimension represented by the MLIR Attr value.
         """
-        if isinstance(attr, builtin.IntegerAttr):
+        if isinstance(attr, builtin.IntegerAttr | kgen.SIMDAttr):
             return StaticDim.from_mlir(attr)
         elif isinstance(attr, kgen.ParamDeclRefAttr):
             return SymbolicDim.from_mlir(attr)
@@ -203,37 +205,40 @@ class Dim:
         """Lists the symbolic dimension names on which this dim depends."""
         raise NotImplementedError
 
+    def substitute(self, mapping: Mapping[str, DimLike]) -> Dim:
+        """Returns this dim with named symbols replaced per ``mapping``.
+
+        Substituting static values folds the result through the compiler's
+        own attribute evaluation; substituting symbols renames. Unmapped
+        symbols are left intact.
+
+        Args:
+            mapping: A mapping from symbolic dimension name to the
+                replacement dim (or dim-like value).
+
+        Returns:
+            The dim with substitutions applied.
+        """
+        raise NotImplementedError
+
 
 @dataclass(frozen=True)
 class SymbolicDim(Dim):
-    """A symbolic tensor dimension.
+    """A symbolic tensor dimension with an unknown size identified by name.
 
-    Symbolic dimensions represent named dimensions in MO tensor types.
+    When you don't know a dimension value at compile time, you can use a
+    symbolic dimension. This helps you identify dimensions by name and lets the
+    compiler optimize operations when two or more dimensions share the same name.
 
-    Symbolic dimensions don't have a static value, but they allow a readable
-    name to understand what's going on in the model IR better, and they also
-    allow users to hint to the compiler that two dimensions will have the same
-    value, which can often allow important speedups.
-
-    In tensor type notation:
-
-    .. code-block::
-
-        !mo.tensor<[batch, x, 10], si32]>
-
-    The first and second dimensions are named ``batch`` and ``x`` respectively.
-
-    Creating a ``SymbolicDim``:
+    The following example creates a symbolic dimension implicitly passing the
+    strings ``"batch"`` and ``"x"`` to :class:`TensorType`:
 
     .. code-block:: python
 
-        dim = SymbolicDim("name")
+       from max.dtype import DType
+       from max.graph import DeviceRef, TensorType
 
-    Using ``SymbolicDim`` in a :class:`~max.graph.TensorType`:
-
-    .. code-block:: python
-
-        tensor_type = TensorType(DType.bool, (SymbolicDim("batch"), SymbolicDim("x"), 10))
+       tensor_type = TensorType(DType.float32, ("batch", "x", 10), device=DeviceRef.CPU())
     """
 
     name: str
@@ -260,7 +265,7 @@ class SymbolicDim(Dim):
     def __repr__(self) -> str:
         return f"Dim({self.name!r})"
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Whether the dimension is the same as another symbolic dimension.
 
         Symbolic dimensions with the same name are interpreted as the same
@@ -286,7 +291,7 @@ class SymbolicDim(Dim):
         Returns:
             An ``mlir.Attribute`` in the context representing the dimension.
         """
-        si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+        si64 = kgen.SIMDType(1, kgen._KGENDType.get_int(64, True))
         return kgen.ParamDeclRefAttr(self.name, si64)
 
     @staticmethod
@@ -310,23 +315,49 @@ class SymbolicDim(Dim):
         """Lists the symbolic dimension names on which this dim depends."""
         yield self
 
+    def substitute(self, mapping: Mapping[str, DimLike]) -> Dim:
+        """Returns this dim with named symbols replaced per ``mapping``.
+
+        Args:
+            mapping: A mapping from symbolic dimension name to the
+                replacement dim (or dim-like value).
+
+        Returns:
+            ``Dim(mapping[self.name])`` if ``self.name`` is in ``mapping``,
+            otherwise this dim unchanged.
+        """
+        replacement = mapping.get(self.name)
+        return self if replacement is None else Dim(replacement)
+
 
 @dataclass(frozen=True)
 class AlgebraicDim(Dim):
-    """An algebraic tensor dimension to enable expressions over symbolic dimensions.
+    """A dimension defined by an expression over symbolic dimensions.
 
-    That is, any expression over a symbolic dimension returns ``AlgebraicDim``.
-    Furthermore, algebraic dimensions automatically simplify into a canonical
-    form.
-
-    The following example demonstrates how to create and use algebraic dimensions with symbolic values:
+    Arithmetic on symbolic dimensions produces an ``AlgebraicDim``:
 
     .. code-block:: python
 
         from max.graph import AlgebraicDim, Dim
-        isinstance(Dim("batch") * 5, AlgebraicDim)  # Returns True
-        print(Dim("batch") * 5)  # Outputs: batch * 5
-        -Dim("x") - 4 == -(Dim("x") + 4)  # Returns True
+
+        isinstance(Dim("batch") * 5, AlgebraicDim)  # True
+
+    Equivalent expressions simplify to the same form:
+
+    .. code-block:: python
+
+        from max.graph import Dim
+
+        Dim("x") + 1 + 1 == Dim("x") + 2  # True
+
+    .. note::
+
+        Algebraic dimensions are valid inside a graph. However, they can't
+        appear in graph input or output types because their underlying values
+        can be ambiguous. For example, a dimension of ``Dim("foo") *
+        Dim("bar")`` could be satisfied by multiple combinations of ``foo`` and
+        ``bar``.
+
     """
 
     attr: kgen.ParamOperatorAttr
@@ -350,6 +381,35 @@ class AlgebraicDim(Dim):
             op, [Dim(operand).to_mlir() for operand in operands]
         )
         return Dim(attr)
+
+    def substitute(self, mapping: Mapping[str, DimLike]) -> Dim:
+        """Returns this dim with named symbols replaced per ``mapping``.
+
+        Substitutes into each operand, then reapplies the operator, so
+        substitution to static values folds through the compiler's own
+        attribute evaluation rather than being recomputed in Python.
+
+        Args:
+            mapping: A mapping from symbolic dimension name to the
+                replacement dim (or dim-like value).
+
+        Returns:
+            The dim with substitutions applied, re-folded by the compiler.
+
+        Raises:
+            ZeroDivisionError: If substitution produces a zero divisor.
+        """
+        operands = [
+            Dim(operand).substitute(mapping) for operand in self.attr.operands
+        ]
+        # __floordiv__'s zero guard does not run here, and the compiler
+        # neither folds nor rejects a literal zero divisor. A div attribute
+        # always carries two operands - its verifier rejects any other count.
+        if self.attr.opcode == kgen.POC.div and operands[1] == 0:
+            raise ZeroDivisionError(
+                f"substituting into {self} produced a zero divisor"
+            )
+        return AlgebraicDim.apply(self.attr.opcode, *operands)
 
     def __format__(self, format_spec: str) -> str:
         formatters: Mapping[str, Callable[[Any], str]] = {
@@ -383,7 +443,7 @@ class AlgebraicDim(Dim):
     def __repr__(self) -> str:
         return f"{self:repr}"
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return isinstance(other, AlgebraicDim) and self.attr == other.attr
 
     def to_mlir(self) -> kgen.ParamOperatorAttr:
@@ -422,18 +482,19 @@ class AlgebraicDim(Dim):
 @functools.total_ordering
 @dataclass(frozen=True)
 class StaticDim(Dim):
-    """A static tensor dimension.
+    """A static tensor dimension with a fixed size.
 
-    Static tensor dimensions will always have exactly the same value,
-    and are key to good model performance.
+    Because a static dimension's size is fixed, related computation can be
+    optimized at compile time. This is key to good model performance.
 
-    The following example shows how static dimensions can be created implicitly:
+    The following example creates static dimensions implicitly by passing
+    integer values to :class:`TensorType`:
 
     .. code-block:: python
 
-        from max.graph import TensorType
         from max.dtype import DType
-        tensor = TensorType(DType.int64, (4, 5))
+        from max.graph import DeviceRef, TensorType
+        tensor = TensorType(DType.int64, (4, 5), device=DeviceRef.CPU())
         # This creates a tensor with 2 static dimensions: 4 and 5 respectively
     """
 
@@ -441,6 +502,10 @@ class StaticDim(Dim):
     """The size of the static dimension."""
 
     def __init__(self, dim: int | builtin.TypedAttr | StaticDim) -> None:
+        # Use CastToBuiltinAttr to fold back to integer.
+        if isinstance(dim, kgen.SIMDAttr):
+            dim = kgen.CastToBuiltinAttr(dim)
+
         if isinstance(dim, builtin.IntegerAttr):
             dim = dim.value
         elif isinstance(dim, StaticDim):
@@ -454,6 +519,18 @@ class StaticDim(Dim):
         if not -(2**63) <= self.dim < 2**63:
             raise ValueError("Dim value must be -2**63 <= dim < 2**63")
 
+    def substitute(self, mapping: Mapping[str, DimLike]) -> Dim:
+        """Returns this dim unchanged: a static dim has no symbols.
+
+        Args:
+            mapping: A mapping from symbolic dimension name to the
+                replacement dim (or dim-like value). Ignored.
+
+        Returns:
+            This dim, unchanged.
+        """
+        return self
+
     def __str__(self) -> str:
         return str(self.dim)
 
@@ -463,7 +540,7 @@ class StaticDim(Dim):
     def __int__(self) -> int:
         return self.dim
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Whether the dimension has the same size as another dimension.
 
         Args:
@@ -482,7 +559,7 @@ class StaticDim(Dim):
     def __hash__(self):
         return hash(self.dim)
 
-    def to_mlir(self) -> builtin.IntegerAttr:
+    def to_mlir(self) -> builtin.TypedAttr:
         """Creates an ``mlir.Attribute`` representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
@@ -491,7 +568,7 @@ class StaticDim(Dim):
             An ``mlir.Attribute`` in the context representing the dimension.
         """
         si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
-        return builtin.IntegerAttr(si64, self.dim)
+        return kgen.CastFromBuiltinAttr(builtin.IntegerAttr(si64, self.dim))
 
     @staticmethod
     def from_mlir(attr: builtin.TypedAttr) -> StaticDim:
@@ -503,7 +580,7 @@ class StaticDim(Dim):
         Returns:
             StaticDim: The ``StaticDim`` represented by the ``builtin.IntegerAttr``.
         """
-        if not isinstance(attr, builtin.IntegerAttr):
+        if not isinstance(attr, builtin.IntegerAttr | kgen.SIMDAttr):
             raise TypeError(
                 f"StaticDim.from_mlir only accepts builtin.IntegerAttr, got {type(attr).__name__}"
             )
@@ -515,4 +592,7 @@ class StaticDim(Dim):
         return ()
 
 
-DimLike = int | str | Dim | np.integer[Any] | builtin.TypedAttr
+DimLike = int | str | Dim | np.integer | builtin.TypedAttr
+"""Anything a dimension accepts: a Python int, a symbolic name, a
+:class:`Dim`, a NumPy integer, or a typed MLIR attribute.
+"""

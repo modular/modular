@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from nn.argmaxmin import argmax, argmin
+from nn.argmaxmin import argmax
 
 
 # CHECK-LABEL: test_argn
@@ -22,37 +22,23 @@ def test_argn() raises:
     comptime size = 93
 
     comptime vector_shape = row_major[size]()
-    var vector_stack = InlineArray[Int32, vector_shape.product()](
-        uninitialized=True
+    var vector_stack = Array[Int32, vector_shape.product()](
+        fill_with=lambda (i: Int) -> Int32: Int32(i)
     )
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill={})
     var output = TileTensor(output_stack, output_shape)
 
-    for i in range(size):
-        vector[i] = Int32(i)
-
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         0,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 92
     print("argmax = ", output[0])
-
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        0,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 0
-    print("argmin = ", output[0])
 
 
 # CHECK-LABEL: test_argn_2
@@ -63,25 +49,19 @@ def test_argn_2() raises:
     comptime size = 91
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Float32, vector_shape.product()](
-        uninitialized=True
+    var vector_stack = Array[Float32, vector_shape.product()](
+        fill_with=lambda (idx: Int) -> Float32: Float32(idx % size)
     )
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill={})
     var output = TileTensor(output_stack, output_shape)
 
-    for i in range(batch_size):
-        for j in range(size):
-            vector[i, j] = Float32(j)
-
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         1,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 90
@@ -90,19 +70,6 @@ def test_argn_2() raises:
     # CHECK: argmax = 90
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
-
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        1,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_2_test_2
@@ -113,44 +80,27 @@ def test_argn_2_test_2() raises:
     comptime size = 3
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Float32, vector_shape.product()](
-        uninitialized=True
+    var vector_stack = Array[Float32, vector_shape.product()](
+        fill_with=lambda (idx: Int) -> Float32: (
+            Float32(idx) if (idx // size) % 2 == 0 else Float32(-idx)
+        )
     )
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill={})
     var output = TileTensor(output_stack, output_shape)
 
-    for i in range(batch_size):
-        for j in range(size):
-            vector[i, j] = Float32(i * size + j)
-            if i % 2:
-                vector[i, j] *= -1
-
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         1,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 2
     # CHECK: argmax = 0
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
-
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        1,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 2
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_2_neg_axis
@@ -161,44 +111,27 @@ def test_argn_2_neg_axis() raises:
     comptime size = 3
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Float32, vector_shape.product()](
-        uninitialized=True
+    var vector_stack = Array[Float32, vector_shape.product()](
+        fill_with=lambda (idx: Int) -> Float32: (
+            Float32(idx) if (idx // size) % 2 == 0 else Float32(-idx)
+        )
     )
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill={})
     var output = TileTensor(output_stack, output_shape)
 
-    for i in range(batch_size):
-        for j in range(size):
-            vector[i, j] = Float32(i * size + j)
-            if i % 2:
-                vector[i, j] *= -1
-
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         -1,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 2
     # CHECK: argmax = 0
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
-
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        -1,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 2
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_test_zeros
@@ -209,40 +142,22 @@ def test_argn_test_zeros() raises:
     comptime size = 16
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Float32, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Float32, vector_shape.product()](fill=0)
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill={})
     var output = TileTensor(output_stack, output_shape)
 
-    for i in range(batch_size):
-        for j in range(size):
-            vector[i, j] = 0
-
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         1,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 0
     for i in range(batch_size):
         print("argmax = ", output[i, 0])
-
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        1,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 0
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_test_identity
@@ -253,29 +168,21 @@ def test_argn_test_identity() raises:
     comptime size = 5
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Int64, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int64, vector_shape.product()](fill=0)
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill={})
     var output = TileTensor(output_stack, output_shape)
-
-    for i in range(batch_size):
-        for j in range(size):
-            vector[i, j] = 0
 
     vector[1, 4] = 1
     vector[2, 3] = 1
     vector[2, 4] = 1
 
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         1,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 0
@@ -284,18 +191,6 @@ def test_argn_test_identity() raises:
     print("argmax = ", output[1, 0])
     # CHECK: argmax = 3
     print("argmax = ", output[2, 0])
-
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        1,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    for i in range(batch_size):
-        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_3d_identity
@@ -307,25 +202,12 @@ def test_argn_3d_identity() raises:
     comptime hidden_dim = 5
 
     comptime vector_shape = row_major[batch_size, seq_len, hidden_dim]()
-    var vector_stack = InlineArray[Int64, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int64, vector_shape.product()](fill=0)
     var vector = TileTensor(vector_stack, vector_shape)
 
-    for i in range(batch_size):
-        for j in range(seq_len):
-            for k in range(hidden_dim):
-                vector[i, j, k] = 0
-
     comptime output_shape = row_major[batch_size, seq_len, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill=0)
     var output = TileTensor(output_stack, output_shape)
-
-    for i in range(batch_size):
-        for j in range(seq_len):
-            output[i, j, 0] = 0
 
     vector[0, 1, 4] = 1
     vector[1, 0, 1] = 1
@@ -333,9 +215,9 @@ def test_argn_3d_identity() raises:
     vector[1, 1, 3] = 1
 
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         2,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 0
@@ -347,20 +229,6 @@ def test_argn_3d_identity() raises:
     # CHECK: argmax = 3
     print("argmax = ", output[1, 1, 0])
 
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        2,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    # CHECK: argmin = 0
-    for i in range(batch_size):
-        for j in range(seq_len):
-            print("argmin = ", output[i, j, 0])
-
 
 def test_argn_less_than_simd() raises:
     print("== test_argn_less_than_simd")
@@ -369,23 +237,12 @@ def test_argn_less_than_simd() raises:
     comptime hidden_dim = 3  # assumes simd_width of 4
 
     comptime vector_shape = row_major[batch_size, hidden_dim]()
-    var vector_stack = InlineArray[Int64, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int64, vector_shape.product()](fill=0)
     var vector = TileTensor(vector_stack, vector_shape)
 
-    for i in range(batch_size):
-        for j in range(hidden_dim):
-            vector[i, j] = 0
-
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill=0)
     var output = TileTensor(output_stack, output_shape)
-
-    for i in range(batch_size):
-        output[i, 0] = 0
 
     vector[0, 0] = 0
     vector[0, 1] = 1
@@ -395,26 +252,15 @@ def test_argn_less_than_simd() raises:
     vector[1, 2] = 3
 
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         1,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 2
     print("argmax = ", output[0, 0])
     # CHECK: argmax = 0
     print("argmax = ", output[1, 0])
-
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        1,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 0
-    print("argmin = ", output[0, 0])
-    # CHECK: argmin = 2
-    print("argmin = ", output[1, 0])
 
 
 # CHECK-LABEL: test_argn_simd_edge_case
@@ -431,18 +277,11 @@ def test_argn_simd_index_order() raises:
     comptime size = 17
 
     comptime vector_shape = row_major[size]()
-    var vector_stack = InlineArray[Int32, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int32, vector_shape.product()](fill=0)
     var vector = TileTensor(vector_stack, vector_shape)
 
-    for i in range(size):
-        vector[i] = 0
-
     comptime output_shape = row_major[1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill={})
     var output = TileTensor(output_stack, output_shape)
 
     vector[5] = 1
@@ -451,22 +290,13 @@ def test_argn_simd_index_order() raises:
     vector[9] = 1
 
     argmax(
-        vector.make_dynamic[DType.int64](),
+        vector.make_dynamic[.int64](),
         0,
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # CHECK: argmax = 5
     print("argmax = ", output[0])
-
-    argmin(
-        vector.make_dynamic[DType.int64](),
-        0,
-        output.make_dynamic[DType.int64](),
-    )
-
-    # CHECK: argmin = 4
-    print("argmin = ", output[0])
 
 
 # CHECK-LABEL: test_argn_parallelize
@@ -478,7 +308,7 @@ def test_argn_parallelize() raises:
     comptime hidden_dim = 16384
 
     comptime input_shape = row_major[batch_size, hidden_dim]()
-    var input_ptr = alloc[Float32](input_shape.product())
+    var input_ptr = List(length=input_shape.product(), fill=Float32(0))
     var input = TileTensor(input_ptr, input_shape)
 
     for i in range(batch_size):
@@ -486,9 +316,7 @@ def test_argn_parallelize() raises:
             input[i, j] = 0
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
-        uninitialized=True
-    )
+    var output_stack = Array[Int, output_shape.product()](fill={})
     var output = TileTensor(output_stack, output_shape)
 
     input[0, 10] = 100
@@ -508,9 +336,7 @@ def test_argn_parallelize() raises:
     input[7, 40] = -100
     input[7, 400] = 100
 
-    argmax(
-        input.make_dynamic[DType.int64](), 1, output.make_dynamic[DType.int64]()
-    )
+    argmax(input.make_dynamic[.int64](), 1, output.make_dynamic[.int64]())
 
     # CHECK: argmax = 10
     print("argmax = ", output[0, 0])
@@ -528,29 +354,7 @@ def test_argn_parallelize() raises:
     print("argmax = ", output[6, 0])
     # CHECK: argmax = 400
     print("argmax = ", output[7, 0])
-
-    argmin(
-        input.make_dynamic[DType.int64](), 1, output.make_dynamic[DType.int64]()
-    )
-
-    # CHECK: argmin = 100
-    print("argmin = ", output[0, 0])
-    # CHECK: argmin = 20
-    print("argmin = ", output[1, 0])
-    # CHECK: argmin = 300
-    print("argmin = ", output[2, 0])
-    # CHECK: argmin = 40
-    print("argmin = ", output[3, 0])
-    # CHECK: argmin = 100
-    print("argmin = ", output[4, 0])
-    # CHECK: argmin = 200
-    print("argmin = ", output[5, 0])
-    # CHECK: argmin = 300
-    print("argmin = ", output[6, 0])
-    # CHECK: argmin = 40
-    print("argmin = ", output[7, 0])
-
-    input_ptr.free()
+    _ = input_ptr^
 
 
 def main() raises:

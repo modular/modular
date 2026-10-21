@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
 from linalg.transpose import (
@@ -111,7 +110,7 @@ def test_transpose_8x8_tiletensor():
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[i, j] = Scalar[DType.int](val)
+            matrix[i, j] = Int(val)
 
     transpose_inplace[num_rows, num_cols, DType.int](matrix)
 
@@ -138,7 +137,7 @@ def test_transpose_16x16_tiletensor():
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[i, j] = Scalar[DType.int](val)
+            matrix[i, j] = Int(val)
 
     transpose_inplace[num_rows, num_cols, DType.int](matrix)
 
@@ -166,7 +165,7 @@ def test_transpose_2d_identity_tiletensor() raises:
     input[2, 1] = 8
     input[2, 2] = 9
 
-    var perm: InlineArray[Scalar[DType.int], 2] = [0, 1]
+    var perm: Array[Int, 2] = [0, 1]
 
     var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
     _ = output.fill(0)
@@ -208,7 +207,7 @@ def test_transpose_2d_tiletensor() raises:
     input[2, 1] = 8
     input[2, 2] = 9
 
-    var perm: InlineArray[Scalar[DType.int], 2] = [1, 0]
+    var perm: Array[Int, 2] = [1, 0]
 
     var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
     _ = output.fill(0)
@@ -253,7 +252,7 @@ def test_transpose_3d_identity_tiletensor() raises:
     input[1, 1, 1] = 11
     input[1, 1, 2] = 12
 
-    var perm: InlineArray[Scalar[DType.int], 3] = [0, 1, 2]
+    var perm: Array[Int, 3] = [0, 1, 2]
 
     var output = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
     _ = output.fill(0)
@@ -304,7 +303,7 @@ def test_transpose_3d_tiletensor() raises:
     input[1, 1, 1] = 11
     input[1, 1, 2] = 12
 
-    var perm: InlineArray[Scalar[DType.int], 3] = [2, 0, 1]
+    var perm: Array[Int, 3] = [2, 0, 1]
 
     var output = stack_allocation[dtype=DType.int](row_major[3, 2, 2]())
     _ = output.fill(0)
@@ -355,7 +354,7 @@ def test_transpose_si64_tiletensor() raises:
     input[1, 1, 1] = 11
     input[1, 1, 2] = 12
 
-    var perm: InlineArray[Scalar[DType.int], 3] = [2, 1, 0]
+    var perm: Array[Int, 3] = [2, 1, 0]
 
     var output = stack_allocation[dtype=DType.int64](row_major[3, 2, 2]())
     _ = output.fill(0)
@@ -517,11 +516,7 @@ def test_simplify_perm():
 def test_transpose_4x4():
     print("== test_transpose_4x4")
 
-    comptime layout = Layout.row_major(4, 4)
-    var stack = InlineArray[Scalar[DType.int], layout.size()](
-        uninitialized=True
-    )
-    var matrix = LayoutTensor[DType.int, layout](stack)
+    var matrix = stack_allocation[dtype=DType.int](row_major[4, 4]())
 
     matrix[0, 0] = 0
     matrix[0, 1] = 1
@@ -598,16 +593,14 @@ def test_transpose_8x8():
     comptime num_rows: Int = 8
     comptime num_cols: Int = 8
 
-    comptime layout = Layout.row_major(num_rows, num_cols)
-    var stack = InlineArray[Scalar[DType.int], layout.size()](
-        uninitialized=True
+    var matrix = stack_allocation[dtype=DType.int](
+        row_major[num_rows, num_cols]()
     )
-    var matrix = LayoutTensor[DType.int, layout](stack)
 
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[i, j] = Scalar[DType.int](val)
+            matrix[i, j] = Int(val)
 
     transpose_inplace[num_rows, num_cols](matrix)
 
@@ -626,17 +619,15 @@ def test_transpose_16x16():
 
     comptime num_rows: Int = 16
     comptime num_cols: Int = 16
-    comptime layout = Layout.row_major(num_rows, num_cols)
-    var stack = InlineArray[Scalar[DType.int], layout.size()](
-        uninitialized=True
-    )
 
-    var matrix = LayoutTensor[DType.int, layout](stack)
+    var matrix = stack_allocation[dtype=DType.int](
+        row_major[num_rows, num_cols]()
+    )
 
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[i, j] = Scalar[DType.int](val)
+            matrix[i, j] = Int(val)
 
     transpose_inplace[num_rows, num_cols](matrix)
 

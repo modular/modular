@@ -16,15 +16,23 @@ This module provides a dtype-safe dispatch function that gates SM100
 conv2d kernel instantiation to supported dtypes (bf16/fp16) only.
 Importing this module does NOT trigger kernel compilation -- the kernel
 is only compiled when `dispatch_sm100_conv2d` is called with a supported
-dtype inside a @parameter if guard.
+dtype inside a comptime if guard.
 """
 
+from std.collections import OptionalReg
 from std.math import ceildiv
-from std.gpu import global_idx
-from std.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from std.sys import size_of
+from max.gpu import global_idx
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from layout import TensorEngine, TensorLayout, TileTensor, row_major
 from std.utils.index import IndexList
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 
 # =========================================================================
@@ -32,48 +40,62 @@ from linalg.utils import elementwise_epilogue_type
 # =========================================================================
 
 
+@__name(t"transpose_rscf_to_krsc_{dtype}")
 def _transpose_rscf_to_krsc[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    R: Int32,
+    S: Int32,
+    C: Int32,
+    F: Int32,
 ):
     """GPU kernel: transpose filter RSCF [R,S,C,F] -> KRSC [K,R,S,C]."""
+    var _R = Int(R)
+    var _S = Int(S)
+    var _C = Int(C)
+    var _F = Int(F)
     var tid = global_idx.x
-    if tid >= R * S * C * F:
+    if tid >= _R * _S * _C * _F:
         return
-    var k, rem = divmod(tid, R * S * C)
+    var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
-    r, rem = divmod(rem, S * C)
-    var s, c = divmod(rem, C)
-    var src_idx = r * S * C * F + s * C * F + c * F + k
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+    dst_ptr.unsafe_store(tid, src.load((r, s, c, k))[0])
 
 
+@__name(t"transpose_fcrs_to_krsc_{dtype}")
 def _transpose_fcrs_to_krsc[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    F: Int,
-    C: Int,
-    R: Int,
-    S: Int,
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    F: Int32,
+    C: Int32,
+    R: Int32,
+    S: Int32,
 ):
     """GPU kernel: transpose filter FCRS [F,C,R,S] -> KRSC [K,R,S,C]."""
+    var _F = Int(F)
+    var _C = Int(C)
+    var _R = Int(R)
+    var _S = Int(S)
     var tid = global_idx.x
-    if tid >= F * C * R * S:
+    if tid >= _F * _C * _R * _S:
         return
-    var k, rem = divmod(tid, R * S * C)
+    var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
-    r, rem = divmod(rem, S * C)
-    var s, c = divmod(rem, C)
-    var src_idx = k * C * R * S + c * R * S + r * S + s
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+    dst_ptr.unsafe_store(tid, src.load((k, c, r, s))[0])
 
 
 # =========================================================================
@@ -81,37 +103,73 @@ def _transpose_fcrs_to_krsc[
 # =========================================================================
 
 
+@inline(.always)
+def test_alignment_sm100_conv2d[
+    input_type: DType, output_type: DType
+](in_channels: Int, out_channels: Int) -> Bool:
+    """Checks whether the input and output channel counts meet SM100 conv2d alignment requirements.
+
+    Returns True when the input activation row is 64-byte aligned and the
+    output row is 4-byte aligned, otherwise False.
+
+    Parameters:
+        input_type: Element type of the input activation tensor, used to
+            compute the per-row byte width for the 64-byte alignment check.
+        output_type: Element type of the output tensor, used to compute the
+            per-row byte width for the 4-byte alignment check.
+
+    Args:
+        in_channels: Number of input channels per activation row.
+        out_channels: Number of output channels per output row.
+
+    Returns:
+        True if both alignment constraints are satisfied, False otherwise.
+    """
+    return (in_channels * size_of[input_type]()) % 64 == 0 and (
+        out_channels * size_of[output_type]()
+    ) % 4 == 0
+
+
 def dispatch_sm100_conv2d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    filter_is_fcrs: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
+    filter_is_fcrs: Bool = False,
     has_residual: Bool = False,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
+    input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    source_ptr: OptionalReg[
+        MutPointer[Scalar[output_type], MutAnyOrigin]
+    ] = None,
     beta: Float32 = 0.0,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.
 
-    This function gates the SM100 kernel import behind @parameter if
+    This function gates the SM100 kernel import behind comptime if
     on dtype, so the kernel is never compiled for unsupported dtypes.
 
     Parameters:
         input_type: Data type of the input activation tensor.
         filter_type: Data type of the filter weights tensor.
         output_type: Data type of the output tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: If True, filter is FCRS layout; otherwise RSCF.
-        elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(IndexList[2], SIMD) -> None`.
         has_residual: If True, fuse residual add D = Conv(A,B) + beta*C.
+        has_epilogue_fn: Whether `epilogue_fn` stores the output.
+        has_compute_fn: Whether the kernel stores `compute_fn` of each
+            output value; not supported with `has_residual`.
 
     Args:
         input: Input activation tensor in NHWC layout.
@@ -122,6 +180,12 @@ def dispatch_sm100_conv2d[
         source_ptr: Pointer to residual source tensor C (NHWC, same shape
             as output). Only used when has_residual is True.
         beta: Residual scale factor. D = Conv(A,B) + beta*C.
+        epilogue_fn: Elementwise epilogue that stores each output value,
+            with coordinates in the [M, N] GEMM view of the output; ignored
+            unless `has_epilogue_fn` is True.
+        compute_fn: Elementwise transform of each output value, with
+            coordinates in the [M, N] GEMM view of the output; ignored
+            unless `has_compute_fn` is True.
 
     Raises:
         Error if kernel launch fails.
@@ -129,8 +193,14 @@ def dispatch_sm100_conv2d[
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
+    comptime assert not (
+        has_residual and has_compute_fn
+    ), "the residual kernel has no compute epilogue"
 
-    comptime if input_type == DType.bfloat16:
+    comptime if input_type == .bfloat16:
         from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 
@@ -166,16 +236,19 @@ def dispatch_sm100_conv2d[
             var C = Int(filter.dim[1]())
             var R = Int(filter.dim[2]())
             var S = Int(filter.dim[3]())
-            ctx.enqueue_function[
-                _transpose_fcrs_to_krsc[filter_type],
-                _transpose_fcrs_to_krsc[filter_type],
-            ](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_fcrs_to_krsc[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_krsc_ptr,
-                F,
-                C,
-                R,
-                S,
+                Int32(F),
+                Int32(C),
+                Int32(R),
+                Int32(S),
                 grid_dim=grid,
                 block_dim=transpose_block,
             )
@@ -184,16 +257,19 @@ def dispatch_sm100_conv2d[
             var S = Int(filter.dim[1]())
             var C = Int(filter.dim[2]())
             var F = Int(filter.dim[3]())
-            ctx.enqueue_function[
-                _transpose_rscf_to_krsc[filter_type],
-                _transpose_rscf_to_krsc[filter_type],
-            ](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_rscf_to_krsc[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_krsc_ptr,
-                R,
-                S,
-                C,
-                F,
+                Int32(R),
+                Int32(S),
+                Int32(C),
+                Int32(F),
                 grid_dim=grid,
                 block_dim=transpose_block,
             )
@@ -211,40 +287,72 @@ def dispatch_sm100_conv2d[
             pad_w=symmetric_padding[1],
         )
 
-        var act_tt = TileTensor(
-            input.ptr,
-            row_major(Idx(batch), Idx(in_h), Idx(in_w), Idx(in_c)),
-        )
+        var act_tt = input.reshape(row_major(batch, in_h, in_w, in_c))
         var filter_tt = TileTensor(
             filter_krsc_ptr,
-            row_major(Idx(out_c), Idx(fh), Idx(fw), Idx(in_c)),
+            row_major(out_c, fh, fw, in_c),
         )
-        var out_tt = TileTensor(
-            output.ptr,
-            row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
-        )
+        var out_tt = output.reshape(row_major(batch, out_h, out_w, out_c))
 
-        comptime config = Conv2dConfig[
-            input_type, filter_type, output_type
-        ].default_bf16_1sm()
+        # Pick activation/filter swizzle based on C_in alignment. SWIZZLE_128B
+        # requires the inner C-row to be 128B-aligned; SWIZZLE_64B relaxes that
+        # to 64B (e.g. covers bf16 C_in=96 → 192 B per row). Each path
+        # compiles a separately-instantiated kernel.
+        var in_c_bytes = in_c * size_of[input_type]()
 
-        comptime if has_residual:
-            var src_tt = TileTensor(
-                source_ptr,
-                row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
-            )
-            conv2d_fprop_with_residual[
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                has_residual=True,
-            ](out_tt, act_tt, filter_tt, src_tt, beta, problem, ctx)
+        @inline(.always)
+        def _launch[
+            swizzle: TensorMapSwizzle,
+            num_pipeline_stages_override: Int = 0,
+        ]() raises {imm}:
+            comptime config = Conv2dConfig[
+                input_type, filter_type, output_type
+            ].default_bf16_1sm[
+                swizzle=swizzle,
+                num_pipeline_stages_override=num_pipeline_stages_override,
+            ]()
+
+            comptime if has_residual:
+                var src_tt = TileTensor(
+                    # SAFETY: set when has_residual == True
+                    source_ptr.unsafe_value(),
+                    row_major(batch, out_h, out_w, out_c),
+                )
+                conv2d_fprop_with_residual[
+                    config=config,
+                    has_residual=True,
+                    has_epilogue_fn=has_epilogue_fn,
+                ](
+                    out_tt,
+                    act_tt,
+                    filter_tt,
+                    src_tt,
+                    beta,
+                    problem,
+                    ctx,
+                    epilogue_fn,
+                )
+            elif has_epilogue_fn:
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, epilogue_fn, ctx
+                )
+            elif has_compute_fn:
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, compute_fn, ctx
+                )
+            else:
+                conv2d_fprop[config=config](
+                    out_tt, act_tt, filter_tt, problem, ctx
+                )
+
+        if in_c_bytes % 128 == 0:
+            _launch[TensorMapSwizzle.SWIZZLE_128B]()
         else:
-            conv2d_fprop[
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](out_tt, act_tt, filter_tt, problem, ctx)
-
-        # Synchronize before freeing the transposed filter buffer to
-        # ensure the async conv2d kernel has finished reading from it.
-        ctx.synchronize()
-        _ = filter_buf^
+            # Dispatch gate guarantees in_c_bytes % 64 == 0 when we reach here.
+            # BK=32 (half of BK=64) makes the auto-sizer over-estimate stages
+            # (e.g. bf16: predicts 13 where <=6 fit). Pin to 6 as a safe
+            # override matching what the SMEM budget actually allows.
+            _launch[
+                TensorMapSwizzle.SWIZZLE_64B,
+                num_pipeline_stages_override=6,
+            ]()

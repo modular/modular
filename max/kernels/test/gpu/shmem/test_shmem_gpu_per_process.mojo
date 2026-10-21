@@ -24,11 +24,12 @@ mpirun.
 # RUN: %mpirun-gpu-per-process %t
 
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from shmem import *
 from std.testing import assert_equal
 
 
-def simple_shift_kernel(destination: UnsafePointer[Int32, MutAnyOrigin]):
+def simple_shift_kernel(destination: Pointer[Int32, MutAnyOrigin]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
@@ -42,8 +43,8 @@ def main() raises:
     # Initializes SHMEM/MPI and finalizes at the end of the scope
     with SHMEMContext() as ctx:
         # Set up buffers to test devices are communicating with the correct IDs
-        var target_device = ctx.enqueue_create_buffer[DType.int32](1)
-        var target_host = alloc[Int32](1)
+        var target_device = ctx.enqueue_create_buffer[.int32](1)
+        var target_host = unsafe_alloc[Int32](1)
 
         # SHMEMContext takes care of initializing device state into
         # `simple_shift_kernel` constant memory

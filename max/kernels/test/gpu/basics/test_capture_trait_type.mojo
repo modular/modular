@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
-from std.utils import IndexList
+from max.gpu import thread_idx
+from max.gpu.host import DeviceContext
+from layout import RowMajorLayout, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 
 
 trait BaseT(TrivialRegisterPassable):
@@ -25,42 +24,38 @@ trait BaseT(TrivialRegisterPassable):
 
 @fieldwise_init
 struct ImplT(BaseT):
-    var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
+    @__allow_legacy_any_origin_fields
+    var values: TileTensor[.float32, RowMajorLayout[Int], MutAnyOrigin]
 
     def __init__(
         out self,
-        buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE), _],
+        buf: TileTensor[mut=True, .float32, RowMajorLayout[Int], _],
     ) raises:
-        self.values = buf.as_any_origin()
+        self.values = buf.as_unsafe_any_origin()
 
     def get_val(self, idx: Int) -> Float32:
-        return self.values[idx][0]
+        return self.values[idx]
 
 
 def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
-    @parameter
-    @__copy_capture(thing)
-    def kernel_fn():
+    def kernel_fn() {var thing}:
         var idx = thread_idx.x
         print(thing.get_val(idx) * 2)
 
-    comptime kernel = kernel_fn
-    ctx.enqueue_function_experimental[kernel](grid_dim=(1,), block_dim=(size))
+    ctx.enqueue_function(kernel_fn, grid_dim=(1,), block_dim=(size))
 
 
 def trait_repro(ctx: DeviceContext) raises:
     comptime size = 5
-    var managed_buf = ManagedLayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
-        ctx,
-    )
-    var host_buf = managed_buf.tensor[update=False]()
+    var managed_buf = HostDeviceTileTensor[.float32](row_major(size), ctx)
+    var host_buf = managed_buf.host_tensor()
     for i in range(size):
         host_buf[i] = Float32(i)
+    managed_buf.to_device()
 
     var thing = ImplT(managed_buf.device_tensor())
     trait_repro_sub(thing, ctx, size)
-    host_buf = managed_buf.tensor()
+    managed_buf.to_host()
 
     for i in range(size):
         print(host_buf[i])

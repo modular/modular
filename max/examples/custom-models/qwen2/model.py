@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/serve-custom-model-architectures.mdx
+# DOC: develop/serve-custom-model-architectures.mdx
 
 from __future__ import annotations
 
@@ -48,6 +48,6 @@ class Qwen2Model(Llama3Model):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
         )

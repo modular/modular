@@ -22,7 +22,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 @pytest.mark.skip
-def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
+def test_no_operation_dump(custom_ops_mojoc: Path) -> None:
     """Check that we don't dump IR on failure to elaborate."""
     with pytest.raises(ValueError) as excinfo:
         InferenceSession(devices=[CPU()]).load(
@@ -38,7 +38,7 @@ def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
                         )
                     ],
                 ),
-                custom_extensions=[custom_ops_mojopkg],
+                custom_extensions=[custom_ops_mojoc],
             ),
         )
 

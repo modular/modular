@@ -11,11 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides the generic CPU matmul microkernel used as the fallback path.
+
+Defines `Inner_matmul_default`, a scalar FMA-based implementation of the
+`InnerMatmulKernel` trait selected when no architecture-specific kernel
+(VNNI, NEON, I8MM) applies.
+"""
+
 from std.sys import prefetch
 from std.sys.info import align_of
 from std.sys.intrinsics import PrefetchOptions
 
-from layout import LayoutTensor, RuntimeTuple, TileTensor
+from layout import Coord, Idx, TileTensor
 
 from std.utils.index import Index, IndexList
 
@@ -28,13 +35,21 @@ from .impl import InnerMatmulKernel
 # implements the default microkernel.
 @fieldwise_init
 struct Inner_matmul_default(InnerMatmulKernel, Movable):
-    @always_inline
+    """Generic CPU matmul microkernel using scalar FMA accumulation.
+
+    Implements `InnerMatmulKernel` for the fallback path used when no
+    architecture-specific kernel (VNNI, NEON, I8MM) applies. Accumulates
+    partial products from a packed B tile into a local SIMD register buffer
+    and writes the result back to the C matrix with optional boundary checks.
+    """
+
+    @inline(.always)
     def _accumulate[
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        a: TileTensor,
+        b_packed: TileTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -45,14 +60,15 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         local accumulation buffer while processing a single column of A.
 
         Args:
-            a: TODO.
-            b_packed: TODO.
+            a: Input A matrix tile being processed.
+            b_packed: Packed B matrix tile in cache-friendly layout.
             c_local: Pre-allocated local buffer for c partial sums.
-            global_offset: TODO.
+            global_offset: Global (M, N, K) coordinate offset for this tile.
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
+        comptime assert a.flat_rank == 2, "a must be rank 2"
 
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -60,12 +76,9 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         # Global K index.
         var global_k = global_offset.K + tile_n_k_idx[1]
 
-        var b_offset = b_packed.runtime_layout(
-            RuntimeTuple[b_packed.layout.shape](
-                Index(n_outer_idx, tile_n_k_idx[1], 0)
-            )
+        var b_ptr = b_packed.ptr_at_offset(
+            Coord(n_outer_idx, tile_n_k_idx[1], Idx[0])
         )
-        var b_ptr = b_packed.ptr + b_offset
 
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
@@ -76,11 +89,11 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             comptime for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
-                ](b_ptr + (prefetch_offset + idx * simd_size))
+                ](b_ptr.unsafe_offset(prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
-        var K = a.dim[1]()
-        var a_ptr = a.ptr + (global_offset.M * K + global_k)
+        var K = Int(a.dim[1]())
+        var a_ptr = a.ptr_at_offset(Coord(global_offset.M, global_k))
 
         comptime c_type = c_local.dtype
 
@@ -90,12 +103,12 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]
-                var b_val = b_ptr.load[width=simd_size, alignment=alignment](
-                    idx1 * simd_size
-                )
+                var b_val = b_ptr.unsafe_load[
+                    width=simd_size, alignment=alignment
+                ](idx1 * simd_size)
                 c_local.fma(idx0, idx1, a_val, b_val)
 
-    @always_inline
+    @inline(.always)
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -112,16 +125,33 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
+
+        Parameters:
+            kernel_rows: Number of rows in the microkernel tile along the M
+                dimension.
+            kernel_cols: Number of columns in the microkernel tile along the N
+                dimension.
+            simd_size: SIMD vector width used for packed B loads and
+                accumulation.
+
+        Args:
+            c: Output C matrix tile receiving the accumulated products.
+            a: Input A matrix tile in row-major (non-transposed) layout.
+            b_packed: Packed B matrix tile in cache-friendly rank-3 layout.
+            global_offset: Global (M, N, K) coordinate offset of this tile
+                within the full matrices.
+            global_bound: Global (M, N, K) extent of the full matrices used
+                for boundary checks.
+            tile_n_k: Tile extents in the (N, K) dimensions to iterate over.
+            skip_boundary_check: Whether to skip out-of-bounds checks on C
+                loads and stores.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
-
-        # Convert to LayoutTensor for _accumulate which uses runtime_layout.
-        var a_lt = a.to_layout_tensor()
-        var b_lt = b_packed.to_layout_tensor()
+        comptime assert c.flat_rank == 2, "c must be rank 2"
 
         var c_stride = Int(c.dim[1]())
 
-        var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr_at_offset(Coord(global_offset.M, global_offset.N))
 
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
@@ -138,7 +168,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                    rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -150,14 +180,14 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             for idx_k in range(tile_n_k[1]):
                 # accumulate data for this (n, k) index
                 self._accumulate[simd_size, kernel_rows, kernel_cols](
-                    a_lt,
-                    b_lt,
+                    a,
+                    b_packed,
                     acc,
                     global_offset,
-                    Index(idx_n, idx_k),
+                    (idx_n, idx_k),
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

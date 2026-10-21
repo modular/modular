@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
+import os
 
-import hf_repo_lock
 import pytest
-from max.entrypoints import pipelines
+from _cli_pipeline_flags import pipeline_flags
+from max._entrypoints import pipelines
 from test_common.graph_utils import is_h100_h200
 from test_common.lora_utils import (
     create_multiple_test_lora_adapters,
@@ -24,9 +25,6 @@ from test_common.lora_utils import (
 
 # Keep original constants for non-LoRA tests
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
-
-
 logger = logging.getLogger("max.pipelines")
 
 
@@ -34,81 +32,64 @@ logger = logging.getLogger("max.pipelines")
 def test_pipelines_cli__smollm_bfloat16(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    # Use HuggingFace repo ID directly to ensure we have access to all weight formats
-    local_model_path = REPO_ID
+    # Bazel hands the precompiled artifacts over in the environment; the
+    # pipeline is told about them explicitly.
+    precompiled = os.environ.get("PRECOMPILED_MEFS_DIR")
+    reuse_flags = ["--precompiled-mefs", precompiled] if precompiled else []
 
     with pytest.raises(SystemExit):
         pipelines.main(
             [
                 "generate",
-                "--model-path",
-                local_model_path,
                 "--prompt",
                 "Why is the sky blue",
-                "--trust-remote-code",
-                "--device-memory-utilization=0.1",
-                "--quantization-encoding=bfloat16",
-                "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
                 "--top-k=1",
+                *reuse_flags,
+                *pipeline_flags("smollm"),
             ]
         )
     captured = capsys.readouterr()
-    # Verify the model generates a response about why the sky is blue.
-    assert len(captured.out) > 0
+    # `generate` prints this summary only after it has produced tokens. Checking
+    # for it first means a run that exits early cannot satisfy the content check
+    # below off the back of the prompt being echoed.
+    assert "Output size:" in captured.out, (
+        f"the CLI produced no generation:\n{(captured.out + captured.err)[-4000:]}"
+    )
+    # Deliberately excludes "blue": it appears in the prompt, so it cannot
+    # distinguish a real answer from an echo.
     assert any(
         word in captured.out.lower()
-        for word in ["light", "scatter", "atmosphere", "blue"]
-    )
+        for word in ["light", "scatter", "atmosphere", "wavelength"]
+    ), captured.out
 
 
 @pytest.mark.skipif(is_h100_h200(), reason="AITLIB-342: Failing on H100")
-def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
+@pytest.mark.parametrize("capture_flags", [[], ["--device-graph-capture"]])
+def test_pipelines_cli__graph_capture_is_opt_in_and_warmed_up(
     capsys: pytest.CaptureFixture[str],
+    capture_flags: list[str],
 ) -> None:
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    # Use HuggingFace repo ID directly to ensure we have access to all weight formats
-    local_model_path = REPO_ID
-
     with pytest.raises(SystemExit):
         pipelines.main(
             [
                 "generate",
-                "--model-path",
-                local_model_path,
                 "--prompt",
                 "Why is the sky blue",
-                "--trust-remote-code",
-                "--device-memory-utilization=0.1",
-                "--quantization-encoding=bfloat16",
-                "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
-                # We are enabling structured output here, to ensure that
-                # enabling structured output server wide, without a JSON
-                # schema provided does not change the outputs of the base
-                # chat experience.
-                "--enable-structured-output",
                 "--top-k=1",
+                *capture_flags,
+                *pipeline_flags("smollm"),
             ]
         )
     captured = capsys.readouterr()
-    # Verify the model generates a response about why the sky is blue.
-    assert len(captured.out) > 0
-    assert any(
-        word in captured.out.lower()
-        for word in ["light", "scatter", "atmosphere", "blue"]
+    assert "Output size:" in captured.out
+    # The CLI replaces the root log handlers, so its logs reach stderr and
+    # never caplog. Off by default, and warmed up when asked for, so the
+    # not-warmed-up warning never fires.
+    assert "warmup_graph_capture() has not run" not in captured.err, (
+        captured.err[-4000:]
     )
+    warmed_up = "Warming up device graph capture" in captured.err
+    assert warmed_up == bool(capture_flags), captured.err[-4000:]
 
 
 @pytest.mark.skip("LoRA doesn't work with generate entrypoint. E2EOPT-457")
@@ -131,10 +112,6 @@ def test_pipelines_cli__smollm_with_lora(
                 "--device-memory-utilization=0.1",
                 "--quantization-encoding=bfloat16",
                 "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
                 "--enable-lora",
                 "-max-num-loras=2",
                 "--max-lora-rank=16",
@@ -184,10 +161,6 @@ def test_pipelines_cli__smollm_with_multiple_loras(
                 "--device-memory-utilization=0.1",
                 "--quantization-encoding=bfloat16",
                 "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
                 "--enable-lora",
                 "--max-num-loras=3",
                 "--max-lora-rank=16",

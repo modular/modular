@@ -13,9 +13,9 @@
 
 from std.math import ceildiv
 
-from std.gpu import block_dim, global_idx
-from std.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from max.gpu import block_dim, global_idx
+from max.gpu.host import DeviceContext
+from layout import TileTensor, row_major
 from layout.tile_tensor import stack_allocation
 from std.testing import assert_false
 
@@ -31,21 +31,21 @@ def scatter_nd_gpu[
     dtype: DType,
     indices_type: DType,
 ](
-    output_data_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    indices_data_ptr: UnsafePointer[Scalar[indices_type], MutAnyOrigin],
-    element_counts_and_input_dims_ptr: UnsafePointer[Int64, MutAnyOrigin],
-    updates_data_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    output_data_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    indices_data_ptr: MutPointer[Scalar[indices_type], MutAnyOrigin],
+    element_counts_and_input_dims_ptr: MutPointer[Int64, MutAnyOrigin],
+    updates_data_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     num_indices: Int,
     last_index_dimension: Int,
     num_updates_elements: Int,
 ):
-    var id: UInt = global_idx.x
+    var id: Int = global_idx.x
     if id >= num_indices:
         return
 
     var element_counts_and_input_dims = TileTensor(
         element_counts_and_input_dims_ptr,
-        row_major(Idx(last_index_dimension * 2)),
+        row_major(last_index_dimension * 2),
     )
 
     var data_offset = 0
@@ -54,7 +54,7 @@ def scatter_nd_gpu[
     var indices_end = indices_start + last_index_dimension
 
     for i in range(indices_start, indices_end):
-        var index = Int(indices_data_ptr.load(i))
+        var index = Int(indices_data_ptr.unsafe_load(i))
         var element_count_dim = Int(
             element_counts_and_input_dims[i - indices_start]
         )
@@ -98,10 +98,10 @@ def scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: TileTensor[dtype=dtype, ...],
-    indices: TileTensor[dtype=indices_type, ...],
-    updates: TileTensor[dtype=dtype, ...],
-    output: TileTensor[mut=True, dtype=dtype, ...],
+    data: TileTensor[dtype, ...],
+    indices: TileTensor[indices_type, ...],
+    updates: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -151,8 +151,10 @@ def scatter_nd[
 
     # Copy input data to output (appropriate elements will be updated as needed
     # by the end of scatternd kernel).
+    var output_flat = output.reshape(row_major(output.num_elements()))
+    var data_flat = data.reshape(row_major(data.num_elements()))
     for _i in range(output.num_elements()):
-        output.ptr[_i] = data.ptr[_i]
+        output_flat.store((_i,), data_flat.load[width=1]((_i,)))
 
     # Depending on r_minus_m = data_rank - last_shape_of_indices,
     # we will be copying:
@@ -188,17 +190,19 @@ def scatter_nd[
 
     # Buffer below will store both input_strides and data dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
-    var ptr = alloc[Int64](last_shape_of_indices * 2)
+    var ptr = ctx.enqueue_create_host_buffer[.int64](last_shape_of_indices * 2)
+    ctx.synchronize()
 
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
-    var input_strides = InlineArray[Int64, data_rank](uninitialized=True)
-    for i in range(data_rank):
+    def input_strides_at(i: Int) {imm} -> Int64:
         var total_stride = 1
         for j in range(i + 1, data_rank):
             total_stride *= data_shape[j]
-        input_strides[i] = total_stride
+        return Int64(total_stride)
+
+    var input_strides = Array[_, data_rank](fill_with=input_strides_at)
 
     for i in range(last_shape_of_indices):
         ptr[i] = input_strides[i]
@@ -229,7 +233,7 @@ def scatter_nd[
     var num_updates_elements = count_copy
     comptime kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_device,
         indices_device,
         element_counts_and_input_dims_device,
@@ -250,16 +254,15 @@ def scatter_nd[
     _ = updates_device
     _ = indices_device
 
-    ptr.free()
-
 
 def linear_fill[
     dtype: DType
-](buf: TileTensor[mut=True, dtype=dtype, ...], elems: Span[Scalar[dtype], _]):
+](buf: TileTensor[mut=True, dtype, ...], elems: Span[Scalar[dtype], _]):
     assert buf.num_elements() == len(elems), "must fill all elements of tensor"
 
+    var buf_flat = buf.reshape(row_major(buf.num_elements()))
     for i in range(buf.num_elements()):
-        buf.ptr[i] = elems[i]
+        buf_flat.store((i,), elems[i])
 
 
 def test_case[
@@ -298,8 +301,10 @@ def test_case[
     var output_ref = stack_allocation[dtype=dtype](row_major[d0, d1, d2]())
     linear_fill(output_ref, output_ref_vals)
 
+    var output_ref_flat = output_ref.reshape(row_major[d0 * d1 * d2]())
+    var output_flat = output.reshape(row_major[d0 * d1 * d2]())
     for i in range(output.num_elements()):
-        if output_ref.ptr[i] != output.ptr[i]:
+        if output_ref_flat[i] != output_flat[i]:
             print("FAILURE: Mismatch at idx: ", end="")
             print(i)
             assert_false(True)

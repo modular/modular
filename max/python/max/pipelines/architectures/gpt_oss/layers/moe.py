@@ -128,7 +128,7 @@ class GptOssMoE(StackedMoE):
             gate_cls=GptOssMoEGate,
             dtype=config.dtype,
             gate_up_format=GateUpFormat.INTERLEAVED,
-            activation_fn=gptoss_glu_activation,
+            gated_activation_fn=gptoss_glu_activation,
             has_bias=True,
             quant_config=config.quant_config,
             is_sharding=is_sharding,

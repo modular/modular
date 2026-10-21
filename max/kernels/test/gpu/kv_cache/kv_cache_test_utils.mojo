@@ -12,30 +12,160 @@
 # ===----------------------------------------------------------------------=== #
 """Shared utilities for KV cache tests."""
 
-from std.collections import Set
 from std.math import ceildiv
-from std.random import random_ui64
+from std.memory.alloc import unsafe_alloc
+from std.random import shuffle
+from std.utils.numerics import isinf, isnan
 
-from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from max.gpu.host import DeviceBuffer, DeviceContext
+from layout import (
+    Coord,
+    RowMajorLayout,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 
 from std.utils import Index, IndexList
+from std.utils.coord import DynamicCoord
 
 
-struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
-    comptime tensor_type = LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
+# Mirror of `_LUT_TAIL_PAD` in
+# `max/python/max/kv_cache/paged_kv_cache/cache_manager.py`. Bump in
+# lockstep if the Python value changes.
+comptime _LUT_TAIL_PAD = 16
+
+
+def padded_lut_cols(cols: Int) -> Int:
+    """Mirror of `_padded_lut_cols` in
+    `max/python/max/kv_cache/paged_kv_cache/cache_manager.py`.
+
+    `PagedKVCache.populate`'s SIMD path requires the LUT row stride to
+    be a multiple of 8 (chunk alignment, chunk capped at 8) and at
+    least `cols + 15` (so a 16-wide SIMD load at any valid
+    `first_lut_idx` stays in-bounds). Production allocates with this
+    padding; tests must do the same.
+    """
+    return ((cols + 7) // 8) * 8 + _LUT_TAIL_PAD
+
+
+def randperm(n: Int) -> List[Int]:
+    """Return a uniformly random permutation of `[0, n)`.
+
+    Builds the identity permutation `[0, n)` and shuffles it in place with the
+    stdlib Fisher-Yates `shuffle`.
+
+    Use this instead of `random_distinct` when the caller also needs the
+    *complement* of the sample: `perm[:k]` is a uniform sample of `k` distinct
+    values without replacement, and `perm[k:]` is exactly the unsampled
+    remainder. That turns a "do something to every value we did NOT pick" loop
+    (e.g. poisoning unreferenced KV blocks) into a slice walk, with no
+    membership `Set` and no per-element `in` probe.
+
+    Args:
+        n: Size of the permutation; elements are `[0, n)`.
+
+    Returns:
+        A list holding a random permutation of `[0, n)`.
+    """
+    var perm: List[Int] = [i for i in range(n)]
+    shuffle(perm)
+    return perm^
+
+
+def random_distinct(n: Int, k: Int) -> List[Int]:
+    """Sample `k` distinct integers uniformly without replacement from `[0, n)`.
+
+    The first `k` elements of a uniform random permutation are themselves a
+    uniform sample of `k` distinct values without replacement, so this takes
+    the `k`-element prefix of `randperm(n)`.
+
+    This replaces the rejection-sampling idiom (draw into a `Set[Int]`,
+    redraw on collision), whose expected work blows up as `k` approaches `n`:
+    the last few distinct values each take on average `n / (n - i)` draws, so
+    selecting nearly all of a population is roughly `n * H_n` draws
+    (coupon-collector). The paged-KV LUT routinely needs almost every block,
+    which is exactly that worst case. A full shuffle is `O(n)` with no redraws.
+
+    Constraints (caller-enforced): `0 <= k <= n`.
+
+    Args:
+        n: Size of the population `[0, n)` to sample from.
+        k: Number of distinct values to return.
+
+    Returns:
+        A list of `k` distinct integers in `[0, n)`, in sampled order.
+    """
+    var perm = randperm(n)
+    perm.shrink(k)
+    return perm^
+
+
+def assert_no_nan_inf[
+    dtype: DType, LayoutType: TensorLayout
+](
+    mut output: HostDeviceTileTensor[dtype, LayoutType],
+    name: StaticString = "output",
+) raises:
+    """Assert no NaN/Inf is present in `output`.
+
+    Copies the device buffer back to host and linearly scans every element.
+    Raises on the first NaN or Inf with the element's flat index, total size,
+    and the caller-supplied `name`. Use immediately after a kernel +
+    `synchronize()` to give a named, indexed failure rather than relying on
+    tolerance comparisons (which mask NaN-vs-NaN matches and produce vague
+    error messages).
+    """
+    output.to_host()
+    var host = output.host_tensor()
+    var n = host.num_elements()
+    var flat = host.reshape(row_major(n))
+    for i in range(n):
+        var v = flat[i].cast[.float32]()
+        if isnan(v):
+            raise Error(
+                String("NaN at element ")
+                + String(i)
+                + " of "
+                + String(n)
+                + " in '"
+                + String(name)
+                + "'"
+            )
+        if isinf(v):
+            raise Error(
+                String("Inf at element ")
+                + String(i)
+                + " of "
+                + String(n)
+                + " in '"
+                + String(name)
+                + "'"
+            )
+
+
+struct _KVCacheTestTensor[dtype: DType, rank: Int](Copyable):
+    comptime tensor_type = TileTensor[
+        Self.dtype,
+        RowMajorLayout[*DynamicCoord[.int64, Self.rank].element_types],
+        ImmutAnyOrigin,
+    ]
+    comptime tile_tensor_type = Self.tensor_type
 
     var shape: IndexList[Self.rank]
-    var host_ptr: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+    var host_ptr: MutPointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var device_buf: Optional[DeviceBuffer[Self.dtype]]
 
     def __init__(out self, shape: IndexList[Self.rank]):
         self.shape = shape
-        self.host_ptr = alloc[Scalar[Self.dtype]](shape.flattened_length())
+        self.host_ptr = unsafe_alloc[Scalar[Self.dtype]](
+            shape.flattened_length()
+        )
         self.device_buf = None
 
-    def __del__(deinit self):
-        self.host_ptr.free()
+    def __deinit__(deinit self):
+        self.host_ptr.unsafe_free()
 
     def copy_to_device(mut self, ctx: DeviceContext) raises:
         self.device_buf = ctx.enqueue_create_buffer[Self.dtype](
@@ -49,22 +179,22 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
     def device_tensor(self) -> Self.tensor_type:
         return self._tensor(self.device_buf.value().unsafe_ptr())
 
-    def _runtime_layout(self) -> RuntimeLayout[Self.layout]:
-        return RuntimeLayout[Self.layout].row_major(self.shape)
+    def host_tile_tensor(self) -> Self.tile_tensor_type:
+        return self.host_tensor()
 
-    def _tensor(
-        self, ptr: UnsafePointer[Scalar[Self.dtype], _]
-    ) -> Self.tensor_type:
-        return Self.tensor_type(ptr, self._runtime_layout())
+    def device_tile_tensor(self) -> Self.tile_tensor_type:
+        return self.device_tensor()
+
+    def _tensor(self, ptr: Pointer[Scalar[Self.dtype], _]) -> Self.tensor_type:
+        return Self.tensor_type(
+            ptr=ptr.as_imm().as_unsafe_any_origin(),
+            layout=row_major(Coord(self.shape)),
+        )
 
 
 struct CacheLengthsTable(Copyable):
-    var cache_lengths: _KVCacheTestTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), 1
-    ]
-    var input_row_offsets: _KVCacheTestTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), 1
-    ]
+    var cache_lengths: _KVCacheTestTensor[DType.uint32, 1]
+    var input_row_offsets: _KVCacheTestTensor[DType.uint32, 1]
 
     var batch_size: Int
     var max_full_context_length: Int
@@ -112,9 +242,9 @@ struct CacheLengthsTable(Copyable):
         self.max_seq_length_batch = max_seq_length_batch
         self.total_length = total_length
 
-        if ctx:
-            self.cache_lengths.copy_to_device(ctx.value())
-            self.input_row_offsets.copy_to_device(ctx.value())
+        if case .Some(ctx) = ctx:
+            self.cache_lengths.copy_to_device(ctx)
+            self.input_row_offsets.copy_to_device(ctx)
 
     @staticmethod
     def build(
@@ -129,13 +259,20 @@ struct CacheLengthsTable(Copyable):
 
 
 struct PagedLookupTable[page_size: Int](Copyable):
-    var paged_lut: _KVCacheTestTensor[DType.uint32, Layout.row_major[2](), 2]
+    var paged_lut: _KVCacheTestTensor[.uint32, 2]
 
     def __init__(
         out self, batch_size: Int, max_full_context_length: Int
     ) raises:
+        # Pad the LUT inner dim to honor `PagedKVCache.populate`'s SIMD
+        # padding invariant — see `padded_lut_cols`.
         self.paged_lut = type_of(self.paged_lut)(
-            Index(batch_size, ceildiv(max_full_context_length, Self.page_size))
+            Index(
+                batch_size,
+                padded_lut_cols(
+                    ceildiv(max_full_context_length, Self.page_size)
+                ),
+            )
         )
 
     def _build(
@@ -147,27 +284,29 @@ struct PagedLookupTable[page_size: Int](Copyable):
     ) raises:
         var batch_size = len(prompt_lens)
 
-        var host_tensor = LayoutTensor[
-            DType.uint32, type_of(self.paged_lut).layout
-        ](
-            self.paged_lut.host_ptr,
-            self.paged_lut._runtime_layout(),
+        var host_tensor = TileTensor(
+            self.paged_lut.host_ptr, row_major(Coord(self.paged_lut.shape))
         )
-        var used_set = Set[Int]()
+        # Sample one distinct paged block per page across the whole batch up
+        # front, then hand them out in iteration order. Total pages needed is
+        # <= num_paged_blocks by construction.
+        var total_pages = 0
+        for batch in range(batch_size):
+            total_pages += ceildiv(
+                prompt_lens[batch] + cache_lens[batch], Self.page_size
+            )
+        var blocks = random_distinct(num_paged_blocks, total_pages)
 
+        var page_pos = 0
         for batch in range(batch_size):
             var seq_len = prompt_lens[batch] + cache_lens[batch]
 
             for block_idx in range(0, ceildiv(seq_len, Self.page_size)):
-                var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-                while randval in used_set:
-                    randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+                host_tensor[batch, block_idx] = UInt32(blocks[page_pos])
+                page_pos += 1
 
-                used_set.add(randval)
-                host_tensor[batch, block_idx] = UInt32(randval)
-
-        if ctx:
-            self.paged_lut.copy_to_device(ctx.value())
+        if case .Some(ctx) = ctx:
+            self.paged_lut.copy_to_device(ctx)
 
     @staticmethod
     def build(
@@ -192,7 +331,6 @@ struct PagedLookupTable[page_size: Int](Copyable):
         num_paged_blocks: Int,
         ctx: DeviceContext,
     ) raises -> Self:
-        @parameter
         def _to_list(idx_list: IndexList) -> List[Int]:
             var list = List[Int](capacity=idx_list.size)
             for i in range(idx_list.size):
@@ -212,3 +350,9 @@ struct PagedLookupTable[page_size: Int](Copyable):
 
     def device_tensor(self) -> type_of(self.paged_lut).tensor_type:
         return self.paged_lut.device_tensor()
+
+    def host_tile_tensor(self) -> type_of(self.paged_lut).tile_tensor_type:
+        return self.paged_lut.host_tile_tensor()
+
+    def device_tile_tensor(self) -> type_of(self.paged_lut).tile_tensor_type:
+        return self.paged_lut.device_tile_tensor()

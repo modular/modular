@@ -14,10 +14,11 @@
 from std.random import random_float64
 from std.itertools import product
 
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from max.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 # ========================== TILING CONFIGURATION ==========================
 comptime STENCIL_WIDTH = 7
@@ -28,10 +29,10 @@ comptime IN_TILE_DIM = OUT_TILE_DIM + ((STENCIL_WIDTH - 1) // STENCIL_ORDER)
 
 # ========================== KERNEL CODE (REGISTER TILING) ==========================
 def stencil_kernel(
-    d_in: UnsafePointer[Float32, MutAnyOrigin],
-    d_out: UnsafePointer[Float32, MutAnyOrigin],
-    d_c: UnsafePointer[Float32, MutAnyOrigin],  # Stencil coefficients
-    N: Int,
+    d_in: ImmPointer[Float32, ImmutAnyOrigin],
+    d_out: MutPointer[Float32, MutAnyOrigin],
+    d_c: ImmPointer[Float32, ImmutAnyOrigin],  # Stencil coefficients
+    n_dev: Int32,
 ):
     """3D stencil kernel with register tiling.
 
@@ -44,13 +45,15 @@ def stencil_kernel(
         d_in: Input 3D array (flattened).
         d_out: Output 3D array (flattened).
         d_c: Stencil coefficients [7] (center, k-1, k+1, j-1, j+1, i-1, i+1).
-        N: Dimension size (N x N x N).
+        n_dev: Dimension size (N x N x N).
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var N = Int(n_dev)
     # Allocate shared memory for ONE 2D plane (x-y neighbors)
-    var curr_in_s = stack_allocation[
+    var curr_in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Z-neighbors stored in REGISTERS (not shared memory)
@@ -148,10 +151,10 @@ def stencil_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_3d_stencil(
-    h_in: UnsafePointer[Float32, MutAnyOrigin],
-    h_out: UnsafePointer[Float32, MutAnyOrigin],
+    h_in: ImmPointer[Float32, _],
+    h_out: MutPointer[Float32, _],
     N: Int,
-    coeffs: UnsafePointer[Float32, MutAnyOrigin],
+    coeffs: ImmPointer[Float32, _],
 ):
     """CPU reference implementation of 3D stencil."""
     for i, j, k in product(range(N), range(N), range(N)):
@@ -184,7 +187,7 @@ def main() raises:
 
     # Define stencil coefficients
     # c[0] = center, c[1] = k-1, c[2] = k+1, c[3] = j-1, c[4] = j+1, c[5] = i-1, c[6] = i+1
-    var h_c = alloc[Float32](7)
+    var h_c = unsafe_alloc[Float32](7)
     h_c[0] = 1.0  # center
     h_c[1] = 1.0  # k-1
     h_c[2] = 1.0  # k+1
@@ -194,9 +197,9 @@ def main() raises:
     h_c[6] = 1.0  # i+1
 
     # Host memory allocation
-    var h_in = alloc[Float32](total_elements)
-    var h_out = alloc[Float32](total_elements)
-    var h_ref = alloc[Float32](total_elements)
+    var h_in = unsafe_alloc[Float32](total_elements)
+    var h_out = unsafe_alloc[Float32](total_elements)
+    var h_ref = unsafe_alloc[Float32](total_elements)
 
     # Initialize input with random values
     print("Initializing input data...")
@@ -260,11 +263,11 @@ def main() raises:
     print()
 
     # Launch kernel
-    ctx.enqueue_function_experimental[stencil_kernel](
+    ctx.enqueue_function[stencil_kernel](
         d_in,
         d_out,
         d_c,
-        N,
+        Int32(N),
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
     )
@@ -312,7 +315,7 @@ def main() raises:
         print("✗ FAILED: Found", errors, "errors")
 
     # Cleanup
-    h_in.free()
-    h_out.free()
-    h_ref.free()
-    h_c.free()
+    h_in.unsafe_free()
+    h_out.unsafe_free()
+    h_ref.unsafe_free()
+    h_c.unsafe_free()

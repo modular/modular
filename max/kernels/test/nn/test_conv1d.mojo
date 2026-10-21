@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, isclose
+from std.math import isclose
 from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.itertools import product
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout import lt_to_tt
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -59,62 +58,51 @@ def test[
 
     var conv_shape = ConvShape[1](
         n=N,
-        input_dims=Index(W),
-        output_dims=Index(WO),
-        filter_dims=Index(S),
+        input_dims=Coord(Index(W)),
+        output_dims=Coord(Index(WO)),
+        filter_dims=Coord(Index(S)),
         c=C,
         f=F,
-        stride=Index(stride),
-        dilation=Index(dilation),
-        pad_d=Index(0, 0),
-        pad_h=Index(0, 0),
-        pad_w=pad_w,
+        stride=Coord(Index(stride)),
+        dilation=Coord(Index(dilation)),
+        pad_d=Coord(Index(0, 0)),
+        pad_h=Coord(Index(0, 0)),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 
     var C_per_group = C // num_groups
 
-    var input_ptr = alloc[Scalar[dtype]](N * W * C)
-    var filter_ptr = alloc[Scalar[dtype]](S * C_per_group * F)
-    var output_ptr = alloc[Scalar[dtype]](N * WO * F)
-    var output_ref_ptr = alloc[Scalar[dtype]](N * WO * F)
+    var input_ptr = List(length=N * W * C, fill=Scalar[dtype](0))
+    var filter_ptr = List(length=S * C_per_group * F, fill=Scalar[dtype](0))
+    var output_ptr = List(length=N * WO * F, fill=Scalar[dtype](0))
+    var output_ref_ptr = List(length=N * WO * F, fill=Scalar[dtype](0))
 
-    rand[dtype](input_ptr, N * W * C)
-    rand[dtype](filter_ptr, S * C_per_group * F)
+    rand[dtype](input_ptr)
+    rand[dtype](filter_ptr)
 
     # Find the tile size used in packing.
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-
     # Buffers for direct conv.
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_4d = Layout.row_major[4]()
-    var input = LayoutTensor[dtype, layout_3d](
-        input_ptr, RuntimeLayout[layout_3d].row_major(Index(N, W, C))
-    )
-    var filter = LayoutTensor[dtype, layout_3d](
-        filter_ptr, RuntimeLayout[layout_3d].row_major(Index(S, C_per_group, F))
-    )
-    var packed_filter_shape = pack_conv_filter_shape(
-        lt_to_tt(filter), num_groups
-    )
 
-    var packed_filter_ptr = alloc[Scalar[dtype]](
-        packed_filter_shape.flattened_length()
+    var input = TileTensor(Span(input_ptr), row_major(Coord(Index(N, W, C))))
+    var filter = TileTensor(
+        Span(filter_ptr), row_major(Coord(Index(S, C_per_group, F)))
     )
-    var packed_filter = LayoutTensor[dtype, layout_4d](
-        packed_filter_ptr,
-        RuntimeLayout[layout_4d].row_major(packed_filter_shape),
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
+
+    var packed_filter_ptr = List(
+        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    var output = LayoutTensor[dtype, layout_3d](
-        output_ptr, RuntimeLayout[layout_3d].row_major(Index(N, WO, F))
+    var packed_filter = TileTensor(
+        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
     )
+    var output = TileTensor(Span(output_ptr), row_major(Coord(Index(N, WO, F))))
 
     comptime if filter_packed:
-        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -122,9 +110,9 @@ def test[
         dtype,
         dtype,
     ].run(
-        output_ref_ptr,
-        input_ptr,
-        filter_ptr,
+        output_ref_ptr.unsafe_ptr(),
+        input_ptr.unsafe_ptr(),
+        filter_ptr.unsafe_ptr(),
         Index(N, 1, 1, WO, F),  # output shape
         Index(N, 1, 1, W, C),  # input shape
         Index(1, 1, S, C // num_groups, F),  # filter shape
@@ -141,30 +129,26 @@ def test[
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_3d,
-            layout_4d,
-            layout_3d,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
-        ].run(output, input, packed_filter, conv_shape)
+        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_3d,
-            layout_3d,
-            layout_3d,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
-        ].run(output, input, filter, conv_shape)
-
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr.free()
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Check results, return on the first failed comparison.
     var idx = 0
@@ -182,16 +166,16 @@ def test[
             print("Test failed at index: ", Index(n, wo, f))
             print("Golden value: ", output_ref_ptr[idx])
             print("Actual value: ", output_ptr[idx])
-            output_ptr.free()
-            output_ref_ptr.free()
             return
         idx += 1
 
-    output_ptr.free()
-    output_ref_ptr.free()
-
     # CHECK: Succeed
     print("Succeed")
+    _ = output_ref_ptr^
+    _ = output_ptr^
+    _ = packed_filter_ptr^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

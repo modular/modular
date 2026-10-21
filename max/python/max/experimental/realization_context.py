@@ -18,8 +18,8 @@ exits. This is the default behavior.
 
 This has a huge concrete advantage over eagerly executing one operation
 at a time: by controlling the boundary of where the eager context starts
-and ends, we can give advanced users a tool to _enable fine-grained
-bounds for automatic fusion_!
+and ends, we can give advanced users a tool to *enable fine-grained
+bounds for automatic fusion*.
 
 In practice the easiest way to do this is to mark a function as
 `F.functional`. This function is then assumed to be "atomic" for the
@@ -45,20 +45,33 @@ in another Graph API usage.
 
 from __future__ import annotations
 
+import contextlib
 import functools
-import logging
-import os
 import weakref
-from contextvars import ContextVar
+from collections.abc import Callable, Generator
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from max import _core, driver, engine
-from max._core.dialects import builtin, rmo
+from max import _core, driver
+from max._core.dialects import builtin
+from max._mlir_context import in_default_mlir_context
+from max.driver._hazard import (
+    render_producer_error,
+    stamp_device_write,
+)
 from max.dtype import DType
 from max.experimental import _passes
-from max.experimental import functional as F
-from max.experimental.support import driver_tensor_type
+from max.experimental.executor import (
+    CompilingExecutor,
+    Executor,
+    InterpreterExecutor,
+    UnsupportedGraphError,
+    default_executor,
+)
+from max.experimental.support import (
+    SetterContext,
+    driver_tensor_type,
+)
 from max.experimental.tensor import (
     GraphValue,
     RealizationContext,
@@ -72,7 +85,6 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Graph,
-    Shape,
     Value,
     ops,
 )
@@ -82,69 +94,17 @@ if TYPE_CHECKING:
 
 Ex = TypeVar("Ex", bound=BaseException)
 
-_SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
 _SEED: Tensor | None = None
-
-# Environment variable to control interpreter usage.
-# Set to "0" or "false" to disable the interpreter (always compile).
-_USE_INTERPRETER_ENV_VAR = "MAX_USE_EAGER_INTERPRETER"
-
-# Environment variable to control the maximum number of dispatchable ops
-# for which the interpreter is preferred over the graph compiler.
-# Graphs with more ops than this threshold are compiled so the graph
-# compiler can apply fusion.
-# Benchmarks (CPU & A10G GPU, [64,64] f32 tensors) show the interpreter
-# is 7-10x faster than the compiler for up to 10 user-visible ops.
-# 30 dispatchable IR ops covers ~5 user-visible ops.
-_INTERPRETER_MAX_OPS_ENV_VAR = "MAX_INTERPRETER_MAX_OPS"
-_DEFAULT_INTERPRETER_MAX_OPS = 30
-
-
-def _default_use_interpreter() -> bool:
-    """Get the default value for use_interpreter from environment.
-
-    The interpreter is **enabled by default** for small graphs.  Set
-    ``MAX_USE_EAGER_INTERPRETER=0`` or ``false`` to force compilation.
-
-    Returns:
-        True if interpreter should be used by default, False otherwise.
-    """
-    env_value = os.environ.get(_USE_INTERPRETER_ENV_VAR, "").lower()
-    return env_value not in ("0", "false")
-
-
-def _interpreter_max_ops() -> int:
-    """Get the maximum dispatchable-op count for interpreter execution.
-
-    Reads ``MAX_INTERPRETER_MAX_OPS`` from the environment.  Graphs with
-    more dispatchable ops than this value fall through to the graph
-    compiler so fusion optimizations can kick in.
-
-    Returns:
-        The op-count threshold (default 30).
-    """
-    raw = os.environ.get(_INTERPRETER_MAX_OPS_ENV_VAR, "")
-    if raw.strip().isdigit():
-        return int(raw.strip())
-    return _DEFAULT_INTERPRETER_MAX_OPS
 
 
 def seed() -> Tensor:
-    """Gets the global random seed tensor.
-
-    Returns the global seed tensor used for random number generation in eager
-    execution mode. Creates the seed tensor on first access, initialized with
-    the dtype, shape, and device specified by :obj:`max.graph.ops.random.SeedType`.
-
-    Returns:
-        Tensor: The global seed tensor for random number generation.
-    """
+    """Gets the global random seed tensor used in eager execution mode."""
     global _SEED
     if _SEED is None:
-        SeedType = ops.random.SeedType
-        shape = [int(d) for d in SeedType.shape]
+        seed_type = ops.random.SeedType(DeviceRef.CPU())
+        shape = [int(d) for d in seed_type.shape]
         seed_data = driver.Buffer(
-            SeedType.dtype, shape, SeedType.device.to_device()
+            seed_type.dtype, shape, seed_type.device.to_device()
         )
         _SEED = Tensor(storage=seed_data)
     return _SEED
@@ -162,81 +122,65 @@ def set_seed(value: int) -> None:
     seed().driver_tensor[0] = value
 
 
-def _session() -> engine.api.InferenceSession:
-    """A single global inference session for compiling and running kernels on tensors."""
-    device_specs = driver.scan_available_devices()
-    if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
-        device_specs.append(cpu)
-    devices = driver.load_devices(device_specs)
-    if not (session := _SESSION.get(None)):
-        _SESSION.set(session := engine.api.InferenceSession(devices=devices))
-    return session
-
-
 # ─── Shared signal-buffer cache (allocated once per device set) ──────────
 
 
-# maxsize=4: one entry per unique device-set configuration.  Most users
-# have a single configuration; testing may use a few more.  On eviction
-# the next call re-allocates (expensive but correct).
+def _signal_bytes() -> int:
+    """Returns the size in bytes of one signal buffer."""
+    # Imported here because ``max.nn`` depends on this package.
+    from max.nn.comm.allreduce import (  # type: ignore[import-not-found]
+        Signals,
+    )
+
+    return Signals.NUM_BYTES
+
+
+def _allocate_signals(device_ids: tuple[int, ...]) -> list[driver.Buffer]:
+    """Allocates and initializes one signal buffer per device."""
+    from max.nn.comm.allreduce import Signals
+
+    return Signals.allocate([driver.Accelerator(id=i) for i in device_ids])
+
+
+def _signal_buffer_types(device_ids: tuple[int, ...]) -> list[BufferType]:
+    """Returns the graph input types of the signal buffers of ``device_ids``.
+
+    This allocates nothing. A graph declares the signal buffers as inputs
+    when it is built, which may happen on a machine without the devices.
+    """
+    return [
+        BufferType(
+            dtype=DType.uint8,
+            shape=(_signal_bytes(),),
+            device=DeviceRef.GPU(id=i),
+        )
+        for i in device_ids
+    ]
+
+
+# One entry per set of devices. Most programs use one set; tests may use a
+# few. An evicted entry is allocated again on the next call.
 @functools.lru_cache(maxsize=4)
 def _cached_signal_buffers(
     device_ids: tuple[int, ...],
 ) -> tuple[list[driver.Buffer], list[BufferType]]:
-    """Returns (runtime_buffers, buffer_types) for the given GPU device IDs.
+    """Returns the signal buffers and their types for the given devices.
 
-    Signal buffers are 513 MB each — far too expensive to re-allocate per
-    eager graph.  ``lru_cache`` ensures they are allocated once for each
-    unique device set and reused for all subsequent graphs.
-
-    Using ``lru_cache`` on an immutable key (tuple of ints) is thread-safe
-    and avoids mutable module-level state.  In pytest-xdist each worker is
-    a separate process, so there are no cross-worker conflicts.
+    Signal buffers are large, so they are allocated once per set of devices
+    and shared by every graph that runs on those devices.
     """
-    # Signal buffers: 1 MB signal + 512 MB communication scratch per GPU.
-    # Must stay in sync with the Mojo ``Signal`` struct size.
-    _NUM_BYTES = (1 + 512) * 1024 * 1024
-
-    try:
-        driver.enable_all_peer_access()
-    except RuntimeError:
-        logging.getLogger(__name__).warning(
-            "Failed to enable peer-to-peer GPU access. "
-            "Collective operations will fall back to slower paths."
-        )
-
-    accelerators = [driver.Accelerator(id=i) for i in device_ids]
-    runtime_bufs = [
-        driver.Buffer.zeros(
-            shape=(_NUM_BYTES,), dtype=DType.uint8, device=accel
-        )
-        for accel in accelerators
-    ]
-    for accel in accelerators:
-        accel.synchronize()
-
-    buf_types = [
-        BufferType(
-            dtype=DType.uint8, shape=(_NUM_BYTES,), device=DeviceRef.GPU(id=i)
-        )
-        for i in device_ids
-    ]
-    return runtime_bufs, buf_types
+    return _allocate_signals(device_ids), _signal_buffer_types(device_ids)
 
 
 def _make_unrealized(
     ctx: RealizationContext,
     values: tuple[GraphValue, ...],
     mapping: DeviceMapping | None,
-    global_shape: Shape | None,
 ) -> Tensor:
     """Wraps graph values into a Tensor, dispatching to sharded constructor if needed."""
     state = RealizationState(values, ctx)
     if mapping is not None and mapping.mesh.num_devices > 1:
-        placements = mapping.to_placements()
-        return Tensor._from_unrealized_shards(
-            state, mapping.mesh, placements, global_shape
-        )
+        return Tensor._from_unrealized_shards(state, mapping)
     return Tensor(state=state)
 
 
@@ -259,20 +203,41 @@ class EagerRealizationContext(RealizationContext):
     #: Signal buffer graph values for multi-device collectives (lazily created).
     signal_buffers: list[BufferValue] | None
 
-    def __init__(self, use_interpreter: bool | None = None):
-        # When use_interpreter is None (the default), the op-count threshold
-        # gates whether the interpreter is used.  When the caller explicitly
-        # passes True, the threshold is bypassed so the interpreter is always
-        # attempted (falling back only on truly unsupported ops).
-        self._auto_interpreter = use_interpreter is None
-        if use_interpreter is None:
-            use_interpreter = _default_use_interpreter()
-        self._use_interpreter = use_interpreter
+    def __init__(
+        self,
+        executor: Executor | None = None,
+        *,
+        use_interpreter: bool | None = None,
+    ):
+        """Initializes the context.
+
+        Args:
+            executor: Executor used to run the finalized graph.  ``None``
+                resolves to
+                :func:`~max.experimental.executor.default_executor` at
+                construction time.
+            use_interpreter: Deprecated.  Selects an executor for backward
+                compatibility when ``executor`` is not given: ``True`` forces
+                the interpreter for any graph the interpreter accepts (runtime
+                errors propagate), ``False`` forces compilation, and ``None``
+                uses the default executor.
+        """
+        if executor is not None:
+            self._executor: Executor = executor
+        elif use_interpreter is None:
+            self._executor = default_executor()
+        elif use_interpreter:
+            self._executor = InterpreterExecutor(max_ops=None)
+        else:
+            self._executor = CompilingExecutor()
         self.sources = {}
         self.source_values = {}
         self.unrealized = []
         self.signal_buffers = None
 
+        # Inherits process-global default custom extensions (see
+        # max.graph.default_custom_extensions), so a backend's kernel overlays
+        # are reachable by ops staged for eager realization.
         self.graph = Graph("main", input_types=[])
 
         with realization_context(self), self.graph:
@@ -281,9 +246,8 @@ class EagerRealizationContext(RealizationContext):
     def finalize_graph(self) -> tuple[list[Tensor], Graph]:
         """Finalizes the computation graph for execution.
 
-        Prepares the graph for compilation by setting outputs, removing dead
-        code and unused arguments, and replacing static shapes with symbolic
-        parameters. This method is called internally before graph execution.
+        Prepares the graph for execution by setting outputs, lowering RMO
+        ops, and removing dead code and unused arguments.
 
         Returns:
             tuple[list[Tensor], Graph]: A tuple containing the list of output
@@ -304,30 +268,22 @@ class EagerRealizationContext(RealizationContext):
                 s._graph_value for t in outputs for s in t.local_shards
             ]
             self.graph.output(*flat_values)
-        # Remove dead values and inputs
-        module: builtin.ModuleOp = _core.Operation._from_cmlir(
-            self.graph._module.operation
-        )  # type: ignore
-        # Remove sources that no longer exist from the graph
-        _core.lower(
-            module,
-            [
-                builtin.passes.RemoveDeadValuesPass(),
-                rmo.passes.LegalizeRMOOps(),
-            ],
-        )
+        _core.lower(self.graph._module, [builtin.passes.RemoveDeadValuesPass()])
         # The graph symbol is public, so RemoveDeadValues won't remove
         # unused arguments. Do that explicitly.
         _passes.remove_unused_arguments(self.graph)
         return outputs, self.graph
 
+    # Lazy realize fires after the surrounding `with` exits — re-enter on bg threads.
+    @in_default_mlir_context
     async def realize_all(self) -> list[Tensor]:
         """Compiles and executes the computation graph, realizing all tensors.
 
-        Finalizes the computation graph, compiles it using the inference
-        session, and executes it to produce concrete values for all pending
-        (unrealized) tensors. After execution, all tensors tracked by this
-        context will have their data in memory.
+        Finalizes the computation graph, passes it to the bound
+        :class:`~max.experimental.executor.Executor`, and applies the results
+        to produce concrete values for all pending (unrealized) tensors. After
+        execution, all tensors tracked by this context will have their data in
+        memory.
 
         Returns:
             list[Tensor]: The list of realized output tensors (excluding the
@@ -343,51 +299,36 @@ class EagerRealizationContext(RealizationContext):
 
         outputs, graph = self.finalize_graph()
 
-        # Execute graph via interpreter or compilation.
-        # The interpreter is faster for small graphs where fusion has no
-        # benefit; larger graphs are compiled so the graph compiler can
-        # fuse and optimize across ops.  The op-count threshold only
-        # applies when the interpreter was auto-selected (not explicitly
-        # requested by the caller).
-        use_interpreter = self._use_interpreter
-        # Signal-buffer graphs contain collective ops the interpreter can't run.
-        if self.signal_buffers:
-            use_interpreter = False
-        if use_interpreter:
-            from max._interpreter import MOInterpreter
-
-            interp = MOInterpreter()
-            max_ops = _interpreter_max_ops() if self._auto_interpreter else None
-            if not interp.can_execute(graph, max_ops=max_ops):
-                use_interpreter = False
-
         # All graph inputs (tensor data + signal buffers) go through
         # self.sources — signal buffers are registered there by
         # ensure_signal_buffers().
-        input_buffers = [
-            self.sources[inp._mlir_value].driver_tensor for inp in graph.inputs
-        ]
+        input_buffers: list[driver.Buffer] = []
+        mutated_inputs: list[driver.Buffer] = []
+        # graph.inputs excludes what remove_unused_arguments dropped.
+        for inp in graph.inputs:
+            buffer = self.sources[inp._mlir_value].driver_tensor
+            input_buffers.append(buffer)
+            if isinstance(inp, BufferValue):
+                mutated_inputs.append(buffer)
 
-        if use_interpreter:
-            if self._auto_interpreter:
-                try:
-                    results = interp.execute(graph, input_buffers)
-                except Exception:
-                    logging.getLogger("max.experimental").debug(
-                        "Interpreter failed, falling back to graph compiler",
-                        exc_info=True,
-                    )
-                    use_interpreter = False
-            else:
-                results = interp.execute(graph, input_buffers)
-        if not use_interpreter:
-            model = _session().load(graph)
-            results = model(*input_buffers)
+        try:
+            results = self._executor.execute(graph, input_buffers)
+        except UnsupportedGraphError:
+            # Nothing was enqueued, so nothing needs poisoning.
+            raise
+        except BaseException as executor_error:
+            # Enqueued work can still land in a mutated source.
+            stamp_device_write(
+                mutated_inputs,
+                error=render_producer_error(executor_error),
+            )
+            raise
 
         # Update tensors to realized.
         # Each tensor consumes num_shards consecutive results (1 for
         # unsharded, N for sharded).
         result_idx = 0
+        written = list(mutated_inputs)
         for tensor in outputs:
             n = tensor.num_shards
             extracted = results[result_idx : result_idx + n]
@@ -399,6 +340,7 @@ class EagerRealizationContext(RealizationContext):
             tensor._storages = tuple(cast(list[driver.Buffer], extracted))
             tensor._state = None
             result_idx += n
+            written.extend(tensor._storages)
 
         # Update mutated buffer inputs to realized
         for source in self.sources.values():
@@ -406,6 +348,10 @@ class EagerRealizationContext(RealizationContext):
             # Mark the tensor as realized again.
             if source._state and source._state.ctx is self:
                 source._state = None
+
+        # Must precede the seed read below, which is a host read of one of
+        # these buffers.
+        stamp_device_write(written, input_buffers)
 
         new_seed, *outputs = outputs
         set_seed(new_seed.item())
@@ -472,10 +418,9 @@ class EagerRealizationContext(RealizationContext):
         values: tuple[GraphValue, ...],
         *,
         mapping: DeviceMapping | None = None,
-        global_shape: Shape | None = None,
     ) -> Tensor:
         """Creates an unrealized tensor backed by graph value(s)."""
-        tensor = _make_unrealized(self, values, mapping, global_shape)
+        tensor = _make_unrealized(self, values, mapping)
         self.unrealized.append(weakref.ref(tensor))
         return tensor
 
@@ -489,7 +434,7 @@ class EagerRealizationContext(RealizationContext):
         resulting ``BufferValue`` list so subsequent collectives in the
         same graph reuse the same buffers.
 
-        The runtime ``driver.Buffer`` objects (513 MB each) are allocated
+        The runtime ``driver.Buffer`` objects (1025 MB each) are allocated
         once per device set via :func:`_cached_signal_buffers` and shared
         across all eager contexts to avoid repeated allocation.
 
@@ -510,7 +455,7 @@ class EagerRealizationContext(RealizationContext):
         if len(gpu_ids) < 2:
             return None
 
-        # Get or allocate shared runtime buffers (expensive — 513 MB each).
+        # Get or allocate shared runtime buffers (expensive — 1+256 MB each).
         runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
 
         # Add signal buffer types as new graph inputs (per-graph, cheap).
@@ -538,6 +483,8 @@ class EagerRealizationContext(RealizationContext):
     ):
         self.graph.__exit__(exception_type, exception, traceback)
         if not exception:
+            from max.experimental import functional as F
+
             F._run(self.realize_all())
 
 
@@ -564,6 +511,12 @@ class LazyRealizationContext(EagerRealizationContext):
         assert c.real
     """
 
+    #: Subgraph dedup table; armed per instance by ``lazy()``.
+    subgraph_cache: dict[Any, Any] | None = None
+    #: Output tree structure per keyed subgraph (see
+    #: :attr:`GraphRealizationContext.subgraph_out_defs`).
+    subgraph_out_defs: dict[str, Any] = {}
+
     def __exit__(
         self,
         exception_type: type[Ex] | None,
@@ -577,14 +530,11 @@ class GraphRealizationContext(RealizationContext):
     """A realization context for ahead-of-time graph compilation.
 
     This context is used when building computation graphs that will be compiled
-    and executed later (e.g., during :meth:`~max.experimental.nn.Module.compile`). Tensors in this
+    and executed later (such as during :meth:`~max.experimental.nn.Module.compile`). Tensors in this
     context remain as symbolic graph values and cannot be realized.
 
     Unlike eager contexts, this context does not support executing operations
     immediately. Attempting to realize tensors will raise a TypeError.
-
-    Attributes:
-        graph: The graph being constructed in this context.
 
     Example::
 
@@ -597,12 +547,22 @@ class GraphRealizationContext(RealizationContext):
     """
 
     graph: Graph
+    """The graph being constructed in this context."""
     signal_buffers: list[BufferValue] | None
+    #: Subgraph dedup table; armed by the root trace, ``None`` inlines.
+    subgraph_cache: dict[Any, Any] | None
+    #: Output tree structure per keyed subgraph, so a caller that reuses a
+    #: cached subgraph (skipping its body trace) can still rebuild the call's
+    #: results. Keyed by the same dedup key as :attr:`subgraph_cache`.
+    subgraph_out_defs: dict[str, Any]
+    #: What names here are relative to: the enclosing call's prefix, or ``""``.
+    prefix: str
 
     def __init__(
         self,
         graph: Graph,
         signal_buffers: list[BufferValue] | None = None,
+        prefix: str = "",
     ):
         """Initializes the graph realization context.
 
@@ -610,9 +570,13 @@ class GraphRealizationContext(RealizationContext):
             graph: The graph to construct operations in.
             signal_buffers: GPU signal buffer graph values for
                 multi-device collective ops.
+            prefix: What names recorded in this graph are relative to.
         """
         self.graph = graph
         self.signal_buffers = signal_buffers
+        self.subgraph_cache = None
+        self.subgraph_out_defs = {}
+        self.prefix = prefix
 
     async def realize_all(self) -> list[Tensor]:
         """Raises TypeError - graph contexts cannot realize tensors.
@@ -646,10 +610,9 @@ class GraphRealizationContext(RealizationContext):
         values: tuple[GraphValue, ...],
         *,
         mapping: DeviceMapping | None = None,
-        global_shape: Shape | None = None,
     ) -> Tensor:
         """Creates a tensor backed by graph value(s)."""
-        return _make_unrealized(self, values, mapping, global_shape)
+        return _make_unrealized(self, values, mapping)
 
     def __enter__(self):
         self.graph.__enter__()
@@ -662,3 +625,108 @@ class GraphRealizationContext(RealizationContext):
         traceback: TracebackType | None,
     ):
         self.graph.__exit__(exception_type, exception, traceback)
+
+
+def in_graph_context() -> bool:
+    """Returns ``True`` when executing inside a :class:`~max.graph.Graph` context."""
+    try:
+        _ = Graph.current
+    except LookupError:
+        return False
+    return True
+
+
+_DEFAULT_REALIZATION_CONTEXT: Callable[[], RealizationContext] = (
+    EagerRealizationContext
+)
+
+
+def default_realization_context() -> RealizationContext:
+    """Constructs a context for ops realized outside any explicit context."""
+    return _DEFAULT_REALIZATION_CONTEXT()
+
+
+def _set_default_realization_context_raw(
+    fn: Callable[[], RealizationContext],
+) -> None:
+    global _DEFAULT_REALIZATION_CONTEXT
+    _DEFAULT_REALIZATION_CONTEXT = fn
+
+
+def set_default_realization_context(
+    fn: Callable[[], RealizationContext],
+) -> SetterContext[Callable[[], RealizationContext]]:
+    """Sets the constructor used by :func:`default_realization_context`.
+
+    The set takes effect immediately. The returned
+    :class:`~max.experimental.support.SetterContext` may be used as a
+    context manager to restore the previous constructor on exit, or
+    discarded to keep the new one.
+
+    Args:
+        fn: A zero-argument callable returning a new realization context,
+            invoked each time an op realizes outside any explicit context.
+
+    Returns:
+        An undo handle restoring the previously installed constructor.
+    """
+    previous = _DEFAULT_REALIZATION_CONTEXT
+    _set_default_realization_context_raw(fn)
+    return SetterContext(fn, previous, _set_default_realization_context_raw)
+
+
+@contextlib.contextmanager
+def ensure_context() -> Generator[None]:
+    """Ensures a realization context exists for Tensor / TensorValue conversion."""
+    if current_realization_context(None) is not None:
+        yield
+        return
+    ctx: RealizationContext = (
+        GraphRealizationContext(Graph.current)
+        if in_graph_context()
+        else default_realization_context()
+    )
+    with ctx, realization_context(ctx):
+        yield
+
+
+@contextlib.contextmanager
+def lazy() -> Generator[None]:
+    """Defers tensor realization until explicitly awaited."""
+    with LazyRealizationContext() as ctx, realization_context(ctx):
+        # Arm subgraph dedup: a lazy block builds one graph, like compile.
+        ctx.subgraph_cache = {}
+        ctx.subgraph_out_defs = {}
+        yield
+
+
+def subgraph_context() -> (
+    GraphRealizationContext | LazyRealizationContext | None
+):
+    """The context a subgraph would be defined on here, or what inlines instead.
+
+    Returns:
+        The root trace context when one is capturing and armed for
+        deduplication, and :obj:`None` when a body belongs inline.
+    """
+    ctx = current_realization_context(None)
+    if (
+        isinstance(ctx, (GraphRealizationContext, LazyRealizationContext))
+        and ctx.subgraph_cache is not None
+    ):
+        return ctx
+    return None
+
+
+__all__ = [
+    "EagerRealizationContext",
+    "GraphRealizationContext",
+    "LazyRealizationContext",
+    "default_realization_context",
+    "ensure_context",
+    "in_graph_context",
+    "lazy",
+    "seed",
+    "set_default_realization_context",
+    "set_seed",
+]

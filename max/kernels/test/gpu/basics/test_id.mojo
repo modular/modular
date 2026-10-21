@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, global_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, global_idx, thread_idx
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 comptime buffer_size = 1024
@@ -20,14 +20,14 @@ comptime block_dim = 32
 
 
 def test_fill_thread_idx(ctx: DeviceContext) raises:
-    var output_host = alloc[Scalar[DType.int]](buffer_size)
-    var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
+    var output_host = ctx.enqueue_create_host_buffer[.int](buffer_size)
+    var output_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
-    def kernel(output: UnsafePointer[Scalar[DType.int], MutAnyOrigin]):
-        output[global_idx.x] = Scalar[DType.int](thread_idx.x)
+    def kernel(output: MutPointer[Int, MutAnyOrigin]):
+        output[global_idx.x] = thread_idx.x
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_buffer,
         grid_dim=buffer_size // block_dim,
         block_dim=block_dim,
@@ -38,20 +38,18 @@ def test_fill_thread_idx(ctx: DeviceContext) raises:
 
     for i in range(0, buffer_size, block_dim):
         for j in range(block_dim):
-            assert_equal(output_host[i + j], Scalar[DType.int](j))
-
-    output_host.free()
+            assert_equal(output_host[i + j], Int(j))
 
 
 def test_fill_block_idx(ctx: DeviceContext) raises:
-    var output_host = alloc[Scalar[DType.int]](buffer_size)
-    var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
+    var output_host = ctx.enqueue_create_host_buffer[.int](buffer_size)
+    var output_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
-    def kernel(output: UnsafePointer[Scalar[DType.int], MutAnyOrigin]):
-        output[global_idx.x] = Scalar[DType.int](block_idx.x)
+    def kernel(output: MutPointer[Int, MutAnyOrigin]):
+        output[global_idx.x] = block_idx.x
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_buffer,
         grid_dim=buffer_size // block_dim,
         block_dim=block_dim,
@@ -62,9 +60,7 @@ def test_fill_block_idx(ctx: DeviceContext) raises:
 
     for i in range(0, buffer_size, block_dim):
         for j in range(block_dim):
-            assert_equal(output_host[i + j], Scalar[DType.int](i // block_dim))
-
-    output_host.free()
+            assert_equal(output_host[i + j], Int(i // block_dim))
 
 
 def main() raises:

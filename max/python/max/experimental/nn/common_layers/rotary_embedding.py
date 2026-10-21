@@ -13,10 +13,10 @@
 """The rope embedding used within the model."""
 
 import math
-from collections.abc import Iterable
 from functools import cached_property
+from typing import Any
 
-from max.driver import Device
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
@@ -66,11 +66,17 @@ class RotaryEmbedding(Module[..., Tensor]):
         """
         n = self.head_dim
 
-        # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
-        # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
-        iota = F.arange(0, n, step=2, dtype=DType.float64, device=self.device)
-        inv_freq = F.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
+        # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n)
+        # where n is dim for each head.
+        # Notes:
+        # 1. Use float64 to avoid an overflow on the exponential, will be
+        #    converted back to float32.
+        # 2. Force creation on CPU(), instead of the default device.
+        #    This value is generally transferred to all GPUs in the graph, so
+        #    creating on CPU() avoids GPU->GPU transfers.
+        iota = F.arange(0, n, step=2, dtype=DType.float64, device=CPU())
 
+        inv_freq = F.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
         return inv_freq
 
     def freqs_cis_base(self) -> Tensor:
@@ -88,7 +94,7 @@ class RotaryEmbedding(Module[..., Tensor]):
 
             # Generate position ids [0, 1, ..., max_seq_len*2] for a sequence of length (max_seq_len*2).
             t = F.arange(
-                0, self.max_seq_len * 2, device=self.device, dtype=DType.float32
+                0, self.max_seq_len * 2, device=CPU(), dtype=DType.float32
             )
             # Rotation matrix for block i =  [cos(m*theta_i) -sin(m*theta_i); sin(m*theta_i) -cos(m*theta_i)] for each position_id m.
             freqs = F.outer(t, inv_freqs)  # [max_seq_len*2, head_dim // 2]
@@ -113,14 +119,16 @@ class RotaryEmbedding(Module[..., Tensor]):
         n = self.head_dim
         return user_scale if user_scale is not None else math.sqrt(1.0 / n)
 
-    @property
-    def local_parameters(self) -> Iterable[tuple[str, Tensor]]:
-        """Override the local_parameters property to return an empty list.
+    def __tree_flatten__(self) -> tuple[dict[Any, Any], None]:
+        """Excludes the cached ``freqs_cis`` from the children.
 
-        This is to avoid `freqs_cis` being included in the parameters of the
-        module.
+        It is computed from the module's configuration rather than loaded
+        from a checkpoint, so it is not a parameter.
         """
-        return []
+        children, meta = super().__tree_flatten__()
+        for cached in ("freqs_cis", "_freqs_cis"):
+            children.pop(cached, None)
+        return children, meta
 
     def forward(
         self,

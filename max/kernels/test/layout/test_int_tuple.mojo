@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from layout.coord import Coord, Idx
 from layout.int_tuple import *
 from layout.int_tuple import abs  # override builtin abs and min
 from std.testing import assert_equal, assert_false, assert_true, assert_raises
@@ -81,8 +82,8 @@ def test_tuple_slicing() raises:
     print("== test_tuple_slicing")
 
     comptime tr = IntTuple(0, 1, 2, 3, 4)
-    comptime sl0 = String(tr[-1])
-    comptime sl1 = String(tr[-2])
+    comptime sl0 = String(tr[len(tr) - 1])
+    comptime sl1 = String(tr[len(tr) - 2])
     comptime sl2 = String(tr[1:4])
     comptime sl3 = String(tr[1:5:2])
     comptime sl4 = String(tr[:])
@@ -178,6 +179,29 @@ def test_sorted() raises:
     assert_equal(String(t2), "((1, (5, 0)), (7, 3))")
 
     assert_true(IntTuple(4, 6, 8) < IntTuple(5, 6, 7))
+
+
+def test_apply() raises:
+    print("== test_apply")
+
+    def double(x: Int) {} -> Int:
+        return x * 2
+
+    assert_equal(apply(IntTuple(1, 2, 3), double), IntTuple(2, 4, 6))
+    assert_equal(
+        apply(IntTuple(1, IntTuple(2, 3), 4), double),
+        IntTuple(2, IntTuple(4, 6), 8),
+    )
+
+    var offset = 10
+
+    def add_offset(x: Int) {imm} -> Int:
+        return x + offset
+
+    assert_equal(
+        apply(IntTuple(1, IntTuple(2, 3)), add_offset),
+        IntTuple(11, IntTuple(12, 13)),
+    )
 
 
 def test_product() raises:
@@ -428,17 +452,17 @@ def test_iter() raises:
     var it = iter(a)
 
     assert_equal(it.bounds()[0], 2)
-    assert_equal(it.bounds()[1].value(), 2)
+    assert_equal(it.bounds()[1], Optional(2))
 
     assert_equal(Int(next(it)), 2)
 
     assert_equal(it.bounds()[0], 1)
-    assert_equal(it.bounds()[1].value(), 1)
+    assert_equal(it.bounds()[1], Optional(1))
 
     assert_equal(Int(next(it)), 3)
 
     assert_equal(it.bounds()[0], 0)
-    assert_equal(it.bounds()[1].value(), 0)
+    assert_equal(it.bounds()[1], Optional(0))
 
     with assert_raises():
         _ = next(it)  # raises StopIteration
@@ -495,12 +519,22 @@ def test_value_nested_tuple() raises:
     assert_equal(Int(stride[1]), 1)
 
 
+def test_coord_to_int_tuple_conversion() raises:
+    """`Coord` round-trips to `IntTuple` preserving nested structure."""
+    var t = Coord(Coord(Idx[2], Idx[3]), Idx[4])
+    var t2 = coord_to_int_tuple(t)
+    assert_equal(t2[0][0], 2)
+    assert_equal(t2[0][1], 3)
+    assert_equal(t2[1], 4)
+
+
 def main() raises:
     test_tuple_basic()
     test_tuple_slicing()
     test_tuple_basic_ops()
     test_sorted()
 
+    test_apply()
     test_product()
     test_inner_product()
     test_shape_div()
@@ -520,3 +554,5 @@ def main() raises:
 
     test_iter()
     test_value_nested_tuple()
+
+    test_coord_to_int_tuple_conversion()

@@ -14,12 +14,12 @@
 
 import numpy as np
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     InputScaleSpec,
     QuantConfig,
@@ -29,13 +29,12 @@ from max.nn import (
 )
 from max.nn.attention.attention_with_rope import AttentionWithRope
 from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
     KVCacheParams,
-    PagedCacheValues,
+    MHAKVCacheParams,
 )
 from max.nn.quant_config import WeightScaleSpec
 from max.nn.rotary_embedding import RotaryEmbedding
-from test_common.context_utils import create_text_context
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
 def _create_fp8_weights(
@@ -78,16 +77,9 @@ def _create_fp8_weights(
     )
 
 
-def _create_kv_manager(
-    batch_size: int,
-    seq_len: int,
-    num_kv_heads: int,
-    head_dim: int,
-    device: Accelerator,
-    gpu_session: InferenceSession,
-) -> tuple[PagedKVCacheManager, KVCacheParams]:
-    """Create and configure the KV cache manager."""
-    kv_params = KVCacheParams(
+def _create_kv_params(num_kv_heads: int, head_dim: int) -> MHAKVCacheParams:
+    """Describe the KV cache page layout for the attention layer."""
+    return MHAKVCacheParams(
         dtype=DType.bfloat16,
         page_size=128,
         n_kv_heads=num_kv_heads,
@@ -95,15 +87,6 @@ def _create_kv_manager(
         num_layers=1,
         devices=[DeviceRef.GPU()],
     )
-
-    manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=gpu_session,
-        max_batch_size=128,
-    )
-
-    return manager, kv_params
 
 
 def _create_attention_state_dict(
@@ -172,7 +155,6 @@ def _create_attention_state_dict(
 def _build_and_execute_attention_graph(
     attention: AttentionWithRope,
     rope: RotaryEmbedding,
-    kv_manager: PagedKVCacheManager,
     kv_params: KVCacheParams,
     batch_size: int,
     seq_len: int,
@@ -183,7 +165,7 @@ def _build_and_execute_attention_graph(
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
     kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-    dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
+    dispatch_metadata_symbol = kv_symbolic_inputs.attention_dispatch_metadata
     assert dispatch_metadata_symbol is not None
 
     # Prepare input data
@@ -212,31 +194,15 @@ def _build_and_execute_attention_graph(
                 shape=["row_offsets_length"],
                 device=DeviceRef.GPU(),
             ),
-            *kv_symbolic_inputs,
+            *tree.leaves(kv_symbolic_inputs),
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-        (
-            x,
-            input_row_offsets,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            max_lengths,
-            attention_dispatch_metadata,
-        ) = graph.inputs
+        x, input_row_offsets, *kv_inputs = graph.inputs
 
-        kv_collection = PagedCacheValues(
-            blocks.buffer,
-            cache_lengths.tensor,
-            lookup_table.tensor,
-            max_lengths.tensor,
-            dispatch_metadata=AttentionDispatchMetadata(
-                attention_dispatch_metadata.tensor
-            ),
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
         output = attention(
             layer_idx=layer_idx.tensor,
             x=x.tensor,
@@ -257,20 +223,15 @@ def _build_and_execute_attention_graph(
         torch.from_numpy(input_row_offsets_data)
     ).to(device)
 
-    # Set up KV cache batch
-    batch = [create_text_context(np.empty(seq_len)) for _ in range(batch_size)]
-
-    for context in batch:
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
-
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, [seq_len] * batch_size, total_num_pages=8
+    )
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     result = model.execute(
         input_tensor,
         input_row_offsets_tensor,
-        *kv_runtime_inputs,
+        *tree.leaves(kv_runtime_inputs),
     )[0]
 
     return torch.from_dlpack(result)
@@ -316,9 +277,7 @@ def test_attention_with_rope_fp8_amd_static(
         max_seq_len=seq_len * 2,
     )
 
-    kv_manager, kv_params = _create_kv_manager(
-        batch_size, seq_len, num_kv_heads, head_dim, device, gpu_session
-    )
+    kv_params = _create_kv_params(num_kv_heads, head_dim)
 
     # Create AttentionWithRope layer with quant_config
     attention = AttentionWithRope(
@@ -355,7 +314,6 @@ def test_attention_with_rope_fp8_amd_static(
     result_torch = _build_and_execute_attention_graph(
         attention,
         rope,
-        kv_manager,
         kv_params,
         batch_size,
         seq_len,
@@ -409,9 +367,7 @@ def test_attention_with_rope_fp8_amd_dynamic(
         max_seq_len=seq_len * 2,
     )
 
-    kv_manager, kv_params = _create_kv_manager(
-        batch_size, seq_len, num_kv_heads, head_dim, device, gpu_session
-    )
+    kv_params = _create_kv_params(num_kv_heads, head_dim)
 
     # Create AttentionWithRope layer with dynamic quant_config
     attention = AttentionWithRope(
@@ -448,7 +404,6 @@ def test_attention_with_rope_fp8_amd_dynamic(
     result_torch = _build_and_execute_attention_graph(
         attention,
         rope,
-        kv_manager,
         kv_params,
         batch_size,
         seq_len,

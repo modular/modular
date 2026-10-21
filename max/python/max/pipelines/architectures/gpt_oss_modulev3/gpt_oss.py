@@ -20,6 +20,7 @@ import functools
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
+from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
@@ -31,9 +32,10 @@ from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheParamInterface,
-    PagedCacheValues,
-    unflatten_ragged_attention_inputs,
+    KVCacheParams,
+    MultiKVCacheParams,
 )
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import GptOssAttention
 from .layers.moe import GptOssMoE
@@ -43,7 +45,10 @@ from .model_config import GptOssConfig
 
 
 class GptOssTextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[
+        [Tensor, PagedCacheValues, PagedCacheValues, Tensor, Tensor],
+        ModuleV3Outputs,
+    ]
 ):
     """The GPT OSS language model.
 
@@ -97,6 +102,13 @@ class GptOssTextModel(
             eps=config.rms_norm_eps,
         )
 
+        assert isinstance(config.kv_params, MultiKVCacheParams)
+        kv_params_by_type: dict[str, KVCacheParams] = {}
+        for layer_type_key, kv_params_leaf in config.kv_params.children.items():
+            assert isinstance(kv_params_leaf, KVCacheParams)
+            kv_params_by_type[layer_type_key] = kv_params_leaf
+
+        layer_type_counts = {"sliding_attention": 0, "full_attention": 0}
         layers = []
         for i in range(config.num_hidden_layers):
             if i < len(config.layer_types):
@@ -108,6 +120,8 @@ class GptOssTextModel(
                 if layer_type == "sliding_attention"
                 else MHAMaskVariant.CAUSAL_MASK
             )
+            layer_idx_in_cache = layer_type_counts[layer_type]
+            layer_type_counts[layer_type] += 1
             layers.append(
                 GptOssTransformerBlock(
                     attention=GptOssAttention(
@@ -115,8 +129,8 @@ class GptOssTextModel(
                         num_attention_heads=config.num_attention_heads,
                         num_key_value_heads=config.num_key_value_heads,
                         hidden_size=config.hidden_size,
-                        kv_params=config.kv_params,
-                        layer_idx=i,
+                        kv_params=kv_params_by_type[layer_type],
+                        layer_idx=layer_idx_in_cache,
                         local_window_size=config.sliding_window,
                         has_bias=config.attention_bias,
                         mask_variant=mask_variant,
@@ -127,6 +141,13 @@ class GptOssTextModel(
                 )
             )
 
+        self._layer_kv_key = [
+            config.layer_types[i]
+            if i < len(config.layer_types)
+            else "full_attention"
+            for i in range(config.num_hidden_layers)
+        ]
+
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.layers = ModuleList(layers)
@@ -136,18 +157,23 @@ class GptOssTextModel(
     def forward(
         self,
         tokens: Tensor,
-        kv_collection: PagedCacheValues,
+        sliding_kv: PagedCacheValues,
+        global_kv: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         h = self.embed_tokens(tokens)
+        kv_by_type = {
+            "sliding_attention": sliding_kv,
+            "full_attention": global_kv,
+        }
         # Run through transformer layers
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=h.device)
             h = layer(
                 layer_idx_tensor,
                 h,
-                kv_collection,
+                kv_by_type[self._layer_kv_key[idx]],
                 input_row_offsets=input_row_offsets,
             )
 
@@ -162,10 +188,10 @@ class GptOssTextModel(
 
         # For now, simplified to return last token only
         # TODO: Handle VARIABLE and ALL logits cases for distributed processing
-        return (last_logits,)
+        return ModuleV3Outputs(next_token_logits=last_logits)
 
 
-class GptOss(Module[..., tuple[Tensor, ...]]):
+class GptOss(Module[..., ModuleV3Outputs]):
     """The GPT OSS model."""
 
     def __init__(
@@ -183,11 +209,19 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
         tokens: Tensor,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-        *variadic_args,
-    ) -> tuple[Tensor, ...]:
-        kv_collections = unflatten_ragged_attention_inputs(
-            variadic_args, n_devices=self.kv_params.n_devices
+        *variadic_args: Tensor,
+    ) -> ModuleV3Outputs:
+        kv_inputs = iter(x._graph_value for x in variadic_args)
+        assert isinstance(self.kv_params, MultiKVCacheParams)
+        sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(
+            kv_inputs
+        )
+        sliding_kv = PagedCacheValues.from_upstream(
+            sliding_inputs, tokens.mapping
+        )
+        global_kv = PagedCacheValues.from_upstream(
+            global_inputs, tokens.mapping
         )
         return self.language_model(
-            tokens, kv_collections[0], return_n_logits, input_row_offsets
+            tokens, sliding_kv, global_kv, return_n_logits, input_row_offsets
         )

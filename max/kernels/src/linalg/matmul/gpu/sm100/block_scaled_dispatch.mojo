@@ -12,8 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+"""Provides dispatch logic for SM100 block-scaled (NVFP4, MXFP4, MXFP8) matmul kernels with optional elementwise epilogue."""
+
+
+from std.math import ceildiv
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
+from layout import Coord, TileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -21,24 +26,23 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
-    NVFP4_SF_DTYPE,
     get_scaling_kind,
 )
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from std.collections import Optional
 from linalg.utils import (
-    elementwise_epilogue_type,
-    elementwise_compute_lambda_type,
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
 )
-from std.utils.index import Index, IndexList
-from linalg.matmul.vendor.blas import matmul
-from std.memory import UnsafePointer
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.sys import size_of, simd_width_of
-from std.algorithm import elementwise
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.sys import size_of
+from std.sys.info import simd_width_of
+from max.algorithm import elementwise
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized,
+    _blackwell_block_scaled_matmul_impl,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
@@ -55,6 +59,10 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 
 comptime logger = Logger()
 
+# Largest M whose compute closure runs in a separate elementwise pass instead
+# of inside the GEMM epilogue; B200 measurements cover M <= 512.
+comptime compute_fn_unfused_m_cap = 512
+
 comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
@@ -67,10 +75,6 @@ def heuristic_and_outliers_dispatch[
     //,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -81,16 +85,207 @@ def heuristic_and_outliers_dispatch[
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
+    """Dispatches an SM100 block-scaled matmul by selecting a tuning config from
+    per-format outlier tables for specific M ranges, falling back to a
+    small-BN config for GEMVs (`m == 1`) and a heuristic config table for the
+    remaining cases. Returns `DISPATCH_HIT` when a matching config is found and
+    launched, or `DISPATCH_MISS` when no config matches.
+
+    Parameters:
+        c_type: Element type of the output tensor `c` (inferred).
+        a_type: Element type of the LHS input tensor `a` (inferred).
+        b_type: Element type of the RHS input tensor `b` (inferred).
+        scales_dtype: Element type of the per-block scale tensors
+            `a_scales` and `b_scales` (inferred).
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+            Must match the format: 16 for NVFP4, 32 for MXFP4, or 32
+            for MXFP8.
+        transpose_b: Whether `b` is stored transposed. Must be `True`
+            (defaults to `True`).
+        pdl_level: Programmatic Dependent Launch scheduling level for
+            overlapping this kernel with prior GPU work (defaults to
+            `PDLLevel()`).
+
+    Args:
+        c: Output TileTensor accumulating the matmul result.
+        a: LHS input TileTensor.
+        b: RHS input TileTensor (must be transposed).
+        a_scales: Per-block scales for `a`.
+        b_scales: Per-block scales for `b`.
+        tensor_sf: Global tensor scaling factor applied as `alpha`.
+        ctx: Device context used to launch the kernel.
+
+    Returns:
+        `DISPATCH_HIT` if a config was selected and the kernel launched, otherwise `DISPATCH_MISS`.
+    """
+    return _heuristic_and_outliers_dispatch_impl[
+        SF_VECTOR_SIZE,
+        transpose_b,
+        pdl_level=pdl_level,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+    ](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        tensor_sf,
+        no_epilogue_fn,
+        no_compute_fn,
+        ctx,
+    )
+
+
+def heuristic_and_outliers_dispatch[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
+    tensor_sf: Float32,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises -> Int:
+    """Dispatches an SM100 block-scaled matmul (see the other overload),
+    delivering each output value to an epilogue closure instead of writing
+    `c`.
+
+    Parameters:
+        c_type: Element type of the output tensor `c` (inferred).
+        a_type: Element type of the LHS input tensor `a` (inferred).
+        b_type: Element type of the RHS input tensor `b` (inferred).
+        scales_dtype: Element type of the per-block scale tensors (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+        transpose_b: Whether `b` is stored transposed. Must be `True`.
+        pdl_level: Programmatic Dependent Launch scheduling level.
+
+    Args:
+        c: Output TileTensor; only its shape is read.
+        a: LHS input TileTensor.
+        b: RHS input TileTensor (must be transposed).
+        a_scales: Per-block scales for `a`.
+        b_scales: Per-block scales for `b`.
+        tensor_sf: Global tensor scaling factor applied as `alpha`.
+        epilogue_fn: Stores each output value at its global `(m, n)`.
+        ctx: Device context used to launch the kernel.
+
+    Returns:
+        `DISPATCH_HIT` if a config was selected and the kernel launched, otherwise `DISPATCH_MISS`.
+    """
+    return _heuristic_and_outliers_dispatch_impl[
+        SF_VECTOR_SIZE,
+        transpose_b,
+        pdl_level=pdl_level,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](c, a, b, a_scales, b_scales, tensor_sf, epilogue_fn, no_compute_fn, ctx)
+
+
+def heuristic_and_outliers_dispatch[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
+    tensor_sf: Float32,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises -> Int:
+    """Dispatches an SM100 block-scaled matmul (see the other overload),
+    storing `compute_fn(idx, value)` into `c`.
+
+    Parameters:
+        c_type: Element type of the output tensor `c` (inferred).
+        a_type: Element type of the LHS input tensor `a` (inferred).
+        b_type: Element type of the RHS input tensor `b` (inferred).
+        scales_dtype: Element type of the per-block scale tensors (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+        transpose_b: Whether `b` is stored transposed. Must be `True`.
+        pdl_level: Programmatic Dependent Launch scheduling level.
+
+    Args:
+        c: Output TileTensor accumulating the matmul result.
+        a: LHS input TileTensor.
+        b: RHS input TileTensor (must be transposed).
+        a_scales: Per-block scales for `a`.
+        b_scales: Per-block scales for `b`.
+        tensor_sf: Global tensor scaling factor applied as `alpha`.
+        compute_fn: Transforms each output value before it is stored.
+        ctx: Device context used to launch the kernel.
+
+    Returns:
+        `DISPATCH_HIT` if a config was selected and the kernel launched, otherwise `DISPATCH_MISS`.
+    """
+    return _heuristic_and_outliers_dispatch_impl[
+        SF_VECTOR_SIZE,
+        transpose_b,
+        pdl_level=pdl_level,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+    ](c, a, b, a_scales, b_scales, tensor_sf, no_epilogue_fn, compute_fn, ctx)
+
+
+def _heuristic_and_outliers_dispatch_impl[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    *,
+    pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
+    tensor_sf: Float32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises -> Int:
     var m = Int(c.dim[0]())
 
     comptime scaling_kind = get_scaling_kind[
-        a_type, scales_dtype, SF_VECTOR_SIZE
+        a_type, scales_dtype, SF_VECTOR_SIZE, b_type
     ]()
     comptime is_fp4 = (
         scaling_kind == UMMAKind.KIND_MXF4NVF4
         or scaling_kind == UMMAKind.KIND_MXF4
     )
 
+    comptime MMA_K = 32
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+    comptime num_k_iters = ceildiv(a.static_shape[1], BK)
     comptime static_N = c.static_shape[1]
     comptime static_K = a.static_shape[1] * 2 if is_fp4 else a.static_shape[1]
 
@@ -128,9 +323,6 @@ def heuristic_and_outliers_dispatch[
         a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
-    comptime MMA_K = 32
-    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-
     comptime outliers = Table(
         _get_tuning_list_sm100_nvfp4(), "nvfp4_heuristic_outliers"
     ) if scaling_kind == UMMAKind.KIND_MXF4NVF4 else Table(
@@ -139,12 +331,10 @@ def heuristic_and_outliers_dispatch[
         _get_tuning_list_sm100_mxfp8(), "mxfp8_heuristic_outliers"
     )
 
-    @parameter
-    @always_inline
-    def rule(x: TuningConfigSM100) -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime outlier_configs = outliers.find[rule]()
+    comptime outlier_configs = outliers.find(
+        rule=lambda (x: TuningConfigSM100) -> Bool: x.K == static_K
+        and x.N == static_N
+    )
 
     comptime for tuning_config in outlier_configs:
         if m >= tuning_config.M and m < tuning_config.M_end:
@@ -162,6 +352,10 @@ def heuristic_and_outliers_dispatch[
                 num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
                 k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
+                num_pipeline_stages=Optional(
+                    tuning_config.num_pipeline_stages
+                ) if tuning_config.num_pipeline_stages
+                > 0 else None,
                 is_small_bn=tuning_config.is_small_bn,
             )
 
@@ -171,24 +365,57 @@ def heuristic_and_outliers_dispatch[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
                 config=matmul_config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
-            ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                tensor_sf,
+                epilogue_fn,
+                compute_fn,
+                ctx,
+            )
 
             return DISPATCH_HIT
 
-    # disaptch to small-BN kernel for m == 1 as it's optimized for GEMVs
-    if m == 1:
+    # Dispatch to the small-BN kernel for the small-M decode regime (m <= 16:
+    # m == 1 GEMV plus small-batch / speculative-decode m ~ 8, 16). It is
+    # optimized for skinny GEMMs; MMA_N=8 tiles the M dim (m=16 -> 2 tiles).
+    # Larger M keeps the cta_group=2 prefill heuristic below.
+    #
+    # For MXFP8, m in (8, 16] needs two M tiles, so every weight tile is
+    # launched twice. When that exceeds one wave of SMs (N >= ~9.5K, e.g. the
+    # fused M3.1 QKV projection), the heuristic config wins: 14us vs 22us at
+    # M=16, N=9856, K=6144 on B200. FP4 formats keep the small-BN kernel.
+    # The wave estimate uses B200's SM count; revisit for other SM10x parts.
+    # Skipping small-BN exposes heuristic misses to the vendor fallback.
+    comptime two_m_tiles_fit_one_wave = (
+        scaling_kind != UMMAKind.KIND_MXF8F6F4
+        or ceildiv(static_N, 128) * 2 <= B200.sm_count
+    )
+    if m <= 8 or (m <= 16 and two_m_tiles_fit_one_wave):
+        # Larger k-groups shorten the mainloop for this latency-bound skinny
+        # decode GEMM (K=6144 -> 48 k-iters; kg=4 -> 12 groups vs 24), which an
+        # isolated B200 sweep at the served QKV shapes (N in {2304,2560}, K=6144,
+        # M<=16) showed is ~8% faster than kg=2 and ~40% faster than vendor
+        # cuBLASLt, bit-exact. Needs num_pipeline_stages % kg == 0 (12 % 4 == 0).
+        comptime k_group_size = (
+            4 if num_k_iters % 4 == 0 else (2 if num_k_iters % 2 == 0 else 1)
+        )
         comptime config = BlockScaledMatmulConfig[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
         ](
             scaling_kind=scaling_kind,
             cta_group=1,
-            mma_shape=Index(128, 8, 32),
-            cluster_shape=Index(1, 1, 1),
+            mma_shape=(128, 8, 32),
+            cluster_shape=(1, 1, 1),
             block_swizzle_size=8,
             num_accum_pipeline_stages=1,
-            k_group_size=2,
+            k_group_size=k_group_size,
             num_clc_pipeline_stages=0,
             AB_swapped=True,
             is_small_bn=True,
@@ -197,9 +424,20 @@ def heuristic_and_outliers_dispatch[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
             config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
-        ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            tensor_sf,
+            epilogue_fn,
+            compute_fn,
+            ctx,
+        )
 
         logger.info("Using small-BN config: ", config)
         return DISPATCH_HIT
@@ -225,9 +463,20 @@ def heuristic_and_outliers_dispatch[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
                 config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
-            ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                tensor_sf,
+                epilogue_fn,
+                compute_fn,
+                ctx,
+            )
             return DISPATCH_HIT
 
     return DISPATCH_MISS
@@ -243,6 +492,8 @@ def _block_scaled_matmul_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
     //,
     *,
     SF_VECTOR_SIZE: Int,
@@ -250,8 +501,9 @@ def _block_scaled_matmul_with_epilogue[
     config: BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -259,12 +511,20 @@ def _block_scaled_matmul_with_epilogue[
     a_scales: TileTensor[scales_dtype, ...],
     b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
     ctx: DeviceContext,
 ) raises:
-    """Our sm100 block scaled matmul kernel still does not support fusion of elementwise
-    operations. This is a temporary implementation that uses our sm100 block scaled matmul
-    kernel and dispatch a separate epilogue kernel to apply the elementwise
-    operations.
+    """Launch the SM100 block-scaled matmul, fusing the elementwise epilogue
+    in-kernel.
+
+    With `has_epilogue_fn` the matmul stores are redirected through
+    `epilogue_fn` inside the kernel (TMEM -> registers -> closure, no scratch
+    round-trip) on both the main and small-BN paths; with `has_compute_fn` the
+    kernel stores `compute_fn(idx, value)`. Otherwise the kernel performs its
+    default store. Callers must still allocate `c`; the default-store path
+    writes it, and it defines the (row, col) coordinate space the closures
+    address.
     """
 
     var m = Int(c.dim[0]())
@@ -272,55 +532,24 @@ def _block_scaled_matmul_with_epilogue[
     if m == 0 or n == 0:
         return
 
-    comptime if not elementwise_lambda_fn:
-        if not c.ptr._is_not_null():
-            raise "c must be allocated!"
+    comptime K_phys = a.static_shape[1]
 
-        comptime K_phys = a.static_shape[1]
-        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            transpose_b=transpose_b,
-            K=K_phys,
-            config=config,
-            pdl_level=pdl_level,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            ctx,
-            alpha=tensor_sf,
-        )
-        return
-    else:
-        comptime epilogue = elementwise_lambda_fn.value()
-        # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
-        comptime use_32b_simd = True
-        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target=get_gpu_target()]()
-        )
-
-        # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
-        # using row-major offset since TileTensor.load's Coord constraint
-        # can't be proved when c's layout type is fully inferred.
-        @parameter
-        @__copy_capture(c, n)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = rebind[SIMD[c_type, simd_width]](
-                c.load[width=simd_width](Coord(c_coord))
-            )
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
-
-        # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
-        # apply the epilogue.
-        if c.ptr._is_not_null():
-            comptime K_phys = a.static_shape[1]
-            blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+    # At decode-sized M the compute closure runs inside the single-tile
+    # mainloop tail, once per scalar element behind dependent global loads, and
+    # costs several microseconds on top of a GEMM that is itself ~10us. Writing
+    # the plain GEMM result to `c` and applying `compute_fn` from an
+    # elementwise kernel hides those latencies across threads. The small-BN
+    # kernel keeps the fused closure: its epilogue is cheap there, and the
+    # extra launch would lose.
+    comptime if (
+        has_compute_fn
+        and not config.is_small_bn
+        and config.scaling_kind == UMMAKind.KIND_MXF8F6F4
+    ):
+        if m <= compute_fn_unfused_m_cap:
+            _block_scaled_matmul_with_epilogue[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
-                K=K_phys,
                 config=config,
                 pdl_level=pdl_level,
             ](
@@ -329,173 +558,47 @@ def _block_scaled_matmul_with_epilogue[
                 b,
                 a_scales,
                 b_scales,
+                tensor_sf,
+                no_epilogue_fn,
+                no_compute_fn,
                 ctx,
-                alpha=tensor_sf,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
+
+            def apply_compute_fn[
+                width: Int, alignment: Int = 1
+            ](idx: Coord) {var c, var compute_fn}:
+                c.store[alignment=alignment * size_of[c_type]()](
+                    idx,
+                    compute_fn[c_type, width, alignment=alignment](
+                        idx, c.load[width=width](idx)
+                    ),
+                )
+
+            comptime simd_size = simd_width_of[c_type, target=ctx.target]()
+            elementwise[
+                simd_size,
+                target="gpu",
+                _trace_description="elementwise_block_scaled_matmul_compute",
+            ](apply_compute_fn, (m, n), ctx)
             return
 
-        # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var num_elems = m * n
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elems)
-        var c_tmp = TileTensor(
-            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
-                tmp_device_buffer.unsafe_ptr()
-            ),
-            row_major(Coord(Idx(m), Idx(n))),
-        )
-
-        _block_scaled_matmul_with_epilogue[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
-            c_tmp,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            tensor_sf,
-            ctx,
-        )
-
-        _ = tmp_device_buffer^
-
-
-def _vendor_blas_block_scaled_matmul_with_epilogue[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    scales_dtype: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
-    //,
-    *,
-    SF_VECTOR_SIZE: Int,
-    transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, MutAnyOrigin],
-    tensor_sf: Float32,
-    ctx: DeviceContext,
-) raises:
-    comptime assert _is_sm10x_gpu(
-        ctx.default_device_info
-    ), "This kernel is only supported on SM100"
-
-    comptime assert transpose_b, "Only support transposed B"
-
-    comptime assert (
-        scales_dtype == NVFP4_SF_DTYPE
-    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
-
-    comptime assert SF_VECTOR_SIZE in (
-        NVFP4_SF_VECTOR_SIZE,
-    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
-
-    comptime assert (
-        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
-    ), "Both A and B scales must have the same shape in K dimension"
-    comptime assert (
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0]
-    ), ""
-    comptime assert (
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1]
-    ), ""
-    comptime assert (
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
-    ), ""
-
-    var m = c.dim(0)
-    var n = c.dim(1)
-    if m == 0 or n == 0:
-        return
-
-    comptime if not elementwise_lambda_fn:
-        if not c.ptr._is_not_null():
-            raise "c must be allocated!"
-
-        matmul(
-            ctx,
-            c,
-            a,
-            b,
-            a_scales=a_scales.get_immutable(),
-            b_scales=b_scales.get_immutable(),
-            transpose_b=True,
-            c_row_major=True,
-            alpha=tensor_sf,
-        )
-    else:
-        comptime epilogue = elementwise_lambda_fn.value()
-        # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
-        comptime use_32b_simd = True
-        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target=get_gpu_target()]()
-        )
-
-        @parameter
-        @__copy_capture(c)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = c.load[width=simd_width,](c_coord)
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
-
-        # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
-        # apply the epilogue.
-        if c.ptr._is_not_null():
-            var m = c.dim[0]()
-            var n = c.dim[1]()
-
-            matmul(
-                ctx,
-                c,
-                a,
-                b,
-                a_scales=a_scales.get_immutable(),
-                b_scales=b_scales.get_immutable(),
-                alpha=tensor_sf,
-                transpose_b=True,
-                c_row_major=True,
-            )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
-            return
-
-        # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c.size())
-        var c_tmp = c
-        c_tmp.ptr = tmp_device_buffer.unsafe_ptr()
-
-        _vendor_blas_block_scaled_matmul_with_epilogue[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
-            c_tmp,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            tensor_sf,
-            ctx,
-        )
-
-        _ = tmp_device_buffer^
+    # Store-redirect epilogues and the remaining compute closures stay fused
+    # through TileWriter on both the main and small-BN paths.
+    _blackwell_block_scaled_matmul_impl[
+        transpose_b=transpose_b,
+        K=K_phys,
+        config=config,
+        pdl_level=pdl_level,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
+    ](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        epilogue_fn,
+        compute_fn,
+        ctx,
+        tensor_sf,
+    )

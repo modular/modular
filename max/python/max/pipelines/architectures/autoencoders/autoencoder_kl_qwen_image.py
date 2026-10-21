@@ -31,7 +31,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, float32_to_bfloat16_as_uint16
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
@@ -39,8 +39,7 @@ from max.graph.weights import WeightData, Weights
 from max.nn.conv import Conv2d
 from max.nn.layer import LayerList, Module
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import (
     AutoencoderKLQwenImageConfig,
@@ -53,7 +52,14 @@ def _interpolate_2d_nearest(
     *,
     scale_factor: int = 2,
 ) -> TensorValue:
-    """Upsample an NCHW tensor using nearest-neighbor expansion."""
+    """Upsample an NCHW tensor using nearest-neighbor expansion.
+
+    Delegates to ``ops.resize_nearest`` with the asymmetric transform and
+    floor rounding, which at an exact 2x scale maps each output coordinate
+    to ``out_coord // 2`` -- the same replication the old hand-rolled
+    reshape + broadcast expansion produced. The resize kernel's
+    integer-scale fast path makes this as cheap as the broadcast trick.
+    """
     if x.rank != 4:
         raise ValueError(f"Input tensor must have rank 4, got {x.rank}")
     if scale_factor != 2:
@@ -62,13 +68,12 @@ def _interpolate_2d_nearest(
         )
 
     n, c, h, w = x.shape
-    x_reshaped = ops.reshape(x, [n, c, h, 1, w, 1])
-    ones = ops.broadcast_to(
-        ops.constant(1.0, dtype=x.dtype, device=x.device),
-        [1, 1, 1, scale_factor, 1, scale_factor],
+    return ops.resize_nearest(
+        x,
+        [n, c, h * scale_factor, w * scale_factor],
+        coordinate_transform_mode=ops.CoordinateTransformMode.ASYMMETRIC,
+        round_mode=ops.RoundMode.FLOOR,
     )
-    x_expanded = x_reshaped * ones
-    return ops.reshape(x_expanded, [n, c, h * scale_factor, w * scale_factor])
 
 
 class NCHWRMSNorm(Module):
@@ -103,26 +108,13 @@ class NCHWRMSNorm(Module):
         gamma = self.gamma.cast(x_perm.dtype)
         if x_perm.device:
             gamma = gamma.to(x_perm.device)
-        x_normed = ops.custom(
-            "rms_norm",
-            x_perm.device,
-            [
-                x_perm,
-                gamma,
-                ops.constant(
-                    self.eps, dtype=x_perm.dtype, device=DeviceRef.CPU()
-                ),
-                ops.constant(0.0, dtype=x_perm.dtype, device=DeviceRef.CPU()),
-            ],
-            [
-                TensorType(
-                    dtype=x_perm.dtype,
-                    shape=x_perm.shape,
-                    device=x_perm.device,
-                )
-            ],
-            parameters={"multiply_before_cast": True},
-        )[0].tensor
+        x_normed = ops.rms_norm(
+            x_perm,
+            gamma,
+            self.eps,
+            weight_offset=0.0,
+            multiply_before_cast=True,
+        )
         return ops.permute(x_normed, [0, 3, 1, 2])
 
 
@@ -734,7 +726,7 @@ def _transform_decoder_weights(
         """Convert WeightData to numpy, casting bfloat16 to float32."""
         if wd.dtype == DType.bfloat16:
             wd = wd.astype(DType.float32)
-        return np.from_dlpack(wd.data)  # type: ignore
+        return np.from_dlpack(wd.data)
 
     def _to_weight_data(arr: np.ndarray, name: str, dtype: DType) -> WeightData:
         """Convert numpy array to WeightData at target dtype."""

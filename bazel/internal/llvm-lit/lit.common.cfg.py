@@ -13,6 +13,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import platform
 import shutil
 import sys
 from pathlib import Path
@@ -40,7 +41,9 @@ else:
 
 import modular_test_format
 
-config.test_format = modular_test_format.ModularShTest(execute_external)
+config.test_format = modular_test_format.ModularShTest(
+    execute_external, force_execute_external=execute_external
+)
 
 if execute_external:
     config.available_features.add("shell")
@@ -73,13 +76,32 @@ llvm_config.with_environment(
     append_path=True,
 )
 
+if sys.platform == "darwin":
+    # Expose macOS 26+ as a lit feature so tests can be selectively skipped.
+    # The ASAN runtime (libclang_rt.asan_osx_dynamic.dylib) comes from the
+    # pre-built @clang-macos toolchain (LLVM 20.1.8), which hangs on macOS 26
+    # in FindAvailableMemoryRange (fixed in llvm/llvm-project#191039,
+    # merged 2026-04-09 to LLVM main, not yet in any release). Remove once
+    # @clang-macos is updated to a release that includes the fix. MOTO-1516.
+    _mac_ver = platform.mac_ver()[0]
+    if _mac_ver and int(_mac_ver.split(".")[0]) >= 26:
+        config.available_features.add("macos-26+")
+
+    # Metal AIR disassembly tests require Xcode's air-objdump utility.
+    if shutil.which("air-objdump") or (
+        shutil.which("xcrun")
+        and os.system(
+            "xcrun -sdk macosx air-objdump --version >/dev/null 2>&1"
+        )
+        == 0
+    ):
+        config.available_features.add("air-objdump")
+
 #---------------------------------------
 # Mojo tools
 #---------------------------------------
 
 mojo_exe = "mojo"
-if shutil.which("mojo-compiler-only"):
-    mojo_exe = "mojo-compiler-only"
 
 def mojo_subst(name, args):
     return ToolSubst(name, mojo_exe, extra_args=args)

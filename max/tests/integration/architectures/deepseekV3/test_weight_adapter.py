@@ -31,6 +31,8 @@ def test_convert_safetensor_state_dict() -> None:
         "model.layers.29.self_attn.kv_a_layernorm.weight": weight,
         "model.layers.29.self_attn.kv_a_proj_with_mqa.weight": weight,
         "model.layers.29.self_attn.kv_a_proj_with_mqa.weight_scale_inv": weight,
+        "model.layers.29.self_attn.k_proj.k_scale": weight,
+        "model.layers.29.self_attn.v_proj.v_scale": weight,
         "model.layers.61.input_layernorm.weight": weight,
         "model.layers.61.post_attention_layernorm.weight": weight,
         "model.layers.61.self_attn.kv_a_layernorm.weight": weight,
@@ -46,3 +48,5 @@ def test_convert_safetensor_state_dict() -> None:
     assert len(new_state_dict) == 5
     for key in new_state_dict:
         assert "61" not in key
+        assert not key.endswith(".k_scale")
+        assert not key.endswith(".v_scale")

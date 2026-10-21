@@ -11,13 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
-from std.sys import align_of, size_of
+from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
@@ -32,7 +30,6 @@ from layout import (
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     matmul_sm100_fallback,
 )
-from linalg.utils import elementwise_epilogue_type
 
 from std.utils.index import Index, IndexList
 
@@ -51,23 +48,21 @@ def test_matmul_sm100_fallback[
     BK: Int = 64,
     use_epilogue: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType,) raises:
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k)
+    var c_size = Int(m) * Int(n)
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
@@ -79,10 +74,10 @@ def test_matmul_sm100_fallback[
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     print(
         "umma_shape",
@@ -97,11 +92,11 @@ def test_matmul_sm100_fallback[
         "use_epilogue:",
         use_epilogue,
         " : PROBLEM SHAPE (M,N,K): (",
-        m.value(),
+        Int(m),
         "x",
-        n.value(),
+        Int(n),
         "x",
-        k.value(),
+        Int(k),
         ") - ",
         "BLOCKS SHAPE (BM,BN,BK): (",
         umma_shape[0],
@@ -112,24 +107,16 @@ def test_matmul_sm100_fallback[
         ")",
     )
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
-    @parameter
-    @always_inline
-    @__copy_capture(c_tensor_lt)
-    def epilogue_fn[
-        _dtype: DType,
-        width: Int,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[alignment=alignment](
-            idx, rebind[SIMD[c_type, width]](val)
-        )
+    @inline(.always)
+    def compute_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val
 
     # Initialize matmul operands
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 
@@ -150,27 +137,21 @@ def test_matmul_sm100_fallback[
         block_tile_shape=block_tile_shape,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            epilogue_fn
-        ) if use_epilogue else None,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+        has_compute_fn=use_epilogue,
+    ](c_tensor, a_tensor, b_tensor, ctx, compute_fn)
 
     ctx.synchronize()
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -182,17 +163,13 @@ def test_matmul_sm100_fallback[
     ctx.synchronize()
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -213,21 +190,21 @@ def main() raises:
                 test_matmul_sm100_fallback[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(200)),
-                    Idx(128),
-                    Idx(128),
+                    Int(200),
+                    Idx[128],
+                    Idx[128],
                 )
                 test_matmul_sm100_fallback[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
@@ -235,39 +212,39 @@ def main() raises:
                     use_epilogue=True,
                 ](
                     ctx,
-                    Idx(Int(128)),
-                    Idx(128),
-                    Idx(128),
+                    Int(128),
+                    Idx[128],
+                    Idx[128],
                 )
 
                 test_matmul_sm100_fallback[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(400)),
-                    Idx(128),
-                    Idx(128),
+                    Int(400),
+                    Idx[128],
+                    Idx[128],
                 )
 
                 test_matmul_sm100_fallback[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(1024)),
-                    Idx(2048),
-                    Idx(2048),
+                    Int(1024),
+                    Idx[2048],
+                    Idx[2048],
                 )
 
                 comptime BK_list: List[Int] = [BK, BK * 2]
@@ -276,69 +253,69 @@ def main() raises:
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(1024)),
-                        Idx(2048),
-                        Idx(2048),
+                        Int(1024),
+                        Idx[2048],
+                        Idx[2048],
                     )
 
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(1024),
-                        Idx(2048),
-                        Idx(2048),
+                        Idx[1024],
+                        Idx[2048],
+                        Idx[2048],
                     )
 
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(100)),
-                        Idx(512),
-                        Idx(256),
+                        Int(100),
+                        Idx[512],
+                        Idx[256],
                     )
 
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(99)),
-                        Idx(1024),
-                        Idx(1024),
+                        Int(99),
+                        Idx[1024],
+                        Idx[1024],
                     )
 
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(201)),
-                        Idx(2048),
-                        Idx(256),
+                        Int(201),
+                        Idx[2048],
+                        Idx[256],
                     )

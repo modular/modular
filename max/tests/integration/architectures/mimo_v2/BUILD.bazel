@@ -1,0 +1,226 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "mimo_v2",
+    size = "small",
+    srcs = glob(
+        ["test_*.py"],
+        exclude = ["*_gpu.py"],
+    ),
+    imports = ["."],
+    # Importing max.pipelines times out pytest collection on contended macOS
+    # workers, and macOS adds no coverage to these CPU-only tests.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/weights",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Builds (never compiles) the graph, whose allreduce binds real accelerators.
+# The W4A8 experts run only on SM100.
+modular_py_test(
+    name = "mimo_v2_gpu",
+    size = "small",
+    srcs = glob(
+        ["test_*_gpu.py"],
+        exclude = [
+            "test_expert_precision_gpu.py",
+            "test_serving_numerics_gpu.py",
+        ],
+    ),
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    # Manual: MiMo GPU model checks time out on shared CI workers.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "tiny_fixture",
+    testonly = True,
+    srcs = ["tiny_fixture.py"],
+    imports = ["."],
+    deps = [
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "mimo_runner",
+    testonly = True,
+    srcs = ["mimo_runner.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("transformers"),
+        requirement("ml-dtypes"),
+    ],
+)
+
+filegroup(
+    name = "tiny_goldens",
+    srcs = ["testdata/tiny_goldens.npz"],
+)
+
+modular_py_test(
+    name = "mimo_v2_expert_precision_gpu",
+    size = "large",
+    srcs = ["test_expert_precision_gpu.py"],
+    exec_properties = {"test.resources:gpu-memory": "8"},
+    gpu_constraints = ["//:b200_gpu"],
+    # Manual: MiMo GPU model checks time out on shared CI workers.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Compiles and runs the tiny fixture, tensor parallel over two GPUs, and scores
+# its logits against checked-in HF goldens.
+modular_py_test(
+    name = "mimo_v2_numerics_gpu",
+    size = "large",
+    srcs = ["test_serving_numerics_gpu.py"],
+    data = [":tiny_goldens"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    precompile_device_count = 2,
+    precompile_mefs = True,
+    # Manual: MiMo GPU model checks time out on shared CI workers.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":mimo_runner",
+        ":tiny_fixture",
+        "//max/python/max/driver",
+        requirement("numpy"),
+    ],
+)
+
+# TP4 uses the same goldens and bounds as TP2. The standard remote B200 lane
+# exposes two GPUs, so this target runs explicitly on a four-GPU workspace.
+modular_py_test(
+    name = "mimo_v2_numerics_tp4_gpu",
+    size = "large",
+    srcs = ["test_serving_numerics_gpu.py"],
+    data = [":tiny_goldens"],
+    env = {"MIMO_TEST_TP_DEGREE": "4"},
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    precompile_device_count = 4,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":mimo_runner",
+        ":tiny_fixture",
+        "//max/python/max/driver",
+        requirement("numpy"),
+    ],
+)
+
+# Scores MAX against the golden fixtures on a real or random checkpoint; needs
+# the checkpoint and fixtures on disk and a GPU, so it runs by hand.
+modular_py_binary(
+    name = "check_reference_fixtures",
+    testonly = True,
+    srcs = ["check_reference_fixtures.py"],
+    imports = ["."],
+    main = "check_reference_fixtures.py",
+    tags = ["manual"],
+    deps = [
+        ":mimo_runner",
+        requirement("numpy"),
+        requirement("safetensors"),
+    ],
+)
+
+# Builds the random-weight and beacon fixtures and their HF references, or
+# the tiny fixture's goldens, from the published checkpoint's code; runs by
+# hand.
+modular_py_binary(
+    name = "make_random_fixture",
+    testonly = True,
+    srcs = ["make_random_fixture.py"],
+    imports = ["."],
+    main = "make_random_fixture.py",
+    tags = ["manual"],
+    deps = [
+        ":tiny_fixture",
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)

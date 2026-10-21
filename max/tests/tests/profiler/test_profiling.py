@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import unittest.mock
+import warnings
 
 import pytest
+from max._core.profiler import range_begin_with_id, range_end
 from max.profiler import Tracer, traced
 
 
@@ -41,7 +43,7 @@ def test_profiling() -> None:
 def test_profiling_disabled() -> None:
     with unittest.mock.patch(
         "max.profiler.tracing.is_profiling_enabled", return_value=False
-    ) as m:
+    ):
         test_profiling()
 
 
@@ -58,3 +60,11 @@ async def test_async_profiling() -> None:
 
     with Tracer("potato"):
         await foo()
+
+
+def test_unrecorded_range_is_a_silent_no_op() -> None:
+    """Tests that a range begun with no live trace records nothing."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert range_begin_with_id(1, "unrecorded") == 0
+        range_end(0)

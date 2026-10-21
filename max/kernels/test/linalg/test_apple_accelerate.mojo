@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     apple_matmul,
 )
+from std.memory.alloc import unsafe_alloc
 from std.testing import *
 
 from std.utils.index import Index
@@ -30,8 +31,8 @@ comptime c_type = DType.float32
 
 def gemm_naive(
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor,
+    b: TileTensor,
     m: Int,
     n: Int,
     k: Int,
@@ -42,10 +43,10 @@ def gemm_naive(
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var a_val = a.load(Coord(Idx(i), Idx(p))).cast[c.dtype]()[0]
-                var b_val = b.load(Coord(Idx(p), Idx(j))).cast[c.dtype]()[0]
-                var cur = c.load(Coord(Idx(i), Idx(j)))[0]
-                c.store(Coord(Idx(i), Idx(j)), cur + a_val * b_val)
+                var a_val = a.load((i, p)).cast[c.dtype]()[0]
+                var b_val = b.load((p, j)).cast[c.dtype]()[0]
+                var cur = c.load((i, j))[0]
+                c.store((i, j), cur + a_val * b_val)
 
 
 def test_matmul(
@@ -59,27 +60,27 @@ def test_matmul(
     comptime assert c.flat_rank >= 2
     comptime assert a.flat_rank >= 2
     comptime assert b.flat_rank >= 2
-    var golden_ptr = alloc[Scalar[c.dtype]](m * n, alignment=alignment)
-    var golden = TileTensor(golden_ptr, row_major(Coord(Idx(m), Idx(n))))
+    var golden_ptr = unsafe_alloc[Scalar[c.dtype]](m * n, alignment=alignment)
+    var golden = TileTensor(golden_ptr, row_major(m, n))
 
     for i in range(m):
         for j in range(k):
             a.store(
-                Coord(Idx(i), Idx(j)),
+                (i, j),
                 Scalar[a.dtype](i + j) * Scalar[a.dtype](0.001),
             )
 
     for i in range(k):
         for j in range(n):
             b.store(
-                Coord(Idx(i), Idx(j)),
+                (i, j),
                 Scalar[b.dtype](i + k) * Scalar[b.dtype](0.001),
             )
 
     for i in range(m):
         for j in range(n):
-            c.store(Coord(Idx(i), Idx(j)), Scalar[c.dtype](0))
-            golden.store(Coord(Idx(i), Idx(j)), Scalar[golden.dtype](0))
+            c.store((i, j), Scalar[c.dtype](0))
+            golden.store((i, j), Scalar[golden.dtype](0))
 
     apple_matmul(c, a, b)
     gemm_naive(golden, a, b, m, n, k)
@@ -87,14 +88,9 @@ def test_matmul(
     var errors: Int = 0
     for i in range(m):
         for j in range(n):
-            if c.load(Coord(Idx(i), Idx(j))) != golden.load(
-                Coord(Idx(i), Idx(j))
-            ):
+            if c.load((i, j)) != golden.load((i, j)):
                 if errors < 10:
-                    print(
-                        c.load(Coord(Idx(i), Idx(j)))
-                        - golden.load(Coord(Idx(i), Idx(j)))
-                    )
+                    print(c.load((i, j)) - golden.load((i, j)))
                 errors += 1
 
     assert_true(
@@ -111,23 +107,23 @@ def test_matmul(
         ),
     )
 
-    golden_ptr.free()
+    golden_ptr.unsafe_free()
 
 
 def test_matmul(m: Int, n: Int, k: Int) raises:
-    var c_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
-    var a_ptr = alloc[Scalar[a_type]](m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
+    var c_ptr = unsafe_alloc[Scalar[c_type]](m * n, alignment=alignment)
+    var a_ptr = unsafe_alloc[Scalar[a_type]](m * k, alignment=alignment)
+    var b_ptr = unsafe_alloc[Scalar[b_type]](k * n, alignment=alignment)
 
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(m), Idx(n))))
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(m), Idx(k))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(k), Idx(n))))
+    var c = TileTensor(c_ptr, row_major(m, n))
+    var a = TileTensor(a_ptr, row_major(m, k))
+    var b = TileTensor(b_ptr, row_major(k, n))
 
     test_matmul(c, a, b, m, n, k)
 
-    c_ptr.free()
-    b_ptr.free()
-    a_ptr.free()
+    c_ptr.unsafe_free()
+    b_ptr.unsafe_free()
+    a_ptr.unsafe_free()
 
 
 def test_matmul() raises:
@@ -143,8 +139,8 @@ def test_matmul() raises:
 
 def bmm_naive(
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor,
+    b: TileTensor,
     batches: Int,
     m: Int,
     n: Int,
@@ -157,16 +153,10 @@ def bmm_naive(
         for i in range(m):
             for p in range(k):
                 for j in range(n):
-                    var a_val = a.load(Coord(Idx(batch), Idx(i), Idx(p))).cast[
-                        c.dtype
-                    ]()[0]
-                    var b_val = b.load(Coord(Idx(batch), Idx(p), Idx(j))).cast[
-                        c.dtype
-                    ]()[0]
-                    var cur = c.load(Coord(Idx(batch), Idx(i), Idx(j)))[0]
-                    c.store(
-                        Coord(Idx(batch), Idx(i), Idx(j)), cur + a_val * b_val
-                    )
+                    var a_val = a.load((batch, i, p)).cast[c.dtype]()[0]
+                    var b_val = b.load((batch, p, j)).cast[c.dtype]()[0]
+                    var cur = c.load((batch, i, j))[0]
+                    c.store((batch, i, j), cur + a_val * b_val)
 
 
 def test_batched_matmul(
@@ -181,18 +171,16 @@ def test_batched_matmul(
     comptime assert c.flat_rank >= 3
     comptime assert a.flat_rank >= 3
     comptime assert b.flat_rank >= 3
-    var golden_ptr = alloc[Scalar[c.dtype]](
+    var golden_ptr = unsafe_alloc[Scalar[c.dtype]](
         batches * m * n, alignment=alignment
     )
-    var golden = TileTensor(
-        golden_ptr, row_major(Coord(Idx(batches), Idx(m), Idx(n)))
-    )
+    var golden = TileTensor(golden_ptr, row_major(batches, m, n))
 
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
                 a.store(
-                    Coord(Idx(batch), Idx(i), Idx(j)),
+                    (batch, i, j),
                     Scalar[a.dtype](i + j) * Scalar[a.dtype](0.001),
                 )
 
@@ -200,17 +188,15 @@ def test_batched_matmul(
         for i in range(k):
             for j in range(n):
                 b.store(
-                    Coord(Idx(batch), Idx(i), Idx(j)),
+                    (batch, i, j),
                     Scalar[b.dtype](i + k) * Scalar[b.dtype](0.001),
                 )
 
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                c.store(Coord(Idx(batch), Idx(i), Idx(j)), Scalar[c.dtype](0))
-                golden.store(
-                    Coord(Idx(batch), Idx(i), Idx(j)), Scalar[golden.dtype](0)
-                )
+                c.store((batch, i, j), Scalar[c.dtype](0))
+                golden.store((batch, i, j), Scalar[golden.dtype](0))
 
     var c_shape = Index(batches, m, n)
     apple_batched_matmul(c, a, b, c_shape)
@@ -220,13 +206,10 @@ def test_batched_matmul(
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                if c.load(Coord(Idx(batch), Idx(i), Idx(j))) != golden.load(
-                    Coord(Idx(batch), Idx(i), Idx(j))
-                ):
+                if c.load((batch, i, j)) != golden.load((batch, i, j)):
                     if errors < 10:
                         print(
-                            c.load(Coord(Idx(batch), Idx(i), Idx(j)))
-                            - golden.load(Coord(Idx(batch), Idx(i), Idx(j))),
+                            c.load((batch, i, j)) - golden.load((batch, i, j)),
                             "at",
                             batch,
                             i,
@@ -250,23 +233,23 @@ def test_batched_matmul(
         ),
     )
 
-    golden_ptr.free()
+    golden_ptr.unsafe_free()
 
 
 def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
-    var c_ptr = alloc[Scalar[c_type]](batch * m * n, alignment=alignment)
-    var a_ptr = alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
+    var c_ptr = unsafe_alloc[Scalar[c_type]](batch * m * n, alignment=alignment)
+    var a_ptr = unsafe_alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
+    var b_ptr = unsafe_alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
 
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(batch), Idx(m), Idx(n))))
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(batch), Idx(m), Idx(k))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(batch), Idx(k), Idx(n))))
+    var c = TileTensor(c_ptr, row_major(batch, m, n))
+    var a = TileTensor(a_ptr, row_major(batch, m, k))
+    var b = TileTensor(b_ptr, row_major(batch, k, n))
 
     test_batched_matmul(c, a, b, batch, m, n, k)
 
-    c_ptr.free()
-    b_ptr.free()
-    a_ptr.free()
+    c_ptr.unsafe_free()
+    b_ptr.unsafe_free()
+    a_ptr.unsafe_free()
 
 
 def test_batched_matmul() raises:

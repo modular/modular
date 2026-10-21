@@ -15,18 +15,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
-from transformers.models.auto.configuration_auto import AutoConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchVLConfigWithTextSubconfig,
+)
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
@@ -125,8 +132,15 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Qwen3VLConfig(ArchConfigWithKVCache):
+class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Qwen3VL models."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
+    }
 
     devices: list[DeviceRef]
     """Devices that the Qwen3VL model is parallelized over."""
@@ -176,33 +190,11 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
     llm_config: Llama3Config
     """Language model configuration using Llama3 architecture."""
 
-    def get_kv_params(self) -> KVCacheParams:
+    quantization_encoding: SupportedEncoding | None = None
+
+    def get_kv_params(self) -> KVCacheParamInterface:
         """Returns the KV cache parameters from the embedded LLM config."""
         return self.llm_config.get_kv_params()
-
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded LLM config."""
-        return self.llm_config.get_max_seq_len()
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return Llama3Config.construct_kv_params(
-            huggingface_config=llm_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
@@ -212,26 +204,14 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
         )
         return Llama3Config.get_num_layers(llm_config)
 
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculate maximum sequence length for Qwen3VL."""
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config=pipeline_config,
-            huggingface_config=llm_config,
-        )
-
     @override
     @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3VLConfig instance from pipeline configuration.
 
@@ -249,13 +229,17 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3VLConfig from pipeline and HuggingFace configs.
 
@@ -278,9 +262,9 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
         text_config = huggingface_config.text_config
 
         # Get quantization encoding for dtype
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
 
         # Create VisionConfig from the vision config
@@ -319,7 +303,7 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
             )
 
         llm_config = Llama3Config.initialize_from_config(
-            pipeline_config, text_config
+            pipeline_config, text_config, max_seq_len=max_seq_len
         )
 
         # Handle both MoE (e.g., 30B) and dense (e.g., VL 2B 4B etc) variants.
@@ -356,6 +340,7 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
             vision_config=vision_config,
             # Composed language model configuration
             llm_config=llm_config,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(
@@ -364,7 +349,7 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
         llm_state_dict: dict[str, WeightData],
         vision_state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
     ) -> None:
         """Finalize the Qwen3VLConfig instance with state_dict dependent fields.
 

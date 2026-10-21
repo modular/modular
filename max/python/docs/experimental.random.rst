@@ -11,8 +11,8 @@ max.experimental.random
 
 .. currentmodule:: max.experimental.random
 
-Random generation
------------------
+Distributions
+-------------
 
 .. autosummary::
    :nosignatures:

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from max.nn.layer import Module
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 
 from .model_config import Qwen2_5VLConfig
 from .nn.decoder import Qwen25VLDecoder
@@ -36,7 +37,15 @@ class Qwen2_5VL(Module):
 
     def build_language_model(self) -> Qwen25VLDecoder:
         """Return the language model component."""
-        return Qwen25VLDecoder(self.config.llm_config)
+        encoding = self.config.quantization_encoding
+        assert encoding is not None, "quantization_encoding must be resolved"
+        return Qwen25VLDecoder(
+            self.config.llm_config,
+            mrope_section=self.config.mrope_section,
+            # The pipeline model's dtype, which the vision graph's outputs
+            # are cast to before they reach the language graph.
+            image_embedding_dtype=supported_encoding_dtype(encoding),
+        )
 
     def __call__(self, *args, **kwargs):
         """This class is not meant to be called directly. Use the component models instead."""

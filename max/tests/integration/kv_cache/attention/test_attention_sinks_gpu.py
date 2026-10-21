@@ -18,19 +18,17 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
-    KVCacheParams,
-    PagedCacheValues,
+    MHAKVCacheParams,
 )
-from test_common.context_utils import create_text_context
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
 def max_flash_attention_with_sinks(
@@ -68,7 +66,7 @@ def max_flash_attention_with_sinks(
     num_layers = 1
 
     # Setup KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
@@ -77,24 +75,13 @@ def max_flash_attention_with_sinks(
         devices=[DeviceRef.GPU()],
     )
 
-    # Create KV manager
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
+    prompt_lens = [
+        int(input_row_offsets[i + 1] - input_row_offsets[i])
+        for i in range(batch_size)
+    ]
+    kv_cache_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=8
     )
-
-    # Create contexts for KV cache
-    batch = []
-    for i in range(batch_size):
-        seq_len = input_row_offsets[i + 1] - input_row_offsets[i]
-        context = create_text_context(np.empty(seq_len))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        batch.append(context)
-
-    kv_cache_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     # Define graph input types
     input_type = TensorType(
@@ -120,7 +107,7 @@ def max_flash_attention_with_sinks(
                 input_type,
                 input_row_offsets_type,
                 sinks_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             inputs = g.inputs
@@ -129,13 +116,7 @@ def max_flash_attention_with_sinks(
             sink_weights = inputs[2].tensor
 
             # Fetch KV cache
-            kv_collection = PagedCacheValues(
-                kv_blocks=inputs[3].buffer,
-                cache_lengths=inputs[4].tensor,
-                lookup_table=inputs[5].tensor,
-                max_lengths=inputs[6].tensor,
-                dispatch_metadata=AttentionDispatchMetadata(inputs[7].tensor),
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(inputs[3:]))[0]
 
             # Layer index
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -174,7 +155,7 @@ def max_flash_attention_with_sinks(
         q_tensor,
         offsets_tensor,
         sinks_tensor,
-        *kv_cache_inputs,
+        *tree.leaves(kv_cache_inputs),
     )[0]
 
     return cast(Buffer, result).to(CPU()).to_numpy()

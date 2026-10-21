@@ -73,15 +73,15 @@ class Value(Generic[MlirType]):
 
     .. code-block:: python
 
-        from max.graph import Graph, ops, Value
+        from max.graph import DeviceRef, Graph, ops, Value
         from max.dtype import DType
         import numpy as np
 
         # Create a graph context
         with Graph("value_example") as graph:
             # Create input values
-            a = ops.constant(np.array([1, 2, 3]), dtype=DType.float32, device=DeviceRef.CPU())
-            b = ops.constant(np.array([4, 5, 6]), dtype=DType.float32, device=DeviceRef.CPU())
+            a = ops.constant(np.array([1, 2, 3], dtype=np.float32), dtype=DType.float32, device=DeviceRef.CPU())
+            b = ops.constant(np.array([4, 5, 6], dtype=np.float32), dtype=DType.float32, device=DeviceRef.CPU())
 
             # Use values to perform operations
             c = a + b  # c is a Value representing the addition
@@ -170,6 +170,15 @@ class Value(Generic[MlirType]):
 
 
 class _ChainValue(Value[mo.ChainType]):
+    """Represents a chain value used to sequence side-effecting ops.
+
+    When creating a graph, a global sequence of chains is initialized to
+    sequence side-effecting ops. Every side-effecting op, such as
+    ``buffer_load()``, ``buffer_store()``, and
+    ``buffer_store_slice()``, consumes the current chain and produces a new
+    one. Each chain can be used at most once, which prevents data races.
+    """
+
     def __init__(self, value: Value[Any] | _Value[mo.ChainType]) -> None:
         if isinstance(value, _Value):
             assert isinstance(value.type, mo.ChainType)
@@ -218,7 +227,38 @@ class _OpaqueValue(Value[mo.OpaqueType]):
 
 
 class BufferValue(Value[mo.BufferType]):
-    """Represents a mutable semantic tensor within a :class:`~max.graph.Graph`."""
+    """Represents a mutable semantic tensor within a :class:`~max.graph.Graph`.
+
+    Unlike a :class:`TensorValue`, which is value semantic and produces a new
+    value from every operation, a ``BufferValue`` refers to memory you can
+    update in place. Read it into a tensor with
+    :func:`~max.graph.ops.buffer_load` and write a tensor back with
+    :func:`~max.graph.ops.buffer_store`. This is how a graph carries state that
+    must persist across executions, such as a key-value cache.
+
+    The following example loads a buffer input, updates it, and stores the
+    result back in place:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import BufferType, DeviceRef, Graph, ops
+
+        buffer_type = BufferType(DType.float32, shape=[4], device=DeviceRef.CPU())
+
+        with Graph("buffer_demo", input_types=[buffer_type]) as graph:
+            state = graph.inputs[0].buffer
+
+            # Read the current contents into a value-semantic tensor.
+            current = ops.buffer_load(state)
+
+            # Write an updated tensor back into the same memory.
+            ops.buffer_store(state, current + 1)
+            graph.output(current)
+
+            print(f"dtype: {state.dtype}")  # Output: dtype: DType.float32
+            print(f"shape: {state.shape}")  # Output: shape: [Dim(4)]
+    """
 
     def __init__(
         self, value: Value[Any] | _Value[mo.BufferType] | HasBufferValue
@@ -332,7 +372,7 @@ class TensorValue(Value[mo.TensorType]):
 
         import numpy as np
         from max.dtype import DType
-        from max.graph import Graph, ops
+        from max.graph import DeviceRef, Graph, ops
 
         # Create a sample matrix
         matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -442,7 +482,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -472,7 +512,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a matrix with float32 values
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -497,7 +537,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix (2-dimensional array)
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -529,7 +569,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -565,7 +605,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -599,7 +639,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -632,7 +672,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a matrix with float32 values
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -657,14 +697,37 @@ class TensorValue(Value[mo.TensorType]):
         return ops.cast(self, dtype)
 
     def rebind(self, shape: ShapeLike, message: str = "") -> TensorValue:
-        """Rebinds the tensor to a new shape with error handling.
+        """Asserts that the tensor has the specified shape at runtime.
+
+        This method adds a runtime assertion that the tensor's shape matches
+        the given ``shape``. It does not modify the tensor's data or actual
+        shape; instead, it verifies the shape constraint and propagates
+        the asserted shape information to subsequent operations in the graph.
+
+        Use ``rebind()`` when you need to:
+
+        - Constrain a tensor with dynamic or unknown dimensions to specific
+          fixed sizes required by a downstream operation.
+        - Assert shape invariants that the compiler cannot infer statically.
+        - Provide shape hints to enable compiler optimizations.
+
+        If the assertion fails at runtime (the actual shape does not match
+        ``shape``), an error is raised with the optional ``message``.
 
         Args:
-            shape: The new shape as an iterable of integers or symbolic dimensions.
-            message: (optional) A message for logging or debugging.
+            shape: The expected shape as an iterable of integers or symbolic
+                dimensions (:class:`~max.graph.Dim`). The rank must match the
+                tensor's current rank.
+            message: An optional message to include in the error if the
+                assertion fails at runtime.
 
         Returns:
-            A new :class:`TensorValue` with the updated shape.
+            A new :class:`TensorValue` with the same data but with the
+            symbolic shape set to the asserted ``shape``.
+
+        Raises:
+            ValueError: If the rank of ``shape`` does not match the tensor's
+                rank.
         """
         return ops.rebind(self, shape, message)
 
@@ -699,7 +762,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x3 matrix
             matrix = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
@@ -922,7 +985,7 @@ class TensorValue(Value[mo.TensorType]):
         """Reduces the tensor using a variance operation along ``axis``.
 
         The variance is computed as the mean of squared deviations from the mean
-        (population variance, i.e., without Bessel's correction) along the specified axis.
+        (population variance; that is, without Bessel's correction) along the specified axis.
 
         .. code-block:: python
 
@@ -974,7 +1037,7 @@ class TensorValue(Value[mo.TensorType]):
             index = (index,)
         return ops.slice_tensor(self, index)
 
-    def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+    def __eq__(self, rhs: object) -> TensorValue:  # type: ignore[override]
         """Performs element-wise equality comparison.
 
         Args:
@@ -996,7 +1059,7 @@ class TensorValue(Value[mo.TensorType]):
         """Rounds to the elementwise nearest integer, with ties going towards the nearest even number."""
         return ops.round(self)
 
-    def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+    def __ne__(self, rhs: object) -> TensorValue:  # type: ignore[override]
         """Performs element-wise inequality comparison.
 
         Args:
@@ -1121,10 +1184,13 @@ class TensorValue(Value[mo.TensorType]):
     def __floordiv__(self, rhs: TensorValueLike) -> TensorValue:
         """Performs element-wise floor division.
 
+        Matches Python ``//``: see :obj:`~max.graph.ops.floor_div`. Integer
+        operands produce an integer result.
+
         Args:
             rhs: The right-hand side operand for floor division. Must be tensor-like.
         """
-        return ops.floor(ops.div(self, rhs))
+        return ops.floor_div(self, rhs)
 
     def __rfloordiv__(self, lhs: TensorValueLike) -> TensorValue:
         """Performs element-wise floor division with reversed operands.
@@ -1132,7 +1198,7 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             lhs: The left-hand side operand for floor division. Must be tensor-like.
         """
-        return ops.floor(ops.div(lhs, self))
+        return ops.floor_div(lhs, self)
 
     def __mod__(self, rhs: TensorValueLike) -> TensorValue:
         """Performs element-wise modulo operation.
@@ -1276,7 +1342,16 @@ StrongTensorValueLike = (
 )
 
 TensorValueLike = StrongTensorValueLike | Numeric
+"""Anything a graph operation accepts where a tensor value is expected.
+
+Covers :class:`TensorValue` and tensor-like objects, plus the numeric
+scalars a graph converts to constants.
+"""
+
 BufferValueLike = BufferValue | HasBufferValue
+"""A :class:`BufferValue` or any object convertible to one through
+``__buffervalue__``.
+"""
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
@@ -1284,10 +1359,6 @@ _numeric = (int, float, np.integer, np.floating, np.ndarray)
 _scalar = (int, float, np.integer, np.floating, Dim)
 _strong_tensor_value_like = (_Value[mo.TensorType], TensorValue, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
-
-
-def _is_numeric(obj: Any) -> TypeGuard[Numeric]:
-    return isinstance(obj, _numeric)
 
 
 def _is_scalar(obj: Any) -> TypeGuard[Scalar]:

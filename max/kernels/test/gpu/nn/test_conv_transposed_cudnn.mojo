@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import Vendor
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from layout._fillers import random
 from nn.conv.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
@@ -30,7 +29,7 @@ def test_conv_transposed_cudnn[
     stride_val: Int = 1,
     dilation_val: Int = 1,
     pad_val: Int = 0,
-    dtype: DType = DType.float32,
+    dtype: DType = .float32,
 ](ctx: DeviceContext,) raises:
     """
     Fixed 1-D transposed-convolution test with correct QRSFC kernel layout.
@@ -83,15 +82,13 @@ def test_conv_transposed_cudnn[
     ]()
 
     # Allocate host memory for NHWC tensors
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var output_host_ptr = alloc[Scalar[dtype]](output_size)
-    var output_ref_host_ptr = alloc[Scalar[dtype]](output_size)
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_ref_host_ptr = ctx.enqueue_create_host_buffer[dtype](output_size)
 
     # Create host TileTensors for NHWC
     var input_host = TileTensor(input_host_ptr, input_layout)
     var filter_host = TileTensor(filter_host_ptr, filter_layout)
-    var output_host = TileTensor(output_host_ptr, output_layout)
     var output_ref_host = TileTensor(output_ref_host_ptr, output_layout)
 
     random(input_host)
@@ -116,9 +113,7 @@ def test_conv_transposed_cudnn[
         ),
         TileTensor(
             filter_host_ptr,
-            row_major(
-                Coord(IndexList[5](1, 1, kernel_len, out_channels, in_channels))
-            ),
+            row_major(1, 1, kernel_len, out_channels, in_channels),
         ),
         stride,
         dilation,
@@ -132,9 +127,15 @@ def test_conv_transposed_cudnn[
     # -------------------------------------------------------------
 
     # Allocate host memory for NCHW tensors (for cuDNN)
-    var input_nchw_host_ptr = alloc[Scalar[dtype]](input_nchw_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_nchw_size)
-    var output_nchw_host_ptr = alloc[Scalar[dtype]](output_nchw_size)
+    var input_nchw_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        input_nchw_size
+    )
+    var filter_nchw_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        filter_nchw_size
+    )
+    var output_nchw_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_nchw_size
+    )
 
     # Create host TileTensors for NCHW
     var input_nchw_host = TileTensor(input_nchw_host_ptr, input_nchw_layout)
@@ -168,17 +169,15 @@ def test_conv_transposed_cudnn[
     # Invoke cuDNN helper.
     conv_transposed_cudnn[dtype, dtype, dtype](
         TileTensor(
-            d_input.unsafe_ptr(),
+            d_input,
             row_major(Coord(IndexList[4](1, in_channels, 1, input_len))),
         ),  # dy (input grad)
         TileTensor(
-            d_filter.unsafe_ptr(),
-            row_major(
-                Coord(IndexList[4](in_channels, out_channels, 1, kernel_len))
-            ),
+            d_filter,
+            row_major(in_channels, out_channels, 1, kernel_len),
         ),  # w (filter)
         TileTensor(
-            d_output.unsafe_ptr(),
+            d_output,
             row_major(Coord(IndexList[4](1, out_channels, 1, output_len))),
         ),  # dx (output)
         stride_hw,
@@ -205,15 +204,6 @@ def test_conv_transposed_cudnn[
             )
     print("Succeed")
 
-    # Cleanup host memory
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    output_host_ptr.free()
-    output_ref_host_ptr.free()
-    input_nchw_host_ptr.free()
-    filter_nchw_host_ptr.free()
-    output_nchw_host_ptr.free()
-
     # Cleanup device buffers
     _ = d_input^
     _ = d_filter^
@@ -223,7 +213,7 @@ def test_conv_transposed_cudnn[
 def main() raises:
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
-        if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:
+        if ctx.default_device_info.api != "cuda":
             print("Skipping cuDNN tests - not running on NVIDIA GPU")
             return
 

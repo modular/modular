@@ -10,7 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""DeepSeek-V3 mixture-of-experts architecture for text generation."""
 
 from .arch import deepseekV3_arch
+from .model import DeepseekV3Inputs, DeepseekV3Model
+from .model_config import DeepseekV3Config
+from .tool_parser import DeepseekV3_1ToolParser, DeepseekV3ToolParser
 
-__all__ = ["deepseekV3_arch"]
+__all__ = [
+    "DeepseekV3Config",
+    "DeepseekV3Inputs",
+    "DeepseekV3Model",
+    "DeepseekV3ToolParser",
+    "DeepseekV3_1ToolParser",
+    "deepseekV3_arch",
+]

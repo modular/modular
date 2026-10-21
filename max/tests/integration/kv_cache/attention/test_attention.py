@@ -20,19 +20,17 @@ from collections.abc import Callable, Sequence
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
 from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
-    KVCacheParams,
-    PagedCacheValues,
+    MHAKVCacheParams,
 )
-from modular_graph_test import modular_graph_test
-from test_common.context_utils import create_text_context
+from test_common.modular_graph_test import modular_graph_test
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
@@ -58,7 +56,7 @@ def test_kv_cache_ragged_attention(
     mask_strategy: MHAMaskVariant,
 ) -> None:
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
@@ -78,16 +76,7 @@ def test_kv_cache_ragged_attention(
         DType.uint32, ["input_row_offsets_len"], DeviceRef.CPU()
     )
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-    dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
-    assert dispatch_metadata_symbol is not None
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()
 
     def construct() -> Graph:
         with Graph(
@@ -95,29 +84,13 @@ def test_kv_cache_ragged_attention(
             input_types=[
                 input_type,
                 input_row_offsets_type,
-                *kv_symbolic_inputs,
+                *tree.leaves(kv_symbolic_inputs),
             ],
         ) as g:
-            (
-                input,
-                input_row_offsets,
-                blocks,
-                cache_lengths,
-                lookup_table,
-                max_lengths,
-                attention_dispatch_metadata,
-            ) = g.inputs
+            input, input_row_offsets, *kv_inputs = g.inputs
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                blocks.buffer,
-                cache_lengths.tensor,
-                lookup_table.tensor,
-                max_lengths.tensor,
-                dispatch_metadata=AttentionDispatchMetadata(
-                    attention_dispatch_metadata.tensor
-                ),
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
             result = flash_attention_ragged(
                 kv_params,
                 input=input.tensor,
@@ -133,15 +106,6 @@ def test_kv_cache_ragged_attention(
 
     g = construct()
 
-    batch = [
-        create_text_context(np.empty(prompt_lens[i])) for i in range(batch_size)
-    ]
-
-    for context in batch:
-        kv_manager.claim(context.request_id, replica_idx=0)
-        assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
-
     input_row_offsets = Buffer(
         DType.uint32,
         [batch_size + 1],
@@ -151,7 +115,9 @@ def test_kv_cache_ragged_attention(
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=8
+    )
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     @modular_graph_test(
@@ -163,11 +129,11 @@ def test_kv_cache_ragged_attention(
         },
         provided_inputs={
             1: input_row_offsets,
-            2: kv_runtime_inputs.blocks,
-            3: kv_runtime_inputs.cache_lengths,
-            4: kv_runtime_inputs.lookup_table,
-            5: kv_runtime_inputs.max_lengths,
-            6: kv_runtime_inputs.attention_dispatch_metadata,
+            # The KV tail starts at slot 2; let its own order place the rest.
+            **{
+                2 + i: buf
+                for i, buf in enumerate(tree.leaves(kv_runtime_inputs))
+            },
         },
     )
     def test_runs_without_nan(

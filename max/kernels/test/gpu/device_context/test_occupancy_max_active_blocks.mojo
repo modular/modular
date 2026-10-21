@@ -16,20 +16,23 @@
 
 from std.sys import align_of
 
-from std.gpu.host import DeviceContext
-from std.gpu import block_dim, global_idx, thread_idx
-from std.gpu.memory import external_memory
-from std.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu import block_dim, global_idx, thread_idx
+from max.gpu.memory import external_memory
+from max.gpu.sync import barrier
 from std.testing import assert_almost_equal, assert_equal
+from std.math import ceildiv
 
 
 # Kernel that uses shared memory for testing occupancy with dynamic shared memory
 def shared_memory_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
     """A kernel that uses shared memory to test occupancy calculations."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     var thread_id = thread_idx.x
     var block_size = block_dim.x
@@ -37,7 +40,7 @@ def shared_memory_kernel(
     # Get a pointer to shared memory for the indices and values
     var shared_data = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[Float32](),
     ]()
 
@@ -64,11 +67,13 @@ def shared_memory_kernel(
 
 # Simple kernel for testing occupancy calculations
 def occupancy_test_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
     """A simple kernel for testing occupancy - just copies input to output."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -82,9 +87,7 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     )
 
     # Compile the simple kernel for occupancy testing
-    var simple_func = ctx.compile_function[
-        occupancy_test_kernel, occupancy_test_kernel
-    ]()
+    var simple_func = ctx.compile_function[occupancy_test_kernel]()
 
     # Test with different block sizes
     var block_sizes: List[Int] = [32, 64, 128, 256, 512, 1024]
@@ -114,9 +117,7 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
             )
 
     # Test with shared memory usage
-    var shared_func = ctx.compile_function[
-        shared_memory_kernel, shared_memory_kernel
-    ]()
+    var shared_func = ctx.compile_function[shared_memory_kernel]()
 
     print("\nTesting occupancy with different shared memory sizes:")
     var shared_memory_sizes: List[Int] = [
@@ -170,15 +171,15 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     print("\nVerifying kernel execution with optimized block size:")
 
     comptime length = 1024
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var output_host = ctx.enqueue_create_host_buffer[.float32](length)
 
     # Initialize input data
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var output_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
+    var output_device = ctx.enqueue_create_buffer[.float32](length)
 
     # Copy input to device
     ctx.enqueue_copy(input_device, input_host)
@@ -199,12 +200,12 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     )
 
     # Launch the kernel
-    var grid_dim = (length + optimal_block_size - 1) // optimal_block_size
+    var grid_dim = ceildiv(length, optimal_block_size)
     comptime kernel = occupancy_test_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         input_device,
         output_device,
-        length,
+        Int32(length),
         grid_dim=grid_dim,
         block_dim=optimal_block_size,
     )

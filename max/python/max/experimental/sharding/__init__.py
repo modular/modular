@@ -11,64 +11,100 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Placement types and sharding specifications for distributed tensors.
+"""Defines how a tensor is laid out across a device mesh and how ops reshard it.
 
-This package is the single source of truth for describing how tensor data is
-distributed across a :class:`DeviceMesh`.  It contains:
+Describes, for every op, what redistribution to perform before the op runs.
+The pipeline is deliberately local: per-op rules over a placement vocabulary
+(:class:`Replicated`, :class:`Sharded`, :class:`Partial`,
+:class:`Unknown`), scored by a single cost model, with the cheapest plan
+picked at each dispatch. There is no whole-graph trace.
 
-**Placement types** (mesh-axis-indexed primitives):
+An op redistributes its inputs whenever the plan it picks needs it, so a
+model can contain collectives it never wrote. Inside an
+:func:`auto_reshard` block, ``mode="warn"`` reports each one and
+``"raise"`` refuses it, both naming the collective and the ``transfer_to``
+that would replace it:
 
-* :class:`Replicated` — every device holds a full copy.
-* :class:`Sharded` — tensor is split along a dimension.
-* :class:`Partial` — each device holds a partial result needing reduction.
+.. code-block:: python
 
-**Sharding specifications** (high-level wrappers):
+    from max.driver import CPU
+    from max.experimental.functional import full, matmul, relu
+    from max.experimental.sharding import (
+        DeviceMesh,
+        DeviceMapping,
+        Sharded,
+        auto_reshard,
+    )
 
-* :class:`PlacementMapping` — **mesh-axis-indexed** (PyTorch DTensor style).
-  One :class:`Placement` per mesh axis.  Suitable for eager dispatch.
-* :class:`NamedMapping` — **tensor-dimension-indexed** (JAX PartitionSpec
-  style).  One entry per tensor dimension names the mesh axis that shards it.
-  Suitable for compiler-driven sharding propagation.
+    # A simulated two-device mesh (both slots are the same CPU).
+    mesh = DeviceMesh(
+        devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
+    )
 
-Both spec types share the same :class:`DeviceMesh` and can be converted to
-each other for the standard placement vocabulary.  Conversions that would
-lose information raise :class:`ConversionError`.
+    # ``a`` is column-sharded, ``b`` is row-sharded: a @ b contracts the
+    # sharded dimension, so the product is a partial sum on every device.
+    a = full([4, 8], 1.0, device=DeviceMapping(mesh, (Sharded(1),)))
+    b = full([8, 2], 1.0, device=DeviceMapping(mesh, (Sharded(0),)))
+
+    # ``relu`` needs the full sum, so its input is allreduced first. This
+    # block reports that, instead of letting it pass unremarked.
+    with auto_reshard(mode="warn"):
+        y = relu(matmul(a, b))
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    # full(4, 8) @ full(8, 2) = 8 * ones(4, 2), then relu is a no-op (positive).
+    assert np.allclose(y.to_numpy(), np.full((4, 2), 8.0))
+
+This module avoids the overloaded word "rank". A *device* is one accelerator;
+a *mesh axis* is one named dimension of the :class:`DeviceMesh` grid; a
+*shard* is one device's piece of a tensor; a *tensor axis* is a dimension of
+the tensor itself.
 """
 
-from .mappings import (
-    ConversionError,
-    DeviceMapping,
-    NamedMapping,
-    PlacementMapping,
-    SpecEntry,
+from ._auto_reshard import auto_reshard
+from .action import (
+    AxisAssignment,
+    match_operand_placement,
+    replicated_rows,
 )
+from .mappings import ConversionError, DeviceMapping, NamedMapping
 from .mesh import DeviceMesh
-from .placements import Partial, Placement, ReduceOp, Replicated, Sharded
-from .shapes import (
-    _shard_sizes_along_axis,
-    global_shape_from_local,
-    local_shard_shape_from_global,
-    shard_shape,
+from .placements import (
+    ALL_TRANSITIONS,
+    DEFAULT_TRANSITIONS,
+    Partial,
+    Placement,
+    Replicated,
+    Sharded,
+    ShardingError,
+    Transition,
+    Unknown,
 )
-from .types import DistributedBufferType, DistributedTensorType, DistributedType
+from .types import BufferLayout, TensorLayout
+from .visualize import visualize
 
 __all__ = [
+    "ALL_TRANSITIONS",
+    "DEFAULT_TRANSITIONS",
+    "AxisAssignment",
+    "BufferLayout",
     "ConversionError",
     "DeviceMapping",
     "DeviceMesh",
-    "DistributedBufferType",
-    "DistributedTensorType",
-    "DistributedType",
     "NamedMapping",
     "Partial",
     "Placement",
-    "PlacementMapping",
-    "ReduceOp",
     "Replicated",
     "Sharded",
-    "SpecEntry",
-    "_shard_sizes_along_axis",
-    "global_shape_from_local",
-    "local_shard_shape_from_global",
-    "shard_shape",
+    "ShardingError",
+    "TensorLayout",
+    "Transition",
+    "Unknown",
+    "auto_reshard",
+    "match_operand_placement",
+    "replicated_rows",
+    "visualize",
 ]

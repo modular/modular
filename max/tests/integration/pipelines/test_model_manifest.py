@@ -13,13 +13,18 @@
 
 """Tests for ModelManifest."""
 
+import pickle
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+from max.graph.weights import WeightData
 from max.pipelines.lib.config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.weight_loader import WeightLoader, dict_loader
 
 # All unit tests patch _load_model_index and validate_hf_repo_access to
 # avoid network calls.  We also force HF_HUB_OFFLINE=False so that
@@ -29,8 +34,14 @@ from max.pipelines.lib.model_manifest import ModelManifest
 LOAD_INDEX_TARGET = (
     "max.pipelines.lib.model_manifest.ModelManifest._load_model_index"
 )
-VALIDATE_HF_ACCESS_TARGET = "max.pipelines.lib.hf_utils.validate_hf_repo_access"
+VALIDATE_HF_ACCESS_TARGET = (
+    "max.pipelines.lib.config.model_config.validate_hf_repo_access"
+)
+VALIDATE_HF_ACCESS_HFUTILS_TARGET = (
+    "max.pipelines.weights.hf_utils.validate_hf_repo_access"
+)
 HF_OFFLINE_TARGET = "huggingface_hub.constants.HF_HUB_OFFLINE"
+FILE_EXISTS_TARGET = "huggingface_hub.file_exists"
 
 
 def _make_config(
@@ -47,28 +58,57 @@ def _make_config(
     return MAXModelConfig.model_construct(**kwargs)
 
 
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally so real-repo tests keep
+    working; uncached/placeholder repos get a fake path.
+    """
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+        # Some tests force HF_HUB_OFFLINE=False (online path); keep the eager
+        # config-existence probe offline so it doesn't hit the network.
+        patch("huggingface_hub.file_exists", return_value=False),
+    ):
+        yield
+
+
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestFromModelPath:
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_get_main(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_get_main(
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         assert registry["main"].model_path == "test-model"
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_contains_main(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_contains_main(
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         assert "main" in registry
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_does_not_contain_other(
-        self, _mock_load: Any, _mock_validate: Any
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         assert "draft" not in registry
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_items(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_items(
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         items = list(registry.items())
         assert len(items) == 1
@@ -77,7 +117,9 @@ class TestFromModelPath:
         assert cfg.model_path == "test-model"
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_len(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_len(
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         assert len(registry) == 1
 
@@ -132,12 +174,13 @@ class TestSpeculativeDecoding:
         assert len(registry) == 2
 
 
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestErrorMessages:
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_get_missing_role(
-        self, _mock_load: Any, _mock_validate: Any
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         with pytest.raises(KeyError, match="draft"):
@@ -145,13 +188,14 @@ class TestErrorMessages:
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_get_missing_role_lists_available(
-        self, _mock_load: Any, _mock_validate: Any
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         with pytest.raises(KeyError, match="main"):
             registry["draft"]
 
 
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestDiffusersAutoExpansion:
@@ -168,7 +212,9 @@ class TestDiffusersAutoExpansion:
             "scheduler": ["diffusers", "FlowMatchEulerDiscreteScheduler"],
         }
 
-    def test_expands_diffusers_model(self, _mock_validate: Any) -> None:
+    def test_expands_diffusers_model(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path("org/diffusion-model")
 
@@ -178,22 +224,26 @@ class TestDiffusersAutoExpansion:
         assert "scheduler" in registry
 
     def test_each_component_inherits_model_path(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path("org/diffusion-model")
 
-        for _role, component_cfg in registry.items():
+        for component_cfg in registry.values():
             assert component_cfg.model_path == "org/diffusion-model"
 
-    def test_each_component_has_subfolder(self, _mock_validate: Any) -> None:
+    def test_each_component_has_subfolder(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path("org/diffusion-model")
 
         for role, component_cfg in registry.items():
             assert component_cfg.subfolder == role
 
-    def test_non_diffusers_stays_main(self, _mock_validate: Any) -> None:
+    def test_non_diffusers_stays_main(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=None):
             registry = ModelManifest.from_model_path(
                 "org/llm-model", device_specs=[]
@@ -203,7 +253,7 @@ class TestDiffusersAutoExpansion:
         assert len(registry) == 1
 
     def test_propagates_kwargs_to_diffusers_components(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path(
@@ -215,7 +265,9 @@ class TestDiffusersAutoExpansion:
         for config in registry.values():
             assert config.quantization_encoding == "float32"
 
-    def test_skips_private_keys(self, _mock_validate: Any) -> None:
+    def test_skips_private_keys(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         model_index: dict[str, object] = {
             "_class_name": "FluxPipeline",
             "_diffusers_version": "0.30.0",
@@ -228,7 +280,9 @@ class TestDiffusersAutoExpansion:
         assert "_class_name" not in registry
         assert "_diffusers_version" not in registry
 
-    def test_metadata_populated(self, _mock_validate: Any) -> None:
+    def test_metadata_populated(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         model_index: dict[str, object] = {
             "_class_name": "FluxPipeline",
             "_diffusers_version": "0.30.0",
@@ -246,6 +300,141 @@ class TestDiffusersAutoExpansion:
         }
 
 
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
+@patch(HF_OFFLINE_TARGET, False)
+@patch(VALIDATE_HF_ACCESS_TARGET)
+class TestModularModelIndex:
+    """Expansion of a ``modular_model_index.json``, whose components are
+    3-element entries carrying their own loading arguments."""
+
+    @staticmethod
+    def _entry(class_name: str, subfolder: str | None) -> list[object]:
+        """One 3-element entry, as MiniMax Music 3's index writes them."""
+        loading_args: dict[str, object] = {
+            "pretrained_model_name_or_path": "org/canonical-repo",
+            "revision": None,
+            "type_hint": ["diffusers", class_name],
+            "variant": None,
+        }
+        if subfolder is not None:
+            loading_args["subfolder"] = subfolder
+        return ["diffusers", class_name, loading_args]
+
+    @classmethod
+    def _fake_modular_index(cls) -> dict[str, object]:
+        return {
+            "_blocks_class_name": "MiniMaxMusic3Blocks",
+            "_class_name": "MiniMaxMusic3ModularPipeline",
+            "transformer": cls._entry(
+                "MiniMaxMusic3Transformer1DModel", "transformer"
+            ),
+            "vocoder": cls._entry("MiniMaxMusic3Vocoder", "vocoder"),
+        }
+
+    def test_expands_modular_components(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        with patch(LOAD_INDEX_TARGET, return_value=self._fake_modular_index()):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        assert set(registry) == {"transformer", "vocoder"}
+        assert registry.metadata == {
+            "_blocks_class_name": "MiniMaxMusic3Blocks",
+            "_class_name": "MiniMaxMusic3ModularPipeline",
+        }
+
+    def test_reads_the_explicit_subfolder(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        index: dict[str, object] = {
+            "transformer": self._entry("MiniMaxMusic3Transformer1DModel", "dit")
+        }
+        with patch(LOAD_INDEX_TARGET, return_value=index):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        assert registry["transformer"].subfolder == "dit"
+
+    def test_falls_back_to_the_role_without_a_subfolder(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        index: dict[str, object] = {
+            "vocoder": self._entry("MiniMaxMusic3Vocoder", None)
+        }
+        with patch(LOAD_INDEX_TARGET, return_value=index):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        assert registry["vocoder"].subfolder == "vocoder"
+
+    def test_keeps_the_requested_repo_over_the_canonical_one(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        # The index names the checkpoint's Hub id; a local checkout has to
+        # keep resolving locally rather than being sent back to the Hub.
+        with patch(LOAD_INDEX_TARGET, return_value=self._fake_modular_index()):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        for config in registry.values():
+            assert config.model_path == "org/music-model"
+
+    def test_entry_without_loading_args_is_metadata(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        index: dict[str, object] = {
+            "transformer": ["diffusers", "MiniMaxMusic3Transformer1DModel"],
+            "_bogus": ["diffusers", "SomeClass", "not-a-dict"],
+        }
+        with patch(LOAD_INDEX_TARGET, return_value=index):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        assert set(registry) == {"transformer"}
+        assert registry.metadata == {
+            "_bogus": ["diffusers", "SomeClass", "not-a-dict"]
+        }
+
+
+class TestModelIndexDiscovery:
+    """Which index file ``_load_model_index`` reads, and from where."""
+
+    @staticmethod
+    def _local_repo(path: Path) -> Any:
+        repo = MagicMock()
+        repo.repo_type = "local"
+        repo.local_path = str(path)
+        return repo
+
+    def test_reads_a_plain_index(self, tmp_path: Path) -> None:
+        (tmp_path / "model_index.json").write_text('{"_class_name": "Flux"}')
+
+        index = ModelManifest._load_model_index(self._local_repo(tmp_path))
+
+        assert index == {"_class_name": "Flux"}
+
+    def test_reads_a_modular_index(self, tmp_path: Path) -> None:
+        (tmp_path / "modular_model_index.json").write_text(
+            '{"_class_name": "MiniMaxMusic3ModularPipeline"}'
+        )
+
+        index = ModelManifest._load_model_index(self._local_repo(tmp_path))
+
+        assert index == {"_class_name": "MiniMaxMusic3ModularPipeline"}
+
+    def test_prefers_the_plain_index(self, tmp_path: Path) -> None:
+        (tmp_path / "model_index.json").write_text('{"_class_name": "Plain"}')
+        (tmp_path / "modular_model_index.json").write_text(
+            '{"_class_name": "Modular"}'
+        )
+
+        index = ModelManifest._load_model_index(self._local_repo(tmp_path))
+
+        assert index == {"_class_name": "Plain"}
+
+    def test_returns_none_without_an_index(self, tmp_path: Path) -> None:
+        assert (
+            ModelManifest._load_model_index(self._local_repo(tmp_path)) is None
+        )
+
+
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestRevisionPropagation:
@@ -253,7 +442,7 @@ class TestRevisionPropagation:
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_revision_propagates_to_main(
-        self, _mock_load: Any, _mock_validate: Any
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         registry = ModelManifest.from_model_path(
             "test-model", revision="abc123", device_specs=[]
@@ -261,7 +450,7 @@ class TestRevisionPropagation:
         assert registry["main"].huggingface_model_revision == "abc123"
 
     def test_revision_propagates_to_components(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         model_index: dict[str, object] = {
             "_class_name": "FluxPipeline",
@@ -273,12 +462,24 @@ class TestRevisionPropagation:
                 "org/diffusion-model", revision="def456"
             )
 
-        for _role, cfg in registry.items():
+        for cfg in registry.values():
             assert cfg.huggingface_model_revision == "def456"
 
 
 class TestWithOverride:
     """Tests for with_override."""
+
+    @pytest.fixture(autouse=True)
+    def _offline_hf_probe(self) -> Any:
+        """Keep with_override's weight-path identity re-resolution offline.
+
+        Overriding ``weight_path`` re-runs the identity parse, which probes
+        HF for ``org/repo/file`` paths. Default the probe to False so paths
+        pass through unchanged; tests that exercise external-repo extraction
+        re-patch it to True.
+        """
+        with patch(FILE_EXISTS_TARGET, return_value=False):
+            yield
 
     @staticmethod
     def _flux2_manifest() -> ModelManifest:
@@ -426,48 +627,69 @@ class TestWithOverride:
         assert updated["draft"].quantization_encoding == "q4_0"
         assert updated["main"] is main_model  # main unchanged
 
+    def test_weight_path_override_extracts_external_weights_repo(self) -> None:
+        """An ``org/repo/file`` weight_path override resolves to that repo.
 
-DEVICES_EXIST_TARGET = "max.pipelines.lib.config.model_config.devices_exist"
-WEIGHT_PARSE_TARGET = (
-    "max.pipelines.lib.config.model_config.WeightPathParser.parse"
-)
+        Regression test for the FLUX.2/Wan quantized serving configs:
+        ``--model-override transformer.weight_path=["org/quant-repo/f.st"]``
+        must split the external repo id off the path (as construction-time
+        parsing does) instead of treating the whole string as a file inside
+        the base repo, which 404s at weight download.
+        """
+        manifest = self._flux2_manifest()
+        with patch(FILE_EXISTS_TARGET, return_value=True):
+            updated = manifest.with_override(
+                "transformer",
+                weight_path=[
+                    Path(
+                        "black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors"
+                    )
+                ],
+                quantization_encoding="float4_e2m1fnx2",
+            )
+        cfg = updated["transformer"]
+        assert cfg.weight_path == [Path("flux2-dev-nvfp4.safetensors")]
+        assert (
+            cfg.huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev-NVFP4"
+        )
+        # The original manifest's component is untouched.
+        assert (
+            manifest["transformer"].huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev"
+        )
+
+    def test_weight_path_override_resets_stale_weights_repo(self) -> None:
+        """Re-overriding weight_path drops a previously extracted repo id."""
+        manifest = self._flux2_manifest()
+        with patch(FILE_EXISTS_TARGET, return_value=True):
+            updated = manifest.with_override(
+                "transformer",
+                weight_path=[Path("org/quant-repo/weights.safetensors")],
+            )
+        assert (
+            updated["transformer"].huggingface_weight_repo_id
+            == "org/quant-repo"
+        )
+
+        reverted = updated.with_override(
+            "transformer", weight_path=[Path("weights.safetensors")]
+        )
+        assert (
+            reverted["transformer"].huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev"
+        )
 
 
-class TestResolve:
-    """Tests for ModelManifest.resolve()."""
+class TestFlux2Overrides:
+    """with_override() composes multi-component replacement scenarios."""
 
-    def test_resolve_calls_each_config(self) -> None:
-        """resolve() delegates to MAXModelConfig.resolve() for every component."""
-        vae = _make_config("vae-model")
-        unet = _make_config("unet-model")
-        manifest = ModelManifest({"vae": vae, "unet": unet})
-
-        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
-            manifest.resolve()
-
-        assert mock_resolve.call_count == 2
-
-    def test_resolve_empty_manifest(self) -> None:
-        """resolve() on an empty manifest is a no-op."""
-        manifest = ModelManifest({})
-        manifest.resolve()  # should not raise
-
-    def test_resolve_single_main(self) -> None:
-        """resolve() works for a single-model manifest."""
-        cfg = _make_config("org/llm-model")
-        manifest = ModelManifest({"main": cfg})
-
-        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
-            manifest.resolve()
-
-        mock_resolve.assert_called_once()
-
-    @patch(DEVICES_EXIST_TARGET, return_value=True)
+    @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
-    def test_resolve_flux2_with_overrides(
-        self, _mock_validate: Any, _mock_devices: Any
+    def test_flux2_with_overrides(
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
-        """Resolve a FLUX.2-dev manifest with transformer and VAE overrides.
+        """Override a FLUX.2-dev manifest's transformer weights and VAE.
 
         Simulates:
           - main repo: black-forest-labs/FLUX.2-dev (diffusers pipeline)
@@ -495,47 +717,27 @@ class TestResolve:
             }
         )
 
-        # Apply overrides: NVFP4 transformer weights + tiny VAE.
-        manifest = manifest.with_override(
-            "transformer",
-            weight_path=[
-                Path("black-forest-labs/FLUX.2-dev-NVFP4/weights.safetensors")
-            ],
-            quantization_encoding="float4_e2m1fnx2",
-        ).with_override(
-            "vae",
-            config=_make_config(
-                "fal/FLUX.2-Tiny-AutoEncoder",
-                quantization_encoding="bfloat16",
-            ),
-        )
+        # Apply overrides: NVFP4 transformer weights + tiny VAE. The
+        # weight_path override re-resolves identity, which probes HF for
+        # ``org/repo/file`` paths — force the probe offline so the path
+        # passes through unchanged.
+        with patch(FILE_EXISTS_TARGET, return_value=False):
+            manifest = manifest.with_override(
+                "transformer",
+                weight_path=[
+                    Path(
+                        "black-forest-labs/FLUX.2-dev-NVFP4/weights.safetensors"
+                    )
+                ],
+                quantization_encoding="float4_e2m1fnx2",
+            ).with_override(
+                "vae",
+                config=_make_config(
+                    "fal/FLUX.2-Tiny-AutoEncoder",
+                    quantization_encoding="bfloat16",
+                ),
+            )
 
-        # Verify pre-resolve state.
-        assert (
-            manifest["transformer"].quantization_encoding == "float4_e2m1fnx2"
-        )
-        assert manifest["transformer"].model_path == base_repo
-        assert manifest["vae"].model_path == "fal/FLUX.2-Tiny-AutoEncoder"
-        assert manifest["text_encoder"].model_path == base_repo
-        assert manifest["scheduler"].model_path == base_repo
-
-        # Mock WeightPathParser.parse to return weight_path unchanged
-        # (avoids filesystem/network access).
-        def fake_parse(
-            model_path: str, weight_path: list[Path]
-        ) -> tuple[list[Path], str | None]:
-            return (weight_path, None)
-
-        with patch(WEIGHT_PARSE_TARGET, side_effect=fake_parse):
-            manifest.resolve()
-
-        # Print resolved manifest for manual inspection.
-        import logging
-
-        logging.basicConfig(level=logging.INFO, force=True)
-        manifest.log_model_info()
-
-        # Post-resolve: configs should retain their values.
         assert (
             manifest["transformer"].quantization_encoding == "float4_e2m1fnx2"
         )
@@ -549,99 +751,73 @@ class TestResolve:
         assert manifest["scheduler"].model_path == base_repo
 
 
-class TestFrozenAfterResolve:
-    """Tests that ModelManifest rejects mutations after resolve()."""
+class TestImmutability:
+    """ModelManifest rejects mutation; updates go through with_override()."""
 
-    @staticmethod
-    def _resolved_manifest() -> ModelManifest:
+    def test_setitem_raises(self) -> None:
         manifest = ModelManifest({"main": _make_config("org/model")})
-        with patch.object(MAXModelConfig, "resolve"):
-            manifest.resolve()
-        return manifest
+        with pytest.raises(TypeError, match="immutable"):
+            manifest["draft"] = _make_config("org/other")
 
-    def test_setitem_raises_after_resolve(self) -> None:
-        manifest = self._resolved_manifest()
-        with pytest.raises(TypeError, match="frozen after resolve"):
-            manifest["new"] = _make_config("org/other")
-
-    def test_delitem_raises_after_resolve(self) -> None:
-        manifest = self._resolved_manifest()
-        with pytest.raises(TypeError, match="frozen after resolve"):
+    def test_delitem_raises(self) -> None:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        with pytest.raises(TypeError, match="immutable"):
             del manifest["main"]
 
-    def test_update_raises_after_resolve(self) -> None:
-        manifest = self._resolved_manifest()
-        with pytest.raises(TypeError, match="frozen after resolve"):
-            manifest.update({"new": _make_config("org/other")})
+    def test_update_raises(self) -> None:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        with pytest.raises(TypeError, match="immutable"):
+            manifest.update({"draft": _make_config("org/other")})
 
-    def test_pop_raises_after_resolve(self) -> None:
-        manifest = self._resolved_manifest()
-        with pytest.raises(TypeError, match="frozen after resolve"):
+    def test_pop_raises(self) -> None:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        with pytest.raises(TypeError, match="immutable"):
             manifest.pop("main")
 
-    def test_clear_raises_after_resolve(self) -> None:
-        manifest = self._resolved_manifest()
-        with pytest.raises(TypeError, match="frozen after resolve"):
+    def test_popitem_raises(self) -> None:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        with pytest.raises(TypeError, match="immutable"):
+            manifest.popitem()
+
+    def test_setdefault_raises(self) -> None:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        with pytest.raises(TypeError, match="immutable"):
+            manifest.setdefault("draft", _make_config("org/other"))
+
+    def test_clear_raises(self) -> None:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+        with pytest.raises(TypeError, match="immutable"):
             manifest.clear()
 
-    def test_mutations_allowed_before_resolve(self) -> None:
-        manifest = ModelManifest({"main": _make_config("org/model")})
-        new_cfg = _make_config("org/other")
-        manifest["draft"] = new_cfg
-        assert manifest["draft"] is new_cfg
 
+class TestPickle:
+    """ModelManifest round-trips through pickle.
 
-class TestTotalWeightsSize:
-    """Tests for ModelManifest.total_weights_size."""
+    ``PipelineConfig`` crosses process boundaries when serve spawns model
+    workers, and the default dict-subclass protocol restores items through
+    ``__setitem__``, which this class rejects.
+    """
 
-    def test_raises_before_resolve(self) -> None:
-        """Accessing total_weights_size before resolve() raises RuntimeError."""
-        manifest = ModelManifest({"main": _make_config("org/model")})
-        with pytest.raises(RuntimeError, match="must be resolved"):
-            _ = manifest.total_weights_size
-
-    def test_sums_component_weights(self) -> None:
-        """total_weights_size sums weights_size() across all components."""
+    def test_round_trip_preserves_items_and_metadata(self) -> None:
         manifest = ModelManifest(
-            {
-                "transformer": _make_config("org/model"),
-                "vae": _make_config("org/model"),
-            }
+            {"main": _make_config("org/llm-model")},
+            metadata={"_class_name": "FluxPipeline"},
         )
-        with (
-            patch.object(MAXModelConfig, "resolve"),
-            patch.object(
-                MAXModelConfig,
-                "weights_size",
-                side_effect=[100, 200],
-            ),
-        ):
-            manifest.resolve()
-            assert manifest.total_weights_size == 300
 
-    def test_empty_weight_path_contributes_zero(self) -> None:
-        """Components with no weight_path contribute zero bytes."""
-        scheduler = _make_config("org/model", weight_path=[])
-        transformer = _make_config("org/model")
-        manifest = ModelManifest(
-            {"scheduler": scheduler, "transformer": transformer}
-        )
-        with (
-            patch.object(MAXModelConfig, "resolve"),
-            patch.object(
-                MAXModelConfig,
-                "weights_size",
-                side_effect=[0, 500],
-            ),
-        ):
-            manifest.resolve()
-            assert manifest.total_weights_size == 500
+        restored = pickle.loads(pickle.dumps(manifest))
 
-    def test_empty_manifest_returns_zero(self) -> None:
-        """An empty resolved manifest has total_weights_size == 0."""
-        manifest = ModelManifest({})
-        manifest.resolve()
-        assert manifest.total_weights_size == 0
+        assert isinstance(restored, ModelManifest)
+        assert list(restored.keys()) == ["main"]
+        assert restored["main"].model_path == "org/llm-model"
+        assert restored.metadata == {"_class_name": "FluxPipeline"}
+
+    def test_round_trip_stays_immutable(self) -> None:
+        manifest = ModelManifest({"main": _make_config("org/model")})
+
+        restored = pickle.loads(pickle.dumps(manifest))
+
+        with pytest.raises(TypeError, match="immutable"):
+            restored["draft"] = _make_config("org/other")
 
 
 class TestSerialization:
@@ -892,9 +1068,12 @@ class TestPrimaryArchitectureName:
             ):
                 _ = manifest.main_architecture_name
 
+    @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
     @patch(HF_OFFLINE_TARGET, False)
     @patch(VALIDATE_HF_ACCESS_TARGET)
-    def test_diffusion_returns_class_name(self, _mock_validate: Any) -> None:
+    def test_diffusion_returns_class_name(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         """Diffusion manifests return _class_name from stored metadata."""
         model_index: dict[str, object] = {
             "_class_name": "FluxPipeline",
@@ -932,7 +1111,6 @@ _COMPUTED_FIELDS = {
     "huggingface_model_repo",
     "huggingface_config",
     "model_name",
-    "graph_quantization_encoding",
     "generation_config",
     "sampling_params_defaults",
 }
@@ -963,3 +1141,197 @@ def _msgpack_round_trip(manifest: ModelManifest) -> ModelManifest:
         for role, cfg_data in unpacked["models"].items()
     }
     return ModelManifest(models, metadata=unpacked.get("metadata"))
+
+
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
+@patch(HF_OFFLINE_TARGET, False)
+@patch(VALIDATE_HF_ACCESS_TARGET)
+class TestCrossRepoSubfolder:
+    """Tests for cross-repo weight subfolder handling."""
+
+    def test_huggingface_weight_repo_clears_subfolder_for_external_repo(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        """When _weights_repo_id differs from model_path, subfolder is None."""
+        cfg = _make_config("org/base-model")
+        cfg = cfg.model_copy(update={"subfolder": "transformer"})
+        cfg._weights_repo_id = "org/external-weights"
+
+        repo = cfg.huggingface_weight_repo
+        assert repo.subfolder is None
+        assert repo.repo_id == "org/external-weights"
+
+    def test_huggingface_weight_repo_preserves_subfolder_for_same_repo(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        """When _weights_repo_id matches model_path, subfolder is preserved."""
+        cfg = _make_config("org/base-model")
+        cfg = cfg.model_copy(update={"subfolder": "transformer"})
+        cfg._weights_repo_id = "org/base-model"
+
+        repo = cfg.huggingface_weight_repo
+        assert repo.subfolder == "transformer"
+
+    def test_huggingface_weight_repo_preserves_subfolder_when_no_override(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        """When _weights_repo_id is None, subfolder is preserved."""
+        cfg = _make_config("org/base-model")
+        cfg = cfg.model_copy(update={"subfolder": "transformer"})
+
+        repo = cfg.huggingface_weight_repo
+        assert repo.subfolder == "transformer"
+
+
+# ---------------------------------------------------------------------------
+# loader() helpers
+# ---------------------------------------------------------------------------
+
+LOAD_WEIGHTS_TARGET = "max.pipelines.lib.config.model_config.load_weights"
+
+
+def _wd(name: str, value: float = 0.0) -> WeightData:
+    """Build a tiny ``WeightData`` carrying a single-element float32 array."""
+    return WeightData.from_numpy(np.array([value], dtype=np.float32), name)
+
+
+def _fake_weights(items: dict[str, WeightData]) -> MagicMock:
+    """Mock the ``Weights`` protocol enough for ``_loader_over_weights``.
+
+    Supports both access paths the loader uses:
+    - ``w.items()`` -> ``(name, accessor)`` pairs (for ``keys()`` iteration).
+    - ``w[name]`` -> accessor (for query resolution).
+
+    Each accessor's ``.data()`` returns the corresponding ``WeightData``.
+    """
+    accessors = {
+        name: MagicMock(data=MagicMock(return_value=wd))
+        for name, wd in items.items()
+    }
+    weights = MagicMock()
+    weights.items.return_value = list(accessors.items())
+    weights.__getitem__.side_effect = lambda name: accessors[name]
+    return weights
+
+
+def _per_role_loader_patch(
+    manifest: ModelManifest, per_role: dict[str, dict[str, WeightData]]
+) -> Any:
+    """Patches ``MAXModelConfig.loader`` to route by-role into ``dict_loader``."""
+
+    def fake_loader(self: MAXModelConfig) -> WeightLoader:
+        for role, cfg in manifest.items():
+            if cfg is self:
+                return dict_loader(per_role[role])
+        raise AssertionError("unknown config")
+
+    return patch.object(MAXModelConfig, "loader", fake_loader)
+
+
+class TestMAXModelConfigLoader:
+    def test_loader_resolves_and_enumerates(self) -> None:
+        cfg = _make_config("test/model")
+        wd_a = _wd("a")
+        wd_b = _wd("b")
+        fake = _fake_weights({"layer.0.weight": wd_a, "layer.1.bias": wd_b})
+        with (
+            patch.object(
+                MAXModelConfig,
+                "resolved_weight_paths",
+                return_value=[Path("/tmp/w.safetensors")],
+            ),
+            patch(LOAD_WEIGHTS_TARGET, return_value=fake) as load_mock,
+        ):
+            loader = cfg.loader()
+            assert loader("layer.0.weight") is wd_a
+            assert loader("layer.1.bias") is wd_b
+            assert set(loader.keys()) == {"layer.0.weight", "layer.1.bias"}
+
+        load_mock.assert_called_once_with([Path("/tmp/w.safetensors")])
+
+    def test_loader_keys_filter_by_prefix(self) -> None:
+        cfg = _make_config("test/model")
+        fake = _fake_weights(
+            {"layers.0.weight": _wd("a"), "embed.weight": _wd("b")}
+        )
+        with (
+            patch.object(
+                MAXModelConfig,
+                "resolved_weight_paths",
+                return_value=[Path("/tmp/w.safetensors")],
+            ),
+            patch(LOAD_WEIGHTS_TARGET, return_value=fake),
+        ):
+            loader = cfg.loader()
+            assert set(loader.keys("layers.")) == {"layers.0.weight"}
+
+    def test_empty_when_no_weights(self) -> None:
+        cfg = _make_config("test/model")
+        with patch.object(
+            MAXModelConfig, "resolved_weight_paths", return_value=[]
+        ):
+            loader = cfg.loader()
+
+        assert list(loader.keys()) == []
+        with pytest.raises(KeyError):
+            loader("any.name")
+
+
+class TestModelManifestLoader:
+    def test_loader_resolves_role_prefixed_keys(self) -> None:
+        manifest = ModelManifest({"text_encoder": _make_config("te")})
+        wd = _wd("v")
+        per_role = {"text_encoder": {"layers.0.weight": wd}}
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert loader("text_encoder.layers.0.weight") is wd
+        assert set(loader.keys()) == {"text_encoder.layers.0.weight"}
+
+    def test_loader_unions_multiple_roles(self) -> None:
+        manifest = ModelManifest(
+            {
+                "text_encoder": _make_config("te"),
+                "vae": _make_config("vae"),
+            }
+        )
+        per_role = {
+            "text_encoder": {"encoder.weight": _wd("te.w")},
+            "vae": {
+                "decoder.weight": _wd("vae.w"),
+                "decoder.bias": _wd("vae.b"),
+            },
+        }
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert set(loader.keys()) == {
+            "text_encoder.encoder.weight",
+            "vae.decoder.weight",
+            "vae.decoder.bias",
+        }
+
+    def test_loader_keys_filter_by_role_prefix(self) -> None:
+        manifest = ModelManifest(
+            {
+                "text_encoder": _make_config("te"),
+                "vae": _make_config("vae"),
+            }
+        )
+        per_role = {
+            "text_encoder": {"a": _wd("a")},
+            "vae": {"b": _wd("b")},
+        }
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert set(loader.keys("vae.")) == {"vae.b"}
+
+    def test_empty_manifest_returns_loader_with_no_keys(self) -> None:
+        loader = ModelManifest({}).loader()
+        assert list(loader.keys()) == []
+        with pytest.raises(KeyError):
+            loader("anything")

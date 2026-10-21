@@ -1,0 +1,326 @@
+---
+title: "Mojo tips for Python devs"
+sidebar_label: "Tips for Python devs"
+description: >
+  Learn where Python instincts apply in Mojo and where they don't.
+---
+
+Mojo looks a lot like Python. That makes it easy to start, but also easy to
+bring some wrong assumptions with you.
+
+Discover the differences most likely to surprise Python developers.
+
+## The default collection isn't List
+
+A bracketed comma-delimited default collection isn't a list. It's an array.
+Arrays are fixed-size homogeneous indexable collections:
+
+```mojo
+var a = [1, 2, 3]  # Type is Array[Int, 3]
+```
+
+You can't append to arrays. The size stays 3 after declaration. All
+variables are mutable, so you can assign new values to elements of the
+array.
+
+Use explicit typing to create lists. Mojo lists are variable-sized
+homogeneous indexable collections.
+
+```mojo
+var a: List = [1, 2, 3]  # or
+var b: List[Int] = [1, 2, 3]
+```
+
+A Python list can freely mix unrelated value types:
+
+```python
+values = ["one", 2.0, 3]
+```
+
+A Mojo `List` has an element type:
+
+```mojo
+var values: List[String] = ["one", "two", "three"]
+values.append("four")
+```
+
+Dictionaries also have fixed key and value types:
+
+```mojo
+var counts: Dict[String, Int] = {"a": 1, "b": 2}
+counts["c"] = 3
+```
+
+Mojo collections don't support negative indexes. Count from the end
+explicitly:
+
+```mojo
+var readings: List[Int] = [12, 80, 45]
+print(readings[len(readings) - 1])   # 45
+print(readings[len(readings) - 2:])  # [80, 45]
+```
+
+A literal negative index, such as `readings[-1]`, is a compile-time error.
+A negative index computed at run time aborts with an out-of-bounds error.
+Slices follow the same rule, so `readings[-2:]` aborts too.
+
+If a collection needs a known set of different types, use `Variant` as its
+element or value type.
+
+Much of the surrounding syntax stays familiar. Mojo supports list,
+dictionary, and set comprehensions, along with familiar `for` and `while`
+loops.
+
+## Values aren't Python references
+
+In Python, assignment binds another name to the same list:
+
+```python
+a = [1, 2, 3]
+b = a
+b.append(4)
+print(a)  # [1, 2, 3, 4]
+```
+
+Assignment doesn't imply Python-style aliasing in Mojo. A variable owns its
+value. Assigning it to another variable may copy the value, require an
+explicit copy, or require an ownership transfer, depending on the type.
+
+When you actually want shared access, use a reference:
+
+```mojo
+var a: List[Int] = [1, 2, 3]
+ref b = a
+b.append(4)
+print(a)  # [1, 2, 3, 4]
+```
+
+Here, `a` owns the list and `b` refers to the same value.
+
+Trivial types such as `Int` are implicitly copyable:
+
+```mojo
+var a = 10
+var b = a  # a copy, not a reference
+b += 10
+print(a)  # 10
+print(b)  # 20
+```
+
+For a `List`, make the copy explicit:
+
+```mojo
+var a: List[Int] = [1, 2, 3]
+var b = a.copy()  # copies have no intrinsic connection
+b.append(4)  # change b, not a
+print(a)  # [1, 2, 3]
+print(b)  # [1, 2, 3, 4]
+```
+
+## Types stay fixed
+
+Python lets a name refer to values of unrelated types over its lifetime:
+
+```python
+value = "hello"
+value = 10
+```
+
+Mojo variables are fixed-type storage. You can't change a variable's type:
+
+```mojo
+var value = 1
+value = "hello"  # Error: String can't be assigned to Int
+```
+
+When a value legitimately needs to hold one of several known types, use a
+type such as `Variant[String, Int]`. The variable's type stays fixed. The
+variant represents which of its allowed value types it currently holds.
+
+## Variables are mutable; function arguments aren't by default
+
+All Mojo variables are mutable. You can assign a new value of the same type
+to an existing variable. That doesn't mean every value is itself mutable.
+
+```mojo
+var value = 10
+value = 20
+```
+
+Function arguments work differently. By default, a function receives an
+immutable reference to the caller's value:
+
+```mojo
+def increment(value: Int):
+    value += 1  # Error: value isn't mutable
+```
+
+Use `mut` when the function can modify the caller's value:
+
+```mojo
+def increment(mut value: Int):
+    value += 1
+
+var value = 20
+increment(value)
+print(value)  # 21
+```
+
+When working with methods, use `mut` on `self` for any method that
+modifies the instance:
+
+```mojo
+@fieldwise_init
+struct Struct:
+    var name: String
+
+    def update_name(mut self, new_name: String):
+        self.name = new_name
+
+def main():
+    var name_struct = Struct("Mojo")
+    print(name_struct.name)  # Mojo
+    name_struct.update_name("Hello")
+    print(name_struct.name)  # Hello
+```
+
+Other argument conventions can transfer ownership or express different
+reference behavior. Read the Mojo signature instead of inferring argument
+behavior from Python.
+
+## Numeric representation is explicit
+
+Python's built-in `int` has arbitrary precision, and Python's built-in
+`float` is typically a 64-bit IEEE 754 floating-point value.
+
+Mojo gives you explicit control over numeric representation. `Int` is a
+machine-width integer. When width matters, use a sized type such as `Int8`,
+`Int32`, or `Int64`.
+
+Mojo doesn't have a general `Float` type analogous to `Int`. Use an
+explicit floating-point type such as `Float32` or `Float64`.
+
+Sized numeric types such as `Int32` and `Float32` are scalar aliases for
+one-element `SIMD` values. Use `SIMD` directly for fixed-size vectors.
+
+### Watch division types
+
+Division depends on the operands. Dividing two `Int` values with `/` produces
+an `Int`:
+
+```mojo
+var a: Int = 7
+var b: Int = 2
+print(a / b)  # 3
+```
+
+Integer *literals* behave differently. Dividing two integer literals
+(raw numbers) with `/` produces a floating-point result at compile time:
+
+```mojo
+print(7 / 2)  # 3.5
+```
+
+## Structs aren't dynamic Python classes
+
+A Mojo `struct` combines data and behavior, but it isn't a dynamic Python
+class. Its fields and their types are fixed at compile time. You can't add
+arbitrary fields to an instance at runtime.
+
+```mojo
+struct Point:
+    var x: Int
+    var y: Int
+
+    def __init__(out self, x: Int, y: Int):
+        self.x = x
+        self.y = y
+```
+
+The `out self` convention gives the initializer an uninitialized result value
+that it must initialize before returning.
+
+Use `@fieldwise_init` to have Mojo synthesize the initializer instead.
+
+Don't translate `class` to `struct` mechanically. Identify what the type
+guarantees, then express those guarantees through its fields, methods, and
+traits.
+
+## Traits make interfaces explicit
+
+Python commonly relies on duck typing: code works as long as an object
+supports the operations you use.
+
+```python
+def sketch(shape):
+    shape.draw()
+```
+
+Mojo traits let you state that requirement explicitly and have the compiler
+check it:
+
+```mojo
+trait Drawable:
+    def draw(self):
+        ...
+
+def sketch[T: Drawable](shape: T):
+    shape.draw()
+```
+
+You keep polymorphism, but the compiler can check the interface before the
+program runs.
+
+## Error propagation is explicit
+
+Mojo keeps the familiar `try`, `except`, and `raise` syntax. One important
+difference appears in the signature: a function that can propagate an error
+declares `raises`.
+
+```mojo
+def validate(value: Int) raises:
+    if value < 0:
+        raise Error("value must be nonnegative")
+```
+
+A non-raising function must handle errors from a raising function rather
+than implicitly propagating them:
+
+```mojo
+def check(value: Int):
+    try:
+        validate(value)
+    except e:
+        print(e)
+```
+
+Mojo also supports typed errors when callers need to know the specific error
+type a function can raise.
+
+## Memory uses ownership
+
+Python largely manages object lifetimes for you. In Mojo, ownership and
+references determine value lifetimes.
+
+When migrating code, ask **who owns this value and who only refers to it?**
+Default argument behavior, `mut` references, copies, and ownership
+transfers all build on that distinction.
+
+Ordinary Mojo doesn't require manual allocation. Pointer and allocation APIs
+are available when you need lower-level control.
+
+## Don't translate Python mechanically
+
+Similar syntax makes line-by-line translation tempting. It breaks down when
+the Python code depends on dynamic behavior.
+
+Before translating a piece of Python, ask:
+
+- What types can this value actually have?
+- Does this code depend on two names referring to the same mutable object?
+- Which functions modify values supplied by their callers?
+- Does a collection really need heterogeneous elements?
+- What interface does this code expect from a value?
+- Who should own this value, and how long does it need to live?
+
+The answers point to the Mojo design more reliably than syntax alone.

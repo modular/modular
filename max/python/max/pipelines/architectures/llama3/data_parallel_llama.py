@@ -14,9 +14,12 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+import functools
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -24,16 +27,14 @@ from max.graph import (
     Graph,
     TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    unflatten_ragged_attention_inputs,
-)
-from max.nn.layer import Module
-from max.pipelines.lib.lora import LoRAManager
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.layer import LayerList, Module
 
 from .llama3 import Llama3
 from .model_config import Llama3Config
@@ -45,23 +46,21 @@ class DataParallelLlama(Module):
     def __init__(self, config: Llama3Config):
         self.config = config
         self.devices = config.devices
-        self.models = []
+        models = []
         for device in config.devices:
             # TODO: dataclasses.replace doesn't work for model config objects:
             # "... has no attribute 'draft_pipeline_parallel_degree'"
             new_config = copy.deepcopy(config)
             new_config.devices = [device]
-            self.models.append(Llama3(new_config))
+            models.append(Llama3(new_config))
 
-        # Sets up weight tracking for the first model.
-        self.model = self.models[0]
-
-        # Replace all weights from the other distributed models with weights
-        # from the first model.
-        model_weights = self.model.raw_state_dict()
-        for model in self.models[1:]:
-            for key, value in model_weights.items():
-                _assign_weight(model, key, value)
+        # A LayerList, not a plain list, so weight tracking sees every
+        # replica and each rank's weights land on that rank. Sharing rank
+        # 0's weights instead makes every `weight.to(x.device)` a
+        # peer-to-peer copy of the whole model, on every execution.
+        # Don't also alias a replica to an attribute: every `Module`
+        # attribute is registered, so rank 0 would get two sets of weights.
+        self.models = LayerList(models)
 
     def __call__(
         self, all_model_args: Sequence[Sequence[Any]]
@@ -80,7 +79,6 @@ class DataParallelLlama(Module):
     def input_types(
         self,
         kv_params: KVCacheParamInterface,
-        lora_manager: LoRAManager | None,
     ) -> tuple[TensorType | BufferType, ...]:
         """Creates input tensor types used for building the graph.
 
@@ -104,7 +102,10 @@ class DataParallelLlama(Module):
         tokens and input_row_offsets into data parallel splits.
         """
         inputs = []
-        single_model_inputs = self.model.input_types(kv_params, lora_manager)
+        first_model = self.models[0]
+        # `LayerList.__getitem__` is typed as returning `Layer`.
+        assert isinstance(first_model, Llama3)
+        single_model_inputs = first_model.input_types(kv_params)
         (
             token_type,
             input_row_offsets_type,
@@ -113,7 +114,7 @@ class DataParallelLlama(Module):
         ) = single_model_inputs
         del single_model_kv_cache_inputs
 
-        flat_kv_cache_inputs = kv_params.get_symbolic_inputs().flatten()
+        flat_kv_cache_inputs = kv_params.flattened_kv_inputs()
 
         data_parallel_split_type = TensorType(
             DType.int64,
@@ -130,7 +131,9 @@ class DataParallelLlama(Module):
         ]
         return tuple(inputs)
 
-    def _call_flat(self, *args: Value[Any]) -> tuple[TensorValue, ...]:
+    def _call_flat(
+        self, kv_params: KVCacheParamInterface, *args: Value[Any]
+    ) -> tuple[TensorValue, ...]:
         (
             tokens,
             input_row_offsets,
@@ -148,8 +151,9 @@ class DataParallelLlama(Module):
 
         all_model_args = []
 
-        kv_collections = unflatten_ragged_attention_inputs(
-            all_kv_cache_inputs, n_devices=len(self.config.devices)
+        kv_collections = tree.leaves(
+            kv_params.unflatten_kv_inputs(iter(all_kv_cache_inputs)),
+            leaf=KVCacheInputsPerDevice,
         )
 
         for i in range(len(self.config.devices)):
@@ -164,37 +168,72 @@ class DataParallelLlama(Module):
 
         return self(all_model_args)
 
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
 
-def _assign_weight(module: Module, key: str, value: Any) -> None:
-    path = key.split(".")
-    for attr in path[:-1]:
-        if attr.isnumeric():
-            module = module[int(attr)]  # type: ignore
-        else:
-            module = getattr(module, attr)
-    setattr(module, path[-1], value)
+        Adapts the flat graph inputs to :meth:`__call__` through
+        :meth:`_call_flat`.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            functools.partial(self._call_flat, self.config.kv_params),
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
 
-def create_graph(
-    config: Llama3Config,
-    kv_params: KVCacheParamInterface,
-    state_dict: dict[str, Any],
-) -> tuple[Graph, dict[str, Any]]:
+def create_model(
+    config: Llama3Config, state_dict: dict[str, Any]
+) -> DataParallelLlama:
+    """Builds a data-parallel Llama with a replica of the weights per device.
+
+    Args:
+        config: The model config.
+        state_dict: The single-replica weights. Drops ``rope_freqs.weight``,
+            which the model does not use.
+
+    Returns:
+        The model, with its weights loaded.
+    """
     model = DataParallelLlama(config)
 
-    new_state_dict = {}
     state_dict.pop("rope_freqs.weight", None)
-    for key, value in state_dict.items():
-        new_key = "model." + key
-        new_state_dict[new_key] = value
+    # One prefix per replica. The copy is shallow (the weight buffer stays
+    # shared) and is needed because `load_state_dict` rewrites the value's
+    # dtype and shape in place.
+    new_state_dict = {}
+    for replica_idx in range(len(config.devices)):
+        # Must match the attribute the replicas are registered under.
+        prefix = f"models.{replica_idx}."
+        for key, value in state_dict.items():
+            new_state_dict[prefix + key] = copy.copy(value)
     model.load_state_dict(
         new_state_dict,
         override_quantization_encoding=True,
         weight_alignment=1,
         strict=True,
     )
-    inputs = model.input_types(kv_params, None)
-    with Graph("llama3", input_types=inputs) as graph:
-        outputs = model._call_flat(*graph.inputs)
-        graph.output(*outputs)
-        return graph, model.state_dict()
+    return model

@@ -12,20 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host.compile import _compile_code
-from std.gpu.memory import CacheEviction, CacheOperation, load
+from max.gpu.host.compile import _compile_code
+from max.gpu.memory import CacheEviction, CacheOperation, load
 from std.testing import assert_equal, assert_true
 
 
 def load_value[
     *,
-    dtype: DType = DType.uint32,
+    dtype: DType = .uint32,
     width: Int = 1,
     read_only: Bool = False,
     prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> SIMD[dtype, width]:
+](ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin]) -> SIMD[dtype, width]:
     return load[
         width=width,
         read_only=read_only,
@@ -77,7 +77,7 @@ def test_load() raises:
         "ld.global.lu.v2.u32 "
         in _compile_code[
             load_value[
-                dtype=DType.uint32,
+                dtype=.uint32,
                 width=2,
                 prefetch_size=None,
                 cache_policy=CacheOperation.LAST_USE,
@@ -89,7 +89,7 @@ def test_load() raises:
     assert_true(
         "ld.global.nc.v2.u32 "
         in _compile_code[
-            load_value[dtype=DType.uint32, width=2, read_only=True],
+            load_value[dtype=.uint32, width=2, read_only=True],
             emission_kind="asm",
         ]()
     )

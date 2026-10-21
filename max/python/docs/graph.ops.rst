@@ -1,4 +1,5 @@
 :title: max.graph.ops
+:sidebar_label: ops
 :type: module
 :lang: python
 
@@ -14,4 +15,10 @@ max.graph.ops
    :undoc-members:
    :imported-members:
    :show-inheritance:
-   :exclude-members: Callable, DType, DeviceRef, Graph, InterpolationMode, TensorType, TensorValue
+   :exclude-members: Callable, DType, DeviceRef, Graph, InterpolationMode, TensorType, TensorValue, side_stream
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   graph.ops.sequence

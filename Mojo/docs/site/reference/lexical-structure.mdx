@@ -1,0 +1,264 @@
+---
+title: Mojo lexical structure reference
+sidebar_label: Lexical structure
+description: >
+  Complete reference for Mojo lexical structure. Covers source text,
+  lines, indentation, line continuation, comments, semicolons, commas,
+  delimiters, and token separation.
+---
+
+{/* VERIFIED: Lexer.cpp lexToken(), skipComment(), formToken();
+     TokenKinds.def; ParserBase.cpp
+     Compiler verified: 2026-10-09, Mojo 1.2.0.dev2026100705 (9a7787ee)
+     Last updated: 2026-10-09 (initial draft) */}
+
+Mojo divides source text into tokens:
+[identifiers](/docs/reference/keywords/#identifiers),
+[keywords](/docs/reference/keywords/#keywords),
+[literals](/docs/reference/literals),
+[operators](/docs/reference/operators), and delimiters.
+
+This page explores how tokens form lines and blocks, how statements
+continue across lines, and how comments and punctuation work.
+
+## Source text
+
+Mojo reads source files as Unicode Standard UTF-8 encoded text.
+
+Comments and string literals can contain Unicode grapheme clusters.
+Identifiers use ASCII letters, digits, and underscores only (see
+[Identifiers](/docs/reference/keywords#identifiers)).
+
+```mojo
+# Größe und Maß: any text works in a comment
+print("größe")  # and in a string literal
+```
+
+Mojo doesn't accept a UTF-8 byte-order mark (BOM) at the start of a file.
+Save source files as UTF-8 without a BOM.
+
+## Lines
+
+A line ends at a line feed (`\n`), a carriage return (`\r`), or a
+carriage return followed by a line feed (`\r\n`). A form feed or vertical
+tab also ends a line.
+
+Mojo ignores blank lines and lines with only a comment, whatever
+the indentation:
+
+```mojo
+if ready:
+    start()
+
+  # A comment at any indentation won't affect the block.
+    log("started")
+```
+
+## Indentation
+
+Indentation groups statements into blocks. A
+[compound statement](/docs/reference/compound-statements) header ends with
+`:`, and its body is indented deeper than the header. The body ends at the
+first line indented to the header's level or less.
+
+Mojo measures indentation by counting the spaces and tabs at the start of
+a line. A tab counts as one column, the same as a space. Use spaces or
+tabs, not both.
+
+Each line's leading whitespace must match the previous line's, character
+for character, over their shared length.
+
+```mojo
+def main():
+    var width = 3
+    var height = 4    # Error: tab-indented after space-indented
+  var depth = 2 # Error: 2-spaces used after 4-spaces
+```
+
+## Line continuation
+
+A statement can continue onto another line in four ways.
+
+Inside parentheses, indentation doesn't
+matter. A parenthesized expression can span as many lines as it needs:
+
+```mojo
+var total = area(
+    width=5,
+    height=6,
+)
+
+var size = (
+    "small"
+    if total < 100
+    else "large"
+)
+```
+
+A backslash at the end of a line joins the next line to it. Only spaces
+or tabs can follow the backslash on its line:
+
+```mojo
+var total = width * height + \
+    margin
+```
+
+A backslash anywhere else is part of a string literal or an error.
+
+A line indented deeper than the statement's first line continues that
+statement, with or without parentheses:
+
+```mojo
+var total = width * height
+    + margin                  # Continues the assignment
+```
+
+A line that ends with an operator continues onto the next line, because
+the operator still needs its right operand:
+
+```mojo
+var total = width * height +
+    margin
+
+if width <
+    height:
+    print("width is less than height")
+else:
+    print("width is not less than height")
+```
+
+Prefer parentheses for long expressions. They make continuation explicit
+and let you control indentation.
+
+## Comments
+
+A comment starts with `#` and runs to the end of the line:
+
+```mojo
+# Comments can stand on their own line.
+var retries = 3  # Or follow code.
+```
+
+Mojo doesn't have block comment syntax. Prefix each line of a multiline
+comment with `#`. Many IDE/editors have support built-in.
+
+A `#` inside a string literal is part of the string, not the start of a
+comment:
+
+```mojo
+print("Order #1042")  # Prints: Order #1042
+```
+
+Mojo discards comments before parsing, so a comment can hold any
+text. A `#!` line at the top of a file is a comment too, so a shebang
+line works, just not in the way you might expect. It's just a text comment:
+
+```mojo
+#!/usr/bin/env mojo
+```
+
+## Docstrings
+
+A docstring is a string literal at the start of a module, function,
+struct, or trait body. Unlike a comment, a docstring is part of the
+program: the compiler keeps it, and documentation tools read it. See the
+[docstring reference](/docs/reference/docstrings) for the format.
+
+## Semicolons
+
+A semicolon groups simple statements on the same line. You don't
+need one at the end of a statement:
+
+```mojo
+var width = 3; var height = 4
+```
+
+Think of semicolons as glue, not terminators.
+
+A trailing semicolon is allowed. Two semicolons in a row (`;;`) are an
+error.
+
+A compound statement can put its body on the header line, after the `:`.
+Semicolons separate the statements in that body:
+
+```mojo
+if width < height: print("narrow"); print("tall")
+for step in range(2): print(step)
+```
+
+## Commas
+
+A comma separates the items in a syntax list: arguments, parameters,
+conformances, collection elements, captures, import names, and tuple items.
+A trailing comma after the last item is allowed in every list:
+
+```mojo
+from std.collections import (
+    Dict,
+    Set,
+)
+
+def area(width: Int, height: Int,) -> Int:
+    return width * height
+
+var ports = [80, 443,]
+var total = area(
+    width=5,
+    height=6,
+)
+```
+
+In multiline lists, put each item on its own line with a trailing comma.
+Adding an item then changes only one line in a diff.
+
+A one-element tuple needs a trailing comma. Without it, the parentheses
+only group the value:
+
+```mojo
+var single = (8080,)  # Tuple with one element
+var grouped = (8080)  # The number 8080 in parentheses
+```
+
+An empty item is an error, so `print(1,,2)` and `(,)` don't compile.
+Write an empty tuple as `()`.
+
+## Delimiters
+
+Delimiters group, separate, and mark parts of a statement. Several
+characters also serve as operators; see the
+[operator reference](/docs/reference/operators) for those uses.
+
+| Delimiter    | Use                                                                  | Reference                                                                                                                    |
+|--------------|----------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
+| `( )`        | Grouping, calls, argument lists, tuples                              | [Expressions](/docs/reference/expressions)                                                                                   |
+| `[ ]`        | Parameter lists, subscripts, array and list literals                 | [Collections](/docs/reference/expressions#lists-and-arrays), [subscripts](/docs/reference/expressions#subscripts-and-slices) |
+| `{ }`        | Set and dict literals, initializer lists, capture lists              | [Collections](/docs/reference/expressions#sets), [closures](/docs/reference/closure-declarations)                            |
+| `,`          | Separates items in a list                                            | [Commas](#commas)                                                                                                            |
+| `;`          | Separates simple statements                                          | [Semicolons](#semicolons)                                                                                                    |
+| `:`          | Ends a header; type annotations, dict entries, slices                | [Compound statements](/docs/reference/compound-statements)                                                                   |
+| `.`          | Member access, implicit member references                            | [Expressions](/docs/reference/expressions#member-access)                                                                     |
+| `->`         | Return type                                                          | [Function declarations](/docs/reference/function-declarations)                                                               |
+| `@`          | Decorator                                                            | [Decorators](/docs/reference/decorators)                                                                                     |
+| `=`          | Assignment, default values, keyword arguments                        | [Simple statements](/docs/reference/simple-statements)                                                                       |
+| `:=`         | Walrus assignment                                                    | [Expressions](/docs/reference/expressions#walrus-operator)                                                                   |
+| `/` `*` `//` | Positional-only, keyword-only, and infer-only markers in a signature | [Function declarations](/docs/reference/function-declarations)                                                               |
+| `^`          | Transfer, after a name                                               | [Ownership](/docs/manual/values/ownership)                                                                                   |
+| `_`          | Discard pattern                                                      | [Literals](/docs/reference/literals#discard-pattern)                                                                         |
+| `...`        | Ellipsis                                                             | [Literals](/docs/reference/literals#ellipsis-literal)                                                                        |
+| `` ` ``      | Escaped identifier                                                   | [Identifiers](/docs/reference/keywords#escaped-identifiers)                                                                  |
+| `#`          | Comment                                                              | [Comments](#comments)                                                                                                        |
+
+Mojo doesn't use `!` on its own, `?`, or `$`. Outside a string literal or
+comment, each is an error.
+
+## Token separation
+
+Whitespace separates tokens that would otherwise run together. Two words need
+whitespace between them, as in `def main` or `var count`. Whitespace is optional
+around operators and delimiters:
+
+```mojo
+print(3+4)    # 7
+print(3 + 4)  # 7
+my_function(a=1, b = 2)  # a custom call
+```

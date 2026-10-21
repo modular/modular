@@ -13,21 +13,21 @@
 
 from std.os import abort
 from std.memory import OpaquePointer
+from max.gpu.host import DeviceContext
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
-from std.gpu.host import DeviceAttribute
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
-from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
-    compute_mla_dispatch_scalars_runtime,
+from nn.attention.gpu.mla_decode_dispatch_scalars import (
+    mla_decode_dispatch_scalars,
 )
 
 
 @export
-def PyInit_kv_cache_ops() -> PythonObject:
+def PyInit_kv_cache_ops() abi("C") -> PythonObject:
     """Creates a Python module with KV-cache helper bindings."""
     try:
         var b = PythonModuleBuilder("kv_cache_ops")
@@ -44,7 +44,7 @@ def PyInit_kv_cache_ops() -> PythonObject:
         abort(t"failed to create kv cache op bindings module: {e}")
 
 
-def _make_int_list(values: InlineArray[Int, 3]) -> PythonObject:
+def _make_int_list(values: Array[Int, 3]) -> PythonObject:
     ref cpython = Python().cpython()
     var result_py_list = cpython.PyList_New(len(values))
     for i in range(len(values)):
@@ -54,7 +54,15 @@ def _make_int_list(values: InlineArray[Int, 3]) -> PythonObject:
     return PythonObject(from_owned=result_py_list)
 
 
-@export
+def _get_ctx(
+    device_context_ptr: PythonObject,
+) raises -> Optional[OpaquePointer[MutUntrackedOrigin]]:
+    var addr = Int(py=device_context_ptr)
+    if addr == 0:
+        return None
+    return OpaquePointer[MutUntrackedOrigin](unsafe_from_address=addr)
+
+
 def mha_decode_num_partitions(
     batch_size_obj: PythonObject,
     max_cache_valid_length_obj: PythonObject,
@@ -64,9 +72,7 @@ def mha_decode_num_partitions(
     var batch_size = Int(py=batch_size_obj)
     var max_cache_valid_length = Int(py=max_cache_valid_length_obj)
     var n_kv_heads = Int(py=n_kv_heads_obj)
-    var ctx = OpaquePointer[MutExternalOrigin](
-        unsafe_from_address=Int(py=device_context_ptr)
-    )
+    var ctx = _get_ctx(device_context_ptr)
 
     if not ctx:
         raise Error("Expected a non-null device context pointer.")
@@ -77,19 +83,18 @@ def mha_decode_num_partitions(
     if n_kv_heads < 1:
         raise Error("n_kv_heads must be positive.")
 
-    var device_ctx = DeviceContextPtr(ctx)
+    var device_ctx = DeviceContext(ctx.unsafe_value())
     var num_partitions = mha_decoding_num_partitions(
         batch_size,
         max_cache_valid_length,
         n_kv_heads,
-        device_ctx.get_device_context(),
+        device_ctx,
     )
 
     ref cpython = Python().cpython()
     return PythonObject(from_owned=cpython.PyLong_FromSsize_t(num_partitions))
 
 
-@export
 def mla_dispatch_args_scalar(
     batch_size_obj: PythonObject,
     max_cache_valid_length_obj: PythonObject,
@@ -97,15 +102,15 @@ def mla_dispatch_args_scalar(
     num_heads_obj: PythonObject,
     is_fp8_kv_obj: PythonObject,
     device_context_ptr: PythonObject,
+    sparse_indices_stride_obj: PythonObject,
 ) raises -> PythonObject:
     var batch_size = Int(py=batch_size_obj)
     var max_cache_valid_length = Int(py=max_cache_valid_length_obj)
     var q_max_seq_len = Int(py=q_max_seq_len_obj)
     var num_heads = Int(py=num_heads_obj)
     var is_fp8_kv = Int(py=is_fp8_kv_obj) != 0
-    var ctx = OpaquePointer[MutExternalOrigin](
-        unsafe_from_address=Int(py=device_context_ptr)
-    )
+    var sparse_indices_stride = Int(py=sparse_indices_stride_obj)
+    var ctx = _get_ctx(device_context_ptr)
 
     if not ctx:
         raise Error("Expected a non-null device context pointer.")
@@ -117,20 +122,23 @@ def mla_dispatch_args_scalar(
         raise Error("q_max_seq_len must be positive.")
     if num_heads < 1:
         raise Error("num_heads must be positive.")
+    if sparse_indices_stride < 0:
+        raise Error("sparse_indices_stride must be non-negative.")
 
-    var device_ctx = DeviceContextPtr(ctx)
-    var scalars = compute_mla_dispatch_scalars_runtime(
+    var device_ctx = DeviceContext(ctx.unsafe_value())
+
+    var scalars = mla_decode_dispatch_scalars(
         batch_size,
         max_cache_valid_length,
         q_max_seq_len,
         num_heads,
         is_fp8_kv,
-        device_ctx.get_device_context().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        ),
+        device_ctx,
+        sparse_indices_stride=sparse_indices_stride,
     )
-    var result = InlineArray[Int, 3](uninitialized=True)
-    result[0] = scalars[0]
-    result[1] = scalars[1]
-    result[2] = scalars[2]
+    var result: Array[Int, 3] = [
+        scalars[0],
+        scalars[1],
+        scalars[2],
+    ]
     return _make_int_list(result)

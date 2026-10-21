@@ -12,9 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from .agentic_code import AgenticCodeBenchmarkDataset
+from .agentic_tools import ToolConfig, tool_profiles_from_mapping
+from .artificial_analysis import ArtificialAnalysisBenchmarkDataset
 from .arxiv_summarization import ArxivSummarizationBenchmarkDataset
 from .axolotl import AxolotlBenchmarkDataset
 from .batch_job import BatchJobBenchmarkDataset
+from .chat_judge import ChatJudgeBenchmarkDataset, ChatJudgeChatSamples
 from .code_debug import CodeDebugBenchmarkDataset
 from .distribution import (
     BaseDistribution,
@@ -26,6 +29,7 @@ from .huggingface import HuggingFaceBenchmarkDataset
 from .instruct_coder import InstructCoderBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
+from .nemotron_opencode import NemotronOpenCodeBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
 from .pixel import PixelBenchmarkDataset
 from .pixel_image_edit import LocalImageBenchmarkDataset
@@ -34,6 +38,7 @@ from .random import RandomBenchmarkDataset, SyntheticBenchmarkDataset
 from .registry import DATASET_REGISTRY, DatasetRegistryEntry
 from .sharegpt import ShareGPTBenchmarkDataset
 from .sonnet import SonnetBenchmarkDataset
+from .turn_profile import TurnProfile, TurnTargets
 from .types import (
     ChatSamples,
     ChatSession,
@@ -42,17 +47,22 @@ from .types import (
     PixelGenerationImageOptions,
     PixelGenerationSampledRequest,
     SampledRequest,
+    SharedContext,
+    TurnSelector,
 )
 from .vision_arena import VisionArenaBenchmarkDataset
 
 __all__ = [
     "DATASET_REGISTRY",
     "AgenticCodeBenchmarkDataset",
+    "ArtificialAnalysisBenchmarkDataset",
     "ArxivSummarizationBenchmarkDataset",
     "AxolotlBenchmarkDataset",
     "BaseDistribution",
     "BatchJobBenchmarkDataset",
     "BenchmarkDataset",
+    "ChatJudgeBenchmarkDataset",
+    "ChatJudgeChatSamples",
     "ChatSamples",
     "ChatSession",
     "CodeDebugBenchmarkDataset",
@@ -65,6 +75,7 @@ __all__ = [
     "InstructCoderBenchmarkDataset",
     "LocalBenchmarkDataset",
     "LocalImageBenchmarkDataset",
+    "NemotronOpenCodeBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
     "OpenAIImage",
     "PixelBenchmarkDataset",
@@ -73,8 +84,14 @@ __all__ = [
     "RandomBenchmarkDataset",
     "SampledRequest",
     "ShareGPTBenchmarkDataset",
+    "SharedContext",
     "SonnetBenchmarkDataset",
     "SyntheticBenchmarkDataset",
     "SyntheticPixelBenchmarkDataset",
+    "ToolConfig",
+    "TurnProfile",
+    "TurnSelector",
+    "TurnTargets",
     "VisionArenaBenchmarkDataset",
+    "tool_profiles_from_mapping",
 ]

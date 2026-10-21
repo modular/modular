@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,14 +24,15 @@ from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,
     PipelineModel,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
-from .graph import build_graph
+from .encoder import WhisperEncoder
 
 logger = logging.getLogger("max.pipelines")
 
@@ -56,7 +58,10 @@ class WhisperInputs(ModelInputs):
 
 
 # TODO: Need specific Context type, not just this base type.
-class Whisper(PipelineModel[Any]):
+class Whisper(PipelineModel[Any, None, Model]):
+    state_dict: dict[str, Any]
+    """The weights, kept for :meth:`graph_specs`."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -64,8 +69,11 @@ class Whisper(PipelineModel[Any]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -73,29 +81,36 @@ class Whisper(PipelineModel[Any]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
-        self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
 
-    def load_model(self, session: InferenceSession) -> Model:
-        """
-        Load the Whisper speech recognition model.
-        """
-        with CompilationTimer("model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(dict(self.weights.items()))
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            graph = build_graph(
-                state_dict,
-                self.huggingface_config,
-                self.dtype,
-                DeviceRef.from_device(self.devices[0]),
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized audio encoder."""
+        return self._models[GraphRole.ENCODER]
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        self.state_dict = super()._load_state_dict()
+        return self.state_dict
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> None:
+        del state_dict
+
+    def graph_specs(self, model_config: None) -> Mapping[str, GraphSpec]:
+        """Returns the audio encoder graph."""
+        del model_config
+        encoder = WhisperEncoder(
+            self.huggingface_config,
+            self.dtype,
+            DeviceRef.from_device(self.devices[0]),
+        )
+        encoder.load_state_dict(self.state_dict)
+        return {
+            GraphRole.ENCODER: GraphSpec(
+                encoder, "whisper_audio_encoder", encoder.input_types()
             )
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=state_dict)
-
-        return model
+        }

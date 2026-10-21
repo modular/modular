@@ -66,6 +66,11 @@ struct MmaWarpContext[
 
     __enter__: Signals epilogue that TMEM is allocated
     __exit__: Waits for epilogue, deallocates TMEM
+
+    Parameters:
+        opc: Output pipeline configuration (stages, stride, cta_group).
+        mma_threads: Number of MMA threads.
+        epilogue_threads: Number of epilogue threads.
     """
 
     comptime _Types = _WarpContextTypes[
@@ -80,7 +85,7 @@ struct MmaWarpContext[
     var output_pipeline: Self.Pipeline
     var dealloc_barrier: Self.Dealloc
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         tmem: Self.Tmem,
@@ -92,7 +97,7 @@ struct MmaWarpContext[
         self.dealloc_barrier = dealloc_barrier
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
         accum_barriers_ptr: MbarPtr,
@@ -118,16 +123,16 @@ struct MmaWarpContext[
         )
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
-    @always_inline
+    @inline(.always)
     def __enter__(self) -> Self:
         Self.Sync.arrive()
         return self
 
-    @always_inline
+    @inline(.always)
     def __exit__(self):
         self.dealloc_barrier.complete_dealloc(self.tmem)
 
-    @always_inline
+    @inline(.always)
     def per_k_stage(
         mut self,
     ) -> MmaKStage[origin_of(self.output_pipeline), Self.opc]:
@@ -159,6 +164,11 @@ struct EpilogueWarpContext[
 
     IMPORTANT: Call Sync.wait() BEFORE constructing to ensure TMEM address
     is visible from shared memory.
+
+    Parameters:
+        opc: Output pipeline configuration (stages, stride, cta_group).
+        mma_threads: Number of MMA threads.
+        epilogue_threads: Number of epilogue threads.
     """
 
     comptime _Types = _WarpContextTypes[
@@ -173,7 +183,7 @@ struct EpilogueWarpContext[
     var output_pipeline: Self.Pipeline
     var dealloc_barrier: Self.Dealloc
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         tmem: Self.Tmem,
@@ -185,7 +195,7 @@ struct EpilogueWarpContext[
         self.dealloc_barrier = dealloc_barrier
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
         accum_barriers_ptr: MbarPtr,
@@ -213,15 +223,15 @@ struct EpilogueWarpContext[
         )
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
-    @always_inline
+    @inline(.always)
     def __enter__(self) -> Self:
         return self
 
-    @always_inline
+    @inline(.always)
     def __exit__(self):
         self.dealloc_barrier.signal_complete()
 
-    @always_inline
+    @inline(.always)
     def per_k_stage[
         input_origin: MutOrigin,
         Payload: TilePayload,
@@ -248,6 +258,16 @@ struct EpilogueWarpContext[
                 with epi_ctx.per_k_stage(input_pipeline) as epi_stage:
                     accum.promote(epi_stage, ...)
                 # Both pipelines signaled automatically
+
+        Parameters:
+            input_origin: Memory origin of the `input_pipeline` reference,
+                controlling which warp group owns it.
+            Payload: Tile payload type carried by the input pipeline (for
+                example, `BlockwiseFP8TilePayload`).
+            num_group_stages: Number of producer-consumer stages in the input
+                pipeline.
+            k_group_size: Number of K iterations grouped into each pipeline
+                stage.
 
         Args:
             input_pipeline: The InputTilePipeline (extracts .pipeline internally).
@@ -285,7 +305,7 @@ struct MmaWarp[
     opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
-]:
+](not Deinitable):
     """Unified linear type for MMA warp TMEM lifecycle.
 
     Works as both a linear type (direct use) and within context managers.
@@ -313,7 +333,7 @@ struct MmaWarp[
     var output_pipeline: Self.Pipeline
     var dealloc_barrier: Self.Dealloc
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         tmem: Self.Tmem,
@@ -325,7 +345,7 @@ struct MmaWarp[
         self.dealloc_barrier = dealloc_barrier
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
         accum_barriers_ptr: MbarPtr,
@@ -352,7 +372,7 @@ struct MmaWarp[
         Self.Sync.arrive()  # Signal epilogue that TMEM is ready
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
-    @always_inline
+    @inline(.always)
     def per_k_stage(
         mut self,
     ) -> MmaKStage[origin_of(self.output_pipeline), Self.opc]:
@@ -362,7 +382,7 @@ struct MmaWarp[
         """
         return self.output_pipeline.per_k().produce()
 
-    @always_inline
+    @inline(.always)
     def acquire_k_stage_linear(
         mut self,
     ) -> MmaStage[origin_of(self.output_pipeline), Self.opc]:
@@ -378,7 +398,7 @@ struct MmaWarp[
         """
         return self.output_pipeline.acquire_mma_linear()
 
-    @always_inline
+    @inline(.always)
     def release(deinit self):
         """Wait for epilogue and deallocate TMEM.
 
@@ -392,7 +412,7 @@ struct EpilogueWarp[
     opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
-]:
+](not Deinitable):
     """Unified linear type for epilogue warp lifecycle.
 
     Works as both a linear type (direct use) and within context managers.
@@ -422,7 +442,7 @@ struct EpilogueWarp[
     var output_pipeline: Self.Pipeline
     var dealloc_barrier: Self.Dealloc
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         tmem: Self.Tmem,
@@ -434,7 +454,7 @@ struct EpilogueWarp[
         self.dealloc_barrier = dealloc_barrier
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
         accum_barriers_ptr: MbarPtr,
@@ -461,7 +481,7 @@ struct EpilogueWarp[
         )
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
-    @always_inline
+    @inline(.always)
     def per_k_stage[
         input_origin: MutOrigin,
         Payload: TilePayload,
@@ -481,10 +501,24 @@ struct EpilogueWarp[
         """Get per-K stage context manager (for compatibility).
 
         Prefer acquire_k_stage_linear() for flat code structure.
+
+        Parameters:
+            input_origin: Memory origin of the `input_pipeline` reference,
+                controlling which warp group owns it.
+            Payload: Tile payload type carried by the input pipeline (for
+                example, `BlockwiseFP8TilePayload`).
+            num_group_stages: Number of producer-consumer stages in the input
+                pipeline.
+            k_group_size: Number of K iterations grouped into each pipeline
+                stage.
+
+        Args:
+            input_pipeline: Input tile pipeline providing A-scales data for
+                the epilogue.
         """
         return self.output_pipeline.per_k_epilogue(input_pipeline.pipeline)
 
-    @always_inline
+    @inline(.always)
     def acquire_k_stage_linear(
         mut self,
     ) -> EpilogueStage[origin_of(self.output_pipeline), Self.opc]:
@@ -499,7 +533,7 @@ struct EpilogueWarp[
         """
         return self.output_pipeline.acquire_epilogue_linear()
 
-    @always_inline
+    @inline(.always)
     def release(deinit self):
         """Signal epilogue completion.
 

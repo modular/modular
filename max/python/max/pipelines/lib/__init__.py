@@ -20,19 +20,36 @@ from max.config import (
     get_default_max_config_file_section_name,
     resolve_max_config_inheritance,
 )
-
-from .bfloat16_utils import (
+from max.driver import (
     float32_array_to_buffer,
     float32_to_bfloat16_as_uint16,
 )
+from max.pipelines.sampling import (
+    SamplingConfig,
+    rejection_sampler,
+    rejection_sampler_with_residuals,
+    token_sampler,
+)
+from max.pipelines.weights.hf_utils import (
+    HuggingFaceRepo,
+    download_weight_files,
+    generate_local_model_path,
+    try_to_load_from_cache,
+    validate_hf_repo_access,
+)
+from max.pipelines.weights.quant import parse_quant_config
+from max.pipelines.weights.weight_path_parser import WeightPathParser
+
+from .audio_tokenizer import AudioGenerationTokenizer
 from .config import (
-    AudioGenerationConfig,
     DenoisingCacheConfig,
+    DenoisingCacheSettings,
     KVCacheConfig,
     KVConnectorConfig,
     LoRAConfig,
     MAXModelConfig,
     MAXModelConfigBase,
+    PipelineArgs,
     PipelineConfig,
     PipelineRole,
     ProfilingConfig,
@@ -48,102 +65,112 @@ from .config import (
     supported_encoding_supported_on,
 )
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
-from .hf_utils import (
-    HuggingFaceRepo,
-    download_weight_files,
-    generate_local_model_path,
-    try_to_load_from_cache,
-    validate_hf_repo_access,
-)
+from .graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
 from .interfaces import (
     AlwaysSignalBuffersMixin,
+    BatchProcessor,
+    BatchProcessorRuntime,
+    GraphPipelineModelWithKVCache,
     ModelInputs,
     ModelOutputs,
+    ModuleV3MultiGraphPipelineModelWithKVCache,
+    ModuleV3Outputs,
+    ModuleV3PipelineModelWithKVCache,
     PipelineModel,
     PipelineModelWithKVCache,
+    RaggedBatchProcessor,
     UnifiedEagleOutputs,
+    UnifiedSpecDecodeInputs,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
 )
-from .lora import LoRAManager
-from .lora_request_processor import LoRARequestProcessor
-from .memory_estimation import MemoryEstimator
+from .memory_estimation import MemoryEstimator, MemoryPlan
 from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
+    SupportsSSMStateWarmup,
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
-from .quant import parse_quant_config
-from .registry import PIPELINE_REGISTRY, SupportedArchitecture
-from .sampling import (
-    SamplingConfig,
-    rejection_sampler,
-    rejection_sampler_with_residuals,
-    token_sampler,
+from .registry import (
+    PIPELINE_REGISTRY,
+    PipelineModelType,
+    RetrievedPipeline,
+    Speculator,
+    SupportedArchitecture,
 )
-from .speculative_decoding import (
-    SpeculativeDecodingPipelineBase,
-    StandaloneSpeculativeDecodingPipeline,
-)
-from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
-    PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
     build_eos_tracker_for_request,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from .utils import CompilationTimer, upper_bounded_default
-from .weight_path_parser import WeightPathParser
+from .vision_preprocess_cache import VisionPreprocessCache
 
 __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
-    "AudioGenerationConfig",
+    "AudioGenerationTokenizer",
+    "BatchProcessor",
+    "BatchProcessorRuntime",
     "CompilationTimer",
     "DenoisingCacheConfig",
+    "DenoisingCacheSettings",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
+    "GraphPipelineModelWithKVCache",
+    "GraphRole",
+    "GraphSpec",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVConnectorConfig",
     "LoRAConfig",
-    "LoRAManager",
-    "LoRARequestProcessor",
     "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MemoryEstimator",
+    "MemoryPlan",
     "ModelInputs",
     "ModelManifest",
     "ModelOutputs",
+    "ModuleV3MultiGraphPipelineModelWithKVCache",
+    "ModuleV3Outputs",
+    "ModuleV3PipelineModelWithKVCache",
     "OverlapTextGenerationPipeline",
+    "PipelineArgs",
     "PipelineConfig",
     "PipelineModel",
+    "PipelineModelType",
     "PipelineModelWithKVCache",
     "PipelineRole",
     "PipelineRuntimeConfig",
     "PixelGenerationPipeline",
     "PixelGenerationTokenizer",
-    "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
+    "RaggedBatchProcessor",
     "RepoType",
+    "RetrievedPipeline",
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",
-    "SpeculativeDecodingBase",
-    "SpeechTokenGenerationPipeline",
-    "StandaloneSpeculativeDecodingPipeline",
+    "Speculator",
     "SupportedArchitecture",
     "SupportedEncoding",
+    "SupportsSSMStateWarmup",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
     "UnifiedEagleOutputs",
+    "UnifiedSpecDecodeInputs",
+    "VisionPreprocessCache",
     "WeightPathParser",
     "build_eos_tracker_for_request",
+    "compile_and_init_graphs",
     "convert_max_config_value",
     "deep_merge_max_configs",
     "download_weight_files",
@@ -155,8 +182,11 @@ __all__ = [
     "max_tokens_to_generate",
     "parse_quant_config",
     "parse_supported_encoding_from_file_name",
+    "process_ragged_kv_outputs",
+    "ragged_kv_symbolic_inputs",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
+    "resolve_eos_token_ids",
     "resolve_max_config_inheritance",
     "supported_encoding_dtype",
     "supported_encoding_quantization",

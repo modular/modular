@@ -11,20 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.math import exp2
 from std.pathlib import Path
 from std.sys._assembly import inlined_assembly
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.compile import _compile_code
-from std.memory import stack_allocation
+from max.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.compile import _compile_code
+from max.gpu.host.info import A100
+from std.memory import unsafe_stack_allocation
 
 
 def kernel(x: Int) -> Int:
     return thread_idx.x
 
 
-def parametric[f: def(Int) -> Int]() -> Int:
+def parametric[f: def(Int) thin -> Int]() -> Int:
     return f(42)
 
 
@@ -47,13 +50,13 @@ def test_compile_code() raises:
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(x: MutPointer[Int, MutAnyOrigin]):
         x[0] = thread_idx.x
 
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[kernel, dump_asm=True]()
+        _ = ctx.compile_function[kernel, dump_asm=True]()
 
 
 def kernel_inlined_assembly():
@@ -70,9 +73,7 @@ def test_compile_function_with_assembly() raises:
     # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=True
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=True]()
 
 
 # CHECK-LABEL: test_compile_function_with_path
@@ -84,9 +85,7 @@ def test_compile_function_with_path() raises:
 
     with DeviceContext() as ctx:
         comptime out_file = Path("/tmp/my_file.ptx")
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=out_file
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=out_file]()
         print(out_file.read_text())
 
 
@@ -98,16 +97,13 @@ def test_compile_function_with_path_func() raises:
     # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
-        var out_file_name = "my_file_2.ptx"
+        comptime out_file_name = "my_file_2.ptx"
         comptime out_dir = Path("/tmp")
 
-        @parameter
-        def dummy_fn() capturing -> Path:
+        def dummy_fn() -> Path:
             return out_dir / out_file_name
 
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=dummy_fn
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=dummy_fn]()
 
         var out_file = out_dir / out_file_name
         print(out_file.read_text())
@@ -117,8 +113,8 @@ def test_compile_function_with_path_func() raises:
 def test_short_nvptx_ptr() raises:
     print("== test_short_nvptx_ptr")
 
-    def do_some_shared_mem_op(src: UnsafePointer[Int32, ImmutAnyOrigin]):
-        var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
+    def do_some_shared_mem_op(src: ImmPointer[Int32, ImmutAnyOrigin]):
+        var a = unsafe_stack_allocation[20, Int32, address_space=.SHARED]()
         a[thread_idx.x] = src[0]
         barrier()
 
@@ -131,9 +127,33 @@ def test_short_nvptx_ptr() raises:
     # CHECK-NEXT: ld.global.b32
     # CHECK-NEXT: st.shared.b32
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[
-            do_some_shared_mem_op, dump_asm=True
+        _ = ctx.compile_function[do_some_shared_mem_op, dump_asm=True]()
+
+
+# CHECK-LABEL: test_exp2_compile
+def test_exp2_compile() raises:
+    print("== test_exp2_compile")
+
+    # https://godbolt.org/z/j9ecfjjP1
+    def exp_op(output: MutPointer[Float32, MutAnyOrigin], max_scaled: Int32):
+        output[] = exp2(
+            output[] * 1.44269504088896340736 - max_scaled.cast[.float32]()
+        )
+
+    # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"
+    print(_compile_code[exp_op, target=A100.target, emission_kind="llvm-opt"]())
+    # CHECK: fma.rn.f32
+    print(_compile_code[exp_op, target=A100.target, emission_kind="asm"]())
+
+    # CHECK: fma.rn.ftz.f32
+    print(
+        _compile_code[
+            exp_op,
+            target=A100.target,
+            emission_kind="asm",
+            compile_options="target-abi=shortptr,denormal-fp-math-f32=preserve-sign",
         ]()
+    )
 
 
 def main() raises:
@@ -143,3 +163,4 @@ def main() raises:
     test_compile_function_with_path()
     test_compile_function_with_path_func()
     test_short_nvptx_ptr()
+    test_exp2_compile()

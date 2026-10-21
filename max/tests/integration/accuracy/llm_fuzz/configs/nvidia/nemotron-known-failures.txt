@@ -1,0 +1,50 @@
+# Nemotron-H llm-fuzz known failures, one `scenario:test` per line.
+#
+# Each entry failed in unexcluded runs of the CI-default `--validation-only`
+# lane on this config; passing tests are deliberately absent. Re-validate when
+# xgrammar, the Qwen 3.5 tool parser or the model changes. The
+# `constrained_decoding` scenario is not in that lane and is not listed.
+#
+# Read by the ad-hoc lane via nemotron-known-failures.sh. The Mammoth llm-fuzz
+# image can read it via EXCLUDE_FILE; no Nemotron overlay is configured here.
+
+# The model emits one call when asked for two in one turn.
+tc_basics:parallel_tc_two_tools
+tc_basics:parallel_tc_correct_indices
+
+# The qwen_xml grammar for a free-form object rejects hyphenated keys.
+tc_schema_enforcement:freeform_object_hyphen_keys[tool_choice=auto]
+tc_schema_enforcement:freeform_object_hyphen_keys[tool_choice=required]
+
+# For `integer | null` the model returns 7e+57, 70000000.0 or inf: xgrammar is
+# not holding the integer branch of the anyOf to integers.
+tc_schema_enforcement:anyof_nullable_integer[tool_choice=auto]
+tc_schema_enforcement:anyof_nullable_integer[tool_choice=required]
+
+# Deterministic in repeated runs: the cache-served answer is cut short
+# ("P9MZ38" vs "P9MZ38EP" from a fresh replay). Possible prefix-cache bug on
+# this hybrid model, which is what this test exists to catch; investigate.
+needle_prefix_cache:needle_recall
+
+# ---- Intermittent ------------------------------------------------------------
+# The model returns fewer items than the prompt asks for; arguments conform.
+tc_schema_enforcement:anyof_deeply_nested[tool_choice=auto]
+tc_schema_enforcement:anyof_deeply_nested[tool_choice=required]
+tc_schema_enforcement:ref_defs_cross_referencing[tool_choice=required]
+
+# An array came back as whitespace-padded fragments that do not parse (the
+# grammar allows unbounded whitespace in JSON values).
+tc_schema_enforcement:ref_defs_array_enforcement[tool_choice=required]
+
+# The model reasons for the whole turn and returns no content.
+basic_reasoning_and_tool_usage:special-token-content-thinking-on
+
+# With reasoning off the model sometimes answers in text instead of a call.
+openrouter_tests:reasoning-disabled-tool-call-step-1
+
+# A `</think>` or `</tool_call>` marker occasionally leaks into content.
+basic_reasoning_and_tool_usage:tool-call-auto-thinking-off
+basic_reasoning_and_tool_usage:tool-call-auto-thinking-on
+
+# Reasoning sometimes spends the token budget before the JSON completes.
+openai_spec_compliance:response_format_json_schema

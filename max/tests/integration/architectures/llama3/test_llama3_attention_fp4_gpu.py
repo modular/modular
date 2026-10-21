@@ -20,21 +20,26 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.interfaces import TextGenerationContext
-from max.kv_cache import PagedKVCacheManager
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.weights.quant import parse_quant_config
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack
@@ -97,22 +102,22 @@ def attention_weights_and_scales(
         outdim = config.num_attention_heads * config.head_dim
         if key in "kv":
             outdim = config.head_dim * config.num_key_value_heads
-            # state_dict.update({f"{key}_proj.{key}_scale": torch.randn(1, dtype=torch.bfloat16).abs()})
 
+        prefix = f"{key}_proj" if key in "qkv" else "o_proj"
         state_dict.update(
             {
-                f"{key}_proj.input_scale": torch.tensor(
+                f"{prefix}.input_scale": torch.tensor(
                     [0.0015], dtype=torch.float32
                 ),
-                f"{key}_proj.weight": torch.randint(
+                f"{prefix}.weight": torch.randint(
                     255, (outdim, hidden_size // 2), dtype=torch.uint8
                 ),
-                f"{key}_proj.weight_scale": torch.randn(
+                f"{prefix}.weight_scale": torch.randn(
                     outdim, hidden_size // block_size
                 )
                 .abs()
                 .to(torch.float8_e4m3fn),
-                f"{key}_proj.weight_scale_2": torch.tensor(
+                f"{prefix}.weight_scale_2": torch.tensor(
                     [0.0002], dtype=torch.float32
                 ),
             }
@@ -208,7 +213,7 @@ def generate_max_outputs_fp4(
     if quant_config is None:
         raise ValueError("Failed to parse quant config for FP4")
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=cache_dtype,
         n_kv_heads=config.num_key_value_heads,
         head_dim=config.head_dim,
@@ -232,7 +237,7 @@ def generate_max_outputs_fp4(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
+    flattened_kv_types = kv_params.flattened_kv_inputs()
 
     session = InferenceSession(devices=[Accelerator()])
 
@@ -254,8 +259,8 @@ def generate_max_outputs_fp4(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
+        kv_collection: PagedCacheValues = kv_params.unflatten_kv_inputs(
+            iter(kv_cache)
         )[0]
 
         # Create layer_idx constant
@@ -276,11 +281,11 @@ def generate_max_outputs_fp4(
 
     # Set up KV cache for execution (single replica: replica_idx=0)
     batch = [create_text_context(np.empty(input_seq_len))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0)
-    kv_runtime_inputs = kv_manager.runtime_inputs(
-        cast(list[list[TextGenerationContext]], [batch])
-    ).inputs[0]
+    kv_manager.claim(batch[0])
+    kv_manager.alloc(batch[0])
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf(
+        cast(list[list[TextContext]], [batch])
+    )[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     # Prepare inputs - flatten batch and sequence dimensions
@@ -290,11 +295,7 @@ def generate_max_outputs_fp4(
     out = compiled.execute(
         Buffer.from_dlpack(input_tensor_flat).to(device),
         Buffer.from_numpy(input_row_offsets_input).to(device),
-        kv_runtime_inputs.blocks.to(device),
-        kv_runtime_inputs.cache_lengths.to(device),
-        kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_lengths,
-        kv_runtime_inputs.attention_dispatch_metadata,
+        *tree.leaves(kv_runtime_inputs),
     )[0]
     return from_dlpack(out).to(torch.bfloat16)
 

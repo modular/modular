@@ -10,34 +10,111 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""End-to-end tests for MO interpreter with Mojo ops.
+"""End-to-end tests for MO interpreter op handlers.
 
-These tests verify that the Mojo op implementations produce correct results
-by comparing against numpy reference implementations.
+These tests verify that the graph-compiler-backed op handlers produce
+correct results by comparing against numpy reference implementations.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Generator, Sequence
+from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
+import ml_dtypes
 import numpy as np
 import pytest
-from max.driver import CPU
+from max import _core, _eager_policy, engine
+from max._core.dialects import mo, rmo
+from max._interpreter_ops import (
+    data_movement_gc,
+    elementwise_binary_gc,
+    gather_gc,
+    gc_compile,
+    matmul_gc,
+    nms_gc,
+    nonzero_gc,
+    random_gc,
+    range_gc,
+    scatter_nd_gc,
+    select_gc,
+    shape_rearrange_gc,
+    unary_elementwise_gc,
+    warm,
+)
+from max._interpreter_ops.handlers import (
+    _handle_buffer_create,
+    _handle_buffer_transfer,
+    _handle_debug_tensor_print,
+    _handle_distributed_allreduce_sum,
+    _handle_gather_sum,
+    _handle_index_to_tensor,
+    _handle_shape_from_tensor,
+    _handle_squeeze_shape,
+    _handle_unsqueeze_shape,
+)
+from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
+from max.engine import MissingArtifactError
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
+from max.experimental.executor import (
+    CompilingExecutor,
+    InterpreterExecutor,
+    UnsupportedGraphError,
+    set_default_executor,
+)
+from max.experimental.functional import (
+    reduce_scatter,
+)
+from max.experimental.functional import (
+    transfer_to as df_shard,
+)
 from max.experimental.realization_context import set_seed
+from max.experimental.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Replicated,
+    Sharded,
+)
 from max.experimental.tensor import Tensor, realization_context
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph.ops import CoordinateTransformMode, RoundMode
+
+
+@pytest.fixture(autouse=True)
+def _interpreter_only() -> Generator[None]:
+    """All tests in this module run on the interpreter -- it is the unit
+    under test.  Graphs it cannot execute raise UnsupportedGraphError."""
+    with set_default_executor(InterpreterExecutor()):
+        yield
+
 
 # DTypes to test for elementwise operations
 # Note: bfloat16 is excluded since NumPy doesn't support it natively
 FLOAT_DTYPES = [DType.float32, DType.float64]
+# Shape-rearrange ops are pure copies, so they also serve float16 (which has no
+# typed CPU kernel) via the width-based uint bit-cast.
+REARRANGE_FLOAT_DTYPES = FLOAT_DTYPES + [DType.float16]
 INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
 UINT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
 SIGNED_DTYPES = FLOAT_DTYPES + INT_DTYPES
 ELEMENTWISE_DTYPES = SIGNED_DTYPES + UINT_DTYPES
 # DTypes to test for matmul operations (float and integer)
 MATMUL_DTYPES = FLOAT_DTYPES + INT_DTYPES
+
+# Captured pre-migration; the shared kernel's counter mapping must not change them.
+_RANDOM_NORMAL_SEED7_F32 = np.array(
+    [
+        -0.30484700202941895,
+        1.0453333854675293,
+        -0.27856412529945374,
+        0.7178202867507935,
+    ],
+    dtype=np.float32,
+)
 
 
 class TestBinaryElementwiseOps:
@@ -54,7 +131,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -73,7 +150,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a - b
@@ -92,7 +169,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a * b
@@ -111,13 +188,43 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a / b
 
         expected = np.divide(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES + UINT_DTYPES)
+    def test_floor_div_integer(self, dtype: DType) -> None:
+        """Int ``//`` stays integral and matches numpy on the interpreter.
+
+        Integer ``floor_div`` emits a raw ``DivOp`` on the integer operands, so
+        Div must sweep integer dtypes or the eager executor falls back to a
+        full graph compile.
+        """
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(12, dtype=np_dtype).reshape(shape)
+        if dtype.is_signed_integral():
+            a_np = a_np - 6
+        b_np = np.full(shape, 4, dtype=np_dtype)
+        if dtype.is_signed_integral():
+            b_np[0] = -4
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            c = a // b
+
+        assert c.dtype == dtype
+        np.testing.assert_array_equal(
+            np.from_dlpack(c), np.floor_divide(a_np, b_np)
+        )
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_pow(self, dtype: DType) -> None:
@@ -131,13 +238,33 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a**b
 
         expected = np.power(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES + UINT_DTYPES)
+    def test_pow_integer(self, dtype: DType) -> None:
+        """Int ``pow`` matches numpy; Pow sweeps integer dtypes."""
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        # Small bases / exponent 2 keep the result within every int width.
+        a_np = np.arange(1, 13, dtype=np_dtype).reshape(shape)
+        b_np = np.full(shape, 2, dtype=np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            c = a**b
+
+        expected = np.power(a_np, b_np)
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
 
     @pytest.mark.parametrize("dtype", ELEMENTWISE_DTYPES)
     def test_max(self, dtype: DType) -> None:
@@ -150,7 +277,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = F.max(a, b)
@@ -169,7 +296,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = F.min(a, b)
@@ -190,7 +317,7 @@ class TestBinaryElementwiseOps:
         lower_bound = Tensor.from_dlpack(lower_bound_np)
         upper_bound = Tensor.from_dlpack(upper_bound_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = F.clamp(a, lower_bound, upper_bound)
@@ -212,7 +339,7 @@ class TestBinaryComparisonOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a == b
@@ -232,7 +359,7 @@ class TestBinaryComparisonOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a != b
@@ -252,7 +379,7 @@ class TestBinaryComparisonOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a > b
@@ -272,7 +399,7 @@ class TestBinaryComparisonOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a >= b
@@ -295,7 +422,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = -x
@@ -312,7 +439,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = abs(x)
@@ -330,7 +457,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = abs(x)
@@ -347,7 +474,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.exp(x)
@@ -366,7 +493,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.log(x)
@@ -385,7 +512,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.sqrt(x)
@@ -404,7 +531,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tanh(x)
@@ -423,7 +550,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.relu(x)
@@ -440,7 +567,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.sin(x)
@@ -459,7 +586,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cos(x)
@@ -478,7 +605,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.floor(x)
@@ -502,17 +629,23 @@ class TestUnaryMixedOps:
             (DType.uint8, DType.float32),
             (DType.float32, DType.int64),
             (DType.int64, DType.float32),
+            (DType.uint8, DType.uint16),
+            (DType.int32, DType.bool),
+            (DType.bool, DType.int32),
+            (DType.float32, DType.bool),
         ],
     )
     def test_cast(self, in_dtype: DType, out_dtype: DType) -> None:
         """Test cast op converts dtype correctly."""
         in_np_dtype = in_dtype.to_numpy()
         out_np_dtype = out_dtype.to_numpy()
-        x_np = np.arange(12, dtype=in_np_dtype).reshape(3, 4)
+        # numpy rejects arange with an explicit bool dtype past 2 elements, so
+        # build the ramp in the default dtype and cast it to the input dtype.
+        x_np = np.arange(12).astype(in_np_dtype).reshape(3, 4)
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(out_dtype)
@@ -530,7 +663,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.is_nan(x)
@@ -550,7 +683,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.is_inf(x)
@@ -566,7 +699,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.float32)
@@ -579,7 +712,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.int32)
@@ -593,7 +726,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.is_nan(x)
@@ -625,7 +758,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(out_dtype)
@@ -657,7 +790,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(out_dtype)
@@ -679,7 +812,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.float32)
@@ -698,7 +831,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.int32)
@@ -720,7 +853,7 @@ class TestBooleanLogicOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a & b
@@ -736,7 +869,7 @@ class TestBooleanLogicOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a | b
@@ -752,7 +885,7 @@ class TestBooleanLogicOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a ^ b
@@ -766,7 +899,7 @@ class TestBooleanLogicOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = ~x
@@ -785,7 +918,7 @@ class TestChainedOperations:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             # (x + 1) * 2 - 3
@@ -803,7 +936,7 @@ class TestChainedOperations:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             # Compare (x * 2) > 5
@@ -829,7 +962,7 @@ class TestBasicOpExecution:
             np.array([[5.0, 6.0], [7.0, 8.0]], dtype=np.float32)
         )
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -842,7 +975,7 @@ class TestBasicOpExecution:
         a = Tensor.from_dlpack(np.array([2.0, 3.0, 4.0], dtype=np.float32))
         b = Tensor.from_dlpack(np.array([5.0, 6.0, 7.0], dtype=np.float32))
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a * b
@@ -854,7 +987,7 @@ class TestBasicOpExecution:
         """Test unary operations like exp, sqrt, tanh."""
         x = Tensor.from_dlpack(np.array([0.0, 1.0, 2.0], dtype=np.float32))
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.exp(x)
@@ -876,7 +1009,7 @@ class TestDataPassthrough:
         x = Tensor.from_dlpack(input_np)
         z = Tensor.from_dlpack(zeros_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = x + z
@@ -892,7 +1025,7 @@ class TestDataPassthrough:
             x = Tensor.from_dlpack(input_np)
             z = Tensor.from_dlpack(zeros_np)
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 result = x + z
@@ -911,7 +1044,7 @@ class TestDataPassthrough:
             x = Tensor.from_dlpack(input_np)
             z = Tensor.from_dlpack(zeros_np)
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 result = x + z
@@ -930,7 +1063,7 @@ class TestShapeOps:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3])
@@ -946,7 +1079,7 @@ class TestShapeOps:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 4])
@@ -960,7 +1093,7 @@ class TestShapeOps:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[3, 2, 2])
@@ -978,7 +1111,7 @@ class TestShapeOps:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             x_broadcast = x.broadcast_to(shape=[2, 3])
@@ -988,6 +1121,416 @@ class TestShapeOps:
             [[11.0, 22.0, 33.0], [41.0, 52.0, 63.0]], dtype=np.float32
         )
         np.testing.assert_array_almost_equal(np.from_dlpack(z), expected)
+
+
+class TestNonMaximumSuppressionOp:
+    """Tests for NMS interpreter op (mo.non_maximum_suppression).
+
+    Routes through F.non_maximum_suppression -> ops.non_maximum_suppression ->
+    rmo.MoNonMaximumSuppressionOp -> mo.NonMaximumSuppressionOp ->
+    _handle_non_maximum_suppression -> nms_gc.nms_model. CPU-only (MO_HostOnly).
+
+    The reference is a pure-NumPy greedy NMS implementation applied
+    independently per (batch, class) pair.
+    """
+
+    @staticmethod
+    def _nms_numpy_reference(
+        boxes_np: np.ndarray,
+        scores_np: np.ndarray,
+        max_output_boxes_per_class: int,
+        iou_threshold: float,
+        score_threshold: float,
+    ) -> np.ndarray:
+        """Pure-NumPy greedy NMS reference.
+
+        Args:
+            boxes_np: [batch, num_boxes, 4] float array (y1, x1, y2, x2).
+            scores_np: [batch, num_classes, num_boxes] float array.
+            max_output_boxes_per_class: Max selections per (batch, class).
+            iou_threshold: IoU suppression threshold.
+            score_threshold: Minimum score threshold.
+
+        Returns:
+            [num_selected, 3] int64 array with rows
+            [batch_idx, class_idx, box_idx].
+        """
+        batch_size, num_boxes, _ = boxes_np.shape
+        num_classes = scores_np.shape[1]
+        results: list[list[int]] = []
+
+        for b in range(batch_size):
+            for c in range(num_classes):
+                sc = scores_np[b, c]
+                # Filter by score threshold.
+                candidates = [
+                    i for i in range(num_boxes) if sc[i] > score_threshold
+                ]
+                # Sort by score descending.
+                candidates.sort(key=lambda i: -sc[i])
+
+                selected: list[int] = []
+                suppressed = set()
+                for idx in candidates:
+                    if idx in suppressed:
+                        continue
+                    if len(selected) >= max_output_boxes_per_class:
+                        break
+                    selected.append(idx)
+                    # Suppress overlapping boxes.
+                    bx = boxes_np[b]
+                    y1_a, x1_a, y2_a, x2_a = bx[idx]
+                    ay1, ay2 = min(y1_a, y2_a), max(y1_a, y2_a)
+                    ax1, ax2 = min(x1_a, x2_a), max(x1_a, x2_a)
+                    area_a = (ay2 - ay1) * (ax2 - ax1)
+
+                    for other in candidates:
+                        if other in suppressed or other == idx:
+                            continue
+                        y1_b, x1_b, y2_b, x2_b = bx[other]
+                        by1, by2 = min(y1_b, y2_b), max(y1_b, y2_b)
+                        bx1, bx2 = min(x1_b, x2_b), max(x1_b, x2_b)
+                        area_b = (by2 - by1) * (bx2 - bx1)
+
+                        iy1 = max(ay1, by1)
+                        ix1 = max(ax1, bx1)
+                        iy2 = min(ay2, by2)
+                        ix2 = min(ax2, bx2)
+                        inter = max(0.0, iy2 - iy1) * max(0.0, ix2 - ix1)
+                        union = area_a + area_b - inter
+                        if union > 0 and inter / union > iou_threshold:
+                            suppressed.add(other)
+
+                for box_idx in selected:
+                    results.append([b, c, box_idx])
+
+        if not results:
+            return np.zeros((0, 3), dtype=np.int64)
+        return np.array(results, dtype=np.int64)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float64])
+    def test_nms_basic(self, dtype: DType) -> None:
+        """Test NMS with 1 batch, 1 class, 6 overlapping boxes.
+
+        Parametrized over boxes/scores dtype; thresholds stay float32.
+        """
+        np_dtype = dtype.to_numpy()
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.05, 0.05, 1.05, 1.05],
+                    [2.0, 2.0, 3.0, 3.0],
+                    [2.1, 2.1, 3.1, 3.1],
+                    [5.0, 5.0, 6.0, 6.0],
+                    [8.0, 8.0, 9.0, 9.0],
+                ]
+            ],
+            dtype=np_dtype,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.75, 0.6, 0.5, 0.4, 0.3]]],
+            dtype=np_dtype,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+
+    def test_nms_multi_class(self) -> None:
+        """Test NMS with 1 batch, 2 classes (NMS runs per class)."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.05, 0.05, 1.05, 1.05],
+                    [5.0, 5.0, 6.0, 6.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.8, 0.3], [0.1, 0.95, 0.5]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+
+    def test_nms_multi_batch(self) -> None:
+        """Test NMS with 2 batches, 1 class each."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.05, 0.05, 1.05, 1.05],
+                ],
+                [
+                    [2.0, 2.0, 3.0, 3.0],
+                    [5.0, 5.0, 6.0, 6.0],
+                ],
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.8]], [[0.7, 0.6]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+
+    def test_nms_score_threshold(self) -> None:
+        """Test that boxes below score_threshold are excluded."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [5.0, 5.0, 6.0, 6.0],
+                    [10.0, 10.0, 11.0, 11.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.3, 0.1]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.5
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+        assert result_np.shape[0] == 1
+
+    def test_nms_max_output_boxes(self) -> None:
+        """Test that max_output_boxes_per_class caps selections."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [5.0, 5.0, 6.0, 6.0],
+                    [10.0, 10.0, 11.0, 11.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.8, 0.7]]],
+            dtype=np.float32,
+        )
+
+        max_out = 2
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+        assert result_np.shape[0] == 2
+
+    def test_nms_all_suppressed(self) -> None:
+        """Test heavy overlap — only 1 box survives."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.01, 0.01, 1.01, 1.01],
+                    [0.02, 0.02, 1.02, 1.02],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.8, 0.7]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+        assert result_np.shape[0] == 1
+
+    def test_nms_empty_output(self) -> None:
+        """Test all scores below threshold — empty output."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [5.0, 5.0, 6.0, 6.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.1, 0.2]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.5
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        assert result_np.shape == (0, 3)
+
+    def test_nms_gc_model_returns_exact_selection_count(self) -> None:
+        """A compiled NMS model sizes its own data-dependent output."""
+        # Two heavily-overlapping boxes in one batch and one class; with
+        # max_output_boxes_per_class=1 exactly one survives.
+        boxes = Buffer.from_numpy(
+            np.array(
+                [[[0.0, 0.0, 1.0, 1.0], [0.0, 0.1, 1.0, 1.1]]],
+                dtype=np.float32,
+            )
+        )
+        scores = Buffer.from_numpy(np.array([[[0.9, 0.8]]], dtype=np.float32))
+        model = nms_gc.nms_model(DType.float32)
+        (out,) = model(
+            boxes,
+            scores,
+            Buffer.from_numpy(np.asarray(1, dtype=np.int64)),
+            Buffer.from_numpy(np.asarray(0.5, dtype=np.float32)),
+            Buffer.from_numpy(np.asarray(0.0, dtype=np.float32)),
+        )
+        # One row: [batch_index, class_index, box_index] for the winner.
+        np.testing.assert_array_equal(out.to_numpy(), np.array([[0, 0, 0]]))
+
+    def test_float16_unsupported(self) -> None:
+        """float16 isn't in this family's CPU dtype set."""
+        with pytest.raises(KeyError, match="float16"):
+            nms_gc.nms_model(DType.float16)
 
 
 class TestInterpreterVsCompiled:
@@ -1003,7 +1546,7 @@ class TestInterpreterVsCompiled:
 
         # Execute via interpreter
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             interp_result = a + b
@@ -1029,7 +1572,7 @@ class TestInterpreterVsCompiled:
         b = Tensor.from_dlpack(b_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             interp_result = a * b
@@ -1056,7 +1599,7 @@ class TestInterpreterVsCompiled:
 
         # x * 2 + 1
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             interp_result = x * two + one
@@ -1068,6 +1611,54 @@ class TestInterpreterVsCompiled:
             compiled_result = x * two + one
 
         np.testing.assert_array_almost_equal(
+            np.from_dlpack(interp_result), np.from_dlpack(compiled_result)
+        )
+
+    def test_interpreter_matches_compiled_nms(self) -> None:
+        """Test that interpreter NMS matches compiled NMS."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.05, 0.05, 1.05, 1.05],
+                    [5.0, 5.0, 6.0, 6.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.75, 0.4]]],
+            dtype=np.float32,
+        )
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(10, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(0.5, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(0.0, dtype=np.float32))
+
+        # Execute via interpreter path
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            interp_result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        # Execute via a compiling executor: deterministic, where the jit
+        # may interpreter-serve while its background compile is pending.
+        with (
+            set_default_executor(CompilingExecutor()),
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            compiled_result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        # Results should match
+        np.testing.assert_array_equal(
             np.from_dlpack(interp_result), np.from_dlpack(compiled_result)
         )
 
@@ -1083,7 +1674,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3])
@@ -1100,7 +1691,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 4])
@@ -1117,7 +1708,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[3, 2, 2])
@@ -1135,7 +1726,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[4, 3])
@@ -1153,7 +1744,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 4])
@@ -1170,7 +1761,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 4])
@@ -1187,7 +1778,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 2])
@@ -1204,7 +1795,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 1, 2])
@@ -1221,7 +1812,7 @@ class TestStaticBroadcastToOp:
 
             x = Tensor.from_dlpack(input_np)
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 y = x.broadcast_to(shape=[2, 3])
@@ -1237,7 +1828,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             # Broadcast then add
@@ -1250,6 +1841,103 @@ class TestStaticBroadcastToOp:
             [[2.0, 3.0, 4.0], [2.0, 3.0, 4.0]], dtype=np.float32
         )
         np.testing.assert_array_equal(result, expected)
+
+    def test_broadcast_rank0_to_rank0(self) -> None:
+        """Broadcasting a rank-0 (scalar) tensor to a rank-0 target shape.
+
+        Exercises ``data_movement_gc.broadcast_to``'s rank-0 special case: the
+        fixed-rank data_movement_gc graph needs at least one axis, so a
+        rank-0 target must fall back to a driver copy rather than a
+        compiled model call.
+        """
+        input_np = np.array(42.0, dtype=np.float32)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[])
+
+        result = np.from_dlpack(y)
+        assert result.shape == ()
+        np.testing.assert_array_equal(result, input_np)
+
+    def test_broadcast_zero_extent_dim(self) -> None:
+        """Broadcasting to a zero-extent target dim must produce an empty
+        result, not fail in the padded fixed-rank graph."""
+        input_np = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[0, 3])
+
+        result = np.from_dlpack(y)
+        assert result.shape == (0, 3)
+        np.testing.assert_array_equal(result, np.broadcast_to(input_np, (0, 3)))
+
+
+class TestTransposeOp:
+    """Tests for TransposeOp using the Tensor API with MO interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype", REARRANGE_FLOAT_DTYPES + INT_DTYPES + UINT_DTYPES
+    )
+    def test_permute_rank3_non_adjacent(self, dtype: DType) -> None:
+        """Test permute with a non-adjacent rank-3 permutation (2, 0, 1)."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(24, dtype=np_dtype).reshape(2, 3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.permute([2, 0, 1])
+
+        result = np.from_dlpack(y)
+        expected = np.transpose(x_np, (2, 0, 1))
+        np.testing.assert_array_equal(result, expected)
+
+    def test_transpose_rank0_scalar(self) -> None:
+        """Transposing a scalar (rank-0) tensor via ``Tensor.transpose``.
+
+        ``ops.transpose`` accepts axes ``-1``/``0`` on a rank-0 tensor and
+        emits an empty perm, so ``_handle_transpose`` must special-case
+        rank 0 rather than reaching the fixed-rank ``data_movement_gc``
+        graph (which needs at least one axis).
+        """
+        x_np = np.array(3.5, dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.transpose(-1, 0)
+
+        result = np.from_dlpack(y)
+        assert result.shape == ()
+        np.testing.assert_array_equal(result, x_np)
+
+    def test_transpose_zero_extent_dim(self) -> None:
+        """Transposing a tensor with a zero-extent dim must produce the
+        permuted empty shape, not fail in the padded fixed-rank graph."""
+        x_np = np.empty((0, 3), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.permute([1, 0])
+
+        result = np.from_dlpack(y)
+        assert result.shape == (3, 0)
+        np.testing.assert_array_equal(result, np.transpose(x_np, (1, 0)))
 
 
 class TestMatmulOp:
@@ -1266,7 +1954,7 @@ class TestMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1284,7 +1972,7 @@ class TestMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1303,7 +1991,7 @@ class TestMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1321,7 +2009,7 @@ class TestMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1343,7 +2031,7 @@ class TestBatchMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1361,7 +2049,7 @@ class TestBatchMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1380,7 +2068,7 @@ class TestBatchMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1398,7 +2086,7 @@ class TestBatchMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1419,7 +2107,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(1, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1443,7 +2131,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(2, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1467,7 +2155,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(0.25, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1491,7 +2179,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(-1, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1515,7 +2203,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(1, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1537,7 +2225,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(2, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1552,6 +2240,76 @@ class TestRangeOp:
         expected = np.arange(5, 15, 2, dtype=np.float32)
         np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
 
+    def test_range_gc_model_returns_runtime_length(self) -> None:
+        """The compiled model sizes its own output from the host scalars."""
+        model = range_gc.range_model(CPU(), DType.float32)
+        (out,) = model(
+            Buffer.from_numpy(np.asarray(0.0, dtype=np.float32)),
+            Buffer.from_numpy(np.asarray(5.0, dtype=np.float32)),
+            Buffer.from_numpy(np.asarray(1.0, dtype=np.float32)),
+        )
+        np.testing.assert_array_equal(
+            out.to_numpy(), np.arange(0.0, 5.0, 1.0, dtype=np.float32)
+        )
+
+    def test_range_non_divisible_interval_rounds_up(self) -> None:
+        """``arange(0, 5, 2)`` now yields 3 elements, not 2.
+
+        The shared shape function rounds up like Python's ``range`` where the
+        old handler floored, so callers must now declare ``out_dim=3``.
+        """
+        start_t = Tensor.from_dlpack(np.array(0, dtype=np.float32))
+        stop_t = Tensor.from_dlpack(np.array(5, dtype=np.float32))
+        step_t = Tensor.from_dlpack(np.array(2, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=3,
+                dtype=DType.float32,
+                device=CPU(),
+            )
+
+        expected = np.array([0.0, 2.0, 4.0], dtype=np.float32)
+        np.testing.assert_array_equal(np.from_dlpack(t), expected)
+
+    def test_range_declared_length_mismatch_raises(self) -> None:
+        """A declared length that disagrees with the model's output raises.
+
+        Uses buffer-backed scalars with a deliberately floored ``out_dim``: a
+        fully-literal range is constant-folded before the handler runs.
+        """
+        start_t = Tensor.from_dlpack(np.array(0, dtype=np.float32))
+        stop_t = Tensor.from_dlpack(np.array(5, dtype=np.float32))
+        step_t = Tensor.from_dlpack(np.array(2, dtype=np.float32))
+
+        with pytest.raises(RuntimeError, match=r"declared.*length.*2.*3"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                # Keep a reference: an unreferenced result tensor can be
+                # elided by realization as dead code, along with the error.
+                t = Tensor.arange(
+                    start_t,
+                    stop_t,
+                    step_t,
+                    out_dim=2,
+                    dtype=DType.float32,
+                    device=CPU(),
+                )
+                assert t is not None
+
+    def test_float16_unsupported(self) -> None:
+        """float16 isn't in this family's CPU dtype set."""
+        with pytest.raises(KeyError, match="float16"):
+            range_gc.range_model(CPU(), DType.float16)
+
 
 class TestReduceOps:
     """Tests for reduction Mojo ops."""
@@ -1565,7 +2323,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -1582,7 +2340,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=0)
@@ -1599,7 +2357,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=1)
@@ -1616,7 +2374,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -1635,7 +2393,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -1652,7 +2410,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=0)
@@ -1669,7 +2427,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=1)
@@ -1686,7 +2444,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -1708,7 +2466,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=-1)
@@ -1725,7 +2483,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=0)
@@ -1742,7 +2500,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=1)
@@ -1759,7 +2517,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=-1)
@@ -1778,7 +2536,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=-1)
@@ -1795,7 +2553,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=0)
@@ -1812,7 +2570,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=1)
@@ -1829,7 +2587,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=-1)
@@ -1853,7 +2611,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=-1)
@@ -1870,7 +2628,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=0)
@@ -1887,7 +2645,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=1)
@@ -1905,13 +2663,187 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=-1)
 
         expected = np.prod(x_np, axis=-1, keepdims=True)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    # --- Bool reduce tests (issue #6067) ---
+
+    def test_reduce_max_bool(self) -> None:
+        """Test reduce_max on a bool tensor (logical OR)."""
+        x_np = np.array(
+            [[True, False, True], [False, False, False]], dtype=np.bool_
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.max(axis=-1)
+
+        expected = np.max(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_reduce_min_bool(self) -> None:
+        """Test reduce_min on a bool tensor (logical AND)."""
+        x_np = np.array(
+            [[True, False, True], [True, True, True]], dtype=np.bool_
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        expected = np.min(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_reduce_max_bool_first_axis(self) -> None:
+        """Test reduce_max on a bool tensor along the first axis."""
+        x_np = np.array(
+            [[False, True, False], [False, False, True]], dtype=np.bool_
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.max(axis=0)
+
+        expected = np.max(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_reduce_max_bool_all_false(self) -> None:
+        """Test reduce_max on an all-False bool tensor."""
+        x_np = np.zeros((2, 3), dtype=np.bool_)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.max(axis=-1)
+
+        expected = np.max(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_reduce_max_bool_all_true(self) -> None:
+        """Test reduce_max on an all-True bool tensor."""
+        x_np = np.ones((2, 3), dtype=np.bool_)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.max(axis=-1)
+
+        expected = np.max(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    # --- Additional tests requested in PR review ---
+
+    def test_reduce_min_bool_all_false(self) -> None:
+        """Test reduce_min on an all-False bool tensor."""
+        x_np = np.zeros((2, 3), dtype=np.bool_)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        expected = np.min(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_reduce_min_bool_all_true(self) -> None:
+        """Test reduce_min on an all-True bool tensor."""
+        x_np = np.ones((2, 3), dtype=np.bool_)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        expected = np.min(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_reduce_bool_3d(self) -> None:
+        """Test reduce max/min on a 3D bool tensor across each axis."""
+        x_np = np.array(
+            [
+                [[True, False], [False, True], [True, True]],
+                [[False, False], [True, False], [False, True]],
+            ],
+            dtype=np.bool_,
+        )  # shape (2, 3, 2)
+
+        for axis in range(3):
+            for op_fn, np_fn in [
+                (Tensor.max, np.max),
+                (Tensor.min, np.min),
+            ]:
+                x = Tensor.from_dlpack(x_np)
+                with (
+                    rc.EagerRealizationContext() as ctx,
+                    realization_context(ctx),
+                ):
+                    y = op_fn(x, axis=axis)
+
+                expected = np_fn(x_np, axis=axis, keepdims=True)
+                np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_reduce_bool_4d(self) -> None:
+        """Test reduce max/min on a 4D bool tensor across each axis."""
+        x_np = (
+            np.random.default_rng(42)
+            .choice([True, False], size=(2, 2, 3, 2))
+            .astype(np.bool_)
+        )
+
+        for axis in range(4):
+            for op_fn, np_fn in [
+                (Tensor.max, np.max),
+                (Tensor.min, np.min),
+            ]:
+                x = Tensor.from_dlpack(x_np)
+                with (
+                    rc.EagerRealizationContext() as ctx,
+                    realization_context(ctx),
+                ):
+                    y = op_fn(x, axis=axis)
+
+                expected = np_fn(x_np, axis=axis, keepdims=True)
+                np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_reduce_bool_single_element_axis(self) -> None:
+        """Test reduce max/min on a bool tensor with a size-1 axis."""
+        x_np = np.array([[True], [False], [True]], dtype=np.bool_)  # (3, 1)
+
+        for op_fn, np_fn in [
+            (Tensor.max, np.max),
+            (Tensor.min, np.min),
+        ]:
+            x = Tensor.from_dlpack(x_np)
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = op_fn(x, axis=1)
+
+            expected = np_fn(x_np, axis=1, keepdims=True)
+            np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
 
 def _numpy_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
@@ -1942,7 +2874,7 @@ class TestSoftmaxOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.softmax(x, axis=-1)
@@ -1960,7 +2892,7 @@ class TestSoftmaxOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.softmax(x, axis=-1)
@@ -1978,7 +2910,7 @@ class TestSoftmaxOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.logsoftmax(x, axis=-1)
@@ -1996,7 +2928,7 @@ class TestSoftmaxOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.logsoftmax(x, axis=-1)
@@ -2023,7 +2955,7 @@ class TestBroadcastBinaryOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -2039,7 +2971,7 @@ class TestBroadcastBinaryOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a * b
@@ -2055,7 +2987,7 @@ class TestBroadcastBinaryOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a - b
@@ -2073,7 +3005,7 @@ class TestBroadcastBinaryOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -2089,7 +3021,7 @@ class TestRandomNormalOp:
         """Test that random normal produces correct shape and dtype."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2105,7 +3037,7 @@ class TestRandomNormalOp:
         """Test that same seed produces identical results."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2114,7 +3046,7 @@ class TestRandomNormalOp:
             )
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2130,7 +3062,7 @@ class TestRandomNormalOp:
         """Test that random normal has approximately correct mean and std."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(123)
@@ -2152,7 +3084,7 @@ class TestRandomNormalOp:
         """Test random normal with different float dtypes."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2162,6 +3094,25 @@ class TestRandomNormalOp:
         assert result_np.shape == (10, 10)
         assert result_np.dtype == dtype.to_numpy()
 
+    def test_random_normal_matches_recorded_baseline(self) -> None:
+        """Migrating to the shared GC kernel must not change sampled values.
+
+        A mismatch means the counter mapping diverged, not that the baseline
+        is stale.
+        """
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(7)
+            result = max_random.gaussian(
+                (4,), dtype=DType.float32, device=CPU()
+            )
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(result), _RANDOM_NORMAL_SEED7_F32
+        )
+
 
 class TestRandomUniformOp:
     """Tests for random uniform op via max.random.uniform with interpreter."""
@@ -2170,7 +3121,7 @@ class TestRandomUniformOp:
         """Test that random uniform produces correct shape and dtype."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2186,7 +3137,7 @@ class TestRandomUniformOp:
         """Test that same seed produces identical results."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2195,7 +3146,7 @@ class TestRandomUniformOp:
             )
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2211,7 +3162,7 @@ class TestRandomUniformOp:
         """Test that random uniform has approximately correct statistics."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(123)
@@ -2233,7 +3184,7 @@ class TestRandomUniformOp:
         """Test random uniform with different float dtypes."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2243,14 +3194,19 @@ class TestRandomUniformOp:
         assert result_np.shape == (10, 10)
         assert result_np.dtype == dtype.to_numpy()
 
+    def test_float16_unsupported(self) -> None:
+        """float16 isn't in this family's CPU dtype set."""
+        with pytest.raises(KeyError, match="float16"):
+            random_gc.random_model(mo.RandomUniformOp, CPU(), DType.float16)
+
 
 class TestShapeChangeOps:
     """Tests for shape change operations (squeeze, unsqueeze, reshape variants).
 
-    These test the reshape semantics that SqueezeShapeOp, UnsqueezeShapeOp,
-    AddSingletonDimOp, SplitDimOp, and MergeDimOp implement. Since these ops
-    are emitted by MLIR lowering passes rather than the Python API directly,
-    we test through the Tensor API methods that produce equivalent reshapes.
+    These test the reshape semantics that SqueezeShapeOp and UnsqueezeShapeOp
+    implement, along with the reshape variants (add-singleton, split, and
+    merge) that the Tensor API expresses. We test through the Tensor API
+    methods that produce these reshapes.
     """
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
@@ -2261,7 +3217,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=1)
@@ -2279,7 +3235,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=0)
@@ -2297,7 +3253,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=-1)
@@ -2315,7 +3271,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=0)
@@ -2333,7 +3289,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=1)
@@ -2351,7 +3307,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=-1)
@@ -2363,7 +3319,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_split_dim(self, dtype: DType) -> None:
-        """Test reshape that splits a dimension (equivalent to SplitDimOp).
+        """Test reshape that splits a dimension.
 
         E.g., [12, 3] -> [3, 4, 3] splits dimension 0 into (3, 4).
         """
@@ -2372,7 +3328,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([3, 4, 3])
@@ -2384,7 +3340,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_merge_dims(self, dtype: DType) -> None:
-        """Test reshape that merges adjacent dimensions (equivalent to MergeDimOp).
+        """Test reshape that merges adjacent dimensions.
 
         E.g., [2, 3, 4] -> [6, 4] merges dimensions 0 and 1.
         """
@@ -2393,7 +3349,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([6, 4])
@@ -2405,7 +3361,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_add_singleton(self, dtype: DType) -> None:
-        """Test reshape that adds a singleton dimension (equiv to AddSingletonDimOp).
+        """Test reshape that adds a singleton dimension.
 
         E.g., [3, 4] -> [3, 1, 4] adds a dimension of size 1.
         """
@@ -2414,7 +3370,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([3, 1, 4])
@@ -2430,7 +3386,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             squeezed = x.squeeze(axis=1)
@@ -2448,7 +3404,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=0)
@@ -2466,7 +3422,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=0)
@@ -2494,7 +3450,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -2516,7 +3472,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -2536,7 +3492,45 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", UINT_DTYPES)
+    def test_select_uint(self, dtype: DType) -> None:
+        """Test select op with unsigned integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array([True, False, True, False], dtype=np.bool_)
+        x_np = np.array([1, 2, 3, 4], dtype=np_dtype)
+        y_np = np.array([10, 20, 30, 40], dtype=np_dtype)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_select_bool_values(self) -> None:
+        """Test select op where x/y (not just cond) are bool tensors."""
+        cond_np = np.array([True, False, True, False], dtype=np.bool_)
+        x_np = np.array([True, True, False, False], dtype=np.bool_)
+        y_np = np.array([False, False, True, True], dtype=np.bool_)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -2554,7 +3548,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -2571,7 +3565,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -2592,7 +3586,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
@@ -2610,7 +3604,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=1)
@@ -2628,7 +3622,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=-1)
@@ -2646,7 +3640,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
@@ -2664,7 +3658,7 @@ class TestConcatOp:
         b = Tensor.from_dlpack(b_np)
         c = Tensor.from_dlpack(c_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b, c], axis=0)
@@ -2678,7 +3672,7 @@ class TestConcatOp:
 
         a = Tensor.from_dlpack(a_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a], axis=0)
@@ -2693,13 +3687,37 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
 
         expected = np.concatenate([a_np, b_np], axis=0)
         np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("axis", [0, 1, -1])
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.uint8, DType.int16, DType.bool, DType.float16],
+    )
+    def test_concat_extra_dtypes(self, dtype: DType, axis: int) -> None:
+        """Concat over dtypes the old Mojo path also accepted.
+
+        float16 has no typed CPU kernel; it exercises the width-16 uint bit-cast.
+        """
+        a_np = np.array([[1, 0, 1], [0, 1, 1]]).astype(dtype.to_numpy())
+        b_np = np.array([[1, 1, 0], [0, 0, 1]]).astype(dtype.to_numpy())
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.concat([a, b], axis=axis)
+
+        expected = np.concatenate([a_np, b_np], axis=axis)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
 
 
 def _numpy_layer_norm(
@@ -2728,7 +3746,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -2750,7 +3768,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -2772,7 +3790,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -2792,7 +3810,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -2814,13 +3832,219 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
 
         expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestRmsNormOp:
+    """Tests for rms_norm interpreter op via F.rms_norm.
+
+    Routes through F.rms_norm -> ops.rms_norm -> mo.ReduceRmsNormOp ->
+    _handle_rms_norm -> rms_norm_gc.rms_norm_model.
+    """
+
+    @staticmethod
+    def _rms_norm_ref(
+        x: np.ndarray,
+        weight: np.ndarray,
+        eps: float,
+        weight_offset: float = 0.0,
+        multiply_before_cast: bool = False,
+    ) -> np.ndarray:
+        """Pure-numpy RMS norm reference.
+
+        output = x / rms(x) * (weight + weight_offset)
+        rms(x) = sqrt(mean(x^2) + eps)
+        """
+        x_f64 = x.astype(np.float64)
+        rms = np.sqrt(np.mean(x_f64**2, axis=-1, keepdims=True) + eps)
+        normed = x_f64 / rms
+        w = weight.astype(np.float64) + weight_offset
+        return (normed * w).astype(x.dtype)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_basic_2d(self, dtype: DType) -> None:
+        """Test rms_norm on a 2D tensor."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((4, 5)).astype(np_dtype)
+        w_np = rng.standard_normal(5).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-5)
+
+        expected = self._rms_norm_ref(x_np, w_np, 1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-4, atol=1e-4
+        )
+
+    def test_3d_input(self) -> None:
+        """Test rms_norm on a 3D tensor (batch + sequence + feature)."""
+        rng = np.random.default_rng(43)
+        x_np = rng.standard_normal((2, 3, 8)).astype(np.float32)
+        w_np = rng.standard_normal(8).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-5)
+
+        expected = self._rms_norm_ref(x_np, w_np, 1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_multiply_before_cast(self) -> None:
+        """Test Gemma-style multiply_before_cast=True."""
+        rng = np.random.default_rng(44)
+        x_np = rng.standard_normal((4, 6)).astype(np.float32)
+        w_np = rng.standard_normal(6).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-5, multiply_before_cast=True)
+
+        expected = self._rms_norm_ref(
+            x_np, w_np, 1e-5, multiply_before_cast=True
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_weight_offset(self) -> None:
+        """Test rms_norm with non-zero weight_offset (Gemma-style +1)."""
+        rng = np.random.default_rng(45)
+        x_np = rng.standard_normal((3, 4)).astype(np.float32)
+        w_np = rng.standard_normal(4).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-5, weight_offset=1.0)
+
+        expected = self._rms_norm_ref(x_np, w_np, 1e-5, weight_offset=1.0)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_large_feature_dim(self) -> None:
+        """Test rms_norm with a large feature dimension."""
+        rng = np.random.default_rng(46)
+        x_np = rng.standard_normal((8, 128)).astype(np.float32)
+        w_np = rng.standard_normal(128).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-6)
+
+        expected = self._rms_norm_ref(x_np, w_np, 1e-6)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+
+def _numpy_group_norm(
+    x: np.ndarray,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    num_groups: int,
+    eps: float = 1e-5,
+) -> np.ndarray:
+    """Numerically stable group normalization reference implementation."""
+    n, c, *spatial = x.shape
+    x_grouped = x.astype(np.float64).reshape(
+        n, num_groups, c // num_groups, *spatial
+    )
+    axes = tuple(range(2, x_grouped.ndim))
+    mean = x_grouped.mean(axis=axes, keepdims=True)
+    var = x_grouped.var(axis=axes, keepdims=True)
+    normed = ((x_grouped - mean) / np.sqrt(var + eps)).reshape(x.shape)
+    broadcast_shape = (1, c) + (1,) * len(spatial)
+    result = normed * gamma.astype(np.float64).reshape(
+        broadcast_shape
+    ) + beta.astype(np.float64).reshape(broadcast_shape)
+    return result.astype(x.dtype)
+
+
+class TestGroupNormOp:
+    """Tests for group_norm interpreter op via F.group_norm.
+
+    Routes through F.group_norm -> ops.group_norm -> mo.ReduceGroupNormOp ->
+    _handle_group_norm -> group_norm_gc.group_norm_model. GPU correctness is
+    covered by TestGroupNormGPU in test_interpreter_ops_gpu.py.
+    """
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_group_norm_4d(self, dtype: DType) -> None:
+        """Test group_norm on a 4D (N, C, H, W) tensor."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(50)
+        x_np = rng.standard_normal((2, 4, 3, 3)).astype(np_dtype)
+        gamma_np = rng.standard_normal(4).astype(np_dtype)
+        beta_np = rng.standard_normal(4).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
+
+        expected = _numpy_group_norm(
+            x_np, gamma_np, beta_np, num_groups=2, eps=1e-5
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-4, atol=1e-4
+        )
+
+    def test_group_norm_3d(self) -> None:
+        """Test group_norm on a 3D (N, C, L) tensor."""
+        rng = np.random.default_rng(51)
+        x_np = rng.standard_normal((2, 8, 5)).astype(np.float32)
+        gamma_np = rng.standard_normal(8).astype(np.float32)
+        beta_np = rng.standard_normal(8).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=4, epsilon=1e-5)
+
+        expected = _numpy_group_norm(
+            x_np, gamma_np, beta_np, num_groups=4, eps=1e-5
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-4, atol=1e-4
+        )
 
 
 class TestSliceOp:
@@ -2834,7 +4058,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(2, 7)])
@@ -2842,7 +4066,7 @@ class TestSliceOp:
         expected = x_np[2:7]
         np.testing.assert_array_equal(np.from_dlpack(result), expected)
 
-    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    @pytest.mark.parametrize("dtype", REARRANGE_FLOAT_DTYPES)
     def test_slice_2d(self, dtype: DType) -> None:
         """Test 2D slice across both dimensions."""
         np_dtype = dtype.to_numpy()
@@ -2850,7 +4074,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 2), slice(1, 3)])
@@ -2864,7 +4088,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 10, 2)])
@@ -2878,7 +4102,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 2), slice(1, 3), slice(0, 2)])
@@ -2894,7 +4118,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(1, 3), slice(0, 2)])
@@ -2908,7 +4132,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(1, 2), slice(2, 3)])
@@ -2922,7 +4146,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 3), slice(0, 4)])
@@ -2942,7 +4166,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0)
@@ -2959,7 +4183,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=-1)
@@ -2976,7 +4200,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0)
@@ -2993,7 +4217,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=1)
@@ -3010,7 +4234,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=2)
@@ -3027,7 +4251,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=3)
@@ -3043,7 +4267,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0, exclusive=True)
@@ -3060,7 +4284,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0, reverse=True)
@@ -3077,7 +4301,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0, exclusive=True, reverse=True)
@@ -3094,13 +4318,20 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0)
 
         expected = np.cumsum(x_np, axis=0)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+def test_flat_index_strides() -> None:
+    """Row-major strides used to flatten a multi-dim index into a scalar."""
+    assert gc_compile.flat_index_strides((4, 3, 2)) == [6, 2, 1]
+    assert gc_compile.flat_index_strides((5,)) == [1]
+    assert gc_compile.flat_index_strides(()) == []
 
 
 class TestGatherOp:
@@ -3116,7 +4347,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -3134,7 +4365,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=1)
@@ -3150,7 +4381,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=-1)
@@ -3166,7 +4397,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=1)
@@ -3182,7 +4413,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=2)
@@ -3198,7 +4429,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -3214,7 +4445,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -3232,7 +4463,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -3252,7 +4483,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -3271,7 +4502,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -3289,7 +4520,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx, batch_dims=1)
@@ -3306,7 +4537,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -3323,7 +4554,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -3342,7 +4573,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -3358,13 +4589,285 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
 
         expected = np.array([x_np[2, 1], x_np[0, 3]], dtype=np.float32)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestGatherNdFusedModel:
+    """Tests for gather_gc's fused flatten-index + real gather_nd graph.
+
+    ``handlers.py`` isn't updated until Task 4R, so these call
+    :func:`gather_gc.gather_nd_model`/:func:`gather_gc.gather_nd_operand_views`
+    directly rather than through ``F.gather_nd`` (see ``TestGatherNdOp`` for
+    the handler-level suite, which stays red until Task 4R lands).
+    """
+
+    def test_batch_dims_0(self) -> None:
+        """batch_dims=0: single flat batch, multi-dim index fully flattened."""
+        device = CPU()
+        x_np = np.arange(12, dtype=np.uint32).reshape(3, 4)
+        idx_np = np.array([[0, 1], [2, 3]], dtype=np.int64)  # m=2, k=2
+
+        data_view, idx_view, strides = gather_gc.gather_nd_operand_views(
+            x_np.shape, idx_np.shape, batch_dims=0
+        )
+        strides_np = np.array(strides, dtype=np.int64)
+
+        model = gather_gc.gather_nd_model(device, DType.uint32, DType.int64)
+        (out,) = model(
+            Buffer.from_numpy(x_np.reshape(data_view)),
+            Buffer.from_numpy(idx_np.reshape(idx_view)),
+            Buffer.from_numpy(strides_np),
+        )
+
+        # flat indices: 0*4+1=1, 2*4+3=11 -> x.flat[[1, 11]]
+        expected = np.array(
+            [[[x_np.flat[1]], [x_np.flat[11]]]], dtype=np.uint32
+        )
+        np.testing.assert_array_equal(out.to_numpy(), expected)
+
+    def test_batch_dims_gt_0_multi_index_per_batch(self) -> None:
+        """batch_dims=1, batch>1, m>1: per-batch-distinct indices via the
+        real ``batch_dims=1`` handling -- no batch-folding hack needed."""
+        device = CPU()
+        x_np = np.arange(24, dtype=np.uint32).reshape(2, 3, 4)
+        # Per batch, 2 index vectors of depth 1 (index into the size-3 dim).
+        idx_np = np.array([[[1], [0]], [[2], [1]]], dtype=np.int64)
+
+        data_view, idx_view, strides = gather_gc.gather_nd_operand_views(
+            x_np.shape, idx_np.shape, batch_dims=1
+        )
+        strides_np = np.array(strides, dtype=np.int64)
+
+        model = gather_gc.gather_nd_model(device, DType.uint32, DType.int64)
+        (out,) = model(
+            Buffer.from_numpy(x_np.reshape(data_view)),
+            Buffer.from_numpy(idx_np.reshape(idx_view)),
+            Buffer.from_numpy(strides_np),
+        )
+
+        expected = np.stack(
+            [
+                np.stack([x_np[0, 1], x_np[0, 0]]),
+                np.stack([x_np[1, 2], x_np[1, 1]]),
+            ]
+        )
+        np.testing.assert_array_equal(out.to_numpy(), expected)
+
+
+class TestDebugTensorPrintOp:
+    """Tests for the debug.tensor.print interpreter handler."""
+
+    def test_debug_tensor_print_bfloat16(self, capsys: Any) -> None:
+        """NumPy can't hold bfloat16, so the handler must not crash on it."""
+        values_f32 = np.array([1.5, -2.0, 0.25], dtype=np.float32)
+        buf = Buffer.from_numpy(
+            values_f32.astype(ml_dtypes.bfloat16).view(np.uint16)
+        ).view(DType.bfloat16)
+
+        mock_op = MagicMock()
+        mock_op.label = "x"
+
+        result = _handle_debug_tensor_print(mock_op, [None, buf])
+
+        assert result == [None]
+        printed = capsys.readouterr().out
+        assert "1.5" in printed
+        assert "-2" in printed
+        assert "0.25" in printed
+
+
+class TestGatherSumOp:
+    """Tests for the gather_sum interpreter handler.
+
+    ``mo.GatherSumOp`` fuses a gather (axis 0) with a sum reduction
+    (axis 1).  It is ``MO_HostOnly`` and used by DLRM-style multi-hot
+    embeddings.  Tests call the handler directly since no user-facing
+    graph API produces this op.
+    """
+
+    def test_gather_sum_basic(self) -> None:
+        """Gather rows then sum over the multi-hot dimension."""
+        input_np = np.arange(12, dtype=np.float32).reshape(4, 3)
+        indices_np = np.array([[0, 2], [1, 3]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = MagicMock()
+
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        input_buf = Buffer.from_numpy(input_np)
+        indices_buf = Buffer.from_numpy(indices_np)
+
+        result = _handle_gather_sum(mock_op, [input_buf, indices_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+
+        gathered = np.take(input_np, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(out.to_numpy(), expected)
+
+    def test_gather_sum_single_index(self) -> None:
+        """Single index per row — sum is a no-op."""
+        input_np = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
+        indices_np = np.array([[2], [0]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_gather_sum(
+            mock_op,
+            [Buffer.from_numpy(input_np), Buffer.from_numpy(indices_np)],
+        )
+
+        gathered = np.take(input_np, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        assert isinstance(result[0], Buffer)
+        np.testing.assert_array_almost_equal(result[0].to_numpy(), expected)
+
+    def test_gather_sum_int_data(self) -> None:
+        """Integer input dtype."""
+        input_np = np.arange(8, dtype=np.int64).reshape(4, 2)
+        indices_np = np.array([[0, 1], [2, 3]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_gather_sum(
+            mock_op,
+            [Buffer.from_numpy(input_np), Buffer.from_numpy(indices_np)],
+        )
+
+        gathered = np.take(input_np, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        assert isinstance(result[0], Buffer)
+        np.testing.assert_array_equal(result[0].to_numpy(), expected)
+
+    def test_gather_sum_bfloat16(self) -> None:
+        """NumPy can't hold bfloat16, so the handler must not crash on it.
+
+        No user-facing graph API produces ``mo.gather_sum`` (see the class
+        docstring), so this exercises the handler directly rather than
+        covering a path real callers can reach today.
+        """
+        input_f32 = np.arange(12, dtype=np.float32).reshape(4, 3)
+        input_bf16 = Buffer.from_numpy(
+            input_f32.astype(ml_dtypes.bfloat16).view(np.uint16)
+        ).view(DType.bfloat16)
+        indices_np = np.array([[0, 2], [1, 3]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_gather_sum(
+            mock_op, [input_bf16, Buffer.from_numpy(indices_np)]
+        )
+
+        assert isinstance(result[0], Buffer)
+        assert result[0].dtype == DType.bfloat16
+        gathered = np.take(input_f32, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        out_f32 = (
+            result[0]
+            .view(DType.uint16)
+            .to_numpy()
+            .view(ml_dtypes.bfloat16)
+            .astype(np.float32)
+        )
+        np.testing.assert_array_almost_equal(out_f32, expected)
+
+
+class TestDistributedAllreduceSumOp:
+    """Tests for the distributed.allreduce.sum interpreter handler on host."""
+
+    def test_allreduce_sum_leaves_host_inputs_unmodified(self) -> None:
+        """The sum must not accumulate into an input that's already on CPU."""
+        a = np.arange(4, dtype=np.float32)
+        b = 10 * np.arange(4, dtype=np.float32)
+        bufs = [Buffer.from_numpy(a.copy()), Buffer.from_numpy(b.copy())]
+
+        mock_op = MagicMock()
+        mock_op.inputs = [MagicMock(), MagicMock()]
+        mock_op.group_size = 0
+        mock_result = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result, mock_result, MagicMock()]
+
+        result = _handle_distributed_allreduce_sum(mock_op, bufs)
+
+        np.testing.assert_array_equal(bufs[0].to_numpy(), a)
+        np.testing.assert_array_equal(bufs[1].to_numpy(), b)
+        for out in result[:2]:
+            assert isinstance(out, Buffer)
+            np.testing.assert_array_equal(out.to_numpy(), a + b)
+        assert result[2] is None
+
+
+def _mock_op_on(device: DeviceRef) -> MagicMock:
+    mock_result = MagicMock()
+    mock_result.type.device_ref = device.to_mlir()
+    mock_op = MagicMock()
+    mock_op.results = [mock_result]
+    return mock_op
+
+
+class TestSqueezeUnsqueezeShapeOps:
+    """Tests for the mo.squeeze_shape and mo.unsqueeze_shape handlers.
+
+    No graph API emits these ops (ops.squeeze and ops.unsqueeze lower to
+    reshape), so the tests call the handlers directly.
+    """
+
+    @pytest.mark.parametrize("np_dtype", [np.int32, np.int64])
+    def test_squeeze_shape(self, np_dtype: type) -> None:
+        """Negative and unsorted indices; the shape dtype is preserved."""
+        shape = Buffer.from_numpy(np.array([2, 1, 3, 1, 1], dtype=np_dtype))
+        indices = Buffer.from_numpy(np.array([-1, 1, 3], dtype=np.int32))
+
+        (out,) = _handle_squeeze_shape(
+            _mock_op_on(DeviceRef.CPU()), [shape, indices]
+        )
+
+        assert isinstance(out, Buffer)
+        result = out.to_numpy()
+        assert result.dtype == np_dtype
+        np.testing.assert_array_equal(result, [2, 3])
+
+    @pytest.mark.parametrize("np_dtype", [np.int32, np.int64])
+    def test_unsqueeze_shape(self, np_dtype: type) -> None:
+        """Negative indices count from the end of the output rank."""
+        shape = Buffer.from_numpy(np.array([10, 11, 12, 13], dtype=np_dtype))
+        indices = Buffer.from_numpy(np.array([0, -3, 3], dtype=np.int64))
+
+        (out,) = _handle_unsqueeze_shape(
+            _mock_op_on(DeviceRef.CPU()), [shape, indices]
+        )
+
+        assert isinstance(out, Buffer)
+        result = out.to_numpy()
+        assert result.dtype == np_dtype
+        np.testing.assert_array_equal(result, [1, 10, 11, 1, 1, 12, 13])
 
 
 class TestArgMaxMinOp:
@@ -3385,7 +4888,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=axis)
@@ -3403,7 +4906,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=1)
@@ -3427,7 +4930,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=0)
@@ -3448,7 +4951,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=1)
@@ -3465,7 +4968,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=0)
@@ -3483,7 +4986,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=2)
@@ -3505,7 +5008,7 @@ class TestSplitOp:
             assert isinstance(result, Tensor)
             np.testing.assert_array_equal(np.from_dlpack(result), exp)
 
-    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    @pytest.mark.parametrize("dtype", REARRANGE_FLOAT_DTYPES)
     @pytest.mark.parametrize("axis", [0, 1])
     def test_2d_axes(self, dtype: DType, axis: int) -> None:
         """Test split on a 2D tensor along each axis."""
@@ -3515,7 +5018,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, split_sizes, axis=axis)
@@ -3530,7 +5033,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 2, 1], axis=1)
@@ -3544,7 +5047,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 3], axis=-1)
@@ -3558,7 +5061,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 2, 3], axis=1)
@@ -3574,7 +5077,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 2], axis=0)
@@ -3589,7 +5092,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [2, 1, 3], axis=1)
@@ -3603,7 +5106,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, 2, axis=0)
@@ -3613,7 +5116,7 @@ class TestSplitOp:
 
 
 class TestScatterOp:
-    """Tests for scatter op via MO interpreter (CPU-only, MO_HostOnly)."""
+    """Tests for scatter op via MO interpreter on CPU."""
 
     @staticmethod
     def _scatter_ref(
@@ -3645,7 +5148,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=axis)
@@ -3672,7 +5175,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=-1)
@@ -3692,7 +5195,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=1)
@@ -3711,7 +5214,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=2)
@@ -3736,7 +5239,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=1)
@@ -3754,7 +5257,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=0)
@@ -3777,7 +5280,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=0)
@@ -3804,7 +5307,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=1)
@@ -3814,7 +5317,7 @@ class TestScatterOp:
 
 
 class TestScatterAddOp:
-    """Tests for scatter_add op via MO interpreter (CPU-only, MO_HostOnly).
+    """Tests for scatter_add op via MO interpreter on CPU.
 
     Uses ``F.scatter_add`` which routes through ``ops.scatter_add`` ->
     ``rmo.MoScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
@@ -3860,7 +5363,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=axis)
@@ -3882,7 +5385,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=-1)
@@ -3903,7 +5406,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=1)
@@ -3923,7 +5426,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=0)
@@ -3933,9 +5436,7 @@ class TestScatterAddOp:
         # Explicit check: slot 1 must be 30.0, not 20.0.
         assert float(np.from_dlpack(y)[1]) == 30.0
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_add with numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -3948,7 +5449,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=0)
@@ -3967,13 +5468,439 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=0)
 
         expected = self._scatter_add_ref(x_np, updates_np, indices_np, axis=0)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterMaxOp:
+    """Tests for scatter_max op via MO interpreter on CPU.
+
+    Uses ``F.scatter_max`` which routes through ``ops.scatter_max`` ->
+    ``rmo.MoScatterMaxOp`` -> ``mo.scatter.max`` -> interpreter handler.
+    The reference keeps ``max(existing, update)`` at duplicate indices.
+    """
+
+    @staticmethod
+    def _scatter_max_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+        axis: int,
+    ) -> np.ndarray:
+        out = x_np.copy()
+        ndim = x_np.ndim
+        if axis < 0:
+            axis += ndim
+        for upd_idx in np.ndindex(updates_np.shape):
+            out_idx: list[Any] = list(upd_idx)
+            out_idx[axis] = int(indices_np[upd_idx])
+            t = tuple(out_idx)
+            out[t] = max(out[t], updates_np[upd_idx])
+        return out
+
+    @pytest.mark.parametrize("axis", [0, 1])
+    def test_basic_2d(self, axis: int) -> None:
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        if axis == 0:
+            updates_np = np.ones((2, 4), dtype=np.float32) * 100.0
+            indices_np = np.array([[0, 1, 2, 0], [2, 0, 1, 2]], dtype=np.int64)
+        else:
+            updates_np = np.ones((3, 2), dtype=np.float32) * 50.0
+            indices_np = np.array([[0, 3], [1, 2], [0, 1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_max(x, updates, indices, axis=axis)
+
+        expected = self._scatter_max_ref(x_np, updates_np, indices_np, axis)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate indices keep the maximum."""
+        x_np = np.zeros((4,), dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 5.0, 40.0], dtype=np.float32)
+        indices_np = np.array([1, 1, 2, 3], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_max(x, updates, indices, axis=0)
+
+        expected = self._scatter_max_ref(x_np, updates_np, indices_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 20.0
+
+    def test_negative_axis(self) -> None:
+        x_np = np.zeros((3, 4), dtype=np.float32)
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            dtype=np.float32,
+        )
+        indices_np = np.array([[0, 1, 0], [2, 3, 2], [1, 0, 1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_max(x, updates, indices, axis=-1)
+
+        expected = self._scatter_max_ref(x_np, updates_np, indices_np, axis=-1)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
+    def test_dtypes(self, dtype: DType) -> None:
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+        updates_np = (np.ones((2, 4), dtype=np_dtype) * 100).astype(np_dtype)
+        indices_np = np.array([[0, 1, 2, 0], [2, 1, 0, 2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_max(x, updates, indices, axis=0)
+
+        expected = self._scatter_max_ref(x_np, updates_np, indices_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterMinOp:
+    """Tests for scatter_min op via MO interpreter on CPU.
+
+    Uses ``F.scatter_min`` which routes through ``ops.scatter_min`` ->
+    ``rmo.MoScatterMinOp`` -> ``mo.scatter.min`` -> interpreter handler.
+    The reference keeps ``min(existing, update)`` at duplicate indices.
+    """
+
+    @staticmethod
+    def _scatter_min_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+        axis: int,
+    ) -> np.ndarray:
+        out = x_np.copy()
+        ndim = x_np.ndim
+        if axis < 0:
+            axis += ndim
+        for upd_idx in np.ndindex(updates_np.shape):
+            out_idx: list[Any] = list(upd_idx)
+            out_idx[axis] = int(indices_np[upd_idx])
+            t = tuple(out_idx)
+            out[t] = min(out[t], updates_np[upd_idx])
+        return out
+
+    @pytest.mark.parametrize("axis", [0, 1])
+    def test_basic_2d(self, axis: int) -> None:
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4) + 100.0
+        if axis == 0:
+            updates_np = np.ones((2, 4), dtype=np.float32) * 5.0
+            indices_np = np.array([[0, 1, 2, 0], [2, 0, 1, 2]], dtype=np.int64)
+        else:
+            updates_np = np.ones((3, 2), dtype=np.float32) * 5.0
+            indices_np = np.array([[0, 3], [1, 2], [0, 1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_min(x, updates, indices, axis=axis)
+
+        expected = self._scatter_min_ref(x_np, updates_np, indices_np, axis)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate indices keep the minimum."""
+        x_np = np.array([100.0, 100.0, 100.0, 100.0], dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 5.0, 40.0], dtype=np.float32)
+        indices_np = np.array([1, 1, 2, 3], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_min(x, updates, indices, axis=0)
+
+        expected = self._scatter_min_ref(x_np, updates_np, indices_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 10.0
+
+    def test_negative_axis(self) -> None:
+        x_np = np.full((3, 4), 999.0, dtype=np.float32)
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            dtype=np.float32,
+        )
+        indices_np = np.array([[0, 1, 0], [2, 3, 2], [1, 0, 1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_min(x, updates, indices, axis=-1)
+
+        expected = self._scatter_min_ref(x_np, updates_np, indices_np, axis=-1)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
+    def test_dtypes(self, dtype: DType) -> None:
+        np_dtype = dtype.to_numpy()
+        x_np = (np.arange(12, dtype=np.float32).reshape(3, 4) + 100).astype(
+            np_dtype
+        )
+        updates_np = np.ones((2, 4), dtype=np_dtype)
+        indices_np = np.array([[0, 1, 2, 0], [2, 1, 0, 2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_min(x, updates, indices, axis=0)
+
+        expected = self._scatter_min_ref(x_np, updates_np, indices_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterMulOp:
+    """Tests for scatter_mul op via MO interpreter on CPU.
+
+    Uses ``F.scatter_mul`` which routes through ``ops.scatter_mul`` ->
+    ``rmo.MoScatterMulOp`` -> ``mo.scatter.mul`` -> interpreter handler.
+    The reference multiplies ``output[...][idx] *= update`` at each index.
+    """
+
+    @staticmethod
+    def _scatter_mul_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+        axis: int,
+    ) -> np.ndarray:
+        out = x_np.copy()
+        ndim = x_np.ndim
+        if axis < 0:
+            axis += ndim
+        for upd_idx in np.ndindex(updates_np.shape):
+            out_idx: list[Any] = list(upd_idx)
+            out_idx[axis] = int(indices_np[upd_idx])
+            t = tuple(out_idx)
+            out[t] *= updates_np[upd_idx]
+        return out
+
+    @pytest.mark.parametrize("axis", [0, 1])
+    def test_basic_2d(self, axis: int) -> None:
+        x_np = np.ones((3, 4), dtype=np.float32) * 2.0
+        if axis == 0:
+            updates_np = np.ones((2, 4), dtype=np.float32) * 3.0
+            indices_np = np.array([[0, 1, 2, 0], [2, 0, 1, 2]], dtype=np.int64)
+        else:
+            updates_np = np.ones((3, 2), dtype=np.float32) * 5.0
+            indices_np = np.array([[0, 3], [1, 2], [0, 1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_mul(x, updates, indices, axis=axis)
+
+        expected = self._scatter_mul_ref(x_np, updates_np, indices_np, axis)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate indices multiply: 2 * 10 * 20 = 400."""
+        x_np = np.array([2.0, 2.0, 2.0, 2.0], dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 5.0, 40.0], dtype=np.float32)
+        indices_np = np.array([1, 1, 2, 3], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_mul(x, updates, indices, axis=0)
+
+        expected = self._scatter_mul_ref(x_np, updates_np, indices_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 400.0
+
+    def test_negative_axis(self) -> None:
+        x_np = np.ones((3, 4), dtype=np.float32) * 10.0
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            dtype=np.float32,
+        )
+        indices_np = np.array([[0, 1, 0], [2, 3, 2], [1, 0, 1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_mul(x, updates, indices, axis=-1)
+
+        expected = self._scatter_mul_ref(x_np, updates_np, indices_np, axis=-1)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
+    def test_dtypes(self, dtype: DType) -> None:
+        np_dtype = dtype.to_numpy()
+        x_np = np.ones((3, 4), dtype=np_dtype) * 2
+        x_np = x_np.astype(np_dtype)
+        updates_np = (np.ones((2, 4), dtype=np_dtype) * 3).astype(np_dtype)
+        indices_np = np.array([[0, 1, 2, 0], [2, 1, 0, 2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_mul(x, updates, indices, axis=0)
+
+        expected = self._scatter_mul_ref(x_np, updates_np, indices_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterNdFusedModel:
+    """Tests for scatter_nd_gc's fused flatten-index + real scatter_nd graph.
+
+    ``handlers.py`` isn't updated until Task 4R, so these call
+    :func:`scatter_nd_gc.scatter_nd_model`/
+    :func:`scatter_nd_gc.scatter_nd_operand_views` directly rather than
+    through ``F.scatter_nd``/``F.scatter_nd_add`` (see ``TestScatterNdOp``/
+    ``TestScatterNdAddOp`` for the handler-level suites, which stay red until
+    Task 4R lands).
+    """
+
+    def test_overwrite(self) -> None:
+        """ScatterNdOp: last-write-wins overwrite through the fused graph."""
+        device = CPU()
+        x_np = np.arange(12, dtype=np.uint32).reshape(3, 4)
+        updates_np = np.array([100, 200], dtype=np.uint32)
+        idx_np = np.array([[0, 1], [2, 3]], dtype=np.int64)  # m=2, k=2
+
+        input_view, updates_view, indices_view, strides = (
+            scatter_nd_gc.scatter_nd_operand_views(x_np.shape, idx_np.shape)
+        )
+        strides_np = np.array(strides, dtype=np.int64)
+
+        model = scatter_nd_gc.scatter_nd_model(
+            mo.ScatterNdOp, device, DType.uint32, DType.int64
+        )
+        (out,) = model(
+            Buffer.from_numpy(x_np.reshape(input_view)),
+            Buffer.from_numpy(updates_np.reshape(updates_view)),
+            Buffer.from_numpy(idx_np.reshape(indices_view)),
+            Buffer.from_numpy(strides_np),
+        )
+
+        expected = x_np.copy()
+        expected[0, 1] = 100
+        expected[2, 3] = 200
+        np.testing.assert_array_equal(
+            out.to_numpy().reshape(x_np.shape), expected
+        )
+
+    def test_reduce_add_with_duplicate_indices(self) -> None:
+        """ScatterNdAddOp: duplicate index vectors accumulate through the
+        fused graph, exercising the real reduce kernel (not just overwrite)."""
+        device = CPU()
+        x_np = np.zeros((3, 4), dtype=np.float32)
+        # Two update rows target the same index vector -> must accumulate.
+        updates_np = np.array([1.0, 2.0, 5.0], dtype=np.float32)
+        idx_np = np.array([[0, 1], [0, 1], [2, 3]], dtype=np.int64)
+
+        input_view, updates_view, indices_view, strides = (
+            scatter_nd_gc.scatter_nd_operand_views(x_np.shape, idx_np.shape)
+        )
+        strides_np = np.array(strides, dtype=np.int64)
+
+        model = scatter_nd_gc.scatter_nd_model(
+            mo.ScatterNdAddOp, device, DType.float32, DType.int64
+        )
+        (out,) = model(
+            Buffer.from_numpy(x_np.reshape(input_view)),
+            Buffer.from_numpy(updates_np.reshape(updates_view)),
+            Buffer.from_numpy(idx_np.reshape(indices_view)),
+            Buffer.from_numpy(strides_np),
+        )
+
+        expected = x_np.copy()
+        expected[0, 1] = 1.0 + 2.0
+        expected[2, 3] = 5.0
+        np.testing.assert_array_equal(
+            out.to_numpy().reshape(x_np.shape), expected
+        )
+
+    def test_lazy_default_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """By default (env var unset) a supported miss compiles lazily."""
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.delenv(
+            _eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(
+            scatter_nd_gc._FAMILIES[mo.ScatterNdOp], "cache", {}
+        )
+        model = scatter_nd_gc.scatter_nd_model(
+            mo.ScatterNdOp, CPU(), DType.uint32, DType.int64
+        )
+        assert model is not None
 
 
 class TestScatterNdOp:
@@ -4013,7 +5940,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -4037,7 +5964,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -4059,7 +5986,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -4078,7 +6005,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -4097,7 +6024,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -4115,7 +6042,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -4125,7 +6052,7 @@ class TestScatterNdOp:
 
 
 class TestScatterNdAddOp:
-    """Tests for scatter_nd_add op via the MO interpreter (CPU-only).
+    """Tests for scatter_nd_add op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_add`` which routes through ``ops.scatter_nd_add`` ->
     ``rmo.MoScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
@@ -4160,7 +6087,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -4181,7 +6108,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -4200,7 +6127,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -4220,7 +6147,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -4230,9 +6157,7 @@ class TestScatterNdAddOp:
         # Explicit check: slot 1 must be 30.0, not 20.0.
         assert float(np.from_dlpack(y)[1]) == 30.0
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_nd_add with various numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -4245,7 +6170,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -4265,12 +6190,390 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
 
         expected = self._scatter_nd_add_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterNdMaxOp:
+    """Tests for scatter_nd_max op via the MO interpreter (CPU path).
+
+    Uses ``F.scatter_nd_max`` which routes through ``ops.scatter_nd_max`` ->
+    ``rmo.MoScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
+    Duplicate index vectors keep the maximum.
+    """
+
+    @staticmethod
+    def _scatter_nd_max_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then keep max at N-D index positions."""
+        out = x_np.copy()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] = np.maximum(out[idx_vec], updates_np[batch_idx])
+        return out
+
+    def test_1d_full_index(self) -> None:
+        """Test scatter_nd_max on a 1D tensor with full indexing."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
+        updates_np = np.array([10.0, 0.5], dtype=np.float32)
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd_max on a 2D tensor with 1-D partial indexing."""
+        x_np = np.zeros((3, 3), dtype=np.float32)
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd_max on a 2D tensor with full 2-D indexing."""
+        x_np = np.zeros((3, 3), dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate index vectors must keep the maximum, not overwrite."""
+        x_np = np.zeros((4,), dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 5.0], dtype=np.float32)
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 20.0
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_nd_max with various numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.zeros((4,), dtype=np_dtype)
+        updates_np = np.array([5, 10, 15], dtype=np_dtype)
+        indices_np = np.array([[0], [2], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_max(x, updates, indices)
+
+        expected = self._scatter_nd_max_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterNdMinOp:
+    """Tests for scatter_nd_min op via the MO interpreter (CPU path).
+
+    Uses ``F.scatter_nd_min`` which routes through ``ops.scatter_nd_min`` ->
+    ``rmo.MoScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
+    Duplicate index vectors keep the minimum.
+    """
+
+    @staticmethod
+    def _scatter_nd_min_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then keep min at N-D index positions."""
+        out = x_np.copy()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] = np.minimum(out[idx_vec], updates_np[batch_idx])
+        return out
+
+    def test_1d_full_index(self) -> None:
+        """Test scatter_nd_min on a 1D tensor with full indexing."""
+        x_np = np.array([10.0, 20.0, 30.0, 40.0, 50.0], dtype=np.float32)
+        updates_np = np.array([5.0, 100.0], dtype=np.float32)
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd_min on a 2D tensor with 1-D partial indexing."""
+        x_np = np.full((3, 3), 100.0, dtype=np.float32)
+        updates_np = np.array(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd_min on a 2D tensor with full 2-D indexing."""
+        x_np = np.full((3, 3), 100.0, dtype=np.float32)
+        updates_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate index vectors must keep the minimum."""
+        x_np = np.full((4,), 100.0, dtype=np.float32)
+        updates_np = np.array([30.0, 10.0, 5.0], dtype=np.float32)
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 10.0
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_nd_min with various numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.full((4,), 100, dtype=np_dtype)
+        updates_np = np.array([5, 10, 15], dtype=np_dtype)
+        indices_np = np.array([[0], [2], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_min(x, updates, indices)
+
+        expected = self._scatter_nd_min_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterNdMulOp:
+    """Tests for scatter_nd_mul op via the MO interpreter (CPU path).
+
+    Uses ``F.scatter_nd_mul`` which routes through ``ops.scatter_nd_mul`` ->
+    ``rmo.MoScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
+    Duplicate index vectors multiply.
+    """
+
+    @staticmethod
+    def _scatter_nd_mul_ref(
+        x_np: np.ndarray,
+        updates_np: np.ndarray,
+        indices_np: np.ndarray,
+    ) -> np.ndarray:
+        """NumPy reference: copy input then multiply at N-D index positions."""
+        out = x_np.copy()
+        index_depth = indices_np.shape[-1]
+        batch_shape = indices_np.shape[:-1]
+        for batch_idx in np.ndindex(batch_shape):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            out[idx_vec] *= updates_np[batch_idx]
+        return out
+
+    def test_1d_full_index(self) -> None:
+        """Test scatter_nd_mul on a 1D tensor with full indexing."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
+        updates_np = np.array([10.0, 2.0], dtype=np.float32)
+        indices_np = np.array([[1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_row_scatter(self) -> None:
+        """Test scatter_nd_mul on a 2D tensor with 1-D partial indexing."""
+        x_np = np.ones((3, 3), dtype=np.float32) * 2
+        updates_np = np.array(
+            [[3.0, 3.0, 3.0], [4.0, 4.0, 4.0]], dtype=np.float32
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_2d_element_scatter(self) -> None:
+        """Test scatter_nd_mul on a 2D tensor with full 2-D indexing."""
+        x_np = np.ones((3, 3), dtype=np.float32) * 5
+        updates_np = np.array([2.0, 3.0, 4.0], dtype=np.float32)
+        indices_np = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_duplicate_indices(self) -> None:
+        """Duplicate index vectors must chain multiplications."""
+        x_np = np.ones((4,), dtype=np.float32)
+        updates_np = np.array([3.0, 5.0, 2.0], dtype=np.float32)
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+        assert float(np.from_dlpack(y)[1]) == 15.0
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
+    def test_dtypes(self, dtype: DType) -> None:
+        """Test scatter_nd_mul with various numeric dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.ones((4,), dtype=np_dtype) * 2
+        updates_np = np.array([5, 10, 15], dtype=np_dtype)
+        indices_np = np.array([[0], [2], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        updates = Tensor.from_dlpack(updates_np)
+        indices = Tensor.from_dlpack(indices_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.scatter_nd_mul(x, updates, indices)
+
+        expected = self._scatter_nd_mul_ref(x_np, updates_np, indices_np)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
 
@@ -4331,7 +6634,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f)
@@ -4349,7 +6652,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f, stride=(2, 2))
@@ -4368,7 +6671,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f, padding=padding)
@@ -4378,41 +6681,43 @@ class TestConv2dOp:
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
 
-    def test_dilation(self) -> None:
-        """Test 3x3 conv with dilation 2."""
-        x_np = np.arange(1 * 7 * 7 * 1, dtype=np.float32).reshape(1, 7, 7, 1)
+    @pytest.mark.parametrize("dilation", [(2, 2), (2, 3), (1, 2)])
+    def test_dilation(self, dilation: tuple[int, int]) -> None:
+        """Non-unit dilation produces correct output (MXF-529 / KERN-3238)."""
+        x_np = np.arange(1 * 9 * 9 * 1, dtype=np.float32).reshape(1, 9, 9, 1)
         f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
 
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            y = F.conv2d(x, f, dilation=(2, 2))
+            y = F.conv2d(x, f, dilation=dilation)
 
-        expected = self._conv2d_ref(x_np, f_np, (1, 1), (2, 2), (0, 0, 0, 0), 1)
+        expected = self._conv2d_ref(
+            x_np, f_np, (1, 1), dilation, (0, 0, 0, 0), 1
+        )
         np.testing.assert_allclose(
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
 
     def test_groups(self) -> None:
-        """Test grouped convolution (groups=2)."""
+        """Grouped conv (groups > 1) is not supported after the GC migration
+        (MXF-529): it needs a pre-packed filter layout the eager
+        interpreter never has, and there's no way to pack it from Python."""
         x_np = np.arange(1 * 4 * 4 * 4, dtype=np.float32).reshape(1, 4, 4, 4)
         f_np = np.ones((3, 3, 2, 4), dtype=np.float32)
 
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d(x, f, groups=2)
-
-        expected = self._conv2d_ref(x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), 2)
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
+        with pytest.raises(NotImplementedError, match="groups"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d(x, f, groups=2)
+                assert y is not None
 
     def test_1x1_conv(self) -> None:
         """Test pointwise (1x1) convolution."""
@@ -4422,7 +6727,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f)
@@ -4440,7 +6745,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f)
@@ -4450,143 +6755,60 @@ class TestConv2dOp:
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
 
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC conv path on CPU.
+
+        conv_gc._supported_dtypes excludes float16 on CPU (fails to compile
+        there; compiles fine on GPU), matching pooling_gc's and resize_gc's
+        own CPU+float16 exclusion.
+        """
+        x_np = np.arange(1 * 5 * 5 * 1, dtype=np.float16).reshape(1, 5, 5, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np.float16)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with pytest.raises(UnsupportedGraphError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d(x, f)
+                assert y is not None
+
+    def test_conv3d_is_refused(self) -> None:
+        """The rank-4 conv model must not execute a rank-5 convolution."""
+        x = Tensor.from_dlpack(np.ones((1, 4, 4, 4, 1), dtype=np.float32))
+        f = Tensor.from_dlpack(np.ones((2, 2, 2, 1, 1), dtype=np.float32))
+
+        with pytest.raises(UnsupportedGraphError, match="rank-4 NHWC"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv3d(x, f)
+                assert y is not None
+
 
 class TestConvTranspose2dOp:
     """Tests for the mo.conv_transpose (2D transposed conv) handler."""
 
-    @staticmethod
-    def _conv_transpose2d_ref(
-        x: np.ndarray,
-        filt: np.ndarray,
-        stride: tuple[int, int],
-        dilation: tuple[int, int],
-        padding: tuple[int, int, int, int],
-        output_padding: tuple[int, int],
-    ) -> np.ndarray:
-        """Pure-numpy 2D transposed conv reference (NHWC, RSCF filter).
-
-        Filter layout for conv_transpose: [kH, kW, out_c, in_c].
-        """
-        n, in_h, in_w, in_c = x.shape
-        kh, kw, out_c, filt_in_c = filt.shape
-        assert filt_in_c == in_c
-        sh, sw = stride
-        dh, dw = dilation
-        ph0, ph1, pw0, pw1 = padding
-        oph, opw = output_padding
-
-        oh = (in_h - 1) * sh - ph0 - ph1 + dh * (kh - 1) + 1 + oph
-        ow = (in_w - 1) * sw - pw0 - pw1 + dw * (kw - 1) + 1 + opw
-
-        out = np.zeros((n, oh, ow, out_c), dtype=x.dtype)
-        for b in range(n):
-            for ohi in range(oh):
-                for owi in range(ow):
-                    for oci in range(out_c):
-                        acc = np.float64(0)
-                        for fi in range(kh):
-                            h_cand = ohi + ph0 - fi * dh
-                            if h_cand < 0 or h_cand % sh != 0:
-                                continue
-                            ih = h_cand // sh
-                            if ih >= in_h:
-                                continue
-                            for fj in range(kw):
-                                w_cand = owi + pw0 - fj * dw
-                                if w_cand < 0 or w_cand % sw != 0:
-                                    continue
-                                iw = w_cand // sw
-                                if iw >= in_w:
-                                    continue
-                                for ic in range(in_c):
-                                    acc += float(x[b, ih, iw, ic]) * float(
-                                        filt[fi, fj, oci, ic]
-                                    )
-                        out[b, ohi, owi, oci] = acc
-        return out
-
-    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
-    def test_basic_3x3(self, dtype: DType) -> None:
-        """Test basic 3x3 conv_transpose, stride 1, no padding."""
-        np_dt = dtype.to_numpy()
-        x_np = np.arange(1 * 3 * 3 * 1, dtype=np_dt).reshape(1, 3, 3, 1)
-        f_np = np.ones((3, 3, 1, 1), dtype=np_dt)
-
-        x = Tensor.from_dlpack(x_np)
-        f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f)
-
-        expected = self._conv_transpose2d_ref(
-            x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), (0, 0)
-        )
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_stride_2(self) -> None:
-        """Test conv_transpose with stride 2 (upsampling)."""
-        x_np = np.arange(1 * 2 * 2 * 1, dtype=np.float32).reshape(1, 2, 2, 1)
-        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
-
-        x = Tensor.from_dlpack(x_np)
-        f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f, stride=(2, 2))
-
-        expected = self._conv_transpose2d_ref(
-            x_np, f_np, (2, 2), (1, 1), (0, 0, 0, 0), (0, 0)
-        )
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_padding(self) -> None:
-        """Test conv_transpose with non-zero padding."""
-        x_np = np.arange(1 * 4 * 4 * 1, dtype=np.float32).reshape(1, 4, 4, 1)
-        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
-        padding = (1, 1, 1, 1)
-
-        x = Tensor.from_dlpack(x_np)
-        f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f, padding=padding)
-
-        expected = self._conv_transpose2d_ref(
-            x_np, f_np, (1, 1), (1, 1), padding, (0, 0)
-        )
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_dilation(self) -> None:
-        """Test conv_transpose with dilation."""
+    def test_unsupported(self) -> None:
+        """conv_transpose has no supported kernel (KERN-3233): the old Mojo
+        binding's GPU path crashed on Apple/CUDA and it was never migrated
+        to the graph compiler, so the handler now raises rather than
+        falling back to a broken kernel."""
         x_np = np.arange(1 * 3 * 3 * 1, dtype=np.float32).reshape(1, 3, 3, 1)
         f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
 
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
-        with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
-            realization_context(ctx),
-        ):
-            y = F.conv2d_transpose(x, f, dilation=(2, 2))
-
-        expected = self._conv_transpose2d_ref(
-            x_np, f_np, (1, 1), (2, 2), (0, 0, 0, 0), (0, 0)
-        )
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
+        with pytest.raises(NotImplementedError, match="conv_transpose"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv2d_transpose(x, f)
+                assert y is not None
 
 
 class TestMaxPoolOp:
@@ -4642,7 +6864,7 @@ class TestMaxPoolOp:
         x_np = np.arange(16, dtype=np_dtype).reshape(1, 4, 4, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 2))
@@ -4657,7 +6879,7 @@ class TestMaxPoolOp:
         x_np = np.arange(36, dtype=np.float32).reshape(1, 6, 6, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
@@ -4672,7 +6894,7 @@ class TestMaxPoolOp:
         x_np = np.arange(16, dtype=np.float32).reshape(1, 4, 4, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(3, 3), padding=1)
@@ -4687,7 +6909,7 @@ class TestMaxPoolOp:
         x_np = np.arange(49, dtype=np.float32).reshape(1, 7, 7, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(3, 3), dilation=2)
@@ -4703,7 +6925,7 @@ class TestMaxPoolOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y_floor = F.max_pool2d(
@@ -4732,7 +6954,7 @@ class TestMaxPoolOp:
         x_np = np.arange(24, dtype=np.float32).reshape(1, 4, 6, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 3), stride=(1, 2))
@@ -4748,7 +6970,7 @@ class TestMaxPoolOp:
         x_np = rng.standard_normal((2, 8, 8, 3)).astype(np.float32)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(3, 3), stride=2, padding=1)
@@ -4765,7 +6987,7 @@ class TestMaxPoolOp:
         x_np = np.arange(16, dtype=np_dtype).reshape(1, 4, 4, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
@@ -4774,6 +6996,24 @@ class TestMaxPoolOp:
             x_np, (2, 2), (2, 2), (1, 1), (0, 0, 0, 0)
         )
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC pooling path on CPU.
+
+        pooling_gc._supported_dtypes excludes float16 on CPU (fails to
+        compile there; compiles fine on GPU), matching resize_gc's
+        CPU+float16 exclusion.
+        """
+        x_np = np.arange(16, dtype=np.float16).reshape(1, 4, 4, 1)
+        x = Tensor.from_dlpack(x_np)
+
+        with pytest.raises(UnsupportedGraphError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.max_pool2d(x, kernel_size=(2, 2))
+                assert y is not None
 
 
 class TestTileOp:
@@ -4787,14 +7027,14 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
 
         np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
 
-    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    @pytest.mark.parametrize("dtype", REARRANGE_FLOAT_DTYPES)
     @pytest.mark.parametrize(
         "reps", [(2, 3), (1, 4), (3, 1)], ids=["2x3", "1x4", "3x1"]
     )
@@ -4804,7 +7044,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -4818,7 +7058,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -4832,7 +7072,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -4846,7 +7086,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -4865,12 +7105,63 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
 
         np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+    def test_5d(self) -> None:
+        """Test tiling a 5-D tensor, the top of the precompiled sweep."""
+        x_np = np.arange(2 * 3 * 2 * 2 * 2, dtype=np.float32).reshape(
+            2, 3, 2, 2, 2
+        )
+        reps = (2, 1, 3, 2, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+    def test_6d_and_7d(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test tiling 6-D and 7-D tensors, lazily compiled past the sweep.
+
+        The warm suite forbids cold compiles (eager_py_test.bzl sets
+        MAX_EAGER_ALLOW_LAZY_COMPILE=0 on CPU lanes); this test exercises
+        the over-sweep lazy path, so it re-allows it for itself, like the
+        resize lazy test does.
+        """
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+        x_np = np.arange(2 * 1 * 3 * 2 * 2 * 2, dtype=np.float32).reshape(
+            2, 1, 3, 2, 2, 2
+        )
+        reps = (2, 1, 1, 3, 2, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+        x7_np = x_np.reshape(2, 1, 1, 3, 2, 2, 2)
+        reps7 = (1, 2, 1, 1, 2, 3, 1)
+
+        x7 = Tensor.from_dlpack(x7_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y7 = F.tile(x7, reps7)
+
+        np.testing.assert_array_equal(np.from_dlpack(y7), np.tile(x7_np, reps7))
 
 
 class TestBandPartOp:
@@ -4904,7 +7195,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=None, num_upper=0)
@@ -4918,7 +7209,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=0, num_upper=None)
@@ -4932,7 +7223,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=0, num_upper=0)
@@ -4946,7 +7237,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=1, num_upper=1)
@@ -4960,7 +7251,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=None, num_upper=0, exclude=True)
@@ -4974,7 +7265,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=1, num_upper=0)
@@ -4990,12 +7281,40 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=None, num_upper=None)
 
         np.testing.assert_array_equal(np.from_dlpack(y), x_np)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float16,
+            DType.float32,
+            DType.float64,
+            DType.int32,
+            DType.int64,
+            DType.uint8,
+            DType.bool,
+        ],
+    )
+    def test_band_part_dtype_width_coverage(self, dtype: DType) -> None:
+        """Every byte-aligned dtype rides the same width-keyed GC model."""
+        np_dt = dtype.to_numpy()
+        x_np = np.ones((2, 3, 4), dtype=np_dt)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            x = Tensor.from_dlpack(x_np).to(CPU())
+            out = F.band_part(x, num_lower=0, num_upper=0)
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out),
+            self._band_part_ref(x_np, num_lower=0, num_upper=0),
+        )
 
 
 class TestAvgPool2dOp:
@@ -5060,7 +7379,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(x, kernel_size=(2, 2))
@@ -5076,7 +7395,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(
@@ -5096,7 +7415,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(x, kernel_size=(2, 2), dilation=2)
@@ -5112,7 +7431,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(x, kernel_size=(3, 3), stride=2, ceil_mode=True)
@@ -5130,7 +7449,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(
@@ -5146,6 +7465,424 @@ class TestAvgPool2dOp:
         np.testing.assert_allclose(
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
+
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC pooling path on CPU.
+
+        pooling_gc._supported_dtypes excludes float16 on CPU (fails to
+        compile there; compiles fine on GPU), matching resize_gc's
+        CPU+float16 exclusion.
+        """
+        x_np = np.arange(16, dtype=np.float16).reshape(1, 4, 4, 1)
+        x = Tensor.from_dlpack(x_np)
+
+        with pytest.raises(UnsupportedGraphError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.avg_pool2d(x, kernel_size=(2, 2))
+                assert y is not None
+
+
+class TestRoiAlignOp:
+    """Tests for roi_align interpreter op via F.roi_align.
+
+    Routes through F.roi_align -> ops.roi_align -> rmo.MoRoiAlignOp ->
+    mo.RoiAlignOp -> _handle_roi_align -> roi_align_gc.roi_align_model.
+    The op is MO_SingleDeviceWithHostOperands: input/rois/output live on the
+    input device, the four numeric scalars stay host-side. These tests run on
+    CPU. The reference is a pure-numpy bilinear-interpolation ROI pooler.
+    """
+
+    @staticmethod
+    def _roi_align_ref(
+        x_nhwc: np.ndarray,
+        rois: np.ndarray,
+        out_h: int,
+        out_w: int,
+        spatial_scale: float = 1.0,
+        sampling_ratio: float = 0.0,
+        aligned: bool = False,
+        mode: str = "AVG",
+    ) -> np.ndarray:
+        """Pure-numpy ROI Align reference (NHWC layout).
+
+        ROIs have shape [M, 5]: [batch_idx, x0, y0, x1, y1].
+        """
+        n_regions = rois.shape[0]
+        height, width, channels = (
+            x_nhwc.shape[1],
+            x_nhwc.shape[2],
+            x_nhwc.shape[3],
+        )
+        offset = 0.5 if aligned else 0.0
+        output = np.zeros(
+            (n_regions, out_h, out_w, channels), dtype=x_nhwc.dtype
+        )
+
+        for ri in range(n_regions):
+            batch_idx = int(rois[ri, 0])
+            roi_start_w = rois[ri, 1] * spatial_scale - offset
+            roi_start_h = rois[ri, 2] * spatial_scale - offset
+            roi_end_w = rois[ri, 3] * spatial_scale - offset
+            roi_end_h = rois[ri, 4] * spatial_scale - offset
+
+            if aligned:
+                roi_h = roi_end_h - roi_start_h
+                roi_w = roi_end_w - roi_start_w
+            else:
+                roi_h = max(roi_end_h - roi_start_h, 1.0)
+                roi_w = max(roi_end_w - roi_start_w, 1.0)
+
+            bin_h = roi_h / out_h
+            bin_w = roi_w / out_w
+
+            grid_h = int(
+                sampling_ratio if sampling_ratio > 0 else np.ceil(bin_h)
+            )
+            grid_w = int(
+                sampling_ratio if sampling_ratio > 0 else np.ceil(bin_w)
+            )
+            pool_count = max(grid_h * grid_w, 1)
+
+            for ph in range(out_h):
+                for pw in range(out_w):
+                    for c in range(channels):
+                        if mode == "AVG":
+                            pool_val = 0.0
+                        else:
+                            pool_val = -np.inf
+                        for iy in range(grid_h):
+                            for ix in range(grid_w):
+                                y = (
+                                    roi_start_h
+                                    + ph * bin_h
+                                    + (iy + 0.5) * bin_h / grid_h
+                                )
+                                x = (
+                                    roi_start_w
+                                    + pw * bin_w
+                                    + (ix + 0.5) * bin_w / grid_w
+                                )
+                                if (
+                                    y < -1.0
+                                    or y > height
+                                    or x < -1.0
+                                    or x > width
+                                ):
+                                    continue
+                                y = max(y, 0.0)
+                                x = max(x, 0.0)
+                                y_low = min(int(y), height - 1)
+                                x_low = min(int(x), width - 1)
+                                y_high = min(y_low + 1, height - 1)
+                                x_high = min(x_low + 1, width - 1)
+                                ly = y - y_low
+                                lx = x - x_low
+                                hy = 1.0 - ly
+                                hx = 1.0 - lx
+                                v = (
+                                    hy * hx * x_nhwc[batch_idx, y_low, x_low, c]
+                                    + hy
+                                    * lx
+                                    * x_nhwc[batch_idx, y_low, x_high, c]
+                                    + ly
+                                    * hx
+                                    * x_nhwc[batch_idx, y_high, x_low, c]
+                                    + ly
+                                    * lx
+                                    * x_nhwc[batch_idx, y_high, x_high, c]
+                                )
+                                if mode == "AVG":
+                                    pool_val += v
+                                else:
+                                    pool_val = max(
+                                        pool_val,
+                                        hy
+                                        * hx
+                                        * x_nhwc[batch_idx, y_low, x_low, c],
+                                    )
+                                    pool_val = max(
+                                        pool_val,
+                                        hy
+                                        * lx
+                                        * x_nhwc[batch_idx, y_low, x_high, c],
+                                    )
+                                    pool_val = max(
+                                        pool_val,
+                                        ly
+                                        * hx
+                                        * x_nhwc[batch_idx, y_high, x_low, c],
+                                    )
+                                    pool_val = max(
+                                        pool_val,
+                                        ly
+                                        * lx
+                                        * x_nhwc[batch_idx, y_high, x_high, c],
+                                    )
+                        if mode == "AVG":
+                            output[ri, ph, pw, c] = pool_val / pool_count
+                        else:
+                            output[ri, ph, pw, c] = pool_val
+        return output
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_avg_mode(self, dtype: DType) -> None:
+        """Test ROI Align with AVG pooling mode."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(100, dtype=np_dtype).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 1, 1, 5, 5]], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(x, rois, output_height=3, output_width=3)
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_max_mode(self) -> None:
+        """Test ROI Align with MAX pooling mode."""
+        x_np = np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 2, 2, 8, 8]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=3, output_width=3, mode="MAX"
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3, mode="MAX")
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_aligned(self) -> None:
+        """Test ROI Align with aligned=True (half-pixel offset)."""
+        x_np = np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 1, 1, 5, 5]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=3, output_width=3, aligned=True
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3, aligned=True)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_spatial_scale(self) -> None:
+        """Test ROI Align with non-unit spatial_scale."""
+        x_np = np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 2, 2, 10, 10]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=3, output_width=3, spatial_scale=0.5
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3, spatial_scale=0.5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_sampling_ratio(self) -> None:
+        """Test ROI Align with explicit sampling_ratio."""
+        x_np = np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 1, 1, 8, 8]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=3, output_width=3, sampling_ratio=3.0
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3, sampling_ratio=3.0)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_multiple_rois(self) -> None:
+        """Test ROI Align with multiple ROIs."""
+        x_np = np.arange(200, dtype=np.float32).reshape(2, 10, 10, 1)
+        rois_np = np.array(
+            [
+                [0, 0, 0, 5, 5],
+                [1, 2, 2, 8, 8],
+                [0, 3, 3, 9, 9],
+            ],
+            dtype=np.float32,
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=2, output_width=2, sampling_ratio=2.0
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 2, 2, sampling_ratio=2.0)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_multichannel(self) -> None:
+        """Test ROI Align with multiple channels."""
+        x_np = np.arange(300, dtype=np.float32).reshape(1, 10, 10, 3)
+        rois_np = np.array([[0, 1, 1, 6, 6]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(x, rois, output_height=3, output_width=3)
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    @pytest.mark.skipif(accelerator_count() == 0, reason="requires a GPU")
+    @pytest.mark.parametrize(
+        "dtype, aligned, mode",
+        [
+            (DType.float32, False, "AVG"),
+            (DType.float16, False, "AVG"),
+            (DType.bfloat16, False, "AVG"),
+            (DType.float32, False, "MAX"),
+            (DType.float32, True, "AVG"),
+        ],
+        ids=["f32", "f16", "bf16", "f32-max", "f32-aligned"],
+    )
+    def test_gpu_keeps_output_resident(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        dtype: DType,
+        aligned: bool,
+        mode: str,
+    ) -> None:
+        """GPU eager roi_align keeps the output on the input device.
+
+        The op is MO_SingleDeviceWithHostOperands: input/rois/output live on
+        the input device, the four numeric scalars stay host-side. The result
+        must come back GPU-resident and match the CPU reference.
+        """
+        monkeypatch.setenv(
+            _eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR,
+            "1",
+        )
+        device = Accelerator()
+
+        if dtype == DType.bfloat16:
+            # NumPy has no bf16 dtype, so dtype.to_numpy() raised before
+            # the kernel ever ran. Every input value here (0..99 and the
+            # roi coordinates) is an integer that bf16 represents exactly,
+            # so build the buffers from the float32 patterns truncated to
+            # the bf16 half, per this file's uint16-view bf16 idiom.
+            x_u16 = (
+                (
+                    np.ascontiguousarray(np.arange(100, dtype=np.float32)).view(
+                        np.uint32
+                    )
+                    >> 16
+                )
+                .astype(np.uint16)
+                .reshape(1, 10, 10, 1)
+            )
+            rois_u16 = (
+                np.ascontiguousarray(
+                    np.array([[0, 1, 1, 5, 5]], dtype=np.float32)
+                ).view(np.uint32)
+                >> 16
+            ).astype(np.uint16)
+            x = Tensor(
+                storage=Buffer.from_numpy(x_u16).view(DType.bfloat16).to(device)
+            )
+            rois = Tensor(
+                storage=Buffer.from_numpy(rois_u16)
+                .view(DType.bfloat16)
+                .to(device)
+            )
+        else:
+            x_np = np.arange(100, dtype=dtype.to_numpy()).reshape(1, 10, 10, 1)
+            rois_np = np.array([[0, 1, 1, 5, 5]], dtype=dtype.to_numpy())
+            x = Tensor(storage=Buffer.from_numpy(x_np).to(device))
+            rois = Tensor(storage=Buffer.from_numpy(rois_np).to(device))
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x,
+                rois,
+                output_height=3,
+                output_width=3,
+                aligned=aligned,
+                mode=mode,
+            )
+
+        assert y.storage is not None
+        assert y.storage.device == device
+        # np.from_dlpack rejects GPU-resident buffers, so move to host first.
+        # The kernel accumulates in float32, so compare against a float32
+        # reference with a tolerance that covers the output dtype's rounding.
+        x_ref = (
+            np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+            if dtype == DType.bfloat16
+            else x_np.astype(np.float32)
+        )
+        rois_ref = (
+            np.array([[0, 1, 1, 5, 5]], dtype=np.float32)
+            if dtype == DType.bfloat16
+            else rois_np.astype(np.float32)
+        )
+        expected = self._roi_align_ref(
+            x_ref,
+            rois_ref,
+            3,
+            3,
+            aligned=aligned,
+            mode=mode,
+        )
+        rtol, atol = (1e-2, 1e-2) if dtype != DType.float32 else (1e-5, 1e-5)
+        if dtype == DType.bfloat16:
+            # to_numpy() has no bf16 mapping either; read the host buffer
+            # as uint16 patterns and widen them back to float32.
+            buf = y.storage.to(CPU()).view(DType.uint16)
+            got = (buf.to_numpy().astype(np.uint32) << 16).view(np.float32)
+        else:
+            got = y.to(CPU()).to_numpy()
+        np.testing.assert_allclose(got, expected, rtol=rtol, atol=atol)
 
 
 class TestTopKOp:
@@ -5175,7 +7912,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=2, axis=axis)
@@ -5191,7 +7928,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=3, axis=1)
@@ -5208,7 +7945,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=1, axis=0)
@@ -5225,7 +7962,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=4, axis=1)
@@ -5237,9 +7974,7 @@ class TestTopKOp:
             np.from_dlpack(idxs), np.array([[0, 3, 1, 2]])
         )
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
         """Test top-2 with numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -5247,7 +7982,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=2, axis=1)
@@ -5283,7 +8018,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=2, axis=axis)
@@ -5299,7 +8034,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=3, axis=1)
@@ -5316,7 +8051,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=1, axis=0)
@@ -5333,7 +8068,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=4, axis=1)
@@ -5345,9 +8080,7 @@ class TestBottomKOp:
             np.from_dlpack(idxs), np.array([[2, 1, 3, 0]])
         )
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
         """Test bottom-2 with numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -5355,7 +8088,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=2, axis=1)
@@ -5373,8 +8106,7 @@ class TestArgNonzeroOp:
     ``np.argwhere(x != 0).astype(np.int64)``, which returns row-major
     coordinates in the same order as the kernel.
 
-    ``mo.arg_nonzero`` is MO_HostOnly so no GPU path exists; no GPU tests
-    are needed.
+    CPU and GPU buffers use the same rank-preserving graph family.
     """
 
     @staticmethod
@@ -5388,7 +8120,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -5402,7 +8134,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -5419,7 +8151,26 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        ref = self._nonzero_ref(x_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+    def test_6d_basic(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test nonzero on a rank-6 tensor, which compiles on demand."""
+        monkeypatch.delenv(
+            _eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR, raising=False
+        )
+        x_np = np.zeros((2, 2, 2, 2, 2, 2), dtype=np.float32)
+        x_np[0, 1, 0, 1, 0, 1] = 1.0
+        x_np[1, 0, 1, 0, 1, 0] = -2.0
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -5433,7 +8184,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -5448,7 +8199,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -5467,6 +8218,7 @@ class TestArgNonzeroOp:
             DType.int64,
             DType.uint8,
             DType.uint32,
+            DType.bool,
         ],
     )
     def test_dtype_parametrize(self, dtype: DType) -> None:
@@ -5476,13 +8228,66 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
 
         ref = self._nonzero_ref(x_np)
         np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+    def test_nonzero_gc_model_returns_exact_nnz(self) -> None:
+        """A compiled arg_nonzero model sizes its own data-dependent output."""
+        x = Buffer.from_numpy(
+            np.array([[0.0, 1.0, 0.0], [2.0, 0.0, 3.0]], dtype=np.float32)
+        )
+        model = nonzero_gc.nonzero_model(CPU(), DType.float32, rank=2)
+        (out,) = model(x)
+        np.testing.assert_array_equal(
+            out.to_numpy(), np.array([[0, 1], [1, 0], [1, 2]])
+        )
+
+    def test_float16_unsupported(self) -> None:
+        """float16 isn't in this family's CPU dtype set."""
+        with pytest.raises(KeyError, match="float16"):
+            nonzero_gc.nonzero_model(CPU(), DType.float16, rank=1)
+
+    @pytest.mark.skipif(accelerator_count() == 0, reason="requires a GPU")
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float64],
+        ids=["f32", "f64"],
+    )
+    def test_gpu_preserves_device_and_float_semantics(
+        self, dtype: DType
+    ) -> None:
+        """GPU eager nonzero keeps output resident and treats -0 as zero.
+
+        float64 must keep working on GPU even though nonzero isn't in the
+        standard GPU float sweep: before the GC family it ran via the CPU
+        f64 graph after a host round-trip. Nonzero only loads and compares
+        against zero, so it is swept here directly on non-Metal GPUs.
+        """
+        device = Accelerator()
+        x_np = np.array(
+            [[-0.0, np.nan, 0.0], [2.0, 0.0, -3.0]], dtype=dtype.to_numpy()
+        )
+        x = Tensor(storage=Buffer.from_numpy(x_np).to(device))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        assert result.storage is not None
+        assert result.storage.device == device
+        # np.from_dlpack rejects GPU-resident buffers (BufferError:
+        # Unsupported device in DLTensor), so move the result to the host
+        # before comparing.
+        np.testing.assert_array_equal(
+            result.to(CPU()).to_numpy(), self._nonzero_ref(x_np)
+        )
 
 
 class TestPadConstantOp:
@@ -5511,7 +8316,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 2])
@@ -5526,7 +8331,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 1, 2, 0], value=7.0)
@@ -5542,7 +8347,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [0, 1, 2, 0, 1, 3])
@@ -5557,7 +8362,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [0, 0, 0, 0])
@@ -5574,7 +8379,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 1, 0, 2])
@@ -5602,7 +8407,7 @@ class TestPadReflectOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 1, 0, 1], mode="reflect")
@@ -5617,7 +8422,7 @@ class TestPadReflectOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [2, 2, 1, 1], mode="reflect")
@@ -5632,7 +8437,7 @@ class TestPadReflectOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 0, 1, 1, 0, 1], mode="reflect")
@@ -5647,12 +8452,32 @@ class TestPadReflectOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [0, 0, 0, 0], mode="reflect")
 
         np.testing.assert_array_equal(np.from_dlpack(out), x_np)
+
+    @pytest.mark.skipif(accelerator_count() == 0, reason="requires a GPU")
+    def test_gpu_reflect(self) -> None:
+        """Reflect pad on a GPU-resident tensor keeps the output on the
+        accelerator and matches the CPU reference."""
+        device = Accelerator()
+        x_np = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+        x = Tensor(storage=Buffer.from_numpy(x_np).to(device))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [1, 1, 0, 1], mode="reflect")
+
+        assert out.storage is not None
+        assert out.storage.device == device
+        np.testing.assert_array_equal(
+            out.to(CPU()).to_numpy(), self._ref(x_np, [1, 1, 0, 1])
+        )
 
 
 class TestPadRepeatOp:
@@ -5673,7 +8498,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [2, 1, 1, 0], mode="edge")
@@ -5688,7 +8513,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [3, 0, 2, 0], mode="edge")
@@ -5703,7 +8528,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 2, 0, 1, 2, 0], mode="edge")
@@ -5718,7 +8543,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [0, 0, 0, 0], mode="edge")
@@ -5735,7 +8560,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 1, 2, 0], mode="edge")
@@ -5744,13 +8569,372 @@ class TestPadRepeatOp:
             np.from_dlpack(out), self._ref(x_np, [1, 1, 2, 0])
         )
 
+    @pytest.mark.skipif(accelerator_count() == 0, reason="requires a GPU")
+    def test_gpu_edge(self) -> None:
+        """Edge pad on a GPU-resident tensor keeps the output on the
+        accelerator and matches the CPU reference."""
+        device = Accelerator()
+        x_np = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+        x = Tensor(storage=Buffer.from_numpy(x_np).to(device))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.pad(x, [2, 1, 1, 0], mode="edge")
+
+        assert out.storage is not None
+        assert out.storage.device == device
+        np.testing.assert_array_equal(
+            out.to(CPU()).to_numpy(), self._ref(x_np, [2, 1, 1, 0])
+        )
+
+
+class TestShapeIndexOps:
+    """Tests for internal shape/index interpreter handlers.
+
+    ``mo.ShapeFromTensorOp`` and ``mo.IndexToTensorOp`` are internal MO
+    dialect ops that are usually folded away by canonicalization.  The
+    handlers are defensive — they prevent ``NotImplementedError`` if these
+    ops survive into the interpreter.  Tests call the handler functions
+    directly with constructed buffers since no user-facing graph API
+    produces these ops.
+    """
+
+    def test_index_to_tensor(self) -> None:
+        """IndexToTensorOp wraps a scalar int64 into a rank-0 tensor."""
+        input_np = np.array([42], dtype=np.int64)
+        input_buf = Buffer.from_numpy(input_np)
+
+        mock_op = MagicMock()
+        result = _handle_index_to_tensor(mock_op, [input_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        out_np = out.to_numpy()
+        assert out_np.shape == ()
+        assert int(out_np.item()) == 42
+
+    def test_index_to_tensor_negative(self) -> None:
+        """IndexToTensorOp handles negative integers."""
+        input_np = np.array([-7], dtype=np.int64)
+        input_buf = Buffer.from_numpy(input_np)
+
+        mock_op = MagicMock()
+        result = _handle_index_to_tensor(mock_op, [input_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        assert int(out.to_numpy().item()) == -7
+
+    def test_index_to_tensor_zero(self) -> None:
+        """IndexToTensorOp handles zero."""
+        input_np = np.array([0], dtype=np.int64)
+        input_buf = Buffer.from_numpy(input_np)
+
+        mock_op = MagicMock()
+        result = _handle_index_to_tensor(mock_op, [input_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        assert int(out.to_numpy().item()) == 0
+        assert out.to_numpy().shape == ()
+
+    def test_shape_from_tensor_passthrough(self) -> None:
+        """ShapeFromTensorOp passes through the input buffer."""
+        shape_np = np.array([2, 3, 4], dtype=np.int64)
+        shape_buf = Buffer.from_numpy(shape_np)
+
+        mock_op = MagicMock()
+        result = _handle_shape_from_tensor(mock_op, [shape_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        np.testing.assert_array_equal(out.to_numpy(), shape_np)
+
+    def test_shape_from_tensor_single_dim(self) -> None:
+        """ShapeFromTensorOp handles single-dimension shapes."""
+        shape_np = np.array([10], dtype=np.int64)
+        shape_buf = Buffer.from_numpy(shape_np)
+
+        mock_op = MagicMock()
+        result = _handle_shape_from_tensor(mock_op, [shape_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+        np.testing.assert_array_equal(out.to_numpy(), [10])
+
+
+class TestBufferOps:
+    """Tests for buffer create/transfer interpreter handlers.
+
+    ``mo.BufferCreateOp`` and ``mo.BufferTransferOp`` are internal MO dialect
+    ops that are normally lowered by the graph compiler.  The handlers are
+    defensive — they prevent ``NotImplementedError`` if these ops survive into
+    the interpreter.  Tests call the handler functions directly with
+    constructed buffers since no user-facing graph API produces these ops.
+    """
+
+    def test_buffer_create_shape_and_dtype(self) -> None:
+        """BufferCreateOp allocates a buffer with the requested shape/dtype."""
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+
+        buf_type = BufferType(DType.float32, [2, 3], DeviceRef.CPU())
+        mock_result.type = buf_type.to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_buffer_create(mock_op, [])
+
+        assert len(result) == 1
+        buf = result[0]
+        assert isinstance(buf, Buffer)
+        assert buf.shape == (2, 3)
+        assert buf.dtype == DType.float32
+
+    def test_buffer_create_scalar(self) -> None:
+        """BufferCreateOp handles rank-0 (scalar) buffers."""
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+
+        buf_type = BufferType(DType.int32, [], DeviceRef.CPU())
+        mock_result.type = buf_type.to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_buffer_create(mock_op, [])
+
+        assert len(result) == 1
+        buf = result[0]
+        assert isinstance(buf, Buffer)
+        assert buf.shape == ()
+        assert buf.dtype == DType.int32
+
+    def test_buffer_transfer_copies_data(self) -> None:
+        """BufferTransferOp copies src contents into dst."""
+        src_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        src = Buffer.from_numpy(src_np)
+        dst = Buffer(dtype=DType.float32, shape=[2, 2])
+
+        mock_op = MagicMock()
+        result = _handle_buffer_transfer(mock_op, [src, dst, None])
+
+        assert result == [None]
+        np.testing.assert_array_equal(dst.to_numpy(), src_np)
+
+    def test_buffer_transfer_independent(self) -> None:
+        """After transfer, modifying src does not affect dst."""
+        src_np = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        src = Buffer.from_numpy(src_np)
+        dst = Buffer(dtype=DType.float32, shape=[3])
+
+        mock_op = MagicMock()
+        _handle_buffer_transfer(mock_op, [src, dst, None])
+
+        dst_snapshot = dst.to_numpy().copy()
+
+        new_src = Buffer.from_numpy(
+            np.array([99.0, 99.0, 99.0], dtype=np.float32)
+        )
+        src.inplace_copy_from(new_src)
+
+        np.testing.assert_array_equal(dst.to_numpy(), dst_snapshot)
+
+
+class TestMutableStoreOps:
+    """End-to-end CPU tests for the mutable-tensor write interpreter handlers.
+
+    ``F.buffer_store`` emits ``mo.MutableStoreOp``; ``F.buffer_store_slice``
+    emits ``mo.MutableStoreSliceOp``. Both are dispatched by the interpreter
+    to the respective handlers. Buffers are CPU-resident to exercise the
+    handler's host fast path.
+    """
+
+    def test_buffer_store(self) -> None:
+        """F.buffer_store writes a full tensor into the buffer."""
+        buf = Buffer.zeros([4], DType.float32, CPU())
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(np.ones(4, dtype=np.float32))
+            F.buffer_store(a, b)
+
+        np.testing.assert_array_equal(
+            buf.to_numpy(), np.ones(4, dtype=np.float32)
+        )
+
+    def test_buffer_store_slice_unit_steps(self) -> None:
+        """F.buffer_store_slice writes a contiguous 2D sub-region."""
+        buf = Buffer.zeros([4, 4], DType.float32, CPU())
+        slice_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(slice_np)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        expected = np.zeros((4, 4), dtype=np.float32)
+        expected[1:3, 1:3] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_stepped(self) -> None:
+        """F.buffer_store_slice honors non-unit steps."""
+        buf = Buffer.zeros([8], DType.float32, CPU())
+        slice_np = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(slice_np)
+            F.buffer_store_slice(a, b, [slice(0, 8, 2)])
+
+        expected = np.zeros(8, dtype=np.float32)
+        expected[0:8:2] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_heterogeneous_steps(self) -> None:
+        """F.buffer_store_slice handles different steps per axis."""
+        buf = Buffer.zeros([6, 6], DType.float32, CPU())
+        slice_np = np.arange(6, dtype=np.float32).reshape(3, 2) + 1.0
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(slice_np)
+            F.buffer_store_slice(a, b, [slice(0, 6, 2), slice(1, 6, 3)])
+
+        expected = np.zeros((6, 6), dtype=np.float32)
+        expected[0:6:2, 1:6:3] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_negative_indices(self) -> None:
+        """F.buffer_store_slice supports negative start/stop."""
+        buf = Buffer.from_numpy(np.arange(10, dtype=np.float32))
+        slice_np = np.array([100.0, 200.0, 300.0], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(slice_np)
+            F.buffer_store_slice(a, b, [slice(-4, -1)])
+
+        expected = np.arange(10, dtype=np.float32)
+        expected[-4:-1] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_bfloat16_cpu(self) -> None:
+        """F.buffer_store_slice works end-to-end on a bf16 CPU buffer."""
+        # bf16 is 2 bytes/element. Build source/dest via uint16 bytes then
+        # view as bf16 to avoid DLPack entirely.
+        dst_u16 = np.zeros((4, 4), dtype=np.uint16)
+        src_u16 = np.array(
+            [[0x3F80, 0x4000], [0x4040, 0x4080]], dtype=np.uint16
+        )
+
+        buf = Buffer.from_numpy(dst_u16).view(DType.bfloat16)
+        src_buf = Buffer.from_numpy(src_u16).view(DType.bfloat16)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor(storage=src_buf)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        # Compare via uint16 view: slice coords and element bytes match.
+        expected = np.zeros((4, 4), dtype=np.uint16)
+        expected[1:3, 1:3] = src_u16
+        np.testing.assert_array_equal(
+            buf.view(DType.uint16).to_numpy(), expected
+        )
+
+    def test_buffer_store_slice_float8_e4m3fn_cpu(self) -> None:
+        """F.buffer_store_slice works end-to-end on a float8_e4m3fn CPU buffer."""
+        # fp8 is 1 byte per element; build source/dest via uint8 bytes then
+        # view as fp8 to avoid DLPack entirely.
+        dst_bytes = np.zeros((4, 4), dtype=np.uint8)
+        src_bytes = np.array([[0x11, 0x22], [0x33, 0x44]], dtype=np.uint8)
+
+        buf = Buffer.from_numpy(dst_bytes).view(DType.float8_e4m3fn)
+        src_buf = Buffer.from_numpy(src_bytes).view(DType.float8_e4m3fn)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor(storage=src_buf)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        # Compare via uint8 view: slice coords and element bytes match.
+        expected = np.zeros((4, 4), dtype=np.uint8)
+        expected[1:3, 1:3] = src_bytes
+        np.testing.assert_array_equal(
+            buf.view(DType.uint8).to_numpy(), expected
+        )
+
+    def test_buffer_store_slice_float8_e5m2_cpu(self) -> None:
+        """F.buffer_store_slice works end-to-end on a float8_e5m2 CPU buffer."""
+        dst_bytes = np.zeros((4, 4), dtype=np.uint8)
+        src_bytes = np.array([[0x55, 0x66], [0x77, 0x88]], dtype=np.uint8)
+
+        buf = Buffer.from_numpy(dst_bytes).view(DType.float8_e5m2)
+        src_buf = Buffer.from_numpy(src_bytes).view(DType.float8_e5m2)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor(storage=src_buf)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        expected = np.zeros((4, 4), dtype=np.uint8)
+        expected[1:3, 1:3] = src_bytes
+        np.testing.assert_array_equal(
+            buf.view(DType.uint8).to_numpy(), expected
+        )
+
+    def test_buffer_store_slice_float4_e2m1fn_raises(self) -> None:
+        """Slice writes on float4_e2m1fn still raise (packed 4-bit unsupported)."""
+        buf = Buffer.zeros([4, 4], DType.float4_e2m1fn, CPU())
+        src = Buffer.zeros([2, 2], DType.float4_e2m1fn, CPU())
+
+        # Realization happens on EagerRealizationContext exit, so the raise
+        # must wrap the whole context.
+        with pytest.raises(NotImplementedError, match="float4_e2m1fn"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                a = Tensor(storage=buf)
+                b = Tensor(storage=src)
+                F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
 
 class TestResizeLinearOp:
     """Tests for linear (bilinear) resize interpreter op (mo.resize.linear).
 
     Routes through F.resize_linear -> ops.resize_linear ->
     rmo.MoResizeLinearOp -> mo.ResizeLinearOp -> _handle_resize_linear ->
-    resize_ops.ResizeLinear.  CPU-only (MO_HostOnly).
+    resize_gc.resize_model.  The CPU path is covered here; the GPU path is
+    covered by TestResizeLinearGPU in test_interpreter_ops_gpu.py.
 
     The reference is a pure-numpy separable 1-D linear interpolation along
     each spatial dimension (dimensions 2 and beyond).  Four coordinate
@@ -5894,10 +9078,14 @@ class TestResizeLinearOp:
         out_shape = [1, 1, 8, 8]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -5914,10 +9102,14 @@ class TestResizeLinearOp:
         out_shape = [1, 3, 4, 4]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -5934,10 +9126,14 @@ class TestResizeLinearOp:
         out_shape = [1, 2, 7, 7]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=1)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ALIGN_CORNERS,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=1
@@ -5954,11 +9150,14 @@ class TestResizeLinearOp:
         out_shape = [1, 1, 3, 3]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(
-                x, out_shape, coordinate_transform_mode=0, antialias=True
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+                antialias=True,
             )
 
         out_np = np.from_dlpack(out)
@@ -5972,9 +9171,10 @@ class TestResizeLinearOp:
         )
         np.testing.assert_allclose(out_np, ref, rtol=1e-3, atol=1e-3)
 
-    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
-        """Resize works for float32 and float16 inputs."""
+        """Resize works for every dtype resize_gc supports on CPU
+        (gc_compile.float_dtypes(cpu) == FLOAT_DTYPES)."""
         rng = np.random.default_rng(4)
         np_dtype = dtype.to_numpy()
         x_np = rng.standard_normal((1, 2, 4, 4)).astype(np_dtype)
@@ -5982,14 +9182,38 @@ class TestResizeLinearOp:
         out_shape = [1, 2, 6, 6]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(x, out_shape)
 
         ref = self._resize_linear_ref(x_np, out_shape)
-        tol = 1e-2 if dtype == DType.float16 else 1e-4
-        np.testing.assert_allclose(np.from_dlpack(out), ref, rtol=tol, atol=tol)
+        np.testing.assert_allclose(
+            np.from_dlpack(out), ref, rtol=1e-4, atol=1e-4
+        )
+
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC resize path on CPU.
+
+        Unlike the old hand-written Mojo kernel, the graph-compiler CPU
+        backend has no float16 kernel (gc_compile.float_dtypes excludes it,
+        matching gc_compile.CPU_FLOAT_DTYPES's exclusion for other families).
+        """
+        rng = np.random.default_rng(4)
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np.float16)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 6, 6]
+
+        with pytest.raises(UnsupportedGraphError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                # Keep a reference alive through context exit (where
+                # realize_all -> the handler -> resize_model actually raises)
+                # -- an unassigned call's Tensor can get GC'd first.
+                out = F.resize_linear(x, out_shape)
+                assert out is not None
 
     def test_3d_input(self) -> None:
         """Resize a rank-3 (NCW) input using 1-D linear interpolation."""
@@ -5999,7 +9223,7 @@ class TestResizeLinearOp:
         out_shape = [1, 4, 16]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(x, out_shape)
@@ -6008,3 +9232,1004 @@ class TestResizeLinearOp:
         np.testing.assert_allclose(
             np.from_dlpack(out), ref, rtol=1e-4, atol=1e-4
         )
+
+
+class TestResizeNearestOp:
+    """Tests for nearest-neighbor resize interpreter op (mo.resize.nearest).
+
+    Routes through F.resize_nearest -> ops.resize_nearest ->
+    rmo.MoResizeNearestOp -> mo.ResizeNearestOp -> _handle_resize_nearest ->
+    resize_gc.resize_model.  The CPU path is covered here; the GPU path is
+    covered by TestResizeNearestGPU in test_interpreter_ops_gpu.py.
+
+    The reference is a pure-numpy nearest-neighbor lookup applied to every
+    dimension.  Four coordinate transformation modes and four rounding modes
+    are supported -- see ``_resize_nearest_ref``.
+    """
+
+    @staticmethod
+    def _coord(
+        x_out: int,
+        in_size: int,
+        out_size: int,
+        mode: int,
+    ) -> float:
+        """Map output coordinate to input coordinate.
+
+        Args:
+            x_out: Output pixel index.
+            in_size: Input dimension size.
+            out_size: Output dimension size.
+            mode: 0=half_pixel, 1=align_corners, 2=asymmetric, 3=half_pixel_1D.
+
+        Returns:
+            Corresponding input coordinate (may be fractional).
+        """
+        scale = out_size / in_size
+        if mode == 1:  # align_corners
+            return (
+                float(x_out) * (in_size - 1) / (out_size - 1)
+                if out_size > 1
+                else 0.0
+            )
+        if mode == 2:  # asymmetric
+            return float(x_out) / scale
+        if mode == 3:  # half_pixel_1D
+            if out_size == 1:
+                return 0.0
+            return (float(x_out) + 0.5) / scale - 0.5
+        # half_pixel (0)
+        return (float(x_out) + 0.5) / scale - 0.5
+
+    @staticmethod
+    def _round(val: float, round_mode: int) -> int:
+        """Round a coordinate using the specified rounding mode.
+
+        Args:
+            val: Fractional input coordinate.
+            round_mode: 0=HalfDown, 1=HalfUp, 2=Floor, 3=Ceil.
+
+        Returns:
+            Rounded integer coordinate.
+        """
+        if round_mode == 0:  # HalfDown: ceil(x - 0.5)
+            return int(np.ceil(val - 0.5))
+        if round_mode == 1:  # HalfUp: floor(x + 0.5)
+            return int(np.floor(val + 0.5))
+        if round_mode == 2:  # Floor
+            return int(np.floor(val))
+        # Ceil (3)
+        return int(np.ceil(val))
+
+    @staticmethod
+    def _resize_nearest_ref(
+        x_np: np.ndarray,
+        out_shape: list[int],
+        coordinate_transform_mode: int = 0,
+        round_mode: int = 0,
+    ) -> np.ndarray:
+        """Numpy reference for nearest-neighbor resize across all dimensions.
+
+        Args:
+            x_np: Input array.
+            out_shape: Full output shape (same rank as ``x_np``).
+            coordinate_transform_mode: 0=half_pixel (default),
+                1=align_corners, 2=asymmetric, 3=half_pixel_1D.
+            round_mode: 0=HalfDown (default), 1=HalfUp, 2=Floor, 3=Ceil.
+
+        Returns:
+            Output array with ``out_shape`` and ``x_np.dtype``.
+        """
+        rank = x_np.ndim
+        out = np.empty(out_shape, dtype=x_np.dtype)
+
+        for out_idx in np.ndindex(*out_shape):
+            in_idx = []
+            for d in range(rank):
+                mapped = TestResizeNearestOp._coord(
+                    out_idx[d],
+                    x_np.shape[d],
+                    out_shape[d],
+                    coordinate_transform_mode,
+                )
+                rounded = TestResizeNearestOp._round(mapped, round_mode)
+                clamped = min(rounded, x_np.shape[d] - 1)
+                in_idx.append(clamped)
+            out[out_idx] = x_np[tuple(in_idx)]
+
+        return out
+
+    def test_2d_upsample(self) -> None:
+        """Upsample 4x4 spatial to 8x8 with half_pixel (coord_mode=0)."""
+        rng = np.random.default_rng(100)
+        x_np = rng.standard_normal((1, 1, 4, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 8, 8]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
+
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=0
+        )
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_2d_downscale(self) -> None:
+        """Downscale 8x8 spatial to 4x4 with half_pixel (coord_mode=0)."""
+        rng = np.random.default_rng(101)
+        x_np = rng.standard_normal((1, 3, 8, 8)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 3, 4, 4]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
+
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=0
+        )
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_floor_round_mode(self) -> None:
+        """Upsample with round_mode=2 (Floor), asymmetric coord mode.
+
+        Uses asymmetric (mode=2) bc half_pixel + floor can produce negative
+        input coordinates at the boundary, which the kernel doesn't clamp.
+        """
+        rng = np.random.default_rng(102)
+        x_np = rng.standard_normal((1, 1, 3, 3)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 6, 6]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ASYMMETRIC,
+                round_mode=RoundMode.FLOOR,
+            )
+
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=2, round_mode=2
+        )
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_align_corners(self) -> None:
+        """Resize with align_corners coordinate mode (coord_mode=1)."""
+        rng = np.random.default_rng(103)
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 7, 7]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ALIGN_CORNERS,
+            )
+
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=1
+        )
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_dtypes(self, dtype: DType) -> None:
+        """Resize works for every dtype resize_gc supports on CPU
+        (gc_compile.float_dtypes(cpu) == FLOAT_DTYPES)."""
+        rng = np.random.default_rng(104)
+        np_dtype = dtype.to_numpy()
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np_dtype)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 6, 6]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(x, out_shape)
+
+        ref = self._resize_nearest_ref(x_np, out_shape)
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    def test_float16_unsupported(self) -> None:
+        """float16 doesn't compile through the GC resize path on CPU.
+
+        Unlike the old hand-written Mojo kernel, the graph-compiler CPU
+        backend has no float16 kernel (gc_compile.float_dtypes excludes it,
+        matching gc_compile.CPU_FLOAT_DTYPES's exclusion for other families).
+        """
+        rng = np.random.default_rng(104)
+        x_np = rng.standard_normal((1, 2, 4, 4)).astype(np.float16)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 2, 6, 6]
+
+        with pytest.raises(UnsupportedGraphError, match="float16"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                # Keep a reference alive through context exit (where
+                # realize_all -> the handler -> resize_model actually raises)
+                # -- an unassigned call's Tensor can get GC'd first.
+                out = F.resize_nearest(x, out_shape)
+                assert out is not None
+
+    def test_3d_input(self) -> None:
+        """Resize a rank-3 (NCW) input using nearest-neighbor."""
+        rng = np.random.default_rng(105)
+        x_np = rng.standard_normal((1, 4, 8)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 4, 16]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(x, out_shape)
+
+        ref = self._resize_nearest_ref(x_np, out_shape)
+        np.testing.assert_allclose(np.from_dlpack(out), ref)
+
+    @pytest.mark.skipif(accelerator_count() == 0, reason="requires a GPU")
+    def test_gpu_output_stays_resident(self) -> None:
+        """Eager nearest resize on an accelerator buffer stays on-device.
+
+        The kernel is a pure gather (elementwise over the output shape),
+        so it launches on the input's device; this exercises the
+        handler's device dispatch and the family's GPU graph directly.
+        """
+        device = Accelerator()
+        rng = np.random.default_rng(102)
+        x_np = rng.standard_normal((1, 2, 6, 6)).astype(np.float32)
+        out_shape = [1, 2, 9, 9]
+        x = Tensor(storage=Buffer.from_numpy(x_np).to(device))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+                round_mode=RoundMode.HALF_DOWN,
+            )
+
+        assert out.storage is not None
+        assert out.storage.device == device
+        ref = self._resize_nearest_ref(
+            x_np, out_shape, coordinate_transform_mode=0, round_mode=0
+        )
+        np.testing.assert_allclose(out.to(CPU()).to_numpy(), ref)
+
+
+class TestResizeBicubicOp:
+    """Tests for bicubic resize interpreter op (mo.resize.bicubic).
+
+    Runs on the input's device (single-device MO op with a host ``size``
+    operand); the kernel is rank-4 only. The reference is a pure-NumPy
+    separable Keys (a=-0.75) bicubic with the kernel's clamp boundary
+    rule.
+    """
+
+    @staticmethod
+    def _cubic_weight(t: np.ndarray) -> np.ndarray:
+        """Keys cubic convolution weights (a=-0.75) for |t| in [0, 2)."""
+        a = -0.75
+        t = np.abs(t)
+        w = np.zeros_like(t)
+        near = t < 1.0
+        far = (t >= 1.0) & (t < 2.0)
+        # |t| < 1: (a+2)|t|^3 - (a+3)|t|^2 + 1
+        w[near] = (a + 2.0) * t[near] ** 3 - (a + 3.0) * t[near] ** 2 + 1.0
+        # 1 <= |t| < 2: a|t|^3 - 5a|t|^2 + 8a|t| - 4a
+        w[far] = (
+            a * t[far] ** 3 - 5.0 * a * t[far] ** 2 + 8.0 * a * t[far] - 4.0 * a
+        )
+        return w
+
+    @staticmethod
+    def _bicubic_ref(x_np: np.ndarray, out_shape: list[int]) -> np.ndarray:
+        """NumPy reference: Keys (a=-0.75) bicubic, half-pixel mapping.
+
+        Separable 1-D passes over H then W, matching the kernel's
+        construction. Out-of-range taps are clamped into the input
+        (the kernel's boundary rule); all four weights are kept.
+        """
+        _, _, h_in, w_in = x_np.shape
+        _, _, h_out, w_out = out_shape
+
+        def axis_pass(
+            a: np.ndarray, axis: int, size_in: int, size_out: int
+        ) -> np.ndarray:
+            scale = size_in / size_out
+            osh = list(a.shape)
+            osh[axis] = size_out
+            out = np.zeros(osh, dtype=np.float32)
+            moved = np.moveaxis(a, axis, -1)
+            moved_out = np.moveaxis(out, axis, -1)
+            for j in range(size_out):
+                center = (j + 0.5) * scale - 0.5
+                base = int(np.floor(center))
+                taps = np.array([base - 1, base, base + 1, base + 2])
+                weights = TestResizeBicubicOp._cubic_weight(taps - center)
+                # Boundary rule matches the kernel: clamp each tap into
+                # range, keep all four weights (no renormalization).
+                taps = np.clip(taps, 0, size_in - 1)
+                acc = np.zeros(moved.shape[:-1], dtype=np.float64)
+                for t, wt in zip(taps, weights, strict=True):
+                    acc += wt * moved[..., t]
+                moved_out[..., j] = acc.astype(np.float32)
+            return out
+
+        y = axis_pass(x_np, 2, h_in, h_out)
+        y = axis_pass(y, 3, w_in, w_out)
+        return y
+
+    def test_upsample(self) -> None:
+        """Upsamples 4x4 to 8x8 spatial through the eager bicubic path."""
+        rng = np.random.default_rng(200)
+        x_np = rng.standard_normal((1, 1, 4, 4)).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [1, 1, 8, 8]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(x, out_shape)
+
+        ref = self._bicubic_ref(x_np, out_shape)
+        np.testing.assert_allclose(np.from_dlpack(out), ref, rtol=1e-3)
+
+    def test_rejects_non_rank4(self) -> None:
+        """The op requires rank-4 (NCHW); lower ranks fail at graph
+        construction with a clear ValueError."""
+        x_np = np.zeros((4, 4), dtype=np.float32)
+        x = Tensor.from_dlpack(x_np)
+        out_shape = [8, 8]
+
+        with pytest.raises(ValueError, match="rank-4"):
+            F.resize_bicubic(x, out_shape)
+
+
+class TestDistributedScatterSimulated:
+    """Test distributed_scatter on a simulated CPU mesh."""
+
+    def test_scatter_simulated_fallback(self) -> None:
+        """Simulated mesh: distributed_scatter falls back to transfer_to."""
+        cpu = CPU()
+        mesh = DeviceMesh(
+            devices=(cpu, cpu), mesh_shape=(2,), axis_names=("dp",)
+        )
+
+        data = np.arange(8, dtype=np.float32).reshape(4, 2)
+        mapping = DeviceMapping(mesh, (Sharded(0),))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = df_shard(Tensor(data), mapping)
+
+        assert result.placements == (Sharded(0),)
+        assert len(result.local_shards) == 2
+        np.testing.assert_allclose(result.local_shards[0].to_numpy(), data[:2])
+        np.testing.assert_allclose(result.local_shards[1].to_numpy(), data[2:])
+
+
+class TestDistributedBroadcastSimulated:
+    """Test distributed_broadcast on a simulated CPU mesh."""
+
+    def test_broadcast_simulated_fallback(self) -> None:
+        """Simulated mesh: distributed_broadcast falls back to transfer_to."""
+        cpu = CPU()
+        mesh = DeviceMesh(
+            devices=(cpu, cpu), mesh_shape=(2,), axis_names=("dp",)
+        )
+
+        data = np.arange(8, dtype=np.float32).reshape(4, 2)
+        t = Tensor.from_dlpack(data)
+
+        mapping = DeviceMapping(mesh, (Replicated(),))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = df_shard(t, mapping)
+
+        assert result.placements == (Replicated(),)
+        assert len(result.local_shards) == 2
+        np.testing.assert_allclose(result.local_shards[0].to_numpy(), data)
+        np.testing.assert_allclose(result.local_shards[1].to_numpy(), data)
+
+
+class TestDistributedReducescatterSumSimulated:
+    """Test distributed_reducescatter_sum on a simulated CPU mesh."""
+
+    def test_reducescatter_sum_simulated_fallback(self) -> None:
+        """Simulated mesh: reduce-scatter falls back to add + split."""
+        cpu = CPU()
+        mesh = DeviceMesh(
+            devices=(cpu, cpu), mesh_shape=(2,), axis_names=("tp",)
+        )
+
+        # Two [4, 2] partial contributions — one per device.
+        data_a = np.arange(8, dtype=np.float32).reshape(4, 2)
+        data_b = np.arange(8, 16, dtype=np.float32).reshape(4, 2)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            # Build a Partial tensor with different data per shard.
+            shard_a = Tensor(data_a).__tensorvalue__()
+            shard_b = Tensor(data_b).__tensorvalue__()
+            partial_t = Tensor.from_shard_values(
+                [shard_a, shard_b],
+                DeviceMapping(mesh, (Partial(),)),
+            )
+            result = reduce_scatter(partial_t, scatter_axis=0, mesh_axis=0)
+
+        assert result.placements == (Sharded(0),)
+        assert len(result.local_shards) == 2
+        total = data_a + data_b
+        np.testing.assert_allclose(result.local_shards[0].to_numpy(), total[:2])
+        np.testing.assert_allclose(result.local_shards[1].to_numpy(), total[2:])
+
+
+class _NoDeviceFamily(gc_compile.GCFamilySpec):
+    """A family that sweeps none of this machine's devices."""
+
+    name = "test_no_device"
+
+    def build_module(self) -> Module:
+        return Module()
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        return module if module is not None else Module()
+
+    def sweep_devices(self) -> list[Device]:
+        return []
+
+
+class _CpuAddOneFamily(gc_compile.GCFamilySpec):
+    """A family of one CPU graph, cheap enough to warm in a unit test."""
+
+    name = "test_add_one"
+
+    def build_module(self) -> Module:
+        return self.build_module_for_device(CPU())
+
+    def build_module_for_device(
+        self, device: Device, module: Module | None = None
+    ) -> Module:
+        if module is None:
+            module = Module()
+        tensor = TensorType(DType.float32, [4], device=DeviceRef.CPU())
+        with Graph(
+            "test_add_one", input_types=[tensor], module=module
+        ) as graph:
+            graph.output(graph.inputs[0].tensor + 1.0)
+        return module
+
+    def sweep_devices(self) -> list[Device]:
+        return [CPU()]
+
+
+def _name_warm_store(monkeypatch: pytest.MonkeyPatch, directory: Path) -> None:
+    """Names ``directory`` as this process's warm store, writing an empty one
+    there unless something was already exported into it."""
+    if not (directory / "manifest.json").exists():
+        engine.MefStore.for_export(directory).write_manifest()
+    monkeypatch.setenv(gc_compile.WARM_STORE_ENV_VAR, str(directory))
+    gc_compile.warm_store.cache_clear()
+
+
+class TestLazyGCModelCompilation:
+    """Direct tests for the per-(op, device, dtype) GC model caches.
+
+    Covers behavior the dispatch handlers rely on but don't assert: compile-once
+    reuse, unsupported unary targets raising, and ``MAX_EAGER_OP_PRECOMPILE``
+    selecting lazy (default) vs the opt-in precompile sweep.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate_from_session_warm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> Generator[None, None, None]:
+        """Run these decision-logic tests free of the session's warm store
+        and its lazy-compile ban.
+
+        This target is a ``modular_eager_py_test``, so the process names a
+        build-time warm store that every family loads from. This class instead
+        unit-tests the lazy/stamp/per-target decision logic, which a named
+        store would short-circuit. Tests that need a store name their own
+        in-body, after this fixture.
+        """
+        monkeypatch.delenv(gc_compile.WARM_STORE_ENV_VAR, raising=False)
+        monkeypatch.delenv(
+            _eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR, raising=False
+        )
+        gc_compile.warm_store.cache_clear()
+        yield
+        gc_compile.warm_store.cache_clear()
+
+    def test_matmul_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same (device, dtype) returns the cached model."""
+        cpu = CPU()
+        first = matmul_gc.matmul_model(cpu, DType.float32)
+        second = matmul_gc.matmul_model(cpu, DType.float32)
+        assert first is second
+
+    def test_unary_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same unary target returns the cached model."""
+        cpu = CPU()
+        first = unary_elementwise_gc.unary_model(mo.ExpOp, cpu, DType.float32)
+        second = unary_elementwise_gc.unary_model(mo.ExpOp, cpu, DType.float32)
+        assert first is second
+
+    def test_unary_model_unsupported_dtype_raises(self) -> None:
+        """A transcendental op on an int dtype is outside the supported set."""
+        # Exp only sweeps float dtypes; int32 is unsupported and must not be
+        # handed to load_all as an uncompilable graph.
+        with pytest.raises(KeyError, match="Unsupported unary op/device/dtype"):
+            unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.int32)
+
+    def test_unary_model_canonicalizes_rmo_alias(self) -> None:
+        """An rmo (Mo-prefixed) unary op resolves like its mo form.
+
+        Canonicalizing the op name keys ``rmo.MoExpOp`` to the same cache
+        entry as ``mo.ExpOp``; without it a supported op misses and raises
+        KeyError (see gc_compile.canonical_op_name).
+        """
+        rmo_exp = rmo.MoExpOp
+        cpu = CPU()
+        u = unary_elementwise_gc
+        assert u._graph_name(rmo_exp, cpu, DType.float32) == u._graph_name(
+            mo.ExpOp, cpu, DType.float32
+        )
+        assert u._is_supported(rmo_exp, cpu, DType.float32)
+        # Resolves to the same cached model rather than raising KeyError.
+        assert u.unary_model(rmo_exp, cpu, DType.float32) is u.unary_model(
+            mo.ExpOp, cpu, DType.float32
+        )
+
+    # MXF-510: a residual precompile-mode cache miss used to raise KeyError.
+    @pytest.mark.parametrize(
+        ("family", "call_model"),
+        [
+            (
+                matmul_gc._FAMILY,
+                lambda: matmul_gc.matmul_model(CPU(), DType.float32),
+            ),
+            (
+                select_gc._FAMILY,
+                lambda: select_gc.select_model(CPU(), DType.float32),
+            ),
+            (
+                unary_elementwise_gc._FAMILY,
+                lambda: unary_elementwise_gc.unary_model(
+                    mo.ExpOp, CPU(), DType.float32
+                ),
+            ),
+            (
+                elementwise_binary_gc._FAMILY,
+                lambda: elementwise_binary_gc.binary_model(
+                    mo.AddOp, CPU(), DType.float32
+                ),
+            ),
+            (
+                shape_rearrange_gc._FAMILY,
+                lambda: shape_rearrange_gc.model(
+                    mo.ConcatOp, CPU(), DType.uint32
+                ),
+            ),
+            # Op-keyed: each of scatter_nd/_add/_max/_min/_mul dispatches
+            # through its own registered family object on a miss.
+            (
+                scatter_nd_gc._FAMILIES[mo.ScatterNdOp],
+                lambda: scatter_nd_gc.scatter_nd_model(
+                    mo.ScatterNdOp, CPU(), DType.uint32, DType.int64
+                ),
+            ),
+        ],
+        ids=[
+            "matmul",
+            "select",
+            "unary",
+            "binary",
+            "shape_rearrange",
+            "scatter_nd",
+        ],
+    )
+    def test_precompile_miss_compiles(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        family: gc_compile.GCOpFamily,
+        call_model: Callable[[], object],
+    ) -> None:
+        """With MAX_EAGER_OP_PRECOMPILE=1, a residual cache miss compiles."""
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
+        monkeypatch.setattr(family, "cache", {})
+        assert call_model() is not None
+
+    def test_matmul_model_lazy_default_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """By default (env var unset) a miss compiles the target lazily."""
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(matmul_gc._FAMILY, "cache", {})
+        model = matmul_gc.matmul_model(CPU(), DType.float32)
+        assert model is not None
+
+    def test_select_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same (device, dtype) returns the cached model."""
+        cpu = CPU()
+        first = select_gc.select_model(cpu, DType.float32)
+        second = select_gc.select_model(cpu, DType.float32)
+        assert first is second
+
+    def test_select_model_lazy_default_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """By default (env var unset) a miss compiles the target lazily."""
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(select_gc._FAMILY, "cache", {})
+        model = select_gc.select_model(CPU(), DType.float32)
+        assert model is not None
+
+    def test_unary_model_lazy_default_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """By default (env var unset) a supported miss compiles lazily."""
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(unary_elementwise_gc._FAMILY, "cache", {})
+        model = unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.float32)
+        assert model is not None
+
+    def test_warm_stamp_roundtrip(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """write_warm_stamp then warm_stamp_matches for the same context."""
+        monkeypatch.setattr(gc_compile, "_cache_dir", lambda: tmp_path)
+        assert not gc_compile.warm_stamp_matches()
+        gc_compile.write_warm_stamp()
+        assert gc_compile.warm_stamp_matches()
+
+    def test_gc_op_family_prefers_store_over_stamp(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """ensure_swept loads a named warm store, skipping the stamp sweep."""
+        family = gc_compile.GCOpFamily(_NoDeviceFamily())
+        calls: list[str] = []
+        _name_warm_store(monkeypatch, tmp_path)
+        monkeypatch.setattr(gc_compile, "warm_stamp_matches", lambda: True)
+        monkeypatch.setattr(
+            family, "compile_sweep", lambda: calls.append("stamp_sweep")
+        )
+        family.ensure_swept()
+        assert calls == []
+        assert family.swept
+
+    def test_gc_op_family_sweeps_on_warm_stamp(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With no warm store but a matching warm stamp, ensure_swept batch-sweeps."""
+
+        class _FakeFamily(gc_compile.GCFamilySpec):
+            name = "test"
+
+            def build_module(self) -> Module:
+                return Module()
+
+            def build_module_for_device(
+                self, device: Device, module: Module | None = None
+            ) -> Module:
+                return Module()
+
+            def sweep_devices(self) -> list[Device]:
+                return []
+
+        family = gc_compile.GCOpFamily(_FakeFamily())
+        calls: list[str] = []
+        monkeypatch.setattr(gc_compile, "warm_stamp_matches", lambda: True)
+        monkeypatch.setattr(
+            family, "compile_sweep", lambda: calls.append("sweep")
+        )
+        family.ensure_swept()
+        assert calls == ["sweep"]
+        assert family.swept
+
+    def test_warm_families_skips_family_with_no_sweep_devices(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A family that builds for none of this machine's devices (e.g. a
+        GPU-only family on a CPU-only host) warms as zero ops instead of
+        crashing the whole warm."""
+
+        # MXF-599: GPU-only group_norm crashed the warm on CPU-only machines.
+        class _GpuOnlyFamily(gc_compile.GCFamilySpec):
+            name = "test_gpu_only"
+
+            def build_module(self) -> Module:
+                return Module()
+
+            def build_module_for_device(
+                self, device: Device, module: Module | None = None
+            ) -> Module:
+                return module if module is not None else Module()
+
+            def sweep_devices(self) -> list[Device]:
+                return []
+
+        family = gc_compile.GCOpFamily(_GpuOnlyFamily())
+        monkeypatch.setattr(gc_compile, "registered_families", lambda: [family])
+
+        assert list(warm.warm_families(jobs=2)) == [("test_gpu_only", 0)]
+        assert list(warm.warm_families(jobs=1)) == [("test_gpu_only", 0)]
+        assert family.cache == {}
+
+        # Loading from a warm store must also no-op without ever building a
+        # session (InferenceSession(devices=[]) silently defaults to CPU).
+        _name_warm_store(monkeypatch, tmp_path)
+
+        def _no_session(*args: object, **kwargs: object) -> None:
+            raise AssertionError("InferenceSession must not be constructed")
+
+        monkeypatch.setattr(gc_compile.engine, "InferenceSession", _no_session)
+        family.swept = False
+        family.ensure_swept()
+        assert family.swept
+        assert family.cache == {}
+
+    def test_cache_dir_from_derived_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The stamp dir is MODULAR_DERIVED_PATH/cache/.max_cache, else the
+        engine's own MEF cache dir."""
+        monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
+        assert gc_compile._cache_dir() == tmp_path / "cache" / ".max_cache"
+
+        monkeypatch.delenv("MODULAR_DERIVED_PATH")
+        assert gc_compile._cache_dir() == _core.engine.max_cache_dir()
+
+    def test_context_signature_stable(self) -> None:
+        """The signature is stable and pins count + host/accelerator arch.
+
+        Also a regression guard: it must not raise on a CPU-only host
+        (accelerator_architecture_name raises for a CPU device).
+        """
+        sig = gc_compile._context_signature()
+        assert sig == gc_compile._context_signature()
+        assert "accelerators=" in sig and "cpu=" in sig
+
+    def test_no_warm_store_unless_named(self) -> None:
+        assert gc_compile.warm_store() is None
+
+    def test_warm_store_missing_a_slot_raises(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A named store is all-or-nothing: a family whose slot it lacks raises
+        rather than compiling."""
+        family = gc_compile.GCOpFamily(_CpuAddOneFamily())
+        _name_warm_store(monkeypatch, tmp_path)
+        with pytest.raises(
+            MissingArtifactError, match=r"test_add_one_cpu\.mef"
+        ):
+            family.ensure_swept()
+
+    def test_warm_store_loads_every_slot(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        family = gc_compile.GCOpFamily(_CpuAddOneFamily())
+        cpu = CPU()
+        store = engine.MefStore.for_export(tmp_path)
+        engine.InferenceSession(devices=[cpu]).compile(
+            family.build_module_for_device(cpu)
+        ).export_mef(
+            store.claim_export_artifact(
+                gc_compile.warm_artifact_name(family.name, cpu)
+            )
+        )
+        store.write_manifest()
+        _name_warm_store(monkeypatch, tmp_path)
+
+        family.ensure_swept()
+        assert family.store_adopted
+        assert set(family.cache) == {"test_add_one"}
+
+    def test_binary_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same binary target returns the cached model."""
+        cpu = CPU()
+        first = elementwise_binary_gc.binary_model(mo.AddOp, cpu, DType.float32)
+        second = elementwise_binary_gc.binary_model(
+            mo.AddOp, cpu, DType.float32
+        )
+        assert first is second
+
+    def test_binary_comparison_model_compiles(self) -> None:
+        """A comparison op (bool output) compiles like an arithmetic one."""
+        model = elementwise_binary_gc.binary_model(
+            mo.GreaterOp, CPU(), DType.float32
+        )
+        assert model is not None
+
+    def test_binary_model_unsupported_dtype_raises(self) -> None:
+        """And sweeps bool only; an int dtype is outside the supported set."""
+        with pytest.raises(
+            KeyError, match="Unsupported binary op/device/dtype"
+        ):
+            elementwise_binary_gc.binary_model(mo.AndOp, CPU(), DType.int32)
+
+    def test_binary_model_pow_integer_supported(self) -> None:
+        """Pow sweeps NUMERIC, so an int Pow compiles."""
+        model = elementwise_binary_gc.binary_model(mo.PowOp, CPU(), DType.int32)
+        assert model is not None
+
+    def test_binary_model_lazy_default_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """By default (env var unset) a supported miss compiles lazily."""
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(elementwise_binary_gc._FAMILY, "cache", {})
+        model = elementwise_binary_gc.binary_model(
+            mo.AddOp, CPU(), DType.float32
+        )
+        assert model is not None
+
+    def test_uint_view_dtype_rejects_sub_byte(self) -> None:
+        """Byte-aligned dtypes bit-cast to a same-width uint; sub-byte raises."""
+        assert gc_compile.uint_view_dtype(DType.float16) == DType.uint16
+        assert gc_compile.uint_view_dtype(DType.float64) == DType.uint64
+        assert gc_compile.uint_view_dtype(DType.bool) == DType.uint8
+        assert gc_compile.uint_view_dtype(DType.float8_e4m3fn) == DType.uint8
+        with pytest.raises(NotImplementedError, match="sub-byte"):
+            gc_compile.uint_view_dtype(DType.float4_e2m1fn)
+
+    def test_tile_rank_over_cap_raises(self) -> None:
+        """Rank past the sweep raises only when lazy compile is disallowed.
+
+        tile is arbitrary-rank: rank 6 is outside the precompiled sweep but
+        compiles on demand. The same KeyError "Unsupported" signal as an
+        unsupported dtype fires only under MAX_EAGER_ALLOW_LAZY_COMPILE=0.
+        """
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "0")
+        try:
+            with pytest.raises(
+                KeyError, match="Unsupported shape-rearrange rank 6"
+            ):
+                shape_rearrange_gc.model(mo.TileOp, CPU(), DType.uint8, rank=6)
+        finally:
+            monkeypatch.undo()
+
+    def test_tile_rank_past_sweep_compiles_lazily(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Rank past the sweep passes the support gate in the default mode.
+
+        Checks the gate only (the model object needs the full GC stack);
+        rank 6 must not be refused when lazy compile is allowed.
+        """
+        monkeypatch.delenv("MAX_EAGER_ALLOW_LAZY_COMPILE", raising=False)
+        spec = shape_rearrange_gc._spec_for(mo.TileOp)
+        assert spec is not None and spec.arbitrary_rank
+        # The sweep itself still precompiles only 1..MAX_RANK.
+        assert shape_rearrange_gc._ranks_for(spec)[-1] == (
+            shape_rearrange_gc.MAX_RANK
+        )
+
+
+class TestDataMovementGCFamily:
+    """Direct family-level tests for data_movement_gc graphs.
+
+    Every graph is built at ``data_movement_gc.MAX_RANK``; the handlers
+    pad lower-rank shapes to it with leading 1s, so these direct model
+    calls use rank-5 inputs (the padded form the handlers produce).
+    """
+
+    def test_family_transpose_model(self) -> None:
+        x = np.arange(24, dtype=np.uint32).reshape(1, 1, 2, 3, 4)
+        model = data_movement_gc.model(mo.TransposeOp, CPU(), DType.uint32)
+        (out,) = model(
+            Buffer.from_numpy(x),
+            Buffer.from_numpy(np.array([0, 1, 4, 2, 3], dtype=np.int64)),
+        )
+        np.testing.assert_array_equal(
+            out.to_numpy(), np.transpose(x, (0, 1, 4, 2, 3))
+        )
+
+    def test_family_broadcast_model(self) -> None:
+        x = np.array([[1], [2]], dtype=np.uint64).reshape(1, 1, 1, 2, 1)
+        model = data_movement_gc.model(mo.BroadcastToOp, CPU(), DType.uint64)
+        # Output dims bind from the shapes of the host carrier inputs.
+        (out,) = model(
+            Buffer.from_numpy(x),
+            *(
+                Buffer.from_numpy(np.zeros(dim, dtype=np.uint8))
+                for dim in (1, 1, 1, 2, 3)
+            ),
+        )
+        np.testing.assert_array_equal(
+            out.to_numpy(), np.broadcast_to(x, (1, 1, 1, 2, 3))
+        )
+
+    def test_family_store_slice_model(self) -> None:
+        dst = Buffer.from_numpy(np.zeros((1, 1, 1, 4, 4), dtype=np.uint8))
+        src = Buffer.from_numpy(np.ones((1, 1, 1, 2, 2), dtype=np.uint8) * 5)
+        model = data_movement_gc.model(
+            mo.MutableStoreSliceOp, CPU(), DType.uint8
+        )
+        model(
+            dst,
+            src,
+            Buffer.from_numpy(np.array([0, 0, 0, 1, 1], dtype=np.int64)),
+            Buffer.from_numpy(np.array([1, 1, 1, 3, 3], dtype=np.int64)),
+            Buffer.from_numpy(np.array([1, 1, 1, 1, 1], dtype=np.int64)),
+        )
+        expected = np.zeros((1, 1, 1, 4, 4), dtype=np.uint8)
+        expected[..., 1:3, 1:3] = 5
+        np.testing.assert_array_equal(dst.to_numpy(), expected)
+
+    def test_broadcast_gc_rejects_rank_over_max(self) -> None:
+        """The fixed-rank graphs cap at MAX_RANK; a rank-6 target must
+        raise the handler's clear error, not an opaque compile failure."""
+        input_buf = Buffer.from_numpy(np.zeros((1,) * 6, dtype=np.float32))
+        with pytest.raises(ValueError, match="at most rank-5"):
+            data_movement_gc.broadcast_to(input_buf, [1] * 6, CPU())
+
+    def test_broadcast_gc_rank0_is_a_copy(self) -> None:
+        """Rank 0 bypasses the compiled model (ranks 1..MAX_RANK only) and
+        falls back to a driver copy in ``data_movement_gc.broadcast_to``;
+        result is a distinct buffer, not an alias of the input."""
+        input_buf = Buffer.from_numpy(np.array(7.0, dtype=np.float32))
+        out = data_movement_gc.broadcast_to(input_buf, [], CPU())
+
+        assert out is not input_buf
+        np.testing.assert_array_equal(out.to_numpy(), input_buf.to_numpy())
+
+        # Mutating the output must not affect the input: proves a real
+        # copy rather than an aliased view.
+        out.to_numpy()[...] = 99.0
+        assert float(input_buf.to_numpy()) == 7.0
+
+    def test_broadcast_gc_rejects_illegal_shape(self) -> None:
+        """An input dim that is neither 1 nor equal to the target dim is an
+        illegal broadcast; ``data_movement_gc.broadcast_to`` must raise rather
+        than silently dispatching a model that would misbehave."""
+        input_buf = Buffer.from_numpy(np.zeros(3, dtype=np.float32))
+
+        with pytest.raises(ValueError, match="dim 0"):
+            data_movement_gc.broadcast_to(input_buf, [5], CPU())

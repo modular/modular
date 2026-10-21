@@ -82,6 +82,38 @@ def test_max_graph_export_import_mef(session: InferenceSession) -> None:
         assert np.allclose(output_numpy, output2_numpy)
 
 
+def test_compiled_model_export_mef(session: InferenceSession) -> None:
+    """Compiles a graph without initializing it on a device, exports the mef
+    from the CompiledModel artifact, and checks that the file contents are
+    non-empty."""
+
+    with tempfile.NamedTemporaryFile() as mef_file:
+        graph = create_test_graph()
+        compiled = session.compile(graph)
+        compiled.export_mef(Path(mef_file.name))
+        assert os.path.getsize(mef_file.name) > 0
+
+
+def test_compiled_model_export_mef_roundtrip(
+    session: InferenceSession,
+) -> None:
+    """Exports a mef from an uninitialized CompiledModel, then loads and
+    executes it to verify the exported artifact is valid."""
+
+    with tempfile.NamedTemporaryFile() as mef_file:
+        graph = create_test_graph()
+        compiled = session.compile(graph)
+        compiled.export_mef(mef_file.name)
+        model = session.load(mef_file.name)
+        a_np = np.ones((1, 1)).astype(np.float32)
+        b_np = np.ones((1, 1)).astype(np.float32)
+        a = Buffer.from_numpy(a_np).to(model.input_devices[0])
+        b = Buffer.from_numpy(b_np).to(model.input_devices[1])
+        output = model.execute(a, b)[0]
+        assert isinstance(output, Buffer)
+        assert np.allclose((a_np + b_np), output.to_numpy())
+
+
 def test_max_graph_device(session: InferenceSession) -> None:
     graph = create_test_graph()
     device = CPU()
@@ -108,6 +140,10 @@ def test_identity(session: InferenceSession) -> None:
     _ = output[0].to(CPU())[0]
 
 
+@pytest.mark.compile_on_gpu(
+    "a Graph loaded from MLIR text cannot report its inputs, which the "
+    "precompile store names an artifact by"
+)
 def test_max_graph_export_import_mlir(session: InferenceSession) -> None:
     """Creates a graph via max-graph API, exports the mlir to a tempfile, and
     loads the mlir. Both the original model from the max-graph and the model
@@ -116,7 +152,7 @@ def test_max_graph_export_import_mlir(session: InferenceSession) -> None:
     with tempfile.NamedTemporaryFile(mode="w+") as mlir_file:
         graph = create_test_graph()
         compiled = session.load(graph)
-        mlir_file.write(str(graph._module))
+        mlir_file.write(graph._module.asm())
         a_np = np.ones((1, 1)).astype(np.float32)
         b_np = np.ones((1, 1)).astype(np.float32)
         a = Buffer.from_numpy(a_np).to(compiled.input_devices[0])

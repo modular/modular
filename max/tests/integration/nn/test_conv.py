@@ -15,6 +15,7 @@ from shared_conv_impl import (
     conv1d_impl,
     conv1d_tuple_padding_impl,
     conv1d_tuple_padding_nonfcrs_impl,
+    conv2d_1x1_impl,
     conv2d_impl,
     conv2d_tuple_padding_impl,
     conv3d_impl,
@@ -36,6 +37,10 @@ def test_conv1d_tuple_padding(session: InferenceSession) -> None:
 
 def test_conv1d_tuple_padding_nonfcrs(session: InferenceSession) -> None:
     conv1d_tuple_padding_nonfcrs_impl(session)
+
+
+def test_conv2d_1x1(session: InferenceSession) -> None:
+    conv2d_1x1_impl(session)
 
 
 def test_conv2d(session: InferenceSession) -> None:

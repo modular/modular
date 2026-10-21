@@ -11,6 +11,55 @@ max.pipelines
 
 .. currentmodule:: max.pipelines
 
+Submodules
+----------
+
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.architectures
+   max.pipelines.audio
+   max.pipelines.context
+   max.pipelines.diffusion
+   max.pipelines.kv_cache
+   max.pipelines.lib
+   max.pipelines.lib.arch_lookup
+   max.pipelines.lib.interfaces
+   max.pipelines.lib.log_probabilities
+   max.pipelines.lib.registry
+   max.pipelines.modeling.base
+   max.pipelines.modeling.dataprocessing
+   max.pipelines.modeling.types
+   max.pipelines.weights
+   max.pipelines.lora
+   max.pipelines.request
+   max.pipelines.sampling
+   max.pipelines.speculative
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   pipelines.architectures
+   pipelines.audio
+   pipelines.context
+   pipelines.diffusion
+   pipelines.kv_cache
+   pipelines.lib
+   pipelines.lib.arch_lookup
+   pipelines.lib.auto_processor
+   pipelines.lib.generate
+   pipelines.lib.interfaces
+   pipelines.lib.log_probabilities
+   pipelines.lib.registry
+   pipelines.modeling.base
+   pipelines.modeling.dataprocessing
+   pipelines.modeling.types
+   pipelines.weights
+   pipelines.lora
+   pipelines.request
+   pipelines.sampling
+   pipelines.speculative
 
 Configuration
 -------------
@@ -20,14 +69,27 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
-   AudioGenerationConfig
    KVCacheConfig
-   LoRAConfig
    MAXModelConfig
+   PipelineArgs
    PipelineConfig
+   PipelineRuntimeConfig
    ProfilingConfig
    SamplingConfig
    SpeculativeConfig
+
+In-process generation
+---------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   AutoModel
+   AutoPipeline
+   AutoProcessor
+   AutoTokenizer
 
 Pipelines
 ---------
@@ -39,7 +101,6 @@ Pipelines
 
    EmbeddingsPipeline
    PixelGenerationPipeline
-   SpeechTokenGenerationPipeline
    TextGenerationPipeline
    TextGenerationPipelineInterface
 
@@ -51,24 +112,40 @@ Model interface
    :toctree: generated
    :template: autosummary/class.rst
 
-   GenerateMixin
    MemoryEstimator
    ModelInputs
    ModelOutputs
    PipelineModel
 
-Context
--------
+Eager usage validation
+----------------------
+
+The eager usage validator adds guard rails around eager code running
+inside a compiled pipeline. Configure it with the
+``runtime.eager_usage_validator`` MAX config setting.
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/class.rst
 
-   PixelContext
-   TextAndVisionContext
-   TextContext
-   TTSContext
+   EagerUsageValidator
+   EagerValidatorMode
+   ~max.pipelines.modeling.eager_validation.Phase
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.pipelines.modeling.eager_validation.eager_usage_validator
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   eager_validator
 
 Tokenizers
 ----------
@@ -79,7 +156,6 @@ Tokenizers
    :template: autosummary/class.rst
 
    IdentityPipelineTokenizer
-   PreTrainedPipelineTokenizer
    TextAndVisionTokenizer
    TextTokenizer
 
@@ -103,13 +179,6 @@ Utilities
 .. autosummary::
    :nosignatures:
    :toctree: generated
-   :template: autosummary/class.rst
-
-   PrependPromptSpeechTokens
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
    :template: autosummary/function.rst
 
    download_weight_files
@@ -121,14 +190,10 @@ Utilities
    supported_encoding_supported_on
    upper_bounded_default
 
-Submodules
-----------
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
 
-.. toctree::
-   :maxdepth: 1
+   ADAPTER_CONFIG_FILE
 
-   pipelines.core
-   pipelines.lib
-   pipelines.lib.interfaces
-   pipelines.lib.log_probabilities
-   pipelines.lib.registry

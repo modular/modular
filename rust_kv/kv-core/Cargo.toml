@@ -1,0 +1,17 @@
+[package]
+name = "kv-core"
+version = "0.1.0"
+edition = "2024"
+# Bazel builds Rust 1.94.0, the oldest toolchain that has to compile this crate.
+rust-version = "1.94"
+publish = false
+description = "Host-side KV cache bookkeeping shared by MAX Serve and Mach."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+sha2 = "0.10"
+
+[lints]
+workspace = true

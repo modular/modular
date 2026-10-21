@@ -25,20 +25,24 @@ from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 
+from ..norm.rms_norm import rms_norm
 from .functional_kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
+from .linear import QKVLinear
 from .rotary_embedding import RotaryEmbedding
 
 
 class AttentionWithRope(Module[..., Tensor]):
     """Implementation of attention that uses Rotary Position Embedding (RoPE).
 
-    This is a ModuleV3 port of the legacy AttentionWithRope class. It supports
-    both separate and stacked QKV projections, optional clip_qkv clamping, and
+    This is a ModuleV3 port of the legacy AttentionWithRope class. The Q/K/V
+    projection is a fused
+    :class:`~max.experimental.nn.common_layers.linear.QKVLinear` ``qkv_proj``
+    submodule that handles both checkpoint layouts: separate q/k/v weights (the
+    default, name-transparent) and a pre-fused ``qkv_proj`` weight
+    (``stacked_qkv=True``). It also supports optional ``clip_qkv`` clamping and
     optional QK normalization via RMSNorm.
     """
 
@@ -70,7 +74,8 @@ class AttentionWithRope(Module[..., Tensor]):
             layer_idx: The layer number associated with this Attention block.
             scale: Optional attention scale; defaults to sqrt(1/head_dim).
             has_bias: Whether Q/K/V have bias (stacked_qkv forbids bias).
-            stacked_qkv: Whether Q/K/V weights are stacked in a single weight.
+            stacked_qkv: Whether the checkpoint stores Q/K/V as a single fused
+                ``qkv_proj`` weight (vs separate q/k/v weights).
             clip_qkv: If provided, clamp Q/K/V weights to
                 ``[-clip_qkv, clip_qkv]``.
             use_qk_norm: Whether to use RMSNorm on Q/K.
@@ -106,28 +111,13 @@ class AttentionWithRope(Module[..., Tensor]):
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
         self.q_weight_dim = q_weight_dim
 
-        if stacked_qkv:
-            self.qkv_proj = Linear(
-                in_dim=hidden_size,
-                out_dim=q_weight_dim + 2 * kv_weight_dim,
-                bias=False,
-            )
-        else:
-            self.q_proj = Linear(
-                in_dim=hidden_size,
-                out_dim=q_weight_dim,
-                bias=has_bias,
-            )
-            self.k_proj = Linear(
-                in_dim=hidden_size,
-                out_dim=kv_weight_dim,
-                bias=has_bias,
-            )
-            self.v_proj = Linear(
-                in_dim=hidden_size,
-                out_dim=kv_weight_dim,
-                bias=has_bias,
-            )
+        self.qkv_proj = QKVLinear(
+            in_dim=hidden_size,
+            q_dim=q_weight_dim,
+            kv_dim=kv_weight_dim,
+            bias=has_bias,
+            stacked=stacked_qkv,
+        )
 
         self.o_proj = Linear(
             in_dim=q_weight_dim,
@@ -141,32 +131,19 @@ class AttentionWithRope(Module[..., Tensor]):
 
     @property
     def wqkv(self) -> Tensor:
-        """The concatenation of q, k, and v weight vectors."""
-        if self.stacked_qkv:
-            return self.qkv_proj.weight
-        else:
-            wq: Tensor = self.q_proj.weight
-            wk: Tensor = self.k_proj.weight
-            wv: Tensor = self.v_proj.weight
-            if self.clip_qkv:
-                wq = F.clip(wq, -self.clip_qkv, self.clip_qkv)
-                wk = F.clip(wk, -self.clip_qkv, self.clip_qkv)
-                wv = F.clip(wv, -self.clip_qkv, self.clip_qkv)
-            return F.concat([wq, wk, wv], axis=0)
+        """The fused q||k||v projection weight (clamped if ``clip_qkv``)."""
+        weight = self.qkv_proj.fused_weight
+        if self.clip_qkv:
+            weight = F.clip(weight, -self.clip_qkv, self.clip_qkv)
+        return weight
 
     @property
     def wqkv_bias(self) -> Tensor | None:
-        """The concatenation of q, k, and v bias weight vectors."""
+        """The fused q||k||v projection bias, or ``None`` when unused."""
         if not self.has_bias:
             return None
-        assert not self.stacked_qkv
-
-        assert self.q_proj.bias is not None
-        assert self.k_proj.bias is not None
-        assert self.v_proj.bias is not None
-        return F.concat(
-            [self.q_proj.bias, self.k_proj.bias, self.v_proj.bias], axis=0
-        )
+        bias = self.qkv_proj.fused_bias
+        return bias if isinstance(bias, Tensor) else None
 
     def forward(
         self,
@@ -179,53 +156,46 @@ class AttentionWithRope(Module[..., Tensor]):
 
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 
-        wqkv = self.wqkv
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=wqkv,
-            bias=self.wqkv_bias,
+        # clip_qkv clamps the fused weight; clamp commutes with the q||k||v row
+        # concat, so this equals clamping q/k/v separately.
+        if self.clip_qkv:
+            weight = F.clip(
+                self.qkv_proj.fused_weight, -self.clip_qkv, self.clip_qkv
+            )
+            qkv = x @ weight.T + self.qkv_proj.fused_bias
+        else:
+            qkv = self.qkv_proj(x)
+
+        if self.use_qk_norm:
+            head_dim = self.kv_params.head_dim
+            q_dim = self.n_heads * head_dim
+            kv_dim = self.num_key_value_heads * head_dim
+            x_q, x_k, x_v = qkv.split([q_dim, kv_dim, kv_dim], axis=-1)
+
+            x_q = x_q.reshape((-1, self.n_heads, head_dim))
+            x_q = rms_norm(x_q, self.q_norm_weight, self.rms_norm_eps)
+            x_q = x_q.reshape((-1, q_dim))
+
+            x_k = x_k.reshape((-1, self.num_key_value_heads, head_dim))
+            x_k = rms_norm(x_k, self.k_norm_weight, self.rms_norm_eps)
+            x_k = x_k.reshape((-1, kv_dim))
+
+            qkv = F.concat([x_q, x_k, x_v], axis=-1)
+
+        # Fused rope + split + KV store.
+        rope = self.rope
+        freqs_cis = F.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=kwargs["input_row_offsets"],
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-        )
-
+            interleaved=rope.interleaved,
+        ).rebind_mapping(qkv.mapping)
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-
-        if self.use_qk_norm:
-            # Normalize new K entries in-place inside the KV cache.
-            # Per-head RMSNorm across head_dim, gamma size = [head_dim].
-            rms_norm_key_cache(
-                kv_params=self.kv_params,
-                kv_collection=kv_collection,
-                gamma=self.k_norm_weight.cast(self.kv_params.dtype).to(
-                    xq.device
-                ),
-                epsilon=self.rms_norm_eps,
-                layer_idx=layer_idx,
-                total_seq_len=total_seq_len,
-                input_row_offsets=kwargs["input_row_offsets"],
-                weight_offset=0.0,
-            )
-
-            # Normalize Q per head across the last dim (head_dim).
-            q_gamma = F.cast(self.q_norm_weight.to(xq.device), xq.dtype)
-            eps_q = F.constant(self.rms_norm_eps, xq.dtype, device=xq.device)
-            inv_rms = F.rsqrt(F.mean(xq * xq, axis=-1) + eps_q)
-            xq = (xq * inv_rms) * q_gamma
-
-        freqs_cis = F.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
-
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            kwargs["input_row_offsets"],
-            kv_collection,
-            freqs_cis=freqs_cis,
-            layer_idx=layer_idx,
-            interleaved=self.rope.interleaved,
-        )
 
         attn_out = flash_attention_ragged(
             self.kv_params,
@@ -235,6 +205,6 @@ class AttentionWithRope(Module[..., Tensor]):
             input_row_offsets=kwargs["input_row_offsets"],
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
-        )
+        ).rebind_mapping(xq.mapping)
         attn_out = F.reshape(attn_out, shape=[total_seq_len, self.q_weight_dim])
         return self.o_proj(attn_out)

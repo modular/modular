@@ -15,19 +15,20 @@
 # Handles matrix dimensions that are not divisible by tile width
 
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx, barrier
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from max.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
 
 def matrix_mul_tiled_boundary_kernel(
-    M: UnsafePointer[Float32, MutExternalOrigin],
-    N: UnsafePointer[Float32, MutExternalOrigin],
-    P: UnsafePointer[Float32, MutExternalOrigin],
-    Width: Int,
+    M: MutPointer[Float32, MutUntrackedOrigin],
+    N: MutPointer[Float32, MutUntrackedOrigin],
+    P: MutPointer[Float32, MutUntrackedOrigin],
+    width_dev: Int32,
 ):
     """Tiled matrix multiplication kernel with boundary checking.
 
@@ -37,20 +38,22 @@ def matrix_mul_tiled_boundary_kernel(
         M: Input matrix M (device).
         N: Input matrix N (device).
         P: Output matrix P = M * N (device).
-        Width: Matrix dimension (Width x Width matrices).
+        width_dev: Matrix dimension (Width x Width matrices).
     """
+    # Int is not device-passable; widen the fixed-width arg.
+    var Width = Int(width_dev)
     comptime TILE_WIDTH = 16
 
     # Allocate shared memory tiles
-    var Mds = stack_allocation[
+    var Mds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
-    var Nds = stack_allocation[
+    var Nds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     var tx = thread_idx.x
@@ -66,26 +69,20 @@ def matrix_mul_tiled_boundary_kernel(
     for ph in range(num_phases):
         # Collaborative loading of M and N tiles into shared memory with boundary checks
         if Row < Width and (ph * TILE_WIDTH + tx) < Width:
-            Mds[ty * TILE_WIDTH + tx] = Scalar[DType.float32](
-                M[Row * Width + ph * TILE_WIDTH + tx]
-            )
+            Mds[ty * TILE_WIDTH + tx] = M[Row * Width + ph * TILE_WIDTH + tx]
         else:
-            Mds[ty * TILE_WIDTH + tx] = Scalar[DType.float32](0.0)
+            Mds[ty * TILE_WIDTH + tx] = 0.0
 
         if (ph * TILE_WIDTH + ty) < Width and Col < Width:
-            Nds[ty * TILE_WIDTH + tx] = Scalar[DType.float32](
-                N[(ph * TILE_WIDTH + ty) * Width + Col]
-            )
+            Nds[ty * TILE_WIDTH + tx] = N[(ph * TILE_WIDTH + ty) * Width + Col]
         else:
-            Nds[ty * TILE_WIDTH + tx] = Scalar[DType.float32](0.0)
+            Nds[ty * TILE_WIDTH + tx] = 0.0
 
         barrier()
 
         # Compute partial dot product
         for k in range(TILE_WIDTH):
-            Pvalue += Float32(Mds[ty * TILE_WIDTH + k]) * Float32(
-                Nds[k * TILE_WIDTH + tx]
-            )
+            Pvalue += Mds[ty * TILE_WIDTH + k] * Nds[k * TILE_WIDTH + tx]
 
         barrier()
 
@@ -95,9 +92,9 @@ def matrix_mul_tiled_boundary_kernel(
 
 
 def matmul_tiled_boundary(
-    h_a: UnsafePointer[Float32, MutExternalOrigin],
-    h_b: UnsafePointer[Float32, MutExternalOrigin],
-    h_c: UnsafePointer[Float32, MutExternalOrigin],
+    h_a: MutPointer[Float32, MutUntrackedOrigin],
+    h_b: MutPointer[Float32, MutUntrackedOrigin],
+    h_c: MutPointer[Float32, MutUntrackedOrigin],
     width: Int,
     ctx: DeviceContext,
 ) raises:
@@ -121,7 +118,7 @@ def matmul_tiled_boundary(
     var d_c = ctx.enqueue_create_buffer[dtype](size)
 
     # Initialize d_c to zero
-    var zeros = alloc[Float32](size)
+    var zeros = unsafe_alloc[Float32](size)
     for i in range(size):
         zeros[i] = 0.0
 
@@ -137,11 +134,11 @@ def matmul_tiled_boundary(
     var grid_dim_y = ceildiv(width, TILE_WIDTH)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[matrix_mul_tiled_boundary_kernel](
+    ctx.enqueue_function[matrix_mul_tiled_boundary_kernel](
         d_a,
         d_b,
         d_c,
-        width,
+        Int32(width),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(block_dim_x, block_dim_y, 1),
     )
@@ -151,16 +148,16 @@ def matmul_tiled_boundary(
     ctx.synchronize()
 
     # Cleanup
-    zeros.free()
+    zeros.unsafe_free()
 
 
 # ========================== TEST CODE ==========================
 
 
 def cpu_matmul(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
-    c: UnsafePointer[Float32, MutExternalOrigin],
+    a: MutPointer[Float32, MutUntrackedOrigin],
+    b: MutPointer[Float32, MutUntrackedOrigin],
+    c: MutPointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -179,8 +176,8 @@ def cpu_matmul(
 
 
 def initialize(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
+    a: MutPointer[Float32, MutUntrackedOrigin],
+    b: MutPointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """Initialize input matrices with test data.
@@ -201,10 +198,10 @@ def main() raises:
     var size = width * width
 
     # Allocate host memory
-    var h_a = alloc[Float32](size)
-    var h_b = alloc[Float32](size)
-    var h_c = alloc[Float32](size)
-    var h_ref = alloc[Float32](size)
+    var h_a = unsafe_alloc[Float32](size)
+    var h_b = unsafe_alloc[Float32](size)
+    var h_c = unsafe_alloc[Float32](size)
+    var h_ref = unsafe_alloc[Float32](size)
 
     # Initialize buffers
     initialize(h_a, h_b, width)
@@ -244,7 +241,7 @@ def main() raises:
         print("Success")
 
     # Cleanup
-    h_a.free()
-    h_b.free()
-    h_c.free()
-    h_ref.free()
+    h_a.unsafe_free()
+    h_b.unsafe_free()
+    h_c.unsafe_free()
+    h_ref.unsafe_free()

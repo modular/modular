@@ -13,17 +13,19 @@
 
 from std.math import iota
 
-import compiler
-from std.complex import ComplexSIMD
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import OutputTensor, foreach
+import extensibility
 
-from std.utils.index import IndexList
+from max.gpu.host import DeviceContext
+from std.complex import ComplexSIMD
+
+from extensibility import OutputTensor, foreach
+
+from std.utils.coord import Coord, coord_to_index_list
 
 comptime float_dtype = DType.float32
 
 
-@compiler.register("mandelbrot")
+@extensibility.register("mandelbrot")
 struct Mandelbrot:
     @staticmethod
     def execute[
@@ -38,16 +40,16 @@ struct Mandelbrot:
         scale_y: Float32,
         max_iterations: Int32,
         # the context is needed for some GPU calls
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
-        @parameter
-        @always_inline
+        @inline(.always)
         def elementwise_mandelbrot[
             width: Int
-        ](idx: IndexList[output.rank]) -> SIMD[output.dtype, width]:
+        ](idx: Coord) {var} -> SIMD[output.dtype, width]:
             # Obtain the position in the grid from the X, Y thread locations.
-            var row = idx[0]
-            var col = idx[1]
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             # Calculate the complex C corresponding to that grid location.
             var cx = (
@@ -63,7 +65,7 @@ struct Mandelbrot:
 
             # Perform the Mandelbrot iteration loop calculation.
             var iters = SIMD[output.dtype, width](0)
-            var in_set_mask = SIMD[DType.bool, width](fill=True)
+            var in_set_mask = SIMD[.bool, width](fill=True)
             for _ in range(max_iterations):
                 if not any(in_set_mask):
                     break
@@ -73,4 +75,4 @@ struct Mandelbrot:
 
             return iters
 
-        foreach[elementwise_mandelbrot, target=target](output, ctx)
+        foreach[target=target](elementwise_mandelbrot, output, ctx)

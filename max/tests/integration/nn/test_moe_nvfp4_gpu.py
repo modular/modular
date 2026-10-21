@@ -71,7 +71,7 @@ def test_moe_nvfp4_single_gpu() -> None:
         weight_scale=WeightScaleSpec(
             granularity=ScaleGranularity.BLOCK,
             dtype=DType.float8_e4m3fn,
-            block_size=(1, 8),
+            block_size=(1, 16),
         ),
         mlp_quantized_layers=set(),
         attn_quantized_layers=set(),

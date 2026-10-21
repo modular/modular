@@ -17,42 +17,44 @@ from __future__ import annotations
 import functools
 import logging
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
-import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, ops
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputs
 from max.nn.linear import MLP, Linear
 from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.rotary_embedding import (
+    Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+)
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
-from transformers import AutoConfig
+from typing_extensions import override
 
+from .batch_processor import Qwen3EmbeddingBatchProcessor
 from .layers import (
     Qwen3AttentionNoCache,
     Qwen3EmbeddingTransformer,
     Qwen3EmbeddingTransformerBlock,
-    last_token_pool,
-    normalize_embeddings,
 )
+from .model_config import Qwen3EmbeddingConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -71,7 +73,9 @@ class Qwen3EmbeddingInputs(ModelInputs):
     """Number of logits to return (kept for interface compatibility)"""
 
 
-class Qwen3EmbeddingModel(PipelineModel[TextContext]):
+class Qwen3EmbeddingModel(
+    PipelineModel[TextContext, Qwen3EmbeddingConfig, Model]
+):
     """Qwen3 embedding pipeline model without KV caching.
 
     This model is optimized for embedding generation with:
@@ -81,10 +85,14 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     - Last token pooling with L2 normalization
     """
 
-    model: Model
-    """Compiled and initialized model."""
+    model_config_cls: ClassVar[type[Qwen3EmbeddingConfig]] = (
+        Qwen3EmbeddingConfig
+    )
+    batch_processor_cls: ClassVar[type[Qwen3EmbeddingBatchProcessor]] = (
+        Qwen3EmbeddingBatchProcessor
+    )
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization method."""
 
     attention_bias: bool = False
@@ -100,8 +108,11 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        max_batch_size: int = 1,
     ) -> None:
         """Initialize the Qwen3 embedding pipeline model.
 
@@ -114,54 +125,73 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             adapter: Optional weight adapter
             return_logits: Return logits mode
         """
-        self.pipeline_config = pipeline_config
-        self.session = session
-        self.devices = devices
-
-        # Build and compile graph
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(weights, adapter, session)
-            timer.mark_build_complete()
-            self.model = session.load(graph, weights_registry=self.state_dict)
-
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        """Build the embedding model graph.
-
-        Args:
-            weights: Model weights
-            adapter: Optional weight adapter
-            session: Optional inference session
-
-        Returns:
-            Compiled graph
-        """
-        # Load weights
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
+        super().__init__(
+            pipeline_config,
+            session,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter=adapter,
+            return_logits=return_logits,
+            max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
+        self._models = self.load_graphs(session)
 
-        # Get configuration
+    @property
+    def model(self) -> Model:
+        """The compiled and initialized model."""
+        return self._models[GraphRole.ENCODER]
+
+    @override
+    def _load_state_dict(self) -> dict[str, Any]:
+        self.state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, self.weights, self.adapter
+        )
+        return self.state_dict
+
+    @override
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> Qwen3EmbeddingConfig:
+        del state_dict
+        return self.arch_config_as(Qwen3EmbeddingConfig)
+
+    @override
+    def graph_specs(
+        self, model_config: Qwen3EmbeddingConfig
+    ) -> Mapping[str, GraphSpec]:
+        """Returns the embedding graph."""
+        del model_config
+        state_dict = self.state_dict
         dtype = self.dtype
         device_refs = [DeviceRef.from_device(d) for d in self.devices]
 
         # Create RoPE
         head_dim = self.huggingface_config.head_dim
-        max_seq_len = self.pipeline_config.model.max_length or 32768
+        rope_scaling_params: Llama3RopeScalingParams | None = None
+        rope_scaling = getattr(self.huggingface_config, "rope_scaling", None)
+        if rope_scaling is not None:
+            rope_type = rope_scaling.get("type") or rope_scaling.get(
+                "rope_type"
+            )
+            if rope_type == "llama3":
+                rope_scaling_params = Llama3RopeScalingParams(
+                    factor=rope_scaling["factor"],
+                    low_freq_factor=rope_scaling["low_freq_factor"],
+                    high_freq_factor=rope_scaling["high_freq_factor"],
+                    orig_max_position=rope_scaling[
+                        "original_max_position_embeddings"
+                    ],
+                )
         rope = Llama3RotaryEmbedding(
             dim=self.huggingface_config.hidden_size,
             n_heads=self.huggingface_config.num_attention_heads,
             theta=get_rope_theta(self.huggingface_config),
-            max_seq_len=max_seq_len,
+            max_seq_len=self.max_seq_len,
             head_dim=head_dim,
             interleaved=False,  # Qwen3 uses non-interleaved RoPE
-            scaling_params=getattr(
-                self.huggingface_config, "rope_scaling", None
-            ),
+            scaling_params=rope_scaling_params,
         )
 
         # Calculate Qwen3-specific attention multiplier
@@ -255,6 +285,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             rope=rope,
             embedding_multiplier=1.0,
             device=device_refs[0],
+            pool_embeddings=self.pipeline_config.model.pool_embeddings,
         )
 
         # Load weights into model
@@ -267,38 +298,14 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             ),
         )
 
-        self.state_dict = nn_model.state_dict()
-
-        # Build graph
-        graph_inputs = nn_model.input_types()
-
-        with Graph("qwen3_embedding", input_types=graph_inputs) as graph:
-            tokens, input_row_offsets, return_n_logits = graph.inputs
-
-            # Forward pass - returns hidden_states
-            hidden_states = nn_model(
-                tokens.tensor,
-                input_row_offsets.tensor,
-                return_n_logits.tensor,
+        return {
+            GraphRole.ENCODER: GraphSpec(
+                nn_model,
+                "qwen3_embedding",
+                nn_model.input_types(),
+                weights=nn_model.state_dict(),
             )
-
-            if self.pipeline_config.model.pool_embeddings:
-                # Apply last token pooling
-                embeddings = last_token_pool(
-                    hidden_states, input_row_offsets.tensor
-                )
-
-                # Apply L2 normalization
-                embeddings_normalized = normalize_embeddings(embeddings)
-
-                # Output pooled and normalized embeddings [batch_size, hidden_size]
-                graph.output(embeddings_normalized)
-            else:
-                # Return raw hidden states [total_seq_len, hidden_size]
-                hidden_states_f32 = ops.cast(hidden_states, DType.float32)
-                graph.output(hidden_states_f32)
-
-        return graph
+        }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the model.
@@ -321,96 +328,3 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         # Return embeddings in logits field for pipeline compatibility
         assert isinstance(model_outputs[0], Buffer)
         return ModelOutputs(logits=model_outputs[0])
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> Qwen3EmbeddingInputs:
-        """Prepare initial inputs for embedding generation.
-
-        Args:
-            replica_batches: Batches of text contexts
-            kv_cache_inputs: Ignored (no KV cache for embeddings)
-            return_n_logits: Number of logits (ignored for embeddings)
-
-        Returns:
-            Prepared inputs
-        """
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        device = self.devices[0]
-
-        # Collect all tokens from the batch
-        all_tokens: list[int] = []
-        row_offsets = [0]
-
-        for ctx in context_batch:
-            tokens = ctx.tokens.active
-            all_tokens.extend(tokens)
-            row_offsets.append(len(all_tokens))
-
-        # Convert to numpy arrays
-        tokens_array = np.array(all_tokens, dtype=np.uint32)
-        row_offsets_array = np.array(row_offsets, dtype=np.uint32)
-
-        # Create buffers on CPU (inputs are expected on CPU)
-        tokens_buffer = Buffer.from_numpy(tokens_array)
-        row_offsets_buffer = Buffer.from_numpy(row_offsets_array)
-        return_n_logits_buffer = Buffer.from_numpy(
-            np.array([return_n_logits], dtype=np.uint32)
-        )
-
-        return Qwen3EmbeddingInputs(
-            tokens=tokens_buffer.to(device),
-            input_row_offsets=row_offsets_buffer,
-            return_n_logits=return_n_logits_buffer,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen3EmbeddingInputs:
-        """Prepare next token inputs (not supported for embedding models).
-
-        Args:
-            next_tokens: Next tokens
-            prev_model_inputs: Previous inputs
-
-        Raises:
-            NotImplementedError: Embedding models don't support autoregressive generation
-        """
-        raise NotImplementedError(
-            "Qwen3 embedding model does not support autoregressive generation"
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculate maximum sequence length.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            huggingface_config: HuggingFace configuration
-
-        Returns:
-            Maximum sequence length
-        """
-        # Use configured max_length, bounded by model's max_position_embeddings
-        model_max = getattr(
-            huggingface_config, "max_position_embeddings", 32768
-        )
-        configured_max = pipeline_config.model.max_length or 8192
-
-        if configured_max > model_max:
-            raise ValueError(
-                f"Configured max_length ({configured_max}) exceeds model's "
-                f"max_position_embeddings ({model_max})"
-            )
-
-        return configured_max

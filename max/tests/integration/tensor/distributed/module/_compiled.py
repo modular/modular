@@ -26,25 +26,22 @@ from __future__ import annotations
 from typing import ClassVar
 
 import numpy as np
-from _test_helpers import to_np
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.distributed_functional.collectives import (
-    all_reduce_sum,
-    materialize,
+from max.experimental.compilation import CompiledCallable
+from max.experimental.functional import (
+    full,
+    matmul,
+    ones,
+    relu,
+    transfer_to,
 )
-from max.experimental.distributed_functional.collectives import (
-    shard as distribute,
-)
-from max.experimental.distributed_functional.creation import full, ones
-from max.experimental.distributed_functional.elementwise import relu
-from max.experimental.distributed_functional.matmul import matmul
-from max.experimental.nn.module import CompiledModel, Module, module_dataclass
+from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -61,9 +58,9 @@ def sym(feature_dim: int) -> TensorType:
 
 def check(result: Tensor, expected_val: float, shape: tuple[int, ...]) -> None:
     """Materialize and check values match expected constant."""
-    gathered = materialize(result) if result.is_distributed else result
+    gathered = result.materialize() if result.is_distributed else result
     expected = np.full(shape, expected_val)
-    np.testing.assert_allclose(to_np(gathered), expected, rtol=1e-4)
+    np.testing.assert_allclose(gathered.to_numpy(), expected, rtol=1e-4)
 
 
 class CompiledTests:
@@ -83,12 +80,10 @@ class CompiledTests:
             W: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
                 return matmul(x_dist, self.W)
 
-        W = ones(
-            [D, D], dtype=F32, device=PlacementMapping(mesh, (Sharded(1),))
-        )
+        W = ones([D, D], dtype=F32, device=DeviceMapping(mesh, (Sharded(1),)))
         compiled = Linear(W=W).compile(sym(D))
         result = compiled(full([3, D], 1.0, dtype=F32, device=CPU()))
         assert result.placements == (Sharded(1),)
@@ -103,11 +98,11 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
                 return matmul(relu(matmul(x_dist, self.W1)), self.W2)
 
-        m_s1 = PlacementMapping(mesh, (Sharded(1),))
-        m_s0 = PlacementMapping(mesh, (Sharded(0),))
+        m_s1 = DeviceMapping(mesh, (Sharded(1),))
+        m_s0 = DeviceMapping(mesh, (Sharded(0),))
         model = MLP(
             W1=ones([D, D], dtype=F32, device=m_s1),
             W2=ones([D, D], dtype=F32, device=m_s0),
@@ -128,11 +123,11 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
                 return matmul(relu(matmul(x_dist, self.W1)), self.W2)
 
-        m_s1 = PlacementMapping(mesh, (Sharded(1),))
-        m_s0 = PlacementMapping(mesh, (Sharded(0),))
+        m_s1 = DeviceMapping(mesh, (Sharded(1),))
+        m_s0 = DeviceMapping(mesh, (Sharded(0),))
         model = MLP(
             W1=ones([D, D], dtype=F32, device=m_s1),
             W2=ones([D, D], dtype=F32, device=m_s0),
@@ -154,11 +149,11 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
                 return matmul(relu(matmul(x_dist, self.W1)), self.W2)
 
-        m_s1 = PlacementMapping(mesh, (Sharded(1),))
-        m_s0 = PlacementMapping(mesh, (Sharded(0),))
+        m_s1 = DeviceMapping(mesh, (Sharded(1),))
+        m_s0 = DeviceMapping(mesh, (Sharded(0),))
         model = MLP(
             W1=ones([D, D], dtype=F32, device=m_s1),
             W2=ones([D, D], dtype=F32, device=m_s0),
@@ -166,10 +161,10 @@ class CompiledTests:
         x = full([5, D], 1.0, dtype=F32, device=CPU())
         eager_result = model(x)
         assert eager_result.placements == (Partial(),)
-        eager = to_np(materialize(eager_result))
+        eager = eager_result.to_numpy()
         compiled_result = model.compile(sym(D))(x)
         assert compiled_result.placements == (Partial(),)
-        compiled = to_np(materialize(compiled_result))
+        compiled = compiled_result.to_numpy()
         np.testing.assert_allclose(eager, compiled, rtol=1e-4)
 
     def test_compiled_with_allreduce(self) -> None:
@@ -181,13 +176,13 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
                 h = relu(matmul(x_dist, self.W1))
                 out = matmul(h, self.W2)
-                return all_reduce_sum(out)
+                return transfer_to(out, DeviceMapping(mesh, (Replicated(),)))
 
-        m_s1 = PlacementMapping(mesh, (Sharded(1),))
-        m_s0 = PlacementMapping(mesh, (Sharded(0),))
+        m_s1 = DeviceMapping(mesh, (Sharded(1),))
+        m_s0 = DeviceMapping(mesh, (Sharded(0),))
         model = TPMLP(
             W1=ones([D, D], dtype=F32, device=m_s1),
             W2=ones([D, D], dtype=F32, device=m_s0),
@@ -206,13 +201,13 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(
-                    x, PlacementMapping(mesh, (Replicated(), Replicated()))
+                x_dist = transfer_to(
+                    x, DeviceMapping(mesh, (Replicated(), Replicated()))
                 )
                 return matmul(relu(matmul(x_dist, self.W1)), self.W2)
 
-        m_s1 = PlacementMapping(mesh, (Replicated(), Sharded(1)))
-        m_s0 = PlacementMapping(mesh, (Replicated(), Sharded(0)))
+        m_s1 = DeviceMapping(mesh, (Replicated(), Sharded(1)))
+        m_s0 = DeviceMapping(mesh, (Replicated(), Sharded(0)))
         model = MLP(
             W1=ones([D, D], dtype=F32, device=m_s1),
             W2=ones([D, D], dtype=F32, device=m_s0),
@@ -223,10 +218,10 @@ class CompiledTests:
         assert result.placements == (Replicated(), Partial())
         check(result, float(D * D), (3, D))
 
-    # ── CompiledModel API tests ─────────────────────────────────────────
+    # ── CompiledCallable API tests ─────────────────────────────────────────
 
     def test_compile_returns_compiled_model(self) -> None:
-        """compile() returns a CompiledModel, not a bare closure."""
+        """compile() returns a CompiledCallable, not a bare closure."""
         mesh = self.MESH_2
 
         @module_dataclass
@@ -234,14 +229,12 @@ class CompiledTests:
             W: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
                 return matmul(x_dist, self.W)
 
-        W = ones(
-            [D, D], dtype=F32, device=PlacementMapping(mesh, (Sharded(1),))
-        )
+        W = ones([D, D], dtype=F32, device=DeviceMapping(mesh, (Sharded(1),)))
         compiled = Linear(W=W).compile(sym(D))
-        assert isinstance(compiled, CompiledModel)
+        assert isinstance(compiled, CompiledCallable)
         assert isinstance(compiled.engine_model, Model)
         assert isinstance(compiled.signal_buffers, list)
 
@@ -254,12 +247,10 @@ class CompiledTests:
             W: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
                 return matmul(x_dist, self.W)
 
-        W = ones(
-            [D, D], dtype=F32, device=PlacementMapping(mesh, (Sharded(1),))
-        )
+        W = ones([D, D], dtype=F32, device=DeviceMapping(mesh, (Sharded(1),)))
         compiled = Linear(W=W).compile(sym(D))
         x = Buffer.from_numpy(np.ones((3, D), dtype=np.float32))
         raw_outputs = compiled.execute_raw(x)
@@ -279,13 +270,13 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
                 h = relu(matmul(x_dist, self.W1))
                 out = matmul(h, self.W2)
-                return all_reduce_sum(out)
+                return transfer_to(out, DeviceMapping(mesh, (Replicated(),)))
 
-        m_s1 = PlacementMapping(mesh, (Sharded(1),))
-        m_s0 = PlacementMapping(mesh, (Sharded(0),))
+        m_s1 = DeviceMapping(mesh, (Sharded(1),))
+        m_s0 = DeviceMapping(mesh, (Sharded(0),))
         model = MLP(
             W1=ones([D, D], dtype=F32, device=m_s1),
             W2=ones([D, D], dtype=F32, device=m_s0),
@@ -295,7 +286,7 @@ class CompiledTests:
         x_np = np.ones((3, D), dtype=np.float32)
         # Tensor path
         tensor_result = compiled(full([3, D], 1.0, dtype=F32, device=CPU()))
-        tensor_np = to_np(tensor_result)
+        tensor_np = tensor_result.to_numpy()
         # Buffer path
         raw_outputs = compiled.execute_raw(Buffer.from_numpy(x_np))
         raw_np = np.from_dlpack(raw_outputs[0].to(CPU()))

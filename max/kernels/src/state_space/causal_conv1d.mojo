@@ -55,46 +55,41 @@ Activation Support:
     - SiLU: Sigmoid Linear Unit activation (x * sigmoid(x))
 """
 
-from std.math import exp
+from std.algorithm import vectorize
+from std.math import ceildiv
+from std.sys import align_of, simd_width_of
 
-from std.algorithm import sync_parallelize
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
+from max.gpu import (
+    block_dim,
+    block_idx,
+    thread_idx,
 )
-from layout import TensorLayout, TileTensor
-
-
-# ===----------------------------------------------------------------------=== #
-# Activation Functions
-# ===----------------------------------------------------------------------=== #
-
-
-def silu[
-    dtype: DType, width: Int
-](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
-    """Sigmoid Linear Unit (SiLU) activation function.
-
-    Computes x * sigmoid(x) = x / (1 + exp(-x)).
-
-    Args:
-        x: Input SIMD vector.
-
-    Returns:
-        SiLU activation applied element-wise.
-
-    Constraints:
-        The dtype must be a floating-point type.
-    """
-    if x < -20.0:
-        return 0.0
-    return x / (1 + exp(-x))
+from layout import (
+    ImmTileTensor,
+    MutTileTensor,
+    TensorEngine,
+    TensorLayout,
+    TileTensor,
+)
+from nn.activations import silu
 
 
 # ===----------------------------------------------------------------------=== #
 # CPU Implementations
 # ===----------------------------------------------------------------------=== #
+
+
+@inline(.always)
+def _silu_cast[
+    dtype: DType, width: Int
+](v: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Applies SiLU, computing in float32 for non-floating-point dtypes."""
+    comptime if dtype.is_floating_point():
+        return silu(v)
+    else:
+        return silu(v.cast[.float32]()).cast[dtype]()
 
 
 def causal_conv1d_channel_first_fwd_cpu[
@@ -107,26 +102,24 @@ def causal_conv1d_channel_first_fwd_cpu[
     dim: Int,
     seqlen: Int,
     width: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (B, C, L)
-    weight: TileTensor[weight_dtype, ...],  # Shape (C, W)
+    x: TileTensor[mut=False, x_dtype, ...],  # Shape (B, C, L)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, C, L)
-    bias: TileTensor[bias_dtype, ...],  # Shape (C,), stride = 1
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
-    bias_stride: UInt32,
+    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (C,)
     silu_activation: Bool,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU implementation of causal conv1d for channel-first layout with bias.
 
     Optimizations:
     1. Parallelization across batch*channel dimensions using sync_parallelize.
     2. Pre-loaded weights in registers to reduce memory access.
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        bias_dtype: Element type of the bias tensor `bias`.
 
     Args:
         batch: Batch size.
@@ -137,30 +130,25 @@ def causal_conv1d_channel_first_fwd_cpu[
         weight: Weight tensor of shape (C, W).
         output: Output tensor of shape (B, C, L).
         bias: Bias tensor of shape (C,).
-        x_batch_stride: Stride for the batch dimension of the input tensor.
-        x_c_stride: Stride for the channel dimension of the input tensor.
-        x_l_stride: Stride for the sequence length dimension of the input tensor.
-        weight_c_stride: Stride for the channel dimension of the weight tensor.
-        weight_width_stride: Stride for the width dimension of the weight tensor.
-        out_batch_stride: Stride for the batch dimension of the output tensor.
-        out_c_stride: Stride for the channel dimension of the output tensor.
-        out_l_stride: Stride for the sequence length dimension of the output tensor.
-        bias_stride: Stride for the bias tensor.
         silu_activation: Whether to apply SiLU activation.
+        ctx: The context to execute the work on.
     """
+    debug_assert(
+        x.dynamic_stride(2) == 1 and output.dynamic_stride(2) == 1,
+        "channel-first kernels require unit sequence stride",
+    )
     var width_minus_1: Int = width - 1
     var total_bc = batch * dim
 
     # Parallelize across batch*channel combinations
-    @parameter
-    def process_bc(bc_idx: Int):
+    def process_bc(bc_idx: Int) {imm}:
         var b, c = divmod(bc_idx, dim)
 
         # Bounds checking
         if b >= batch or c >= dim:
             return
 
-        # Validate bias tensor has valid dimensions (use debug_assert since we can't raise in @parameter fn)
+        # Validate bias tensor has valid dimensions (use debug_assert since we can't raise in @__parameter fn)
         assert (
             Int(bias.dim[0]()) > 0
         ), "Bias tensor must have at least one element"
@@ -168,72 +156,57 @@ def causal_conv1d_channel_first_fwd_cpu[
             bias.dim[0]()
         ), "Channel index out of bounds for bias tensor"
 
-        var weight_c_base_offset = UInt32(c * Int(weight_c_stride))
-        var bias_offset = UInt32(c * Int(bias_stride))
         var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
-            bias.ptr[bias_offset]
+            bias.load[width=1]((c,))
         )
 
-        # Pre-load weights for this channel to reduce memory access
-        var w0: Scalar[weight_dtype] = 0
-        var w1: Scalar[weight_dtype] = 0
-        var w2: Scalar[weight_dtype] = 0
-        var w3: Scalar[weight_dtype] = 0
-        if width >= 1:
-            w0 = Scalar[weight_dtype](weight.ptr[weight_c_base_offset])
-        if width >= 2:
-            w1 = Scalar[weight_dtype](
-                weight.ptr[
-                    weight_c_base_offset + UInt32(Int(weight_width_stride))
-                ]
-            )
-        if width >= 3:
-            w2 = Scalar[weight_dtype](
-                weight.ptr[
-                    weight_c_base_offset + UInt32(2 * Int(weight_width_stride))
-                ]
-            )
-        if width >= 4:
-            w3 = Scalar[weight_dtype](
-                weight.ptr[
-                    weight_c_base_offset + UInt32(3 * Int(weight_width_stride))
-                ]
-            )
-
-        var x_base = UInt32(b * Int(x_batch_stride) + c * Int(x_c_stride))
-        var out_base = UInt32(b * Int(out_batch_stride) + c * Int(out_c_stride))
-
-        # Process all sequence positions
-        for l in range(seqlen):
-            var conv_sum: Scalar[output_dtype] = cur_bias
-
-            for w in range(width):
-                var input_l: Int = l - (width_minus_1 - w)
-                if input_l >= 0:
-                    var x_offset: UInt32 = x_base + UInt32(
-                        UInt32(input_l) * x_l_stride
+        def conv_chunk[
+            simd_width: Int
+        ](l: Int) {
+            imm x,
+            imm weight,
+            imm output,
+            cur_bias,
+            b,
+            c,
+            width,
+            width_minus_1,
+            silu_activation,
+            mut,
+        }:
+            var conv_sum = SIMD[output_dtype, simd_width](cur_bias)
+            if l >= width_minus_1:
+                for w in range(width):
+                    var input_val = x.load[width=simd_width](
+                        (b, c, l - (width_minus_1 - w))
                     )
-                    var input_val: Scalar[x_dtype] = x.ptr[x_offset]
-                    # Select weight based on position
-                    var weight_val: Scalar[weight_dtype] = w0 if w == 0 else (
-                        w1 if w == 1 else (w2 if w == 2 else w3)
+                    var weight_val = Scalar[x_dtype](
+                        weight.load[width=1]((c, w))
                     )
-                    conv_sum = conv_sum + Scalar[output_dtype](
-                        input_val * Scalar[x_dtype](weight_val)
-                    )
-
-            var out_offset: UInt32 = out_base + UInt32(UInt32(l) * out_l_stride)
-            var out_val: Scalar[output_dtype] = conv_sum
+                    conv_sum += (input_val * weight_val).cast[output_dtype]()
+            else:
+                # The first window reaches before the sequence start, so
+                # those taps are zero per lane.
+                comptime for i in range(simd_width):
+                    var lane_sum: Scalar[output_dtype] = cur_bias
+                    for w in range(width):
+                        var input_l: Int = l + i - (width_minus_1 - w)
+                        if input_l >= 0:
+                            var input_val = x.load[width=1]((b, c, input_l))
+                            var weight_val = Scalar[x_dtype](
+                                weight.load[width=1]((c, w))
+                            )
+                            lane_sum += Scalar[output_dtype](
+                                input_val * weight_val
+                            )
+                    conv_sum[i] = lane_sum
             if silu_activation:
-                comptime if output_dtype.is_floating_point():
-                    out_val = silu(out_val)
-                else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
-                        output_dtype
-                    ]()
-            output.ptr[out_offset] = out_val
+                conv_sum = _silu_cast(conv_sum)
+            output.store((b, c, l), conv_sum)
 
-    sync_parallelize[process_bc](total_bc)
+        vectorize[simd_width_of[output_dtype]()](seqlen, conv_chunk)
+
+    sync_parallelize(process_bc, total_bc, ctx)
 
 
 def causal_conv1d_channel_first_fwd_cpu_no_bias[
@@ -245,24 +218,22 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
     dim: Int,
     seqlen: Int,
     width: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (B, C, L)
-    weight: TileTensor[weight_dtype, ...],  # Shape (C, W)
+    x: TileTensor[mut=False, x_dtype, ...],  # Shape (B, C, L)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, C, L)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
     silu_activation: Bool,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU implementation of causal conv1d for channel-first layout without bias.
 
     Optimizations:
     1. Parallelization across batch*channel dimensions using sync_parallelize.
     2. Pre-loaded weights in registers to reduce memory access.
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
 
     Args:
         batch: Batch size.
@@ -272,86 +243,101 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
         x: Input tensor of shape (B, C, L).
         weight: Weight tensor of shape (C, W).
         output: Output tensor of shape (B, C, L).
-        x_batch_stride: Stride for the batch dimension of the input tensor.
-        x_c_stride: Stride for the channel dimension of the input tensor.
-        x_l_stride: Stride for the sequence length dimension of the input tensor.
-        weight_c_stride: Stride for the channel dimension of the weight tensor.
-        weight_width_stride: Stride for the width dimension of the weight tensor.
-        out_batch_stride: Stride for the batch dimension of the output tensor.
-        out_c_stride: Stride for the channel dimension of the output tensor.
-        out_l_stride: Stride for the sequence length dimension of the output tensor.
         silu_activation: Whether to apply SiLU activation.
+        ctx: The context to execute the work on.
     """
+    debug_assert(
+        x.dynamic_stride(2) == 1 and output.dynamic_stride(2) == 1,
+        "channel-first kernels require unit sequence stride",
+    )
     var width_minus_1: Int = width - 1
     var total_bc = batch * dim
 
     # Parallelize across batch*channel combinations
-    @parameter
-    def process_bc(bc_idx: Int):
+    def process_bc(bc_idx: Int) {imm}:
         var b, c = divmod(bc_idx, dim)
 
-        var weight_c_base_offset = UInt32(UInt32(c) * weight_c_stride)
-
-        # Pre-load weights for this channel to reduce memory access
-        var w0: Scalar[weight_dtype] = 0
-        var w1: Scalar[weight_dtype] = 0
-        var w2: Scalar[weight_dtype] = 0
-        var w3: Scalar[weight_dtype] = 0
-        if width >= 1:
-            w0 = Scalar[weight_dtype](weight.ptr[weight_c_base_offset])
-        if width >= 2:
-            w1 = Scalar[weight_dtype](
-                weight.ptr[weight_c_base_offset + UInt32(weight_width_stride)]
+        def conv_chunk[
+            simd_width: Int
+        ](l: Int) {
+            imm x,
+            imm weight,
+            imm output,
+            b,
+            c,
+            width,
+            width_minus_1,
+            silu_activation,
+            mut,
+        }:
+            var conv_sum = SIMD[output_dtype, simd_width](
+                Scalar[output_dtype](0)
             )
-        if width >= 3:
-            w2 = Scalar[weight_dtype](
-                weight.ptr[
-                    weight_c_base_offset + UInt32(2 * weight_width_stride)
-                ]
-            )
-        if width >= 4:
-            w3 = Scalar[weight_dtype](
-                weight.ptr[
-                    weight_c_base_offset + UInt32(3 * weight_width_stride)
-                ]
-            )
-
-        var x_base = UInt32(UInt32(b) * x_batch_stride + UInt32(c) * x_c_stride)
-        var out_base = UInt32(
-            UInt32(b) * out_batch_stride + UInt32(c) * out_c_stride
-        )
-
-        # Process all sequence positions
-        for l in range(seqlen):
-            var conv_sum: Scalar[output_dtype] = 0.0
-
-            for w in range(width):
-                var input_l: Int = l - (width_minus_1 - w)
-                if input_l >= 0:
-                    var x_offset: UInt32 = x_base + UInt32(
-                        UInt32(input_l) * x_l_stride
+            if l >= width_minus_1:
+                for w in range(width):
+                    var input_val = x.load[width=simd_width](
+                        (b, c, l - (width_minus_1 - w))
                     )
-                    var input_val: Scalar[x_dtype] = x.ptr[x_offset]
-                    # Select weight based on position
-                    var weight_val: Scalar[weight_dtype] = w0 if w == 0 else (
-                        w1 if w == 1 else (w2 if w == 2 else w3)
+                    var weight_val = Scalar[x_dtype](
+                        weight.load[width=1]((c, w))
                     )
-                    conv_sum = conv_sum + Scalar[output_dtype](
-                        input_val * Scalar[x_dtype](weight_val)
-                    )
-
-            var out_offset: UInt32 = out_base + UInt32(UInt32(l) * out_l_stride)
-            var out_val: Scalar[output_dtype] = conv_sum
+                    conv_sum += (input_val * weight_val).cast[output_dtype]()
+            else:
+                # The first window reaches before the sequence start, so
+                # those taps are zero per lane.
+                comptime for i in range(simd_width):
+                    var lane_sum: Scalar[output_dtype] = Scalar[output_dtype](0)
+                    for w in range(width):
+                        var input_l: Int = l + i - (width_minus_1 - w)
+                        if input_l >= 0:
+                            var input_val = x.load[width=1]((b, c, input_l))
+                            var weight_val = Scalar[x_dtype](
+                                weight.load[width=1]((c, w))
+                            )
+                            lane_sum += Scalar[output_dtype](
+                                input_val * weight_val
+                            )
+                    conv_sum[i] = lane_sum
             if silu_activation:
-                comptime if output_dtype.is_floating_point():
-                    out_val = silu(out_val)
-                else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
-                        output_dtype
-                    ]()
-            output.ptr[out_offset] = out_val
+                conv_sum = _silu_cast(conv_sum)
+            output.store((b, c, l), conv_sum)
 
-    sync_parallelize[process_bc](total_bc)
+        vectorize[simd_width_of[output_dtype]()](seqlen, conv_chunk)
+
+    sync_parallelize(process_bc, total_bc, ctx)
+
+
+@inline(.always)
+def _load_channels[
+    dtype: DType, //, width: Int
+](t: TileTensor[dtype, ...], c: Int) -> SIMD[dtype, width]:
+    """Loads `t[c:c + width]`, honoring a non-unit stride of the 1-D `t`."""
+    var vals = SIMD[dtype, width]()
+    comptime for i in range(width):
+        vals[i] = t.load[width=1]((c + i,))
+    return vals
+
+
+@inline(.always)
+def _load_weight_taps[
+    dtype: DType, //, width: Int
+](t: TileTensor[dtype, ...], c: Int, w: Int) -> SIMD[dtype, width]:
+    """Loads tap `w` of channels `c:c + width` from a (C, W) weight."""
+    var vals = SIMD[dtype, width]()
+    comptime for i in range(width):
+        vals[i] = t.load[width=1]((c + i, w))
+    return vals
+
+
+@inline(.always)
+def _apply_silu[
+    dtype: DType, width: Int
+](v: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Applies SiLU, computing in float32 for non-floating-point dtypes."""
+    comptime if dtype.is_floating_point():
+        return silu(v)
+    else:
+        return silu(v.cast[.float32]()).cast[dtype]()
 
 
 def causal_conv1d_channel_last_fwd_cpu[
@@ -364,69 +350,60 @@ def causal_conv1d_channel_last_fwd_cpu[
     dim: Int,
     seqlen: Int,
     width: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (B, L, C)
-    weight: TileTensor[weight_dtype, ...],  # Shape (C, W)
+    x: TileTensor[mut=False, x_dtype, ...],  # Shape (B, L, C)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, L, C)
-    bias: TileTensor[bias_dtype, ...],  # Shape (C,), stride = 1
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
+    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (C,)
     silu_activation: Bool,
 ):
     """
     Optimized CPU implementation of causal conv1d for channel-last layout with bias.
 
-    Structured for potential SIMD optimizations. Currently similar to naive but
-    organized for future vectorization improvements.
+    Vectorizes across channels, which are contiguous in memory.
     """
+    debug_assert(
+        x.dynamic_stride(2) == 1 and output.dynamic_stride(2) == 1,
+        "channel-last kernels require unit channel stride",
+    )
     var width_minus_1: Int = width - 1
 
     for b in range(batch):
         for l in range(seqlen):
-            for c in range(dim):
-                var conv_sum: Scalar[output_dtype] = Scalar[output_dtype](
-                    bias.ptr[c]
-                )
 
+            def conv_chunk[
+                simd_width: Int
+            ](c: Int) {
+                imm x,
+                imm weight,
+                imm bias,
+                imm output,
+                b,
+                l,
+                width,
+                width_minus_1,
+                silu_activation,
+                mut,
+            }:
+                var conv_sum = _load_channels[simd_width](bias, c).cast[
+                    output_dtype
+                ]()
                 for w in range(width):
                     var input_l: Int = l - (width_minus_1 - w)
                     if input_l >= 0:
-                        var x_offset: UInt32 = (
-                            UInt32(b) * x_batch_stride
-                            + UInt32(input_l) * x_l_stride
-                            + UInt32(c) * x_c_stride
+                        var input_val = x.load[width=simd_width](
+                            (b, input_l, c)
                         )
-                        var input_val: Scalar[x.dtype] = x.ptr[x_offset]
-                        var weight_offset: UInt32 = (
-                            UInt32(c) * weight_c_stride
-                            + UInt32(w) * weight_width_stride
+                        var weight_val = _load_weight_taps[simd_width](
+                            weight, c, w
                         )
-                        var weight_val: Scalar[weight.dtype] = weight.ptr[
-                            weight_offset
-                        ]
-                        conv_sum = conv_sum + Scalar[output_dtype](
-                            input_val * Scalar[x.dtype](weight_val)
-                        )
-
-                var out_offset: UInt32 = (
-                    UInt32(b) * out_batch_stride
-                    + UInt32(l) * out_l_stride
-                    + UInt32(c) * out_c_stride
-                )
-                var out_val: Scalar[output_dtype] = conv_sum
+                        conv_sum += (
+                            input_val * weight_val.cast[x_dtype]()
+                        ).cast[output_dtype]()
                 if silu_activation:
-                    comptime if output_dtype.is_floating_point():
-                        out_val = silu(out_val)
-                    else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
-                            output_dtype
-                        ]()
-                output.ptr[out_offset] = out_val
+                    conv_sum = _apply_silu(conv_sum)
+                output.store((b, l, c), conv_sum)
+
+            vectorize[simd_width_of[output_dtype]()](dim, conv_chunk)
 
 
 def causal_conv1d_channel_last_fwd_cpu_no_bias[
@@ -438,66 +415,53 @@ def causal_conv1d_channel_last_fwd_cpu_no_bias[
     dim: Int,
     seqlen: Int,
     width: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (B, L, C)
-    weight: TileTensor[weight_dtype, ...],  # Shape (C, W)
+    x: TileTensor[mut=False, x_dtype, ...],  # Shape (B, L, C)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, L, C)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
     silu_activation: Bool,
 ):
     """
     Optimized CPU implementation of causal conv1d for channel-last layout without bias.
 
-    Structured for potential SIMD optimizations. Currently similar to naive but
-    organized for future vectorization improvements.
+    Vectorizes across channels, which are contiguous in memory.
     """
+    debug_assert(
+        x.dynamic_stride(2) == 1 and output.dynamic_stride(2) == 1,
+        "channel-last kernels require unit channel stride",
+    )
     var width_minus_1: Int = width - 1
 
     for b in range(batch):
         for l in range(seqlen):
-            for c in range(dim):
-                var conv_sum: Scalar[output_dtype] = 0.0
 
+            def conv_chunk[
+                simd_width: Int
+            ](c: Int) {
+                imm x,
+                imm weight,
+                imm output,
+                b,
+                l,
+                width,
+                width_minus_1,
+                silu_activation,
+                mut,
+            }:
+                var conv_sum = SIMD[output_dtype, simd_width](0)
                 for w in range(width):
                     var input_l: Int = l - (width_minus_1 - w)
-                    if input_l >= 0:
-                        var x_offset: UInt32 = (
-                            UInt32(b) * x_batch_stride
-                            + UInt32(input_l) * x_l_stride
-                            + UInt32(c) * x_c_stride
-                        )
-                        var input_val: Scalar[x.dtype] = x.ptr[x_offset]
-                        var weight_offset: UInt32 = (
-                            UInt32(c) * weight_c_stride
-                            + UInt32(w) * weight_width_stride
-                        )
-                        var weight_val: Scalar[weight.dtype] = weight.ptr[
-                            weight_offset
-                        ]
-                        conv_sum = conv_sum + Scalar[output_dtype](
-                            input_val * Scalar[x.dtype](weight_val)
-                        )
-
-                var out_offset: UInt32 = (
-                    UInt32(b) * out_batch_stride
-                    + UInt32(l) * out_l_stride
-                    + UInt32(c) * out_c_stride
-                )
-                var out_val: Scalar[output_dtype] = conv_sum
+                    if input_l < 0:
+                        continue
+                    var input_val = x.load[width=simd_width]((b, input_l, c))
+                    var weight_val = _load_weight_taps[simd_width](weight, c, w)
+                    conv_sum += (input_val * weight_val.cast[x_dtype]()).cast[
+                        output_dtype
+                    ]()
                 if silu_activation:
-                    comptime if output_dtype.is_floating_point():
-                        out_val = silu(out_val)
-                    else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
-                            output_dtype
-                        ]()
-                output.ptr[out_offset] = out_val
+                    conv_sum = _apply_silu(conv_sum)
+                output.store((b, l, c), conv_sum)
+
+            vectorize[simd_width_of[output_dtype]()](dim, conv_chunk)
 
 
 def causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
@@ -511,87 +475,63 @@ def causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
     dim: Int,
     seqlen: Int,
     width: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (B, L, C)
-    weight: TileTensor[weight_dtype, ...],  # Shape (C, W)
+    x: TileTensor[mut=False, x_dtype, ...],  # Shape (B, L, C)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, L, C)
-    bias: TileTensor[bias_dtype, ...],  # Shape (C,)
-    seq_idx: TileTensor[seq_idx_dtype, ...],  # Shape (B, L)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
-    seq_idx_batch_stride: UInt32,
-    seq_idx_l_stride: UInt32,
+    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (C,)
+    seq_idx: TileTensor[mut=False, seq_idx_dtype, ...],  # Shape (B, L)
     silu_activation: Bool,
 ):
     """Optimized implementation of causal conv1d for channel last data layout with seq_idx.
     """
+    debug_assert(
+        x.dynamic_stride(2) == 1 and output.dynamic_stride(2) == 1,
+        "channel-last kernels require unit channel stride",
+    )
     var width_minus_1: Int = width - 1
 
     for b in range(batch):
         for l in range(seqlen):
-            var seq_idx_offset: UInt32 = (
-                UInt32(b) * seq_idx_batch_stride + UInt32(l) * seq_idx_l_stride
-            )
-            var cur_seq_idx_val = seq_idx.ptr[seq_idx_offset]
-            var cur_seq_idx: Int32 = Int32(cur_seq_idx_val)
+            var cur_seq_idx = Int32(seq_idx.load[width=1]((b, l)))
 
-            for c in range(dim):
-                var conv_sum: Scalar[output_dtype] = Scalar[output_dtype](
-                    bias.ptr[c]
-                )
-
+            def conv_chunk[
+                simd_width: Int
+            ](c: Int) {
+                imm x,
+                imm weight,
+                imm bias,
+                imm output,
+                imm seq_idx,
+                b,
+                l,
+                cur_seq_idx,
+                width,
+                width_minus_1,
+                silu_activation,
+                mut,
+            }:
+                var conv_sum = _load_channels[simd_width](bias, c).cast[
+                    output_dtype
+                ]()
                 for w in range(width):
                     var input_l: Int = l - (width_minus_1 - w)
-                    var valid_seq: Bool = True
-                    if input_l >= 0:
-                        var input_seq_idx_offset: UInt32 = (
-                            UInt32(b) * seq_idx_batch_stride
-                            + UInt32(input_l) * seq_idx_l_stride
-                        )
-                        var input_seq_idx_val = seq_idx.ptr[
-                            input_seq_idx_offset
-                        ]
-                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                        if input_seq_idx != cur_seq_idx:
-                            valid_seq = False
-
-                    if valid_seq and input_l >= 0:
-                        var x_offset: UInt32 = (
-                            UInt32(b) * x_batch_stride
-                            + UInt32(input_l) * x_l_stride
-                            + UInt32(c) * x_c_stride
-                        )
-                        var input_val: Scalar[x_dtype] = x.ptr[x_offset]
-                        var weight_offset: UInt32 = (
-                            UInt32(c) * weight_c_stride
-                            + UInt32(w) * weight_width_stride
-                        )
-                        var weight_val: Scalar[weight_dtype] = weight.ptr[
-                            weight_offset
-                        ]
-                        conv_sum = conv_sum + Scalar[output_dtype](
-                            input_val * Scalar[x_dtype](weight_val)
-                        )
-
-                var out_offset: UInt32 = (
-                    UInt32(b) * out_batch_stride
-                    + UInt32(l) * out_l_stride
-                    + UInt32(c) * out_c_stride
-                )
-                var out_val: Scalar[output_dtype] = conv_sum
+                    if input_l < 0:
+                        continue
+                    var input_seq_idx = Int32(
+                        seq_idx.load[width=1]((b, input_l))
+                    )
+                    if input_seq_idx != cur_seq_idx:
+                        continue
+                    var input_val = x.load[width=simd_width]((b, input_l, c))
+                    var weight_val = _load_weight_taps[simd_width](weight, c, w)
+                    conv_sum += (input_val * weight_val.cast[x_dtype]()).cast[
+                        output_dtype
+                    ]()
                 if silu_activation:
-                    comptime if output_dtype.is_floating_point():
-                        out_val = silu(out_val)
-                    else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
-                            output_dtype
-                        ]()
-                output.ptr[out_offset] = out_val
+                    conv_sum = _apply_silu(conv_sum)
+                output.store((b, l, c), conv_sum)
+
+            vectorize[simd_width_of[output_dtype]()](dim, conv_chunk)
 
 
 def causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
@@ -604,84 +544,59 @@ def causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
     dim: Int,
     seqlen: Int,
     width: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (B, L, C)
-    weight: TileTensor[weight_dtype, ...],  # Shape (C, W)
+    x: TileTensor[mut=False, x_dtype, ...],  # Shape (B, L, C)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, L, C)
-    seq_idx: TileTensor[seq_idx_dtype, ...],  # Shape (B, L)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
-    seq_idx_batch_stride: UInt32,
-    seq_idx_l_stride: UInt32,
+    seq_idx: TileTensor[mut=False, seq_idx_dtype, ...],  # Shape (B, L)
     silu_activation: Bool,
 ):
     """Optimized implementation of causal conv1d for channel last data layout without bias but with seq_idx.
     """
+    debug_assert(
+        x.dynamic_stride(2) == 1 and output.dynamic_stride(2) == 1,
+        "channel-last kernels require unit channel stride",
+    )
     var width_minus_1: Int = width - 1
 
     for b in range(batch):
         for l in range(seqlen):
-            var seq_idx_offset: UInt32 = (
-                UInt32(b) * seq_idx_batch_stride + UInt32(l) * seq_idx_l_stride
-            )
-            var cur_seq_idx_val = seq_idx.ptr[seq_idx_offset]
-            var cur_seq_idx: Int32 = Int32(cur_seq_idx_val)
+            var cur_seq_idx = Int32(seq_idx.load[width=1]((b, l)))
 
-            for c in range(dim):
-                var conv_sum: Scalar[output_dtype] = 0.0
-
+            def conv_chunk[
+                simd_width: Int
+            ](c: Int) {
+                imm x,
+                imm weight,
+                imm output,
+                imm seq_idx,
+                b,
+                l,
+                cur_seq_idx,
+                width,
+                width_minus_1,
+                silu_activation,
+                mut,
+            }:
+                var conv_sum = SIMD[output_dtype, simd_width](0)
                 for w in range(width):
                     var input_l: Int = l - (width_minus_1 - w)
-                    var valid_seq: Bool = True
-                    if input_l >= 0:
-                        var input_seq_idx_offset: UInt32 = (
-                            UInt32(b) * seq_idx_batch_stride
-                            + UInt32(input_l) * seq_idx_l_stride
-                        )
-                        var input_seq_idx_val = seq_idx.ptr[
-                            input_seq_idx_offset
-                        ]
-                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                        if input_seq_idx != cur_seq_idx:
-                            valid_seq = False
-
-                    if valid_seq and input_l >= 0:
-                        var x_offset: UInt32 = (
-                            UInt32(b) * x_batch_stride
-                            + UInt32(input_l) * x_l_stride
-                            + UInt32(c) * x_c_stride
-                        )
-                        var input_val: Scalar[x_dtype] = x.ptr[x_offset]
-                        var weight_offset: UInt32 = (
-                            UInt32(c) * weight_c_stride
-                            + UInt32(w) * weight_width_stride
-                        )
-                        var weight_val: Scalar[weight_dtype] = weight.ptr[
-                            weight_offset
-                        ]
-                        conv_sum = conv_sum + Scalar[output_dtype](
-                            input_val * Scalar[x_dtype](weight_val)
-                        )
-
-                var out_offset: UInt32 = (
-                    UInt32(b) * out_batch_stride
-                    + UInt32(l) * out_l_stride
-                    + UInt32(c) * out_c_stride
-                )
-                var out_val: Scalar[output_dtype] = conv_sum
+                    if input_l < 0:
+                        continue
+                    var input_seq_idx = Int32(
+                        seq_idx.load[width=1]((b, input_l))
+                    )
+                    if input_seq_idx != cur_seq_idx:
+                        continue
+                    var input_val = x.load[width=simd_width]((b, input_l, c))
+                    var weight_val = _load_weight_taps[simd_width](weight, c, w)
+                    conv_sum += (input_val * weight_val.cast[x_dtype]()).cast[
+                        output_dtype
+                    ]()
                 if silu_activation:
-                    comptime if output_dtype.is_floating_point():
-                        out_val = silu(out_val)
-                    else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
-                            output_dtype
-                        ]()
-                output.ptr[out_offset] = out_val
+                    conv_sum = _apply_silu(conv_sum)
+                output.store((b, l, c), conv_sum)
+
+            vectorize[simd_width_of[output_dtype]()](dim, conv_chunk)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -701,30 +616,27 @@ def causal_conv1d_channel_first_fwd_gpu[
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
     bias_LT: TensorLayout,
+    x_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    bias_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],  # Shape (B, C, L)
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    x: TileTensor[
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
+    ],  # Shape (B, C, L)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutExternalOrigin
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
-        output_dtype, output_LT, MutExternalOrigin
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, C, L)
     bias: TileTensor[
-        bias_dtype, bias_LT, MutExternalOrigin
-    ],  # Shape (C,), stride = 1
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
-    bias_stride: UInt32,
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
+    ],  # Shape (C,)
     silu_activation: Int8,
 ):
     """Optimized GPU implementation of causal conv1d for channel-first layout with bias.
@@ -739,6 +651,26 @@ def causal_conv1d_channel_first_fwd_gpu[
     Grid: (ceildiv(seqlen, kNThreads * kNElts), dim, batch)
     Block: kNThreads
 
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        kNThreads: Number of threads per block used to process the sequence
+            dimension.
+        kWidth: Compile-time convolution kernel width; must match the runtime
+            `width` argument.
+        kNElts: Number of sequence elements each thread processes, used for
+            SIMD vectorization and ILP.
+        bias_dtype: Element type of the bias tensor `bias`.
+        x_LT: TensorLayout of the input tensor `x`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+        bias_LT: TensorLayout of the bias tensor `bias`.
+        x_engine: Engine of the input tensor `x`.
+        weight_engine: Engine of the weight tensor `weight`.
+        output_engine: Engine of the output tensor `output`.
+        bias_engine: Engine of the bias tensor `bias`.
+
     Args:
         batch: Batch size.
         dim: Number of channels.
@@ -748,131 +680,89 @@ def causal_conv1d_channel_first_fwd_gpu[
         weight: Weight tensor of shape (C, W).
         output: Output tensor of shape (B, C, L).
         bias: Bias tensor of shape (C,).
-        x_batch_stride: Stride for the batch dimension of the input tensor.
-        x_c_stride: Stride for the channel dimension of the input tensor.
-        x_l_stride: Stride for the sequence length dimension of the input tensor.
-        weight_c_stride: Stride for the channel dimension of the weight tensor.
-        weight_width_stride: Stride for the width dimension of the weight tensor.
-        out_batch_stride: Stride for the batch dimension of the output tensor.
-        out_c_stride: Stride for the channel dimension of the output tensor.
-        out_l_stride: Stride for the sequence length dimension of the output tensor.
-        bias_stride: Stride for the channel dimension of the bias tensor.
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
     var channel_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = Int(x.dim[0]())
     var nChannels: Int = Int(x.dim[1]())
     var nSeqLen: Int = Int(x.dim[2]())
 
-    if batch_id >= nBatches or channel_id >= nChannels or kWidth != width:
-        return
-
-    # Safety check for null pointers
-    if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
-    ):
+    if batch_id >= nBatches or channel_id >= nChannels or kWidth != _width:
         return
 
     # Safety check for bias dimension - if bias is empty or channel_id is out of bounds, use zero bias
     var bias_dim = Int(bias.dim[0]())
     var cur_bias: Scalar[x_dtype] = 0
     if bias_dim > 0 and channel_id < bias_dim:
-        var bias_offset = UInt32(channel_id) * bias_stride
-        cur_bias = Scalar[x_dtype](bias.ptr[bias_offset])
+        cur_bias = Scalar[x_dtype](bias.load[width=1]((channel_id,)))
 
     var out_vals: SIMD[output_dtype, kNElts] = 0
-    var prev_input_chunk: SIMD[x_dtype, kNElts]
-    var input_chunk: SIMD[x_dtype, kNElts]
-
-    # For width 3, we need to use scalars instead of SIMD (SIMD requires power-of-2 widths)
+    # For _width 3, we need to use scalars instead of SIMD (SIMD requires power-of-2 widths)
     # Declare variables for both cases - only one will be used based on kWidth
     var W_2: SIMD[x_dtype, 2] = 0
     var W_4: SIMD[x_dtype, 4] = 0
     var w0: Scalar[x_dtype] = 0
     var w1: Scalar[x_dtype] = 0
     var w2: Scalar[x_dtype] = 0
-    var w_single: Scalar[x_dtype] = 0  # For width 1
+    var w_single: Scalar[x_dtype] = 0  # For _width 1
 
-    var weight_c_base: UInt32 = UInt32(channel_id) * weight_c_stride
-    if kWidth == 1:
-        w_single = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(0) * weight_width_stride]
-        )
-    elif kWidth == 2:
-        var w0_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(0) * weight_width_stride]
-        )
-        var w1_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(1) * weight_width_stride]
-        )
-        W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
-    elif kWidth == 4:
-        var w0_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(0) * weight_width_stride]
-        )
-        var w1_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(1) * weight_width_stride]
-        )
-        var w2_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(2) * weight_width_stride]
-        )
-        var w3_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(3) * weight_width_stride]
-        )
-        W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
-    else:
-        w0 = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(0) * weight_width_stride]
-        )
-        w1 = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(1) * weight_width_stride]
-        )
-        w2 = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(2) * weight_width_stride]
-        )
+    comptime match kWidth:
+        case 1:
+            w_single = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+        case 2:
+            var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
+        case 4:
+            var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            var w2_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
+            var w3_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 3)))
+            W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
+        case _:
+            w0 = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            w1 = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            w2 = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
 
     if seq_start >= nSeqLen:
         return
-    var prev_chunk_col: Int = (seq_start - 1) // kNElts
-    prev_input_chunk = 0
-    if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
-        comptime for i in range(kNElts):
-            var prev_seq_idx: Int = prev_chunk_col * kNElts + i
-            if prev_seq_idx >= 0 and prev_seq_idx < nSeqLen:
-                var prev_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(prev_seq_idx) * x_l_stride
-                )
-                prev_input_chunk[i] = Scalar[x_dtype](x.ptr[prev_offset])
-
-    var current_chunk_col: Int = seq_start // kNElts
-    input_chunk = 0
-    if current_chunk_col >= 0 and current_chunk_col * kNElts < nSeqLen:
-        comptime for i in range(kNElts):
-            var curr_seq_idx: Int = current_chunk_col * kNElts + i
-            if curr_seq_idx < nSeqLen:
-                var curr_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(curr_seq_idx) * x_l_stride
-                )
-                input_chunk[i] = Scalar[x_dtype](x.ptr[curr_offset])
-
-    _ = prev_input_chunk.join(input_chunk)
     var silu_active = Bool(Int(silu_activation) != 0)
+
+    var input_taps: SIMD[x_dtype, 8] = 0
+    comptime if kWidth == 4 and kNElts == 4:
+        comptime for i in range(3):
+            var input_l = seq_start - 3 + i
+            if input_l >= 0:
+                input_taps[i] = Scalar[x_dtype](
+                    x.load[width=1]((batch_id, channel_id, input_l))
+                )
+        if x.dynamic_stride(2) == 1 and seq_start + 4 <= nSeqLen:
+            # A channel row or subview need not have full-vector alignment.
+            var current = x.load[
+                width=4, alignment=align_of[Scalar[x_dtype]]()
+            ]((batch_id, channel_id, seq_start))
+            comptime for i in range(4):
+                input_taps[3 + i] = current[i]
+        else:
+            comptime for i in range(4):
+                var input_l = seq_start + i
+                if input_l < nSeqLen:
+                    input_taps[3 + i] = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l))
+                    )
 
     comptime for i in range(kNElts):
         var seq_idx: Int = seq_start + i
@@ -883,73 +773,60 @@ def causal_conv1d_channel_first_fwd_gpu[
         # This avoids SIMD slice issues while maintaining correctness
         var conv_result: Scalar[x_dtype] = 0
 
-        comptime if kWidth == 1:
-            if seq_idx >= 0 and seq_idx < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(seq_idx) * x_l_stride
-                )
-                var x_val = Scalar[x_dtype](x.ptr[load_offset])
-                conv_result = w_single * x_val
-        elif kWidth == 2:
-            var input_window: SIMD[x_dtype, 2] = 0
-
-            comptime for w in range(2):
-                var input_l: Int = seq_idx - (1 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    var load_offset: UInt32 = (
-                        UInt32(batch_id) * x_batch_stride
-                        + UInt32(channel_id) * x_c_stride
-                        + UInt32(input_l) * x_l_stride
+        comptime match kWidth:
+            case 1:
+                if seq_idx >= 0 and seq_idx < nSeqLen:
+                    var x_val = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, seq_idx))
                     )
-                    input_window[w] = Scalar[x_dtype](x.ptr[load_offset])
-            var tmp: SIMD[x_dtype, 2] = W_2 * input_window
-            conv_result = tmp.reduce_add[1]()
-        elif kWidth == 4:
-            var input_window: SIMD[x_dtype, 4] = 0
+                    conv_result = w_single * x_val
+            case 2:
+                var input_window: SIMD[x_dtype, 2] = 0
 
-            comptime for w in range(4):
-                var input_l: Int = seq_idx - (3 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    var load_offset: UInt32 = (
-                        UInt32(batch_id) * x_batch_stride
-                        + UInt32(channel_id) * x_c_stride
-                        + UInt32(input_l) * x_l_stride
+                comptime for w in range(2):
+                    var input_l: Int = seq_idx - (1 - w)
+                    if input_l >= 0 and input_l < nSeqLen:
+                        input_window[w] = Scalar[x_dtype](
+                            x.load[width=1]((batch_id, channel_id, input_l))
+                        )
+                var tmp: SIMD[x_dtype, 2] = W_2 * input_window
+                conv_result = tmp.reduce_add[1]()
+            case 4:
+                var input_window: SIMD[x_dtype, 4] = 0
+
+                comptime if kNElts == 4:
+                    comptime for w in range(4):
+                        input_window[w] = input_taps[i + w]
+                else:
+                    comptime for w in range(4):
+                        var input_l: Int = seq_idx - (3 - w)
+                        if input_l >= 0 and input_l < nSeqLen:
+                            input_window[w] = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, channel_id, input_l))
+                            )
+                var tmp: SIMD[x_dtype, 4] = W_4 * input_window
+                conv_result = tmp.reduce_add[1]()
+            case _:
+                # kWidth == 3 case
+                var x0: Scalar[x_dtype] = 0
+                var x1: Scalar[x_dtype] = 0
+                var x2: Scalar[x_dtype] = 0
+                var input_l0: Int = seq_idx - 2
+                var input_l1: Int = seq_idx - 1
+                var input_l2: Int = seq_idx
+                if input_l0 >= 0 and input_l0 < nSeqLen:
+                    x0 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l0))
                     )
-                    input_window[w] = Scalar[x_dtype](x.ptr[load_offset])
-            var tmp: SIMD[x_dtype, 4] = W_4 * input_window
-            conv_result = tmp.reduce_add[1]()
-        else:
-            # kWidth == 3 case
-            var x0: Scalar[x_dtype] = 0
-            var x1: Scalar[x_dtype] = 0
-            var x2: Scalar[x_dtype] = 0
-            var input_l0: Int = seq_idx - 2
-            var input_l1: Int = seq_idx - 1
-            var input_l2: Int = seq_idx
-            if input_l0 >= 0 and input_l0 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l0) * x_l_stride
-                )
-                x0 = Scalar[x_dtype](x.ptr[load_offset])
-            if input_l1 >= 0 and input_l1 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l1) * x_l_stride
-                )
-                x1 = Scalar[x_dtype](x.ptr[load_offset])
-            if input_l2 >= 0 and input_l2 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l2) * x_l_stride
-                )
-                x2 = Scalar[x_dtype](x.ptr[load_offset])
-            conv_result = w0 * x0 + w1 * x1 + w2 * x2
+                if input_l1 >= 0 and input_l1 < nSeqLen:
+                    x1 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l1))
+                    )
+                if input_l2 >= 0 and input_l2 < nSeqLen:
+                    x2 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l2))
+                    )
+                conv_result = w0 * x0 + w1 * x1 + w2 * x2
 
         var out_val: Scalar[output_dtype] = Scalar[output_dtype](
             cur_bias
@@ -958,21 +835,14 @@ def causal_conv1d_channel_first_fwd_gpu[
             comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
         out_vals[i] = out_val
 
     comptime for i in range(kNElts):
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
             break
-        var out_offset: UInt32 = (
-            UInt32(batch_id) * out_batch_stride
-            + UInt32(channel_id) * out_c_stride
-            + UInt32(seq_idx) * out_l_stride
-        )
-        output.ptr[out_offset] = Scalar[output_dtype](out_vals[i])
+        output.store((batch_id, channel_id, seq_idx), out_vals[i])
 
 
 # Optimized GPU version without bias
@@ -986,26 +856,23 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
     x_LT: TensorLayout,
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
+    x_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],  # Shape (B, C, L)
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    x: TileTensor[
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
+    ],  # Shape (B, C, L)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutExternalOrigin
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
-        output_dtype, output_LT, MutExternalOrigin
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, C, L)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
     silu_activation: Int8,
 ):
     """
@@ -1017,13 +884,47 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
     3. Vectorized weight loading and computation
     4. Optimized activation function with SIMD operations
     5. Better thread utilization and memory bandwidth usage
+
+    Grid: (ceildiv(seqlen, kNThreads * kNElts), dim, batch)
+    Block: kNThreads
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        kNThreads: Number of threads per block used to process the sequence
+            dimension.
+        kWidth: Compile-time convolution kernel width; must match the runtime
+            `width` argument.
+        kNElts: Number of sequence elements each thread processes, used for
+            SIMD vectorization and ILP.
+        x_LT: TensorLayout of the input tensor `x`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+        x_engine: Engine of the input tensor `x`.
+        weight_engine: Engine of the weight tensor `weight`.
+        output_engine: Engine of the output tensor `output`.
+
+    Args:
+        batch: Batch size.
+        dim: Number of channels.
+        seqlen: Sequence length.
+        width: Kernel width (must match kWidth compile-time parameter).
+        x: Input tensor of shape (B, C, L).
+        weight: Weight tensor of shape (C, W).
+        output: Output tensor of shape (B, C, L).
+        silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
     var channel_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
     var nBatches: Int = Int(x.dim[0]())
     var nChannels: Int = Int(x.dim[1]())
@@ -1033,9 +934,6 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
         return
 
     var out_vals: SIMD[x_dtype, kNElts] = 0
-    var prev_input_chunk: SIMD[x_dtype, kNElts]
-    var input_chunk: SIMD[x_dtype, kNElts]
-
     var W_2: SIMD[x_dtype, 2] = 0
     var W_4: SIMD[x_dtype, 4] = 0
     var w0: Scalar[x_dtype] = 0
@@ -1043,76 +941,29 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
     var w2: Scalar[x_dtype] = 0
     var w_single: Scalar[x_dtype] = 0
 
-    var weight_c_base: UInt32 = UInt32(channel_id) * weight_c_stride
-    if kWidth == 1:
-        w_single = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(0) * weight_width_stride]
-        )
-    elif kWidth == 2:
-        var w0_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(0) * weight_width_stride]
-        )
-        var w1_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(1) * weight_width_stride]
-        )
-        W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
-    elif kWidth == 4:
-        var w0_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(0) * weight_width_stride]
-        )
-        var w1_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(1) * weight_width_stride]
-        )
-        var w2_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(2) * weight_width_stride]
-        )
-        var w3_val = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(3) * weight_width_stride]
-        )
-        W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
-    else:
-        w0 = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(0) * weight_width_stride]
-        )
-        w1 = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(1) * weight_width_stride]
-        )
-        w2 = Scalar[x_dtype](
-            weight.ptr[weight_c_base + UInt32(2) * weight_width_stride]
-        )
+    comptime match kWidth:
+        case 1:
+            w_single = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+        case 2:
+            var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
+        case 4:
+            var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            var w2_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
+            var w3_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 3)))
+            W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
+        case _:
+            w0 = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            w1 = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            w2 = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
 
     if seq_start >= nSeqLen:
         return
-    var prev_chunk_col: Int = (seq_start - 1) // kNElts
-    prev_input_chunk = 0
-    if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
-        comptime for i in range(kNElts):
-            var prev_seq_idx: Int = prev_chunk_col * kNElts + i
-            if prev_seq_idx >= 0 and prev_seq_idx < nSeqLen:
-                var prev_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(prev_seq_idx) * x_l_stride
-                )
-                prev_input_chunk[i] = Scalar[x_dtype](x.ptr[prev_offset])
-
-    # Load current chunk
-    var current_chunk_col: Int = seq_start // kNElts
-    input_chunk = 0
-    if current_chunk_col >= 0 and current_chunk_col * kNElts < nSeqLen:
-        comptime for i in range(kNElts):
-            var curr_seq_idx: Int = current_chunk_col * kNElts + i
-            if curr_seq_idx < nSeqLen:
-                var curr_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(curr_seq_idx) * x_l_stride
-                )
-                input_chunk[i] = Scalar[x_dtype](x.ptr[curr_offset])
-
     var silu_active = Bool(Int(silu_activation) != 0)
 
     comptime for i in range(kNElts):
@@ -1123,92 +974,72 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
         # Build input window by loading directly from memory
         var conv_result: Scalar[x_dtype] = 0
 
-        comptime if kWidth == 1:
-            if seq_idx >= 0 and seq_idx < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(seq_idx) * x_l_stride
-                )
-                var x_val = Scalar[x_dtype](x.ptr[load_offset])
-                conv_result = w_single * x_val
-        elif kWidth == 2:
-            var input_window: SIMD[x_dtype, 2] = 0
-
-            comptime for w in range(2):
-                var input_l: Int = seq_idx - (1 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    var load_offset: UInt32 = (
-                        UInt32(batch_id) * x_batch_stride
-                        + UInt32(channel_id) * x_c_stride
-                        + UInt32(input_l) * x_l_stride
+        comptime match kWidth:
+            case 1:
+                if seq_idx >= 0 and seq_idx < nSeqLen:
+                    var x_val = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, seq_idx))
                     )
-                    input_window[w] = Scalar[x_dtype](x.ptr[load_offset])
-            var tmp: SIMD[x_dtype, 2] = W_2 * input_window
-            conv_result = tmp.reduce_add[1]()
-        elif kWidth == 4:
-            var input_window: SIMD[x_dtype, 4] = 0
+                    conv_result = w_single * x_val
+            case 2:
+                var input_window: SIMD[x_dtype, 2] = 0
 
-            comptime for w in range(4):
-                var input_l: Int = seq_idx - (3 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    var load_offset: UInt32 = (
-                        UInt32(batch_id) * x_batch_stride
-                        + UInt32(channel_id) * x_c_stride
-                        + UInt32(input_l) * x_l_stride
+                comptime for w in range(2):
+                    var input_l: Int = seq_idx - (1 - w)
+                    if input_l >= 0 and input_l < nSeqLen:
+                        input_window[w] = Scalar[x_dtype](
+                            x.load[width=1]((batch_id, channel_id, input_l))
+                        )
+                var tmp: SIMD[x_dtype, 2] = W_2 * input_window
+                conv_result = tmp.reduce_add[1]()
+            case 4:
+                var input_window: SIMD[x_dtype, 4] = 0
+
+                comptime for w in range(4):
+                    var input_l: Int = seq_idx - (3 - w)
+                    if input_l >= 0 and input_l < nSeqLen:
+                        input_window[w] = Scalar[x_dtype](
+                            x.load[width=1]((batch_id, channel_id, input_l))
+                        )
+                var tmp: SIMD[x_dtype, 4] = W_4 * input_window
+                conv_result = tmp.reduce_add[1]()
+            case _:
+                # kWidth == 3 case
+                var x0: Scalar[x_dtype] = 0
+                var x1: Scalar[x_dtype] = 0
+                var x2: Scalar[x_dtype] = 0
+                var input_l0: Int = seq_idx - 2
+                var input_l1: Int = seq_idx - 1
+                var input_l2: Int = seq_idx
+                if input_l0 >= 0 and input_l0 < nSeqLen:
+                    x0 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l0))
                     )
-                    input_window[w] = Scalar[x_dtype](x.ptr[load_offset])
-            var tmp: SIMD[x_dtype, 4] = W_4 * input_window
-            conv_result = tmp.reduce_add[1]()
-        else:
-            # kWidth == 3 case
-            var x0: Scalar[x_dtype] = 0
-            var x1: Scalar[x_dtype] = 0
-            var x2: Scalar[x_dtype] = 0
-            var input_l0: Int = seq_idx - 2
-            var input_l1: Int = seq_idx - 1
-            var input_l2: Int = seq_idx
-            if input_l0 >= 0 and input_l0 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l0) * x_l_stride
-                )
-                x0 = Scalar[x_dtype](x.ptr[load_offset])
-            if input_l1 >= 0 and input_l1 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l1) * x_l_stride
-                )
-                x1 = Scalar[x_dtype](x.ptr[load_offset])
-            if input_l2 >= 0 and input_l2 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l2) * x_l_stride
-                )
-                x2 = Scalar[x_dtype](x.ptr[load_offset])
-            conv_result = w0 * x0 + w1 * x1 + w2 * x2
+                if input_l1 >= 0 and input_l1 < nSeqLen:
+                    x1 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l1))
+                    )
+                if input_l2 >= 0 and input_l2 < nSeqLen:
+                    x2 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l2))
+                    )
+                conv_result = w0 * x0 + w1 * x1 + w2 * x2
 
         var out_val: Scalar[x_dtype] = conv_result
         if silu_active:
             comptime if x_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[x_dtype]()
+                out_val = silu(out_val.cast[.float32]()).cast[x_dtype]()
         out_vals[i] = out_val
 
     comptime for i in range(kNElts):
         var seq_idx: Int = seq_start + i
         if seq_idx >= seq_end:
             break
-        var out_offset: UInt32 = (
-            UInt32(batch_id) * out_batch_stride
-            + UInt32(channel_id) * out_c_stride
-            + UInt32(seq_idx) * out_l_stride
+        output.store(
+            (batch_id, channel_id, seq_idx), Scalar[output_dtype](out_vals[i])
         )
-        output.ptr[out_offset] = Scalar[output_dtype](out_vals[i])
 
 
 def causal_conv1d_channel_last_fwd_gpu[
@@ -1223,29 +1054,27 @@ def causal_conv1d_channel_last_fwd_gpu[
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
     bias_LT: TensorLayout,
+    x_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    bias_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],  # Shape (B, L, C)
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    x: TileTensor[
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
+    ],  # Shape (B, L, C)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutExternalOrigin
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
-        output_dtype, output_LT, MutExternalOrigin
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, L, C)
     bias: TileTensor[
-        bias_dtype, bias_LT, MutExternalOrigin
-    ],  # Shape (C,), stride = 1
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
+    ],  # Shape (C,)
     silu_activation: Int8,
 ):
     """
@@ -1262,22 +1091,23 @@ def causal_conv1d_channel_last_fwd_gpu[
     For channel-last layout (B, L, C), we reshape to (B*L, C) to enable vectorized
     operations along channels, and process multiple sequence positions per thread.
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
-
-    # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
-    # For channel-last (B, L, C), we load SIMD vectors along the channel dimension
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
@@ -1288,15 +1118,6 @@ def causal_conv1d_channel_last_fwd_gpu[
     var channel_start: Int = channel_chunk_id * kNElts
 
     if channel_start >= nChannels:
-        return
-
-    # Safety check for null pointers
-    if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
-    ):
         return
 
     # Safety check for bias tensor dimensions
@@ -1314,66 +1135,12 @@ def causal_conv1d_channel_last_fwd_gpu[
             break
 
         var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
-            bias.ptr[c_idx]
+            bias.load[width=1]((c_idx,))
         )
-        var W = (weight.ptr + c_idx * Int(weight_c_stride)).load[width=kWidth]()
-        var prev_chunk_col: Int = (seq_start - 1) // kNElts
-        var prev_input_chunk: SIMD[x_dtype, kNElts] = 0
-        if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
-            var prev_row_2d: Int = batch_id * nSeqLen + prev_chunk_col * kNElts
-            if prev_row_2d >= 0 and prev_row_2d < nBatches * nSeqLen:
-                var prev_batch, prev_seq = divmod(prev_row_2d, nSeqLen)
-                if (
-                    prev_batch >= 0
-                    and prev_batch < nBatches
-                    and prev_seq >= 0
-                    and prev_seq < nSeqLen
-                ):
-                    # Load SIMD vector manually using pointer arithmetic
-                    prev_input_chunk = 0
+        var W = SIMD[weight_dtype, kWidth](0)
 
-                    comptime for i in range(kNElts):
-                        var c_idx_load: Int = channel_start + i
-                        if c_idx_load < nChannels:
-                            var prev_offset: UInt32 = (
-                                UInt32(prev_batch) * x_batch_stride
-                                + UInt32(prev_seq) * x_l_stride
-                                + UInt32(c_idx_load) * x_c_stride
-                            )
-                            prev_input_chunk[i] = Scalar[x_dtype](
-                                x.ptr[prev_offset]
-                            )
-
-        var current_chunk_col: Int = seq_start // kNElts
-        var input_chunk: SIMD[x_dtype, kNElts] = 0
-        if current_chunk_col >= 0 and current_chunk_col * kNElts < nSeqLen:
-            var current_row_2d: Int = (
-                batch_id * nSeqLen + current_chunk_col * kNElts
-            )
-            if current_row_2d >= 0 and current_row_2d < nBatches * nSeqLen:
-                var current_batch, current_seq = divmod(current_row_2d, nSeqLen)
-                if (
-                    current_batch >= 0
-                    and current_batch < nBatches
-                    and current_seq >= 0
-                    and current_seq < nSeqLen
-                ):
-                    # Load SIMD vector manually using pointer arithmetic
-                    input_chunk = 0
-
-                    comptime for i in range(kNElts):
-                        var c_idx_load: Int = channel_start + i
-                        if c_idx_load < nChannels:
-                            var current_offset: UInt32 = (
-                                UInt32(current_batch) * x_batch_stride
-                                + UInt32(current_seq) * x_l_stride
-                                + UInt32(c_idx_load) * x_c_stride
-                            )
-                            input_chunk[i] = Scalar[x_dtype](
-                                x.ptr[current_offset]
-                            )
-
-        _ = prev_input_chunk.join(input_chunk)
+        comptime for tap in range(kWidth):
+            W[tap] = weight.load[width=1]((c_idx, tap))
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
@@ -1385,20 +1152,16 @@ def causal_conv1d_channel_last_fwd_gpu[
             var conv_sum: Scalar[output_dtype] = cur_bias
 
             # Build input window by loading directly from memory
-            # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
             var input_window: SIMD[x_dtype, kWidth] = 0
 
             comptime for w in range(kWidth):
                 var input_l: Int = seq_idx - (kWidth - 1 - w)
                 if input_l >= 0 and input_l < nSeqLen:
-                    var load_offset: UInt32 = (
-                        UInt32(batch_id) * x_batch_stride
-                        + UInt32(input_l) * x_l_stride
-                        + UInt32(c_idx) * x_c_stride
+                    input_window[w] = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, input_l, c_idx))
                     )
-                    input_window[w] = Scalar[x_dtype](x.ptr[load_offset])
 
-            var tmp: SIMD[output_dtype, kWidth] = rebind[type_of(tmp)](
+            var tmp = rebind[SIMD[output_dtype, kWidth]](
                 input_window * rebind[type_of(input_window)](W)
             )
             conv_sum = conv_sum + tmp.reduce_add[1]()
@@ -1408,7 +1171,7 @@ def causal_conv1d_channel_last_fwd_gpu[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -1417,12 +1180,7 @@ def causal_conv1d_channel_last_fwd_gpu[
             var seq_idx: Int = seq_start + i
             if seq_idx >= seq_end:
                 break
-            var out_offset: UInt32 = (
-                UInt32(batch_id) * out_batch_stride
-                + UInt32(seq_idx) * out_l_stride
-                + UInt32(c_idx) * out_c_stride
-            )
-            output.ptr[out_offset] = out_vals_channel[i]
+            output.store((batch_id, seq_idx, c_idx), out_vals_channel[i])
 
 
 # Optimized GPU version without bias for channel last
@@ -1436,26 +1194,23 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
     x_LT: TensorLayout,
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
+    x_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],  # Shape (B, L, C)
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    x: TileTensor[
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
+    ],  # Shape (B, L, C)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutExternalOrigin
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
-        output_dtype, output_LT, MutExternalOrigin
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, L, C)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
     silu_activation: Int8,
 ):
     """
@@ -1468,22 +1223,23 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
     4. Optimized activation function with SIMD operations
     5. Better thread utilization and memory bandwidth usage
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
-
-    # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
-    # For channel-last (B, L, C), we load SIMD vectors along the channel dimension
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
@@ -1501,64 +1257,10 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
         if c_idx >= nChannels:
             break
 
-        var W = (weight.ptr + c_idx * Int(weight_c_stride)).load[width=kWidth]()
-        var prev_chunk_col: Int = (seq_start - 1) // kNElts
-        var prev_input_chunk: SIMD[x_dtype, kNElts] = 0
-        if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
-            var prev_row_2d: Int = batch_id * nSeqLen + prev_chunk_col * kNElts
-            if prev_row_2d >= 0 and prev_row_2d < nBatches * nSeqLen:
-                var prev_batch, prev_seq = divmod(prev_row_2d, nSeqLen)
-                if (
-                    prev_batch >= 0
-                    and prev_batch < nBatches
-                    and prev_seq >= 0
-                    and prev_seq < nSeqLen
-                ):
-                    # Load SIMD vector manually using pointer arithmetic
-                    prev_input_chunk = 0
+        var W = SIMD[weight_dtype, kWidth](0)
 
-                    comptime for i in range(kNElts):
-                        var c_idx_load: Int = channel_start + i
-                        if c_idx_load < nChannels:
-                            var prev_offset: UInt32 = (
-                                UInt32(prev_batch) * x_batch_stride
-                                + UInt32(prev_seq) * x_l_stride
-                                + UInt32(c_idx_load) * x_c_stride
-                            )
-                            prev_input_chunk[i] = Scalar[x_dtype](
-                                x.ptr[prev_offset]
-                            )
-
-        var current_chunk_col: Int = seq_start // kNElts
-        var input_chunk: SIMD[x_dtype, kNElts] = 0
-        if current_chunk_col >= 0 and current_chunk_col * kNElts < nSeqLen:
-            var current_row_2d: Int = (
-                batch_id * nSeqLen + current_chunk_col * kNElts
-            )
-            if current_row_2d >= 0 and current_row_2d < nBatches * nSeqLen:
-                var current_batch, current_seq = divmod(current_row_2d, nSeqLen)
-                if (
-                    current_batch >= 0
-                    and current_batch < nBatches
-                    and current_seq >= 0
-                    and current_seq < nSeqLen
-                ):
-                    # Load SIMD vector manually using pointer arithmetic
-                    input_chunk = 0
-
-                    comptime for i in range(kNElts):
-                        var c_idx_load: Int = channel_start + i
-                        if c_idx_load < nChannels:
-                            var current_offset: UInt32 = (
-                                UInt32(current_batch) * x_batch_stride
-                                + UInt32(current_seq) * x_l_stride
-                                + UInt32(c_idx_load) * x_c_stride
-                            )
-                            input_chunk[i] = Scalar[x_dtype](
-                                x.ptr[current_offset]
-                            )
-
-        _ = prev_input_chunk.join(input_chunk)
+        comptime for tap in range(kWidth):
+            W[tap] = weight.load[width=1]((c_idx, tap))
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
@@ -1570,20 +1272,16 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
             var conv_sum: Scalar[output_dtype] = 0.0
 
             # Build input window by loading directly from memory
-            # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
             var input_window: SIMD[x_dtype, kWidth] = 0
 
             comptime for w in range(kWidth):
                 var input_l: Int = seq_idx - (kWidth - 1 - w)
                 if input_l >= 0 and input_l < nSeqLen:
-                    var load_offset: UInt32 = (
-                        UInt32(batch_id) * x_batch_stride
-                        + UInt32(input_l) * x_l_stride
-                        + UInt32(c_idx) * x_c_stride
+                    input_window[w] = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, input_l, c_idx))
                     )
-                    input_window[w] = Scalar[x_dtype](x.ptr[load_offset])
 
-            var tmp: SIMD[output_dtype, kWidth] = rebind[type_of(tmp)](
+            var tmp = rebind[SIMD[output_dtype, kWidth]](
                 input_window * rebind[type_of(input_window)](W)
             )
             conv_sum = conv_sum + tmp.reduce_add[1]()
@@ -1593,7 +1291,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -1602,12 +1300,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
             var seq_idx: Int = seq_start + i
             if seq_idx >= seq_end:
                 break
-            var out_offset: UInt32 = (
-                UInt32(batch_id) * out_batch_stride
-                + UInt32(seq_idx) * out_l_stride
-                + UInt32(c_idx) * out_c_stride
-            )
-            output.ptr[out_offset] = out_vals_channel[i]
+            output.store((batch_id, seq_idx, c_idx), out_vals_channel[i])
 
 
 # ============================================================================
@@ -1630,34 +1323,31 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     output_LT: TensorLayout,
     bias_LT: TensorLayout,
     seq_idx_LT: TensorLayout,
+    x_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    bias_engine: TensorEngine,
+    seq_idx_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],  # Shape (B, L, C)
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    x: TileTensor[
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
+    ],  # Shape (B, L, C)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutExternalOrigin
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
-        output_dtype, output_LT, MutExternalOrigin
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, L, C)
     bias: TileTensor[
-        bias_dtype, bias_LT, MutExternalOrigin
-    ],  # Shape (C,), stride = 1
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
+    ],  # Shape (C,)
     seq_idx: TileTensor[
-        seq_idx_dtype, seq_idx_LT, MutExternalOrigin
+        seq_idx_dtype, seq_idx_LT, ImmUntrackedOrigin, Engine=seq_idx_engine
     ],  # Shape (B, L)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
-    seq_idx_batch_stride: UInt32,
-    seq_idx_l_stride: UInt32,
     silu_activation: Int8,
 ):
     """
@@ -1671,24 +1361,61 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     5. Optimized activation function with SIMD operations
     6. Better thread utilization and memory bandwidth usage
     7. seq_idx support for conditional processing
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        bias_dtype: Element type of the bias tensor `bias`.
+        seq_idx_dtype: Element type of the `seq_idx` tensor.
+        kNThreads: Number of threads per block used to process the sequence
+            dimension.
+        kWidth: Compile-time convolution kernel width; must match the runtime
+            `width` argument.
+        kNElts: Number of sequence elements each thread processes, used for
+            SIMD vectorization and ILP.
+        x_LT: TensorLayout of the input tensor `x`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+        bias_LT: TensorLayout of the bias tensor `bias`.
+        seq_idx_LT: TensorLayout of the `seq_idx` tensor.
+        x_engine: Engine of the input tensor `x`.
+        weight_engine: Engine of the weight tensor `weight`.
+        output_engine: Engine of the output tensor `output`.
+        bias_engine: Engine of the bias tensor `bias`.
+        seq_idx_engine: Engine of the `seq_idx` tensor.
+
+    Args:
+        batch: Batch size.
+        dim: Number of channels.
+        seqlen: Sequence length.
+        width: Kernel width (must match `kWidth` compile-time parameter).
+        x: Input tensor of shape (B, L, C).
+        weight: Weight tensor of shape (C, W).
+        output: Output tensor of shape (B, L, C).
+        bias: Bias tensor of shape (C,).
+        seq_idx: Per-position sequence id tensor of shape (B, L); a
+            convolution tap at position `input_l` only contributes when its
+            sequence id matches the id at the output position.
+        silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
-
-    # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
-    # For channel-last (B, L, C), we load SIMD vectors along the channel dimension
-    # Base pointer for batch_id: x.ptr + batch_id * x_batch_stride
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
@@ -1701,22 +1428,12 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     if channel_start >= nChannels:
         return
 
-    # Safety check for null pointers
-    if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
-    ):
-        return
-
     # Safety check for bias tensor dimensions
     var bias_dim = Int(bias.dim[0]())
     if bias_dim == 0:
         return
 
-    # Helper function to load SIMD vector from 3D tensor at (batch, seq, channel_start)
-    # For channel-last (B, L, C), offset = batch * x_batch_stride + seq * x_l_stride + channel_start * x_c_stride
+    # Helper function to load SIMD vector from 3D tensor at (_batch, seq, channel_start)
     for c_offset in range(kNElts):
         var c_idx: Int = channel_start + c_offset
         if c_idx >= nChannels:
@@ -1726,10 +1443,8 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
         if c_idx >= bias_dim:
             break
 
-        # Access bias with proper offset (assuming stride=1 for bias tensor)
-        var bias_offset = UInt32(c_idx)
         var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
-            bias.ptr[bias_offset]
+            bias.load[width=1]((c_idx,))
         )
 
         # Load weights directly from memory to avoid vectorize issues
@@ -1740,32 +1455,16 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
         var w3: Scalar[weight_dtype] = 0
 
         comptime if kWidth >= 1:
-            w0 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 0 * weight_width_stride
-                ]
-            )
+            w0 = weight.load[width=1]((c_idx, 0))
 
         comptime if kWidth >= 2:
-            w1 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 1 * weight_width_stride
-                ]
-            )
+            w1 = weight.load[width=1]((c_idx, 1))
 
         comptime if kWidth >= 3:
-            w2 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 2 * weight_width_stride
-                ]
-            )
+            w2 = weight.load[width=1]((c_idx, 2))
 
         comptime if kWidth >= 4:
-            w3 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 3 * weight_width_stride
-                ]
-            )
+            w3 = weight.load[width=1]((c_idx, 3))
 
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
@@ -1776,196 +1475,142 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
                 break
 
             # Get current seq_idx value
-            var cur_seq_idx_offset: UInt32 = (
-                UInt32(batch_id) * seq_idx_batch_stride
-                + UInt32(seq_pos) * seq_idx_l_stride
-            )
-            var cur_seq_idx_val = seq_idx.ptr[cur_seq_idx_offset]
+            var cur_seq_idx_val = seq_idx.load[width=1]((batch_id, seq_pos))
             var cur_seq_idx: Int32 = Int32(cur_seq_idx_val)
 
             var conv_sum: Scalar[output_dtype] = cur_bias
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
-            comptime if kWidth == 1:
-                var input_l: Int = seq_pos
-                if input_l >= 0 and input_l < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l) * seq_idx_l_stride
+            comptime match kWidth:
+                case 1:
+                    var input_l: Int = seq_pos
+                    if input_l >= 0 and input_l < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l)
+                        )
+                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
+                        if input_seq_idx == cur_seq_idx:
+                            var x_val = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l, c_idx))
+                            )
+                            conv_sum += Scalar[output_dtype](
+                                Scalar[output_dtype](x_val)
+                                * Scalar[output_dtype](w0)
+                            )
+                case 2:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 1
+                    var input_l1: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                    if input_seq_idx == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
+                case 3:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 2
+                    var input_l1: Int = seq_pos - 1
+                    var input_l2: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        var x_val = Scalar[x_dtype](x.ptr[load_offset])
-                        conv_sum += Scalar[output_dtype](
-                            Scalar[output_dtype](x_val)
-                            * Scalar[output_dtype](w0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
                         )
-            elif kWidth == 2:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 1
-                var input_l1: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l2, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l0) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
+                case _:  # kWidth == 4
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var x3: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 3
+                    var input_l1: Int = seq_pos - 2
+                    var input_l2: Int = seq_pos - 1
+                    var input_l3: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l2, c_idx))
+                            )
+                    if input_l3 >= 0 and input_l3 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l3)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x3 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l3, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
+                        + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l1) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                )
-            elif kWidth == 3:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 2
-                var input_l1: Int = seq_pos - 1
-                var input_l2: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l0) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l1) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l2) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l2) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x2 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                )
-            else:  # kWidth == 4
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var x3: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 3
-                var input_l1: Int = seq_pos - 2
-                var input_l2: Int = seq_pos - 1
-                var input_l3: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l0) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l1) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l2) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l2) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x2 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l3 >= 0 and input_l3 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l3) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l3) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x3 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                    + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
-                )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -1974,12 +1619,7 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
-            var out_offset: UInt32 = (
-                UInt32(batch_id) * out_batch_stride
-                + UInt32(seq_pos) * out_l_stride
-                + UInt32(c_idx) * out_c_stride
-            )
-            output.ptr[out_offset] = out_vals_channel[i]
+            output.store((batch_id, seq_pos, c_idx), out_vals_channel[i])
 
 
 # Optimized GPU implementation for channel-last without bias but with seq_idx as TileTensor
@@ -1995,31 +1635,27 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
     seq_idx_LT: TensorLayout,
+    x_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    seq_idx_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],  # Shape (B, L, C)
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    x: TileTensor[
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
+    ],  # Shape (B, L, C)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutExternalOrigin
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
-        output_dtype, output_LT, MutExternalOrigin
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, L, C)
     seq_idx: TileTensor[
-        seq_idx_dtype, seq_idx_LT, MutExternalOrigin
+        seq_idx_dtype, seq_idx_LT, ImmUntrackedOrigin, Engine=seq_idx_engine
     ],  # Shape (B, L)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
-    seq_idx_batch_stride: UInt32,
-    seq_idx_l_stride: UInt32,
     silu_activation: Int8,
 ):
     """
@@ -2033,22 +1669,23 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     5. Better thread utilization and memory bandwidth usage
     6. seq_idx support for conditional processing
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
-
-    # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
-    # For channel-last (B, L, C), we load SIMD vectors along the channel dimension
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
@@ -2074,32 +1711,16 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
         var w3: Scalar[weight_dtype] = 0
 
         comptime if kWidth >= 1:
-            w0 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 0 * weight_width_stride
-                ]
-            )
+            w0 = weight.load[width=1]((c_idx, 0))
 
         comptime if kWidth >= 2:
-            w1 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 1 * weight_width_stride
-                ]
-            )
+            w1 = weight.load[width=1]((c_idx, 1))
 
         comptime if kWidth >= 3:
-            w2 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 2 * weight_width_stride
-                ]
-            )
+            w2 = weight.load[width=1]((c_idx, 2))
 
         comptime if kWidth >= 4:
-            w3 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 3 * weight_width_stride
-                ]
-            )
+            w3 = weight.load[width=1]((c_idx, 3))
 
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
@@ -2110,196 +1731,142 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
                 break
 
             # Get current seq_idx value
-            var cur_seq_idx_offset: UInt32 = (
-                UInt32(batch_id) * seq_idx_batch_stride
-                + UInt32(seq_pos) * seq_idx_l_stride
-            )
-            var cur_seq_idx_val = seq_idx.ptr[cur_seq_idx_offset]
+            var cur_seq_idx_val = seq_idx.load[width=1]((batch_id, seq_pos))
             var cur_seq_idx: Int32 = Int32(cur_seq_idx_val)
 
             var conv_sum: Scalar[output_dtype] = 0.0
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
-            comptime if kWidth == 1:
-                var input_l: Int = seq_pos
-                if input_l >= 0 and input_l < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l) * seq_idx_l_stride
+            comptime match kWidth:
+                case 1:
+                    var input_l: Int = seq_pos
+                    if input_l >= 0 and input_l < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l)
+                        )
+                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
+                        if input_seq_idx == cur_seq_idx:
+                            var x_val = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l, c_idx))
+                            )
+                            conv_sum += Scalar[output_dtype](
+                                Scalar[output_dtype](x_val)
+                                * Scalar[output_dtype](w0)
+                            )
+                case 2:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 1
+                    var input_l1: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                    if input_seq_idx == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
+                case 3:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 2
+                    var input_l1: Int = seq_pos - 1
+                    var input_l2: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        var x_val = Scalar[x_dtype](x.ptr[load_offset])
-                        conv_sum += Scalar[output_dtype](
-                            Scalar[output_dtype](x_val)
-                            * Scalar[output_dtype](w0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
                         )
-            elif kWidth == 2:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 1
-                var input_l1: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l2, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l0) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
+                case _:  # kWidth == 4
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var x3: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 3
+                    var input_l1: Int = seq_pos - 2
+                    var input_l2: Int = seq_pos - 1
+                    var input_l3: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l2, c_idx))
+                            )
+                    if input_l3 >= 0 and input_l3 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l3)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x3 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l3, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
+                        + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l1) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                )
-            elif kWidth == 3:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 2
-                var input_l1: Int = seq_pos - 1
-                var input_l2: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l0) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l1) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l2) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l2) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x2 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                )
-            else:  # kWidth == 4
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var x3: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 3
-                var input_l1: Int = seq_pos - 2
-                var input_l2: Int = seq_pos - 1
-                var input_l3: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l0) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l1) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l2) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l2) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x2 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l3 >= 0 and input_l3 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l3) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l3) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        x3 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                    + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
-                )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -2308,12 +1875,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
-            var out_offset: UInt32 = (
-                UInt32(batch_id) * out_batch_stride
-                + UInt32(seq_pos) * out_l_stride
-                + UInt32(c_idx) * out_c_stride
-            )
-            output.ptr[out_offset] = out_vals_channel[i]
+            output.store((batch_id, seq_pos, c_idx), out_vals_channel[i])
 
 
 # ============================================================================
@@ -2336,58 +1898,54 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     output_LT: TensorLayout,
     bias_LT: TensorLayout,
     seq_idx_LT: TensorLayout,
+    x_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    bias_engine: TensorEngine,
+    seq_idx_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],  # Shape (B, C, L)
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    x: TileTensor[
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
+    ],  # Shape (B, C, L)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutExternalOrigin
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
-        output_dtype, output_LT, MutExternalOrigin
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, C, L)
     bias: TileTensor[
-        bias_dtype, bias_LT, MutExternalOrigin
-    ],  # Shape (C,), stride = 1
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
+    ],  # Shape (C,)
     seq_idx: TileTensor[
-        seq_idx_dtype, seq_idx_LT, MutExternalOrigin
+        seq_idx_dtype, seq_idx_LT, ImmUntrackedOrigin, Engine=seq_idx_engine
     ],  # Shape (B, L)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
-    seq_idx_batch_stride: UInt32,
-    seq_idx_l_stride: UInt32,
     silu_activation: Int8,
 ):
     """
     Optimized causal conv1d implementation for channel-first data layout using SIMD operations with seq_idx support.
 
-    For channel-first (B, C, L): x_c_stride = L, x_l_stride = 1
-    Offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
-
-    # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
-    # For channel-first (B, C, L), we load SIMD vectors along the sequence dimension
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
@@ -2400,22 +1958,12 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     if channel_start >= nChannels:
         return
 
-    # Safety check for null pointers
-    if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
-    ):
-        return
-
     # Safety check for bias tensor dimensions
     var bias_dim = Int(bias.dim[0]())
     if bias_dim == 0:
         return
 
     # For channel-first (B, C, L), we process each channel separately
-    # Since sequence dimension is contiguous (stride=1), we can load directly from memory
     for c_offset in range(kNElts):
         var c_idx: Int = channel_start + c_offset
         if c_idx >= nChannels:
@@ -2426,7 +1974,7 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
             break
 
         var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
-            bias.ptr[c_idx]
+            bias.load[width=1]((c_idx,))
         )
         # Load weights directly from memory to avoid vectorize issues
         # For kWidth == 3, use scalar operations to avoid SIMD issues
@@ -2436,32 +1984,16 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
         var w3: Scalar[weight_dtype] = 0
 
         comptime if kWidth >= 1:
-            w0 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 0 * weight_width_stride
-                ]
-            )
+            w0 = weight.load[width=1]((c_idx, 0))
 
         comptime if kWidth >= 2:
-            w1 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 1 * weight_width_stride
-                ]
-            )
+            w1 = weight.load[width=1]((c_idx, 1))
 
         comptime if kWidth >= 3:
-            w2 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 2 * weight_width_stride
-                ]
-            )
+            w2 = weight.load[width=1]((c_idx, 2))
 
         comptime if kWidth >= 4:
-            w3 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 3 * weight_width_stride
-                ]
-            )
+            w3 = weight.load[width=1]((c_idx, 3))
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
@@ -2471,196 +2003,142 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
                 break
 
             # Get current seq_idx value
-            var cur_seq_idx_offset: UInt32 = (
-                UInt32(batch_id) * seq_idx_batch_stride
-                + UInt32(seq_pos) * seq_idx_l_stride
-            )
-            var cur_seq_idx_val = seq_idx.ptr[cur_seq_idx_offset]
+            var cur_seq_idx_val = seq_idx.load[width=1]((batch_id, seq_pos))
             var cur_seq_idx: Int32 = Int32(cur_seq_idx_val)
 
             var conv_sum: Scalar[output_dtype] = cur_bias
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            # For channel-first (B, C, L): offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
-            comptime if kWidth == 1:
-                var input_l: Int = seq_pos
-                if input_l >= 0 and input_l < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l) * seq_idx_l_stride
+            comptime match kWidth:
+                case 1:
+                    var input_l: Int = seq_pos
+                    if input_l >= 0 and input_l < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l)
+                        )
+                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
+                        if input_seq_idx == cur_seq_idx:
+                            var x_val = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l))
+                            )
+                            conv_sum += Scalar[output_dtype](
+                                Scalar[output_dtype](x_val)
+                                * Scalar[output_dtype](w0)
+                            )
+                case 2:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 1
+                    var input_l1: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                    if input_seq_idx == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l) * x_l_stride
+                case 3:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 2
+                    var input_l1: Int = seq_pos - 1
+                    var input_l2: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        var x_val = Scalar[x_dtype](x.ptr[load_offset])
-                        conv_sum += Scalar[output_dtype](
-                            Scalar[output_dtype](x_val)
-                            * Scalar[output_dtype](w0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
                         )
-            elif kWidth == 2:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 1
-                var input_l1: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l2))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l0) * x_l_stride
+                case _:  # kWidth == 4
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var x3: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 3
+                    var input_l1: Int = seq_pos - 2
+                    var input_l2: Int = seq_pos - 1
+                    var input_l3: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l2))
+                            )
+                    if input_l3 >= 0 and input_l3 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l3)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x3 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l3))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
+                        + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l1) * x_l_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                )
-            elif kWidth == 3:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 2
-                var input_l1: Int = seq_pos - 1
-                var input_l2: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l0) * x_l_stride
-                        )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l1) * x_l_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l2) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l2) * x_l_stride
-                        )
-                        x2 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                )
-            else:  # kWidth == 4
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var x3: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 3
-                var input_l1: Int = seq_pos - 2
-                var input_l2: Int = seq_pos - 1
-                var input_l3: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l0) * x_l_stride
-                        )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l1) * x_l_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l2) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l2) * x_l_stride
-                        )
-                        x2 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l3 >= 0 and input_l3 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l3) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l3) * x_l_stride
-                        )
-                        x3 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                    + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
-                )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -2669,12 +2147,7 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
-            var out_offset: UInt32 = (
-                UInt32(batch_id) * out_batch_stride
-                + UInt32(c_idx) * out_c_stride
-                + UInt32(seq_pos) * out_l_stride
-            )
-            output.ptr[out_offset] = out_vals_channel[i]
+            output.store((batch_id, c_idx, seq_pos), out_vals_channel[i])
 
 
 # Optimized GPU implementation for channel-first without bias but with seq_idx as TileTensor
@@ -2690,55 +2163,50 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
     seq_idx_LT: TensorLayout,
+    x_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    seq_idx_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],  # Shape (B, C, L)
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    x: TileTensor[
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
+    ],  # Shape (B, C, L)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutExternalOrigin
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
-        output_dtype, output_LT, MutExternalOrigin
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, C, L)
     seq_idx: TileTensor[
-        seq_idx_dtype, seq_idx_LT, MutExternalOrigin
+        seq_idx_dtype, seq_idx_LT, ImmUntrackedOrigin, Engine=seq_idx_engine
     ],  # Shape (B, L)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
-    seq_idx_batch_stride: UInt32,
-    seq_idx_l_stride: UInt32,
     silu_activation: Int8,
 ):
     """
     Optimized causal conv1d implementation for channel-first data layout using SIMD operations (no bias) with seq_idx support.
 
-    For channel-first (B, C, L): x_c_stride = L, x_l_stride = 1
-    Offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
     var channel_chunk_id: Int = block_idx.y
     var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = Int(block_dim.x)
+    var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
-
-    # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
-    # For channel-first (B, C, L), we load SIMD vectors along the sequence dimension
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
@@ -2764,32 +2232,16 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
         var w3: Scalar[weight_dtype] = 0
 
         comptime if kWidth >= 1:
-            w0 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 0 * weight_width_stride
-                ]
-            )
+            w0 = weight.load[width=1]((c_idx, 0))
 
         comptime if kWidth >= 2:
-            w1 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 1 * weight_width_stride
-                ]
-            )
+            w1 = weight.load[width=1]((c_idx, 1))
 
         comptime if kWidth >= 3:
-            w2 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 2 * weight_width_stride
-                ]
-            )
+            w2 = weight.load[width=1]((c_idx, 2))
 
         comptime if kWidth >= 4:
-            w3 = Scalar[weight_dtype](
-                weight.ptr[
-                    UInt32(c_idx) * weight_c_stride + 3 * weight_width_stride
-                ]
-            )
+            w3 = weight.load[width=1]((c_idx, 3))
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
         var silu_active = Bool(Int(silu_activation) != 0)
 
@@ -2799,196 +2251,142 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
                 break
 
             # Get current seq_idx value
-            var cur_seq_idx_offset: UInt32 = (
-                UInt32(batch_id) * seq_idx_batch_stride
-                + UInt32(seq_pos) * seq_idx_l_stride
-            )
-            var cur_seq_idx_val = seq_idx.ptr[cur_seq_idx_offset]
+            var cur_seq_idx_val = seq_idx.load[width=1]((batch_id, seq_pos))
             var cur_seq_idx: Int32 = Int32(cur_seq_idx_val)
 
             var conv_sum: Scalar[output_dtype] = 0.0
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            # For channel-first (B, C, L): offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
-            comptime if kWidth == 1:
-                var input_l: Int = seq_pos
-                if input_l >= 0 and input_l < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l) * seq_idx_l_stride
+            comptime match kWidth:
+                case 1:
+                    var input_l: Int = seq_pos
+                    if input_l >= 0 and input_l < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l)
+                        )
+                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
+                        if input_seq_idx == cur_seq_idx:
+                            var x_val = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l))
+                            )
+                            conv_sum += Scalar[output_dtype](
+                                Scalar[output_dtype](x_val)
+                                * Scalar[output_dtype](w0)
+                            )
+                case 2:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 1
+                    var input_l1: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                    if input_seq_idx == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l) * x_l_stride
+                case 3:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 2
+                    var input_l1: Int = seq_pos - 1
+                    var input_l2: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        var x_val = Scalar[x_dtype](x.ptr[load_offset])
-                        conv_sum += Scalar[output_dtype](
-                            Scalar[output_dtype](x_val)
-                            * Scalar[output_dtype](w0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
                         )
-            elif kWidth == 2:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 1
-                var input_l1: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l2))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l0) * x_l_stride
+                case _:  # kWidth == 4
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var x3: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 3
+                    var input_l1: Int = seq_pos - 2
+                    var input_l2: Int = seq_pos - 1
+                    var input_l3: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l2))
+                            )
+                    if input_l3 >= 0 and input_l3 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l3)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x3 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l3))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
+                        + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
                     )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l1) * x_l_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                )
-            elif kWidth == 3:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 2
-                var input_l1: Int = seq_pos - 1
-                var input_l2: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l0) * x_l_stride
-                        )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l1) * x_l_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l2) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l2) * x_l_stride
-                        )
-                        x2 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                )
-            else:  # kWidth == 4
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var x3: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 3
-                var input_l1: Int = seq_pos - 2
-                var input_l2: Int = seq_pos - 1
-                var input_l3: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l0) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l0) * x_l_stride
-                        )
-                        x0 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l1) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l1) * x_l_stride
-                        )
-                        x1 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l2) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l2) * x_l_stride
-                        )
-                        x2 = Scalar[x_dtype](x.ptr[load_offset])
-                if input_l3 >= 0 and input_l3 < nSeqLen:
-                    var input_seq_idx_offset: UInt32 = (
-                        UInt32(batch_id) * seq_idx_batch_stride
-                        + UInt32(input_l3) * seq_idx_l_stride
-                    )
-                    var input_seq_idx_val = seq_idx.ptr[input_seq_idx_offset]
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(c_idx) * x_c_stride
-                            + UInt32(input_l3) * x_l_stride
-                        )
-                        x3 = Scalar[x_dtype](x.ptr[load_offset])
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                    + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
-                )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -2997,12 +2395,7 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
             var seq_pos: Int = seq_start + i
             if seq_pos >= seq_end:
                 break
-            var out_offset: UInt32 = (
-                UInt32(batch_id) * out_batch_stride
-                + UInt32(c_idx) * out_c_stride
-                + UInt32(seq_pos) * out_l_stride
-            )
-            output.ptr[out_offset] = out_vals_channel[i]
+            output.store((batch_id, c_idx, seq_pos), out_vals_channel[i])
 
 
 # ============================================================================
@@ -3024,22 +2417,13 @@ def causal_conv1d_update_cpu[
     seqlen: Int,  # seqlen of x (typically 1 for autoregressive inference)
     width: Int,
     state_len: Int,  # state_len of conv_state (>= width - 1)
-    x: TileTensor[x_dtype, ...],  # Shape (B, C, L) or (B, C) when L=1
+    x: TileTensor[
+        mut=False, x_dtype, ...
+    ],  # Shape (B, C, L) or (B, C) when L=1
     conv_state: TileTensor[mut=True, conv_state_dtype, ...],  # Shape (B, C, S)
-    weight: TileTensor[weight_dtype, ...],  # Shape (C, W)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, C, L)
-    bias: TileTensor[bias_dtype, ...],  # Shape (C,)
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    conv_state_batch_stride: UInt32,
-    conv_state_c_stride: UInt32,
-    conv_state_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
+    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (C,)
     silu_activation: Bool,
 ):
     """
@@ -3054,6 +2438,14 @@ def causal_conv1d_update_cpu[
     - conv_state holds the last (state_len) values
     - New x values are appended, old values are shifted out
 
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        conv_state_dtype: Element type of the convolution state tensor
+            `conv_state`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        bias_dtype: Element type of the bias tensor `bias`.
+
     Args:
         batch: Batch size.
         dim: Number of channels.
@@ -3065,26 +2457,14 @@ def causal_conv1d_update_cpu[
         weight: Convolution weights.
         output: Output tensor.
         bias: Bias tensor.
-        x_batch_stride: Stride for batch dimension in x.
-        x_c_stride: Stride for channel dimension in x.
-        x_l_stride: Stride for sequence length dimension in x.
-        conv_state_batch_stride: Stride for batch dimension in conv_state.
-        conv_state_c_stride: Stride for channel dimension in conv_state.
-        conv_state_l_stride: Stride for state length dimension in conv_state.
-        weight_c_stride: Stride for channel dimension in weight.
-        weight_width_stride: Stride for kernel width dimension in weight.
-        out_batch_stride: Stride for batch dimension in output.
-        out_c_stride: Stride for channel dimension in output.
-        out_l_stride: Stride for sequence length dimension in output.
         silu_activation: Whether to apply SiLU activation.
     """
     var width_minus_1: Int = width - 1
 
     for b in range(batch):
         for c in range(dim):
-            var weight_c_base = Int(UInt32(c) * weight_c_stride)
             var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
-                bias.ptr[c]
+                bias.load[width=1]((c,))
             )
             # Process each position in the input sequence
             for l in range(seqlen):
@@ -3099,101 +2479,52 @@ def causal_conv1d_update_cpu[
                     if src_pos >= state_len:
                         # Read from x
                         var x_l_pos = src_pos - state_len
-                        var x_offset = Int(
-                            UInt32(b) * x_batch_stride
-                            + UInt32(c) * x_c_stride
-                            + UInt32(x_l_pos) * x_l_stride
-                        )
-                        input_val = x.ptr[x_offset]
+                        input_val = x.load[width=1]((b, c, x_l_pos))
                     elif src_pos >= 0:
                         # Read from conv_state
-                        var conv_state_offset = Int(
-                            UInt32(b) * conv_state_batch_stride
-                            + UInt32(c) * conv_state_c_stride
-                            + UInt32(src_pos) * conv_state_l_stride
-                        )
                         input_val = Scalar[x_dtype](
-                            conv_state.ptr[conv_state_offset]
+                            conv_state.load[width=1]((b, c, src_pos))
                         )
                     # else: src_pos < 0, treat as 0 (zero padding)
 
-                    var weight_offset = weight_c_base + Int(
-                        UInt32(w) * weight_width_stride
+                    var weight_val: Scalar[weight_dtype] = weight.load[width=1](
+                        (c, w)
                     )
-                    var weight_val: Scalar[weight_dtype] = weight.ptr[
-                        weight_offset
-                    ]
                     conv_sum = conv_sum + Scalar[output_dtype](
                         input_val * Scalar[x_dtype](weight_val)
                     )
 
                 # Write output
-                var out_offset = Int(
-                    UInt32(b) * out_batch_stride
-                    + UInt32(c) * out_c_stride
-                    + UInt32(l) * out_l_stride
-                )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
                     comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                        out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
-                output.ptr[out_offset] = out_val
+                output.store((b, c, l), out_val)
 
             # Update conv_state: shift old values and add new x values
             if seqlen >= state_len:
                 # x is longer than state, just copy last state_len values from x
                 for s in range(state_len):
                     var x_l_pos = seqlen - state_len + s
-                    var x_offset = Int(
-                        UInt32(b) * x_batch_stride
-                        + UInt32(c) * x_c_stride
-                        + UInt32(x_l_pos) * x_l_stride
-                    )
-                    var x_val = x.ptr[x_offset]
-                    var conv_state_offset = Int(
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32(s) * conv_state_l_stride
-                    )
-                    conv_state.ptr[conv_state_offset] = Scalar[
-                        conv_state_dtype
-                    ](x_val)
+                    var x_val = x.load[width=1]((b, c, x_l_pos))
+                    conv_state.store((b, c, s), Scalar[conv_state_dtype](x_val))
             else:
                 # Shift conv_state left by seqlen positions, then append x
                 for s in range(state_len - seqlen):
-                    var src_offset = Int(
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32((s + seqlen)) * conv_state_l_stride
-                    )
-                    var dst_offset = Int(
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32(s) * conv_state_l_stride
-                    )
-                    var val = conv_state.ptr[src_offset]
-                    conv_state.ptr[dst_offset] = val
+                    var val = conv_state.load[width=1]((b, c, (s + seqlen)))
+                    conv_state.store((b, c, s), val)
 
                 # Copy x values to the end
                 for l in range(seqlen):
-                    var x_offset = Int(
-                        UInt32(b) * x_batch_stride
-                        + UInt32(c) * x_c_stride
-                        + UInt32(l) * x_l_stride
+                    var x_val = x.load[width=1]((b, c, l))
+                    conv_state.store(
+                        (b, c, (state_len - seqlen + l)),
+                        Scalar[conv_state_dtype](x_val),
                     )
-                    var x_val = x.ptr[x_offset]
-                    var conv_state_offset = Int(
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32((state_len - seqlen + l)) * conv_state_l_stride
-                    )
-                    conv_state.ptr[conv_state_offset] = Scalar[
-                        conv_state_dtype
-                    ](x_val)
 
 
 def causal_conv1d_update_cpu_no_bias[
@@ -3207,30 +2538,48 @@ def causal_conv1d_update_cpu_no_bias[
     seqlen: Int,
     width: Int,
     state_len: Int,
-    x: TileTensor[x_dtype, ...],
+    x: TileTensor[mut=False, x_dtype, ...],
     conv_state: TileTensor[mut=True, conv_state_dtype, ...],
-    weight: TileTensor[weight_dtype, ...],
+    weight: TileTensor[mut=False, weight_dtype, ...],
     output: TileTensor[mut=True, output_dtype, ...],
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    conv_state_batch_stride: UInt32,
-    conv_state_c_stride: UInt32,
-    conv_state_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
     silu_activation: Bool,
 ):
-    """CPU implementation of causal conv1d update without bias."""
+    """CPU implementation of causal conv1d update without bias.
+
+    Performs incremental convolution for autoregressive decode by treating
+    `conv_state` followed by `x` as a virtual sliding window, computing the
+    output for the new positions, then shifting the newest `state_len`
+    values back into `conv_state` in place.
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        conv_state_dtype: Element type of the convolution state tensor
+            `conv_state`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+
+    Args:
+        batch: Number of sequences processed in parallel.
+        dim: Number of channels per sequence position.
+        seqlen: Number of new input positions in `x` (1 for autoregressive
+            decode).
+        width: Convolution kernel width in positions.
+        state_len: Length of the rolling buffer stored in `conv_state`;
+            must be at least `width - 1`.
+        x: Input tensor of shape (B, C, L) holding the new positions to
+            convolve.
+        conv_state: Rolling convolution state of shape (B, C, S) that
+            holds the last `state_len` values; updated in place.
+        weight: Convolution weights of shape (C, W).
+        output: Output tensor of shape (B, C, L) receiving the convolved
+            values for the new positions.
+        silu_activation: Whether to apply the SiLU activation to the
+            output values before storing.
+    """
     var width_minus_1: Int = width - 1
 
     for b in range(batch):
         for c in range(dim):
-            var weight_c_base = Int(UInt32(c) * weight_c_stride)
-
             for l in range(seqlen):
                 var conv_sum: Scalar[output_dtype] = 0.0
 
@@ -3240,94 +2589,45 @@ def causal_conv1d_update_cpu_no_bias[
 
                     if src_pos >= state_len:
                         var x_l_pos = src_pos - state_len
-                        var x_offset = Int(
-                            UInt32(b) * x_batch_stride
-                            + UInt32(c) * x_c_stride
-                            + UInt32(x_l_pos) * x_l_stride
-                        )
-                        input_val = x.ptr[x_offset]
+                        input_val = x.load[width=1]((b, c, x_l_pos))
                     elif src_pos >= 0:
-                        var conv_state_offset = Int(
-                            UInt32(b) * conv_state_batch_stride
-                            + UInt32(c) * conv_state_c_stride
-                            + UInt32(src_pos) * conv_state_l_stride
-                        )
                         input_val = Scalar[x_dtype](
-                            conv_state.ptr[conv_state_offset]
+                            conv_state.load[width=1]((b, c, src_pos))
                         )
-                    var weight_offset = weight_c_base + Int(
-                        UInt32(w) * weight_width_stride
+                    var weight_val: Scalar[weight_dtype] = weight.load[width=1](
+                        (c, w)
                     )
-                    var weight_val: Scalar[weight_dtype] = weight.ptr[
-                        weight_offset
-                    ]
                     conv_sum = conv_sum + Scalar[output_dtype](
                         input_val * Scalar[x_dtype](weight_val)
                     )
 
-                var out_offset = Int(
-                    UInt32(b) * out_batch_stride
-                    + UInt32(c) * out_c_stride
-                    + UInt32(l) * out_l_stride
-                )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
                     comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                        out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
-                output.ptr[out_offset] = out_val
+                output.store((b, c, l), out_val)
 
             # Update conv_state
             if seqlen >= state_len:
                 for s in range(state_len):
                     var x_l_pos = seqlen - state_len + s
-                    var x_offset = Int(
-                        UInt32(b) * x_batch_stride
-                        + UInt32(c) * x_c_stride
-                        + UInt32(x_l_pos) * x_l_stride
-                    )
-                    var x_val = x.ptr[x_offset]
-                    var conv_state_offset = Int(
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32(s) * conv_state_l_stride
-                    )
-                    conv_state.ptr[conv_state_offset] = Scalar[
-                        conv_state_dtype
-                    ](x_val)
+                    var x_val = x.load[width=1]((b, c, x_l_pos))
+                    conv_state.store((b, c, s), Scalar[conv_state_dtype](x_val))
             else:
                 for s in range(state_len - seqlen):
-                    var src_offset = Int(
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32((s + seqlen)) * conv_state_l_stride
-                    )
-                    var dst_offset = Int(
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32(s) * conv_state_l_stride
-                    )
-                    var val = conv_state.ptr[src_offset]
-                    conv_state.ptr[dst_offset] = val
+                    var val = conv_state.load[width=1]((b, c, (s + seqlen)))
+                    conv_state.store((b, c, s), val)
 
                 for l in range(seqlen):
-                    var x_offset = Int(
-                        UInt32(b) * x_batch_stride
-                        + UInt32(c) * x_c_stride
-                        + UInt32(l) * x_l_stride
+                    var x_val = x.load[width=1]((b, c, l))
+                    conv_state.store(
+                        (b, c, (state_len - seqlen + l)),
+                        Scalar[conv_state_dtype](x_val),
                     )
-                    var x_val = x.ptr[x_offset]
-                    var conv_state_offset = Int(
-                        UInt32(b) * conv_state_batch_stride
-                        + UInt32(c) * conv_state_c_stride
-                        + UInt32((state_len - seqlen + l)) * conv_state_l_stride
-                    )
-                    conv_state.ptr[conv_state_offset] = Scalar[
-                        conv_state_dtype
-                    ](x_val)
 
 
 def causal_conv1d_update_gpu[
@@ -3342,28 +2642,33 @@ def causal_conv1d_update_gpu[
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
     bias_LT: TensorLayout,
+    x_engine: TensorEngine,
+    conv_state_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    bias_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    state_len: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],
-    conv_state: TileTensor[conv_state_dtype, conv_state_LT, MutExternalOrigin],
-    weight: TileTensor[weight_dtype, weight_LT, MutExternalOrigin],
-    output: TileTensor[output_dtype, output_LT, MutExternalOrigin],
-    bias: TileTensor[bias_dtype, bias_LT, MutExternalOrigin],
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    conv_state_batch_stride: UInt32,
-    conv_state_c_stride: UInt32,
-    conv_state_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    state_len: Int32,
+    x: TileTensor[x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine],
+    conv_state: TileTensor[
+        conv_state_dtype,
+        conv_state_LT,
+        MutUntrackedOrigin,
+        Engine=conv_state_engine,
+    ],
+    weight: TileTensor[
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
+    ],
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
+    ],
+    bias: TileTensor[
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
+    ],
     silu_activation: Int8,
 ):
     """GPU kernel for causal conv1d update operation (for autoregressive decode).
@@ -3374,6 +2679,28 @@ def causal_conv1d_update_gpu[
 
     Grid: (batch, ceildiv(dim, kNThreads))
     Block: kNThreads
+
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        conv_state_dtype: Element type of the convolution state tensor
+            `conv_state`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        bias_dtype: Element type of the bias tensor `bias`.
+        kNThreads: Number of threads per block used to process the channel
+            dimension.
+        x_LT: TensorLayout of the input tensor `x`.
+        conv_state_LT: TensorLayout of the convolution state tensor
+            `conv_state`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+        bias_LT: TensorLayout of the bias tensor `bias`.
+        x_engine: Engine of the input tensor `x`.
+        conv_state_engine: Engine of the convolution state tensor
+            `conv_state`.
+        weight_engine: Engine of the weight tensor `weight`.
+        output_engine: Engine of the output tensor `output`.
+        bias_engine: Engine of the bias tensor `bias`.
 
     Args:
         batch: Batch size.
@@ -3386,119 +2713,307 @@ def causal_conv1d_update_gpu[
         weight: Weight tensor of shape (C, W).
         output: Output tensor of shape (B, C, L).
         bias: Bias tensor of shape (C,).
-        x_batch_stride: Stride for the batch dimension of the input tensor.
-        x_c_stride: Stride for the channel dimension of the input tensor.
-        x_l_stride: Stride for the sequence length dimension of the input tensor.
-        conv_state_batch_stride: Stride for the batch dimension of the conv state tensor.
-        conv_state_c_stride: Stride for the channel dimension of the conv state tensor.
-        conv_state_l_stride: Stride for the sequence length dimension of the conv state tensor.
-        weight_c_stride: Stride for the channel dimension of the weight tensor.
-        weight_width_stride: Stride for the width dimension of the weight tensor.
-        out_batch_stride: Stride for the batch dimension of the output tensor.
-        out_c_stride: Stride for the channel dimension of the output tensor.
-        out_l_stride: Stride for the sequence length dimension of the output tensor.
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
+    var _state_len = Int(state_len)
     var b = block_idx.x
     var c_base = block_idx.y * kNThreads
     var c = c_base + thread_idx.x
 
-    if b >= batch or c >= dim:
+    if b >= _batch or c >= _dim:
         return
 
-    var width_minus_1: Int = width - 1
-    var weight_c_base = Int(UInt32(c) * weight_c_stride)
-    var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](bias.ptr[c])
+    var width_minus_1: Int = _width - 1
+    var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
+        bias.load[width=1]((c,))
+    )
     var silu_active = Bool(silu_activation != 0)
 
-    for l in range(seqlen):
+    for l in range(_seqlen):
         var conv_sum: Scalar[output_dtype] = cur_bias
 
-        for w in range(width):
-            var src_pos = state_len + l - (width_minus_1 - w)
+        for w in range(_width):
+            var src_pos = _state_len + l - (width_minus_1 - w)
             var input_val: Scalar[x_dtype] = 0.0
 
-            if src_pos >= state_len:
-                var x_l_pos = src_pos - state_len
-                var x_offset = Int(
-                    UInt32(b) * x_batch_stride
-                    + UInt32(c) * x_c_stride
-                    + UInt32(x_l_pos) * x_l_stride
-                )
-                input_val = x.ptr[x_offset]
+            if src_pos >= _state_len:
+                var x_l_pos = src_pos - _state_len
+                input_val = x.load[width=1]((b, c, x_l_pos))
             elif src_pos >= 0:
-                var conv_state_offset = Int(
-                    UInt32(b) * conv_state_batch_stride
-                    + UInt32(c) * conv_state_c_stride
-                    + UInt32(src_pos) * conv_state_l_stride
+                input_val = Scalar[x_dtype](
+                    conv_state.load[width=1]((b, c, src_pos))
                 )
-                input_val = Scalar[x_dtype](conv_state.ptr[conv_state_offset])
-            var weight_offset = weight_c_base + Int(
-                UInt32(w) * weight_width_stride
-            )
-            var weight_val: Scalar[weight_dtype] = weight.ptr[weight_offset]
+            var weight_val: Scalar[weight_dtype] = weight.load[width=1]((c, w))
             conv_sum = conv_sum + Scalar[output_dtype](
                 input_val * Scalar[x_dtype](weight_val)
             )
-        var out_offset = Int(
-            UInt32(b) * out_batch_stride
-            + UInt32(c) * out_c_stride
-            + UInt32(l) * out_l_stride
-        )
         var out_val: Scalar[output_dtype] = conv_sum
         if silu_active:
             comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
-        output.ptr[out_offset] = out_val
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
+        output.store((b, c, l), out_val)
 
     # Update conv_state
-    if seqlen >= state_len:
-        for s in range(state_len):
-            var x_l_pos = seqlen - state_len + s
-            var x_offset = Int(
-                UInt32(b) * x_batch_stride
-                + UInt32(c) * x_c_stride
-                + UInt32(x_l_pos) * x_l_stride
-            )
-            var x_val = x.ptr[x_offset]
-            var conv_state_offset = Int(
-                UInt32(b) * conv_state_batch_stride
-                + UInt32(c) * conv_state_c_stride
-                + UInt32(s) * conv_state_l_stride
-            )
-            conv_state.ptr[conv_state_offset] = Scalar[conv_state_dtype](x_val)
+    if _seqlen >= _state_len:
+        for s in range(_state_len):
+            var x_l_pos = _seqlen - _state_len + s
+            var x_val = x.load[width=1]((b, c, x_l_pos))
+            conv_state.store((b, c, s), Scalar[conv_state_dtype](x_val))
     else:
-        for s in range(state_len - seqlen):
-            var src_offset = Int(
-                UInt32(b) * conv_state_batch_stride
-                + UInt32(c) * conv_state_c_stride
-                + UInt32((s + seqlen)) * conv_state_l_stride
-            )
-            var dst_offset = Int(
-                UInt32(b) * conv_state_batch_stride
-                + UInt32(c) * conv_state_c_stride
-                + UInt32(s) * conv_state_l_stride
-            )
-            var val = conv_state.ptr[src_offset]
-            conv_state.ptr[dst_offset] = val
+        for s in range(_state_len - _seqlen):
+            var val = conv_state.load[width=1]((b, c, (s + _seqlen)))
+            conv_state.store((b, c, s), val)
 
-        for l in range(seqlen):
-            var x_offset = Int(
-                UInt32(b) * x_batch_stride
-                + UInt32(c) * x_c_stride
-                + UInt32(l) * x_l_stride
+        for l in range(_seqlen):
+            var x_val = x.load[width=1]((b, c, l))
+            conv_state.store(
+                (b, c, (_state_len - _seqlen + l)),
+                Scalar[conv_state_dtype](x_val),
             )
-            var x_val = x.ptr[x_offset]
-            var conv_state_offset = Int(
-                UInt32(b) * conv_state_batch_stride
-                + UInt32(c) * conv_state_c_stride
-                + UInt32((state_len - seqlen + l)) * conv_state_l_stride
+
+
+def causal_conv1d_update_gpu_functional[
+    x_dtype: DType,
+    conv_state_dtype: DType,
+    weight_dtype: DType,
+    output_dtype: DType,
+    bias_dtype: DType,
+    kNThreads: Int,
+    x_LT: TensorLayout,
+    conv_state_LT: TensorLayout,
+    weight_LT: TensorLayout,
+    output_LT: TensorLayout,
+    bias_LT: TensorLayout,
+    x_engine: TensorEngine,
+    conv_state_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
+    bias_engine: TensorEngine,
+    conv_state_in_LT: TensorLayout,
+    conv_state_in_engine: TensorEngine,
+](
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    state_len: Int32,
+    x: TileTensor[x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine],
+    conv_state: TileTensor[
+        conv_state_dtype,
+        conv_state_LT,
+        MutUntrackedOrigin,
+        Engine=conv_state_engine,
+    ],
+    conv_state_in: TileTensor[
+        conv_state_dtype,
+        conv_state_in_LT,
+        ImmUntrackedOrigin,
+        Engine=conv_state_in_engine,
+    ],
+    weight: TileTensor[
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
+    ],
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
+    ],
+    bias: TileTensor[
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
+    ],
+    silu_activation: Int8,
+):
+    """Reads the previous state separately while writing the complete next state.
+
+    Uses the original scalar channel-per-thread update and arithmetic. Identical
+    input/output state views may alias: convolution finishes before state writes,
+    and the ascending shift only reads the current or a later state position.
+    State input loads are non-invariant because the output may alias them.
+    Distinct state layouts are supported when the allocations do not overlap.
+    Partially overlapping state views or aliases with different layouts are
+    unsupported.
+    """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
+    var _state_len = Int(state_len)
+    var b = block_idx.x
+    var c_base = block_idx.y * kNThreads
+    var c = c_base + thread_idx.x
+
+    if b >= _batch or c >= _dim:
+        return
+
+    var width_minus_1: Int = _width - 1
+    var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
+        bias.load[width=1]((c,))
+    )
+    var silu_active = Bool(silu_activation != 0)
+
+    for l in range(_seqlen):
+        var conv_sum: Scalar[output_dtype] = cur_bias
+
+        for w in range(_width):
+            var src_pos = _state_len + l - (width_minus_1 - w)
+            var input_val: Scalar[x_dtype] = 0.0
+
+            if src_pos >= _state_len:
+                var x_l_pos = src_pos - _state_len
+                input_val = x.load[width=1]((b, c, x_l_pos))
+            elif src_pos >= 0:
+                input_val = Scalar[x_dtype](
+                    conv_state_in.load[width=1, invariant=False](
+                        (b, c, src_pos)
+                    )
+                )
+            var weight_val: Scalar[weight_dtype] = weight.load[width=1]((c, w))
+            conv_sum = conv_sum + Scalar[output_dtype](
+                input_val * Scalar[x_dtype](weight_val)
             )
-            conv_state.ptr[conv_state_offset] = Scalar[conv_state_dtype](x_val)
+        var out_val: Scalar[output_dtype] = conv_sum
+        if silu_active:
+            comptime if output_dtype.is_floating_point():
+                out_val = silu(out_val)
+            else:
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
+        output.store[width=1]((b, c, l), out_val)
+
+    if _seqlen >= _state_len:
+        for s in range(_state_len):
+            var x_l_pos = _seqlen - _state_len + s
+            var x_val = x.load[width=1]((b, c, x_l_pos))
+            conv_state.store[width=1](
+                (b, c, s), Scalar[conv_state_dtype](x_val)
+            )
+    else:
+        for s in range(_state_len - _seqlen):
+            var val = conv_state_in.load[width=1, invariant=False](
+                (b, c, (s + _seqlen))
+            )
+            conv_state.store[width=1]((b, c, s), val)
+
+        for l in range(_seqlen):
+            var x_val = x.load[width=1]((b, c, l))
+            conv_state.store[width=1](
+                (b, c, (_state_len - _seqlen + l)),
+                Scalar[conv_state_dtype](x_val),
+            )
+
+
+def enqueue_causal_conv1d_update_gpu[
+    dtype: DType,
+    //,
+    separate_state: Bool = False,
+](
+    ctx: DeviceContext,
+    batch: Int,
+    dim: Int,
+    seqlen: Int,
+    width: Int,
+    state_len: Int,
+    x: ImmTileTensor[dtype, address_space=.GENERIC, ...],
+    conv_state_in: ImmTileTensor[dtype, address_space=.GENERIC, ...],
+    conv_state: MutTileTensor[dtype, address_space=.GENERIC, ...],
+    weight: ImmTileTensor[dtype, address_space=.GENERIC, ...],
+    output: MutTileTensor[dtype, address_space=.GENERIC, ...],
+    bias: ImmTileTensor[dtype, address_space=.GENERIC, ...],
+    silu_activation: Bool,
+) raises:
+    """Enqueues the functional update, retaining copy-plus-update by default.
+
+    The separate-state arm avoids materializing the previous state
+    in the output allocation. Both the registered operation and its benchmark
+    use this launcher so the measured operation matches production dispatch.
+    The default preserves the original in-place kernel ABI and copy-plus-update
+    operation for existing callers and benchmark comparisons.
+    The copy-plus-update arm requires dense state storage. Independent strided
+    state layouts are supported only by the separate-state arm.
+    State views must be disjoint or exactly alias with identical layouts.
+    """
+    comptime threads = 128
+    comptime if separate_state:
+        ctx.enqueue_function[
+            causal_conv1d_update_gpu_functional[
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                threads,
+                x.LayoutType,
+                conv_state.LayoutType,
+                weight.LayoutType,
+                output.LayoutType,
+                bias.LayoutType,
+                x.Engine,
+                conv_state.Engine,
+                weight.Engine,
+                output.Engine,
+                bias.Engine,
+                conv_state_in.LayoutType,
+                conv_state_in.Engine,
+            ]
+        ](
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(width),
+            Int32(state_len),
+            x,
+            conv_state,
+            conv_state_in,
+            weight,
+            output,
+            bias,
+            Int8(silu_activation),
+            grid_dim=(batch, ceildiv(dim, threads)),
+            block_dim=(threads,),
+        )
+    else:
+        ctx.enqueue_copy(
+            conv_state.unsafe_ptr(),
+            conv_state_in.unsafe_ptr(),
+            batch * dim * state_len,
+        )
+        ctx.enqueue_function[
+            causal_conv1d_update_gpu[
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                threads,
+                x.LayoutType,
+                conv_state.LayoutType,
+                weight.LayoutType,
+                output.LayoutType,
+                bias.LayoutType,
+                x.Engine,
+                conv_state.Engine,
+                weight.Engine,
+                output.Engine,
+                bias.Engine,
+            ]
+        ](
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(width),
+            Int32(state_len),
+            x,
+            conv_state,
+            weight,
+            output,
+            bias,
+            Int8(silu_activation),
+            grid_dim=(batch, ceildiv(dim, threads)),
+            block_dim=(threads,),
+        )
 
 
 def causal_conv1d_update_gpu_no_bias[
@@ -3511,27 +3026,29 @@ def causal_conv1d_update_gpu_no_bias[
     conv_state_LT: TensorLayout,
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
+    x_engine: TensorEngine,
+    conv_state_engine: TensorEngine,
+    weight_engine: TensorEngine,
+    output_engine: TensorEngine,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    state_len: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],
-    conv_state: TileTensor[conv_state_dtype, conv_state_LT, MutExternalOrigin],
-    weight: TileTensor[weight_dtype, weight_LT, MutExternalOrigin],
-    output: TileTensor[output_dtype, output_LT, MutExternalOrigin],
-    x_batch_stride: UInt32,
-    x_c_stride: UInt32,
-    x_l_stride: UInt32,
-    conv_state_batch_stride: UInt32,
-    conv_state_c_stride: UInt32,
-    conv_state_l_stride: UInt32,
-    weight_c_stride: UInt32,
-    weight_width_stride: UInt32,
-    out_batch_stride: UInt32,
-    out_c_stride: UInt32,
-    out_l_stride: UInt32,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    state_len: Int32,
+    x: TileTensor[x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine],
+    conv_state: TileTensor[
+        conv_state_dtype,
+        conv_state_LT,
+        MutUntrackedOrigin,
+        Engine=conv_state_engine,
+    ],
+    weight: TileTensor[
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
+    ],
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
+    ],
     silu_activation: Int8,
 ):
     """GPU kernel for causal conv1d update operation without bias (for autoregressive decode).
@@ -3543,6 +3060,25 @@ def causal_conv1d_update_gpu_no_bias[
     Grid: (batch, ceildiv(dim, kNThreads))
     Block: kNThreads
 
+    Parameters:
+        x_dtype: Element type of the input tensor `x`.
+        conv_state_dtype: Element type of the convolution state tensor
+            `conv_state`.
+        weight_dtype: Element type of the weight tensor `weight`.
+        output_dtype: Element type of the output tensor `output`.
+        kNThreads: Number of threads per block used to process the channel
+            dimension.
+        x_LT: TensorLayout of the input tensor `x`.
+        conv_state_LT: TensorLayout of the convolution state tensor
+            `conv_state`.
+        weight_LT: TensorLayout of the weight tensor `weight`.
+        output_LT: TensorLayout of the output tensor `output`.
+        x_engine: Engine of the input tensor `x`.
+        conv_state_engine: Engine of the convolution state tensor
+            `conv_state`.
+        weight_engine: Engine of the weight tensor `weight`.
+        output_engine: Engine of the output tensor `output`.
+
     Args:
         batch: Batch size.
         dim: Number of channels.
@@ -3553,114 +3089,62 @@ def causal_conv1d_update_gpu_no_bias[
         conv_state: Convolution state tensor of shape (B, C, state_len).
         weight: Weight tensor of shape (C, W).
         output: Output tensor of shape (B, C, L).
-        x_batch_stride: Stride for the batch dimension of the input tensor.
-        x_c_stride: Stride for the channel dimension of the input tensor.
-        x_l_stride: Stride for the sequence length dimension of the input tensor.
-        conv_state_batch_stride: Stride for the batch dimension of the conv state tensor.
-        conv_state_c_stride: Stride for the channel dimension of the conv state tensor.
-        conv_state_l_stride: Stride for the sequence length dimension of the conv state tensor.
-        weight_c_stride: Stride for the channel dimension of the weight tensor.
-        weight_width_stride: Stride for the width dimension of the weight tensor.
-        out_batch_stride: Stride for the batch dimension of the output tensor.
-        out_c_stride: Stride for the channel dimension of the output tensor.
-        out_l_stride: Stride for the sequence length dimension of the output tensor.
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
+    var _state_len = Int(state_len)
     var b = block_idx.x
     var c_base = block_idx.y * kNThreads
     var c = c_base + thread_idx.x
 
-    if b >= batch or c >= dim:
+    if b >= _batch or c >= _dim:
         return
 
-    var width_minus_1: Int = width - 1
-    var weight_c_base = Int(UInt32(c) * weight_c_stride)
+    var width_minus_1: Int = _width - 1
     var silu_active = Bool(silu_activation != 0)
 
-    for l in range(seqlen):
+    for l in range(_seqlen):
         var conv_sum: Scalar[output_dtype] = 0.0
 
-        for w in range(width):
-            var src_pos = state_len + l - (width_minus_1 - w)
+        for w in range(_width):
+            var src_pos = _state_len + l - (width_minus_1 - w)
             var input_val: Scalar[x_dtype] = 0.0
 
-            if src_pos >= state_len:
-                var x_l_pos = src_pos - state_len
-                var x_offset = Int(
-                    UInt32(b) * x_batch_stride
-                    + UInt32(c) * x_c_stride
-                    + UInt32(x_l_pos) * x_l_stride
-                )
-                input_val = x.ptr[x_offset]
+            if src_pos >= _state_len:
+                var x_l_pos = src_pos - _state_len
+                input_val = x.load[width=1]((b, c, x_l_pos))
             elif src_pos >= 0:
-                var conv_state_offset = Int(
-                    UInt32(b) * conv_state_batch_stride
-                    + UInt32(c) * conv_state_c_stride
-                    + UInt32(src_pos) * conv_state_l_stride
+                input_val = Scalar[x_dtype](
+                    conv_state.load[width=1]((b, c, src_pos))
                 )
-                input_val = Scalar[x_dtype](conv_state.ptr[conv_state_offset])
-            var weight_offset = weight_c_base + Int(
-                UInt32(w) * weight_width_stride
-            )
-            var weight_val: Scalar[weight_dtype] = weight.ptr[weight_offset]
+            var weight_val: Scalar[weight_dtype] = weight.load[width=1]((c, w))
             conv_sum = conv_sum + Scalar[output_dtype](
                 input_val * Scalar[x_dtype](weight_val)
             )
-        var out_offset = Int(
-            UInt32(b) * out_batch_stride
-            + UInt32(c) * out_c_stride
-            + UInt32(l) * out_l_stride
-        )
         var out_val: Scalar[output_dtype] = conv_sum
         if silu_active:
             comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
-        output.ptr[out_offset] = out_val
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
+        output.store((b, c, l), out_val)
 
-    if seqlen >= state_len:
-        for s in range(state_len):
-            var x_l_pos = seqlen - state_len + s
-            var x_offset = Int(
-                UInt32(b) * x_batch_stride
-                + UInt32(c) * x_c_stride
-                + UInt32(x_l_pos) * x_l_stride
-            )
-            var x_val = x.ptr[x_offset]
-            var conv_state_offset = Int(
-                UInt32(b) * conv_state_batch_stride
-                + UInt32(c) * conv_state_c_stride
-                + UInt32(s) * conv_state_l_stride
-            )
-            conv_state.ptr[conv_state_offset] = Scalar[conv_state_dtype](x_val)
+    if _seqlen >= _state_len:
+        for s in range(_state_len):
+            var x_l_pos = _seqlen - _state_len + s
+            var x_val = x.load[width=1]((b, c, x_l_pos))
+            conv_state.store((b, c, s), Scalar[conv_state_dtype](x_val))
     else:
-        for s in range(state_len - seqlen):
-            var src_offset = Int(
-                UInt32(b) * conv_state_batch_stride
-                + UInt32(c) * conv_state_c_stride
-                + UInt32((s + seqlen)) * conv_state_l_stride
-            )
-            var dst_offset = Int(
-                UInt32(b) * conv_state_batch_stride
-                + UInt32(c) * conv_state_c_stride
-                + UInt32(s) * conv_state_l_stride
-            )
-            var val = conv_state.ptr[src_offset]
-            conv_state.ptr[dst_offset] = val
+        for s in range(_state_len - _seqlen):
+            var val = conv_state.load[width=1]((b, c, (s + _seqlen)))
+            conv_state.store((b, c, s), val)
 
-        for l in range(seqlen):
-            var x_offset = Int(
-                UInt32(b) * x_batch_stride
-                + UInt32(c) * x_c_stride
-                + UInt32(l) * x_l_stride
+        for l in range(_seqlen):
+            var x_val = x.load[width=1]((b, c, l))
+            conv_state.store(
+                (b, c, (_state_len - _seqlen + l)),
+                Scalar[conv_state_dtype](x_val),
             )
-            var x_val = x.ptr[x_offset]
-            var conv_state_offset = Int(
-                UInt32(b) * conv_state_batch_stride
-                + UInt32(c) * conv_state_c_stride
-                + UInt32((state_len - seqlen + l)) * conv_state_l_stride
-            )
-            conv_state.ptr[conv_state_offset] = Scalar[conv_state_dtype](x_val)

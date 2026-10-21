@@ -17,9 +17,10 @@ from queue import Queue
 from threading import Thread
 
 import numpy as np
+from _transfer_engine_helpers import every_leaf, kv_memory
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
-from max.kv_cache import (
+from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     TransferReqData,
@@ -51,7 +52,8 @@ def test_send_recv_basic() -> None:
 
         # Create engine (DP=1, TP=1)
         engine = KVTransferEngine(
-            "engine_1", [[blocks]], total_num_pages=total_num_pages
+            "engine_1",
+            [[kv_memory(blocks, total_num_pages)]],
         )
 
         # Connect with peer
@@ -61,7 +63,11 @@ def test_send_recv_basic() -> None:
 
         # Perform transfer
         transfer_req = engine.initiate_send_transfer(
-            remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
+            remote_md,
+            every_leaf(remote_md, src_idxs),
+            every_leaf(remote_md, dst_idxs),
+            src_replica_idx=0,
+            dst_replica_idx=0,
         )
         transfer_queue.put(transfer_req)
 
@@ -102,7 +108,8 @@ def test_send_recv_basic() -> None:
 
         # Create engine (DP=1, TP=1)
         engine = KVTransferEngine(
-            "engine_2", [[blocks]], total_num_pages=total_num_pages
+            "engine_2",
+            [[kv_memory(blocks, total_num_pages)]],
         )
 
         # Connect with peer

@@ -14,10 +14,12 @@
 from std.math import align_down, ceildiv
 
 from std.algorithm.functional import tile_and_unswitch
-from std.gpu import barrier, global_idx, thread_idx
-from std.gpu.host import DeviceContext
-from layout import TileTensor, Coord, Idx, row_major
-from std.memory import stack_allocation
+from max.gpu import global_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from layout import TileTensor, row_major
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_false
 
 
@@ -27,12 +29,12 @@ comptime tile_size = 32
 
 
 def matmul_sram(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
     """Matrix Multiplication using shared memory.
     This version loads blocks of size tile_size x tile_size from A and B
@@ -44,20 +46,24 @@ def matmul_sram(
     access.
     """
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(M), Idx(K))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(K), Idx(N))))
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(M), Idx(N))))
+    # `Int` is not device-passable; widen the fixed-width args.
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
+    var a = TileTensor(a_ptr, row_major(M, K))
+    var b = TileTensor(b_ptr, row_major(K, N))
+    var c = TileTensor(c_ptr, row_major(M, N))
 
     # Allocate A, B tile in shared memory.
-    var a_shared = stack_allocation[
+    var a_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Global index in C.
@@ -77,10 +83,21 @@ def matmul_sram(
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
     var K_remainder = K - K_roundbytile if K - K_roundbytile > 0 else 1
 
-    @parameter
-    @__copy_capture(localCol, a, row, a_shared, localRow, col, b, b_shared)
-    @always_inline
-    def update_tile[full_tile: Bool](offset: Int, end: Int, tile_size: Int):
+    @inline(.always)
+    def update_tile[
+        full_tile: Bool
+    ](offset: Int, end: Int, tile_size: Int) {
+        var localCol,
+        var a,
+        var row,
+        var a_shared,
+        var localRow,
+        var col,
+        var b,
+        var b_shared,
+        mut result,
+        imm,
+    }:
         # If K is not multiple of tile_size, the last tile contains less than
         # tile_size elements. The thread block needs to take addition bound check
         # when loading elements into shared memory.
@@ -89,43 +106,39 @@ def matmul_sram(
         var a_val: Float32
 
         comptime if not full_tile:
-            a_val = a.load[width=1](
-                Coord(Idx(row), Idx(offset + localCol))
-            ) if (row < M and offset + localCol < K) else 0.0
+            a_val = a[row, offset + localCol] if (
+                row < M and offset + localCol < K
+            ) else 0.0
         else:
-            a_val = (
-                a.load[width=1](Coord(Idx(row), Idx(offset + localCol))) if row
-                < M else 0.0
-            )
+            a_val = a[row, offset + localCol] if row < M else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Float32
 
         comptime if not full_tile:
-            b_val = b.load[width=1](
-                Coord(Idx(offset + localRow), Idx(col))
-            ) if (col < N and offset + localRow < K) else 0.0
+            b_val = b[offset + localRow, col] if (
+                col < N and offset + localRow < K
+            ) else 0.0
         else:
-            b_val = (
-                b.load[width=1](Coord(Idx(offset + localRow), Idx(col))) if col
-                < N else 0.0
-            )
+            b_val = b[offset + localRow, col] if col < N else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
 
         for k in range(tile_size):
-            result += a_shared.load(localRow * tile_size + k) * b_shared.load(
-                k * tile_size + localCol
-            )
+            result += a_shared.unsafe_load(
+                localRow * tile_size + k
+            ) * b_shared.unsafe_load(k * tile_size + localCol)
 
         barrier()
 
-    tile_and_unswitch[update_tile](0, K, tile_size, K_remainder)
+    tile_and_unswitch(
+        0, K, tile_size, K_remainder, workgroup_function=update_tile
+    )
 
     if row < M and col < N:
-        c.store(Coord(Idx(row), Idx(col)), result)
+        c.store((row, col), result)
 
 
 def run_matmul(ctx: DeviceContext) raises:
@@ -136,31 +149,31 @@ def run_matmul(ctx: DeviceContext) raises:
     comptime N = 502
     comptime K = 511
 
-    var a_host_ptr = alloc[Float32](M * K)
+    var a_host_ptr = unsafe_alloc[Float32](M * K)
     var a_host = TileTensor(a_host_ptr, row_major[M, K]())
-    var b_host_ptr = alloc[Float32](K * N)
+    var b_host_ptr = unsafe_alloc[Float32](K * N)
     var b_host = TileTensor(b_host_ptr, row_major[K, N]())
-    var c_host_ptr = alloc[Float32](M * N)
+    var c_host_ptr = unsafe_alloc[Float32](M * N)
     var c_host = TileTensor(c_host_ptr, row_major[M, N]())
 
     _ = a_host.fill(Float32(1))
     _ = b_host.fill(Float32(1))
     _ = c_host.fill(Float32(0))
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function_experimental[matmul_sram](
+    ctx.enqueue_function[matmul_sram](
         a_device,
         b_device,
         c_device,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(N, tile_size), ceildiv(M, tile_size)),
         block_dim=(tile_size, tile_size),
     )
@@ -171,7 +184,7 @@ def run_matmul(ctx: DeviceContext) raises:
     var failed = False
     for i in range(M - 10, M):
         for j in range(N - 10, N):
-            var val = c_host.load[width=1](Coord(Idx(i), Idx(j)))
+            var val = c_host[i, j]
             if val != Float32(K):
                 print(
                     "Fail at index = [",

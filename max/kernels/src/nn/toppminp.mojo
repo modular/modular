@@ -10,25 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU implementations of top-p (nucleus) and min-p sampling for autoregressive token generation."""
 
 
 from std.math import iota
 
+from std.memory import dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.random import random_float64
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
-from nn.softmax import softmax
+from layout import (
+    Coord,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
+from nn.softmax import softmax_inline
 
-from std.utils import IndexList
 
-
-@always_inline
+@inline(.always)
 def top_p_sampling[
     dtype: DType,
     out_idx_type: DType,
     //,
     _test_sort: Bool = False,
 ](
-    top_ps: TileTensor[dtype, ...],
+    top_ps: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
@@ -37,6 +43,22 @@ def top_p_sampling[
     Naive CPU implementation of Top-P sampling for token selection.
     This function applies temperature scaling, softmax, a merge sort, and then
     samples tokens based on the cumulative probability mass (Top-P).
+
+    Parameters:
+        dtype: Element type of `input_logits`, `top_ps`, and `temperature`
+            (inferred).
+        out_idx_type: Element type of the `out_token_ids` tensor (inferred).
+        _test_sort: When true, copies the sorted probabilities back into
+            `input_logits` to verify descending order (defaults to false).
+    Args:
+        top_ps: Per-batch cumulative probability mass thresholds in the
+            range (0, 1].
+        input_logits: Rank-2 logits tensor of shape (batch, vocab) read
+            for temperature scaling and softmax.
+        out_token_ids: Rank-2 output tensor receiving the sampled token
+            index at column 0 of each batch row.
+        temperature: Positive scalar divisor applied to logits before the
+            softmax (defaults to 1).
     """
     # TODO: Implement rank generalization
     comptime assert input_logits.rank == 2, "Only rank 2 tensors are supported"
@@ -45,14 +67,14 @@ def top_p_sampling[
     )
 
 
-@always_inline
+@inline(.always)
 def min_p_sampling[
     dtype: DType,
     out_idx_type: DType,
     //,
     _test_sort: Bool = False,
 ](
-    min_ps: TileTensor[dtype, ...],
+    min_ps: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
@@ -61,13 +83,29 @@ def min_p_sampling[
     Naive CPU implementation of Min-P sampling for token selection.
     This function applies temperature scaling, softmax, a merge sort, and then
     samples tokens based on the calculated probability threshold (Min-P).
+
+    Parameters:
+        dtype: Element type of `input_logits`, `min_ps`, and `temperature`
+            (inferred).
+        out_idx_type: Element type of the `out_token_ids` tensor (inferred).
+        _test_sort: When true, copies the sorted probabilities back into
+            `input_logits` to verify descending order (defaults to false).
+    Args:
+        min_ps: Per-batch minimum probability thresholds in the range
+            (0, 1).
+        input_logits: Rank-2 logits tensor of shape (batch, vocab) read
+            for temperature scaling and softmax.
+        out_token_ids: Rank-2 output tensor receiving the sampled token
+            index at column 0 of each batch row.
+        temperature: Positive scalar divisor applied to logits before the
+            softmax (defaults to 1).
     """
     _topp_minp_sampling[is_top_p=False, _test_sort=_test_sort](
         min_ps, input_logits, out_token_ids, temperature
     )
 
 
-@always_inline
+@inline(.always)
 def _topp_minp_sampling[
     dtype: DType,
     out_idx_type: DType,
@@ -75,7 +113,7 @@ def _topp_minp_sampling[
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
-    p_thresholds: TileTensor[dtype, ...],
+    p_thresholds: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
@@ -110,46 +148,52 @@ def _topp_minp_sampling[
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
-    var sorted_probs_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var sorted_probs_alloc = alloc(
+        AllocLayout[Scalar[dtype]](length=batch_size * vocab_size)
+    ).into_managed()
+    var sorted_probs_ptr: MutPointer[
+        Scalar[dtype], origin_of(sorted_probs_alloc)
+    ] = sorted_probs_alloc.unsafe_ptr()
     var sorted_probs = TileTensor(
         sorted_probs_ptr,
-        row_major(Coord(Idx(batch_size), Idx(vocab_size))),
+        row_major(batch_size, vocab_size),
     )
 
-    var sorted_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * vocab_size)
+    var sorted_ids_alloc = alloc(
+        AllocLayout[Scalar[out_idx_type]](length=batch_size * vocab_size)
+    ).into_managed()
+    var sorted_ids_ptr: MutPointer[
+        Scalar[out_idx_type], origin_of(sorted_ids_alloc)
+    ] = sorted_ids_alloc.unsafe_ptr()
     var sorted_ids = TileTensor(
         sorted_ids_ptr,
-        row_major(Coord(Idx(batch_size), Idx(vocab_size))),
+        row_major(batch_size, vocab_size),
     )
 
     comptime assert sorted_probs.element_size == out_token_ids.element_size
     comptime assert out_token_ids.element_size == 1
 
+    var logits_flat = input_logits.reshape(row_major(batch_size * vocab_size))
+
     # Initialize sorted_ids with iota values
     for batch_id in range(batch_size):
-        iota(sorted_ids.ptr + (batch_id * vocab_size), vocab_size)
+        iota(sorted_ids[batch_id : batch_id + 1, :].as_span())
         # Copy input_logits to sorted_probs
         for i in range(vocab_size):
             var batch_offset = batch_id * vocab_size
-            sorted_probs.ptr[batch_offset + i] = input_logits.ptr[
-                batch_offset + i
-            ]
+            sorted_probs[batch_id, i] = logits_flat.load[width=1](
+                (batch_offset + i,)
+            )
 
-    @parameter
-    @__copy_capture(input_logits)
     def apply_temperature[
-        _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        var val = input_logits.load[width=_simd_width](Coord(coords))
+        _simd_width: Int
+    ](coords: Coord) {var input_logits, imm} -> SIMD[dtype, _simd_width]:
+        var val = input_logits.load[width=_simd_width](coords)
         return val / temperature
 
-    var shape = IndexList[input_logits.rank]()
-
-    comptime for i in range(input_logits.rank):
-        shape[i] = input_logits.layout.shape[i]().value()
-
-    softmax[simd_width=1, input_fn=apply_temperature](
-        shape,
+    softmax_inline[simd_width=1, rank=input_logits.rank](
+        apply_temperature,
+        input_logits.layout.shape_coord(),
         sorted_probs,
         axis=input_logits.rank - 1,
     )
@@ -158,8 +202,11 @@ def _topp_minp_sampling[
 
     # Copy sorted probs back to input_logits if testing
     comptime if _test_sort:
+        var sorted_probs_flat = sorted_probs.reshape(
+            row_major(batch_size * vocab_size)
+        )
         for i in range(batch_size * vocab_size):
-            input_logits.ptr[i] = sorted_probs.ptr[i]
+            logits_flat.store((i,), sorted_probs_flat[i])
 
     # Process each batch
     for batch in range(batch_size):
@@ -171,7 +218,7 @@ def _topp_minp_sampling[
             for i in range(vocab_size):
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
-                    sid = sorted_ids[batch, i]
+                    var sid = sorted_ids[batch, i]
                     out_token_ids[batch, 0] = sid
                     break
         else:
@@ -182,7 +229,7 @@ def _topp_minp_sampling[
             )
             var num_filtered_tokens = 0
             for i in range(vocab_size):
-                if sorted_probs[batch, i][0] >= p_threshold[0]:
+                if sorted_probs[batch, i] >= p_threshold[0]:
                     sum_filtered_probs += sorted_probs[batch, i]
                     num_filtered_tokens += 1
                 else:
@@ -195,15 +242,15 @@ def _topp_minp_sampling[
             for i in range(num_filtered_tokens):
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
-                    sid = sorted_ids[batch, i]
+                    var sid = sorted_ids[batch, i]
                     out_token_ids[batch, 0] = sid
                     break
 
-    sorted_ids_ptr.free()
-    sorted_probs_ptr.free()
+    dealloc(sorted_ids_alloc^)
+    dealloc(sorted_probs_alloc^)
 
 
-@always_inline
+@inline(.always)
 def sort_buf_descending[
     dtype: DType, out_idx_type: DType
 ](
@@ -212,6 +259,17 @@ def sort_buf_descending[
     vocab_size: Int,
 ):
     """Sort each batch separately in descending order using parallel merge sort.
+
+    Parameters:
+        dtype: Element type of `buf_keys` (inferred).
+        out_idx_type: Element type of `buf_ids` (inferred).
+    Args:
+        buf_keys: Rank-2 keys sorted in place in descending order, one
+            row per batch.
+        buf_ids: Rank-2 indices carried alongside `buf_keys` so each key
+            retains its original position.
+        vocab_size: Number of elements per batch row; the total element
+            count divided by this gives the batch count.
     """
     comptime assert buf_keys.rank == 2, "rank must be 2"
     var batch_size = buf_keys.num_elements() // vocab_size
@@ -231,7 +289,22 @@ def merge_sort_recursive[
     start: Int,
     end: Int,
 ):
-    """Recursive merge sort implementation."""
+    """
+    Recursive merge sort implementation.
+
+    Parameters:
+        dtype: Element type of `buf_keys` (inferred).
+        out_idx_type: Element type of `buf_ids` (inferred).
+    Args:
+        buf_keys: Rank-2 keys sorted in place in descending order, one
+            row per batch.
+        buf_ids: Rank-2 indices carried alongside `buf_keys` so each key
+            retains its original position.
+        start: Inclusive start index of the contiguous range to sort
+            within the flattened buffer.
+        end: Exclusive end index of the contiguous range to sort within
+            the flattened buffer.
+    """
     if end - start > 1:
         var mid = start + (end - start) // 2
         merge_sort_recursive(buf_keys, buf_ids, start, mid)
@@ -239,7 +312,7 @@ def merge_sort_recursive[
         merge(buf_keys, buf_ids, start, mid, end)
 
 
-@always_inline
+@inline(.always)
 def merge[
     dtype: DType, out_idx_type: DType
 ](
@@ -249,23 +322,57 @@ def merge[
     mid: Int,
     end: Int,
 ):
-    """Merge two sorted subarrays into one sorted array."""
+    """
+    Merge two sorted subarrays into one sorted array.
+
+    Parameters:
+        dtype: Element type of `buf_keys` (inferred).
+        out_idx_type: Element type of `buf_ids` (inferred).
+    Args:
+        buf_keys: Rank-2 keys holding two adjacent sorted subranges that
+            are merged in place in descending order.
+        buf_ids: Rank-2 indices carried alongside `buf_keys` so each key
+            retains its original position.
+        start: Inclusive start index of the left sorted subrange.
+        mid: Exclusive end of the left subrange and inclusive start of
+            the right subrange.
+        end: Exclusive end index of the right sorted subrange.
+    """
     var left_size = mid - start
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_keys_ptr = alloc[Scalar[dtype]](left_size)
-    var right_keys_ptr = alloc[Scalar[dtype]](right_size)
-    var left_ids_ptr = alloc[Scalar[out_idx_type]](left_size)
-    var right_ids_ptr = alloc[Scalar[out_idx_type]](right_size)
+    var left_keys_ptr = alloc(AllocLayout[Scalar[dtype]](length=left_size))
+    var right_keys_ptr = alloc(AllocLayout[Scalar[dtype]](length=right_size))
+    var left_ids_ptr = alloc(
+        AllocLayout[Scalar[out_idx_type]](length=left_size)
+    )
+    var right_ids_ptr = alloc(
+        AllocLayout[Scalar[out_idx_type]](length=right_size)
+    )
+    var left_keys_data: MutPointer[
+        Scalar[dtype], origin_of(left_keys_ptr._alloc)
+    ] = left_keys_ptr.unsafe_ptr()
+    var right_keys_data: MutPointer[
+        Scalar[dtype], origin_of(right_keys_ptr._alloc)
+    ] = right_keys_ptr.unsafe_ptr()
+    var left_ids_data: MutPointer[
+        Scalar[out_idx_type], origin_of(left_ids_ptr._alloc)
+    ] = left_ids_ptr.unsafe_ptr()
+    var right_ids_data: MutPointer[
+        Scalar[out_idx_type], origin_of(right_ids_ptr._alloc)
+    ] = right_ids_ptr.unsafe_ptr()
+
+    var keys = buf_keys.reshape(row_major(buf_keys.num_elements()))
+    var ids = buf_ids.reshape(row_major(buf_ids.num_elements()))
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_keys_ptr[i] = buf_keys.ptr[start + i]
-        left_ids_ptr[i] = buf_ids.ptr[start + i]
+        left_keys_data[i] = keys.load[width=1]((start + i,))
+        left_ids_data[i] = ids.load[width=1]((start + i,))
     for i in range(right_size):
-        right_keys_ptr[i] = buf_keys.ptr[mid + i]
-        right_ids_ptr[i] = buf_ids.ptr[mid + i]
+        right_keys_data[i] = keys.load[width=1]((mid + i,))
+        right_ids_data[i] = ids.load[width=1]((mid + i,))
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -273,31 +380,33 @@ def merge[
     var k = start  # Index for merged array
 
     while i < left_size and j < right_size:
-        if left_keys_ptr[i] >= right_keys_ptr[j]:  # Use >= for descending order
-            buf_keys.ptr[k] = left_keys_ptr[i]
-            buf_ids.ptr[k] = left_ids_ptr[i]
+        if (
+            left_keys_data[i] >= right_keys_data[j]
+        ):  # Use >= for descending order
+            keys.store((k,), left_keys_data[i])
+            ids.store((k,), left_ids_data[i])
             i += 1
         else:
-            buf_keys.ptr[k] = right_keys_ptr[j]
-            buf_ids.ptr[k] = right_ids_ptr[j]
+            keys.store((k,), right_keys_data[j])
+            ids.store((k,), right_ids_data[j])
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf_keys.ptr[k] = left_keys_ptr[i]
-        buf_ids.ptr[k] = left_ids_ptr[i]
+        keys.store((k,), left_keys_data[i])
+        ids.store((k,), left_ids_data[i])
         i += 1
         k += 1
 
     while j < right_size:
-        buf_keys.ptr[k] = right_keys_ptr[j]
-        buf_ids.ptr[k] = right_ids_ptr[j]
+        keys.store((k,), right_keys_data[j])
+        ids.store((k,), right_ids_data[j])
         j += 1
         k += 1
 
     # Free temporary arrays
-    left_keys_ptr.free()
-    right_keys_ptr.free()
-    left_ids_ptr.free()
-    right_ids_ptr.free()
+    dealloc(left_keys_ptr^)
+    dealloc(right_keys_ptr^)
+    dealloc(left_ids_ptr^)
+    dealloc(right_ids_ptr^)

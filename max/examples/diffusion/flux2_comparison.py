@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -31,6 +30,8 @@ import asyncio
 import base64
 import gc
 import io
+import json
+import logging
 import os
 import random
 import shutil
@@ -48,32 +49,33 @@ from typing import Any, cast
 import diffusers
 import torch
 from max.driver import DeviceSpec
-from max.interfaces import (
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
+from max.pipelines.context import PixelContext
+from max.pipelines.diffusion.config import (
+    DenoisingCacheSettings,
+    resolve_denoising_cache,
+)
+from max.pipelines.diffusion.interface import DiffusionPipeline
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
+from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.types import (
     PipelineTask,
     PixelGenerationInputs,
     RequestID,
 )
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
     InputImageContent,
     InputTextContent,
     OpenResponsesRequestBody,
     OutputImageContent,
     UserMessage,
 )
-from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationTokenizer
-from max.pipelines.lib.interfaces import DiffusionPipeline
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
 )
 from PIL import Image
 
@@ -452,36 +454,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--prefer-module-v3",
         action="store_true",
         help=(
-            "Whether to prefer the eager API architecture over the graph API "
-            "architecture. When set, the server uses the eager API architecture "
+            "Whether to prefer the ModuleV3 architecture over the graph API "
+            "architecture. When set, the server uses the ModuleV3 architecture "
             "when available and falls back to the graph API architecture."
-        ),
-    )
-    parser.add_argument(
-        "--teacache",
-        action="store_true",
-        help="Enable TeaCache optimization for the MAX pipeline.",
-    )
-    parser.add_argument(
-        "--teacache-rel-l1-thresh",
-        type=float,
-        default=None,
-        help="TeaCache relative-L1 threshold (model default if unset).",
-    )
-    parser.add_argument(
-        "--teacache-coefficients",
-        type=float,
-        action="append",
-        default=None,
-        help=(
-            "TeaCache polynomial coefficients. Repeat this flag once per "
-            "coefficient to override the model defaults (5 for FLUX)."
         ),
     )
     parser.add_argument(
         "--no-output",
         action="store_true",
         help="Skip saving generated images to disk.",
+    )
+    parser.add_argument(
+        "--model-override",
+        type=str,
+        action="append",
+        default=None,
+        help=(
+            "Per-component overrides in 'component.field=value' format. "
+            "Repeatable. Example: "
+            "'transformer.quantization_encoding=float4_e2m1fnx2'."
+        ),
     )
     return parser.parse_args(argv)
 
@@ -626,12 +618,6 @@ def _build_image_filename(
         warmup = args.taylorseer_warmup_steps or "default"
         order = args.taylorseer_max_order or "default"
         parts.append(f"taylorseer_i{interval}_w{warmup}_o{order}")
-    if args.teacache:
-        thresh = args.teacache_rel_l1_thresh or "default"
-        coeffs = (
-            "custom" if args.teacache_coefficients is not None else "default"
-        )
-        parts.append(f"teacache_t{thresh}_c{coeffs}")
     return "_".join(parts) + ".png"
 
 
@@ -821,61 +807,107 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     """Load FLUX.2 pipeline via MAX."""
     model_id = args.model
 
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=model_id,
-                    device_specs=[DeviceSpec.accelerator()],
-                    weight_path=(
-                        [Path(p) for p in args.weight_path]
-                        if args.weight_path
-                        else []
-                    ),
-                    quantization_encoding=args.quantization_encoding,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=args.prefer_module_v3,
-        ),
+    manifest = ModelManifest.from_model_path(
+        model_id,
+        device_specs=[DeviceSpec.accelerator()],
     )
+    if args.weight_path:
+        manifest = manifest.with_override(
+            "transformer",
+            weight_path=[Path(p) for p in args.weight_path],
+        )
+    if args.quantization_encoding:
+        manifest = manifest.with_override(
+            "transformer",
+            quantization_encoding=args.quantization_encoding,
+        )
+
+    # Apply flexible per-component overrides from --model-override.
+    if args.model_override:
+        from pydantic import TypeAdapter
+
+        for override in args.model_override:
+            dot_pos = override.find(".")
+            if dot_pos < 1:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            eq_pos = override.find("=", dot_pos)
+            if eq_pos < dot_pos + 2:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            component = override[:dot_pos]
+            field_name = override[dot_pos + 1 : eq_pos]
+            raw_value = override[eq_pos + 1 :]
+
+            if field_name not in MAXModelConfig.model_fields:
+                raise ValueError(
+                    f"Unknown MAXModelConfig field: {field_name!r}. "
+                    f"Valid fields: "
+                    f"{sorted(MAXModelConfig.model_fields.keys())}"
+                )
+            if component not in manifest:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(manifest.keys())}"
+                )
+
+            field_info = MAXModelConfig.model_fields[field_name]
+            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+            try:
+                parsed = json.loads(raw_value)
+            except (json.JSONDecodeError, ValueError):
+                parsed = raw_value
+            value = adapter.validate_python(parsed)
+            manifest = manifest.with_override(component, **{field_name: value})
+
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.models.main_architecture_name,
-        prefer_module_v3=config.runtime.prefer_module_v3,
+        manifest.main_architecture_name,
+        prefer_module_v3=args.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
     assert arch is not None, (
         f"No architecture found in MAX registry for {model_id}."
     )
 
+    # Fill unset denoising-cache fields from the architecture's defaults.
+    config = PipelineConfig(
+        models=manifest,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=args.prefer_module_v3,
+            denoising_cache=resolve_denoising_cache(
+                DenoisingCacheSettings(
+                    first_block_caching=args.first_block_caching,
+                    taylorseer=args.taylorseer,
+                    taylorseer_cache_interval=args.taylorseer_cache_interval,
+                    taylorseer_warmup_steps=args.taylorseer_warmup_steps,
+                    taylorseer_max_order=args.taylorseer_max_order,
+                ),
+                arch.denoising_cache_defaults,
+                arch_name=arch.name,
+            ),
+        ),
+    )
+
     max_length = None
     if "tokenizer" in config.models:
         max_length = 512  # Flux2-specific override
 
-    tokenizer = PixelGenerationTokenizer(
+    tokenizer_cls = cast(type[PixelGenerationTokenizer], arch.tokenizer_cls)
+    tokenizer = tokenizer_cls(
         model_path=model_id,
         pipeline_config=config,
         subfolder="tokenizer",
         max_length=max_length,
     )
 
-    cache_config = DenoisingCacheConfig(
-        first_block_caching=args.first_block_caching,
-        taylorseer=args.taylorseer,
-        taylorseer_cache_interval=args.taylorseer_cache_interval,
-        taylorseer_warmup_steps=args.taylorseer_warmup_steps,
-        taylorseer_max_order=args.taylorseer_max_order,
-        teacache=args.teacache,
-        teacache_rel_l1_thresh=args.teacache_rel_l1_thresh,
-        teacache_coefficients=args.teacache_coefficients,
-    )
-
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
         pipeline_model=pipeline_model,
-        cache_config=cache_config,
     )
     return pipeline, tokenizer, config
 
@@ -1096,6 +1128,10 @@ def _print_per_iteration(
 
 
 def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s: %(message)s",
+    )
     args = parse_args(argv)
 
     # Resolve seed: generate a random one if not explicitly provided.
@@ -1236,19 +1272,6 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"  ts max order     : {args.taylorseer_max_order or 'model-default'}"
         )
-    print(f"  teacache         : {args.teacache}")
-    if args.teacache:
-        print(
-            f"  tc rel_l1 thresh : {args.teacache_rel_l1_thresh or 'model-default'}"
-        )
-        print(
-            "  tc coefficients  : "
-            + (
-                "user-specified"
-                if args.teacache_coefficients is not None
-                else "model-default"
-            )
-        )
     print(f"  warmup runs      : {args.num_warmups}")
     print(f"  timed iterations : {len(requests)}")
     print()
@@ -1270,15 +1293,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.taylorseer:
         caching_parts.append("taylorseer")
-    if args.teacache:
-        caching_parts.append(
-            "teacache"
-            + (
-                f" (threshold: {args.teacache_rel_l1_thresh})"
-                if args.teacache_rel_l1_thresh is not None
-                else " (threshold: model-default)"
-            )
-        )
     print(f"    caching        : {', '.join(caching_parts) or 'none'}")
     print()
 

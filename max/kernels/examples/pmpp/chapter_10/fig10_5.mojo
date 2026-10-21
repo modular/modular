@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.random import random_float64
 from std.math import abs
 from std.bit import log2_floor
+from std.memory.alloc import unsafe_alloc
 
 # ========================== CONFIGURATION ==========================
 comptime BLOCK_DIM = 256
@@ -23,8 +25,8 @@ comptime BLOCK_DIM = 256
 
 # ========================== KERNEL CODE ==========================
 def simple_sum_reduction_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: MutPointer[Float32, MutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Simple sum reduction with divergent threads (loop unrolled).
 
@@ -32,15 +34,15 @@ def simple_sum_reduction_kernel(
         input: Input array (in global memory, modified in-place).
         output: Output scalar for the sum result.
     """
-    var i = 2 * UInt32(thread_idx.x)
+    var i = 2 * thread_idx.x
 
     # Unrolled reduction: strides 1, 2, 4, 8, 16, 32, 64, 128, 256
     comptime NUM_ITERATIONS = log2_floor(BLOCK_DIM) + 1
 
     comptime for s in range(NUM_ITERATIONS):
         comptime stride = 1 << s
-        if UInt32(thread_idx.x) % UInt32(stride) == 0:
-            input[Int(i)] += input[Int(i + UInt32(stride))]
+        if thread_idx.x % stride == 0:
+            input[i] += input[i + stride]
         barrier()
 
     if thread_idx.x == 0:
@@ -49,8 +51,8 @@ def simple_sum_reduction_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.
@@ -71,13 +73,13 @@ def main() raises:
     comptime N = BLOCK_DIM * 2  # Process 2 elements per thread
 
     # Host memory allocation
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](1)
-    var h_ref = alloc[Float32](1)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](1)
+    var h_ref = unsafe_alloc[Float32](1)
 
     # Initialize input with random values
     for i in range(N):
-        h_input[i] = random_float64().cast[DType.float32]()
+        h_input[i] = random_float64().cast[.float32]()
 
     print(
         "Launching simple sum reduction kernel (Fig 10.5) with 1 block and",
@@ -88,14 +90,14 @@ def main() raises:
 
     with DeviceContext() as ctx:
         # Device memory allocation
-        var d_input = ctx.enqueue_create_buffer[DType.float32](N)
-        var d_output = ctx.enqueue_create_buffer[DType.float32](1)
+        var d_input = ctx.enqueue_create_buffer[.float32](N)
+        var d_output = ctx.enqueue_create_buffer[.float32](1)
 
         # Copy data to device
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block)
-        ctx.enqueue_function_experimental[simple_sum_reduction_kernel](
+        ctx.enqueue_function[simple_sum_reduction_kernel](
             d_input,
             d_output,
             grid_dim=(1, 1, 1),
@@ -128,6 +130,6 @@ def main() raises:
         print("SUCCESS: CPU=", h_ref[0], ", GPU=", h_output[0], "match!")
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()

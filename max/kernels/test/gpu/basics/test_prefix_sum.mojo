@@ -13,10 +13,11 @@
 
 from std.math import ceildiv
 
-from std.gpu import global_idx
-from std.gpu.primitives import block, warp
-from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu import global_idx
+from max.gpu.primitives import block
+from max.gpu.primitives import warp
+from max.gpu.globals import WARP_SIZE
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 comptime dtype = DType.uint64
@@ -26,14 +27,17 @@ def warp_prefix_sum_kernel[
     dtype: DType,
     exclusive: Bool,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    size: Int,
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var tid = global_idx.x
     if tid >= size:
         return
-    output[tid] = warp.prefix_sum[exclusive=exclusive](input[tid])
+    output.unsafe_store(
+        tid, warp.prefix_sum[exclusive=exclusive](input.unsafe_load(tid))
+    )
 
 
 def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
@@ -41,12 +45,10 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     comptime BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
-    var in_host = alloc[Scalar[dtype]](size)
-    var out_host = alloc[Scalar[dtype]](size)
-
+    var in_host = ctx.enqueue_create_host_buffer[dtype](size)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](size)
     for i in range(size):
         in_host[i] = UInt64(i)
-        out_host[i] = 0
 
     # Create device buffers and copy input data
     var in_device = ctx.enqueue_create_buffer[dtype](size)
@@ -56,10 +58,10 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
     comptime kernel = warp_prefix_sum_kernel[dtype=dtype, exclusive=exclusive]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         out_device,
         in_device,
-        size,
+        Int32(size),
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
     )
@@ -82,25 +84,25 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
             msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
-    # Cleanup
-    in_host.free()
-    out_host.free()
-
 
 def block_prefix_sum_kernel[
     dtype: DType,
     block_size: Int,
     exclusive: Bool,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    size: Int,
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var tid = global_idx.x
     if tid >= size:
         return
-    output[tid] = block.prefix_sum[exclusive=exclusive, block_size=block_size](
-        input[tid]
+    output.unsafe_store(
+        tid,
+        block.prefix_sum[exclusive=exclusive, block_size=block_size](
+            input.unsafe_load(tid)
+        ),
     )
 
 
@@ -111,12 +113,10 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
-    var in_host = alloc[Scalar[dtype]](size)
-    var out_host = alloc[Scalar[dtype]](size)
-
+    var in_host = ctx.enqueue_create_host_buffer[dtype](size)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](size)
     for i in range(size):
         in_host[i] = UInt64(i)
-        out_host[i] = 0
 
     # Create device buffers and copy input data
     var in_device = ctx.enqueue_create_buffer[dtype](size)
@@ -128,10 +128,10 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     comptime kernel = block_prefix_sum_kernel[
         dtype=dtype, block_size=BLOCK_SIZE, exclusive=exclusive
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         out_device,
         in_device,
-        size,
+        Int32(size),
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
     )
@@ -153,10 +153,6 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
             expected,
             msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
-
-    # Cleanup
-    in_host.free()
-    out_host.free()
 
 
 def main() raises:

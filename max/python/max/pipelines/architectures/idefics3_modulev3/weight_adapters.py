@@ -33,6 +33,7 @@ from max.graph.weights import WeightData, Weights
 # become ``language_model.layers.0.self_attn.q_proj.weight``.
 IDEFICS3_LANGUAGE_MODEL_MAPPING: dict[str, str] = {
     "model.text_model.": "language_model.",
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
 }
 
 # V3 vision model weight mapping.
@@ -96,8 +97,8 @@ def convert_idefics3_vision_model_state_dict(
 
     for checkpoint_name, weight in state_dict.items():
         if checkpoint_name.startswith(
-            "model.connector."
-        ) or checkpoint_name.startswith("model.vision_model."):
+            ("model.connector.", "model.vision_model.")
+        ):
             vision_model_name = checkpoint_name
             for before, after in IDEFICS3_VISION_MODEL_MAPPING.items():
                 vision_model_name = vision_model_name.replace(before, after)

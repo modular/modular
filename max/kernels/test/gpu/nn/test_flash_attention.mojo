@@ -15,33 +15,22 @@ from std.math import exp
 from std.random import rand, seed
 from std.sys import argv
 
-from std.gpu import *
-from std.gpu.host import DeviceContext
-from std.sys import has_amd_gpu_accelerator
-from std.gpu.host.info import (
+from max.gpu import *
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import (
     A100,
     H100,
     GPUInfo,
-    Vendor,
     _is_sm10x_gpu,
 )
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import (
     flash_attention,
     mha_gpu_naive,
 )
 from nn.attention.mha_mask import NullMask
+from nn.attention.gpu.nvidia.common import immut_tile_tensor_1d
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -52,11 +41,7 @@ def is_benchmark() -> Bool:
 
 
 def is_sm8(info: GPUInfo) -> Bool:
-    return (
-        info.vendor == Vendor.NVIDIA_GPU
-        and info.compute >= 8
-        and info.compute < 9
-    )
+    return info.api == "cuda" and info.compute >= 8 and info.compute < 9
 
 
 def test[
@@ -79,7 +64,7 @@ def test[
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "num_heads:",
         num_heads,
         "seq_len:",
@@ -105,11 +90,11 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
 
     # Q, K, V are initialized.
     if use_index_input:
@@ -134,9 +119,9 @@ def test[
                     ](i * depth + j)
     else:
         seed(1234567890)
-        rand[qkv_type](q_ptr, q_size)
-        rand[qkv_type](k_ptr, k_size)
-        rand[qkv_type](v_ptr, v_size)
+        rand[qkv_type](q_ptr.as_span())
+        rand[qkv_type](k_ptr.as_span())
+        rand[qkv_type](v_ptr.as_span())
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
@@ -151,34 +136,26 @@ def test[
 
     # Construct device buffers.
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        q_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        k_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        v_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        output_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
-    @always_inline
-    @__copy_capture(q_device, k_device, v_device, output_device)
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         flash_attention[decoding_warp_split_k=decoding_warp_split_k](
             output_device,
             q_device,
@@ -196,7 +173,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -211,10 +188,8 @@ def test[
 
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var output_ref_device = TileTensor(
-        output_ref_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
@@ -236,22 +211,21 @@ def test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
-    _ = output_ref_device_ptr
+    ctx.synchronize()
 
-    @parameter
     def get_rtol() -> Float64:
-        return 2e-2 if num_partitions and num_partitions.value() >= 4 else 1e-2
+        return 2e-2 if num_partitions.or_else(0) >= 4 else 1e-2
 
     var rtol = get_rtol()
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                var expect = output_ptr.load(
+                var expect = output_ptr[d + depth * (h + s * num_heads)].cast[
+                    DType.float64
+                ]()
+                var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
+                ].cast[.float64]()
                 var rerr = abs((actual - expect) / expect)
                 assert_almost_equal(
                     actual,
@@ -266,47 +240,24 @@ def test[
     _ = v_device_ptr
     _ = output_device_ptr
 
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
-
 
 def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
-    var depths = [64, 128]
+    var depths: List = [64, 128, 512]
 
-    if info == materialize[H100]() or _is_sm10x_gpu(info):
+    if info == materialize[H100.gpu_info]() or _is_sm10x_gpu(info):
         depths.append(80)
-    if has_amd_gpu_accelerator():
-        depths.append(512)
+        depths.append(256)
+
     return depths^
 
 
 def test_context_encoding(ctx: DeviceContext) raises:
-    # fp32 arbitrary depth and num_heads, baseline impl.
-    test[DType.float32, depth=127, num_heads=2](111, 121, ctx)
+    test[.bfloat16, depth=127, num_heads=2](111, 121, ctx)
 
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     comptime for d in range(len(depths)):
         comptime depth = depths[d]
-        # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
-        test[
-            DType.float32,
-            depth=depth,
-            num_heads=32,
-        ](1024, 1024, ctx, is_benchmark())
-        test[
-            DType.float32,
-            depth=depth,
-            num_heads=3,
-        ](14, 14, ctx, is_benchmark())
-        test[
-            DType.float32,
-            depth=depth,
-            num_heads=1,
-        ](178, 178, ctx, is_benchmark())
         # bf16 depth == 128, bf16-fp32 mma
         test[
             DType.bfloat16,
@@ -378,7 +329,7 @@ def test_context_encoding(ctx: DeviceContext) raises:
         ](1024, 100, ctx)
 
         test[
-            DType.float32,
+            DType.bfloat16,
             depth=128,
             num_heads=24,
             group=3,
@@ -416,12 +367,28 @@ def test_context_encoding(ctx: DeviceContext) raises:
             num_heads=3,
         ](119, 200, ctx)
 
+        # Zero seq_len / num_keys: the FLUX.2 VAE mid-block attention
+        # runs on a flattened spatial dim, which is zero when the
+        # encoder is invoked on a ``(0, 0, 3)`` placeholder image for
+        # the text-to-image path.  The kernel must early-return rather
+        # than launching with zero grid dims.
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+        ](0, 0, ctx)
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=3,
+        ](0, 0, ctx)
+
 
 def test_decoding[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -437,9 +404,7 @@ def test_decoding[
         ](1, 11, ctx, use_index_input=use_index_input)
 
         comptime if (
-            not is_sm8(ctx.default_device_info)
-            or num_partitions
-            and num_partitions.value() == 1
+            not is_sm8(ctx.default_device_info) or num_partitions == Optional(1)
         ):
             test[
                 qkv_type,
@@ -486,7 +451,7 @@ def test_decoding_large_group[
     batch_size: Int,
     num_partitions: Optional[Int] = None,
     split_k: Bool = False,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -511,23 +476,21 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     comptime num_keys = 64
     comptime depth = 128
     comptime qkv_type = DType.bfloat16  # fast path on A100/H100
-    comptime mask_type = DType.float32
     comptime scale = Float32(0.0)  # force QK logits to exactly 0
 
-    var q_ptr = alloc[Scalar[qkv_type]](
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * seq_len * num_heads * depth
     )
-    var k_ptr = alloc[Scalar[qkv_type]](
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * num_keys * kv_heads * depth
     )
-    var v_ptr = alloc[Scalar[qkv_type]](
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * num_keys * kv_heads * depth
     )
-    var mask_ptr = alloc[Scalar[mask_type]](batch_size * seq_len * num_keys)
-    var out_ptr = alloc[Scalar[qkv_type]](
+    var out_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * seq_len * num_heads * depth
     )
-    var sinks_ptr = alloc[Scalar[qkv_type]](num_heads)
+    var sinks_ptr = ctx.enqueue_create_host_buffer[qkv_type](num_heads)
 
     # Q,K don't matter when scale=0, but set deterministically
     for i in range(batch_size * seq_len * num_heads * depth):
@@ -540,10 +503,6 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     for i in range(batch_size * num_keys * kv_heads * depth):
         v_ptr[i] = Float32(1.0).cast[qkv_type]()
 
-    # No masking
-    for i in range(batch_size * seq_len * num_keys):
-        mask_ptr[i] = 0.0
-
     # Two different sinks for the two heads
     var sink_h0 = Float32(5.0)  # large positive
     var sink_h1 = Float32(3.0)  # moderately positive
@@ -552,9 +511,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
 
     var out_host = TileTensor(
         out_ptr,
-        row_major(
-            (Idx[batch_size](), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((Idx[batch_size], seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var q_dev = ctx.enqueue_create_buffer[qkv_type](
@@ -566,9 +523,6 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     var v_dev = ctx.enqueue_create_buffer[qkv_type](
         batch_size * num_keys * kv_heads * depth
     )
-    var m_dev = ctx.enqueue_create_buffer[mask_type](
-        batch_size * seq_len * num_keys
-    )
     var out_dev = ctx.enqueue_create_buffer[qkv_type](
         batch_size * seq_len * num_heads * depth
     )
@@ -577,41 +531,28 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     ctx.enqueue_copy(q_dev, q_ptr)
     ctx.enqueue_copy(k_dev, k_ptr)
     ctx.enqueue_copy(v_dev, v_ptr)
-    ctx.enqueue_copy(m_dev, mask_ptr)
     ctx.enqueue_copy(sinks_dev, sinks_ptr)
 
     var q_device = TileTensor(
-        q_dev.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        q_dev,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
-        k_dev.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
-        ),
+        k_dev,
+        row_major((batch_size, Idx[num_keys], Idx[kv_heads], Idx[depth])),
     )
     var v_device = TileTensor(
-        v_dev.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
-        ),
+        v_dev,
+        row_major((batch_size, Idx[num_keys], Idx[kv_heads], Idx[depth])),
     )
     var out_device = TileTensor(
-        out_dev.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        out_dev,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
-    comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
-    var sinks_device = LayoutTensor[qkv_type, sinks_layout](
-        sinks_dev.unsafe_ptr(),
-        RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
-    )
+    var sinks_device = immut_tile_tensor_1d(sinks_dev.unsafe_ptr(), num_heads)
 
-    @always_inline
-    def launch(ctx: DeviceContext) raises unified {read}:
+    @inline(.always)
+    def launch(ctx: DeviceContext) raises {imm}:
         flash_attention[sink=True](
             out_device,
             q_device,
@@ -621,12 +562,13 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.get_immutable(),
+            sink_weights=sinks_device,
         )
 
     launch(ctx)
     ctx.synchronize()
     ctx.enqueue_copy(out_ptr, out_dev)
+    ctx.synchronize()
 
     def expected_mass(sink: Float32) -> Float32:
         return Float32(num_keys) / (Float32(num_keys) + exp(sink))
@@ -638,17 +580,23 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     # (since V=1)
     for s in range(seq_len):
         for d in range(depth):
-            var got0 = out_host[0, s, 0, d].cast[DType.float32]()
-            var got1 = out_host[0, s, 1, d].cast[DType.float32]()
+            var got0 = out_host[0, s, 0, d].cast[.float32]()
+            var got1 = out_host[0, s, 1, d].cast[.float32]()
             assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
             assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
 
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    mask_ptr.free()
-    out_ptr.free()
-    sinks_ptr.free()
+    # Keep every device buffer alive until the kernel and the readback have both
+    # completed. `sinks_device` wraps `sinks_dev.unsafe_ptr()` (a raw pointer,
+    # no ownership), so without this keepalive `sinks_dev` can be freed before
+    # the async attention kernel reads it; the allocator then reuses that memory
+    # and the kernel reads a garbage sink weight (intermittently 0 -> output
+    # num_keys/(num_keys+1), or a large value -> output ~0). Mirrors the
+    # `_ = sink_d^` keepalive in `test_apple_fa_prefill.mojo`.
+    _ = q_dev^
+    _ = k_dev^
+    _ = v_dev^
+    _ = out_dev^
+    _ = sinks_dev^
 
 
 def main() raises:
@@ -663,11 +611,6 @@ def main() raises:
             comptime for batch_size in range(1, 5, 3):
                 test_decoding[batch_size, 1, Bool(split_k)](ctx)
 
-                comptime if not split_k:
-                    test_decoding[batch_size, 1, Bool(split_k), DType.float32](
-                        ctx
-                    )
-
                 comptime if (
                     ctx.default_device_info == A100
                     or ctx.default_device_info == H100
@@ -676,10 +619,5 @@ def main() raises:
 
                 test_decoding[batch_size, 2, Bool(split_k)](ctx)
                 test_decoding[batch_size, 4, Bool(split_k)](ctx)
-
-                comptime if not split_k:
-                    test_decoding[batch_size, 4, Bool(split_k), DType.float32](
-                        ctx
-                    )
                 test_decoding[batch_size, None, Bool(split_k)](ctx)
                 test_decoding[batch_size, 32, Bool(split_k)](ctx)

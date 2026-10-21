@@ -14,25 +14,25 @@
 
 from __future__ import annotations
 
-import contextlib
-import copy
 import dataclasses
-import functools
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Generic
 
-from max.driver import CPU, Buffer, Device, DLPackArray
-from max.engine import Model
-from max.experimental.realization_context import (
-    GraphRealizationContext,
-    _session,
+from max import tree
+from max.driver import CPU, Device, DLPackArray
+from max.engine import InferenceSession
+from max.experimental import compilation
+from max.experimental.nn._compilation_timer import CompilationTimer
+from max.experimental.nn._weight_utils import (
+    _ExternalWeight,
+    load_checkpoint,
+    name_weights,
+    shard_checkpoint,
 )
-from max.experimental.tensor import (
-    Tensor,
-    realization_context,
-)
-from max.graph import DeviceRef, Graph
+from max.experimental.sharding import DeviceMapping, DeviceMesh, TensorLayout
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, Type
 from rich.pretty import pretty_repr
 from typing_extensions import ParamSpec, Self, TypeVar, dataclass_transform
 
@@ -43,84 +43,14 @@ if TYPE_CHECKING:
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
-from max.experimental.nn._compile_utils import (
-    InputType,
-    _detect_signals,
-    _flatten_input_types,
-    _flatten_named_buffers,
-    _flatten_outputs,
-    _InputSlot,
-    _OutputSlot,
-    _reconstruct_outputs,
-    _unflatten_args,
-    _wrap_graph_inputs,
-)
-from max.nn.comm.allreduce import Signals
+#: The type of one tensor argument of ``forward``.
+InputType = Type[Any] | TensorLayout
 
-
-class CompiledModel:
-    """Compiled model returned by :meth:`Module.compile`.
-
-    Provides two execution paths:
-
-    * **Tensor path** — ``compiled(tensor_a, tensor_b)`` handles distributed
-      Tensors transparently (unflatten shards, append signals, reconstruct).
-      Used by tests and the high-level API.
-    * **Buffer path** — ``compiled.execute_raw(*buffers)`` passes flat Buffers
-      straight to the engine, auto-appending signal buffers. Returns
-      ``list[Buffer]`` with zero Tensor overhead.  Used by pipeline
-      ``execute()`` methods.
-
-    For CUDA graph capture/replay, access ``compiled.engine_model`` directly::
-
-        compiled.engine_model.capture(key, *all_buffers)
-        compiled.engine_model.replay(key, *all_buffers)
-
-    For multi-GPU capture, append ``compiled.signal_buffers`` to the buffer
-    list passed to capture/replay.
-    """
-
-    def __init__(
-        self,
-        engine_model: Model,
-        input_slots: list[_InputSlot],
-        output_slots: list[_OutputSlot],
-        signal_buffers: list[Buffer],
-        unary: bool,
-    ) -> None:
-        self._engine_model = engine_model
-        self._input_slots = input_slots
-        self._output_slots = output_slots
-        self._signal_buffers = signal_buffers
-        self._unary = unary
-
-    @property
-    def engine_model(self) -> Model:
-        """The underlying :class:`~max.engine.Model` for capture/replay."""
-        return self._engine_model
-
-    @property
-    def signal_buffers(self) -> list[Buffer]:
-        """Signal buffers for multi-GPU collectives (empty for single-GPU)."""
-        return self._signal_buffers
-
-    def __call__(self, *args: Any) -> Any:
-        """Tensor-in, Tensor-out execution (distributed-aware)."""
-        flat_args = _unflatten_args(args, self._input_slots)
-        flat_args.extend(self._signal_buffers)
-        raw_results = list(self._engine_model(*flat_args))
-        return _reconstruct_outputs(
-            raw_results, self._output_slots, self._unary
-        )
-
-    def execute_raw(self, *buffers: Buffer) -> list[Buffer]:
-        """Buffer-in, Buffer-out execution (no Tensor wrapping).
-
-        Auto-appends signal buffers for multi-GPU collectives.
-        """
-        all_bufs: list[Any] = list(buffers)
-        all_bufs.extend(self._signal_buffers)
-        return list(self._engine_model(*all_bufs))
+__all__ = [
+    "Module",
+    "module_dataclass",
+]
+from max.profiler import Tracer
 
 
 class _DevicePinned:
@@ -129,6 +59,21 @@ class _DevicePinned:
     Used as annotation metadata in `PinnedDeviceTensor`. Do not use directly;
     annotate fields with `PinnedDeviceTensor` instead.
     """
+
+
+@dataclasses.dataclass(frozen=True)
+class _TransparentKey:
+    """The tree key of a child with :attr:`~Module.name_transparent` set.
+
+    It renders as ``""`` so that :func:`~max.tree.extend_path` adds no
+    segment to the paths of the child's descendants, but it compares by name
+    so that two transparent children remain distinct keys.
+    """
+
+    name: str
+
+    def __str__(self) -> str:
+        return ""
 
 
 PinnedDeviceTensor = Annotated[Tensor, _DevicePinned]
@@ -141,29 +86,6 @@ that GPU kernels consume as host-side launch arguments should remain on CPU;
 moving them to the accelerator would force an expensive device sync every
 forward pass.
 """
-
-
-def _get_pinned_device_fields(cls: type) -> frozenset[str]:
-    """Returns field names annotated as `PinnedDeviceTensor` on `cls`.
-
-    Walks the MRO so that inherited annotations are included.
-    """
-    pinned: set[str] = set()
-    for base in cls.__mro__:
-        for name, ann in getattr(base, "__annotations__", {}).items():
-            if ann is PinnedDeviceTensor or ann == "PinnedDeviceTensor":
-                pinned.add(name)
-    return frozenset(pinned)
-
-
-def _validate_loaded_parameter(
-    name: str, existing: Tensor, loaded: Tensor
-) -> None:
-    if loaded.shape != existing.shape or loaded.dtype != existing.dtype:
-        raise ValueError(
-            f"{name!r}: Loaded tensor {loaded.type} not assignable to "
-            f"parameter {existing.type}."
-        )
 
 
 class Module(Generic[_P, _R]):
@@ -232,37 +154,69 @@ class Module(Generic[_P, _R]):
 
     :meth:`to` is the single pre-compilation entry point for device placement.
     It moves all weight tensors to the target device and records it on the
-    module via the :attr:`device` property. :meth:`input_types` implementations
-    should reference ``self.device`` when constructing
-    :obj:`~max.graph.TensorType` objects, so a single ``to()`` call drives
-    both weight placement and computation placement:
+    module via the :attr:`device` property. When you construct the
+    :obj:`~max.graph.TensorType` objects you pass to :meth:`compile`, reference
+    ``model.device`` for their ``device`` field, so a single ``to()`` call
+    drives both weight placement and computation placement:
 
     .. code-block:: python
 
-        from max.driver import Accelerator
+        from max.dtype import DType
         from max.experimental.nn import Linear
+        from max.experimental.tensor import Tensor, defaults
+        from max.graph import TensorType
 
-        model = Linear(10, 5)
-        model.to(Accelerator())                       # sets device, moves weights
-        compiled = model.compile(*model.input_types())  # computation runs on GPU
+        model = Linear(5, 10)
+        _, mesh = defaults()
+        model.to(mesh.devices[0])
+
+        input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
+        compiled = model.compile(input_type)
+        result = compiled(Tensor.ones([3, 5], dtype=DType.float32))
+
+    .. invisible-code-block: python
+
+        assert list(result.shape) == [3, 10]
 
     For CPU (the default), calling ``to()`` is optional. The :attr:`device`
     property defaults to :obj:`~max.driver.CPU`:
 
     .. code-block:: python
 
-        model = Linear(10, 5)
-        compiled = model.compile(*model.input_types())  # runs on CPU
+        from max.driver import CPU
+        from max.experimental.nn import Linear
+
+        model = Linear(5, 10)
+        print(model.device)
+
+    .. invisible-code-block: python
+
+        from max.driver import CPU
+
+        assert isinstance(model.device, CPU)
 
     Because :attr:`device` is tracked per-module instance, sub-modules can be
-    placed on different devices independently:
+    placed on different devices independently. Here two :class:`Linear`
+    sub-modules are placed on separate CPU device references (use distinct
+    :obj:`~max.driver.Accelerator` instances when accelerators are available):
 
     .. code-block:: python
 
-        encoder.to(Accelerator(0))
-        decoder.to(Accelerator(1))
+        from max.driver import CPU
+        from max.experimental.nn import Linear
 
-    For graph-level tensor routing *inside* ``forward()`` (e.g., pulling an
+        encoder = Linear(5, 8)
+        decoder = Linear(8, 4)
+
+        encoder.to(CPU(0))
+        decoder.to(CPU(0))
+
+    .. invisible-code-block: python
+
+        assert isinstance(encoder.device, CPU)
+        assert isinstance(decoder.device, CPU)
+
+    For graph-level tensor routing *inside* ``forward()`` (such as pulling an
     activation back to CPU at the end of the graph), use
     :func:`~max.graph.ops.transfer_to` or :meth:`~max.graph.TensorValue.to`
     instead; those insert transfer nodes into the compiled graph and are
@@ -283,8 +237,38 @@ class Module(Generic[_P, _R]):
          - Activation tensors within the compiled graph
        * - ``Tensor.to(device)``
          - Eager runtime (outside a graph)
-         - Concrete eager tensors (e.g., staging inputs)
+         - Concrete eager tensors (such as staging inputs)
     """
+
+    #: Whether this module's own name is dropped from its descendants' paths.
+    name_transparent: bool = False
+
+    def __tree_flatten__(self) -> tuple[dict[Any, Any], None]:
+        """Returns the attributes of this module as its children.
+
+        Children are keyed by attribute name. A child with
+        :attr:`name_transparent` set is keyed by a ``_TransparentKey``
+        instead, which omits it from the paths of its descendants.
+        """
+        return {
+            _TransparentKey(name)
+            if isinstance(value, Module) and value.name_transparent
+            else name: value
+            for name, value in vars(self).items()
+        }, None
+
+    @classmethod
+    def __tree_empty__(cls, meta: None) -> Module[..., Any]:
+        """Creates an empty module whose children are set afterwards."""
+        del meta
+        return object.__new__(cls)
+
+    def __tree_setattr__(self, key: Any, value: Any) -> None:
+        """Sets the child ``key`` to ``value``."""
+        # ``object.__setattr__`` also works for a frozen ``module_dataclass``.
+        object.__setattr__(
+            self, key.name if isinstance(key, _TransparentKey) else key, value
+        )
 
     def forward(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         """Defines the computation performed by the module.
@@ -303,15 +287,16 @@ class Module(Generic[_P, _R]):
             NotImplementedError: If the subclass does not override this method.
         """
         raise NotImplementedError(
-            f"{type(self).__name__} must implement forward()"
+            f"{type(self).__name__} must implement forward() "
+            "(or, for Modules with multiple entry points, expose "
+            "explicit methods called from a parent Module's forward())."
         )
 
     def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-        """Applies the module to the input by calling ``forward``.
+        """Calls :meth:`forward`.
 
-        This method wraps the user-defined ``forward`` method, following
-        PyTorch's convention. Users should override ``forward`` to define
-        their module's computation.
+        To share one subgraph between several modules, wrap the call with
+        :func:`~max.experimental.compilation.as_subgraph`.
 
         Args:
             *args: The arguments to pass to ``forward``.
@@ -324,15 +309,19 @@ class Module(Generic[_P, _R]):
 
     @property
     def local_parameters(self) -> Iterable[tuple[str, Tensor]]:
-        """Iterates over the local parameters of the ``Module``.
+        """Iterates over the tensors held directly on this ``Module``.
 
         Yields:
             ``(name, tensor)`` pairs, where ``name`` is the attribute name of
             the tensor on the module.
         """
-        for name, value in vars(self).items():
-            if isinstance(value, Tensor):
-                yield name, value
+        children, keys, _ = tree.flatten_one_level(self)
+        for key, child in zip(keys, children, strict=True):
+            if isinstance(child, Tensor):
+                yield (
+                    key.name if isinstance(key, _TransparentKey) else key,
+                    child,
+                )
 
     @property
     def parameters(self) -> Iterable[tuple[str, Tensor]]:
@@ -340,49 +329,18 @@ class Module(Generic[_P, _R]):
 
         This property performs a depth-first traversal of the module hierarchy,
         yielding each parameter tensor with its qualified name. The qualified name
-        uses dot-notation to represent the module tree structure (e.g.,
+        uses dot-notation to represent the module tree structure (such as
         ``encoder.layer1.weight``).
 
         Parameters are yielded in depth-first order: first the current module's
         direct parameters, then recursively each sub-module's parameters.
-
-        Counting total parameters:
-
-        .. code-block:: python
-
-            from max.experimental.tensor import Tensor
-            from max.experimental.nn import Module, module_dataclass
-            from max.experimental.nn import Linear
-
-            @module_dataclass
-            class MLP(Module):
-                fc1: Linear
-                fc2: Linear
-
-                def forward(self, x: Tensor) -> Tensor:
-                    return self.fc2(self.fc1(x))
-
-            model = MLP(
-                fc1=Linear(10, 20),
-                fc2=Linear(20, 5)
-            )
-
-            # Count parameters
-            total_params = sum(
-                param.num_elements()
-                for name, param in model.parameters
-            )
-            print(f"Total parameters: {total_params}")
 
         Yields:
             ``(name, parameter)`` tuples where ``name`` is the
             dot-separated qualified path of the parameter and ``parameter``
             is the :class:`~max.experimental.tensor.Tensor`.
         """
-        yield from self.local_parameters
-        for prefix, descendant in self.descendants:
-            for name, parameter in descendant.local_parameters:
-                yield f"{prefix}.{name}", parameter
+        return iter(tree.paths(self, leaf=Tensor).items())
 
     @property
     def children(self) -> Iterable[tuple[str, Module[..., Any]]]:
@@ -392,9 +350,13 @@ class Module(Generic[_P, _R]):
             ``(name, module)`` pairs, where ``name`` is the attribute name of
             the child on the module.
         """
-        for name, value in vars(self).items():
-            if isinstance(value, Module):
-                yield name, value
+        children, keys, _ = tree.flatten_one_level(self)
+        for key, child in zip(keys, children, strict=True):
+            if isinstance(child, Module):
+                yield (
+                    key.name if isinstance(key, _TransparentKey) else key,
+                    child,
+                )
 
     @property
     def descendants(self) -> Iterable[tuple[str, Module[..., Any]]]:
@@ -404,146 +366,23 @@ class Module(Generic[_P, _R]):
             ``(name, module)`` pairs, where ``name`` is the qualified path
             of the descendant with respect to the module.
         """
-        for prefix, child in self.children:
-            yield prefix, child
+        # A name-transparent child is still yielded under its own name. Only
+        # the paths of its descendants omit it.
+        children, keys, _ = tree.flatten_one_level(self)
+        for key, child in zip(keys, children, strict=True):
+            if not isinstance(child, Module):
+                continue
+            yield key.name if isinstance(key, _TransparentKey) else key, child
+            base = tree.extend_path("", key)
             for name, descendant in child.descendants:
-                yield f"{prefix}.{name}", descendant
-
-    def apply_to_local_parameters(
-        self, f: Callable[[str, Tensor], Tensor]
-    ) -> None:
-        """Applies a transformation to each local parameter tensor on the ``Module``.
-
-        The transformation is applied in-place, updating the module's values.
-        It will not be applied to descendant's parameters.
-
-        For example:
-
-        .. code-block:: python
-
-            from max.driver import Accelerator
-            from max.experimental.nn import Linear
-
-            model = Linear(2, 3)
-            model.apply_to_parameters(lambda _, t: t.to(Accelerator()))
-
-        Args:
-            f: The transformation to apply to each local parameter.
-                The transformation takes two arguments, a name and a tensor:
-
-                - The name is the attribute name of the parameter on the module.
-                - The tensor is the current value of that parameter.
-
-                The return value of this function is the new value that will
-                replace the value at that name.
-        """
-        for name, attr in self.local_parameters:
-            setattr(self, name, f(name, attr))
-
-    def apply_to_parameters(self, f: Callable[[str, Tensor], Tensor]) -> None:
-        """Applies a transformation to all parameters in the module hierarchy.
-
-        This method traverses the module tree and applies the transformation function
-        to each parameter in-place, updating both the current module's parameters
-        and all nested sub-module parameters. The transformation receives the
-        parameter's qualified name (dot-separated path) and current tensor value.
-
-        Transfer all parameters to accelerator:
-
-        .. code-block:: python
-
-            from max.driver import Accelerator
-            from max.experimental.tensor import Tensor
-            from max.experimental.nn import Module, module_dataclass, Linear
-
-            @module_dataclass
-            class MLP(Module):
-                fc1: Linear
-                fc2: Linear
-
-                def forward(self, x: Tensor) -> Tensor:
-                    return self.fc2(self.fc1(x))
-
-            model = MLP(
-                fc1=Linear(10, 20),
-                fc2=Linear(20, 5)
-            )
-
-            # Move all parameters to accelerator
-            model.apply_to_parameters(lambda name, t: t.to(Accelerator()))
-
-        Args:
-            f: Transformation function taking ``(name, tensor)`` and returning
-                the transformed tensor. Parameters:
-
-                - ``name`` (:obj:`str`): Qualified dot-separated path of the parameter
-                  (e.g., ``fc1.weight``, ``encoder.layer2.bias``)
-                - ``tensor`` (:class:`~max.experimental.tensor.Tensor`): Current value of the parameter
-
-                Returns the new tensor value to replace the parameter.
-        """
-        self.apply_to_local_parameters(f)
-        for prefix, child in self.children:
-            # Bind an explicit reference to `prefix` into the closure
-            # See https://stackoverflow.com/a/54289183
-            child.apply_to_parameters(
-                functools.partial(
-                    (lambda prefix, name, t: f(f"{prefix}.{name}", t)),
-                    prefix,
-                )
-            )
-
-    def load_state(  # noqa: ANN201
-        self, lookup: Callable[[str, Tensor], DLPackArray]
-    ):
-        """Replaces each parameter in the module and its descendants.
-
-        The transformation is applied in-place, updating the module's values
-        and those of its descendants.
-
-        For example, if we have a model with two parameters, ``weight`` and
-        ``bias``, we can load the state of the model from a dictionary with the
-        following code:
-
-        .. code-block:: python
-
-            from max.experimental.tensor import Tensor
-            from max.experimental.nn import Linear
-
-            model = Linear(2, 3)
-            weights = {
-                "weight": Tensor.zeros([3, 2]),
-                "bias": Tensor.zeros([3]),
-            }
-            model.load_state(lambda name, _: weights[name])
-
-        The lookup is defined as a function rather than a dictionary, allowing
-        for functional remapping of names during this process to account
-        for differences in common weight naming and storage conventions.
-
-        For instance, certain representations may not store weights as
-        transposed, or may need to be quantized, or split out from a shared
-        qkv block, or may just have slightly different names or paths.
-
-        This can also be used for instance to provide a default value for
-        initializing LoRA weights.
-
-        Args:
-            lookup: The lookup function for each parameter:
-
-                - The first argument is the qualified name of the parameter
-                  with respect to the module on which ``load_state()`` was
-                  called.
-                - The second argument is the existing tensor value.
-                - The return value of this function is the new value that will
-                  replace the value at that name in the module tree.
-        """
-        return self.apply_to_parameters(
-            lambda name, existing: Tensor.from_dlpack(lookup(name, existing))
-        )
+                yield tree.extend_path(base, name), descendant
 
     def load_state_dict(
-        self, state: Mapping[str, DLPackArray], strict: bool = True
+        self,
+        state: Mapping[str, DLPackArray],
+        strict: bool = True,
+        *,
+        auto_cast: bool = False,
     ) -> None:
         """Loads parameter values from a dictionary into the module hierarchy.
 
@@ -575,86 +414,50 @@ class Module(Generic[_P, _R]):
                 bias=Tensor.zeros([10])
             )
 
-            # Load weights from dictionary
             weights = {
                 "weight": Tensor.zeros([10, 5]),
                 "bias": Tensor.zeros([10]),
             }
-            model.load_state(lambda name, _: weights[name])
+            model.load_state_dict(weights)
+
+        By default (``auto_cast=False``) any dtype mismatch between the loaded
+        tensor and the parameter raises. When ``auto_cast=True``, loaded
+        weights whose dtype is in the safe-cast set (currently ``float32`` and
+        ``bfloat16``) are automatically cast to the parameter's dtype when
+        shapes match, and a single summary message is logged at ``WARNING``
+        level per call describing how many parameters were cast. Narrowing
+        casts (such as ``float32`` -> ``bfloat16``) are flagged in the log
+        message as ``(precision loss)``. Dtype mismatches outside the
+        safe-cast set still raise regardless of ``auto_cast``.
 
         Args:
             state: Dictionary mapping qualified parameter names to tensor values.
                 Keys should match the names from :attr:`Module.parameters` property.
                 Values should be DLPack-compatible arrays or :class:`~max.experimental.tensor.Tensor` objects.
-                Their shapes and dtypes must match the existing parameters with the
-                corresponding name, but they may be on a different device. In the
-                case that the new value has a different device, it will be copied to
-                the same device as the existing value, and the parameter will be set
-                to the new copy.
+                Shapes must match the existing parameters with the corresponding
+                name. Dtypes must match exactly *or* both lie in the safe-cast
+                set above. Values may be on a different device; in that case the
+                tensor is copied to the existing parameter's device.
             strict: If :obj:`True` (default), verify that all keys in ``state``
-                are used (i.e., match actual parameters). If :obj:`False`, silently
+                are used (that is, match actual parameters). If :obj:`False`, silently
                 ignore extra keys that don't match any parameters.
+            auto_cast: If :obj:`True`, permit safe dtype auto-casting between
+                ``float32`` and ``bfloat16`` when shapes match. Defaults to
+                :obj:`False` — dtype mismatches always raise. Pipelines that
+                want to opt in via ``MODULAR_AUTO_CAST_WEIGHTS`` should pass
+                ``auto_cast=max.pipelines.lib.weight_loading.auto_cast_weights_from_env()``.
 
         Raises:
             ValueError: If ``strict=True`` and some weights in ``state`` don't
                 match any model parameters (indicates architecture mismatch or
                 incorrect weight names).
-            ValueError: If a loaded tensor has a different dtype or shape than
-                the existing parameter.
+            ValueError: If a loaded tensor has a different shape than the
+                existing parameter, or a dtype mismatch that is not covered by
+                the safe-cast set (or ``auto_cast=False``).
             KeyError: If a required parameter name in the model is missing from
                 ``state`` (regardless of ``strict`` setting).
         """
-        loaded = set()
-
-        def lookup(name: str, existing: Tensor) -> DLPackArray:
-            loaded.add(name)
-            value = Tensor.from_dlpack(state[name])
-            _validate_loaded_parameter(name, existing, value)
-            return value
-
-        self.load_state(lookup)
-
-        if strict and (unloaded := state.keys() - loaded):
-            raise ValueError(
-                f"load_state_dict did not use some weights: {unloaded}"
-            )
-
-    def map_parameters(self, f: Callable[[str, Tensor], Tensor]) -> Self:
-        """Creates a new ``Module`` with its parameters transformed by the function.
-
-        The transformation is functional rather than in-place. The module is
-        deep-copied; its descendants are also replaced via the same transform
-        without affecting the original module.
-
-        For example:
-
-        .. code-block:: python
-
-            from max.driver import Accelerator
-            from max.experimental.nn import Linear
-
-            model = Linear(2, 3)
-            model_on_gpu = model.map_parameters(lambda _, t: t.to(Accelerator()))
-
-        Args:
-            f: The transformation to apply to each parameter.
-                The transformation takes two arguments, a name and a tensor:
-
-                - The name is the qualified name of the parameter
-                  with respect to the module on which ``map_parameters()``
-                  was called.
-                - The tensor is the current value of that parameter.
-
-                The return value of this function is the new value that will
-                replace the value at that name in the module tree.
-
-        Returns:
-            A new module tree of the same type resulting from mapping the
-            transformation over all model parameters.
-        """
-        new = copy.deepcopy(self)
-        new.apply_to_parameters(f)
-        return new
+        load_checkpoint(self, state, strict=strict, auto_cast=auto_cast)
 
     @property
     def device(self) -> Device:
@@ -664,20 +467,10 @@ class Module(Generic[_P, _R]):
         subclass ``__init__``. When neither has been called the property
         returns :obj:`~max.driver.CPU` as a safe default so that modules
         without an explicit device placement still compile and run on CPU.
-        :meth:`input_types` implementations should reference ``self.device``
-        when constructing :obj:`~max.graph.TensorType` objects so that a
-        single :meth:`to` call drives both weight placement and computation
-        placement.
-
-        .. code-block:: python
-
-            from max.driver import Accelerator
-            from max.experimental.nn import Linear
-
-            model = Linear(2, 3)
-            print(model.device)     # CPU()  - CPU default
-            model.to(Accelerator())
-            print(model.device)     # Accelerator(id=0)
+        When constructing the :obj:`~max.graph.TensorType` objects you pass to
+        :meth:`compile`, reference ``self.device`` for their ``device`` field
+        so that a single :meth:`to` call drives both weight placement and
+        computation placement.
 
         Returns:
             The device this module is placed on, defaulting to
@@ -700,207 +493,149 @@ class Module(Generic[_P, _R]):
             value = value.to_device()
         object.__setattr__(self, "_module_target_device", value)
 
-    def to(self, device: Device) -> Self:
-        """Sets this module's device and transfers all weight parameters to it.
+    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        """Transfers all module parameters to a single device.
 
-        This is the single entry point for device placement. After calling
-        ``to(device)``, both weight storage and :meth:`input_types` reflect the
-        target device, so ``compile(*self.input_types())`` works correctly
-        without any additional device configuration:
-
-        .. code-block:: python
-
-            from max.driver import Accelerator
-            from max.experimental.nn import Linear
-            from max.graph import TensorType
-            from max.dtype import DType
-
-            model = Linear(2, 3)
-            model.to(Accelerator())
-
-            # input_types() uses self.device, so computation runs on GPU:
-            compiled = model.compile(*model.input_types())
-
-        Unlike PyTorch's eager mode where weights and computation are
-        inseparable, MAX uses a compiled graph model. ``to()`` handles the
-        weight side; :meth:`input_types` implementations use ``self.device``
-        to handle the computation side. Together they form one coherent
-        mechanism.
-
-        For graph-level tensor routing at execution time (inside
-        :meth:`forward`), use :func:`~max.graph.ops.transfer_to` or
-        :meth:`~max.graph.TensorValue.to` instead; those insert transfer ops
-        into the compiled graph and are unrelated to pre-compilation device
-        placement.
+        Records the target as :attr:`device`. Build the input types you pass
+        to :meth:`compile` from it, so that the computation runs where the
+        parameters are.
 
         Args:
-            device: The device to which all model parameters will be
-                transferred and which :meth:`input_types` will use as the
-                computation device.
+            target: The device for all module parameters.
 
         Returns:
             A reference to the model. The transfer is applied mutably; the
             module's :attr:`device` property and all internal parameters are
             updated in place.
+
+        Raises:
+            ValueError: If ``target`` spans more than one device.
         """
+        if isinstance(target, Device):
+            device = target
+        elif isinstance(target, (DeviceMesh, DeviceMapping)):
+            mesh = target if isinstance(target, DeviceMesh) else target.mesh
+            if not mesh.num_devices == 1:
+                raise ValueError(
+                    f"Module.to() moves a module to one device, but {target} "
+                    "spans several. Construct the module inside "
+                    "default_device(mesh) instead."
+                )
+            device = mesh.devices[0]
+        else:
+            raise TypeError(
+                "to() expects Device, DeviceMesh, or DeviceMapping, "
+                f"got {type(target).__name__}"
+            )
+        # Call ``to`` on each child rather than moving its parameters here,
+        # because quantized layers override ``to``.
         object.__setattr__(self, "_module_target_device", device)
-        pinned = _get_pinned_device_fields(type(self))
-        for name, attr in self.local_parameters:
+        pinned = {
+            name
+            for base in type(self).__mro__
+            for name, annotation in getattr(base, "__annotations__", {}).items()
+            if annotation is PinnedDeviceTensor
+            or annotation == "PinnedDeviceTensor"
+        }
+        for name, weight in self.local_parameters:
             if name not in pinned:
-                setattr(self, name, attr.to(device))
+                setattr(self, name, weight.to(target))
         for _, child in self.children:
-            child.to(device)
+            child.to(target)
         return self
-
-    @contextlib.contextmanager
-    def _mapped_parameters(self, f: Callable[[str, Tensor], Tensor]):  # noqa: ANN202
-        parameters = dict(self.parameters)
-        try:
-            self.apply_to_parameters(f)
-            yield parameters
-        finally:
-            self.load_state_dict(parameters)
-
-    def _trace(
-        self,
-        input_types: Sequence[InputType],
-        *,
-        custom_extensions: Iterable[Path] = (),
-    ) -> tuple[
-        Graph,
-        list[_InputSlot],
-        list[_OutputSlot],
-        bool,
-        Signals | None,
-    ]:
-        """Shared tracing core used by :meth:`trace` and :meth:`compile`.
-
-        Builds a :class:`~max.graph.Graph` by symbolically executing
-        ``forward`` with the given input types.  Returns the graph plus
-        bookkeeping needed by :meth:`compile`.
-        """
-        # Expand distributed input types into per-device local types.
-        # For pure single-device usage this is a no-op pass-through.
-        graph_types, input_slots = _flatten_input_types(input_types)
-
-        # Detect multi-GPU distributed inputs and create signal buffers
-        # so that collective ops (all_reduce_sum, all_gather, etc.) use
-        # hardware-accelerated multi-device communication.
-        signals = _detect_signals(input_types, parameters=self.parameters)
-        if signals is not None:
-            graph_types.extend(signals.input_types())
-
-        graph = Graph(
-            type(self).__qualname__,
-            input_types=graph_types,
-            custom_extensions=custom_extensions,
-        )
-
-        # Extract signal BufferValues from the graph inputs (at the end).
-        sig_buf_values = None
-        if signals is not None:
-            n_sig = len(signals.devices)
-            sig_buf_values = [
-                graph.inputs[len(graph_types) - n_sig + i].buffer
-                for i in range(n_sig)
-            ]
-
-        ctx = GraphRealizationContext(graph, signal_buffers=sig_buf_values)
-        with realization_context(ctx), ctx:
-            # Only wrap tensor inputs, not signal buffer inputs.
-            n_tensor_inputs = len(graph_types) - (
-                len(sig_buf_values) if sig_buf_values else 0
-            )
-            inputs = _wrap_graph_inputs(
-                list(graph.inputs[:n_tensor_inputs]), input_slots
-            )
-
-            def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
-                return tensor._as_constant_external(name)
-
-            # Temporarily replace the parameters with external constants
-            # while building the graph.
-            with self._mapped_parameters(as_weight):
-                outputs: Tensor | Sequence[Tensor] = self(*inputs)  # type: ignore[call-arg,assignment,arg-type]
-
-            # Flatten sharded outputs into per-shard graph values.
-            flat_values, output_slots, unary = _flatten_outputs(outputs)
-            graph.output(*flat_values)
-
-        return graph, input_slots, output_slots, unary, signals
 
     def trace(
         self,
         *input_types: InputType,
+        name: str | None = None,
         custom_extensions: Iterable[Path] = (),
-    ) -> Graph:
-        """Traces the module's forward pass into a :class:`~max.graph.Graph`.
+        allow_subgraphs: bool = True,
+        is_device_graph: bool = False,
+        signal_buffer_index: int | None = None,
+    ) -> compilation.StagedGraph[..., Any]:
+        """Traces ``forward`` into a graph without compiling it.
 
-        Like :meth:`compile`, but returns the raw graph without compiling
-        it.  Useful for inspecting the IR, debugging sharding propagation,
-        or feeding into a custom compilation pipeline.
+        The graph refers to each parameter by name, as an external constant,
+        rather than embedding its value. :meth:`compile` supplies the values
+        from the weight registry. Use this method to inspect the MLIR that
+        :meth:`compile` would compile.
+
+        The following example traces a linear layer and prints its MLIR:
+
+        .. code-block:: python
+
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.experimental.nn import Linear
+            from max.experimental.tensor import TensorType, default_device
+
+            with default_device(CPU()):
+                linear = Linear(4, 8)
+                x_type = TensorType(DType.float32, [2, 4], device=linear.device)
+                staged = linear.trace(x_type)
+                print(staged)
+
+        .. invisible-code-block: python
+
+            assert "mo.constant.external" in str(staged)
 
         Args:
-            *input_types: Type specifications for each input to ``forward``.
+            *input_types: The type of each tensor argument of ``forward``, as
+                a :class:`~max.graph.TensorType` or a
+                :class:`~max.experimental.sharding.TensorLayout`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
             custom_extensions: Paths to custom Mojo kernel libraries.
+            allow_subgraphs: Whether calls made through
+                :func:`~max.experimental.compilation.as_subgraph` are traced
+                as subgraphs. If ``False``, they are inlined.
+            is_device_graph: Whether to build a device graph.
+            signal_buffer_index: The graph input position of the signal
+                buffers. See :func:`~max.experimental.compilation.stage`.
 
         Returns:
-            The traced :class:`~max.graph.Graph`.
+            The :class:`~max.experimental.compilation.StagedGraph`. Print it
+            to see the MLIR.
         """
-        graph, *_ = self._trace(
-            input_types, custom_extensions=custom_extensions
+        declared = tree.map(
+            _ExternalWeight.like, self, leaf=Tensor, shared=True
         )
-        return graph
+        name_weights(declared)
+        return compilation.stage(
+            declared,
+            name=type(self).__qualname__ if name is None else name,
+            custom_extensions=custom_extensions,
+            allow_subgraphs=allow_subgraphs,
+            is_device_graph=is_device_graph,
+            signal_buffer_index=signal_buffer_index,
+        )(*input_types)
 
     def compile(
         self,
         *input_types: InputType,
         weights: Mapping[str, DLPackArray] | None = None,
+        session: InferenceSession | None = None,
+        name: str | None = None,
         custom_extensions: Iterable[Path] = (),
-    ) -> CompiledModel:
-        """Compiles the module to an optimized executable through graph tracing.
+        auto_cast: bool = False,
+        allow_subgraphs: bool = True,
+        is_device_graph: bool = False,
+        signal_buffer_index: int | None = None,
+    ) -> compilation.CompiledCallable[_P, _R]:
+        """Traces ``forward`` and compiles it into a callable.
 
-        This method performs symbolic tracing of the module's ``forward`` method
-        to construct a MAX :class:`~max.graph.Graph`, which is then compiled and optimized for
-        efficient execution on CPU, GPU, or other accelerators.
+        The graph refers to each parameter by name, and ``weights`` supplies
+        the values. Call :meth:`to` before compiling and build the input types
+        from :attr:`device`, so that the parameters and the computation are
+        on the same device.
 
-        The compilation process:
-
-        1. Creates symbolic :class:`~max.experimental.tensor.Tensor` instances based on provided type specifications
-        2. Executes ``forward`` with symbolic tensors to record operations
-        3. Constructs a :class:`~max.graph.Graph` representing the computation
-        4. Includes all module parameters as weights in the graph
-        5. Compiles and optimizes the graph for target hardware
-        6. Returns an executable function with the same signature as ``forward``
-
-        The input type specifications must match the signature of ``forward``.
-        Use positional arguments for positional parameters.
-
-        **Device placement:** The canonical pattern is to call :meth:`to`
-        before ``compile``. :meth:`to` sets :attr:`device`, moves all weights
-        to that device, and causes :meth:`input_types` to return
-        :obj:`~max.graph.TensorType` objects annotated with that device. This
-        means a single :meth:`to` call drives both weight placement and
-        computation placement:
-
-        .. code-block:: python
-
-            from max.driver import Accelerator
-            from max.experimental.nn import Linear
-
-            model = Linear(10, 5)
-            model.to(Accelerator())  # sets device, moves weights to GPU
-
-            # input_types() uses self.device — computation runs on GPU:
-            compiled = model.compile(*model.input_types())
-
-        Basic compilation with fixed shapes:
+        The following example compiles a linear layer and runs it:
 
         .. code-block:: python
 
             from max.dtype import DType
-            from max.experimental.tensor import Tensor, TensorType, defaults
             from max.experimental.nn import Module, module_dataclass
+            from max.experimental.tensor import Tensor, TensorType, defaults
 
             @module_dataclass
             class Linear(Module):
@@ -910,109 +645,131 @@ class Module(Generic[_P, _R]):
                 def forward(self, x: Tensor) -> Tensor:
                     return x @ self.weight.T + self.bias
 
-            linear = Linear(
-                weight=Tensor.zeros([10, 5]),
-                bias=Tensor.zeros([10])
+            linear = Linear(Tensor.zeros([10, 5]), Tensor.zeros([10]))
+            _, mesh = defaults()
+            run = linear.compile(
+                TensorType(DType.float32, [3, 5], mesh.devices[0])
             )
+            result = run(Tensor.ones([3, 5], dtype=DType.float32))
 
-            # Compile with fixed input shape
-            _, device = defaults()
-            input_type = TensorType(DType.float32, [3, 5], device=device)
-            model = linear.compile(input_type)
+        .. invisible-code-block: python
 
-            # Execute compiled model
-            input_data = Tensor.ones([3, 5], dtype=DType.float32)
-            result = model(input_data)
-            print(result)
-
-        Compilation with custom Mojo kernel extensions:
-
-        .. code-block:: python
-
-            from pathlib import Path
-            from max.experimental import functional as F
-
-            @module_dataclass
-            class CustomModule(Module):
-                def forward(self, x: Tensor) -> Tensor:
-                    return F.custom(
-                        "my_op", device=x.device,
-                        values=[x], out_types=[x.type],
-                    )[0]
-
-            module = CustomModule()
-            compiled = module.compile(
-                input_type,
-                custom_extensions=[Path("my_ops.mojopkg")],
-            )
+            assert list(result.shape) == [3, 10]
 
         Args:
-            *input_types: Type specifications for each positional argument to
-                ``forward``. Must match the number and order of arguments.
-                Each should be a :class:`~max.graph.Type` (typically
-                :class:`~max.graph.TensorType`) describing the shape and dtype. The
-                ``device`` field on each :obj:`~max.graph.TensorType`
-                determines where activations are computed; use :meth:`to` to
-                set this consistently across weights and inputs.
-            weights: Mapping of parameter names to weight data. Weights should
-                be on CPU and will be transferred to the target device as part
-                of model initialization. If not passed, the model's parameters
-                will be used as the weights.
-            custom_extensions: Paths to custom Mojo kernel libraries
-                (``.mojopkg`` files or Mojo source directories) to load into
-                the graph before tracing. Required when ``forward`` uses
-                :func:`~max.experimental.functional.custom` or
-                :func:`~max.experimental.functional.inplace_custom` with
-                custom kernels, so that kernel signatures are available for
-                validation during graph construction.
+            *input_types: The type of each tensor argument of ``forward``, as
+                a :class:`~max.graph.TensorType` or a
+                :class:`~max.experimental.sharding.TensorLayout`. The device
+                of each type determines where the computation runs.
+            weights: The values of the parameters, keyed by the names that
+                :attr:`parameters` yields. Defaults to the values currently
+                held by this module.
+            session: The session that compiles and initializes the graph,
+                including its precompiled or exported MEFs and its kernel
+                options. Defaults to a session shared by the whole process.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            custom_extensions: Paths to custom Mojo kernel libraries, required
+                when ``forward`` calls
+                :func:`~max.experimental.functional.custom`.
+            auto_cast: Whether to permit a safe ``float32``/``bfloat16`` cast
+                when shapes match. See :meth:`load_state_dict`.
+            allow_subgraphs: Whether calls made through
+                :func:`~max.experimental.compilation.as_subgraph` are traced
+                as subgraphs. If ``False``, they are inlined.
+            is_device_graph: Whether to build a device graph.
+            signal_buffer_index: The graph input position of the signal
+                buffers. See :func:`~max.experimental.compilation.stage`.
 
         Returns:
-            Callable[..., Any]
-                A compiled executable function with the same signature as
-                ``forward``. This function runs the optimized graph and
-                returns results with the same structure as ``forward``
-                (single :class:`~max.experimental.tensor.Tensor` or tuple of tensors).
+            A :class:`~max.experimental.compilation.CompiledCallable` with
+            the signature of ``forward``.
 
         Raises:
-            TypeError: If input types don't match ``forward`` signature or if
-                operations in ``forward`` cannot be traced.
-            RuntimeError: If graph construction fails due to incompatible
-                operations or parameter access issues.
+            TypeError: If an input type does not match ``forward``'s
+                signature, or an operation in ``forward`` cannot be traced.
+            ValueError: If a weight does not fit the parameter it loads
+                into.
+            KeyError: If ``weights`` has no entry for a parameter.
         """
-        graph, input_slots, output_slots, unary, signals = self._trace(
-            input_types, custom_extensions=custom_extensions
+        class_name = type(self).__name__
+        with (
+            Tracer(f"Module.compile({class_name})"),
+            CompilationTimer(class_name) as timer,
+        ):
+            staged, registry = self.stage(
+                *input_types,
+                weights=weights,
+                name=name,
+                custom_extensions=custom_extensions,
+                auto_cast=auto_cast,
+                allow_subgraphs=allow_subgraphs,
+                is_device_graph=is_device_graph,
+                signal_buffer_index=signal_buffer_index,
+            )
+            timer.mark_build_complete()
+            return compilation.CompiledCallable(
+                staged, registry, session=session
+            )
+
+    def stage(
+        self,
+        *input_types: InputType,
+        weights: Mapping[str, DLPackArray] | None = None,
+        name: str | None = None,
+        custom_extensions: Iterable[Path] = (),
+        auto_cast: bool = False,
+        allow_subgraphs: bool = True,
+        is_device_graph: bool = False,
+        signal_buffer_index: int | None = None,
+    ) -> tuple[compilation.StagedGraph[_P, _R], dict[str, Tensor]]:
+        """Traces ``forward`` and builds the weight registry it binds.
+
+        This is the tracing half of :meth:`compile`. Use it to compile and
+        initialize the graph yourself, then wrap the initialized model with
+        :meth:`~max.experimental.compilation.CompiledCallable.from_engine_model`.
+
+        Args:
+            *input_types: As :meth:`compile`.
+            weights: As :meth:`compile`.
+            name: As :meth:`compile`.
+            custom_extensions: As :meth:`compile`.
+            auto_cast: As :meth:`compile`.
+            allow_subgraphs: As :meth:`compile`.
+            is_device_graph: As :meth:`compile`.
+            signal_buffer_index: As :meth:`compile`.
+
+        Returns:
+            The :class:`~max.experimental.compilation.StagedGraph` and the
+            weight registry: a mapping from the name of each weight the
+            graph declares to its data, with one entry per shard for a
+            distributed weight.
+
+        Raises:
+            TypeError: As :meth:`compile`.
+            ValueError: As :meth:`compile`.
+            KeyError: As :meth:`compile`.
+        """
+        declared: Module[_P, _R] = tree.map(
+            _ExternalWeight.like, self, leaf=Tensor, shared=True
         )
-
-        # Compile the graph with module parameters as weights
-        session = _session()
-
-        # Build weights registry from parameters.
-        if weights is None:
-            weights = _flatten_named_buffers(self.parameters)
-        else:
-            for name, existing in self.parameters:
-                if name not in weights:
-                    raise KeyError(
-                        f"Weight '{name}' is missing from the provided weights mapping."
-                    )
-                _validate_loaded_parameter(
-                    name,
-                    existing,
-                    Tensor.from_dlpack(weights[name]),
-                )
-
-        session_model = session.load(graph, weights_registry=weights)
-
-        # Allocate signal buffers once for all future invocations.
-        cached_sig_bufs = signals.buffers() if signals is not None else []
-
-        return CompiledModel(
-            engine_model=session_model,
-            input_slots=input_slots,
-            output_slots=output_slots,
-            signal_buffers=cached_sig_bufs,
-            unary=unary,
+        name_weights(declared)
+        # Build the registry against the declared parameters, which record
+        # the layout each checkpoint entry arrives in.
+        registry = shard_checkpoint(
+            declared,
+            dict(self.parameters) if weights is None else weights,
+            auto_cast=auto_cast,
         )
+        staged = compilation.stage(
+            declared,
+            name=type(self).__qualname__ if name is None else name,
+            custom_extensions=custom_extensions,
+            allow_subgraphs=allow_subgraphs,
+            is_device_graph=is_device_graph,
+            signal_buffer_index=signal_buffer_index,
+        )(*input_types)
+        return staged, registry
 
     def __rich_repr__(self):
         yield from self.children
@@ -1024,26 +781,6 @@ class Module(Generic[_P, _R]):
         their types (nested with indentation), and parameter information (name,
         shape). The format mirrors the module's hierarchical composition, making it
         easy to understand the model architecture at a glance.
-
-        The following is an example output for a module:
-
-        .. code-block:: python
-
-            from max.experimental.tensor import Tensor
-            from max.experimental.nn import Module, module_dataclass
-
-            @module_dataclass
-            class Linear(Module):
-                weight: Tensor
-                bias: Tensor
-
-                def forward(self, x: Tensor) -> Tensor:
-                    return x @ self.weight.T + self.bias
-
-            layer = Linear(
-                weight=Tensor.zeros([128, 64]),
-                bias=Tensor.zeros([128])
-            )
 
         Returns:
             str
@@ -1073,23 +810,21 @@ def module_dataclass(  # noqa: ANN201
     repr: bool = False,
     **kwargs,
 ):
-    """Converts a class into a MAX module with automatic parameter tracking.
+    """Applies :func:`~dataclasses.dataclass` to a :class:`Module` subclass.
 
-    This decorator enables a regular Python class to function as a :class:`Module`,
-    providing automatic discovery and registration of parameters (Tensor fields)
-    and nested modules. The decorated class gains all capabilities of :class:`Module`,
-    including parameter iteration, graph compilation via :meth:`Module.compile`,
-    and hierarchical module composition.
-
-    The decorator applies Python's ``@dataclass`` decorator internally while
-    preserving :class:`Module`'s specialized ``__repr__`` method for better
-    debugging experience when printing module structures.
+    The decorated class gets an ``__init__`` generated from its field
+    annotations and keeps the :class:`Module` repr. Parameter tracking does
+    not depend on this decorator.
 
     .. code-block:: python
 
-        from max.experimental.nn import Module, Linear, module_dataclass
-        from max.experimental.tensor import Tensor
+        from max.driver import CPU
+        from max.dtype import DType
         from max.experimental import functional as F
+        from max.experimental import random
+        from max.experimental.nn import Module, Linear, module_dataclass
+        from max.experimental.tensor import Tensor, default_device
+        from max.graph import TensorType
 
         @module_dataclass
         class MLP(Module):
@@ -1102,20 +837,32 @@ def module_dataclass(  # noqa: ANN201
                 x = self.fc2(x)
                 return x
 
-        # Create module with automatic parameter tracking
-        mlp = MLP(
-            fc1=Linear(128, 256),
-            fc2=Linear(256, 128)
-        )
+        with default_device(CPU()):
+            mlp = MLP(
+                fc1=Linear(128, 256),
+                fc2=Linear(256, 128)
+            )
 
-        # All parameters are automatically tracked
-        print(dict(mlp.parameters).keys())
-        # {'fc1.weight', 'fc1.bias', 'fc2.weight', 'fc2.bias'}
+            print(dict(mlp.parameters).keys())
 
-        # Use the module
-        x = Tensor.randn([4, 128])
-        output = mlp(x)
-        print(output.shape)  # (4, 128)
+            random.set_seed(0)
+            x = random.normal([4, 128], dtype=DType.float32)
+            output = mlp(x)
+
+            input_type = TensorType(DType.float32, ["batch", 128], device=mlp.device)
+            compiled = mlp.compile(input_type)
+            compiled_output = compiled(x)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert set(dict(mlp.parameters).keys()) == {
+            "fc1.weight", "fc1.bias", "fc2.weight", "fc2.bias"
+        }
+        assert list(output.shape) == [4, 128]
+        assert list(compiled_output.shape) == [4, 128]
+        assert np.allclose(output.to_numpy(), compiled_output.to_numpy(), atol=1e-4)
 
     Args:
         cls: The class to decorate. Must define a ``forward`` method.
@@ -1124,7 +871,7 @@ def module_dataclass(  # noqa: ANN201
         repr: If :obj:`True`, use dataclass's default ``__repr__`` instead of
             :class:`Module`'s rich representation. Defaults to :obj:`False`.
         **kwargs: Additional keyword arguments forwarded to Python's
-            ``@dataclass`` decorator (e.g., ``frozen``, ``eq``).
+            ``@dataclass`` decorator (such as ``frozen``, ``eq``).
 
     Returns:
         The decorated class as a :class:`Module` subclass with automatic parameter

@@ -69,7 +69,7 @@ def _create_nvfp4_config() -> QuantConfig:
     weight_spec = WeightScaleSpec(
         granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e4m3fn,
-        block_size=(1, 8),
+        block_size=(1, 16),
     )
     return QuantConfig(
         input_scale=input_spec,

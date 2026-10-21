@@ -11,35 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx
+from std.memory.alloc import unsafe_alloc
+from max.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx
 from layout import *
 
 
 def gpu_kernel(
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    rhs: UnsafePointer[Float32, ImmutAnyOrigin],
-    lhs: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
+    rhs: ImmPointer[Float32, ImmutAnyOrigin],
+    lhs: ImmPointer[Float32, ImmutAnyOrigin],
 ):
     dst[block_idx.x * 4 + thread_idx.x] = (
         rhs[block_idx.x * 4 + thread_idx.x]
         + lhs[block_idx.x * 4 + thread_idx.x]
     )
 
-    _ = LayoutTensor[DType.float32, Layout(IntTuple(16, 1), IntTuple(1, 1))](
-        dst
-    )
+    _ = TileTensor(dst, row_major[16, 1]())
 
 
 def main() raises:
     with DeviceContext() as ctx:
-        var vec_a_ptr = alloc[Float32](16)
-        var vec_b_ptr = alloc[Float32](16)
-        var vec_c_ptr = alloc[Float32](16)
+        var vec_a_ptr = unsafe_alloc[Float32](16)
+        var vec_b_ptr = unsafe_alloc[Float32](16)
+        var vec_c_ptr = unsafe_alloc[Float32](16)
 
-        var vec_a_dev = ctx.enqueue_create_buffer[DType.float32](16)
-        var vec_b_dev = ctx.enqueue_create_buffer[DType.float32](16)
-        var vec_c_dev = ctx.enqueue_create_buffer[DType.float32](16)
+        var vec_a_dev = ctx.enqueue_create_buffer[.float32](16)
+        var vec_b_dev = ctx.enqueue_create_buffer[.float32](16)
+        var vec_c_dev = ctx.enqueue_create_buffer[.float32](16)
 
         for i in range(16):
             vec_a_ptr[i] = Float32(i)
@@ -50,7 +49,7 @@ def main() raises:
         ctx.enqueue_copy(vec_b_dev, vec_b_ptr)
         ctx.enqueue_copy(vec_c_dev, vec_c_ptr)
 
-        ctx.enqueue_function_experimental[gpu_kernel](
+        ctx.enqueue_function[gpu_kernel](
             vec_c_dev,
             vec_a_dev,
             vec_b_dev,

@@ -15,14 +15,24 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import CPU, Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache.utils import AttentionDispatchResolver
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    MultiKVCacheParams,
+)
+from max.nn.kv_cache.utils import MHAAttnKey, MLAAttnKey
 
 N_KV_HEADS = 8
-MLA_NUM_HEADS = [8, 16, 64, 128]
+# Every head count ``compute_mla_dispatch_scalars_runtime`` enumerates. A count
+# missing an arm raises out of both the resolver and the reference graph, so
+# this list is what keeps the enumeration reachable end to end; that the arm
+# forwards to the specialization it names is pinned on the Mojo side, in
+# ``max/kernels/test/gpu/nn/test_mla_decode_split_policy.mojo``.
+MLA_NUM_HEADS = [8, 12, 16, 24, 32, 48, 64, 128]
 TEST_CASES = [
     (1, 17, 128),
     (4, 17, 768),
@@ -130,37 +140,42 @@ def mla_num_heads(request: pytest.FixtureRequest) -> int:
 
 
 @pytest.fixture(scope="module")
-def mha_resolver(
+def mha_params(
     gpu_device_ref: DeviceRef,
-) -> AttentionDispatchResolver:
-    return AttentionDispatchResolver(
+) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=128,
+        num_layers=1,
         devices=[gpu_device_ref],
-        is_mla=False,
-        n_kv_heads_per_device=N_KV_HEADS,
+        n_kv_heads=N_KV_HEADS,
     )
 
 
 @pytest.fixture(scope="module")
-def mla_resolver(
+def mla_params(
     gpu_device_ref: DeviceRef,
     mla_num_heads: int,
-) -> AttentionDispatchResolver:
-    return AttentionDispatchResolver(
+) -> MLAKVCacheParams:
+    return MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
         devices=[gpu_device_ref],
-        is_mla=True,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=mla_num_heads,
+        num_q_heads=mla_num_heads,
     )
 
 
 @pytest.fixture(scope="module")
-def mla_resolver_fp8(gpu_device_ref: DeviceRef) -> AttentionDispatchResolver:
-    return AttentionDispatchResolver(
+def mla_params_fp8(
+    gpu_device_ref: DeviceRef, mla_num_heads: int
+) -> MLAKVCacheParams:
+    return MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=576,
+        num_layers=1,
         devices=[gpu_device_ref],
-        is_mla=True,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=128,
-        is_fp8_kv=True,
+        num_q_heads=mla_num_heads,
     )
 
 
@@ -188,10 +203,12 @@ def reference_mla_model(
 
 @pytest.fixture(scope="module")
 def reference_mla_model_fp8(
-    gpu_session: InferenceSession, gpu_device_ref: DeviceRef
+    gpu_session: InferenceSession,
+    gpu_device_ref: DeviceRef,
+    mla_num_heads: int,
 ) -> Model:
     return _build_reference_mla_model(
-        gpu_session, gpu_device_ref, num_heads=128, is_fp8_kv=True
+        gpu_session, gpu_device_ref, num_heads=mla_num_heads, is_fp8_kv=True
     )
 
 
@@ -200,7 +217,7 @@ def reference_mla_model_fp8(
     TEST_CASES,
 )
 def test_mha_dispatch_resolver_matches_reference_graph(
-    mha_resolver: AttentionDispatchResolver,
+    mha_params: MHAKVCacheParams,
     reference_mha_model: Model,
     batch_size: int,
     max_prompt_length: int,
@@ -210,10 +227,14 @@ def test_mha_dispatch_resolver_matches_reference_graph(
         reference_mha_model, batch_size, max_cache_valid_length
     )
 
-    metadata = mha_resolver(
+    key = mha_params.resolve_attn_key(
         batch_size, max_prompt_length, max_cache_valid_length
-    ).to_numpy()
+    )
+    assert isinstance(key, MHAAttnKey)
+    assert key.num_partitions == expected_num_partitions
 
+    # MHA packs a 4-int CPU buffer ending in max_cache_valid_length.
+    metadata = key.pack_into_buffer(CPU(), max_cache_valid_length).to_numpy()
     np.testing.assert_array_equal(
         metadata,
         np.array(
@@ -233,16 +254,18 @@ def test_mha_dispatch_resolver_matches_reference_graph(
     MLA_TEST_CASES,
 )
 def test_mla_dispatch_resolver_matches_reference_graph(
-    mla_resolver: AttentionDispatchResolver,
+    mla_params: MLAKVCacheParams,
     reference_mla_model: Model,
     batch_size: int,
     max_prompt_length: int,
     max_cache_valid_length: int,
 ) -> None:
+    key = mla_params.resolve_attn_key(
+        batch_size, max_prompt_length, max_cache_valid_length
+    )
+    # MLA packs a 3-int buffer on the accelerator.
     np.testing.assert_array_equal(
-        mla_resolver(
-            batch_size, max_prompt_length, max_cache_valid_length
-        ).to_numpy(),
+        key.pack_into_buffer(Accelerator(), max_cache_valid_length).to_numpy(),
         _resolve_mla_reference(
             reference_mla_model,
             batch_size,
@@ -257,16 +280,17 @@ def test_mla_dispatch_resolver_matches_reference_graph(
     MLA_TEST_CASES,
 )
 def test_mla_fp8_dispatch_resolver_matches_reference_graph(
-    mla_resolver_fp8: AttentionDispatchResolver,
+    mla_params_fp8: MLAKVCacheParams,
     reference_mla_model_fp8: Model,
     batch_size: int,
     max_prompt_length: int,
     max_cache_valid_length: int,
 ) -> None:
+    key = mla_params_fp8.resolve_attn_key(
+        batch_size, max_prompt_length, max_cache_valid_length
+    )
     np.testing.assert_array_equal(
-        mla_resolver_fp8(
-            batch_size, max_prompt_length, max_cache_valid_length
-        ).to_numpy(),
+        key.pack_into_buffer(Accelerator(), max_cache_valid_length).to_numpy(),
         _resolve_mla_reference(
             reference_mla_model_fp8,
             batch_size,
@@ -274,3 +298,60 @@ def test_mla_fp8_dispatch_resolver_matches_reference_graph(
             max_cache_valid_length,
         ),
     )
+
+
+# (batch_size, num_heads, sparse_indices_stride, AMD partitions). The counts
+# hold for 256 and 304 compute units alike. A 2051-row selection (k-pool
+# tail) is 17 tiles, so it takes 32 partitions below batch 32 and 16 at it;
+# 65536 rows at batch 1 clamp to the reducer's 256.
+SPARSE_MLA_CASES = [
+    (1, 8, 2048, 16),
+    (16, 8, 2048, 16),
+    (32, 8, 2048, 16),
+    (64, 8, 2048, 8),
+    (128, 8, 2048, 4),
+    (16, 16, 2048, 16),
+    (16, 8, 2051, 32),
+    (32, 8, 2051, 16),
+    (1, 8, 65536, 256),
+]
+SPARSE_MLA_CACHE_LENGTHS = [128, 2048, 8192, 100_000]
+
+
+@pytest.mark.parametrize(
+    ("batch_size", "num_heads", "sparse_indices_stride", "amd_partitions"),
+    SPARSE_MLA_CASES,
+)
+def test_sparse_mla_dispatch_key_follows_selection(
+    gpu_device_ref: DeviceRef,
+    batch_size: int,
+    num_heads: int,
+    sparse_indices_stride: int,
+    amd_partitions: int,
+) -> None:
+    def params(stride: int | None) -> MLAKVCacheParams:
+        return MLAKVCacheParams(
+            dtype=DType.float8_e4m3fn,
+            head_dim=576,
+            num_layers=1,
+            devices=[gpu_device_ref],
+            num_q_heads=num_heads,
+            sparse_indices_stride=stride,
+        )
+
+    sparse = params(sparse_indices_stride)
+    dense = params(None)
+    multi = MultiKVCacheParams.from_params({"mla": sparse, "indexer": sparse})
+    for cache_length in SPARSE_MLA_CACHE_LENGTHS:
+        key = sparse.resolve_attn_key(batch_size, 1, cache_length)
+        assert isinstance(key, MLAAttnKey)
+        if accelerator_api() == "hip":
+            # The AMD sparse decode kernel splits the selected rows, not the
+            # context, so the capture key must not move with the context.
+            assert key.num_partitions == amd_partitions
+            # The composite key folds in every leaf, the indexer's too.
+            assert multi.resolve_attn_key(
+                batch_size, 1, cache_length
+            ) == multi.resolve_attn_key(batch_size, 1, 1)
+        else:
+            assert key == dense.resolve_attn_key(batch_size, 1, cache_length)

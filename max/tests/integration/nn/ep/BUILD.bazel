@@ -1,15 +1,52 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+_TWO_GPU_TESTS = [
+    "test_ep_moe_eplb.py",
+]
+
 _QUANTIZED_TESTS = [
+    "test_ep_dispatch_nvfp4_dyn.py",
     "test_ep_moe_fp4.py",
     "test_ep_moe_fp8.py",
+    "test_ep_moe_mxfp8.py",
+]
+
+# Kept out of `ep_tests`: it shells out to `rocprofv3`, so it is AMD-only and
+# spans two devices rather than four, and it compiles the EP graph twice (once
+# per arm of its A/B) because `MODULAR_OVERLAP_SHARED_EXPERT` is read at
+# graph-build time.
+_TRACED_TESTS = ["test_ep_side_stream.py"]
+
+# 8-GPU (EP8) gates; run by hand on an 8 x B200 node, never in CI.
+_EP8_TESTS = [
+    "test_ep_moe_fused_megaffn.py",
+]
+
+# 2-GPU (EP2) runtime gate of the fused EP MoE under CUDA-graph replay; run by hand.
+_FUSED_EP2_TESTS = [
+    "test_ep_moe_fused_megaffn_ep2.py",
+]
+
+# 2-GPU (EP2) runtime tests of the fused EP MoE at 128 local experts; run by hand.
+_FUSED_EP2_WIDE_TESTS = [
+    "test_ep_moe_fused_megaffn_ep2_wide.py",
+]
+
+# 4-GPU (EP4) runtime tests of the fused EP MoE on devices 0-3; run by hand.
+_FUSED_EP4_TESTS = [
+    "test_ep_moe_fused_megaffn_ep4.py",
+]
+
+# 4-GPU (EP4) runtime tests of the fused EP MoE at 64 local experts; run by hand.
+_FUSED_EP4_WIDE_TESTS = [
+    "test_ep_moe_fused_megaffn_ep4_wide.py",
 ]
 
 _COMMON_ENV = select({
@@ -50,7 +87,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["test_*.py"],
-        exclude = _QUANTIZED_TESTS,
+        exclude = _QUANTIZED_TESTS + _TRACED_TESTS + _EP8_TESTS + _FUSED_EP2_TESTS + _FUSED_EP2_WIDE_TESTS + _FUSED_EP4_TESTS + _FUSED_EP4_WIDE_TESTS + _TWO_GPU_TESTS,
     ) + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
@@ -71,9 +108,141 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "ep_side_stream_test",
+    # Two traced arms run back to back; the test splits TEST_TIMEOUT between
+    # them, so this sets the per-arm budget.
+    size = "enormous",
+    srcs = _TRACED_TESTS + [
+        "conftest.py",
+        "side_stream_worker.py",
+    ],
+    env = _COMMON_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "12",
+    },
+    gpu_constraints = [
+        "//:amd_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        # TODO(GEX-4366): side-stream work seems to launch after the main
+        # stream on AMD. Manual until the flake is fixed.
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "ep_quantized_tests",
     size = "large",
     srcs = _QUANTIZED_TESTS + ["conftest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "11",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    per_test_shard_count = {
+        # One compiled graph per fused dispatch op.
+        "test_ep_dispatch_nvfp4_dyn.py": 2,
+        "test_ep_moe_fp4.py": 2,
+    },
+    per_test_target_compatible_with = {
+        # Needs mega_ffn.ep_combine_send, registered only by the closed-source kernels.
+        "test_ep_moe_fp4.py": REQUIRES_INTERNAL_KERNELS,
+        # Needs mo.composite.mega_ffn_nvfp4, registered only by the closed-source kernels.
+        "test_ep_moe_mxfp8.py": REQUIRES_INTERNAL_KERNELS,
+    },
+    tags = [
+        "gpu",
+        "requires-network",
+    ],
+    deps = _COMMON_DEPS,
+)
+
+# The EP8, EP4 and EP2 128-local fused tests' shared helpers.
+modular_py_library(
+    name = "fused_megaffn_gates",
+    testonly = True,
+    srcs = ["fused_megaffn_gates.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("pytest"),
+        requirement("torch"),
+    ],
+)
+
+# One-launch fused EP MoE (`mega_ffn.ep_fused`) at GLM-5.3 MoE geometry, EP8,
+# both formats, against the shipping chain: production allocation/lowering,
+# CUDA-graph capture replayed across generations, two workspaces, the
+# capacity and backend refusals, the fail-closed host checks, a shared EP
+# instance, and the optional real GLM-5.3 layer (GLM53_NVFP4_SNAPSHOT). Needs
+# 8 GPUs (devices 0-7); skips itself below that.
+modular_py_test(
+    name = "ep_fused_megaffn_tests",
+    size = "large",
+    srcs = _EP8_TESTS + ["conftest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        # MAX gets 40% of (this - 0.6) GiB per GPU, torch the rest. The MXFP8
+        # weights of all 256 experts take 9.3 GiB on cuda:0 before they move
+        # to the host (torch). The MXFP8 graph-replay case holds a shipping
+        # and two fused models at once, and MAX peaks at 7.8 GiB while the
+        # second fused model initializes; 23 leaves about 1.2 GiB above that
+        # for fragmentation in the allocator's 256 MiB pages.
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    # safetensors: the real-layer replay reads one layer from a local snapshot.
+    deps = _COMMON_DEPS + [
+        ":fused_megaffn_gates",
+        requirement("safetensors"),
+    ],
+)
+
+# One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP2, both formats, top-k 8: production
+# allocation/lowering, CUDA-graph capture replayed across generations, two chained layers,
+# two workspaces, an empty rank, the fail-closed host checks, the backend's refusal, a
+# fused and a shipping model on one EP instance, and the optional pilot
+# (EP2_FUSED_PILOT=1). Needs 2 B200s; skips itself otherwise.
+modular_py_test(
+    name = "ep_fused_megaffn_ep2_tests",
+    size = "large",
+    srcs = _FUSED_EP2_TESTS + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
         "test.resources:gpu-memory": "12",
@@ -85,9 +254,136 @@ modular_py_test(
     mojo_deps = [
         "//max:shmem",
     ],
+    # Each test compiles its own graphs, and together they outlast the
+    # timeout of a single run.
+    shard_count = 8,
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = _COMMON_DEPS,
+)
+
+# One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP2 with GLM-5.3's 256
+# routed experts (128 local), both formats, at capacity 32: CUDA-graph capture
+# replayed across generations, a shared EP instance, the host-side refusals,
+# and the neighbors the backend refuses by the plan query and at EP init.
+modular_py_test(
+    name = "ep_fused_megaffn_ep2_wide_tests",
+    size = "large",
+    srcs = _FUSED_EP2_WIDE_TESTS + ["conftest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        # MAX gets 40% of (this - 0.6) GiB per GPU, torch the rest. A graph
+        # replay case holds a one-layer shipping and two two-layer fused
+        # models, five layers of 128 experts: 23.2 GiB of MXFP8 weights per
+        # GPU, so MAX needs about 31.8 GiB. Torch holds the 256 experts'
+        # 9.3 GiB on cuda:0 until they move to the host.
+        "test.resources:gpu-memory": "80",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+)
+
+# One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP4 (devices 0-3), 8 local
+# experts, both formats: a balanced and a ragged cell under CUDA-graph replay,
+# the capacity refusals, and the host plan for GLM-5.3's 256 experts (64 local)
+# with its neighbors' refusals.
+modular_py_test(
+    name = "ep_fused_megaffn_ep4_tests",
+    size = "large",
+    srcs = _FUSED_EP4_TESTS + ["conftest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "12",
+    },
+    gpu_constraints = [
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+)
+
+# One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP4 (devices 0-3) with
+# GLM-5.3's 256 routed experts (64 local), both formats: a balanced and a ragged
+# cell under CUDA-graph replay and the capacity refusal.
+modular_py_test(
+    name = "ep_fused_megaffn_ep4_wide_tests",
+    size = "large",
+    srcs = _FUSED_EP4_WIDE_TESTS + ["conftest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        # MAX gets 40% of (this - 0.6) GiB per GPU, torch the rest. A graph
+        # replay case holds a one-layer shipping and two two-layer fused
+        # models, five layers of 64 local experts: 11.6 GiB of MXFP8 weights
+        # per GPU. MAX peaks at 12.3 GiB on every GPU (allocator log,
+        # both formats); 35 leaves 1.4 GiB above that for fragmentation
+        # in the allocator's 256 MiB pages. Torch holds the 256 experts'
+        # 9.3 GiB on cuda:0 until they move to the host.
+        "test.resources:gpu-memory": "35",
+    },
+    gpu_constraints = [
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+)
+
+modular_py_test(
+    name = "ep_eplb_tests",
+    size = "large",
+    srcs = _TWO_GPU_TESTS,
+    env = _COMMON_ENV,
+    # Three compiled two-layer MoE models stay resident per device.
+    exec_properties = {
+        "test.resources:gpu-memory": "24",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+    ],
+    mojo_deps = [
+        "//max:shmem",
+    ],
     tags = [
         "gpu",
         "requires-network",
     ],
-    deps = _COMMON_DEPS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
 )

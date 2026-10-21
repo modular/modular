@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from max.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.math import ceildiv
-from std.os import Atomic
+from std.atomic import Atomic
 from std.random import random_ui64
 
 # ========================== CONFIGURATION ==========================
@@ -25,8 +26,8 @@ comptime NUM_BINS = 256
 
 # ========================== KERNEL CODE ==========================
 def histogram_kernel(
-    image: UnsafePointer[UInt8, MutAnyOrigin],
-    bins: UnsafePointer[UInt32, MutAnyOrigin],
+    image: ImmPointer[UInt8, ImmutAnyOrigin],
+    bins: MutPointer[UInt32, MutAnyOrigin],
     width: UInt32,
     height: UInt32,
 ):
@@ -39,10 +40,10 @@ def histogram_kernel(
         height: Image height.
     """
     # Allocate shared memory for private bins
-    var bins_s = stack_allocation[
+    var bins_s = unsafe_stack_allocation[
         NUM_BINS,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Initialize shared memory bins to zero
@@ -57,7 +58,7 @@ def histogram_kernel(
     var i = UInt32(block_idx.x) * UInt32(256) + UInt32(thread_idx.x)
     if i < width * height:
         var bin = image[Int(i)]
-        _ = Atomic.fetch_add(bins_s + Int(bin), UInt32(1))
+        _ = Atomic.fetch_add(bins_s.unsafe_offset(Int(bin)), UInt32(1))
 
     barrier()
 
@@ -65,14 +66,14 @@ def histogram_kernel(
     b = UInt32(thread_idx.x)
     while b < NUM_BINS:
         if bins_s[Int(b)] > 0:
-            _ = Atomic.fetch_add(bins + Int(b), bins_s[Int(b)])
+            _ = Atomic.fetch_add(bins.unsafe_offset(Int(b)), bins_s[Int(b)])
         b += UInt32(256)
 
 
 # ========================== TEST CODE ==========================
 def cpu_histogram(
-    image: UnsafePointer[UInt8, MutAnyOrigin],
-    bins: UnsafePointer[UInt32, MutAnyOrigin],
+    image: ImmPointer[UInt8, _],
+    bins: MutPointer[UInt32, _],
     width: UInt32,
     height: UInt32,
 ):
@@ -95,9 +96,9 @@ def main() raises:
     var total_pixels = Int(width * height)
 
     # Host memory allocation
-    var h_image = alloc[UInt8](total_pixels)
-    var h_bins = alloc[UInt32](NUM_BINS)
-    var h_ref = alloc[UInt32](NUM_BINS)
+    var h_image = unsafe_alloc[UInt8](total_pixels)
+    var h_bins = unsafe_alloc[UInt32](NUM_BINS)
+    var h_ref = unsafe_alloc[UInt32](NUM_BINS)
 
     # Initialize image with random values
     for i in range(total_pixels):
@@ -122,15 +123,15 @@ def main() raises:
 
     with DeviceContext() as ctx:
         # Device memory allocation
-        var d_image = ctx.enqueue_create_buffer[DType.uint8](total_pixels)
-        var d_bins = ctx.enqueue_create_buffer[DType.uint32](NUM_BINS)
+        var d_image = ctx.enqueue_create_buffer[.uint8](total_pixels)
+        var d_bins = ctx.enqueue_create_buffer[.uint32](NUM_BINS)
 
         # Copy data to device
         ctx.enqueue_copy(d_image, h_image)
         ctx.enqueue_copy(d_bins, h_bins)
 
         # Launch kernel
-        ctx.enqueue_function_experimental[histogram_kernel](
+        ctx.enqueue_function[histogram_kernel](
             d_image,
             d_bins,
             width,
@@ -157,9 +158,9 @@ def main() raises:
             errors += 1
 
     # Cleanup
-    h_image.free()
-    h_bins.free()
-    h_ref.free()
+    h_image.unsafe_free()
+    h_bins.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

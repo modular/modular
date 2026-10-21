@@ -28,6 +28,7 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Replicated,
     Sharded,
@@ -88,9 +89,8 @@ class TestSingleDeviceTensor:
         t = Tensor.zeros([4], dtype=DType.float32, device=CPU())
         assert t.mapping.is_fully_replicated
 
-    def test_mesh_is_single(self) -> None:
+    def test_mesh_is_single_device(self) -> None:
         t = Tensor.zeros([4], dtype=DType.float32, device=CPU())
-        assert t.mesh.is_single
         assert t.mesh.num_devices == 1
 
 
@@ -112,13 +112,7 @@ def _make_realized_sharded(
         for _ in range(num_shards)
     )
     return Tensor._from_shards(
-        bufs,
-        mesh,
-        (Sharded(shard_axis),),
-        global_shape=[
-            s * num_shards if i == shard_axis else s
-            for i, s in enumerate(shape_per_shard)
-        ],
+        bufs, DeviceMapping(mesh, (Sharded(shard_axis),))
     )
 
 
@@ -170,18 +164,7 @@ class TestFromShards:
             for _ in range(2)  # wrong: 2 buffers for 4-device mesh
         )
         with pytest.raises(ValueError, match="Expected 4 storages"):
-            Tensor._from_shards(bufs, mesh, (Sharded(0),), global_shape=[8])
-
-    def test_placement_count_mismatch_raises(self) -> None:
-        mesh = mesh_1d(2)
-        bufs = tuple(
-            Buffer.zeros([4], dtype=DType.float32, device=CPU())
-            for _ in range(2)
-        )
-        with pytest.raises(ValueError, match="one placement per mesh axis"):
-            Tensor._from_shards(
-                bufs, mesh, (Sharded(0), Replicated()), global_shape=[8]
-            )
+            Tensor._from_shards(bufs, DeviceMapping(mesh, (Sharded(0),)))
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -233,24 +216,13 @@ class TestShardedTensorShape:
         t = _make_realized_sharded([3, 8], 4, shard_axis=0)
         assert list(t.shape) == [12, 8]
 
-    def test_explicit_global_shape(self) -> None:
-        mesh = mesh_1d(2)
-        bufs = tuple(
-            Buffer.zeros([4, 8], dtype=DType.float32, device=CPU())
-            for _ in range(2)
-        )
-        t = Tensor._from_shards(bufs, mesh, (Sharded(0),), global_shape=[8, 8])
-        assert list(t.shape) == [8, 8]
-
     def test_replicated_shape_equals_shard_shape(self) -> None:
         mesh = mesh_1d(2)
         bufs = tuple(
             Buffer.zeros([4, 8], dtype=DType.float32, device=CPU())
             for _ in range(2)
         )
-        t = Tensor._from_shards(
-            bufs, mesh, (Replicated(),), global_shape=[4, 8]
-        )
+        t = Tensor._from_shards(bufs, DeviceMapping(mesh, (Replicated(),)))
         assert list(t.shape) == [4, 8]
 
 
@@ -273,7 +245,7 @@ class TestShardedTensorRepr:
     def test_contains_mapping(self) -> None:
         t = _make_realized_sharded([2, 4], 2)
         r = repr(t)
-        assert "mapping=" in r or "PlacementMapping" in r
+        assert "mapping=" in r or "DeviceMapping" in r
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -289,10 +261,7 @@ class TestTensor2DMesh:
             for _ in range(4)
         )
         t = Tensor._from_shards(
-            bufs,
-            mesh,
-            (Sharded(0), Sharded(1)),
-            global_shape=[8, 6],
+            bufs, DeviceMapping(mesh, (Sharded(0), Sharded(1)))
         )
         assert t.is_distributed
         assert t.num_shards == 4
@@ -306,10 +275,158 @@ class TestTensor2DMesh:
             for _ in range(4)
         )
         t = Tensor._from_shards(
-            bufs, mesh, (Sharded(0), Sharded(1)), global_shape=[8, 6]
+            bufs, DeviceMapping(mesh, (Sharded(0), Sharded(1)))
         )
         shards = t.local_shards
         assert len(shards) == 4
         for s in shards:
             assert not s.is_distributed
             assert list(s.shape) == [4, 3]
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  Tensor.to: Device, DeviceMesh, DeviceMapping
+# ═════════════════════════════════════════════════════════════════════════
+
+
+class TestTensorTo:
+    """Tests for Tensor.to with Device, DeviceMesh, and DeviceMapping."""
+
+    def test_to_device(self) -> None:
+        """Tensor.to(Device) should work as before for single-device tensors."""
+        t = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
+        result = t.to(CPU())
+        assert result is t  # Same device returns self
+        assert not result.is_distributed
+
+    def test_distributed_to_single_device(self) -> None:
+        """Tensor.to(Device) should raise for distributed tensors."""
+        t = _make_realized_sharded([2, 4], 2)
+        result = t.to(CPU())
+        assert not result.is_distributed
+        assert list(result.shape) == [4, 4]
+
+    def test_single_to_single_device_mesh(self) -> None:
+        """Tensor.to(DeviceMesh) with single device should transfer."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        single_mesh = DeviceMesh(
+            devices=(CPU(),), mesh_shape=(1,), axis_names=("_",)
+        )
+        result = t.to(single_mesh)
+        assert not result.is_distributed
+        assert list(result.shape) == [4, 8]
+
+    def test_single_to_multi_device_mesh_unsharded(self) -> None:
+        """Tensor.to(DeviceMesh) with multi-device creates replicated mapping."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        mesh = mesh_1d(2)
+        result = t.to(mesh)
+        assert result.is_distributed
+        assert result.num_shards == 2
+        assert result.mesh.num_devices == 2
+        # Should be fully replicated
+        assert result.mapping.is_fully_replicated
+
+    def test_to_device_mapping_single_device(self) -> None:
+        """Tensor.to(DeviceMapping) with single-device mesh transfers."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        single_mesh = DeviceMesh(
+            devices=(CPU(),), mesh_shape=(1,), axis_names=("_",)
+        )
+        mapping = DeviceMapping(single_mesh, (Replicated(),))
+        result = t.to(mapping)
+        assert not result.is_distributed
+        assert list(result.shape) == [4, 8]
+
+    def test_to_device_mapping_multi_device_sharded(self) -> None:
+        """Tensor.to(DeviceMapping) with multi-device shards the tensor."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        mesh = mesh_1d(2)
+        mapping = DeviceMapping(mesh, (Sharded(0),))
+        result = t.to(mapping)
+        assert result.is_distributed
+        assert result.num_shards == 2
+        assert result.placements == (Sharded(0),)
+        # Global shape should be preserved
+        assert list(result.shape) == [4, 8]
+        # Each shard should have half along axis 0
+        shards = result.local_shards
+        assert len(shards) == 2
+        for s in shards:
+            assert list(s.shape) == [2, 8]
+
+    def test_to_device_mapping_multi_device_replicated(self) -> None:
+        """Tensor.to(DeviceMapping) with Replicated replicates data."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        mesh = mesh_1d(2)
+        mapping = DeviceMapping(mesh, (Replicated(),))
+        result = t.to(mapping)
+        assert result.is_distributed
+        assert result.num_shards == 2
+        assert result.placements == (Replicated(),)
+        assert list(result.shape) == [4, 8]
+        # Each shard should have full shape
+        shards = result.local_shards
+        for s in shards:
+            assert list(s.shape) == [4, 8]
+
+    def test_to_device_mapping_with_redistribution(self) -> None:
+        """Tensor.to(DeviceMapping) redistributes distributed tensor."""
+        t = _make_realized_sharded([4, 8], 2)
+        mesh = mesh_1d(2)
+        new_mapping = DeviceMapping(mesh, (Sharded(1),))  # Different sharding
+        result = t.to(new_mapping)
+        assert result.is_distributed
+        assert result.num_shards == 2
+        assert result.placements == (Sharded(1),)
+        assert list(result.shape) == [8, 8]
+        assert list(result.local_shards[0].shape) == [8, 4]
+
+    def test_to_invalid_type_raises(self) -> None:
+        """Tensor.to with invalid type should raise TypeError."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        with pytest.raises(
+            TypeError, match="expects Device, DeviceMesh, or DeviceMapping"
+        ):
+            t.to("invalid")  # type: ignore[arg-type]
+
+    def test_to_mesh_preserves_sharded_placement(self) -> None:
+        """Tensor.to(DeviceMesh) preserves pre-defined Sharded placement."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        # Tag with Sharded(0) on single-device mesh
+        t._mapping = DeviceMapping(t.mesh, (Sharded(0),))
+
+        mesh = mesh_1d(2)
+        result = t.to(mesh)
+        assert result.is_distributed
+        assert result.placements == (Sharded(0),)
+        assert result.num_shards == 2
+        # Each shard should have half along axis 0
+        shards = result.local_shards
+        for s in shards:
+            assert list(s.shape) == [2, 8]
+
+    def test_to_mesh_preserves_col_sharded_placement(self) -> None:
+        """Tensor.to(DeviceMesh) preserves Sharded(1) for column-parallel."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        t._mapping = DeviceMapping(t.mesh, (Sharded(1),))
+
+        mesh = mesh_1d(2)
+        result = t.to(mesh)
+        assert result.is_distributed
+        assert result.placements == (Sharded(1),)
+        # Each shard should have half along axis 1
+        shards = result.local_shards
+        for s in shards:
+            assert list(s.shape) == [4, 4]
+
+    def test_to_mesh_replicated_by_default(self) -> None:
+        """Tensor.to(DeviceMesh) defaults to Replicated for untagged tensors."""
+        t = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        mesh = mesh_1d(2)
+        result = t.to(mesh)
+        assert result.is_distributed
+        assert result.mapping.is_fully_replicated
+        shards = result.local_shards
+        for s in shards:
+            assert list(s.shape) == [4, 8]

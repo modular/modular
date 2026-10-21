@@ -1,8 +1,8 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -14,7 +14,6 @@ modular_py_test(
         ["*.py"],
         exclude = [
             "*_gpu.py",
-            "test_dkv_cache_hint.py",
             "test_print_kv_cache.py",
             "test_rotary_embedding.py",
         ],
@@ -24,20 +23,23 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
-        "//max/python/max/kv_cache",
         "//max/python/max/mlir",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/kv_cache:kv_connector",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
-        "//max/tests/integration/graph:modular_graph_test",
         "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:modular_graph_test",
+        "//max/tests/integration/test_common:simple_kv_cache",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
@@ -72,31 +74,23 @@ modular_py_test(
     srcs = glob(
         ["*_rotary_embedding.py"],
     ) + ["conftest.py"],
-    args = [
-        "-n",
-        "auto",
-    ],
-    ignore_extra_deps = [
-        # Used for parallelizing tests
-        requirement("pytest-xdist"),
-    ],
+    shard_count = 11,
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/tests/integration/graph:modular_graph_test",
-        "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:modular_graph_test",
+        "//max/tests/integration/test_common:simple_kv_cache",
         requirement("hypothesis"),
         requirement("numpy"),
-        requirement("pytest-xdist"),
         requirement("torch"),
     ],
 )
@@ -107,30 +101,256 @@ modular_py_test(
         ["*_gpu.py"],
         exclude = [
             "*_distributed_gpu.py",
+            "benchmark_chunked_qkv_rope_store_gpu.py",
             "test_lora_*.py",
-            "test_lmcache_*.py",  # Requires external lmcache package
+            "test_msa_fp8_kv_store_gpu.py",
+            "test_chunked_qkv_rope_store_gpu.py",
+            "test_msa_mxfp8_attention_gpu.py",
+            "test_dual_qk_fp8_kv_store_gpu.py",
+            "test_msa_nvfp4_kv_gpu.py",
+            "test_chunked_staging_region_gpu.py",
+            "test_kv_cache_buffer_pinned_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "1.2",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("hypothesis"),
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
+)
+
+# No kernels in the path, so unlike its neighbours this runs on Apple GPUs too.
+modular_py_test(
+    name = "test_chunked_staging_region_gpu",
+    srcs = ["test_chunked_staging_region_gpu.py"],
+    env = {
+        # The HIP runtime backs pinned host allocations with movable user
+        # pages unless this is set, so without it the driver_alloc cases
+        # fail their startup check rather than exercising it. Harmless on
+        # NVIDIA/Apple, where nothing reads this variable, and the
+        # registered-path tests are unaffected either way.
+        "HSA_USERPTR_FOR_PAGED_MEM": "0",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        requirement("numpy"),
+    ],
+)
+
+# No kernels in the path, so this runs on Apple GPUs too.
+modular_py_test(
+    name = "test_kv_cache_buffer_pinned_gpu",
+    srcs = ["test_kv_cache_buffer_pinned_gpu.py"],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
     ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/nn",
+    ],
+)
+
+modular_py_test(
+    name = "test_chunked_qkv_rope_store_gpu",
+    srcs = ["test_chunked_qkv_rope_store_gpu.py"],
+    # Producer runfiles and sandboxed replay otherwise infer different project
+    # roots, changing node IDs and preventing the recorded MEFs from matching.
+    args = ["--rootdir=max/tests/integration/kv_cache"],
+    exec_properties = {"test.resources:gpu-memory": "2"},
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/tests/integration/test_common:context_utils",
-        requirement("hypothesis"),
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "benchmark_chunked_qkv_rope_store_gpu",
+    srcs = [
+        "benchmark_chunked_qkv_rope_store_gpu.py",
+        "test_chunked_qkv_rope_store_gpu.py",
+    ],
+    # Producer runfiles and sandboxed replay otherwise infer different project
+    # roots, changing node IDs and preventing the recorded MEFs from matching.
+    args = [
+        "--rootdir=max/tests/integration/kv_cache",
+        "-o",
+        "python_files=benchmark_chunked_qkv_rope_store_gpu.py",
+    ],
+    exec_properties = {"test.resources:gpu-memory": "2"},
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Dedicated target for the FP8 KV store round-trip test
+modular_py_test(
+    name = "test_msa_fp8_kv_store_gpu",
+    srcs = [
+        "test_msa_fp8_kv_store_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Dedicated target for the fused MSA attention + MXFP8 quantize bit-exactness
+# test (AMD gfx950 only)
+modular_py_test(
+    name = "test_msa_mxfp8_attention_gpu",
+    srcs = [
+        "test_msa_mxfp8_attention_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    # Needs mo.msa.attention.ragged.paged, registered only by the closed-source kernels.
+    target_compatible_with = ["//:mi355_gpu"] + REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Dedicated target for the dual (main + indexer) QK RMSNorm+RoPE FP8 KV
+# round-trip test
+modular_py_test(
+    name = "test_dual_qk_fp8_kv_store_gpu",
+    srcs = [
+        "test_dual_qk_fp8_kv_store_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Graph-op plumbing for MiniMax-M3's NVFP4 KV cache (writer and reader).
+modular_py_test(
+    name = "test_msa_nvfp4_kv_gpu",
+    srcs = [
+        "test_msa_nvfp4_kv_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    # Needs mo.msa.attention.ragged.paged, registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -145,13 +365,14 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
-        "//max/python/max/kv_cache",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         requirement("hypothesis"),
         requirement("numpy"),
@@ -165,10 +386,9 @@ _LORA_TEST_DEPS = [
     "//max/python/max/engine",
     "//max/python/max/experimental/torch",
     "//max/python/max/graph",
-    "//max/python/max/kv_cache",
     "//max/python/max/nn",
-    "//max/python/max/pipelines/core",
-    "//max/tests/integration/test_common:context_utils",
+    "//max/python/max:tree",
+    "//max/tests/integration/test_common:simple_kv_cache",
     requirement("hypothesis"),
     requirement("numpy"),
     requirement("torch"),
@@ -184,10 +404,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = _LORA_TEST_DEPS,
 )
 
@@ -201,24 +422,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = _LORA_TEST_DEPS,
-)
-
-modular_py_test(
-    name = "test_dkv_cache_hint",
-    srcs = ["test_dkv_cache_hint.py"],
-    tags = ["no-pydeps"],
-    # NIXL (used by _parse_dkv_cache_hint) only supports x86_64 Linux
-    target_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    deps = [
-        "//max/python/max/kv_cache/connectors/dkv",
-        "//max/python/max/pipelines",
-    ],
 )

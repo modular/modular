@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import ClassVar
 
-from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from transformers.models.auto.configuration_auto import AutoConfig
+from max.nn.comm.ep import EPConfig
+from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 from ..llama3.model_config import Llama3Config
@@ -29,6 +31,13 @@ from ..llama3.model_config import Llama3Config
 
 @dataclass(kw_only=True)
 class Qwen3Config(Llama3Config):
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+        "float8_e4m3fn",
+    }
+
     # MoE parameters - these are optional and only used for Qwen3-MOE models
     num_experts: int = 0
     """Number of experts in the MoE layer. 0 means dense model (no MoE)."""
@@ -48,42 +57,8 @@ class Qwen3Config(Llama3Config):
     decoder_sparse_step: int = 1
     """Sparse step for the decoder. Controls which layers use MoE."""
 
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Override the default Llama3Config.construct_kv_params to use head_dim from config.
-
-        Qwen3 models have an explicit head_dim field in their configuration,
-        unlike Llama models where it needs to be calculated.
-
-        Args:
-            huggingface_config: The HuggingFace configuration object.
-            pipeline_config: The MAX Engine pipeline configuration.
-            devices: Devices to use for the KV cache.
-            kv_cache_config: Configuration for KV cache.
-            cache_dtype: Data type for the cache.
-
-        Returns:
-            KVCacheParams object with the correct head_dim from config.
-        """
-        data_parallel_degree = pipeline_config.model.data_parallel_degree
-        if data_parallel_degree > 1:
-            raise ValueError(
-                "Data parallelism is not supported for Qwen3 models"
-            )
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            num_layers=Qwen3Config.get_num_layers(huggingface_config),
-            devices=devices,
-            data_parallel_degree=data_parallel_degree,
-        )
+    ep_config: EPConfig | None = None
+    """Expert parallelism configuration. None means no EP."""
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:
@@ -109,6 +84,8 @@ class Qwen3Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3Config instance from pipeline configuration.
 
@@ -126,7 +103,9 @@ class Qwen3Config(Llama3Config):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @override
     @classmethod
@@ -135,6 +114,8 @@ class Qwen3Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3Config instance from pipeline and HuggingFace configs.
 
@@ -151,14 +132,17 @@ class Qwen3Config(Llama3Config):
         """
         # Get base config from Llama3Config
         base_config = Llama3Config.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            base_config.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
@@ -212,13 +196,15 @@ class Qwen3Config(Llama3Config):
             model_quantization_encoding=base_config.model_quantization_encoding,
             quantization_config=base_config.quantization_config,
             max_seq_len=base_config.max_seq_len,
-            kv_params=qwen3_kv_params,  # Use Qwen3-specific KV params
-            attention_multiplier=qwen3_attention_multiplier,  # Use Qwen3-specific attention multiplier
+            kv_params=qwen3_kv_params,
+            attention_multiplier=qwen3_attention_multiplier,
             embedding_multiplier=base_config.embedding_multiplier,
             residual_multiplier=base_config.residual_multiplier,
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
+            data_parallel_degree=base_config.data_parallel_degree,
+            quantization_encoding=base_config.quantization_encoding,
             # MoE parameters
             num_experts=num_experts,
             num_experts_per_tok=num_experts_per_tok,

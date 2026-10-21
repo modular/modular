@@ -20,11 +20,26 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Any, Literal
 
+from openai.types.chat.completion_create_params import ResponseFormat
 from PIL import Image
+from pydantic import BaseModel
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import TypedDict
 
 DatasetMode = Literal["local", "huggingface"]
+
+
+@dataclass
+class SharedContext:
+    """A single entry in the prefix-cache warmup list.
+
+    Represents the longest observed variant of a unique shared context.
+    Sending the longest variant is sufficient because all shorter variants
+    built from the same base are token-level prefixes of it.
+    """
+
+    text: str
+    num_tokens: int
 
 
 class OpenAIImageURL(TypedDict):
@@ -36,13 +51,50 @@ class OpenAIImage(TypedDict):
     image_url: OpenAIImageURL
 
 
+class TextContentBlock(BaseModel):
+    type: Literal["text"] = "text"
+    text: str
+
+
+class ImageURLDetail(BaseModel):
+    url: str
+
+
+class ImageContentBlock(BaseModel):
+    # Images are carried in the separate RequestFuncInput.images field and
+    # appended to the payload after serialisation; they appear in content lists
+    # only at the wire layer, not in prompts constructed by this codebase.
+    # The model is defined here so ChatMessage.content can represent the full
+    # OpenAI content-block union and round-trip correctly.
+    type: Literal["image_url"] = "image_url"
+    image_url: ImageURLDetail
+
+
+class ChatMessage(BaseModel):
+    # role is "user", "assistant", or "system" in practice. "system" is
+    # used by chat-judge today.
+    # TODO: wire sys_prompt_ratio support with "system" role through the
+    # multi-turn path.
+    role: str
+    # Usually list[TextContentBlock], but not guaranteed: agentic-code passes
+    # plain-string content straight through from its dataset. Consumers that
+    # index or append to content must handle both shapes.
+    content: str | list[TextContentBlock | ImageContentBlock]
+
+
 @dataclass
 class SampledRequest:
-    prompt_formatted: str | list[dict[str, Any]]
+    prompt_formatted: str | list[ChatMessage]
     prompt_len: int
     output_len: int | None
     encoded_images: list[OpenAIImage]
     ignore_eos: bool
+    response_format: ResponseFormat | None = None
+    # OpenAI-style tool definitions forwarded as the chat-completions ``tools``
+    # field. Typed as ``list[dict]`` (not ``ChatCompletionToolUnionParam``) so
+    # datasets can pass through whatever shape the server expects; the driver
+    # serialises this as-is.
+    tools: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -53,6 +105,7 @@ class PixelGenerationImageOptions:
     guidance_scale: float | None = None
     negative_prompt: str | None = None
     seed: int | None = None
+    num_frames: int | None = None
 
 
 @dataclass
@@ -71,39 +124,68 @@ class PixelGenerationSampledRequest(SampledRequest):
     image_options: PixelGenerationImageOptions | None = None
 
 
-MessageSource = Literal["user", "assistant"]
+MessageSource = Literal["user", "assistant", "system"]
+
+# Which user turn(s) of a multi-turn session an augmentation may act on.
+#
+# The selector is shared; the unit each augmentation's fraction draws in is
+# not. Draw per session when the payload persists into later turns, per turn
+# when it does not: images ride in the message history, a response_format is
+# per-request. That also decides whether "first" survives a warmed session --
+# the prefix loop resends its images but never sets response_format
+# (CENG-1086).
+TurnSelector = Literal["first", "last", "every"]
 
 
 @dataclass
-class ChatMessage:
+class SessionMessage:
     source: MessageSource
     content: str
     num_tokens: int
     delay_until_next_message: float | None = None
+    # An agent-loop round; the wire role is still "user".
+    is_agentic: bool = False
+    # Any image tokens are already counted in `num_tokens`, so consumers
+    # must not add them again.
+    images: list[OpenAIImage] = field(default_factory=list)
+    # Constrains this turn's response when set. Only a "user" message carries
+    # one; an assistant message is replayed history and asks the server for
+    # nothing.
+    response_format: ResponseFormat | None = None
+    # Sent as this turn's chat-completions ``tools`` field. Like
+    # ``response_format``, only a "user" message carries one.
+    tools: list[dict[str, Any]] | None = None
 
 
 @dataclass
 class ChatSession:
     id: int | None
-    messages: Sequence[ChatMessage]
+    messages: Sequence[SessionMessage]
     prefix_turns: int = 0
+
+    @property
+    def num_turns(self) -> int:
+        """Model invocations, agent-loop rounds included: the request count."""
+        return sum(1 for m in self.messages if m.source == "user")
 
 
 @dataclass
 class RequestSamples:
     requests: Sequence[SampledRequest]
+    shared_contexts: list[SharedContext] = field(default_factory=list)
 
 
 @dataclass
 class ChatSamples:
     chat_sessions: Sequence[ChatSession]
+    shared_contexts: list[SharedContext] = field(default_factory=list)
 
 
 Samples = RequestSamples | ChatSamples
 
 
 def estimate_num_tokens(tokenizer: PreTrainedTokenizerBase, text: str) -> int:
-    return len(tokenizer(text, add_special_tokens=False).input_ids)
+    return len(tokenizer.encode(text, add_special_tokens=False))
 
 
 def build_chat_message(
@@ -112,8 +194,8 @@ def build_chat_message(
     tokenizer: PreTrainedTokenizerBase,
     num_tokens: int | None = None,
     delay_until_next_message: float | None = None,
-) -> ChatMessage:
-    return ChatMessage(
+) -> SessionMessage:
+    return SessionMessage(
         source,
         prompt,
         num_tokens or estimate_num_tokens(tokenizer, prompt),

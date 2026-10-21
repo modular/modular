@@ -1,7 +1,19 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
+
+mojo_test(
+    name = "test_w4a8_grouped_shapes.mojo.test",
+    size = "small",
+    srcs = ["test_w4a8_grouped_shapes.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    deps = [
+        "//max:linalg",
+        "@mojo//:std",
+    ],
+)
 
 # Grouped GEMM infrastructure tests - portable to any NVIDIA GPU
 # These tests validate scheduling logic, not block-scaled MMA operations
@@ -19,11 +31,35 @@ _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS = [
     "test_grouped_matmul_1d1d_block_fp4_smoke.mojo",
 ]
 
+_EXTRA_DEPS = {
+    "test_batched_matmul.mojo": ["//max:max_mojo"],
+    "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//max:max_mojo"],
+    "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//max:max_mojo"],
+    "test_matmul.mojo": ["//max:max_mojo"],
+}
+
 _EXTRA_CONSTRAINTS = {
     "test_amd_matmul_asm.mojo": ["//:amd_gpu"],
-    "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
-    "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
+    "test_apple_gpu_matmul.mojo": ["//:apple_gpu"],
+    # Apple M5 W4A16 (NVFP4) — covers all three dispatch paths (fused in-register
+    # B-loader, materialize->dense, and the matmul2d 16x32x16 deep-K path). Apple
+    # M5 only (Metal 4 / AIR 2.8); the generic glob loop generates the mojo_test.
+    "test_apple_fp4_matmul.mojo": ["//:apple_gpu"],
+    # Apple M5 int8 W8A8 (widening int8->int32 MMA + per-row/col dequant + the
+    # online activation-quant kernel). Apple M5 only (Metal 4 / AIR 2.8).
+    "test_apple_int8_matmul.mojo": ["//:apple_gpu"],
+    # Apple M5 weight-only FP8 (W8A16): register-resident E4M3 GEMV at M==1 +
+    # materialize->dense interim at M>1. Apple M5 only (Metal 4 / AIR 2.8).
+    "test_fp8_gemv.mojo": ["//:apple_gpu"],
+    # Apple M5 grouped (MoE) weight-only FP8 (W8A16): tiled simdgroup-MMA
+    # grouped matmul vs the naive reference. Apple M5 only (Metal 4 / AIR 2.8).
+    "test_grouped_matmul_apple_fp8.mojo": ["//:apple_gpu"],
+    # Apple M5 grouped (MoE) bf16 or fp16: grouped GEMV (decode) + grouped
+    # simdgroup MMA (prefill) vs the naive reference. Apple M5 only.
+    "test_grouped_matmul_apple.mojo": ["//:apple_gpu"],
+    "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
+    # PDL (griddepcontrol) + llvm.nvvm.nanosleep: NVIDIA SM90+ only.
+    "test_gemv_pdl_race.mojo": ["//:nvidia_gpu"],
     "test_gemv.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -34,6 +70,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_gemv_bf16.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_gemv_multirow.mojo": ["//:nvidia_gpu"],
     "test_gemv_tma.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
         "//:b200_gpu": ["//:b200_gpu"],
@@ -42,19 +79,54 @@ _EXTRA_CONSTRAINTS = {
     "test_grouped_matmul.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
         "//:b200_gpu": ["//:b200_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_grouped_matmul_small_k.mojo": ["//:b200_gpu"],
+    "test_grouped_matmul_rowwise_scaled_fp8.mojo": select({
+        # FIXME: MOCO-4405 — Metal compile exceeds the 900s ceiling since the
+        # union byte-array lowering change (#91813).
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_block_scaled_mma_amd.mojo": ["//:mi355_gpu"],
+    "test_block_scaled_mma_amd_mixed.mojo": ["//:mi355_gpu"],
+    "test_w4a8_grouped_matmul_amd.mojo": ["//:mi355_gpu"],
+    # Tiled blockwise-scaled FP8 dense matmul — CDNA4 16x16x128 FP8 MFMA,
+    # MI355X-specific.
+    "test_blockwise_fp8_matmul_amd.mojo": ["//:mi355_gpu"],
+    "test_batched_matmul_dynamic_scaled_fp8_amd_tiled.mojo": ["//:mi355_gpu"],
+    "test_batched_matmul_dynamic_scaled_fp8_amd_tiled_mla_layout.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_matmul_amd_bench.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_matmul_amd_asm.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_grouped_matmul_amd.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_grouped_matmul_amd_bench.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_grouped_matmul_amd_asm.mojo": ["//:mi355_gpu"],
+    "test_mxfp6_matmul_amd.mojo": ["//:mi355_gpu"],
+    "test_mxfp6_dequant_smoke.mojo": select({
+        "//:nvidia_gpu": ["//:nvidia_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_block_scaled_mma_amd_pack_k.mojo": ["//:mi355_gpu"],
+    "test_mfma_32x32x64_f8f6f4.mojo": ["//:mi355_gpu"],
+    "test_mxfp4_moe_matmul_amd_routed.mojo": ["//:mi355_gpu"],
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
     "test_ping_pong.mojo": ["//:amd_gpu"],
     "test_ping_pong_shapes.mojo": ["//:amd_gpu"],
     "test_matmul_dispatching_amd.mojo": ["//:amd_gpu"],
-    "test_structured_kernel_components.mojo": ["//:amd_gpu"],
+    "test_multistage_gemm_epilogue_owners.mojo": select({
+        "//:nvidia_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_multistage_gemm_epilogue_fn.mojo": ["//:amd_gpu"],
+    "test_multistage_mma_tile_iter.mojo": ["//:nvidia_gpu"],
+    "test_multistage_gemm_closures_nvidia.mojo": ["//:nvidia_gpu"],
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
     "test_stream_k.mojo": ["//:nvidia_gpu"],
     "test_matmul_tile_scheduler_sm100.mojo": ["//:b200_gpu"],
-    "_test_tma.mojo": ["@platforms//:incompatible"],  # TODO: KERN-2276
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
     "test_tma_wgmma_with_multicast.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-2060
     "test_vendor_blas.mojo": [
@@ -66,7 +138,28 @@ _EXTRA_CONSTRAINTS = {
         "//:amd_gpu": ["//:amd_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mxfp4_dequant_matmul_amd.mojo": ["//:amd_gpu"],
     "test_mxfp4_matmul_amd.mojo": ["//:amd_gpu"],
+    "test_mxfp4_matmul_amd_preb.mojo": ["//:mi355_gpu"],
+    "test_mxfp8_matmul_amd_preb.mojo": ["//:mi355_gpu"],
+    "test_mxfp8_matmul_amd.mojo": ["//:mi355_gpu"],
+    "test_mx_split_k_epilogue_amd.mojo": ["//:mi355_gpu"],
+    "test_mxfp4_quant_amd.mojo": ["//:amd_gpu"],
+    "test_mxfp6_matmul_amd_preb.mojo": ["//:mi355_gpu"],
+    "test_mxfp6_matmul_amd_preb_epilogue.mojo": ["//:mi355_gpu"],
+    "test_quantize_mxfp6_lane_group.mojo": ["//:mi355_gpu"],
+    "test_mxfp6_quant_amd.mojo": ["//:mi355_gpu"],
+    "test_mxfp8_quant_amd_geometry.mojo": ["//:mi355_gpu"],
+    "test_mxfp4_grouped_matmul_amd.mojo": ["//:amd_gpu"],
+    "test_mxfp4_grouped_matmul_amd_expert_offset.mojo": ["//:amd_gpu"],
+    "test_mxfp6_grouped_matmul_amd.mojo": ["//:mi355_gpu"],
+    "test_mxfp4_grouped_matmul_amd_kernels.mojo": ["//:amd_gpu"],
+    # Fused SwiGLU + MXFP8 epilogue in the preb kernel. gfx950 only.
+    "test_swiglu_epilogue_amd.mojo": ["//:mi355_gpu"],
+    "test_mxfp6_grouped_matmul_amd_kernels.mojo": ["//:mi355_gpu"],
+    "test_mxfp4_preshuffle_layouts.mojo": ["//:amd_gpu"],
+    "test_router_gate_mixed_gemv_amd.mojo": ["//:amd_gpu"],
+    "test_gemv_split_k_router_shape_amd.mojo": ["//:amd_gpu"],
     "test_matmul_sm90_fp8.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_bf16_multicast.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_hilbert.mojo": ["//:h100_gpu"],
@@ -78,6 +171,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: long running on MacOS
+    "test_multistage_gemm_split_k.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_linalg_matmul_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -90,6 +187,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_split_k_reduce.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411 — bfloat16 numerical mismatch on Apple GPU
     "test_matmul_custom.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -107,17 +208,52 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_naive_blockwise_fp8_matmul.mojo": select({
+        "//:mi355_gpu": ["//:mi355_gpu"],
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_batched_matmul_dynamic_scaled_fp8_naive.mojo": select({
+        "//:mi355_gpu": ["//:mi355_gpu"],
         "//:h100_gpu": ["//:h100_gpu"],
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
-    "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//:b200_gpu"],
+    "test_cublaslt_scaled_nvfp4_matmul.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//:gb10_gpu": ["//:gb10_gpu"],
+        "//:rtx5090_gpu": ["//:rtx5090_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_hipblaslt_scaled_mxfp4_matmul.mojo": ["//:mi355_gpu"],
+    # 4-wave matmul kernels are MI355X-specific (CDNA4 16x16x128 FP8 /
+    # 16x16x32 bf16+fp16 MFMA + HK chiplet/L2 swizzle); other AMD parts
+    # and all NVIDIA / Apple parts can't compile or run them.
+    # Each test iterates dtype (FP8 / BF16 / FP16) inside `main()` —
+    # HK MHA pattern; single BUILD target per file (no dtype for-loop).
+    "test_4wave_matmul.mojo": ["//:mi355_gpu"],
+    # Streams a preshuffled B via CDNA4 16x16x32 bf16 MFMA; MI355X-only.
+    "test_smallm_streaming_matmul.mojo": ["//:mi355_gpu"],
+    "test_4wave_epilogue.mojo": ["//:mi355_gpu"],
+    "test_4wave_split_k.mojo": ["//:mi355_gpu"],
+    "test_4wave_nonaligned.mojo": ["//:mi355_gpu"],
+    "test_split_k_determinism_amd.mojo": [
+        "//:mi355_gpu",
+        "//:has_multi_gpu",
+    ],
+    "test_gemm_mma_cpasync.mojo": ["//:b200_gpu"],
 } | {
     # Grouped GEMM infra tests - work on any NVIDIA GPU with 32-thread warps
     src: ["//:nvidia_gpu"]
     for src in _GROUPED_GEMM_INFRA_TESTS
 }
+
+# Formerly B200-only (SM100 tests) but now exercise arch-neutral fallback
+# paths; pulled out of _B200_TESTS for explicit multi-arch rules below.
+_AMD_GENERIC_FALLBACK_TESTS = [
+    "test_grouped_matmul_dynamic_scaled_fp8.mojo",
+]
 
 _FILECHECK_TESTS = [
     "test_block_swizzle.mojo",
@@ -130,46 +266,63 @@ _FILECHECK_TESTS = [
 _B200_SMOKE_TESTS = [
     "test_matmul_sm100_smoke.mojo",
     "test_matmul_sm100_blockwise_fp8_smoke.mojo",
+    "test_matmul_sm100_swiglu_1sm.mojo",
+    "test_matmul_sm100_swiglu_2sm.mojo",
+    "test_matmul_sm100_swiglu_bias_1sm.mojo",
+    "test_matmul_sm100_swiglu_bias_2sm.mojo",
     "test_tma_im2col_unit.mojo",
 ]
 
 _B200_TESTS = [
     "test_bulk_mma_pair_cta_sm100.mojo",
+    "test_mma_ws_partial_sm100.mojo",
     "test_tma_mma_sm100.mojo",
+    "test_tma_mma_sm100_fp8.mojo",
     "test_tma_mma_sm100_fp8_cast.mojo",
     "test_tma_pair_mma_sm100.mojo",
     "test_matmul_sm100_fallback.mojo",
+    "test_matmul_sm100_fp8_smallm_band_dispatch.mojo",
     "test_matmul_sm100_structured_quick.mojo",
     "test_matmul_sm100_blockwise_fp8.mojo",
-    "test_grouped_matmul_dynamic_scaled_fp8.mojo",
     "test_matmul_sm100_1sm_blockwise_fp8_part_a.mojo",
     "test_matmul_sm100_1sm_blockwise_fp8_part_b.mojo",
     "test_matmul_sm100_2sm_blockwise_fp8_part_a.mojo",
     "test_matmul_sm100_2sm_blockwise_fp8_part_b.mojo",
     "test_grouped_matmul_sm100_blockwise_fp8.mojo",
     "test_blockwise_fp8_1d2d_structured.mojo",
+    "test_blockwise_fp8_bk64.mojo",
     "test_batched_matmul_sm100_scaled.mojo",
     "test_matmul_sm100_epilogue.mojo",
+    "test_matmul_sm100_partial_n_tile_epilogue.mojo",
     "test_matmul_sm100_swapAB_epilogue.mojo",
+    "test_matmul_sm100_transposed_epilogue_bounds.mojo",
+    "test_matmul_sm100_1sm_bf16_1d_bias.mojo",
+    "test_matmul_sm100_2sm_bf16_1d_bias.mojo",
     "test_matmul_sm100_2sm_bf16.mojo",
     "test_matmul_sm100_1sm_bf16.mojo",
+    "test_matmul_sm100_1sm_fp32.mojo",
+    "test_matmul_sm100_2sm_fp32.mojo",
+    "test_matmul_sm100_1sm_fp32_1d_bias.mojo",
+    "test_matmul_sm100_2sm_fp32_1d_bias.mojo",
+    "test_matmul_sm100_fp32_precision.mojo",
     "test_matmul_sm100_2sm_fp8.mojo",
     "test_matmul_sm100_1sm_fp8.mojo",
     "test_matmul_sm100_splitk_2sm_bf16.mojo",
+    "test_matmul_sm100_splitk_parallel.mojo",
+    "test_matmul_sm100_splitk_parallel_graph.mojo",
     "test_tma_mma_sm100_mxfp8.mojo",
     "test_tma_pair_mma_sm100_mxfp8.mojo",
     "test_matmul_sm100_block_scaled_mxfp8_1sm.mojo",
     "test_matmul_sm100_block_scaled_mxfp8_2sm.mojo",
-    "test_matmul_sm100_batched_block_scaled_mxfp8_1sm.mojo",
-    "test_matmul_sm100_batched_block_scaled_mxfp8_2sm.mojo",
+    "test_matmul_sm100_batched_block_scaled_mxfp8_structured.mojo",
     "test_grouped_matmul_sm100_mxfp8.mojo",
+    "test_grouped_matmul_sm100_w4a8.mojo",
     "test_grouped_matmul_sm100_block_fp4.mojo",
     "test_grouped_matmul_nvfp4_dispatch.mojo",
     "test_block_scaled_matmul_with_epilogue.mojo",
     "test_matmul_sm100_block_scaled_nvfp4_1sm.mojo",
     "test_matmul_sm100_block_scaled_fp4_2sm.mojo",
-    "test_matmul_sm100_batched_block_scaled_nvfp4_1sm.mojo",
-    "test_matmul_sm100_batched_block_scaled_nvfp4_2sm.mojo",
+    "test_matmul_sm100_batched_block_scaled_nvfp4_structured.mojo",
     "test_matmul_sm100_block_scaled_mxfp8.mojo",
     "test_matmul_sm100_block_scaled_fp4.mojo",
     "test_matmul_sm100_batched_block_scaled_mxfp8.mojo",
@@ -181,57 +334,155 @@ _B200_TESTS = [
     "test_matmul_sm100_1sm_fp8_normal_epilogue.mojo",
     "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn_2sm.mojo",
+    "test_block_scaled_matmul_mxfp8_dispatch.mojo",
     "test_matmul_sm100_block_scaled_fp4_small_bn.mojo",
     "test_matmul_sm100_block_scaled_fp4_small_bn_2sm.mojo",
     "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo",
     "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo",
     "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo",
     "test_matmul_sm100_batched_1sm_bf16_ctype_fp8.mojo",
-    "test_matmul_sm100_1sm_bf16_rmsnorm.mojo",
+    "test_matmul_sm100_1sm_bf16_with_weight_prefetch.mojo",
+    "test_matmul_sm100_2sm_bf16_with_weight_prefetch.mojo",
+    "test_matmul_sm100_block_scaled_nvfp4_with_weight_prefetch.mojo",
+    "test_matmul_sm100_block_scaled_fp4_1sm_with_weight_prefetch.mojo",
+    "test_matmul_sm100_block_scaled_fp4_2sm_with_weight_prefetch.mojo",
+    "test_matmul_sm100_block_scaled_fp4_small_bn_with_weight_prefetch.mojo",
+    "test_matmul_sm100_block_scaled_fp4_small_bn_2sm_with_weight_prefetch.mojo",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn_with_weight_prefetch.mojo",
+    "test_matmul_sm100_1sm_bf16_bias.mojo",
+    "test_matmul_sm100_2sm_bf16_bias.mojo",
+    "test_matmul_sm100_fused_bias_residual_dispatch.mojo",
+    "test_matmul_compute_fn_sm100.mojo",
+    "test_matmul_epilogue_fn_sm100.mojo",
+    "test_matmul_epilogue_fn_sm100_dispatch.mojo",
+    "test_small_mn_gemms_row_oob.mojo",
+    "test_lora_expand_qkv_sm100.mojo",
 ]
 
 _GPU_MEMORY = {
-    "test_batched_matmul.mojo": "4",
-    "test_grouped_matmul.mojo": "16",
-    "test_gemv2.mojo": "2",
-    "test_matmul.mojo": "3",
+    "test_batched_matmul.mojo": "5",
+    "test_batched_matmul_sm100_scaled.mojo": "1.5",
+    "test_block_scaled_mma_amd.mojo": "1",
+    "test_block_scaled_mma_amd_mixed.mojo": "1",
+    "test_w4a8_grouped_matmul_amd.mojo": "1",
+    "test_mxfp6_matmul_amd.mojo": "2",
+    "test_block_scaled_mma_amd_pack_k.mojo": "1",
+    "test_blockwise_fp8_1d2d_structured.mojo": "1.5",
+    "test_blockwise_fp8_grouped_matmul_amd.mojo": "2",
+    "test_blockwise_fp8_grouped_matmul_amd_bench.mojo": "4",
+    "test_bulk_mma_pair_cta_sm100.mojo": "1.5",
+    "test_cublaslt_scaled_mxfp8_matmul.mojo": "1.5",
+    "test_cublaslt_scaled_nvfp4_matmul.mojo": "1.5",
+    "test_gemm_mma_cpasync.mojo": "2",
+    "test_gemv.mojo": "1.5",
+    "test_gemv2.mojo": "2.5",
+    "test_gemv_multirow.mojo": "1.5",
+    "test_gemv_tma.mojo": "1.5",
+    "test_grouped_block_scaled_gemm_epilogue.mojo": "2",
+    "test_grouped_block_scaled_gemm_execution.mojo": "1.5",
+    "test_grouped_block_scaled_gemm_nvfp4.mojo": "1",
+    "test_grouped_block_scaled_gemm_nvfp4_execution.mojo": "1.5",
+    "test_grouped_matmul.mojo": "8",
+    "test_grouped_matmul_nvfp4_dispatch.mojo": "1.5",
+    # The M3-shape dispatch cases hold two N=K=6144 expert weight copies.
+    "test_swiglu_epilogue_amd.mojo": "1",
+    "test_grouped_matmul_sm100_block_fp4.mojo": "1.5",
+    "test_grouped_matmul_sm100_blockwise_fp8.mojo": "1.5",
+    "test_grouped_matmul_sm100_mxfp8.mojo": "1.5",
+    "test_grouped_matmul_sm100_w4a8.mojo": "2",
+    "test_grouped_matmul_small_k.mojo": "1.5",
+    "test_grouped_matmul_vendor.mojo": "6",
+    "test_matmul.mojo": "4",
     "test_matmul_amd.mojo": "2",
-    "test_matmul_dispatching_amd.mojo": "8",
-    "test_matmul_custom.mojo": "4",
+    "test_matmul_custom.mojo": "5",
+    "test_matmul_dispatch_tables.mojo": "1",
+    "test_matmul_dispatching_amd.mojo": "4",
+    "test_matmul_sm100_1sm_bf16.mojo": "1.5",
+    "test_matmul_sm100_1sm_bf16_1d_bias.mojo": "1.5",
+    "test_matmul_sm100_1sm_bf16_bias.mojo": "2",
+    "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo": "2",
+    "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo": "2",
+    "test_matmul_sm100_1sm_bf16_with_weight_prefetch.mojo": "2",
+    "test_matmul_sm100_2sm_bf16_with_weight_prefetch.mojo": "2",
+    "test_matmul_sm100_block_scaled_nvfp4_with_weight_prefetch.mojo": "2",
+    "test_matmul_sm100_block_scaled_fp4_1sm_with_weight_prefetch.mojo": "2",
+    "test_matmul_sm100_block_scaled_fp4_2sm_with_weight_prefetch.mojo": "2",
+    "test_matmul_sm100_1sm_fp8.mojo": "1.5",
+    "test_matmul_sm100_1sm_fp8_normal_epilogue.mojo": "2",
+    "test_matmul_sm100_2sm_bf16.mojo": "1.5",
+    "test_matmul_sm100_2sm_bf16_1d_bias.mojo": "1.5",
+    "test_matmul_sm100_2sm_bf16_bias.mojo": "2",
+    "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo": "2",
+    "test_matmul_sm100_2sm_bf16_normal_epilogue.mojo": "2",
+    "test_matmul_sm100_2sm_fp8.mojo": "1.5",
+    "test_matmul_sm100_2sm_fp8_normal_epilogue.mojo": "2",
+    "test_matmul_sm100_batched_1sm_bf16.mojo": "2",
+    "test_matmul_sm100_batched_1sm_bf16_ctype_fp8.mojo": "2",
+    "test_matmul_sm100_batched_2sm_bf16.mojo": "2",
+    "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo": "2",
+    "test_matmul_sm100_batched_block_scaled_mxfp8.mojo": "3",
+    "test_matmul_sm100_batched_block_scaled_mxfp8_structured.mojo": "3",
+    "test_matmul_sm100_batched_block_scaled_nvfp4.mojo": "2",
+    "test_matmul_sm100_batched_block_scaled_nvfp4_structured.mojo": "3",
+    "test_matmul_sm100_bf16.mojo": "3",
+    "test_matmul_sm100_block_scaled_fp4.mojo": "2",
+    "test_matmul_sm100_block_scaled_fp4_2sm.mojo": "1.5",
+    "test_matmul_sm100_block_scaled_fp4_small_bn.mojo": "2",
+    "test_matmul_sm100_block_scaled_fp4_small_bn_2sm.mojo": "2",
+    "test_matmul_sm100_block_scaled_fp4_small_bn_with_weight_prefetch.mojo": "2",
+    "test_matmul_sm100_block_scaled_fp4_small_bn_2sm_with_weight_prefetch.mojo": "2",
+    "test_matmul_sm100_block_scaled_mxfp8.mojo": "2",
+    "test_matmul_sm100_block_scaled_mxfp8_1sm.mojo": "1.5",
+    "test_matmul_sm100_block_scaled_mxfp8_2sm.mojo": "1.5",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo": "2",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn_2sm.mojo": "2",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn_with_weight_prefetch.mojo": "2",
+    "test_matmul_sm100_block_scaled_nvfp4_1sm.mojo": "1.5",
+    "test_matmul_sm100_blockwise_fp8.mojo": "1.5",
+    "test_matmul_sm100_epilogue.mojo": "3",
+    "test_matmul_sm100_fallback.mojo": "2",
+    "test_matmul_sm100_fp32_precision.mojo": "1.5",
+    "test_matmul_sm100_fp8.mojo": "3",
+    "test_matmul_sm100_fp8_smallm_band_dispatch.mojo": "2",
+    "test_matmul_sm100_fused_bias_residual_dispatch.mojo": "2",
+    "test_matmul_sm100_partial_n_tile_epilogue.mojo": "2",
+    "test_matmul_sm100_splitk_2sm_bf16.mojo": "1.5",
+    "test_matmul_sm100_splitk_parallel.mojo": "2",
+    "test_matmul_sm100_structured_quick.mojo": "1.5",
+    "test_matmul_sm100_swapAB_epilogue.mojo": "2",
     "test_matmul_sm90_bf16_multicast.mojo": "2",
     "test_matmul_sm90_deepseek_scheduler.mojo": "1",
     "test_matmul_sm90_epilogue.mojo": "1",
     "test_matmul_sm90_fp8.mojo": "1",
     "test_matmul_sm90_hilbert.mojo": "1",
-    "test_sm90_splitk.mojo": "1.5",
-    "test_vendor_blas.mojo": "3",
-    "test_warp_specialization_gemm_with_cluster.mojo": "2",
-    "test_matmul_sm100_bf16.mojo": "3",
-    "test_matmul_sm100_fp8.mojo": "3",
-    "test_matmul_sm100_epilogue.mojo": "3",
-    "test_matmul_sm100_batched_block_scaled_mxfp8_1sm.mojo": "3",
-    "test_matmul_sm100_batched_block_scaled_mxfp8_2sm.mojo": "3",
-    "test_matmul_sm100_batched_block_scaled_nvfp4_1sm.mojo": "3",
-    "test_matmul_sm100_batched_block_scaled_nvfp4_2sm.mojo": "3",
-    "test_matmul_sm100_block_scaled_mxfp8.mojo": "3",
-    "test_matmul_sm100_block_scaled_fp4.mojo": "3",
-    "test_matmul_sm100_batched_block_scaled_mxfp8.mojo": "3",
-    "test_matmul_sm100_batched_block_scaled_nvfp4.mojo": "3",
-    "test_matmul_sm100_batched_2sm_bf16.mojo": "3",
-    "test_matmul_sm100_batched_1sm_bf16.mojo": "3",
-    "test_matmul_sm100_2sm_fp8_normal_epilogue.mojo": "3",
-    "test_matmul_sm100_2sm_bf16_normal_epilogue.mojo": "3",
-    "test_matmul_sm100_1sm_fp8_normal_epilogue.mojo": "3",
-    "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo": "3",
-    "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo": "3",
-    "test_matmul_sm100_block_scaled_fp4_small_bn.mojo": "3",
-    "test_matmul_sm100_block_scaled_fp4_small_bn_2sm.mojo": "3",
-    "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo": "3",
-    "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo": "3",
-    "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo": "3",
-    "test_matmul_sm100_batched_1sm_bf16_ctype_fp8.mojo": "3",
-    "test_matmul_sm100_1sm_bf16_rmsnorm.mojo": "3",
+    "test_block_scaled_matmul_mxfp8_dispatch.mojo": "2",
+    "test_mfma_32x32x64_f8f6f4.mojo": "1",
+    "test_mxfp4_grouped_matmul_amd_expert_offset.mojo": "4",
+    "test_mxfp4_grouped_matmul_amd_kernels.mojo": "2",
+    "test_mxfp6_grouped_matmul_amd_kernels.mojo": "4",
+    "test_mxfp6_matmul_amd_preb.mojo": "2",
+    "test_mxfp6_matmul_amd_preb_epilogue.mojo": "2",
+    "test_mxfp4_matmul_amd.mojo": "2",
+    "test_mxfp4_moe_matmul_amd_routed.mojo": "2",
+    "test_mxfp8_matmul_amd.mojo": "2",
+    "test_mxfp8_matmul_amd_preb.mojo": "2",
+    "test_mx_split_k_epilogue_amd.mojo": "2",
+    "test_ping_pong.mojo": "1",
     "test_ping_pong_shapes.mojo": "2",
+    "test_pipeline_framework.mojo": "1",
+    "test_pipeline_ldg.mojo": "1",
+    "test_sm90_splitk.mojo": "1.5",
+    "test_small_mn_gemms_row_oob.mojo": "2",
+    "test_split_k_determinism_amd.mojo": "2",
+    "test_split_k_reduce.mojo": "2",
+    "test_tma_mma_sm100.mojo": "1.5",
+    "test_tma_mma_sm100_fp8.mojo": "1.5",
+    "test_tma_mma_sm100_mxfp8.mojo": "1.5",
+    "test_tma_pair_mma_sm100.mojo": "1.5",
+    "test_tma_pair_mma_sm100_mxfp8.mojo": "1.5",
+    "test_vendor_blas.mojo": "4",
+    "test_warp_specialization_gemm_with_cluster.mojo": "2",
 }
 
 [
@@ -239,6 +490,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -259,12 +511,18 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
         tags = [
             "gpu",
-        ],
+        ] + (
+            ["manual"] if src in [
+                # TODO(KERN-3603): Flaky on B200.
+                "test_matmul_sm100_blockwise_fp8.mojo",
+            ] else []
+        ),
         target_compatible_with = [
             "//:has_gpu",
             "//:b200_gpu",
@@ -272,6 +530,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:max_mojo",
             "//max:nn",
             "//max:structured_kernels",
             "@mojo//:std",
@@ -279,6 +538,84 @@ _GPU_MEMORY = {
         ],
     )
     for src in _B200_TESTS
+    if src not in _AMD_GENERIC_FALLBACK_TESTS
+]
+
+# Multi-arch coverage for the fallback tests removed from _B200_TESTS.
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
+        },
+        tags = ["gpu"],
+        target_compatible_with = select({
+            "//:mi355_gpu": ["//:mi355_gpu"],
+            "//:h100_gpu": ["//:h100_gpu"],
+            "//:b200_gpu": ["//:b200_gpu"],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:max_mojo",
+            "//max:nn",
+            "//max:structured_kernels",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ] + _EXTRA_DEPS.get(src, []),
+    )
+    for src in _AMD_GENERIC_FALLBACK_TESTS
+]
+
+# W4A8 (E4M3 x E2M1) SM100 block-scaled matmul tests, sharing one harness
+# with an exact host reference. A wrong TMA transaction count hangs rather
+# than fails, so these are `size = "medium"` (300 s) instead of this file's
+# usual `large` (900 s); each finishes in under 30 s on B200. `mojo_test`
+# cannot set `timeout` itself: it forwards the attribute to its `.debug`
+# `mojo_binary`, which rejects it.
+_W4A8_BLOCK_SCALED_HARNESS = "w4a8_block_scaled_matmul_harness.mojo"
+
+_W4A8_BLOCK_SCALED_B200_TESTS = [
+    "test_w4a8_block_scaled_reference.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_minimal.mojo",
+    "test_matmul_sm100_block_scaled_w4a8.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_swapab.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_with_weight_prefetch.mojo",
+    "test_matmul_sm100_batched_block_scaled_w4a8.mojo",
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "medium",
+        srcs = [
+            src,
+            _W4A8_BLOCK_SCALED_HARNESS,
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:b200_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:max_mojo",
+            "//max:structured_kernels",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _W4A8_BLOCK_SCALED_B200_TESTS
 ]
 
 # B200 smoke tests - tagged manual for local-only execution, not run in CI
@@ -287,6 +624,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -315,6 +653,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -328,6 +667,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:max_mojo",
             "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
@@ -336,11 +676,120 @@ _GPU_MEMORY = {
     for src in _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS
 ]
 
+# Explicit rule for the SwiGLU+NVFP4 interleave test — needs //max:shmem
+# (for fused_silu_nvfp4_kernel) on top of the standard B200 deps.
+mojo_test(
+    name = "test_grouped_matmul_swiglu_nvfp4_interleave.mojo.test",
+    size = "large",
+    srcs = ["test_grouped_matmul_swiglu_nvfp4_interleave.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# Explicit rule for the SwiGLU+NVFP4 dispatch test — same deps as the
+# interleave test (shmem provides fused_silu_nvfp4_interleaved_kernel for
+# the reference chain; the dispatch itself now lives in //max:linalg).
+mojo_test(
+    name = "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo.test",
+    size = "large",
+    srcs = ["test_grouped_matmul_swiglu_nvfp4_dispatch.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# S5 byte-exact test for the fused MXFP8 SwiGLU dispatch (in-tile
+# fused epilogue end-to-end vs unfused reference chain). gpu-memory:8
+# matches the NVFP4 dispatch test sibling — MXFP8 stores 2× the bytes
+# per output element than packed NVFP4, so the test's working set
+# is at least as large.
+mojo_test(
+    name = "test_grouped_matmul_swiglu_mxfp8_dispatch.mojo.test",
+    size = "large",
+    srcs = ["test_grouped_matmul_swiglu_mxfp8_dispatch.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# S1 byte-exact test for the standalone MXFP8 fused-silu reference kernel.
+# Same deps as the NVFP4 interleave test (kernel lives in //max:shmem).
+mojo_test(
+    name = "test_fused_silu_mxfp8_interleave.mojo.test",
+    size = "large",
+    srcs = ["test_fused_silu_mxfp8_interleave.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 # Explicit rule for PDL race test - needs MODULAR_DISABLE_VENDOR_FALLBACK to avoid cuBLAS fallback
 mojo_test(
     name = "test_matmul_pdl_race.mojo.test",
     size = "large",
     srcs = ["test_matmul_pdl_race.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     env = {
         "MODULAR_DISABLE_VENDOR_FALLBACK": "1",
     },
@@ -359,6 +808,7 @@ mojo_test(
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -366,6 +816,8 @@ mojo_test(
             ["manual"] if src in [
                 "test_multistage_gemm_fp8.mojo",  # TODO: KERN-1480 Fix and remove this tag
                 "test_ping_pong_shapes.mojo",  # TODO: KERN-2631 Flaky on AMD, re-enable
+                "test_blockwise_fp8_matmul_amd_bench.mojo",  # perf bench, local-only
+                "test_blockwise_fp8_grouped_matmul_amd_bench.mojo",  # perf bench, local-only
             ] else []
         ),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
@@ -375,18 +827,18 @@ mojo_test(
             "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + [
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + _AMD_GENERIC_FALLBACK_TESTS + _W4A8_BLOCK_SCALED_B200_TESTS + [
+            _W4A8_BLOCK_SCALED_HARNESS,
+            "test_w4a8_grouped_shapes.mojo",
             "test_matmul_pdl_race.mojo",
+            "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",
+            "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo",
+            "test_fused_silu_mxfp8_interleave.mojo",
+            "test_grouped_matmul_swiglu_mxfp8_dispatch.mojo",
         ],
     )
 ]
-
-filegroup(
-    name = "test-sources",
-    srcs = glob(["**/*.mojo"]),
-    visibility = ["//utils/debugging/gpu-build-benchmarking:__subpackages__"],
-)

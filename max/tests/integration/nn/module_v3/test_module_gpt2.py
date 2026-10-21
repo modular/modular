@@ -225,7 +225,7 @@ class GPTModel(Module[[Tensor], Tensor]):
 
     def forward(self, in_idx: Tensor) -> Tensor:
         tok_embeds = self.token_embedding(in_idx)
-        pos_embeds = self.positional_embedding(Tensor.range_like(in_idx.type))
+        pos_embeds = self.positional_embedding(Tensor.range_like(in_idx))
         x = tok_embeds + pos_embeds  # Shape [batch_size, num_tokens, emb_size]
         return Sequential(
             self.layers,
@@ -249,7 +249,7 @@ def gpt_model(device: Device):  # noqa: ANN201
             vocab_size=50257,
             context_length=1024,
             qkv_bias=True,
-        ).to(device=device)
+        ).to(target=device)
 
     yield model
 

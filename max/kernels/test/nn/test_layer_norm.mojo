@@ -14,9 +14,10 @@
 from std.math import rsqrt
 
 from std.itertools import product
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from layout.math import mean, variance
 from nn.normalization import *
+from builtin_kernels.rowwise_normalization import layer_norm
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -28,10 +29,10 @@ def run_layer_norm_cpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var input_ptr = alloc[Scalar[dtype]](rows * cols)
-    var output_ptr = alloc[Scalar[dtype]](rows * cols)
-    var gamma_ptr = alloc[Scalar[dtype]](cols)
-    var beta_ptr = alloc[Scalar[dtype]](cols)
+    var input_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var output_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_ptr = List(length=cols, fill=Scalar[dtype](0))
+    var beta_ptr = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -49,41 +50,36 @@ def run_layer_norm_cpu[
     var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype](0.0001)
 
-    @__copy_capture(input_buf)
-    @always_inline
-    @parameter
+    @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = input_buf.layout(Coord(coords))
-        return input_buf.ptr.load[width=width](idx)
+        width: Int,
+        alignment: Int,
+    ](coords: Coord) {var input_buf} -> SIMD[dtype, width]:
+        return input_buf.load[width=width, alignment=alignment](coords)
 
-    @__copy_capture(gamma)
-    @always_inline
-    @parameter
-    def gamma_fn[
-        width: Int, rank: Int
-    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
-        return gamma.ptr.load[width=width](idx)
-
-    @__copy_capture(output_buf)
-    @always_inline
-    @parameter
+    @inline(.always)
     def output_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-        var idx = output_buf.layout(Coord(coords))
-        output_buf.ptr.store[width=width, alignment=alignment](
-            idx, rebind[SIMD[dtype, width]](val)
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_buf}:
+        output_buf.store[alignment=alignment](
+            coords, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
+    layer_norm[dtype, rank, target="cpu"](
+        input_fn,
+        output_fn,
+        Coord(shape),
+        Int(cols),
+        gamma,
+        beta,
+        epsilon,
+    )
 
+    var input_ptr_ptr = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr + r * cols,
-            row_major(Idx(cols)),
+            input_ptr_ptr.unsafe_offset(r * cols),
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -94,30 +90,35 @@ def run_layer_norm_cpu[
         ] + beta_ptr[c]
         assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 
-    input_ptr.free()
-    output_ptr.free()
-    gamma_ptr.free()
-    beta_ptr.free()
-
 
 def main() raises:
     print("0")
-    run_layer_norm_cpu[DType.float32](Index(3, 5))
+    run_layer_norm_cpu[.float32](Index(3, 5))
     print("1")
-    run_layer_norm_cpu[DType.float32](Index(3, 8))
+    run_layer_norm_cpu[.float32](Index(3, 8))
     print("2")
-    run_layer_norm_cpu[DType.float32](Index(7, 33))
+    run_layer_norm_cpu[.float32](Index(7, 33))
     print("3")
-    run_layer_norm_cpu[DType.float32](Index(1, 1024))
+    run_layer_norm_cpu[.float32](Index(1, 1024))
     print("4")
-    run_layer_norm_cpu[DType.float32](Index(1, 8192))
+    run_layer_norm_cpu[.float32](Index(1, 8192))
 
     # variable rank
     print("5")
-    run_layer_norm_cpu[DType.float32](Index(0))
+    run_layer_norm_cpu[.float32](Index(0))
     print("6")
-    run_layer_norm_cpu[DType.float32](Index(5))
+    run_layer_norm_cpu[.float32](Index(5))
     print("7")
-    run_layer_norm_cpu[DType.float32](Index(3, 4, 10, 20, 8))
+    run_layer_norm_cpu[.float32](Index(3, 4, 10, 20, 8))
     print("8")
-    run_layer_norm_cpu[DType.float32](Index(1, 5, 6, 10, 128))
+    run_layer_norm_cpu[.float32](Index(1, 5, 6, 10, 128))
+
+    # float64 regression for KERN-3270: simd_width is 4 on AVX2, so
+    # num_cols=5 hits the vector loop plus a scalar tail, the shape that
+    # segfaulted.
+    print("9")
+    run_layer_norm_cpu[.float64](Index(4, 5))
+    print("10")
+    run_layer_norm_cpu[.float64](Index(3, 5))
+    print("11")
+    run_layer_norm_cpu[.float64](Index(7, 33))

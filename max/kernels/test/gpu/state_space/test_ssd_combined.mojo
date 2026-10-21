@@ -11,9 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from std.math import exp, exp2, log
+from max.gpu.host import DeviceContext
+from layout import (
+    TileTensor,
+    row_major,
+)
+from std.math import ceildiv, exp, exp2, log
+from std.memory.alloc import unsafe_alloc
 from std.random import rand
 from state_space.selective_scan import (
     ssd_combined_cpu,
@@ -21,13 +25,12 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
 
 
-@always_inline
+@inline(.always)
 def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
@@ -35,7 +38,7 @@ def softplus_ref(val: Float32) -> Float32:
     return log(Float32(1.0) + exp(val))
 
 
-@always_inline
+@inline(.always)
 def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
@@ -64,94 +67,48 @@ def run_ssd_combined_gpu[
 
     var group_size = dim // n_groups
     var chunk_size = 2048
-    var n_chunks = (seqlen + chunk_size - 1) // chunk_size
+    var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
-    var output_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var output_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var x_cpu_h = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
-    var x_gpu_h = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
-    var out_z_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var out_z_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var residual_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var u_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var delta_h = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var A_h = alloc[Scalar[dtype]](dim * dstate)
-    var B_h = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
-    var C_h = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
+    var output_cpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var output_gpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var x_cpu_h = unsafe_alloc[Scalar[dtype]](
+        batch * dim * n_chunks * 2 * dstate
+    )
+    var x_gpu_h = unsafe_alloc[Scalar[dtype]](
+        batch * dim * n_chunks * 2 * dstate
+    )
+    var out_z_cpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var out_z_gpu_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var residual_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var u_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var delta_h = unsafe_alloc[Scalar[dtype]](batch * dim * seqlen)
+    var A_h = unsafe_alloc[Scalar[dtype]](dim * dstate)
+    var B_h = unsafe_alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
+    var C_h = unsafe_alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
     var D_size = dim if has_D else 0
-    var D_h = alloc[Scalar[dtype]](max(D_size, 1))
+    var D_h = unsafe_alloc[Scalar[dtype]](max(D_size, 1))
     var z_size = batch * dim * seqlen if has_z else 0
-    var z_h = alloc[Scalar[dtype]](max(z_size, 1))
+    var z_h = unsafe_alloc[Scalar[dtype]](max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
-    var gamma_h = alloc[Scalar[dtype]](dim)
-
-    # Create LayoutTensors for initialization
-    var u_init = LayoutTensor[dtype, layout_3d](
-        u_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var delta_init = LayoutTensor[dtype, layout_3d](
-        delta_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var residual_init = LayoutTensor[dtype, layout_3d](
-        residual_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var A_init = LayoutTensor[dtype, layout_2d](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_init = LayoutTensor[dtype, layout_4d](
-        B_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var C_init = LayoutTensor[dtype, layout_4d](
-        C_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var D_init = LayoutTensor[dtype, layout_1d](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_init = LayoutTensor[dtype, layout_3d](
-        z_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
-                batch if has_z else 0,
-                dim if has_z else 0,
-                seqlen if has_z else 0,
-            )
-        ),
-    )
-    var delta_bias_init = LayoutTensor[dtype, layout_1d](
-        delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
-    )
-    var gamma_init = LayoutTensor[dtype, layout_1d](
-        gamma_h, RuntimeLayout[layout_1d].row_major(Index(dim))
-    )
+    var delta_bias_h = unsafe_alloc[Scalar[dtype]](max(delta_bias_size, 1))
+    var gamma_h = unsafe_alloc[Scalar[dtype]](dim)
 
     # Initialize with random data
-    rand[dtype](u_init.ptr, u_init.size())
-    rand[dtype](delta_init.ptr, delta_init.size())
-    rand[dtype](residual_init.ptr, residual_init.size())
-    rand[dtype](A_init.ptr, A_init.size())
-    rand[dtype](B_init.ptr, B_init.size())
-    rand[dtype](C_init.ptr, C_init.size())
+    rand[dtype](u_h, batch * dim * seqlen)
+    rand[dtype](delta_h, batch * dim * seqlen)
+    rand[dtype](residual_h, batch * dim * seqlen)
+    rand[dtype](A_h, dim * dstate)
+    rand[dtype](B_h, batch * n_groups * dstate * seqlen)
+    rand[dtype](C_h, batch * n_groups * dstate * seqlen)
     if has_D:
-        rand[dtype](D_init.ptr, D_init.size())
+        rand[dtype](D_h, D_size)
     if has_z:
-        rand[dtype](z_init.ptr, z_init.size())
+        rand[dtype](z_h, z_size)
     if has_delta_bias:
-        rand[dtype](delta_bias_init.ptr, delta_bias_init.size())
-    rand[dtype](gamma_init.ptr, gamma_init.size())
+        rand[dtype](delta_bias_h, delta_bias_size)
+    rand[dtype](gamma_h, dim)
 
     # Initialize gamma to positive values
     for i in range(dim):
@@ -196,148 +153,85 @@ def run_ssd_combined_gpu[
             ctx.enqueue_copy[dtype](delta_bias_gpu, delta_bias_h)
         ctx.enqueue_copy[dtype](gamma_gpu, gamma_h)
 
-    # Create CPU LayoutTensors for CPU kernel (using host memory)
-    var output_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_cpu_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+    # Create CPU TileTensors for CPU kernel (using host memory)
+    var output_cpu_lt = TileTensor(output_cpu_h, row_major(batch, dim, seqlen))
+    var x_cpu_lt = TileTensor(
+        x_cpu_h, row_major(batch, dim, n_chunks, 2 * dstate)
     )
-    var x_cpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_cpu_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, dim, n_chunks, 2 * dstate)
-        ),
-    )
-    var out_z_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_cpu_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var residual_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        residual_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var u_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        u_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var delta_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        delta_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var A_cpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_cpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        B_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var C_cpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        C_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var D_cpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var out_z_cpu_lt = TileTensor(out_z_cpu_h, row_major(batch, dim, seqlen))
+    var residual_cpu_lt = TileTensor(residual_h, row_major(batch, dim, seqlen))
+    var u_cpu_lt = TileTensor(u_h, row_major(batch, dim, seqlen))
+    var delta_cpu_lt = TileTensor(delta_h, row_major(batch, dim, seqlen))
+    var A_cpu_lt = TileTensor(A_h, row_major(dim, dstate))
+    var B_cpu_lt = TileTensor(B_h, row_major(batch, n_groups, dstate, seqlen))
+    var C_cpu_lt = TileTensor(C_h, row_major(batch, n_groups, dstate, seqlen))
+    var D_cpu_lt = TileTensor(D_h, row_major(D_size))
+    var z_cpu_lt = TileTensor(
         z_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
+        row_major(
+            (
                 batch if has_z else 0,
                 dim if has_z else 0,
                 seqlen if has_z else 0,
             )
         ),
     )
-    var delta_bias_cpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_h,
-        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
-    )
-    var gamma_cpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        gamma_h, RuntimeLayout[layout_1d].row_major(Index(dim))
-    )
+    var delta_bias_cpu_lt = TileTensor(delta_bias_h, row_major(delta_bias_size))
+    var gamma_cpu_lt = TileTensor(gamma_h, row_major(dim))
 
-    # Create GPU LayoutTensors for GPU kernel
-    var output_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_gpu_gpu,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+    # Create GPU TileTensors for GPU kernel
+    var output_gpu_lt = TileTensor(
+        output_gpu_gpu, row_major(batch, dim, seqlen)
     )
-    var x_gpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_gpu_gpu,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, dim, n_chunks, 2 * dstate)
-        ),
+    var x_gpu_lt = TileTensor(
+        x_gpu_gpu, row_major(batch, dim, n_chunks, 2 * dstate)
     )
-    var out_z_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_gpu_gpu,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+    var out_z_gpu_lt = TileTensor(out_z_gpu_gpu, row_major(batch, dim, seqlen))
+    var residual_gpu_lt = TileTensor(
+        residual_gpu, row_major(batch, dim, seqlen)
     )
-    var residual_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        residual_gpu,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var u_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        u_gpu, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var delta_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        delta_gpu, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var A_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        A_gpu, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_gpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        B_gpu,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var C_gpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        C_gpu,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var D_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        D_gpu, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var u_gpu_lt = TileTensor(u_gpu, row_major(batch, dim, seqlen))
+    var delta_gpu_lt = TileTensor(delta_gpu, row_major(batch, dim, seqlen))
+    var A_gpu_lt = TileTensor(A_gpu, row_major(dim, dstate))
+    var B_gpu_lt = TileTensor(B_gpu, row_major(batch, n_groups, dstate, seqlen))
+    var C_gpu_lt = TileTensor(C_gpu, row_major(batch, n_groups, dstate, seqlen))
+    var D_gpu_lt = TileTensor(D_gpu, row_major(D_size))
+    var z_gpu_lt = TileTensor(
         z_gpu,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
+        row_major(
+            (
                 batch if has_z else 0,
                 dim if has_z else 0,
                 seqlen if has_z else 0,
             )
         ),
     )
-    var delta_bias_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_gpu,
-        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
+    var delta_bias_gpu_lt = TileTensor(
+        delta_bias_gpu, row_major(delta_bias_size)
     )
-    var gamma_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        gamma_gpu, RuntimeLayout[layout_1d].row_major(Index(dim))
-    )
+    var gamma_gpu_lt = TileTensor(gamma_gpu, row_major(dim))
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     # Run CPU kernel with host tensors
     ssd_combined_cpu[
         dtype,
         DSTATE,
-        output_cpu_lt.layout,
-        x_cpu_lt.layout,
-        out_z_cpu_lt.layout,
-        residual_cpu_lt.layout,
-        u_cpu_lt.layout,
-        delta_cpu_lt.layout,
-        A_cpu_lt.layout,
-        B_cpu_lt.layout,
-        C_cpu_lt.layout,
-        D_cpu_lt.layout,
-        z_cpu_lt.layout,
-        delta_bias_cpu_lt.layout,
-        gamma_cpu_lt.layout,
+        output_cpu_lt.LayoutType,
+        x_cpu_lt.LayoutType,
+        out_z_cpu_lt.LayoutType,
+        residual_cpu_lt.LayoutType,
+        u_cpu_lt.LayoutType,
+        delta_cpu_lt.LayoutType,
+        A_cpu_lt.LayoutType,
+        B_cpu_lt.LayoutType,
+        C_cpu_lt.LayoutType,
+        D_cpu_lt.LayoutType,
+        z_cpu_lt.LayoutType,
+        delta_bias_cpu_lt.LayoutType,
+        gamma_cpu_lt.LayoutType,
+        output_cpu_lt.Engine,
     ](
         batch,
         dim,
@@ -357,14 +251,13 @@ def run_ssd_combined_gpu[
         z_cpu_lt,
         delta_bias_cpu_lt,
         gamma_cpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         weight_offset,
     )
 
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from std.math import ceildiv
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
@@ -372,46 +265,29 @@ def run_ssd_combined_gpu[
         ssd_combined_gpu[
             dtype,
             DSTATE,
-            output_gpu_lt.layout,
-            x_gpu_lt.layout,
-            out_z_gpu_lt.layout,
-            residual_gpu_lt.layout,
-            u_gpu_lt.layout,
-            delta_gpu_lt.layout,
-            A_gpu_lt.layout,
-            B_gpu_lt.layout,
-            C_gpu_lt.layout,
-            D_gpu_lt.layout,
-            z_gpu_lt.layout,
-            delta_bias_gpu_lt.layout,
-            gamma_gpu_lt.layout,
-        ],
-        ssd_combined_gpu[
-            dtype,
-            DSTATE,
-            output_gpu_lt.layout,
-            x_gpu_lt.layout,
-            out_z_gpu_lt.layout,
-            residual_gpu_lt.layout,
-            u_gpu_lt.layout,
-            delta_gpu_lt.layout,
-            A_gpu_lt.layout,
-            B_gpu_lt.layout,
-            C_gpu_lt.layout,
-            D_gpu_lt.layout,
-            z_gpu_lt.layout,
-            delta_bias_gpu_lt.layout,
-            gamma_gpu_lt.layout,
-        ],
+            output_gpu_lt.LayoutType,
+            x_gpu_lt.LayoutType,
+            out_z_gpu_lt.LayoutType,
+            residual_gpu_lt.LayoutType,
+            u_gpu_lt.LayoutType,
+            delta_gpu_lt.LayoutType,
+            A_gpu_lt.LayoutType,
+            B_gpu_lt.LayoutType,
+            C_gpu_lt.LayoutType,
+            D_gpu_lt.LayoutType,
+            z_gpu_lt.LayoutType,
+            delta_bias_gpu_lt.LayoutType,
+            gamma_gpu_lt.LayoutType,
+        ]
     ]()
 
     ctx.enqueue_function(
         compiled_kernel,
-        total_batch_dim,
-        batch,
-        dim,
-        seqlen,
-        group_size,
+        Int32(total_batch_dim),
+        Int32(batch),
+        Int32(dim),
+        Int32(seqlen),
+        Int32(group_size),
         Int8(1) if delta_softplus else Int8(0),
         output_gpu_lt,
         x_gpu_lt,
@@ -426,7 +302,7 @@ def run_ssd_combined_gpu[
         z_gpu_lt,
         delta_bias_gpu_lt,
         gamma_gpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         weight_offset,
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
@@ -459,8 +335,8 @@ def run_ssd_combined_gpu[
             )
 
     # Reference implementation for numerical verification
-    var output_ref_h = alloc[Scalar[dtype]](flattened_size)
-    var out_z_ref_h = alloc[Scalar[dtype]](flattened_size)
+    var output_ref_h = unsafe_alloc[Scalar[dtype]](flattened_size)
+    var out_z_ref_h = unsafe_alloc[Scalar[dtype]](flattened_size)
     for i in range(flattened_size):
         output_ref_h[i] = Scalar[dtype](0)
         out_z_ref_h[i] = Scalar[dtype](0)
@@ -470,7 +346,7 @@ def run_ssd_combined_gpu[
             var group_id = d_idx // group_size
 
             # Pre-load A values with LOG2E scaling (matches kernel)
-            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var A_ref = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 A_ref[n] = Float32(A_h[d_idx * dstate + n]) * LOG2E
 
@@ -485,7 +361,7 @@ def run_ssd_combined_gpu[
             var weight_offset_val = Float32(weight_offset)
 
             # Initialize state to zero
-            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state_ref = SIMD[.float32, MAX_DSTATE](0.0)
 
             for t in range(seqlen):
                 var off_3d = b_idx * dim * seqlen + d_idx * seqlen + t
@@ -501,8 +377,8 @@ def run_ssd_combined_gpu[
                 var delta_u = delta_val * u_val
 
                 # Load B, C values
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
                 for n in range(dstate):
                     var bc_offset = (
                         b_idx * n_groups * dstate * seqlen
@@ -553,26 +429,26 @@ def run_ssd_combined_gpu[
                 rtol=rtol,
             )
 
-    output_ref_h.free()
-    out_z_ref_h.free()
+    output_ref_h.unsafe_free()
+    out_z_ref_h.unsafe_free()
 
     # Cleanup
-    output_cpu_h.free()
-    output_gpu_h.free()
-    x_cpu_h.free()
-    x_gpu_h.free()
-    out_z_cpu_h.free()
-    out_z_gpu_h.free()
-    residual_h.free()
-    u_h.free()
-    delta_h.free()
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    D_h.free()
-    z_h.free()
-    delta_bias_h.free()
-    gamma_h.free()
+    output_cpu_h.unsafe_free()
+    output_gpu_h.unsafe_free()
+    x_cpu_h.unsafe_free()
+    x_gpu_h.unsafe_free()
+    out_z_cpu_h.unsafe_free()
+    out_z_gpu_h.unsafe_free()
+    residual_h.unsafe_free()
+    u_h.unsafe_free()
+    delta_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    z_h.unsafe_free()
+    delta_bias_h.unsafe_free()
+    gamma_h.unsafe_free()
     # Device buffers are automatically freed when they go out of scope
     _ = output_gpu_gpu^
     _ = x_gpu_gpu^
@@ -602,6 +478,21 @@ def test_ssd_combined_gpu_basic() raises:
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
+
+
+def test_ssd_combined_gpu_odd_seqlen_multi_channel() raises:
+    """Odd seqlen makes rows start at unaligned element offsets."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_ssd_combined_gpu[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=9, n_groups=1, ctx=ctx)
 
 
 def test_ssd_combined_gpu_without_D() raises:

@@ -10,8 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""InternVL vision-language architecture for multimodal text generation."""
 
 from .arch import internvl_arch
+from .model import InternVLInputs, InternVLModel
+from .model_config import InternVLConfig, VisionConfig
 
-__all__ = ["internvl_arch"]
+__all__ = [
+    "InternVLConfig",
+    "InternVLInputs",
+    "InternVLModel",
+    "VisionConfig",
+    "internvl_arch",
+]

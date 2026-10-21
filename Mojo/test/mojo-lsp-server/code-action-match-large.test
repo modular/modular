@@ -1,0 +1,25 @@
+// RUN: mojo-lsp-server -mojo-test < %s | FileCheck -strict-whitespace %s
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"processId":123,"rootPath":"lit","capabilities":{},"trace":"off"}}
+// -----
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+  "uri":"test:///large.mojo",
+  "languageId":"mojo",
+  "version":1,
+  "text":"def foo(flags: Tuple[Bool, Bool, Bool, Bool]):\n    match flags:\n    print(flags)\n"
+}}}
+// -----
+{"jsonrpc":"2.0","id":5,"method":"textDocument/codeAction","params":{
+  "textDocument":{"uri":"test:///large.mojo"},
+  "range":{"start":{"line":1,"character":4},"end":{"line":1,"character":11}},
+  "context":{"diagnostics":[],"only":["refactor"],"triggerKind":1}
+}}
+// CHECK-LABEL: "id": 5
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": [
+// CHECK:              "newText": "\n    case False, False, False, False:{{.*}}\n    case False, True, True, True:\n        pass",
+// CHECK:      "kind": "refactor",
+// CHECK-NEXT:      "title": "Add missing cases"
+// -----
+{"jsonrpc":"2.0","id":10,"method":"shutdown"}
+// -----
+{"jsonrpc":"2.0","method":"exit"}

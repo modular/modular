@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
-from std.os import Atomic
+from max.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
+from std.atomic import Atomic
+from std.math import ceildiv
 
 
 # ========================== CONFIGURATION ==========================
@@ -23,7 +24,7 @@ comptime BLOCK_DIM = 256
 
 
 # ========================== DEVICE FUNCTIONS ==========================
-@always_inline
+@inline(.always)
 def cond(val: UInt32) -> Bool:
     """Filter: keep only even numbers.
 
@@ -38,9 +39,9 @@ def cond(val: UInt32) -> Bool:
 
 # ========================== KERNEL CODE ==========================
 def filter_kernel(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    output_size: UnsafePointer[UInt32, MutAnyOrigin],
+    input: MutPointer[UInt32, MutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    output_size: MutPointer[UInt32, MutAnyOrigin],
     N: UInt32,
 ):
     """Figure 12.6: Unstable filter kernel with privatization.
@@ -52,15 +53,15 @@ def filter_kernel(
         N: Number of elements.
     """
     # Allocate shared memory for block-private output list
-    var output_s = stack_allocation[
+    var output_s = unsafe_stack_allocation[
         BLOCK_DIM,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
-    var output_size_s = stack_allocation[
+    var output_size_s = unsafe_stack_allocation[
         1,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     if thread_idx.x == 0:
@@ -80,10 +81,10 @@ def filter_kernel(
     barrier()
 
     # Update the public counter (one thread per block)
-    var j_shared = stack_allocation[
+    var j_shared = unsafe_stack_allocation[
         1,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     if thread_idx.x == 0:
         var local_size = output_size_s[0]
@@ -119,7 +120,7 @@ def main() raises:
             h_size[0] = UInt32(0)
 
         # Launch kernel
-        var num_blocks = (N + BLOCK_DIM - 1) // BLOCK_DIM
+        var num_blocks = ceildiv(N, BLOCK_DIM)
         print(
             (
                 "Launching unstable filter kernel with privatization (Fig 12.6)"
@@ -133,7 +134,7 @@ def main() raises:
         print("Input size:", N, "elements")
 
         comptime kernel = filter_kernel
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             d_input,
             d_output,
             d_output_size,

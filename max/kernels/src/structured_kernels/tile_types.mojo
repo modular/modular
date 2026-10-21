@@ -20,7 +20,7 @@ Usage:
 
     # Create tile with a layout
     comptime my_layout = row_major[64, 32]()
-    comptime MyTile = SMemTile[DType.float16, my_layout]
+    comptime MyTile = SMemTile[.float16, my_layout]
 
     # TileTensors are passed directly to TMA/MMA
     tma_op.async_copy(tile, barrier, coords)
@@ -28,18 +28,15 @@ Usage:
 
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     ComptimeInt,
     Coord,
     CoordLike,
+    DefaultEngine,
     Idx,
-    LTToTTLayout,
-    LayoutTensor,
-    Layout as LegacyLayout,
-    RuntimeInt,
+    TensorEngine,
     TensorLayout,
     TileTensor,
     row_major,
@@ -50,11 +47,8 @@ from layout.tma_async import (
     TMATensorTileIm2col,
     create_tensor_tile,
 )
-from std.builtin.variadics import Variadic
 from layout.tile_layout import Layout
-from std.utils.index import IndexList
-from std.memory import stack_allocation
-from std.utils.index import IndexList
+from std.memory import unsafe_stack_allocation
 
 # Core matrix constant from tensor_core_async.mojo
 comptime _CM_NUM_ROWS = 8
@@ -102,7 +96,7 @@ Returns:
 # ============================================================================
 # These create internal Layout types that match the swizzled structures from
 # tile_layout_k_major. Using internal Layout allows passing through struct
-# parameters while preserving type information for .to_layout_tensor().
+# parameters while preserving the swizzle type information.
 #
 # The key insight: new Layout (from _layout.mojo) has compile-time type
 # parameters (shape_types, stride_types) that are preserved through struct
@@ -119,18 +113,18 @@ comptime internal_k_major[
     swizzle_bytes: Int,
 ] = Layout(
     Coord(
-        Coord(Idx[BM // _CM_NUM_ROWS](), Idx[_CM_NUM_ROWS]()),
+        Coord(Idx[BM // _CM_NUM_ROWS], Idx[_CM_NUM_ROWS]),
         Coord(
-            Idx[swizzle_bytes // size_of[dtype]()](),
-            Idx[BK * size_of[dtype]() // swizzle_bytes](),
+            Idx[swizzle_bytes // size_of[dtype]()],
+            Idx[BK * size_of[dtype]() // swizzle_bytes],
         ),
     ),
     Coord(
         Coord(
-            Idx[swizzle_bytes // size_of[dtype]()](),
-            Idx[(BM // _CM_NUM_ROWS) * (swizzle_bytes // size_of[dtype]())](),
+            Idx[swizzle_bytes // size_of[dtype]()],
+            Idx[(BM // _CM_NUM_ROWS) * (swizzle_bytes // size_of[dtype]())],
         ),
-        Coord(Idx[1](), Idx[0]()),
+        Coord(Idx[1], Idx[0]),
     ),
 )
 
@@ -188,10 +182,10 @@ comptime internal_sf_k_major[
     # Shape: ((32, tiles_m), ((4, 4), tiles_k))
     # When tiles_m = 1 or tiles_k = 1, structure is preserved but factor is 1
     Coord(
-        Coord(Idx[_SF_ATOM_M_0](), Idx[dim0 // _SF_ATOM_M_0]()),
+        Coord(Idx[_SF_ATOM_M_0], Idx[dim0 // _SF_ATOM_M_0]),
         Coord(
-            Coord(Idx[_SF_ATOM_M_1](), Idx[_SF_ATOM_K]()),
-            Idx[dim1 // _SF_ATOM_SIZE](),
+            Coord(Idx[_SF_ATOM_M_1], Idx[_SF_ATOM_K]),
+            Idx[dim1 // _SF_ATOM_SIZE],
         ),
     ),
     # Stride: ((16, dim1*32), ((1, 4), 512))
@@ -201,12 +195,12 @@ comptime internal_sf_k_major[
     # K-major: K-tiles are placed with stride = atom M size (32*16=512)
     Coord(
         Coord(
-            Idx[_SF_ATOM_SIZE](),
-            Idx[dim1 * _SF_ATOM_M_0](),
+            Idx[_SF_ATOM_SIZE],
+            Idx[dim1 * _SF_ATOM_M_0],
         ),
         Coord(
-            Coord(Idx[1](), Idx[_SF_ATOM_M_1]()),
-            Idx[_SF_ATOM_M_0 * _SF_ATOM_SIZE](),
+            Coord(Idx[1], Idx[_SF_ATOM_M_1]),
+            Idx[_SF_ATOM_M_0 * _SF_ATOM_SIZE],
         ),
     ),
 )
@@ -237,6 +231,7 @@ comptime SMemTile[
     layout: Layout,
     *,
     alignment: Int = 128,
+    Engine: TensorEngine,
 ] = TileTensor[
     dtype,
     Layout[
@@ -244,17 +239,19 @@ comptime SMemTile[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    Engine=Engine,
+    address_space=.SHARED,
 ]
 """Shared memory tile using TileTensor with a Layout.
 
-The Layout parameter preserves swizzle information, enabling
-.to_layout_tensor() to produce correctly swizzled LayoutTensors.
+The Layout parameter preserves swizzle information so that views derived
+from the tile stay correctly swizzled.
 
 Parameters:
     dtype: The data type of tile elements.
     layout: The full layout including swizzle information.
     alignment: Memory alignment (default 128 for shared memory).
+    Engine: Engine policy of the tile.
 """
 
 
@@ -263,12 +260,12 @@ Parameters:
 # ============================================================================
 
 comptime GMEMLayout1D = Layout[
-    Variadic.types[T=CoordLike, RuntimeInt[DType.int64]],
-    Variadic.types[T=CoordLike, ComptimeInt[1]],
+    Coord[Int64].element_types,
+    Coord[ComptimeInt[1]].element_types,
 ]
 """1D layout for flat global memory arrays.
 
-Shape is dynamic (RuntimeInt), stride is 1 (ComptimeInt[1]).
+Shape is dynamic (Scalar), stride is 1 (ComptimeInt[1]).
 Rank is provably 1 at compile time.
 """
 
@@ -278,8 +275,8 @@ Rank is provably 1 at compile time.
 # ============================================================================
 
 comptime static_row_major[dim0: Int, dim1: Int] = Layout[
-    Variadic.types[T=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]],
-    Variadic.types[T=CoordLike, ComptimeInt[dim1], ComptimeInt[1]],
+    Coord[ComptimeInt[dim0], ComptimeInt[dim1]].element_types,
+    Coord[ComptimeInt[dim1], ComptimeInt[1]].element_types,
 ]
 """2D row-major layout with fully static dimensions.
 
@@ -288,8 +285,8 @@ types with rank=2 provable at compile time.
 """
 
 comptime _StridedLayout[dim0: Int, dim1: Int, stride0: Int] = Layout[
-    Variadic.types[T=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]],
-    Variadic.types[T=CoordLike, ComptimeInt[stride0], ComptimeInt[1]],
+    Coord[ComptimeInt[dim0], ComptimeInt[dim1]].element_types,
+    Coord[ComptimeInt[stride0], ComptimeInt[1]].element_types,
 ]
 """2D layout with explicit stride for dim0.
 
@@ -308,37 +305,30 @@ def _strided_layout[
 
 
 # ============================================================================
-# _to_index_list -- Extract IndexList of shapes from a TensorLayout
+# _to_coord -- Extract static shape Coord from a TensorLayout
 # ============================================================================
 
 
-@parameter
-def _to_index_list[L: TensorLayout]() -> IndexList[L.rank]:
-    """Extract static shapes from a TensorLayout into an IndexList.
+def _to_coord[L: TensorLayout](out res: Coord[*L._shape_types]):
+    """Extract the static shape of a TensorLayout as a flat `Coord`.
 
-    Works for any rank. TMA layouts are always fully static.
+    Works for any rank. TMA layouts are always fully static, so this is a
+    zero-runtime conversion.
     """
-    var result = IndexList[L.rank]()
-
-    comptime for i in range(L.rank):
-        result[i] = L.static_shape[i]
-
-    return result
+    res = Coord[*res.element_types]()
 
 
-def _to_index_list[rank: Int, L: TensorLayout]() -> IndexList[rank]:
-    """Extract static shapes from a TensorLayout into an IndexList with explicit rank.
+def _to_coord[
+    rank: Int, L: TensorLayout
+](out res: Coord[*L._shape_types],):
+    """Extract the static shape of a TensorLayout as a `Coord`, with an
+    explicit rank check.
 
     Used when the compiler can't prove the TensorLayout's rank matches
     the expected rank.
     """
     comptime assert L.rank == rank, "TensorLayout rank must match explicit rank"
-    var result = IndexList[rank]()
-
-    comptime for i in range(rank):
-        result[i] = L.static_shape[i]
-
-    return result
+    res = Coord[*res.element_types]()
 
 
 # ============================================================================
@@ -353,12 +343,10 @@ comptime tma_desc_layout_2d[
     tile_dim0: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[tile_dim0],
-        ComptimeInt[swizzle.bytes() // size_of[dtype]()],
-    ],
-    Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]],
+    Coord[
+        ComptimeInt[tile_dim0], ComptimeInt[swizzle.bytes() // size_of[dtype]()]
+    ].element_types,
+    Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
 ]
 """2D TMA descriptor layout: [dim0, swizzle_elems], strides [1, 1]."""
 
@@ -368,15 +356,36 @@ comptime tma_desc_layout_3d[
     tile_dim1: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    Variadic.types[
-        T=CoordLike,
+    Coord[
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
-    ],
-    Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
+    ].element_types,
+    Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]].element_types,
 ]
 """3D TMA descriptor layout: [dim0, dim1, swizzle_elems], strides [1,1,1]."""
+
+
+# Variant of tma_desc_layout_3d that takes the innermost dim size explicitly
+# instead of deriving it from the swizzle atom size. The default helper is
+# bound to swizzle.bytes() // size_of[dtype](), which matches the per-swizzle
+# upper bound for swizzled modes. For SWIZZLE_NONE, however, the driver only
+# requires boxDim[0] * elem_size to be a multiple of 16 bytes (no upper cap
+# beyond the 256-element limit), so callers may want a larger innermost dim
+# matching their actual SMEM tile width. Use this helper for those cases.
+comptime tma_desc_layout_3d_explicit_inner[
+    tile_dim0: Int,
+    tile_dim1: Int,
+    inner_elems: Int,
+] = Layout[
+    Coord[
+        ComptimeInt[tile_dim0],
+        ComptimeInt[tile_dim1],
+        ComptimeInt[inner_elems],
+    ].element_types,
+    Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]].element_types,
+]
+"""3D TMA descriptor layout with explicit innermost dim (in elements)."""
 
 comptime tma_desc_layout_4d[
     dtype: DType,
@@ -385,20 +394,15 @@ comptime tma_desc_layout_4d[
     tile_dim2: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    Variadic.types[
-        T=CoordLike,
+    Coord[
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
         ComptimeInt[tile_dim2],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
-    ],
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[1],
-        ComptimeInt[1],
-        ComptimeInt[1],
-        ComptimeInt[1],
-    ],
+    ].element_types,
+    Coord[
+        ComptimeInt[1], ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]
+    ].element_types,
 ]
 """4D TMA descriptor layout: [d0,d1,d2,swizzle_elems], strides all 1."""
 
@@ -410,22 +414,20 @@ comptime tma_desc_layout_5d[
     tile_dim3: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    Variadic.types[
-        T=CoordLike,
+    Coord[
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
         ComptimeInt[tile_dim2],
         ComptimeInt[tile_dim3],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
-    ],
-    Variadic.types[
-        T=CoordLike,
+    ].element_types,
+    Coord[
         ComptimeInt[1],
         ComptimeInt[1],
         ComptimeInt[1],
         ComptimeInt[1],
         ComptimeInt[1],
-    ],
+    ].element_types,
 ]
 """5D TMA descriptor layout: [d0,d1,d2,d3,swizzle_elems], strides all 1."""
 
@@ -440,14 +442,13 @@ comptime TmaOpType[
     desc_layout: TensorLayout,
 ] = TMATensorTile[
     dtype,
-    tile_layout.rank,
-    _to_index_list[tile_layout](),
-    _to_index_list[tile_layout.rank, desc_layout](),
+    _to_coord[tile_layout](),
+    _to_coord[tile_layout.rank, desc_layout](),
 ]
 """TMATensorTile type derived from new Layout types.
 
 Single source of truth: new Layout types determine the TMATensorTile
-type parameters via _to_index_list.
+type parameters via _to_coord.
 """
 
 comptime TmaOpTypeIm2col[
@@ -456,9 +457,8 @@ comptime TmaOpTypeIm2col[
     desc_layout: TensorLayout,
 ] = TMATensorTileIm2col[
     dtype,
-    tile_layout.rank,
-    _to_index_list[tile_layout](),
-    _to_index_list[tile_layout.rank, desc_layout](),
+    _to_coord[tile_layout](),
+    _to_coord[tile_layout.rank, desc_layout](),
 ]
 """TMATensorTileIm2col type derived from new Layout types.
 
@@ -469,60 +469,28 @@ Same as TmaOpType but for im2col TMA (used by conv2d activation loads).
 def create_tma_tile[
     tma_tile_layout: TensorLayout,
     tma_desc_layout: TensorLayout,
-    tile_shape: IndexList[tma_tile_layout.rank],
+    tile_shape: Coord,
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[...]) raises -> TmaOpType[
+    unpack_fp4: Bool = False,
+](ctx: DeviceContext, tensor: TileTensor[mut=False, ...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
-    """Create a TMATensorTile using new Layout types.
+    """Creates a TMA tile from a TileTensor.
 
-    Extracts IndexList shapes from new Layout types internally, calls
-    create_tensor_tile, and returns TMATensorTile. No LegacyLayout
-    is exposed to callers -- the conversion is encapsulated here.
+    Calls create_tensor_tile directly with the TileTensor. The TileTensor
+    just needs ptr and layout shape/stride accessors, which work on any
+    TileTensor including reshaped views.
 
     Parameters:
         tma_tile_layout: Tile layout as new TensorLayout.
         tma_desc_layout: Descriptor layout as new TensorLayout.
-        tile_shape: Physical tile dimensions for the TMA descriptor.
+        tile_shape: Physical tile dimensions for the TMA descriptor, as a
+            flat `Coord`.
         swizzle_mode: TMA swizzle mode.
-
-    Args:
-        ctx: Device context for TMA descriptor creation.
-        tensor: Source tensor in global memory.
-
-    Returns:
-        A TMATensorTile (DevicePassable) for use with enqueue_function.
-    """
-    return create_tensor_tile[
-        tile_shape,
-        swizzle_mode=swizzle_mode,
-        __tile_shape=_to_index_list[tma_tile_layout](),
-        __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
-    ](ctx, tensor)
-
-
-def create_tma_tile[
-    tma_tile_layout: TensorLayout,
-    tma_desc_layout: TensorLayout,
-    tile_shape: IndexList[tma_tile_layout.rank],
-    *,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: TileTensor) raises -> TmaOpType[
-    tensor.dtype, tma_tile_layout, tma_desc_layout
-]:
-    """TileTensor overload of create_tma_tile.
-
-    Calls create_tensor_tile directly with TileTensor, bypassing
-    LayoutTensor entirely. The TileTensor just needs ptr and layout
-    shape/stride accessors, which work on any TileTensor including
-    reshaped views.
-
-    Parameters:
-        tma_tile_layout: Tile layout as new TensorLayout.
-        tma_desc_layout: Descriptor layout as new TensorLayout.
-        tile_shape: Physical tile dimensions for the TMA descriptor.
-        swizzle_mode: TMA swizzle mode.
+        unpack_fp4: When True, `tensor` is nibble-packed E2M1 held as `uint8`
+            and the copy pads it into shared memory so a K extent spans one
+            byte per element.
 
     Args:
         ctx: Device context for TMA descriptor creation.
@@ -534,8 +502,9 @@ def create_tma_tile[
     return create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        __tile_shape=_to_index_list[tma_tile_layout](),
-        __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
+        __tile_shape=_to_coord[tma_tile_layout](),
+        __desc_shape=_to_coord[tma_tile_layout.rank, tma_desc_layout](),
+        unpack_fp4=unpack_fp4,
     ](ctx, tensor)
 
 
@@ -545,15 +514,12 @@ def create_tma_tile[
 
 comptime GMEMTile[
     dtype: DType,
-    lt_layout: LegacyLayout,
-] = TileTensor[
-    dtype,
-    LTToTTLayout[lt_layout],
-    MutAnyOrigin,
-]
-"""Global memory TileTensor derived from a legacy Layout.
+    tt_layout: TensorLayout,
+    Engine: TensorEngine = DefaultEngine[element_width=1],
+] = TileTensor[dtype, tt_layout, MutAnyOrigin, Engine=Engine]
+"""Global memory TileTensor for global memory kernel parameters.
 
-Used for kernel parameter types, replacing LayoutTensor parameters.
+Used for kernel parameter types.
 """
 
 
@@ -600,7 +566,8 @@ comptime SMemTile2D[
     dim1: Int,
     *,
     alignment: Int = 128,
-] = SMemTile[dtype, row_major[dim0, dim1](), alignment=alignment]
+    Engine: TensorEngine,
+] = SMemTile[dtype, row_major[dim0, dim1](), alignment=alignment, Engine=Engine]
 """Backward-compatible alias for SMemTile with explicit 2D dimensions."""
 
 
@@ -619,8 +586,8 @@ struct SMemTileArrayWithLayout[
     """Array of TileTensor tiles with explicit Layout (preserves swizzle info).
 
     Unlike SMemTileArray2D which uses row_major internally, this type preserves
-    the full layout information from TMA swizzling, enabling .to_layout_tensor()
-    to produce correctly swizzled LayoutTensors.
+    the full layout information from TMA swizzling, so tiles taken from it
+    carry the correct swizzle.
 
     Parameters:
         dtype: Tile element data type.
@@ -634,11 +601,13 @@ struct SMemTileArrayWithLayout[
 
         var array = MyArray.stack_allocation()
         var tile = array[0]  # Returns TileTensor with swizzled layout
-        var lt = tile.to_layout_tensor()  # Correctly swizzled!
     """
 
     # The TileTensor-based tile type with correct layout
-    comptime Tile = SMemTile[Self.dtype, Self.tile_layout]
+    # Shared memory is raw-pointer addressed so use DefaultEngine.
+    comptime Tile = SMemTile[
+        Self.dtype, Self.tile_layout, Engine=DefaultEngine[element_width=1]
+    ]
 
     # Size calculations - use layout.product() for element count
     comptime tile_size: Int = Self.tile_layout.product()
@@ -646,11 +615,11 @@ struct SMemTileArrayWithLayout[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
-    var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+    var ptr: MutPointer[
+        Scalar[Self.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -667,11 +636,7 @@ struct SMemTileArrayWithLayout[
     def __init__(
         out self,
         # TODO: this should correctly propagate mutability.
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            _,
-            address_space=AddressSpace.SHARED,
-        ],
+        unsafe_ptr: Pointer[Scalar[Self.dtype], _, address_space=.SHARED],
     ):
         """Initialize with a shared memory pointer.
 
@@ -680,9 +645,12 @@ struct SMemTileArrayWithLayout[
         """
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
-    @always_inline
+    @inline(.always)
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -690,8 +658,8 @@ struct SMemTileArrayWithLayout[
         Returns:
             A TileTensor with correct swizzled layout at the given index.
         """
-        var tile_ptr = self.ptr + Self.tile_size * Int(index)
-        return Self.Tile(tile_ptr, Self.tile_layout)
+        var tile_ptr = self.ptr.unsafe_offset(Self.tile_size * Int(index))
+        return Self.Tile(tile_ptr.as_unsafe_any_origin(), Self.tile_layout)
 
     def slice[
         length: Int
@@ -713,9 +681,9 @@ struct SMemTileArrayWithLayout[
         Returns:
             A new SMemTileArrayWithLayout representing the slice.
         """
-        return type_of(result)(self.ptr + Self.tile_size * start)
+        return type_of(result)(self.ptr.unsafe_offset(Self.tile_size * start))
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
@@ -723,11 +691,11 @@ struct SMemTileArrayWithLayout[
         Returns:
             A new SMemTileArrayWithLayout backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         return Self(ptr)
 
@@ -740,22 +708,21 @@ struct SMemTileArrayWithLayout[
 # TODO: This type should correctly propagate mutability.
 struct SMemTileArray[
     dtype: DType,
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
     num_tiles: Int,
     alignment: Int = 128,
 ](TrivialRegisterPassable):
     """Array of TileTensor tiles with variadic shape/stride type parameters.
 
-    This is the TileTensor equivalent of the LayoutTensor-based SMemTileArray
-    in structuring.mojo. By taking shape_types and stride_types directly as
-    variadic type parameters, this preserves full compile-time type information
-    including swizzle patterns.
+    By taking shape_types and stride_types directly as variadic type
+    parameters, this preserves full compile-time type information including
+    swizzle patterns.
 
     Parameters:
         dtype: Tile element data type.
-        shape_types: Variadic shape types from Layout (preserves compile-time info).
-        stride_types: Variadic stride types from Layout (preserves compile-time info).
+        shape_types: List of shape types from Layout (preserves compile-time info).
+        stride_types: List of stride types from Layout (preserves compile-time info).
         num_tiles: Number of tiles in the array.
         alignment: Memory alignment (default 128 for shared memory).
 
@@ -777,7 +744,7 @@ struct SMemTileArray[
         Self.dtype,
         Layout[shape_types=Self.shape_types, stride_types=Self.stride_types],
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     # Layout type for constructing tiles
@@ -795,11 +762,11 @@ struct SMemTileArray[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
-    var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+    var ptr: MutPointer[
+        Scalar[Self.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -816,11 +783,7 @@ struct SMemTileArray[
     def __init__(
         out self,
         # TODO: This should correctly propagate mutability
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            _,
-            address_space=AddressSpace.SHARED,
-        ],
+        unsafe_ptr: Pointer[Scalar[Self.dtype], _, address_space=.SHARED],
     ):
         """Initialize with a shared memory pointer.
 
@@ -829,9 +792,12 @@ struct SMemTileArray[
         """
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
-    @always_inline
+    @inline(.always)
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -839,13 +805,13 @@ struct SMemTileArray[
         Returns:
             A TileTensor with correct swizzled layout at the given index.
         """
-        var tile_ptr = self.ptr + Self.tile_size * Int(index)
+        var tile_ptr = self.ptr.unsafe_offset(Self.tile_size * Int(index))
         # Construct layout from shape/stride types (all compile-time known)
         var layout = Self.TileLayout(
             Coord[*Self.shape_types](),
             Coord[*Self.stride_types](),
         )
-        return Self.Tile(tile_ptr, layout)
+        return Self.Tile(tile_ptr.as_unsafe_any_origin(), layout)
 
     def slice[
         length: Int
@@ -871,9 +837,9 @@ struct SMemTileArray[
         Returns:
             A new SMemTileArray representing the slice.
         """
-        return type_of(result)(self.ptr + Self.tile_size * start)
+        return type_of(result)(self.ptr.unsafe_offset(Self.tile_size * start))
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
@@ -881,11 +847,11 @@ struct SMemTileArray[
         Returns:
             A new SMemTileArray backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         return Self(ptr)
 
@@ -940,7 +906,7 @@ struct SMemTileArray2D[
         For tiles without swizzle, use SMemTileArrayWithLayout with row_major.
 
     Example:
-        comptime MyArray = SMemTileArray2D[DType.float16, 64, 32, 4, 128, 128]
+        comptime MyArray = SMemTileArray2D[.float16, 64, 32, 4, 128, 128]
 
         var array = MyArray.stack_allocation()
         var tile = array[0]  # Returns TileTensor with swizzled layout
@@ -952,6 +918,8 @@ struct SMemTileArray2D[
         Self.dtype,
         internal_k_major[Self.dtype, Self.dim0, Self.dim1, Self.swizzle_bytes],
         alignment=Self.alignment,
+        # Shared memory is raw-pointer addressed so use DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
     ]
 
     # Size calculations
@@ -960,11 +928,11 @@ struct SMemTileArray2D[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
-    var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+    var ptr: MutPointer[
+        Scalar[Self.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -981,11 +949,7 @@ struct SMemTileArray2D[
     def __init__(
         out self,
         # TODO: This should correctly propagate mutability
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            _,
-            address_space=AddressSpace.SHARED,
-        ],
+        unsafe_ptr: Pointer[Scalar[Self.dtype], _, address_space=.SHARED],
     ):
         """Initialize with a shared memory pointer.
 
@@ -999,9 +963,12 @@ struct SMemTileArray2D[
         Self.dtype, Self.dim0, Self.dim1, Self.swizzle_bytes
     ]
 
-    @always_inline
+    @inline(.always)
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -1009,17 +976,21 @@ struct SMemTileArray2D[
         Returns:
             A TileTensor-based tile at the given index with swizzled layout.
         """
-        var tile_ptr = self.ptr + Self.tile_size * Int(index)
+        var tile_ptr = self.ptr.unsafe_offset(Self.tile_size * Int(index))
         return Self.Tile(
-            tile_ptr,
+            tile_ptr.as_unsafe_any_origin(),
             Self.tile_layout,
         )
 
-    @always_inline
+    @inline(.always)
     def get_with_layout[
         tile_layout: Layout, T: Intable
     ](self, index: T) -> SMemTile[
-        Self.dtype, tile_layout, alignment=Self.alignment
+        Self.dtype,
+        tile_layout,
+        alignment=Self.alignment,
+        # Returned view aliases this array's shared memory so use DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
     ]:
         """Get tile at the given index with a specified layout.
 
@@ -1037,9 +1008,9 @@ struct SMemTileArray2D[
         Returns:
             A TileTensor with the specified layout at the given index.
         """
-        var tile_ptr = self.ptr + Self.tile_size * Int(index)
+        var tile_ptr = self.ptr.unsafe_offset(Self.tile_size * Int(index))
         return SMemTile[Self.dtype, tile_layout, alignment=Self.alignment](
-            tile_ptr, tile_layout
+            tile_ptr.as_unsafe_any_origin(), tile_layout
         )
 
     def slice[
@@ -1062,9 +1033,9 @@ struct SMemTileArray2D[
         Returns:
             A new SMemTileArray2D representing the slice.
         """
-        return type_of(result)(self.ptr + Self.tile_size * start)
+        return type_of(result)(self.ptr.unsafe_offset(Self.tile_size * start))
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
@@ -1072,11 +1043,11 @@ struct SMemTileArray2D[
         Returns:
             A new SMemTileArray2D backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         return Self(ptr)
 
@@ -1108,7 +1079,7 @@ struct SMemTileArray2DRowMajor[
         alignment: Memory alignment (default 128 for shared memory).
 
     Example:
-        comptime MyArray = SMemTileArray2DRowMajor[DType.float32, 1, 64, 4]
+        comptime MyArray = SMemTileArray2DRowMajor[.float32, 1, 64, 4]
 
         var array = MyArray.stack_allocation()
         var tile = array[0]  # Returns TileTensor with row_major layout
@@ -1119,6 +1090,8 @@ struct SMemTileArray2DRowMajor[
         Self.dtype,
         row_major[Self.dim0, Self.dim1](),
         alignment=Self.alignment,
+        # Returned view aliases this array's shared memory so use DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
     ]
 
     # The internal layout matching the Tile type
@@ -1130,11 +1103,11 @@ struct SMemTileArray2DRowMajor[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
-    var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+    var ptr: MutPointer[
+        Scalar[Self.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1151,11 +1124,7 @@ struct SMemTileArray2DRowMajor[
     def __init__(
         out self,
         # TODO: This should correctly propagate mutability
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            _,
-            address_space=AddressSpace.SHARED,
-        ],
+        unsafe_ptr: Pointer[Scalar[Self.dtype], _, address_space=.SHARED],
     ):
         """Initialize with a shared memory pointer.
 
@@ -1164,9 +1133,12 @@ struct SMemTileArray2DRowMajor[
         """
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
-    @always_inline
+    @inline(.always)
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -1174,9 +1146,9 @@ struct SMemTileArray2DRowMajor[
         Returns:
             A TileTensor-based tile at the given index with row_major layout.
         """
-        var tile_ptr = self.ptr + Self.tile_size * Int(index)
+        var tile_ptr = self.ptr.unsafe_offset(Self.tile_size * Int(index))
         return Self.Tile(
-            tile_ptr,
+            tile_ptr.as_unsafe_any_origin(),
             Self.tile_layout,
         )
 
@@ -1200,9 +1172,9 @@ struct SMemTileArray2DRowMajor[
         Returns:
             A new SMemTileArray2DRowMajor representing the slice.
         """
-        return type_of(result)(self.ptr + Self.tile_size * start)
+        return type_of(result)(self.ptr.unsafe_offset(Self.tile_size * start))
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
@@ -1210,10 +1182,10 @@ struct SMemTileArray2DRowMajor[
         Returns:
             A new SMemTileArray2DRowMajor backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         return Self(ptr)

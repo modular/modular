@@ -1,0 +1,558 @@
+---
+title: Mojo compound statements reference
+sidebar_label: Compound statements
+description: >
+  Complete reference for Mojo compound statements. Covers if statements,
+  match statements and patterns, if case and while case, loops, error
+  handling with try/except, context managers with with, and compile-time
+  control flow with comptime if/for/match.
+---
+
+<!-- VERIFIED: ParserStmts.cpp parseIfStmt(), parseWhileStmt(),
+     parseMatchStmt(), parseForStmt(), parseTryStmt(), parseWithStmt(),
+     parseComptimeCompoundStmt(), parseComptimeIf(), parseComptimeFor(),
+     parseSuite(); ExprPatterns.h; Signatures.cpp parseCaptureList()
+     Compiler verified: 2026-10-15, Mojo 1.2.0.dev2026101405 (48ec2d26)
+       (match, if case, while case, comptime match sections only)
+     Last updated: 2026-10-15 (adds match, if case, while case,
+       comptime match) -->
+
+A *compound statement* has a header and a body. The header ends
+with `:` and is followed by an indented block with the body.
+
+The body can contain simple statements, other compound
+statements, or both.
+
+```mojo
+if condition:       # Header
+    do_something()  # Body
+```
+
+The body must be indented more than the header. The first body statement
+sets the indentation for the rest of the body:
+
+```mojo
+if condition:
+    do_something()
+      do_more()    # Error because statement has excess indentation
+```
+
+## If statements
+
+An `if` statement executes a block conditionally:
+
+```mojo
+if x > 0:
+    print("positive")
+elif x < 0:
+    print("negative")
+elif x == 0:
+    print("zero")
+else:
+    print("you should never get here")
+```
+
+Conditions are evaluated in order. Add as many as needed.
+The first true condition runs its block, and the statement exits.
+The `else` block runs if no condition is true.
+
+When the body is a single simple statement, you can write it
+on a single line, although many style guides discourage this.
+
+```mojo
+if x > 0: print("positive")
+```
+
+Common shortcuts from other languages won't work in Mojo:
+
+```mojo
+x > 0 and print("positive")  # Error because 'None' isn't truthy
+
+print("positive") if x > 0 else pass
+    # Error because 'pass' isn't an expression
+```
+
+## Match statements
+
+A `match` statement compares one value, the *subject*, against a series of
+`case` patterns:
+
+```mojo
+match status_code:
+    case 200:
+        print("ok")
+    case 301 | 302:
+        print("redirect")
+    case code if code >= 500:
+        print("server error", code)
+    case _:
+        print("other")
+```
+
+The subject is evaluated once. Cases are checked top to bottom, and only the
+first match runs. Execution doesn't fall through to the next case. If no case
+matches, no body runs.
+
+Each `case` can be indented under `match` or aligned with it.
+
+### Patterns
+
+<!-- markdownlint-disable MD013 -->
+
+| Pattern          | Example                                 | Matches                                         |
+|------------------|-----------------------------------------|-------------------------------------------------|
+| Literal          | `case 200:`                             | A value equal to the literal                    |
+| Wildcard         | `case _:`                               | Any value, without binding it                   |
+| Name             | `case code:`                            | Any value, bound to `code`                      |
+| Or               | `case 301 \| 302:`                      | A value that matches any alternative            |
+| Value            | `case == threshold:`                    | A value equal to an existing expression         |
+| Tuple            | `case (0, 0):` or `case True, False:`   | Each element against its own pattern            |
+| Struct           | `case Point(x=0, y=0):`                 | Each named field against its own pattern        |
+| Initializer list | `case {x = 0, y = 0}:`                  | Each named subject field against its pattern    |
+| Enum case        | `case .Some(reading):` or `case .None:` | One case of an `EnumLike` type, like `Optional` |
+| List             | `case [first, *middle, last]:`          | A collection by length and elements             |
+
+<!-- markdownlint-enable MD013 -->
+
+Patterns nest, so one case can reach several layers into the subject:
+
+```mojo
+match marker:   # Optional[Point]
+    case .Some(Point(x=0, y=0)):
+        print("at origin")
+    case .Some(Point(x=x, y=y)) if x == y:
+        print("on diagonal")
+    case .None:
+        print("no marker")
+    case _:
+        print("elsewhere")
+```
+
+A list pattern takes at most one `*name`, which captures the elements between
+the leading and trailing patterns. A list with a different length doesn't
+match. The subject must conform to `Sized` and support integer subscripts. A
+`*name` pattern also requires slice subscripts.
+
+A tuple subject doesn't need parentheses. `match x > 0, y > 0:` matches a
+tuple of two `Bool` values.
+
+### Bindings
+
+A bare name in a pattern binds that part of the subject for the case body. It
+always creates a new binding, even if a variable with the same name exists.
+To compare against an existing value, use `==`:
+
+```mojo
+var limit = 100
+match reading:
+    case == limit:
+        print("at limit")    # Compares reading with limit
+    case limit:
+        print(limit)         # Binds a new `limit`; matches any reading
+```
+
+Bound names are immutable. Use `var` for a mutable copy, or `ref` for a
+reference that writes through to the subject:
+
+```mojo
+match marker:   # A mutable Point
+    case Point(x=ref x, y=0):
+        x = 0       # Updates marker.x
+    case Point(x=var x, y=_):
+        x += 1      # Updates the copy only
+```
+
+Use `as` to bind the whole value a pattern matched:
+
+```mojo
+match status_code:
+    case 404 as code:
+        print("not found:", code)
+    case _:
+        pass
+```
+
+### Guards
+
+A guard adds a condition after the pattern: `case pattern if condition:`.
+The guard runs only after the pattern matches, and it can use the names the
+pattern bound. If the guard is false, matching continues with the next case.
+
+### Exhaustiveness
+
+When the subject's type has a fixed set of values, such as `Bool`, `Optional`,
+or another `EnumLike` type, the compiler warns if the cases don't cover every
+value. Subjects with open-ended values, such as `Int` and `String`, don't need
+to be exhaustive.
+
+The compiler also warns about unreachable cases, such as a repeated literal or
+a case that follows one that matches everything.
+
+## Conditional patterns
+
+`if case` and `while case` test a single pattern without a full `match`
+statement. Both use the patterns that `match` supports.
+
+### if case
+
+`if case pattern = value:` runs its body when the value matches the pattern.
+The value is evaluated once. Names the pattern binds are available only in
+that body:
+
+```mojo
+if case .Some(reading) = primary:
+    print("primary:", reading)
+elif case .Some(reading) = backup:
+    print("backup:", reading)
+else:
+    print("no reading")
+```
+
+If the pattern doesn't match, execution continues with the next `elif` or
+`else`.
+
+### while case
+
+`while case pattern = value:` evaluates the value before each iteration and
+runs the body while it matches the pattern. When the pattern fails, the loop
+exits normally, so an `else` clause runs:
+
+```mojo
+while case .Some(job) = queue.next_job():
+    process(job)
+else:
+    print("queue drained")
+```
+
+## While loops
+
+The `while` loop repeats its body while a condition is true:
+
+```mojo
+var count = 0
+while count < 10:
+    print(count)
+    count += 1
+```
+
+Use `break` to exit the loop early and `continue` to skip to the next
+iteration:
+
+```mojo
+while True:
+    var item = get_next()
+    if item is None:
+        break       # Exit loop if no more items
+    if not is_valid(item):
+        continue    # Skip invalid items
+    process(item)  # Only runs for valid items
+```
+
+## For loops
+
+The `for` statement iterates over a sequence:
+
+```mojo
+for item in items:
+    process(item)
+
+for i in range(10):   # [0, 10)
+    print(i)
+```
+
+To support iteration, a sequence must implement `__iter__()` and
+`__next__()`. A `for` loop desugars to a `while` loop that uses these
+methods.
+
+Destructuring works directly in the loop target. This lets you unpack tuple
+elements as you iterate. In this example, each item in `pairs` is unpacked
+into `key` and `value` for every iteration:
+
+```mojo
+for key, value in pairs:  # For example, [("a", 1), ("b", 2), ...]
+    print(key, value)
+```
+
+### Loop variable bindings
+
+Use `var` and `ref` conventions to control ownership, copying, and
+mutability behavior in loop variables. By default, loop variables are
+immutable references to the iterated items (`imm`). To create a mutable
+copy, use `var`. To maintain value mutability, use `ref`:
+
+```mojo
+var list: List[String] = ["a", "b", "c", "d"]
+
+for var item in list:
+    item = item + "x" # works. item is mutable copy of list element
+    print(item) # prints "ax", then "bx", "cx", and "dx"
+print(list) # unchanged
+
+for ref item in list:
+    item = item + "x" # mutability picked up in reference to list element
+    print(item) # prints "ax", then "bx", "cx", and "dx"
+print(list) # changed to ["ax", "bx", "cx", "dx"]
+```
+
+## Loops and else clauses
+
+An optional `else` clause runs when the loop exits normally.
+It does not run if the loop exits with `break`:
+
+```mojo
+var found = False
+for item in items:
+    if item == target:
+        found = True
+        break
+else:
+    print("not found")  # Only runs if break was never hit
+```
+
+Both `for` and `while` loops support `else`.
+
+## Error handling
+
+A `try` statement executes code that may raise errors.
+
+```mojo
+var result: Bool
+try:
+    result = risky()
+except e:
+    handle(e)
+```
+
+### Structure
+
+Each `try` statement requires at least one `except` or `finally` clause:
+
+```mojo
+try:
+    operation()
+except e:
+    handle_error(e)   # Runs if an error occurs
+else:
+    on_success()      # Runs only if no error occurred
+finally:
+    cleanup()         # Always runs
+```
+
+Execution proceeds in a fixed order:
+
+1. The `try` block runs first.
+1. If an error occurs, the matching `except` block runs.
+1. If no error occurs, the `else` block (if present) runs after the `try`
+   block.
+1. If included, a `finally` block always runs last.
+
+### Error binding
+
+Bind the error to a name with `except name`:
+
+```mojo
+try:
+    risky()
+except e:
+    print(e)   # e is the caught error
+```
+
+Without a binding, the error is caught but not accessible. There is no
+default error variable. This is useful when you want to respond to an
+error state without needing the error details:
+
+```mojo
+try:
+    risky()
+except:
+    print("something went wrong")
+```
+
+### Typed errors
+
+When a function declares a specific error type with `raises ErrorType`,
+the bound variable's type is inferred:
+
+```mojo
+@fieldwise_init
+struct NetworkError:
+    var message: String
+    var code: Int
+
+def fetch() raises NetworkError -> String:
+    raise NetworkError("HTCPCP", 418)   # See RFC 2324 *
+
+try:
+    var result = fetch()
+except e:              # e is inferred as `NetworkError`
+    print(e.message)   # Known types support direct field access
+    print(e.code)      # `.code` and `.message` only work because `e`
+                        # is a known to be `NetworkError`
+```
+
+A `try` block handles one error type. The compiler raises an
+error if code in the `try` block can raise more than one
+error type.
+
+:::note
+[RFC 2324](https://datatracker.ietf.org/doc/html/rfc2324) defines the
+Hyper Text Coffee Pot Control Protocol (HTCPCP) as an April Fools' joke.
+:::
+
+## Context managers
+
+A `with` statement manages resources using context managers. *Context
+managers* define setup (`__enter__`) and cleanup (`__exit__`) operations.
+The cleanup always runs when the block exits, even if an error occurs:
+
+```mojo
+with open("file.txt") as f:
+    var content = f.read()
+# File is closed here, even if an error occurred
+```
+
+Multiple context managers can share a single `with` statement:
+
+```mojo
+with open("input.txt") as f_in, open("output.txt", "w") as f_out:
+    f_out.write(f_in.read())
+```
+
+This is equivalent to nested `with` statements.
+
+### How context managers work
+
+When a `with` block is entered, `__enter__()` is called on the context
+manager expression. The result is bound to the `as` target if present. A
+context manager that defines only `__enter__()` is valid; `__exit__()` is
+optional. When the block exits, `__exit__()` is called if it exists, even
+if an error occurs.
+
+A minimal custom context manager:
+
+```mojo
+struct Scope(ImplicitlyCopyable):
+    var label: String
+
+    def __init__(out self, label: String):
+        self.label = label
+
+    def __enter__(self) -> Self:
+        # perform setup tasks
+        print("entering", self.label)
+        return self
+
+    def __exit__(self):
+        # perform cleanup tasks
+        print("exiting", self.label)
+
+def main():
+    with Scope("setup") as s:
+        print("inside", s.label)
+    # entering setup
+    # inside setup
+    # exiting setup
+```
+
+`__enter__` returns `self` so the `as` target binds to the manager. The
+`ImplicitlyCopyable` conformance lets the compiler return `self` by value.
+
+## Compile-time control flow
+
+`comptime if`, `comptime for`, and `comptime match` run at compile time. The
+condition, sequence, or subject must be a compile-time value or expression.
+
+Use them to generate code based on compile-time conditions. You
+cannot use runtime values in `comptime` statements.
+
+### comptime if
+
+`comptime if` selects a branch at compile time, pruning the unselected
+branches. Only the selected branch appears in the compiled program.
+
+```mojo
+from std.sys import size_of
+
+comptime if size_of[Int]() == 8:
+    print("64-bit")
+else:
+    print("Probably 32-bit")
+```
+
+The condition must be a compile-time expression. In this example,
+`runtime_value` is not available at compile time, so the code errors
+during compilation:
+
+```mojo
+comptime if runtime_value > 0:   # Error because 'comptime if' requires
+    pass                         # compile-time evaluation
+```
+
+`comptime if` supports `elif` and `else` like the regular `if` statement.
+
+### comptime for
+
+`comptime for` unrolls a loop at compile time. Each iteration is
+compiled as separate code. This creates a bigger binary but improves
+runtime performance by eliminating loop overhead and enabling further
+optimizations.
+
+```mojo
+comptime for i in range(3):
+    print(i)   # Compiled as: print(0); print(1); print(2)
+```
+
+Use `comptime for` to generate repeated code patterns or iterate over
+compile-time sequences.
+
+### comptime match
+
+`comptime match` selects a case at compile time. The subject must be a
+compile-time value, and only the selected case is compiled. Names a pattern
+binds are compile-time parameters, so `var` and `ref` bindings aren't allowed.
+
+Comparing with `==` lets `comptime match` act as a type switch:
+
+```mojo
+def element_kind[T: AnyType]() -> String:
+    comptime match T:
+        case == Int:
+            return "integer"
+        case == String:
+            return "string"
+        case _:
+            return "other"
+```
+
+## Scopes
+
+Each compound statement body creates a new scope. Variables declared
+inside a body are not visible outside it:
+
+```mojo
+if condition:
+    var x = 10
+print(x)   # Error: x is not in scope
+```
+
+`with` statement variables bound with `as` are scoped to the `with` block:
+
+```mojo
+with open("file.txt") as f:
+    var data = f.read()
+# f is not accessible here
+```
+
+Nested functions create their own scope and can capture variables from
+enclosing functions with capture lists:
+
+```mojo
+def outer():
+    var count = 0
+
+    def inner() {mut count}:  # Capture count by mutable reference
+        count += 1            # Updates captured count
+
+    inner()
+    print(count)     # 1
+```

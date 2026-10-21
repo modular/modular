@@ -28,20 +28,18 @@ def kernel_verification_ops_path() -> Path:
 
 
 def test_kernel_library(
-    counter_mojopkg: Path, kernel_verification_ops_path: Path
+    counter_mojoc: Path, kernel_verification_ops_path: Path
 ) -> None:
     with Graph("test_kernel_library") as graph:
         kernels = graph._kernel_library
-        kernels.add_path(counter_mojopkg)
+        kernels.add_path(counter_mojoc)
 
         assert "make_counter" in kernels
         assert "my_add" not in kernels
 
         with pytest.raises(ValueError) as err:
-            kernels.add_path(Path("/path/to/invalid.mojopkg"))
-        assert "No such file or directory" in str(
-            err.value
-        ) or "failed to load Mojo package" in str(err.value)
+            kernels.add_path(Path("/path/to/invalid.mojoc"))
+        assert "failed to import kernels" in str(err.value)
 
         kernels.add_path(kernel_verification_ops_path)
         assert "make_counter" in kernels
@@ -65,10 +63,7 @@ def test_undefined_kernel(kernel_verification_ops_path: Path) -> None:
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
             )
-        assert (
-            "Could not find a mojo kernel registered for i_am_not_a_kernel"
-            in str(err.value)
-        )
+        assert "no kernel registered for 'i_am_not_a_kernel'" in str(err.value)
 
 
 def test_my_add_valid(
@@ -383,3 +378,88 @@ def test_mutable_input_tensor_valid(
 
     # Compile the model
     session.load(graph)
+
+
+def _reduction_types(dtype: DType, shapes: list[list[int]]) -> list[TensorType]:
+    return [
+        TensorType(dtype, shape, device=DeviceRef.CPU()) for shape in shapes
+    ]
+
+
+def test_reduction_valid() -> None:
+    input_types = _reduction_types(DType.float32, [[8, 128]])
+    with Graph("test_reduction_valid", input_types=input_types) as graph:
+        ops.custom(
+            "mo.reduce.add.tmp",
+            device=DeviceRef.CPU(),
+            values=list(graph.inputs),
+            out_types=_reduction_types(DType.float32, [[8, 1]]),
+        )
+
+
+@pytest.mark.parametrize(
+    ("symbol", "inputs", "outputs", "message"),
+    [
+        (
+            "mo.reduce.add.tmp",
+            [[8, 128], [8, 128]],
+            [(DType.float32, [8, 1])],
+            "takes one input, got 2",
+        ),
+        (
+            "mo.reduce.arg_max.tmp",
+            [[8, 128]],
+            [(DType.float32, [8, 1])],
+            "has 2 output fields, but the op has 1 results",
+        ),
+        (
+            "mo.reduce.add.tmp",
+            [[8, 1]],
+            [(DType.float32, [8, 1])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add.tmp",
+            [[8, 128]],
+            [(DType.float32, [1, 1])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add.tmp",
+            [[8, 128]],
+            [(DType.float32, [8, 2])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add.tmp",
+            [[8, 128]],
+            [(DType.float32, [8])],
+            "results must be tensors of the input's rank",
+        ),
+        (
+            "mo.reduce.arg_max.tmp",
+            [[4, 16]],
+            [(DType.float32, [4, 1]), (DType.int64, [1, 16])],
+            "results reduce different axes",
+        ),
+    ],
+)
+def test_reduction_invalid(
+    symbol: str,
+    inputs: list[list[int]],
+    outputs: list[tuple[DType, list[int]]],
+    message: str,
+) -> None:
+    input_types = _reduction_types(DType.float32, inputs)
+    with Graph("test_reduction_invalid", input_types=input_types) as graph:
+        with pytest.raises(ValueError) as err:
+            ops.custom(
+                symbol,
+                device=DeviceRef.CPU(),
+                values=list(graph.inputs),
+                out_types=[
+                    TensorType(dtype, shape, device=DeviceRef.CPU())
+                    for dtype, shape in outputs
+                ],
+            )
+        assert f"reduction '{symbol}' {message}" in str(err.value)

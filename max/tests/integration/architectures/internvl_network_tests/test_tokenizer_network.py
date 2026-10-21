@@ -18,16 +18,16 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.internvl.tokenizer import (
+    InternVLProcessor,
+    InternVLTokenizer,
+)
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-)
-from max.pipelines.architectures.internvl.tokenizer import (
-    InternVLProcessor,
-    InternVLTokenizer,
 )
 from PIL import Image
 from pytest_mock import MockerFixture
@@ -109,6 +109,36 @@ async def test_internvl_tokenizer_with_image() -> None:
 
     num_image_tokens = (image_context.tokens.all == image_token_id).sum()
     assert num_image_tokens == expected_image_tokens
+
+
+@pytest.mark.asyncio
+async def test_internvl_tokenizer_token_id_prompt() -> None:
+    model_id = "OpenGVLab/InternVL3-1B-Instruct"
+    tokenizer = InternVLTokenizer(
+        model_path=model_id,
+        pipeline_config=_create_mock_pipeline_config(model_id),
+        trust_remote_code=True,
+    )
+    text_context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID(), model_name=model_id, prompt="What is this?"
+        )
+    )
+    token_ids = text_context.tokens.prompt.tolist()
+
+    context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID(), model_name=model_id, prompt=token_ids
+        )
+    )
+
+    assert context.tokens.prompt.tolist() == token_ids
+    assert context.images == []
+    assert context.max_length == text_context.max_length
+    assert context.eos_tracker == text_context.eos_tracker
+    assert (
+        context.extra_model_args.keys() == text_context.extra_model_args.keys()
+    )
 
 
 @pytest.mark.asyncio

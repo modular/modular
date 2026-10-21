@@ -13,12 +13,14 @@
 
 """Figure 14.7: Radix sort iteration kernel implementation in Mojo."""
 
-from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import DeviceContext
 from std.random import random_ui64
+from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 
-def grid_exclusive_scan(bits: UnsafePointer[UInt32, MutAnyOrigin], N: Int):
+def grid_exclusive_scan(bits: MutPointer[UInt32, _], N: Int):
     """CPU-based exclusive scan for simplicity.
 
     Args:
@@ -33,12 +35,12 @@ def grid_exclusive_scan(bits: UnsafePointer[UInt32, MutAnyOrigin], N: Int):
 
 
 def radix_sort_iter(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    bits: UnsafePointer[UInt32, MutAnyOrigin],
-    N: Int,
-    iter: Int,
-    block_dim_x: Int,
+    input: ImmPointer[UInt32, ImmutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    bits: MutPointer[UInt32, MutAnyOrigin],
+    N_dev: Int32,
+    iter_dev: Int32,
+    block_dim_x_dev: Int32,
 ):
     """Radix sort iteration kernel - extracts bits.
 
@@ -46,10 +48,14 @@ def radix_sort_iter(
         input: Input array.
         output: Output array.
         bits: Bit array.
-        N: Size of array.
-        iter: Current bit position.
-        block_dim_x: Block dimension.
+        N_dev: Size of array.
+        iter_dev: Current bit position.
+        block_dim_x_dev: Block dimension.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var iter = Int(iter_dev)
+    var block_dim_x = Int(block_dim_x_dev)
     var i = block_idx.x * block_dim_x + thread_idx.x
 
     if i < N:
@@ -59,13 +65,13 @@ def radix_sort_iter(
 
 
 def radix_scatter(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    bits: UnsafePointer[UInt32, MutAnyOrigin],
-    scanResult: UnsafePointer[UInt32, MutAnyOrigin],
-    N: Int,
-    iter: Int,
-    block_dim_x: Int,
+    input: ImmPointer[UInt32, ImmutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    bits: MutPointer[UInt32, MutAnyOrigin],
+    scanResult: ImmPointer[UInt32, ImmutAnyOrigin],
+    N_dev: Int32,
+    iter_dev: Int32,
+    block_dim_x_dev: Int32,
 ):
     """Scatter elements based on scan results.
 
@@ -74,10 +80,14 @@ def radix_scatter(
         output: Output array.
         bits: Bit array.
         scanResult: Scan result array.
-        N: Size of array.
-        iter: Current bit position.
-        block_dim_x: Block dimension.
+        N_dev: Size of array.
+        iter_dev: Current bit position.
+        block_dim_x_dev: Block dimension.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var iter = Int(iter_dev)
+    var block_dim_x = Int(block_dim_x_dev)
     var i = block_idx.x * block_dim_x + thread_idx.x
 
     if i < N:
@@ -91,9 +101,7 @@ def radix_scatter(
         output[dst] = key
 
 
-def cpu_radix_sort(
-    data: UnsafePointer[UInt32, MutAnyOrigin], N: Int, num_bits: Int
-):
+def cpu_radix_sort(data: MutPointer[UInt32, _], N: Int, num_bits: Int):
     """CPU radix sort for verification.
 
     Args:
@@ -101,9 +109,9 @@ def cpu_radix_sort(
         N: Size of array.
         num_bits: Number of bits to sort.
     """
-    var tmp = alloc[UInt32](N)
-    var count0 = alloc[UInt32](N)
-    var count1 = alloc[UInt32](N)
+    var tmp = unsafe_alloc[UInt32](N)
+    var count0 = unsafe_alloc[UInt32](N)
+    var count1 = unsafe_alloc[UInt32](N)
 
     for bit in range(num_bits):
         var zeros = 0
@@ -124,12 +132,12 @@ def cpu_radix_sort(
         for i in range(ones):
             data[zeros + i] = count1[i]
 
-    tmp.free()
-    count0.free()
-    count1.free()
+    tmp.unsafe_free()
+    count0.unsafe_free()
+    count1.unsafe_free()
 
 
-def find_max(data: UnsafePointer[UInt32, _], N: Int) -> UInt32:
+def find_max(data: Pointer[UInt32, _], N: Int) -> UInt32:
     """Find maximum value in array.
 
     Args:
@@ -167,9 +175,9 @@ def main() raises:
     var N = 10000
 
     # Allocate host memory
-    var h_data = alloc[UInt32](N)
-    var h_ref = alloc[UInt32](N)
-    var h_bits = alloc[UInt32](N + 1)  # +1 for total count
+    var h_data = unsafe_alloc[UInt32](N)
+    var h_ref = unsafe_alloc[UInt32](N)
+    var h_bits = unsafe_alloc[UInt32](N + 1)  # +1 for total count
 
     # Initialize with random data
     print("Initializing array with", N, "random elements")
@@ -196,16 +204,16 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_input = ctx.enqueue_create_buffer[DType.uint32](N)
-    var d_output = ctx.enqueue_create_buffer[DType.uint32](N)
-    var d_bits = ctx.enqueue_create_buffer[DType.uint32](N + 1)
+    var d_input = ctx.enqueue_create_buffer[.uint32](N)
+    var d_output = ctx.enqueue_create_buffer[.uint32](N)
+    var d_bits = ctx.enqueue_create_buffer[.uint32](N + 1)
 
     # Copy to device
     ctx.enqueue_copy(d_input, h_data)
 
     # Launch configuration
     var threads_per_block = 256
-    var num_blocks = (N + threads_per_block - 1) // threads_per_block
+    var num_blocks = ceildiv(N, threads_per_block)
 
     print("\nLaunching radix sort iteration kernel (Fig 14.7)")
     print("Array size:", N, "elements")
@@ -226,13 +234,13 @@ def main() raises:
 
     for iter in range(num_bits):
         # Extract bits
-        ctx.enqueue_function_experimental[radix_sort_iter](
+        ctx.enqueue_function[radix_sort_iter](
             current_input,
             current_output,
             d_bits,
-            N,
-            iter,
-            threads_per_block,
+            Int32(N),
+            Int32(iter),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )
@@ -254,14 +262,14 @@ def main() raises:
         ctx.synchronize()
 
         # Scatter based on scan results
-        ctx.enqueue_function_experimental[radix_scatter](
+        ctx.enqueue_function[radix_scatter](
             current_input,
             current_output,
             d_bits,
             d_bits,
-            N,
-            iter,
-            threads_per_block,
+            Int32(N),
+            Int32(iter),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )
@@ -333,6 +341,6 @@ def main() raises:
         print("ERROR: Found", errors, "mismatches between GPU and CPU")
 
     # Cleanup
-    h_data.free()
-    h_ref.free()
-    h_bits.free()
+    h_data.unsafe_free()
+    h_ref.unsafe_free()
+    h_bits.unsafe_free()

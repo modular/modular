@@ -10,12 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements shard-and-stack: shards a tensor across devices and stacks the shards into a higher-rank output."""
 
-from std.algorithm import parallelize, sync_parallelize
-from std.gpu.host import DeviceBuffer
-from std.memory import memcpy
-from std.runtime.asyncrt import DeviceContextPtrList
-from tensor import InputVariadicTensors, OutputVariadicTensors
+from max.gpu.host import DeviceBuffer, DeviceContextArray
+from std.memory import unsafe_memcpy
+from extensibility import InputVariadicTensors, OutputVariadicTensors
 from std.utils import product
 
 
@@ -102,7 +101,7 @@ def _shard_and_stack_multi_device[
         rank=outputs.rank - 1,
         ...,
     ],
-    dev_ctxs_input: DeviceContextPtrList,
+    dev_ctxs_input: DeviceContextArray,
 ) raises:
     """Multi-device implementation using H2D transfers.
 
@@ -135,18 +134,16 @@ def _shard_and_stack_multi_device[
     # Total elements per input in output
     var output_elements_per_input = outer_dims * segment_elements
 
-    @no_inline
-    @parameter
-    def transfer(tp_index: Int) raises:
+    # The copies are enqueued from this task, not from parallel CPU sub-tasks:
+    # a task that waits on sub-tasks runs other ready tasks inline while it
+    # waits, and a graph with one of these per MoE layer, each frame holding
+    # every expert's tensor, nests deep enough to overflow the worker stack.
+    # The graph already runs different layers' copies concurrently.
+    for tp_index in range(outputs.size):
         # Device context for this output (index 0 is CPU, so +1)
         var gpu_ctx = dev_ctxs_input[tp_index + 1]
         var output_tensor = dyn_outputs[tp_index]
 
-        # Multi-device mode: use H2D transfers for each output.
-        # Each output goes to a different GPU, using the corresponding
-        # device context.
-        # Note: We process outputs sequentially since each output may be
-        # on a different device and H2D copies are async per device.
         for input_idx in range(inputs.size):
             var input_tensor = dyn_inputs[input_idx]
 
@@ -164,8 +161,12 @@ def _shard_and_stack_multi_device[
                 )
 
                 # H2D copy: source is host pointer, dest is device buffer
-                var src_ptr = input_tensor.unsafe_ptr() + src_offset
-                var dst_ptr = output_tensor.unsafe_ptr() + dst_offset
+                var src_ptr = input_tensor.unsafe_ptr().unsafe_offset(
+                    src_offset
+                )
+                var dst_ptr = output_tensor.unsafe_ptr().unsafe_offset(
+                    dst_offset
+                )
 
                 gpu_ctx.enqueue_copy(
                     DeviceBuffer(
@@ -176,9 +177,6 @@ def _shard_and_stack_multi_device[
                     ),
                     src_ptr,
                 )
-
-    # Enqueue transfers in parallel, one thread per device.
-    sync_parallelize[transfer](outputs.size)
 
 
 def _shard_and_stack_single_device[
@@ -191,7 +189,7 @@ def _shard_and_stack_single_device[
         ...,
     ],
 ) raises:
-    """Single-device implementation using CPU memcpy.
+    """Single-device implementation using CPU unsafe_memcpy.
 
     Parameters:
         axis: The dimension along which to shard the weights.
@@ -216,9 +214,8 @@ def _shard_and_stack_single_device[
     # Total elements per input in output
     var output_elements_per_input = outer_dims * segment_elements
 
-    @no_inline
-    @parameter
-    def process_task(input_idx: Int):
+    # Serial for the same reason as the multi-device copies.
+    for input_idx in range(inputs.size):
         var input_tensor = dyn_inputs[input_idx]
 
         for tp_index in range(outputs.size):
@@ -243,12 +240,14 @@ def _shard_and_stack_single_device[
                 )
 
                 # Copy contiguous segment
-                var src_ptr = input_tensor.unsafe_ptr() + src_offset
-                var dst_ptr = output_tensor.unsafe_ptr() + dst_offset
+                var src_ptr = input_tensor.unsafe_ptr().unsafe_offset(
+                    src_offset
+                )
+                var dst_ptr = output_tensor.unsafe_ptr().unsafe_offset(
+                    dst_offset
+                )
 
-                memcpy(dest=dst_ptr, src=src_ptr, count=segment_elements)
-
-    parallelize[process_task](inputs.size)
+                unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=segment_elements)
 
 
 def shard_and_stack[
@@ -260,7 +259,7 @@ def shard_and_stack[
         rank=outputs.rank - 1,
         ...,
     ],
-    dev_ctxs_input: DeviceContextPtrList,
+    dev_ctxs_input: DeviceContextArray,
 ) raises:
     """Shard weight tensors across multiple devices for tensor parallelism.
 
@@ -279,7 +278,7 @@ def shard_and_stack[
     _validate_shard_and_stack[axis](outputs, inputs)
 
     # Check if outputs are on different devices than inputs (multi-device mode).
-    comptime is_multi_device = dev_ctxs_input.size > 1
+    comptime is_multi_device = dev_ctxs_input.length > 1
 
     comptime if is_multi_device:
         _shard_and_stack_multi_device[axis](outputs, inputs, dev_ctxs_input)

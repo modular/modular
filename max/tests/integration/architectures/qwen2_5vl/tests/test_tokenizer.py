@@ -16,14 +16,14 @@
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.model_manifest import ModelManifest
 from pytest_mock import MockerFixture
 from transformers import Qwen2_5_VLConfig
 
@@ -55,14 +55,21 @@ def _create_mock_huggingface_config() -> NonCallableMock:
     return mock_hf_config
 
 
-class MockKVCacheConfig(KVCacheConfig):
-    def __init__(self) -> None:
-        self.enable_prefix_caching = True
-
-
 class MockModelConfig(MAXModelConfig):
     def __init__(self) -> None:
-        self.kv_cache = MockKVCacheConfig()
+        # Mirror MockPipelineConfig below: seed pydantic state from
+        # model_construct instead of assigning fields (the class is frozen).
+        base = MAXModelConfig.model_construct(
+            kv_cache=KVCacheConfig(enable_prefix_caching=True)
+        )
+        self.__dict__.update(base.__dict__)
+        for attr in (
+            "__pydantic_fields_set__",
+            "__pydantic_extra__",
+            "__pydantic_private__",
+        ):
+            if hasattr(base, attr):
+                object.__setattr__(self, attr, getattr(base, attr))
         self._huggingface_config = _create_mock_huggingface_config()
 
 

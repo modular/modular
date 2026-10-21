@@ -15,7 +15,7 @@
 import std.ffi as ffi
 
 from std.complex import ComplexFloat32, ComplexFloat64
-from std.gpu.host._nvidia_cuda import CUstream
+from max.gpu.host._nvidia_cuda import CUstream
 
 from .types import LibraryProperty, Property, Status, Type
 from .utils import _get_dylib_function
@@ -23,22 +23,22 @@ from .utils import _get_dylib_function
 comptime cufftHandle = ffi.c_uint
 
 
-def cufftCreate(handle: UnsafePointer[cufftHandle, _]) raises -> Status:
-    return _get_dylib_function["cufftCreate", def(type_of(handle)) -> Status]()(
-        handle
-    )
-
-
-def cufftGetVersion(version: UnsafePointer[ffi.c_int, _]) raises -> Status:
+def cufftCreate(handle: Pointer[cufftHandle, _]) raises -> Status:
     return _get_dylib_function[
-        "cufftGetVersion", def(type_of(version)) -> Status
+        "cufftCreate", def(type_of(handle)) thin -> Status
+    ]()(handle)
+
+
+def cufftGetVersion(version: Pointer[ffi.c_int, _]) raises -> Status:
+    return _get_dylib_function[
+        "cufftGetVersion", def(type_of(version)) thin -> Status
     ]()(version)
 
 
 def cufftExecZ2Z(
     plan: cufftHandle,
-    idata: UnsafePointer[ComplexFloat64, _],
-    odata: UnsafePointer[ComplexFloat64, _],
+    idata: Pointer[ComplexFloat64, _],
+    odata: Pointer[ComplexFloat64, _],
     direction: ffi.c_int,
 ) raises -> Status:
     return _get_dylib_function[
@@ -48,14 +48,14 @@ def cufftExecZ2Z(
             type_of(idata),
             type_of(odata),
             ffi.c_int,
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, idata, odata, direction)
 
 
 def cufftExecC2C(
     plan: cufftHandle,
-    idata: UnsafePointer[ComplexFloat32, _],
-    odata: UnsafePointer[ComplexFloat32, _],
+    idata: Pointer[ComplexFloat32, _],
+    odata: Pointer[ComplexFloat32, _],
     direction: ffi.c_int,
 ) raises -> Status:
     return _get_dylib_function[
@@ -65,14 +65,14 @@ def cufftExecC2C(
             type_of(idata),
             type_of(odata),
             ffi.c_int,
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, idata, odata, direction)
 
 
 def cufftExecR2C(
     plan: cufftHandle,
-    idata: UnsafePointer[ffi.c_float, _],
-    odata: UnsafePointer[ComplexFloat32, _],
+    idata: Pointer[ffi.c_float, _],
+    odata: Pointer[ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecR2C",
@@ -80,7 +80,7 @@ def cufftExecR2C(
             cufftHandle,
             type_of(idata),
             type_of(odata),
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, idata, odata)
 
 
@@ -88,19 +88,19 @@ def cufftSetWorkArea(
     plan: cufftHandle, work_area: OpaquePointer[_]
 ) raises -> Status:
     return _get_dylib_function[
-        "cufftSetWorkArea", def(cufftHandle, type_of(work_area)) -> Status
+        "cufftSetWorkArea", def(cufftHandle, type_of(work_area)) thin -> Status
     ]()(plan, work_area)
 
 
 def cufftPlan1d(
-    plan: UnsafePointer[cufftHandle, _],
+    plan: Pointer[cufftHandle, _],
     nx: ffi.c_int,
     type: Type,
     batch: ffi.c_int,
 ) raises -> Status:
     return _get_dylib_function[
         "cufftPlan1d",
-        def(type_of(plan), ffi.c_int, Type, ffi.c_int) -> Status,
+        def(type_of(plan), ffi.c_int, Type, ffi.c_int) thin -> Status,
     ]()(plan, nx, type, batch)
 
 
@@ -109,13 +109,13 @@ def cufftMakePlan2d(
     nx: ffi.c_int,
     ny: ffi.c_int,
     type: Type,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlan2d",
         def(
             cufftHandle, ffi.c_int, ffi.c_int, Type, type_of(work_size)
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, nx, ny, type, work_size)
 
 
@@ -124,19 +124,19 @@ def cufftSetPlanPropertyInt64(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftSetPlanPropertyInt64",
-        def(cufftHandle, Property, ffi.c_long_long) -> Status,
+        def(cufftHandle, Property, ffi.c_long_long) thin -> Status,
     ]()(plan, property, input_value_int)
 
 
 def cufftPlan2d(
-    plan: UnsafePointer[cufftHandle, _],
+    plan: Pointer[cufftHandle, _],
     nx: ffi.c_int,
     ny: ffi.c_int,
     type: Type,
 ) raises -> Status:
     return _get_dylib_function[
         "cufftPlan2d",
-        def(type_of(plan), ffi.c_int, ffi.c_int, Type) -> Status,
+        def(type_of(plan), ffi.c_int, ffi.c_int, Type) thin -> Status,
     ]()(plan, nx, ny, type)
 
 
@@ -145,20 +145,20 @@ def cufftMakePlan1d(
     nx: ffi.c_int,
     type: Type,
     batch: ffi.c_int,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlan1d",
         def(
             cufftHandle, ffi.c_int, Type, ffi.c_int, type_of(work_size)
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, nx, type, batch, work_size)
 
 
 def cufftExecC2R(
     plan: cufftHandle,
-    idata: UnsafePointer[ComplexFloat32, _],
-    odata: UnsafePointer[ffi.c_float, _],
+    idata: Pointer[ComplexFloat32, _],
+    odata: Pointer[ffi.c_float, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecC2R",
@@ -166,23 +166,23 @@ def cufftExecC2R(
             cufftHandle,
             type_of(idata),
             type_of(odata),
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, idata, odata)
 
 
 def cufftMakePlanMany(
     plan: cufftHandle,
     rank: ffi.c_int,
-    n: UnsafePointer[ffi.c_int, _],
-    inembed: UnsafePointer[ffi.c_int, _],
+    n: Pointer[ffi.c_int, _],
+    inembed: Pointer[ffi.c_int, _],
     istride: ffi.c_int,
     idist: ffi.c_int,
-    onembed: UnsafePointer[ffi.c_int, _],
+    onembed: Pointer[ffi.c_int, _],
     ostride: ffi.c_int,
     odist: ffi.c_int,
     type: Type,
     batch: ffi.c_int,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlanMany",
@@ -199,7 +199,7 @@ def cufftMakePlanMany(
             Type,
             ffi.c_int,
             type_of(work_size),
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         plan,
         rank,
@@ -220,7 +220,7 @@ def cufftSetAutoAllocation(
     plan: cufftHandle, auto_allocate: ffi.c_int
 ) raises -> Status:
     return _get_dylib_function[
-        "cufftSetAutoAllocation", def(cufftHandle, ffi.c_int) -> Status
+        "cufftSetAutoAllocation", def(cufftHandle, ffi.c_int) thin -> Status
     ]()(plan, auto_allocate)
 
 
@@ -228,26 +228,26 @@ def cufftEstimate1d(
     nx: ffi.c_int,
     type: Type,
     batch: ffi.c_int,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftEstimate1d",
-        def(ffi.c_int, Type, ffi.c_int, type_of(work_size)) -> Status,
+        def(ffi.c_int, Type, ffi.c_int, type_of(work_size)) thin -> Status,
     ]()(nx, type, batch, work_size)
 
 
 def cufftGetSize(
-    handle: cufftHandle, work_size: UnsafePointer[Int, _]
+    handle: cufftHandle, work_size: Pointer[Int, _]
 ) raises -> Status:
     return _get_dylib_function[
-        "cufftGetSize", def(cufftHandle, type_of(work_size)) -> Status
+        "cufftGetSize", def(cufftHandle, type_of(work_size)) thin -> Status
     ]()(handle, work_size)
 
 
 def cufftExecZ2D(
     plan: cufftHandle,
-    idata: UnsafePointer[ComplexFloat64, _],
-    odata: UnsafePointer[ffi.c_double, _],
+    idata: Pointer[ComplexFloat64, _],
+    odata: Pointer[ffi.c_double, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecZ2D",
@@ -255,38 +255,38 @@ def cufftExecZ2D(
             cufftHandle,
             type_of(idata),
             type_of(odata),
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, idata, odata)
 
 
 def cufftEstimate2d(
-    nx: ffi.c_int, ny: ffi.c_int, type: Type, work_size: UnsafePointer[Int, _]
+    nx: ffi.c_int, ny: ffi.c_int, type: Type, work_size: Pointer[Int, _]
 ) raises -> Status:
     return _get_dylib_function[
         "cufftEstimate2d",
-        def(ffi.c_int, ffi.c_int, Type, type_of(work_size)) -> Status,
+        def(ffi.c_int, ffi.c_int, Type, type_of(work_size)) thin -> Status,
     ]()(nx, ny, type, work_size)
 
 
 def cufftSetStream(plan: cufftHandle, stream: CUstream) raises -> Status:
     return _get_dylib_function[
-        "cufftSetStream", def(cufftHandle, CUstream) -> Status
+        "cufftSetStream", def(cufftHandle, CUstream) thin -> Status
     ]()(plan, stream)
 
 
 def cufftMakePlanMany64(
     plan: cufftHandle,
     rank: ffi.c_int,
-    n: UnsafePointer[ffi.c_long_long, _],
-    inembed: UnsafePointer[ffi.c_long_long, _],
+    n: Pointer[ffi.c_long_long, _],
+    inembed: Pointer[ffi.c_long_long, _],
     istride: ffi.c_long_long,
     idist: ffi.c_long_long,
-    onembed: UnsafePointer[ffi.c_long_long, _],
+    onembed: Pointer[ffi.c_long_long, _],
     ostride: ffi.c_long_long,
     odist: ffi.c_long_long,
     type: Type,
     batch: ffi.c_long_long,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlanMany64",
@@ -303,7 +303,7 @@ def cufftMakePlanMany64(
             Type,
             ffi.c_long_long,
             type_of(work_size),
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         plan,
         rank,
@@ -325,13 +325,13 @@ def cufftGetSize1d(
     nx: ffi.c_int,
     type: Type,
     batch: ffi.c_int,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSize1d",
         def(
             cufftHandle, ffi.c_int, Type, ffi.c_int, type_of(work_size)
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, nx, type, batch, work_size)
 
 
@@ -341,7 +341,7 @@ def cufftMakePlan3d(
     ny: ffi.c_int,
     nz: ffi.c_int,
     type: Type,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlan3d",
@@ -352,23 +352,23 @@ def cufftMakePlan3d(
             ffi.c_int,
             Type,
             type_of(work_size),
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, nx, ny, nz, type, work_size)
 
 
 def cufftGetSizeMany(
     handle: cufftHandle,
     rank: ffi.c_int,
-    n: UnsafePointer[ffi.c_int, _],
-    inembed: UnsafePointer[ffi.c_int, _],
+    n: Pointer[ffi.c_int, _],
+    inembed: Pointer[ffi.c_int, _],
     istride: ffi.c_int,
     idist: ffi.c_int,
-    onembed: UnsafePointer[ffi.c_int, _],
+    onembed: Pointer[ffi.c_int, _],
     ostride: ffi.c_int,
     odist: ffi.c_int,
     type: Type,
     batch: ffi.c_int,
-    work_area: UnsafePointer[Int, _],
+    work_area: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSizeMany",
@@ -385,7 +385,7 @@ def cufftGetSizeMany(
             Type,
             ffi.c_int,
             type_of(work_area),
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         rank,
@@ -403,7 +403,7 @@ def cufftGetSizeMany(
 
 
 def cufftPlan3d(
-    plan: UnsafePointer[cufftHandle, _],
+    plan: Pointer[cufftHandle, _],
     nx: ffi.c_int,
     ny: ffi.c_int,
     nz: ffi.c_int,
@@ -411,18 +411,20 @@ def cufftPlan3d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftPlan3d",
-        def(type_of(plan), ffi.c_int, ffi.c_int, ffi.c_int, Type) -> Status,
+        def(
+            type_of(plan), ffi.c_int, ffi.c_int, ffi.c_int, Type
+        ) thin -> Status,
     ]()(plan, nx, ny, nz, type)
 
 
 def cufftPlanMany(
-    plan: UnsafePointer[cufftHandle, _],
+    plan: Pointer[cufftHandle, _],
     rank: ffi.c_int,
-    n: UnsafePointer[ffi.c_int, _],
-    inembed: UnsafePointer[ffi.c_int, _],
+    n: Pointer[ffi.c_int, _],
+    inembed: Pointer[ffi.c_int, _],
     istride: ffi.c_int,
     idist: ffi.c_int,
-    onembed: UnsafePointer[ffi.c_int, _],
+    onembed: Pointer[ffi.c_int, _],
     ostride: ffi.c_int,
     odist: ffi.c_int,
     type: Type,
@@ -442,7 +444,7 @@ def cufftPlanMany(
             ffi.c_int,
             Type,
             ffi.c_int,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         plan,
         rank,
@@ -462,7 +464,7 @@ def cufftResetPlanProperty(
     plan: cufftHandle, property: Property
 ) raises -> Status:
     return _get_dylib_function[
-        "cufftResetPlanProperty", def(cufftHandle, Property) -> Status
+        "cufftResetPlanProperty", def(cufftHandle, Property) thin -> Status
     ]()(plan, property)
 
 
@@ -472,7 +474,7 @@ def cufftGetSize3d(
     ny: ffi.c_int,
     nz: ffi.c_int,
     type: Type,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSize3d",
@@ -483,32 +485,32 @@ def cufftGetSize3d(
             ffi.c_int,
             Type,
             type_of(work_size),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, nx, ny, nz, type, work_size)
 
 
 def cufftGetProperty(
-    type: LibraryProperty, value: UnsafePointer[ffi.c_int, _]
+    type: LibraryProperty, value: Pointer[ffi.c_int, _]
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetProperty",
-        def(LibraryProperty, type_of(value)) -> Status,
+        def(LibraryProperty, type_of(value)) thin -> Status,
     ]()(type, value)
 
 
 def cufftGetSizeMany64(
     plan: cufftHandle,
     rank: ffi.c_int,
-    n: UnsafePointer[ffi.c_long_long, _],
-    inembed: UnsafePointer[ffi.c_long_long, _],
+    n: Pointer[ffi.c_long_long, _],
+    inembed: Pointer[ffi.c_long_long, _],
     istride: ffi.c_long_long,
     idist: ffi.c_long_long,
-    onembed: UnsafePointer[ffi.c_long_long, _],
+    onembed: Pointer[ffi.c_long_long, _],
     ostride: ffi.c_long_long,
     odist: ffi.c_long_long,
     type: Type,
     batch: ffi.c_long_long,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSizeMany64",
@@ -525,7 +527,7 @@ def cufftGetSizeMany64(
             Type,
             ffi.c_long_long,
             type_of(work_size),
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         plan,
         rank,
@@ -543,23 +545,23 @@ def cufftGetSizeMany64(
 
 
 def cufftDestroy(plan: cufftHandle) raises -> Status:
-    return _get_dylib_function["cufftDestroy", def(cufftHandle) -> Status]()(
-        plan
-    )
+    return _get_dylib_function[
+        "cufftDestroy", def(cufftHandle) thin -> Status
+    ]()(plan)
 
 
 def cufftEstimateMany(
     rank: ffi.c_int,
-    n: UnsafePointer[ffi.c_int, _],
-    inembed: UnsafePointer[ffi.c_int, _],
+    n: Pointer[ffi.c_int, _],
+    inembed: Pointer[ffi.c_int, _],
     istride: ffi.c_int,
     idist: ffi.c_int,
-    onembed: UnsafePointer[ffi.c_int, _],
+    onembed: Pointer[ffi.c_int, _],
     ostride: ffi.c_int,
     odist: ffi.c_int,
     type: Type,
     batch: ffi.c_int,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftEstimateMany",
@@ -575,7 +577,7 @@ def cufftEstimateMany(
             Type,
             ffi.c_int,
             type_of(work_size),
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         rank,
         n,
@@ -593,8 +595,8 @@ def cufftEstimateMany(
 
 def cufftExecD2Z(
     plan: cufftHandle,
-    idata: UnsafePointer[ffi.c_double, _],
-    odata: UnsafePointer[ComplexFloat64, _],
+    idata: Pointer[ffi.c_double, _],
+    odata: Pointer[ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecD2Z",
@@ -602,7 +604,7 @@ def cufftExecD2Z(
             cufftHandle,
             type_of(idata),
             type_of(odata),
-        ) -> Status,
+        ) thin -> Status,
     ]()(plan, idata, odata)
 
 
@@ -611,13 +613,13 @@ def cufftEstimate3d(
     ny: ffi.c_int,
     nz: ffi.c_int,
     type: Type,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftEstimate3d",
         def(
             ffi.c_int, ffi.c_int, ffi.c_int, Type, type_of(work_size)
-        ) -> Status,
+        ) thin -> Status,
     ]()(nx, ny, nz, type, work_size)
 
 
@@ -626,22 +628,22 @@ def cufftGetSize2d(
     nx: ffi.c_int,
     ny: ffi.c_int,
     type: Type,
-    work_size: UnsafePointer[Int, _],
+    work_size: Pointer[Int, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSize2d",
         def(
             cufftHandle, ffi.c_int, ffi.c_int, Type, type_of(work_size)
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, nx, ny, type, work_size)
 
 
 def cufftGetPlanPropertyInt64(
     plan: cufftHandle,
     property: Property,
-    return_ptr_value: UnsafePointer[ffi.c_long_long, _],
+    return_ptr_value: Pointer[ffi.c_long_long, _],
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetPlanPropertyInt64",
-        def(cufftHandle, Property, type_of(return_ptr_value)) -> Status,
+        def(cufftHandle, Property, type_of(return_ptr_value)) thin -> Status,
     ]()(plan, property, return_ptr_value)

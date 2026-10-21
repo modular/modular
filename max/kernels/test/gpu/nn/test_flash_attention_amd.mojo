@@ -16,26 +16,12 @@ from std.random import rand
 from std.sys import argv
 
 
-from std.gpu import *
-from std.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
-from std.memory import memset_zero
-from nn.attention.gpu.mha import (
-    _naive_attention_with_transpose,
-    flash_attention,
-    mha_gpu_naive,
-)
+from max.gpu import *
+from max.gpu.host import DeviceContext
+from layout import Idx, TileTensor, row_major
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -61,13 +47,14 @@ def test[
     ctx: DeviceContext,
     is_benchmark: Bool = False,
     use_index_input: Bool = False,
+    use_adversarial_softmax_input: Bool = False,
 ) raises:
     print(
         "test_flash_attention",
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "seq_len:",
         seq_len,
         "num_keys:",
@@ -101,15 +88,37 @@ def test[
     )
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var mask_ptr = ctx.enqueue_create_host_buffer[mask_type](mask_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
 
     # Q, K, V are randomly initialized.
-    if use_index_input:
+    if use_adversarial_softmax_input:
+        # Large-magnitude Q/K across two K tiles — forces fp32 Inf in the
+        # `_fma` softmax correction while the prescaled path stays finite.
+        assert batch_size == 1
+        assert num_keys >= 256, "need ≥ 2 tiles of BN=128"
+        comptime q_val = Scalar[qkv_type](5.0)
+        comptime k_large = Scalar[qkv_type](100.0)
+        comptime k_small = Scalar[qkv_type](1.0)
+        for i in range(seq_len):
+            for h in range(num_heads):
+                for j in range(depth):
+                    q_ptr[(i * num_heads + h) * depth + j] = q_val
+        for i in range(num_keys):
+            var is_first_tile = i < 128
+            var k_val = k_large if is_first_tile else k_small
+            var v_val = Scalar[qkv_type](1.0) if is_first_tile else Scalar[
+                qkv_type
+            ](-1.0)
+            for h in range(kv_num_heads):
+                for j in range(depth):
+                    k_ptr[(i * kv_num_heads + h) * depth + j] = k_val
+                    v_ptr[(i * kv_num_heads + h) * depth + j] = v_val
+    elif use_index_input:
         assert batch_size == 1
         for i in range(seq_len):
             for h in range(num_heads):
@@ -131,63 +140,24 @@ def test[
                     ](i * depth + j)
 
     else:
-        rand[qkv_type](q_ptr, q_size)
-        rand[qkv_type](k_ptr, k_size)
-        rand[qkv_type](v_ptr, v_size)
+        rand(q_ptr.as_span())
+        rand(k_ptr.as_span())
+        rand(v_ptr.as_span())
 
-    memset_zero(mask_ptr, mask_size)
+    # Zero-initialize mask_ptr (HostBuffer is uninitialized).
+    for i in range(mask_size):
+        mask_ptr[i] = Scalar[mask_type](0)
+
     # Construct buffers.
-    comptime layout_4d = Layout.row_major[4]()
-    var q = LayoutTensor[qkv_type, layout_4d](
-        q_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
-    var k = LayoutTensor[qkv_type, layout_4d](
-        k_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var v = LayoutTensor[qkv_type, layout_4d](
-        v_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var mask = LayoutTensor[mask_type, Layout.row_major[2]()](
-        mask_ptr,
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            Index(seq_len, num_keys)
-        ),
-    )
-    var output = LayoutTensor[qkv_type, layout_4d](
+    var output = TileTensor(
         output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+        row_major((batch_size, seq_len, num_heads, depth)),
     )
 
-    var flash_output = LayoutTensor[qkv_type, layout_4d](
+    var flash_output = TileTensor(
         flash_output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+        row_major((batch_size, seq_len, num_heads, depth)),
     )
-
-    comptime if not against_gpu_naive:
-        comptime assert (
-            qkv_type == mask_type
-        ), "expect qkv and mask have same type for CPU."
-        _naive_attention_with_transpose[qkv_type](
-            output,
-            q,
-            k,
-            v,
-            mask.bitcast[qkv_type](),
-            scale,
-        )
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
@@ -204,44 +174,34 @@ def test[
 
     # Construct device buffers.
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        q_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        k_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        v_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var mask3d = TileTensor(
-        mask_device_ptr.unsafe_ptr(),
-        row_major(Idx(batch_size), Idx(seq_len), Idx(num_keys)),
+        mask_device_ptr,
+        row_major(batch_size, seq_len, num_keys),
     )
     var mask4d = TileTensor(
-        mask_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
-        ),
+        mask_device_ptr,
+        row_major((batch_size, num_heads, seq_len, num_keys)),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        output_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
-    @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         comptime if mask_rank == 3:
             flash_attention(
                 output_device,
@@ -271,7 +231,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -287,13 +247,13 @@ def test[
     comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         var output_ref_device = TileTensor(
-            output_ref_device_ptr.unsafe_ptr(),
+            output_ref_device_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(seq_len),
-                    Idx[num_heads](),
-                    Idx[depth](),
+                    batch_size,
+                    seq_len,
+                    Idx[num_heads],
+                    Idx[depth],
                 )
             ),
         )
@@ -336,6 +296,8 @@ def test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
+    ctx.synchronize()
+
     # This is useful for debugging.
 
     var rtol = 2e-2
@@ -355,13 +317,6 @@ def test[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    mask_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
 
 
 def test_context_encoding[
@@ -482,25 +437,43 @@ def test_context_encoding[
         against_gpu_naive=True,
     ](1, 1, ctx)
 
-    # Large-magnitude inputs to stress-test FMA softmax numerical stability.
-    # Trained models can produce large QK dot products that expose precision
-    # issues in the FMA exp path.
-    test[
-        4,
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=16,
-        group=8,
-        against_gpu_naive=True,
-    ](256, 256, ctx, use_index_input=True)
+    # Adversarial softmax input: prescaled passes, `_fma` NaNs (overflow).
+    # Fill assumes BN=128, so guarded on depth == 128.
+    comptime if depth == 128:
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=depth,
+            num_heads=16,
+            group=8,
+            against_gpu_naive=True,
+        ](256, 256, ctx, use_adversarial_softmax_input=True)
+
+    # Long-context AMD CDNA prefill gate. seq_len=4096 with BF16-output
+    # causal prefill on CDNA fires the gate in `flash_attention_dispatch`,
+    # routing through `mha_prefill_v2`. Validates that (a) the gate builds
+    # + launches the kernel correctly, (b) the tensor adapters in the gate
+    # preserve the data, and (c) the output matches
+    # the gpu_naive reference within BF16 attention tolerance. Guarded on
+    # depth in {64, 128} (the gate's depth eligibility); other depths fall
+    # through to FA2.
+    comptime if depth == 64 or depth == 128:
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=depth,
+            num_heads=16,
+            against_gpu_naive=True,
+        ](4096, 4096, ctx)
 
 
 def test_decoding[
     batch_size: Int,
     depth: Int,
     num_partitions: Optional[Int] = None,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     # BF16 token gen
@@ -580,10 +553,39 @@ def test_decoding[
         num_partitions=num_partitions,
     ](1, 5120, ctx, use_index_input=use_index_input)
 
+    # Stress softmax numerical stability for decode. use_index_input
+    # requires batch_size=1.
+    comptime if batch_size == 1:
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=depth,
+            num_heads=16,
+            group=8,
+            against_gpu_naive=True,
+            batch_size=1,
+            num_partitions=num_partitions,
+        ](1, 128, ctx, use_index_input=True)
+
+        # Adversarial softmax input: prescaled passes, `_fma` NaNs (overflow).
+        comptime if depth == 128:
+            test[
+                4,
+                DType.bfloat16,
+                DType.bfloat16,
+                depth=depth,
+                num_heads=16,
+                group=8,
+                against_gpu_naive=True,
+                batch_size=1,
+                num_partitions=num_partitions,
+            ](1, 256, ctx, use_adversarial_softmax_input=True)
+
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime depths = [64, 128, 256, 512]
+        comptime depths = [64, 80, 128, 256, 512]
 
         comptime for i in range(len(depths)):
             comptime depth = depths[i]

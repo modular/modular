@@ -15,11 +15,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.comm import Allreduce
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    ShardingStrategy,
+    TensorType,
+    TensorValue,
+    Type,
+    Value,
+    ops,
+)
+from max.graph import Module as GraphModule
+from max.nn.comm import Allreduce, Signals
 from max.nn.kernels import tpool_patch_merger
 from max.nn.layer import Module
 
@@ -45,6 +59,7 @@ class Transformer(Module):
 
     def __init__(self, config: VisionConfig) -> None:
         super().__init__()
+        self.config = config
         self.devices = config.devices
         self.merge_kernel_size = (
             config.merge_kernel_size[0],
@@ -194,3 +209,97 @@ class Transformer(Module):
         if self.allreduce is not None:
             return self.allreduce(hs, signal_buffers)
         return hs
+
+    def input_types(self) -> tuple[TensorType | BufferType, ...]:
+        """Returns the graph's input types, in :meth:`__call__`'s argument
+        order, one per device for each argument."""
+        config = self.config
+        devices = self.devices
+        return (
+            *(
+                TensorType(
+                    config.dtype,
+                    shape=[
+                        "n_patches",
+                        config.in_channels,
+                        config.patch_size,
+                        config.patch_size,
+                    ],
+                    device=device,
+                )
+                for device in devices
+            ),
+            *(
+                TensorType(DType.int64, shape=["n_images", 3], device=device)
+                for device in devices
+            ),
+            *(
+                TensorType(DType.uint32, shape=["n_seqlens"], device=device)
+                for device in devices
+            ),
+            *(
+                TensorType(DType.uint32, shape=[1], device=DeviceRef.CPU())
+                for _ in devices
+            ),
+            *(
+                TensorType(DType.int64, shape=["n_patches"], device=device)
+                for device in devices
+            ),
+            *Signals(devices=devices).input_types(),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Groups the flat graph inputs into :meth:`__call__`'s per-device
+        arguments.
+
+        Args:
+            *input_types: The graph's input types, :meth:`input_types`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.devices)
+
+        def forward(*inputs: Value[Any]) -> list[TensorValue]:
+            per_device = [
+                inputs[i : i + n_devices]
+                for i in range(0, 5 * n_devices, n_devices)
+            ]
+            pixel_values, grid_thws, cu_seqlens, max_seqlen, position_ids = [
+                [value.tensor for value in group] for group in per_device
+            ]
+            return self(
+                pixel_values=pixel_values,
+                grid_thws=grid_thws,
+                input_row_offsets=cu_seqlens,
+                max_seq_len=max_seqlen,
+                position_ids=position_ids,
+                signal_buffers=[
+                    value.buffer for value in inputs[5 * n_devices :]
+                ],
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

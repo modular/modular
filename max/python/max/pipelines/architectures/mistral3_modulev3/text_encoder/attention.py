@@ -71,7 +71,11 @@ class EncoderAttention(Module[..., Tensor]):
         head_dim = x.shape[2]
         half_dim = head_dim // 2
 
-        freqs_cis = rope.freqs_cis
+        # ``rope.freqs_cis`` is precomputed on CPU (see the encoder's
+        # ``__init__``) to match the legacy graph API's ``max.nn``
+        # RotaryEmbedding precision; transfer the slice to ``x.device``
+        # so the bf16 multiplication below stays on-device.
+        freqs_cis = rope.freqs_cis.to(x.device)
         freqs = freqs_cis[:seq_len, :]
 
         if len(freqs.shape) == 2:
@@ -109,10 +113,8 @@ class EncoderAttention(Module[..., Tensor]):
         head_dim = x.shape[2]
 
         # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
-        # Use concat instead of tile: tile has no GPU implementation and forces
-        # a CPU round-trip (DtoH + tile + HtoD) for every layer.
         x = F.unsqueeze(x, 2)
-        x = F.concat([x] * n_rep, axis=2)
+        x = F.tile(x, [1, 1, n_rep, 1])
         x = F.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
 
         return x

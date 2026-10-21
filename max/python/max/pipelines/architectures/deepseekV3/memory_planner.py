@@ -1,0 +1,575 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Memory planner for the DeepseekV3 architecture."""
+
+from __future__ import annotations
+
+import logging
+
+from max.dtype import DType
+from max.nn.comm.ep.ep_config import (
+    EPConfig,
+    _ep_fused_moe_requested,
+    calculate_ep_max_tokens_per_rank,
+    estimate_ep_memory_usage,
+)
+from max.nn.comm.ep.ep_manager import (
+    _bound_fused_moe_workspace,
+    _ep_sync_counter_bytes,
+)
+from max.nn.kernels import nvfp4_mla_prefill_convert_bytes
+from max.pipelines.kv_cache import (
+    cache_dtype_for_encoding,
+    is_fp4_kv_cache_format,
+)
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
+from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.modeling.config_enums import (
+    is_float4_encoding,
+    supported_encoding_dtype,
+)
+from max.support.human_readable_formatter import to_human_readable_bytes
+from transformers import AutoConfig
+
+from .model_config import DeepseekV3Config
+
+logger = logging.getLogger("max.pipelines")
+
+
+def _get_mtp_draft_ep_dispatch_dtype(
+    pipeline_config: PipelineConfig,
+) -> DType | None:
+    """Returns the EP dispatch dtype the MTP draft uses, for an FP4 target.
+
+    With an FP4 target the draft dispatches wider than the target does, so
+    the shared EP buffers must be sized for the draft. Returns ``None`` when
+    the override does not apply.
+    """
+    spec_config = pipeline_config.speculative
+    if spec_config is None or not spec_config.is_mtp():
+        return None
+
+    encoding = _select_quantization_encoding(
+        pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
+    )
+    if not is_float4_encoding(encoding):
+        return None
+
+    if pipeline_config.draft_model is None:
+        # MTP baked into the target checkpoint has no separate draft to read an
+        # encoding from. FP4 checkpoints leave the NextN layer's routed experts
+        # unquantized, so the draft dispatches through EP in bfloat16 and the
+        # model upsizes the shared buffers to match (see
+        # ``UnifiedMTPGlm5_2Model``). Size for that here or the estimate misses
+        # the symmetric heap by the dispatch dtype ratio.
+        return DType.bfloat16
+
+    draft_encoding = _select_quantization_encoding(
+        pipeline_config.draft_model, DeepseekV3Config.DEFAULT_ENCODING
+    )
+    return supported_encoding_dtype(draft_encoding)
+
+
+def _ep_max_rank_send_tokens_for_pipeline(
+    pipeline_config: PipelineConfig,
+) -> int:
+    """Upper bound on EP dispatch tokens held on one rank for this pipeline."""
+    return calculate_ep_max_tokens_per_rank(
+        max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+        ep_size=pipeline_config.runtime.ep_size,
+        data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        use_allreduce=pipeline_config.runtime.ep_use_allreduce,
+    )
+
+
+def fused_moe_counter_reserve_memory(
+    pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+) -> int:
+    """Bytes of the fused MoE counters' reserve on all of this node's devices.
+
+    An EP config that gives the experts' FFN width, as the DeepSeek-V3.2 model
+    code does, ends each of a device's EP sync-counter buffers in a fixed
+    reserve for the fused MoE's counters, whether or not the fused MoE runs.
+    The rest of those buffers is main's and stays unplanned. This planner also
+    serves models that give no width and so allocate no reserve; it cannot
+    tell them apart, so it plans the reserve for them too.
+
+    Args:
+        pipeline_config: Pipeline configuration.
+        huggingface_config: HuggingFace model configuration.
+
+    Returns:
+        The reserve bytes over all devices of the node.
+    """
+    n_gpus_per_node = len(pipeline_config.model.device_specs)
+    n_experts = huggingface_config.n_routed_experts
+    use_allreduce = pipeline_config.runtime.ep_use_allreduce
+    with_reserve = _ep_sync_counter_bytes(
+        n_experts,
+        n_gpus_per_node,
+        use_allreduce,
+        huggingface_config.moe_intermediate_size,
+    )
+    without_reserve = _ep_sync_counter_bytes(
+        n_experts, n_gpus_per_node, use_allreduce, 0
+    )
+    return n_gpus_per_node * (with_reserve - without_reserve)
+
+
+def fused_ep_moe_memory(
+    pipeline_config: PipelineConfig,
+    huggingface_config: AutoConfig,
+    dispatch_dtype: DType,
+    max_tokens_per_rank: int,
+) -> int:
+    """Bytes the one-launch fused EP MoE can allocate on all of this node's
+    devices: nothing unless ``MODULAR_EP_FUSED_MOE=1`` asks EP init for it,
+    then the backend's bound for the EP geometry and dispatch element type.
+
+    The plan is made before the checkpoint is parsed, so the dispatch format,
+    its global scales and the shared-expert rows are not known yet. The
+    backend answers the most EP init can allocate for any of them, and a
+    model it refuses gets nothing, so the plan can be high but never short.
+
+    Args:
+        pipeline_config: Pipeline configuration.
+        huggingface_config: HuggingFace model configuration.
+        dispatch_dtype: The target's EP dispatch element type. EP init sets the
+            fused MoE up only on the target's EP config: when an MTP draft
+            makes it allocate the shared buffers from a bfloat16 copy, the
+            backend refuses that copy, so a bound for the target covers both.
+        max_tokens_per_rank: The EP per-rank token capacity.
+
+    Returns:
+        The workspace bytes over all devices of the node.
+    """
+    if not _ep_fused_moe_requested():
+        return 0
+    n_gpus_per_node = len(pipeline_config.model.device_specs)
+    arena, refusal = _bound_fused_moe_workspace(
+        EPConfig(
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            hidden_size=huggingface_config.hidden_size,
+            top_k=huggingface_config.num_experts_per_tok,
+            n_experts=huggingface_config.n_routed_experts,
+            max_tokens_per_rank=max_tokens_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=pipeline_config.runtime.ep_size // n_gpus_per_node,
+            moe_dim=huggingface_config.moe_intermediate_size,
+            use_allreduce=pipeline_config.runtime.ep_use_allreduce,
+        ),
+        dispatch_dtype,
+    )
+    if refusal:
+        logger.info(
+            "Not planning a fused EP MoE workspace: the backend does not"
+            " serve this configuration (%s)",
+            refusal,
+        )
+        return 0
+    logger.info(
+        "Planning the fused EP MoE workspace: "
+        f"{to_human_readable_bytes(arena)} per device"
+    )
+    return n_gpus_per_node * arena
+
+
+def nvfp4_mla_prefill_convert_memory(
+    pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+) -> int:
+    """Bytes the NVFP4 sparse MLA prefill's FP8 conversion can allocate on all
+    of this node's devices.
+
+    Over an NVFP4 cache, a prefill step may convert its context to FP8 once
+    and allocate the copy inside the attention op, outside the graph's
+    planned buffers. Every device converts its own whole latent cache, under
+    TP as under DP, so each reserves the bound.
+
+    Args:
+        pipeline_config: Pipeline configuration.
+        huggingface_config: HuggingFace model configuration.
+
+    Returns:
+        The bytes over all devices of the node, or 0 for another cache
+        format, a decode-only worker, or the conversion turned off.
+    """
+    if pipeline_config.runtime.pipeline_role == "decode_only" or (
+        not is_fp4_kv_cache_format(
+            pipeline_config.model.kv_cache.kv_cache_format
+        )
+    ):
+        return 0
+    runtime = pipeline_config.runtime
+    max_query_tokens = (
+        runtime.max_batch_input_tokens
+        if runtime.enable_chunked_prefill
+        else pipeline_config.model.max_length or 0
+    )
+    per_device = nvfp4_mla_prefill_convert_bytes(
+        max_query_tokens,
+        top_k=huggingface_config.index_topk,
+        row_dim=huggingface_config.kv_lora_rank
+        + huggingface_config.qk_rope_head_dim,
+        page_size=pipeline_config.model.kv_cache.kv_cache_page_size,
+    )
+    memory = len(pipeline_config.model.device_specs) * per_device
+    logger.info(
+        "Estimated NVFP4 MLA prefill conversion scratch: "
+        f"{to_human_readable_bytes(memory)}"
+    )
+    return memory
+
+
+def ep_fuse_ffn_combine_send_for_pipeline(
+    pipeline_config: PipelineConfig,
+    huggingface_config: AutoConfig,
+) -> bool:
+    """Whether the MoE FFN should send its output straight to the peers.
+
+    Called by both the model that builds the graph and the planner that sizes
+    memory for it, because the planner drops a buffer on this answer: it must
+    never be true where the graph would keep the tensor. An over-reserve
+    wastes memory, an under-reserve is an OOM. Conditions only the layer can
+    see raise there instead of narrowing here, so a condition the planner
+    cannot predict never widens what it drops.
+
+    Defaults on except for a decode-only worker. Allocation is a graph-level
+    property, so a role serving both phases gets one answer for both.
+
+    Args:
+        pipeline_config: Pipeline configuration.
+        huggingface_config: HuggingFace model configuration.
+
+    Returns:
+        Whether to fuse the combine send into the FFN epilogue.
+    """
+    explicit = pipeline_config.runtime.ep_fuse_ffn_combine_send
+    requested = (
+        explicit
+        if explicit is not None
+        else pipeline_config.runtime.pipeline_role != "decode_only"
+    )
+    if not requested:
+        return False
+
+    # Allreduce routes within the device and never writes peer buffers.
+    if pipeline_config.runtime.ep_use_allreduce:
+        return False
+
+    # The send has already done the async half of the combine, so it needs the
+    # split async/wait pair. The EP forward only takes that path when an
+    # unfused shared expert gives it something to overlap.
+    if getattr(huggingface_config, "n_shared_experts", 0) != 1:
+        return False
+
+    return is_float4_encoding(
+        _select_quantization_encoding(
+            pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
+        )
+    )
+
+
+class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
+    """Memory planner for DeepseekV3 models.
+
+    Accounts for MLA up-projection buffers, expert-parallel routing memory,
+    and EP SHMEM communication buffers.
+    """
+
+    _always_signal_buffers = True
+
+    def _ep_max_rank_send_tokens(self, pipeline_config: PipelineConfig) -> int:
+        """Upper bound on EP dispatch tokens held on one rank.
+
+        Delegates to the module-level helper by default. Subclasses may
+        override for architecture-specific EP token sizing.
+        """
+        return _ep_max_rank_send_tokens_for_pipeline(pipeline_config)
+
+    def _ep_fuse_ffn_combine_send(
+        self,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> bool:
+        """Whether the graph this plans for fuses the combine send.
+
+        Must match what the model builds: dropping the FFN output buffer for a
+        graph that still materializes it under-reserves activation memory.
+        Subclasses whose graph never fuses override this to return ``False``.
+        """
+        return ep_fuse_ffn_combine_send_for_pipeline(
+            pipeline_config, huggingface_config
+        )
+
+    def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
+        """Estimates weight memory for DeepseekV3 models.
+
+        Adjusts the raw weight file size to account for expert-parallel
+        sharding, shared expert replication, and DP attention duplication.
+
+        Args:
+            pipeline_config: Pipeline configuration.
+
+        Returns:
+            Estimated weight memory in bytes.
+        """
+        model_config = pipeline_config.model
+        weights_size = model_config.weights_size()
+        n_gpus_per_node = len(model_config.device_specs)
+
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
+        )
+
+        def _n_elems_to_bytes(n_elems: int) -> int:
+            dtype = supported_encoding_dtype(encoding).size_in_bytes
+            if is_float4_encoding(encoding):
+                # Account for the scales. For NVFP4 format, every 16 FP4 elements
+                # share one FP8 scale factor. The size of the scales is one
+                # eighth of the size of the FP4 quants (8 bits / (16 * 4 bits)).
+                return int(n_elems // 2 * dtype * 1.125)
+            else:
+                return n_elems * dtype
+
+        config = model_config.huggingface_config
+        assert config is not None
+        n_sparse_layers = (
+            config.num_hidden_layers - config.first_k_dense_replace
+        )
+        n_mtp_layers = config.num_nextn_predict_layers
+
+        # Note: All the following calculations are not exact, but they are
+        # better than directly using the raw weights size.
+
+        # First, Calculate the lm_head/embed_tokens size.
+        # These are always in BF16.
+        lm_head_size = (
+            config.vocab_size
+            * config.hidden_size
+            * DType.bfloat16.size_in_bytes
+        )
+        embed_tokens_size = lm_head_size
+
+        # Subtract the lm_head/embed_tokens size from the weights size
+        weights_size -= lm_head_size + embed_tokens_size
+        weights_size -= (lm_head_size + embed_tokens_size) * n_mtp_layers
+
+        # We don't use the MTP module for now, so subtract the MTP attn/moe size.
+        # Estimate the MTP module size by assuming the MTP layer is of the same
+        # size as a sparse model layer.
+        weights_size = int(
+            weights_size * n_sparse_layers / (n_sparse_layers + n_mtp_layers)
+        )
+
+        # Calculate the routing experts and the shared experts size.
+        expert_elems = (
+            config.moe_intermediate_size * config.hidden_size * 3
+        )  # A factor of 3 accounts for the gate/up/down proj weights.
+        expert_size = _n_elems_to_bytes(expert_elems)
+        routing_experts_size = (
+            n_sparse_layers * config.n_routed_experts * expert_size
+        )
+        shared_experts_size = (
+            n_sparse_layers * config.n_shared_experts * expert_size
+        )
+
+        # Estimate the size of the attention weights.
+        attn_weights_size = (
+            weights_size - routing_experts_size - shared_experts_size
+        )
+
+        # If we use DP attention, attention weights are duplicated on each DP rank.
+        total_size = attn_weights_size * model_config.data_parallel_degree
+
+        # The shared experts are duplicated on each device.
+        total_size += shared_experts_size * n_gpus_per_node
+
+        ep_size = max(pipeline_config.runtime.ep_size, 1)
+        if ep_size == 1:
+            total_size += routing_experts_size
+        else:
+            # we don't support mixing EP and TP strategies yet.
+            # ep_size must be equal to n_gpus_per_node * n_nodes
+            assert ep_size % n_gpus_per_node == 0
+            n_nodes = ep_size // n_gpus_per_node
+            total_size += routing_experts_size // n_nodes
+
+        # Add back the lm_head/embed_tokens size, they will never be duplicated.
+        total_size += lm_head_size + embed_tokens_size
+
+        return total_size
+
+    def estimate_activation_memory(
+        self,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Estimates activation memory for DeepseekV3 models.
+
+        Accounts for MLA up-projection buffers during prefill, expert-parallel
+        routing buffers, EP SHMEM communication buffers, optional CUDA graph
+        capture headroom, and the FP8 conversion scratch of sparse prefill
+        over an NVFP4 cache.
+
+        Args:
+            pipeline_config: Pipeline configuration.
+            huggingface_config: HuggingFace model configuration.
+
+        Returns:
+            Estimated activation memory in bytes.
+        """
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
+        )
+        mla_activation_memory: int = 0
+        moe_activation_memory: int = 0
+        ep_buffer_memory = 0
+
+        # During the prefill, we need to up-project all the KV cache for
+        # current requests. The total context length of requests in a batch
+        # should be limited by max_batch_total_tokens.
+        if pipeline_config.runtime.pipeline_role != "decode_only":
+            max_kv_length: int = 0
+
+            if pipeline_config.runtime.max_batch_total_tokens is None:
+                # If max_batch_total_tokens is not set, we use max_length.
+                max_kv_length = pipeline_config.model.max_length or 0
+            else:
+                max_kv_length = pipeline_config.runtime.max_batch_total_tokens
+
+            cache_dtype = cache_dtype_for_encoding(
+                encoding,
+                pipeline_config.model.kv_cache.kv_cache_format,
+            )
+            mla_activation_memory += (
+                pipeline_config.model.data_parallel_degree
+                * 2  # 2 for K and V
+                * max_kv_length
+                * huggingface_config.num_attention_heads
+                * huggingface_config.qk_nope_head_dim
+                * cache_dtype.size_in_bytes
+            )
+
+        # Estimate buffer and activation memory during Expert Parallel MoE.
+        if pipeline_config.runtime.ep_size > 1:
+            n_gpus_per_node = len(pipeline_config.model.device_specs)
+
+            ep_max_rank_send_tokens = self._ep_max_rank_send_tokens(
+                pipeline_config
+            )
+
+            # Calculate the maximum number of tokens a rank may receive during
+            # all-to-all routing. Each token selects top_k experts, and in the
+            # worst case all selections land on one rank.
+            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
+                huggingface_config.n_routed_experts,
+                pipeline_config.runtime.ep_size
+                * huggingface_config.num_experts_per_tok,
+            )
+
+            if pipeline_config.runtime.ep_use_allreduce:
+                max_recv_tokens_per_rank = (
+                    pipeline_config.runtime.max_batch_input_tokens
+                    * min(
+                        huggingface_config.n_routed_experts // n_gpus_per_node,
+                        huggingface_config.num_experts_per_tok,
+                    )
+                )
+
+            # The maximal activation memory usage happens at the second
+            # grouped_matmul in the MoE layer. The input for that matmul would
+            # of shape [max_recv_tokens_per_rank, moe_intermediate_size].
+            moe_activation_memory += (
+                max_recv_tokens_per_rank
+                * huggingface_config.moe_intermediate_size
+                * supported_encoding_dtype(encoding).size_in_bytes
+            )
+
+            # The output would be of shape [max_recv_tokens_per_rank, hidden_size]
+            # -- unless the FFN sends it straight to the peers from its own
+            # epilogue, in which case it is never materialized and reserving
+            # for it would hand the KV cache a bill for a tensor that does not
+            # exist. Both sides read one flag so the estimate cannot disagree
+            # with the graph.
+            if not self._ep_fuse_ffn_combine_send(
+                pipeline_config, huggingface_config
+            ):
+                moe_activation_memory += (
+                    max_recv_tokens_per_rank
+                    * huggingface_config.hidden_size
+                    * DType.bfloat16.size_in_bytes  # output is always bfloat16.
+                )
+
+            # Adding 256MB per GPU to account for misc items (e.g. FP8 scalars).
+            moe_activation_memory += 256 * 1024 * 1024
+            moe_activation_memory *= n_gpus_per_node
+
+            # EP SHMEM communication buffers are persistent (allocated once at
+            # model init, not freed between layers).
+            n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
+
+            ep_dispatch_dtype = supported_encoding_dtype(encoding)
+            draft_ep_dtype = _get_mtp_draft_ep_dispatch_dtype(pipeline_config)
+            if draft_ep_dtype is not None:
+                ep_dispatch_dtype = draft_ep_dtype
+
+            per_device_ep_memory = estimate_ep_memory_usage(
+                hidden_size=huggingface_config.hidden_size,
+                dispatch_dtype=ep_dispatch_dtype,
+                combine_dtype=DType.bfloat16,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
+                n_experts=huggingface_config.n_routed_experts,
+                n_nodes=n_nodes,
+                n_gpus_per_node=n_gpus_per_node,
+                top_k=huggingface_config.num_experts_per_tok,
+                use_allreduce=pipeline_config.runtime.ep_use_allreduce,
+            )
+            ep_buffer_memory = per_device_ep_memory * n_gpus_per_node
+
+            reserve_memory = fused_moe_counter_reserve_memory(
+                pipeline_config, huggingface_config
+            )
+            logger.info(
+                "Estimated fused MoE counter reserve: "
+                f"{to_human_readable_bytes(reserve_memory)}"
+            )
+            ep_buffer_memory += reserve_memory
+            ep_buffer_memory += fused_ep_moe_memory(
+                pipeline_config,
+                huggingface_config,
+                supported_encoding_dtype(encoding),
+                ep_max_rank_send_tokens,
+            )
+
+            logger.info(
+                "Estimated EP SHMEM buffer memory: "
+                f"{to_human_readable_bytes(ep_buffer_memory)}"
+            )
+
+        # We only need to consider the maximum of the MLA and MoE activation
+        # memories, because the MLA and MoE layers are executed sequentially.
+        activation_memory = max(mla_activation_memory, moe_activation_memory)
+        activation_memory += ep_buffer_memory
+        activation_memory += nvfp4_mla_prefill_convert_memory(
+            pipeline_config, huggingface_config
+        )
+
+        if activation_memory != 0:
+            logger.info(
+                f"Estimated activation memory: {to_human_readable_bytes(activation_memory)}"
+            )
+
+        return activation_memory

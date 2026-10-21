@@ -36,7 +36,7 @@ def test_tensor_value__T(input_type: TensorType) -> None:
 @given(input_type=...)
 def test_buffer__not_tensorvalue(input_type: BufferType) -> None:
     assert not _is_strong_tensor_value_like(input_type)
-    with Graph("buffer", input_types=[input_type]) as graph:
+    with Graph("buffer", input_types=[input_type]):
         with pytest.raises(TypeError):
             TensorValue(input_type)  # type: ignore
 

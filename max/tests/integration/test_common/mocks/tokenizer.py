@@ -18,12 +18,13 @@ import string
 from collections.abc import Sequence
 
 import numpy as np
-from max.interfaces import (
+from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
-    TokenBuffer,
+    TokenIds,
 )
-from max.pipelines.core import TextContext
 
 
 class MockTextTokenizer(
@@ -60,8 +61,8 @@ class MockTextTokenizer(
         return False
 
     @property
-    def eos(self) -> int:
-        return self.vocab_size - 10
+    def eos_token_ids(self) -> set[int]:
+        return {self.vocab_size - 10}
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         self.i += 1
@@ -87,9 +88,7 @@ class MockTextTokenizer(
 
         if self.max_length:
             if len(encoded) > self.max_length:
-                raise ValueError(
-                    "encoded is greater than the max_length of the tokenizer"
-                )
+                raise PromptTooLongError(len(encoded), self.max_length)
 
         if request.sampling_params.max_new_tokens:
             max_length = len(encoded) + request.sampling_params.max_new_tokens
@@ -99,8 +98,8 @@ class MockTextTokenizer(
             max_length = self.max_length
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
-            if request.response_format
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 
@@ -120,5 +119,7 @@ class MockTextTokenizer(
     ) -> np.ndarray:
         return np.array([self.char_to_int[c] for c in prompt])
 
-    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
-        return "".join([self.int_to_char[c] for c in encoded])
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
+        return "".join(
+            self.int_to_char[c] for c in np.atleast_1d(encoded).tolist()
+        )

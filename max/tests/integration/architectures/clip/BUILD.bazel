@@ -2,16 +2,31 @@
 
 load(
     "//bazel:api.bzl",
+    "modular_py_library",
     "modular_py_test",
     "requirement",
 )
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+modular_py_library(
+    name = "clip_attention",
+    testonly = True,
+    srcs = ["_clip_attention.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("pydantic"),
+    ],
+)
 
 modular_py_test(
     name = "clip",
@@ -25,7 +40,7 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -36,11 +51,11 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = [
+        ":clip_attention",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures",
         requirement("torch"),
         requirement("transformers"),
     ],

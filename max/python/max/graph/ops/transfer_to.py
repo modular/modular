@@ -80,6 +80,10 @@ def transfer_to(
         # NOTE: leave the out chain unused: transfers between device and host
         # don't pose a deadlock risk with other multi-device ops, so their
         # sequence doesn't matter.
+        # TODO: migrate to `_add_op_generated(rmo.MoTransferOp, ...)` when the
+        # RMO_MOTransferOp gets a nanobind binding. The MO-side `mo.TransferOp`
+        # would change the graph-time op type from `rmo.mo.transfer` to
+        # `mo.transfer`, which downstream lowering doesn't expect.
         (result, _) = graph._add_op(
             rmo.mo_transfer,
             TensorType(dtype=x.dtype, shape=x.shape, device=device).to_mlir(),
@@ -106,7 +110,10 @@ def transfer_to(
     # collectives and transfers.
     in_chain = graph._add_op(
         mo.chain_create,
-        [graph.device_chains[x.type.device], graph.device_chains[device]],
+        [
+            graph.device_chains[x.type.device],
+            graph.device_chains[device],
+        ],
     )[0]
 
     (result, out_chain) = graph._add_op(

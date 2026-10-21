@@ -17,7 +17,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from pydantic import Field
 from typing_extensions import Self
 
@@ -73,7 +73,3 @@ class ZImageConfig(MAXModelConfigBase):
             * self.in_channels
         )
         return self.dim, out_dim
-
-
-# Back-compat alias for call sites that refer to the config as a "base" type.
-ZImageConfigBase = ZImageConfig

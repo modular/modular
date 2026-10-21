@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from nn.conv.conv import conv_cudnn, conv_gpu
@@ -68,45 +68,61 @@ def test_conv_cudnn[
     comptime output_dim_flattened = Nout * Hout * Wout * Cout
 
     # Define TileTensor layouts
-    comptime input_tt_layout = row_major(
-        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
-    )
-    comptime filter_tt_layout = row_major(
-        (Idx[R](), Idx[S](), Idx[C](), Idx[F]())
-    )
-    comptime filter_nchw_tt_layout = row_major(
-        (Idx[F](), Idx[C](), Idx[R](), Idx[S]())
-    )
+    comptime input_tt_layout = row_major((Idx[N], Idx[H], Idx[W], Idx[C_in]))
+    comptime filter_tt_layout = row_major((Idx[R], Idx[S], Idx[C], Idx[F]))
+    comptime filter_nchw_tt_layout = row_major((Idx[F], Idx[C], Idx[R], Idx[S]))
     comptime output_tt_layout = row_major(
-        (Idx[Nout](), Idx[Hout](), Idx[Wout](), Idx[Cout]())
+        (Idx[Nout], Idx[Hout], Idx[Wout], Idx[Cout])
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[input_type]](input_dim_flattened)
-    var filter_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
-    var filter_nchw_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
-    var output_ref_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
-    var output_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
+    var input_host_ptr = ctx.enqueue_create_host_buffer[input_type](
+        input_dim_flattened
+    )
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_dim_flattened
+    )
+    var filter_nchw_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_dim_flattened
+    )
+    var output_ref_host_ptr = ctx.enqueue_create_host_buffer[output_type](
+        output_dim_flattened
+    )
+    var output_host_ptr = ctx.enqueue_create_host_buffer[output_type](
+        output_dim_flattened
+    )
 
     # Create host TileTensors
     var input_host = TileTensor(
-        Span(ptr=input_host_ptr, length=input_dim_flattened),
+        Span(
+            unsafe_ptr=input_host_ptr.unsafe_ptr(), length=input_dim_flattened
+        ),
         input_tt_layout,
     )
     var filter_host = TileTensor(
-        Span(ptr=filter_host_ptr, length=filter_dim_flattened),
+        Span(
+            unsafe_ptr=filter_host_ptr.unsafe_ptr(), length=filter_dim_flattened
+        ),
         filter_tt_layout,
     )
     var filter_nchw_host = TileTensor(
-        Span(ptr=filter_nchw_host_ptr, length=filter_dim_flattened),
+        Span(
+            unsafe_ptr=filter_nchw_host_ptr.unsafe_ptr(),
+            length=filter_dim_flattened,
+        ),
         filter_nchw_tt_layout,
     )
     var output_ref_host = TileTensor(
-        Span(ptr=output_ref_host_ptr, length=output_dim_flattened),
+        Span(
+            unsafe_ptr=output_ref_host_ptr.unsafe_ptr(),
+            length=output_dim_flattened,
+        ),
         output_tt_layout,
     )
     var output_host = TileTensor(
-        Span(ptr=output_host_ptr, length=output_dim_flattened),
+        Span(
+            unsafe_ptr=output_host_ptr.unsafe_ptr(), length=output_dim_flattened
+        ),
         output_tt_layout,
     )
 
@@ -198,13 +214,6 @@ def test_conv_cudnn[
                     )
     print("Succeed")
 
-    # Cleanup host memory
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
-    output_ref_host_ptr.free()
-    output_host_ptr.free()
-
     # Cleanup device buffers
     _ = input_dev^
     _ = filter_dev^
@@ -220,8 +229,11 @@ def main() raises:
 
         test_conv_cudnn[
             IndexList[4](1, 1, 550, 1024),  # input  (NHWC)
-            IndexList[4](
-                1, 7, 1024, 1024
+            (
+                1,
+                7,
+                1024,
+                1024,
             ),  # filter (RSCF) (height, width, in_channels, out_channels)
             IndexList[4](1, 1, 550, 1024),  # output (NHWC)
             DType.float32,
@@ -229,8 +241,11 @@ def main() raises:
             DType.float32,
             IndexList[2](1, 1),  # stride
             IndexList[2](1, 1),  # dilation
-            IndexList[4](
-                0, 0, 3, 3
+            (
+                0,
+                0,
+                3,
+                3,
             ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after] (symmetric: pad_h=0, pad_w=3)
         ](ctx)
 
@@ -247,8 +262,11 @@ def main() raises:
                 dtype,
                 IndexList[2](1, 1),  # stride
                 IndexList[2](1, 1),  # dilation
-                IndexList[4](
-                    0, 0, 0, 0
+                (
+                    0,
+                    0,
+                    0,
+                    0,
                 ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
             ](ctx)
 
@@ -281,8 +299,11 @@ def main() raises:
             DType.float32,
             IndexList[2](1, 1),  # stride
             IndexList[2](1, 1),  # dilation
-            IndexList[4](
-                0, 0, 0, 0
+            (
+                0,
+                0,
+                0,
+                0,
             ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx1)
 
@@ -299,8 +320,11 @@ def main() raises:
                 DType.float32,
                 IndexList[2](1, 1),  # stride
                 IndexList[2](1, 1),  # dilation
-                IndexList[4](
-                    0, 0, 0, 0
+                (
+                    0,
+                    0,
+                    0,
+                    0,
                 ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
             ](ctx2)
 

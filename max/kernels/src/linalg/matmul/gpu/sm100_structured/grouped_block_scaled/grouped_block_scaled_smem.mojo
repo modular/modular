@@ -22,8 +22,7 @@ Additional SMEM allocations:
 Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
 """
 
-from std.gpu.memory import AddressSpace
-from std.gpu.host.nvidia.tma import TMADescriptor
+from max.gpu.host.nvidia.tma import TMADescriptor
 
 from ..block_scaled.block_scaled_smem import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
@@ -52,9 +51,19 @@ struct GroupedBlockScaledSmem[
     Thin wrapper over BlockScaledTileCore + SmemPipelineBundle + TMA descriptors.
 
     Layout in SMEM:
-    1. Tile storage (via core) — A, B, C, SFA, SFB tiles
+    1. Tile storage (via core): A, B, C, SFA, SFB tiles
     2. Pipeline barriers
     3. Tensormap descriptors (5 x 128 bytes = 640 bytes)
+
+    Parameters:
+        a_type: Element type of the A operand matrix.
+        b_type: Element type of the B operand matrix.
+        c_type: Element type of the C output matrix.
+        sfa_dtype: Element type of the A operand scaling factors.
+        sfb_dtype: Element type of the B operand scaling factors.
+        transpose_b: Whether the B operand is stored in transposed layout.
+        config: Block-scaled matmul configuration providing tile shapes,
+            pipeline stage counts, and scaling factor layout parameters.
     """
 
     # ========== Core (tile storage + constants) ==========
@@ -91,40 +100,40 @@ struct GroupedBlockScaledSmem[
     var tensormap_c: TMADescriptor
 
     # ========== Tile Accessors (forwarding) ==========
-    @always_inline
+    @inline(.always)
     def a_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.ATileArray:
         """Get A tile array accessor."""
         return self.core.a_tiles()
 
-    @always_inline
+    @inline(.always)
     def b_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.BTileArray:
         """Get B tile array accessor."""
         return self.core.b_tiles()
 
-    @always_inline
+    @inline(.always)
     def c_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.CTileArray:
         """Get C tile array accessor."""
         return self.core.c_tiles()
 
-    @always_inline
+    @inline(.always)
     def sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.SFATileArray:
         """Get SFA tile array accessor."""
         return self.core.sfa_tiles()
 
-    @always_inline
+    @inline(.always)
     def sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.SFBTileArray:
         """Get SFB tile array accessor."""
         return self.core.sfb_tiles()
 
     # ========== Size Utilities ==========
     @staticmethod
-    @always_inline
+    @inline(.always)
     def tensormap_storage_size() -> Int:
         """Size of tensormap storage in bytes (5 x 128 = 640 bytes)."""
         return NUM_GROUPED_TENSORMAPS * TMA_DESCRIPTOR_BYTES
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def total_tile_size() -> Int:
         """Total tile storage size (A+B+SFA+SFB+C) in elements."""
         return Self.Core.total_tile_size()

@@ -11,6 +11,22 @@ max.experimental.nn
 
 .. currentmodule:: max.experimental.nn
 
+Submodules
+----------
+
+.. autosummary::
+   :nosignatures:
+
+   max.experimental.nn.norm
+   max.experimental.nn.rope
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   experimental.nn.norm
+   experimental.nn.rope
+
 Base classes
 ------------
 
@@ -21,7 +37,9 @@ Base classes
 
    Module
    ModuleList
+   PinnedDeviceTensor
    Sequential
+   TransparentModule
 
 Linear layers
 -------------
@@ -35,6 +53,34 @@ Linear layers
    Embedding
    Linear
 
+LoRA
+----
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   LoRA
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   lora_layers
+   lora_parameters
+
+Hyper-connection
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   HyperConnection
+
 Functions
 ---------
 
@@ -43,13 +89,16 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   as_subgraph
    module_dataclass
 
-Submodules
-----------
+Mesh axes
+---------
 
-.. toctree::
-   :maxdepth: 1
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
 
-   experimental.nn.norm
-   experimental.nn.rope
+   ~max.experimental.nn.common_layers.mesh_axis.DP
+   ~max.experimental.nn.common_layers.mesh_axis.TP

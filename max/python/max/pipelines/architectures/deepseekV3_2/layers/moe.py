@@ -16,11 +16,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kernels import moe_create_indices
-from max.nn.moe import MoEQuantized
-from max.nn.moe.quant_strategy import (
-    silu_gate,
-)
+from max.nn.comm.ep.ep_kernels import fused_silu
+from max.nn.kernels import moe_create_indices, moe_finalize
+from max.nn.moe import MoEQuantized, NvMxf4f8Strategy
 
 
 class DeepseekV3_2MoE(MoEQuantized):
@@ -38,9 +36,6 @@ class DeepseekV3_2MoE(MoEQuantized):
 
     def __init__(self, *args, **kwargs):
         # minimize code paths, KISS principle
-        assert not kwargs.get("apply_router_weight_first", True), (
-            "apply_router_weight_first argument not supported"
-        )
         assert kwargs.get("has_shared_experts", False), (
             "has_shared_experts argument not supported"
         )
@@ -70,7 +65,6 @@ class DeepseekV3_2MoE(MoEQuantized):
             self.gate_up_proj,
             gate_up_scales,
             expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
-            tokens_padded_per_expert=True,
             expert_inputs=expert_inputs,
         )
         # V3.2: Cast to float32 at the silu
@@ -88,7 +82,6 @@ class DeepseekV3_2MoE(MoEQuantized):
             self.down_proj,
             down_scales,
             expert_scales=nvfp4.down_expert if nvfp4 else None,
-            tokens_padded_per_expert=True,
             expert_inputs=down_inputs,
         )
 
@@ -105,10 +98,6 @@ class DeepseekV3_2MoE(MoEQuantized):
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
-        assert not self.apply_router_weight_first, (
-            "apply_router_weight_first must be False for quantized MoE"
-        )
-
         router_idx, router_weight = self.gate(x)
         if self._ep_batch_manager:
             return self._ep_call(
@@ -116,34 +105,48 @@ class DeepseekV3_2MoE(MoEQuantized):
             )
 
         router_idx = ops.reshape(router_idx, [-1])
-        seq_len = x.shape[0]
 
-        (
-            token_order,
-            expert_start,
-            restore_order,
-            expert_ids,
-            usage_stats,
-        ) = moe_create_indices(
-            ops.cast(router_idx, DType.int32), self.num_experts
+        create_indices_result = moe_create_indices(
+            ops.cast(router_idx, DType.int32),
+            self.num_experts,
+            needs_scales_offset=self._is_nvfp4,
         )
+        token_order, expert_start, restore_order, expert_ids, usage_stats = (
+            create_indices_result[:5]
+        )
+        scales_offset = create_indices_result[5] if nvfp4 else None
 
-        permutated_states = ops.gather(
-            x,
-            ops.cast(token_order // self.num_experts_per_token, DType.int32),
-            axis=0,
-        )
+        total_m = ops.shape_to_tensor(token_order.shape)[0].cast(DType.uint32)
 
-        permuted_quant, permuted_scales = strategy.quantize(
-            permutated_states,
-            self._token_group_size,
-            nvfp4.gate_up_input if nvfp4 else None,
-        )
+        if nvfp4:
+            assert scales_offset is not None
+            assert isinstance(strategy, NvMxf4f8Strategy)
+            # The grouped quantize gathers rows through the slot order itself,
+            # dividing by the top-k in its loads, so neither the token indices
+            # nor the permuted activations materialize.
+            permuted_quant, permuted_scales = strategy.grouped_quantize(
+                x,
+                self._token_group_size,
+                nvfp4.gate_up_input,
+                expert_start,
+                scales_offset,
+                expert_ids,
+                indices=token_order,
+                indices_divisor=self.num_experts_per_token,
+            )
+        else:
+            gather_indices = ops.cast(
+                token_order // self.num_experts_per_token, DType.int32
+            )
+            permuted_quant, permuted_scales = strategy.quantize(
+                ops.gather(x, gather_indices, axis=0),
+                self._token_group_size,
+            )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
             self.gate_up_proj_scales,
             self.down_proj_scales,
-            permutated_states.device,
+            x.device,
         )
 
         expert_inputs: tuple[TensorValue, ...] = (
@@ -155,12 +158,10 @@ class DeepseekV3_2MoE(MoEQuantized):
         )
 
         if nvfp4:
-            a_scale_offsets = ops.constant(
-                0, dtype=DType.uint32, device=x.device
-            ).broadcast_to([expert_ids.shape[0]])
+            assert scales_offset is not None
             expert_inputs = (
                 *expert_inputs[:3],
-                a_scale_offsets,
+                scales_offset,
                 *expert_inputs[3:],
             )
 
@@ -169,16 +170,33 @@ class DeepseekV3_2MoE(MoEQuantized):
             gate_up_scales,
             expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
             expert_inputs=expert_inputs,
+            estimated_total_m=total_m,
         )
         # V3.2: Cast to float32 at the silu
         # https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/87e509a2e5a100d221c97df52c6e8be7835f0057/inference/model.py#L744
         gate_up_projs = gate_up_projs.cast(DType.float32)
-        gate_up_projs = silu_gate(gate_up_projs, self.moe_dim)
-        gate_up_quant, gate_up_scales = strategy.quantize(
-            gate_up_projs,
-            self._token_group_size,
-            nvfp4.down_input if nvfp4 else None,
-        )
+        gated_activation_fn = self.activation.gated_activation_fn
+        if gated_activation_fn is not None:
+            gate_up_projs = gated_activation_fn(gate_up_projs, self.moe_dim)
+        else:
+            gate_up_projs = fused_silu(
+                gate_up_projs, expert_start, activation=self.activation
+            )
+        if nvfp4:
+            assert scales_offset is not None
+            gate_up_quant, gate_up_scales = strategy.grouped_quantize(
+                gate_up_projs,
+                self._token_group_size,
+                nvfp4.down_input,
+                expert_start,
+                scales_offset,
+                expert_ids,
+            )
+        else:
+            gate_up_quant, gate_up_scales = strategy.quantize(
+                gate_up_projs,
+                self._token_group_size,
+            )
 
         down_inputs = (gate_up_quant, gate_up_scales) + expert_inputs[2:]
 
@@ -187,14 +205,12 @@ class DeepseekV3_2MoE(MoEQuantized):
             down_scales,
             expert_scales=nvfp4.down_expert if nvfp4 else None,
             expert_inputs=down_inputs,
+            estimated_total_m=total_m,
         )
 
-        down_projs = ops.gather(down_projs, restore_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, down_projs.shape[-1]]
+        routed_expert_out = moe_finalize(
+            down_projs, restore_order, router_weight, DType.float32
         )
-
-        routed_expert_out = ops.unsqueeze(router_weight, axis=1) @ down_projs
-        routed_expert_out = ops.squeeze(routed_expert_out, axis=1)
 
         if self.has_shared_experts:
             routed_expert_out += self.shared_experts(x).cast(DType.float32)

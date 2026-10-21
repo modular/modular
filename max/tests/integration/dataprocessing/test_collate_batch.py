@@ -14,13 +14,18 @@
 
 import numpy as np
 import pytest
-from hypothesis import assume, given
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
-from max.pipelines.dataprocessing import (
+from max.pipelines.modeling.dataprocessing import (
     PaddingDirection,
     batch_padded_tokens_and_mask,
     collate_batch,
 )
+
+# Hypothesis's per-example deadline trips on slow CI workers (macOS BuildBuddy)
+# where the first example absorbs JIT/import warmup. The same example then
+# runs in <1ms on a warm worker, so this is a timing artifact, not a real bug.
+_NO_DEADLINE = settings(deadline=None)
 
 # Shared batch size between start_pos and tokens.
 batch_size_strategy = st.shared(
@@ -46,6 +51,7 @@ tokens_strategy = batch_size_strategy.flatmap(
 )
 
 
+@_NO_DEADLINE
 @given(arrays=..., pad_value=...)
 def test_collate_batch(arrays: list[list[int]], pad_value: int) -> None:
     assume(arrays)
@@ -74,6 +80,7 @@ def test_collate_batch(arrays: list[list[int]], pad_value: int) -> None:
         assert np.all(padded[:pad_len] == pad_value)
 
 
+@_NO_DEADLINE
 @given(arrays=..., pad_value=...)
 def test_collate_batch__pad_right(
     arrays: list[list[int]], pad_value: int
@@ -104,12 +111,14 @@ def test_collate_batch__pad_right(
         assert np.all(padded[len(array) :] == pad_value)
 
 
+@_NO_DEADLINE
 @given(pad_value=...)
 def test_collate_batch__no_items(pad_value: int) -> None:
     with pytest.raises(ValueError):
         collate_batch([], pad_value=pad_value)
 
 
+@_NO_DEADLINE
 @given(start_pos=start_pos_strategy, tokens=tokens_strategy)
 def test_collate_mask__tokens_and_mask_shapes_match(
     start_pos: list[int],

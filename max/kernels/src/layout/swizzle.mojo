@@ -34,11 +34,12 @@ optimizes memory access patterns for higher throughput.
 """
 
 from std.sys import simd_width_of, size_of
+from std.math.uutils import udivmod
 
 from std.bit import log2_floor
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
-from .int_tuple import flatten
+from .int_tuple import flatten, IntTuple
 from .layout import Layout
 
 # ===-----------------------------------------------------------------------===#
@@ -231,41 +232,7 @@ from .layout import Layout
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-def shiftr(a: Int, s: Int) -> Int:
-    """Shift right or left based on sign of shift amount.
-
-    Performs a right shift if `s` is positive, or a left shift if
-    `s` is negative.
-
-    Args:
-        a: The integer value to shift.
-        s: The shift amount. Positive for right, negative for left.
-
-    Returns:
-        The shifted integer value.
-    """
-    return a >> s if s > 0 else a << -s
-
-
-@always_inline
-def shiftl(a: Int, s: Int) -> Int:
-    """Shift left or right based on sign of shift amount.
-
-    Performs a left shift if `s` is positive, or a right shift if
-    `s` is negative.
-
-    Args:
-        a: The integer value to shift.
-        s: The shift amount. Positive for left, negative for right.
-
-    Returns:
-        The shifted integer value.
-    """
-    return a << s if s > 0 else a >> -s
-
-
-@always_inline
+@inline(.always)
 def shiftr(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
     """Shift right/left based on sign of shift for scalars.
 
@@ -282,7 +249,7 @@ def shiftr(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
     return a >> s if s > 0 else a << -s
 
 
-@always_inline
+@inline(.always)
 def shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
     """Shift left/right based on sign of shift for scalars.
 
@@ -304,9 +271,7 @@ def shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-struct Swizzle(
-    Copyable, ImplicitlyDestructible, TrivialRegisterPassable, Writable
-):
+struct Swizzle(Copyable, Deinitable, TrivialRegisterPassable, Writable):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared
@@ -336,9 +301,6 @@ struct Swizzle(
         zzz_mask (Int): Mask for the target bits (ZZZ).
     """
 
-    comptime has_shape = False
-    """Indicates if layout has shape. Swizzle always False."""
-
     var bits: Int
     """Number of bits in the mask."""
     var base: Int
@@ -350,7 +312,7 @@ struct Swizzle(
     var zzz_mask: Int
     """Mask for the target bits."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, bits: Int, base: Int, shift: Int):
         """Initialize a Swizzle object.
 
@@ -379,7 +341,7 @@ struct Swizzle(
             self.base - min(self.shift, 0)
         )
 
-    @always_inline
+    @inline(.always)
     def __call__(self, index: IntTuple) -> Int:
         """Apply swizzle to an IntTuple index.
 
@@ -394,7 +356,7 @@ struct Swizzle(
         """
         return self.__call__(index.value())
 
-    @always_inline
+    @inline(.always)
     def __call__(self, offset: Int) -> Int:
         """Apply swizzle to an integer offset.
 
@@ -409,7 +371,7 @@ struct Swizzle(
         """
         return offset ^ shiftr(offset & self.yyy_mask, self.shift)
 
-    @always_inline
+    @inline(.always)
     def __call__(self, offset: Scalar) -> Scalar[offset.dtype]:
         """Apply swizzle to a scalar offset.
 
@@ -427,7 +389,7 @@ struct Swizzle(
             Scalar[offset.dtype](self.shift),
         )
 
-    @always_inline
+    @inline(.always)
     def size(self) -> Int:
         """Get the size of the swizzle pattern.
 
@@ -439,7 +401,7 @@ struct Swizzle(
         """
         return 1 << (self.bits + self.base + abs(self.shift))
 
-    @always_inline
+    @inline(.always)
     def cosize(self) -> Int:
         """Get the cosize of the swizzle pattern.
 
@@ -463,7 +425,7 @@ struct Swizzle(
         writer.write("(", self.bits, ",", self.base, ",", self.shift, ")")
 
 
-@always_inline
+@inline(.always)
 def make_ldmatrix_swizzle[
     dtype: DType, row_size: Int, log2_vector_width: Int = 0
 ]() -> Swizzle:
@@ -508,7 +470,7 @@ def make_ldmatrix_swizzle[
     return Swizzle(bits, log2_vector_width, shifts)
 
 
-@always_inline
+@inline(.always)
 def make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     """Create a 2D swizzle to avoid bank conflicts.
 
@@ -532,7 +494,7 @@ def make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     return Swizzle(bits, base, shifts)
 
 
-@always_inline
+@inline(.always)
 def make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """Create swizzle based on predefined swizzle modes.
 
@@ -572,15 +534,12 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         offset: Optional offset between layouts (default: 0).
     """
 
-    comptime has_shape = True
-    """True because the base layout always has a shape."""
-
     var layout_a: Layout
     """The base layout to apply."""
     var layout_b: Swizzle
     """The swizzle to apply."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, var layout_a: Layout, layout_b: Swizzle):
         """Initialize ComposedLayout with a layout and swizzle.
 
@@ -588,23 +547,14 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
             layout_a: The base layout.
             layout_b: The swizzle.
         """
-        comptime assert (
-            not Self.offset or Self.offset.value() >= 0
-        ), "Requires non-negative offset if present"
+        comptime if case .Some(offset) = Self.offset:
+            comptime assert (
+                offset >= 0
+            ), "Requires non-negative offset if present"
         self.layout_a = layout_a^
         self.layout_b = layout_b
 
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """Copy constructor for ComposedLayout.
-
-        Args:
-            copy: The ComposedLayout to copy from.
-        """
-        self.layout_a = copy.layout_a.copy()
-        self.layout_b = copy.layout_b
-
-    @always_inline
+    @inline(.always)
     def __call__(self, idx: IntTuple) -> Int:
         """Apply composed layout to an index.
 
@@ -616,10 +566,10 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         Returns:
             The transformed index.
         """
-        var offset_val = Self.offset.value() if Self.offset else 0
+        var offset_val = Self.offset.or_else(0)
         return self.layout_b(offset_val + self.layout_a(idx))
 
-    @always_inline
+    @inline(.always)
     def __call__(self, idx: IntTuple, offset_val: Int) -> Int:
         """Apply composed layout with runtime offset.
 
@@ -638,7 +588,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         ), "Static offset set; runtime offset not allowed."
         return self.layout_b(offset_val + self.layout_a(idx))
 
-    @always_inline
+    @inline(.always)
     def size(self) -> Int:
         """Get the size of the composed layout.
 
@@ -649,7 +599,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         """
         return self.layout_a.size()
 
-    @always_inline
+    @inline(.always)
     def cosize(self) -> Int:
         """Get the cosize of the composed layout.
 
@@ -661,10 +611,10 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         return self.layout_b.cosize()
 
 
-@always_inline
+@inline(.always)
 def eval_composed[
     composed_layout: ComposedLayout
-](idx: UInt, offset: UInt = 0) -> UInt:
+](idx: Int, offset: Int = 0) -> Int:
     """Evaluate a composed layout with swizzle.
 
     Applies the base layout, adds an optional offset, and then applies
@@ -686,13 +636,14 @@ def eval_composed[
     comptime shape_a = flatten(composed_layout.layout_a.shape)
     comptime stride_a = flatten(composed_layout.layout_a.stride)
 
+    var coord_i: Int
     comptime for i in range(len(stride_a)):
         comptime s = shape_a[i].value()
         comptime st = stride_a[i].value()
-        a_idx, coord_i = divmod(a_idx, UInt(s))
-        b_idx += Int(coord_i * UInt(st))
+        a_idx, coord_i = udivmod(a_idx, s)
+        b_idx += coord_i * st
 
-    b_idx += Int(offset)
+    b_idx += offset
 
     comptime layout_b = composed_layout.layout_b
-    return UInt(layout_b(b_idx))
+    return layout_b(b_idx)

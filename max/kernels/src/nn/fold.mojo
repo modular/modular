@@ -13,10 +13,11 @@
 """Implements the fold operation."""
 
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
+from max.gpu.host import DeviceContext
 from layout import TileTensor
-from std.runtime.asyncrt import DeviceContextPtr
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -31,7 +32,7 @@ def fold[
     output: TileTensor[mut=True, dtype, ...],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Folds array of sliding local blocks into a single output tensor.
 
@@ -47,7 +48,7 @@ def fold[
         output: Output tensor to write to, shape [N, C, H, W].
         output_size: Spatial shape of the output tensor (H, W).
         kernel_size: Size of the sliding blocks.
-        ctx: DeviceContextPtr.
+        ctx: The device context.
     """
 
     comptime assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"
@@ -102,24 +103,14 @@ def fold[
     comptime stride_w = stride[1]
     comptime stride_h = stride[0]
 
-    @always_inline
-    @parameter
-    @__copy_capture(
-        kernel_w,
-        kernel_h,
-        height_col,
-        width_col,
-    )
-    def fold_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank_]):
-        comptime assert rank_ == 4, "fold_fn: rank must be 4"
-        var idx = rebind[IndexList[4]](idx_arg)
+    @inline(.always)
+    def fold_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == 4, "fold_fn: rank must be 4"
 
-        var batch = idx[0]
-        var channel = idx[1]
-        var h_out = idx[2]
-        var w_out = idx[3]
+        var batch = Int(idx[0])
+        var channel = Int(idx[1])
+        var h_out = Int(idx[2])
+        var w_out = Int(idx[3])
 
         var output_val = Scalar[dtype](0)
 
@@ -156,28 +147,25 @@ def fold[
                         batch, channel_offset + kernel_offset, patch_offset
                     ][0]
 
-        output[idx[0], idx[1], idx[2], idx[3]] = output_val
+        output[idx] = output_val
 
-    var dispatch_shape = IndexList[4](N, C, H, W)
+    var dispatch_shape = (N, C, H, W)
     elementwise[
-        func=fold_fn,
         simd_width=1,
         target=target,
         _trace_description="fold_fn",
-    ](dispatch_shape, ctx)
+    ](fold_fn, dispatch_shape, ctx)
 
 
-def fold_shape[
-    dtype: DType
-](
-    input: TileTensor[dtype, ...],
+def fold_shape(
+    input_shape: IndexList[3],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
 ) raises -> IndexList[4]:
     """Returns the shape of the output tensor of the fold operation."""
     var output_shape = IndexList[4]()
-    output_shape[0] = Int(input.dim(0))
-    output_shape[1] = Int(input.dim(1)) // (kernel_size[0] * kernel_size[1])
+    output_shape[0] = input_shape[0]
+    output_shape[1] = input_shape[1] // (kernel_size[0] * kernel_size[1])
     output_shape[2] = output_size[0]
     output_shape[3] = output_size[1]
     return output_shape

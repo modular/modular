@@ -15,20 +15,21 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from std.collections import OptionalReg
-
 import std.time
 from std.io.io import _printf
 from std.math import sqrt
 from std.random import randint, randn, seed
 from std.sys import argv, size_of
 
-from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import TileTensor, Idx
+from max.gpu.host import DeviceBuffer, DeviceContext
+from layout import Coord, TileTensor, Idx
 from layout.tile_layout import row_major
-from std.memory import UnsafePointer
+from std.memory import Pointer
+from std.memory.alloc import unsafe_alloc
 from shmem import *
 from shmem.ep_comm import (
+    EP_NO_INPUT_SCALES,
+    EP_NO_ROUTER_WEIGHTS,
     BF16TokenFormat,
     EPLocalSyncCounters,
     combine_wait_kernel,
@@ -37,6 +38,7 @@ from shmem.ep_comm import (
     dispatch_async_kernel,
 )
 from std.testing import assert_equal
+from std.utils.index import IndexList
 
 
 def is_benchmark() -> Bool:
@@ -53,7 +55,7 @@ def is_pressure_test() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def welford_update(
     mut mean: Float64, mut m2: Float64, count: Int, new_value: Float64
 ):
@@ -67,13 +69,13 @@ def welford_update(
 
 def legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
+](topk_ids: Pointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
-        var topk_ids_for_token = topk_ids + tok_id * top_k
+        var topk_ids_for_token = topk_ids.unsafe_offset(tok_id * top_k)
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        def is_duplicate() unified {read} -> Int:
+        def is_duplicate() {imm} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -82,7 +84,12 @@ def legalize_topk_ids[
 
         var duplicate_idx = is_duplicate()
         while duplicate_idx != -1:
-            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            randint(
+                topk_ids_for_token.unsafe_offset(duplicate_idx),
+                1,
+                0,
+                n_experts - 1,
+            )
             duplicate_idx = is_duplicate()
 
 
@@ -98,7 +105,7 @@ def test_combine[
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
 
     comptime output_tt_layout = row_major(
-        (Idx[max_recv_num_tokens](), Idx[hidden_size]())
+        (Idx[max_recv_num_tokens], Idx[hidden_size])
     )
     comptime token_fmt_type = BF16TokenFormat[
         output_layout=type_of(output_tt_layout), hidden_size, top_k
@@ -122,29 +129,27 @@ def test_combine[
             n_tokens_per_rank,
         )
 
-    var send_buf = shmem_malloc[DType.uint8](
-        UInt(top_k * n_tokens_per_rank * msg_bytes)
+    var send_buf = shmem_malloc[.uint8](top_k * n_tokens_per_rank * msg_bytes)
+    var recv_buf = shmem_malloc[.uint8](
+        n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
     )
-    var recv_buf = shmem_malloc[DType.uint8](
-        UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
-    )
-    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
+    var recv_count = shmem_malloc[.uint64](n_local_experts * n_ranks)
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
-    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](
+    var atomic_counter = ctx.enqueue_create_buffer[.int32](
         EPLocalSyncCounters[n_experts].total_size()
     )
 
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
 
-    var host_topk_ids = alloc[Int32](n_tokens_per_rank * top_k)
-    var host_input_tokens = alloc[Scalar[input_type]](
+    var host_topk_ids = unsafe_alloc[Int32](n_tokens_per_rank * top_k)
+    var host_input_tokens = unsafe_alloc[Scalar[input_type]](
         n_tokens_per_rank * hidden_size
     )
 
-    var device_topk_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_topk_buf = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * top_k
     )
     var device_input_buf = ctx.enqueue_create_buffer[input_type](
@@ -153,30 +158,30 @@ def test_combine[
     var device_output_buf = ctx.enqueue_create_buffer[input_type](
         n_tokens_per_rank * n_ranks * n_local_experts * hidden_size
     )
-    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.uint32](
+    var device_row_offsets_buf = ctx.enqueue_create_buffer[.uint32](
         n_local_experts + 1
     )
-    var device_expert_ids_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_expert_ids_buf = ctx.enqueue_create_buffer[.int32](
         n_local_experts
     )
-    var device_src_token_info_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_src_token_info_buf = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * n_ranks * n_local_experts * 2
     )
 
-    device_output_2_buf = ctx.enqueue_create_buffer[input_type](
+    var device_output_2_buf = ctx.enqueue_create_buffer[input_type](
         n_tokens_per_rank * top_k * hidden_size
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
+        device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k])
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[hidden_size]),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major(Idx[max_recv_num_tokens](), Idx[hidden_size]()),
+        row_major(Idx[max_recv_num_tokens], Idx[hidden_size]),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -186,11 +191,11 @@ def test_combine[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major(Idx[max_recv_num_tokens](), Idx[2]()),
+        row_major(Idx[max_recv_num_tokens], Idx[2]),
     )
     var output_2_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_2_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[top_k], Idx[hidden_size]),
     )
 
     var format_handler = token_fmt_type(output_tensor)
@@ -208,8 +213,9 @@ def test_combine[
         n_tokens_per_rank,
         1,  # p2p_world_size
         token_fmt_type,
+        InputScalesFnType=type_of(EP_NO_INPUT_SCALES),
     ]
-    var func = ctx.compile_function_experimental[dispatch_async]()
+    var func = ctx.compile_function[dispatch_async]()
     shmem_module_init(func)
 
     comptime dispatch_wait = dispatch_wait_kernel[
@@ -223,7 +229,7 @@ def test_combine[
         n_tokens_per_rank,
         type_of(format_handler),
     ]
-    var func_dispatch_wait = ctx.compile_function_experimental[dispatch_wait]()
+    var func_dispatch_wait = ctx.compile_function[dispatch_wait]()
 
     comptime combine_async = combine_async_kernel[
         input_type,
@@ -238,23 +244,31 @@ def test_combine[
         n_tokens_per_rank,
         1,  # p2p_world_size
     ]
-    var func_combine_async = ctx.compile_function_experimental[combine_async]()
+    var func_combine_async = ctx.compile_function[combine_async]()
     shmem_module_init(func_combine_async)
+
+    @inline(.always)
+    def store_output_2[
+        dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
+    ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_2_tensor}:
+        output_2_tensor.store[
+            width=width, alignment=alignment * size_of[dtype]()
+        ](Coord(coords), rebind[SIMD[input_type, width]](val))
 
     comptime combine_wait = combine_wait_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        output_2_tensor.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
         n_ranks,
         combine_msg_bytes,
         n_tokens_per_rank,
+        type_of(store_output_2),
+        type_of(EP_NO_ROUTER_WEIGHTS),
+        has_router_weights=False,
     ]
-    var func_combine_async_wait = ctx.compile_function_experimental[
-        combine_wait
-    ]()
+    var func_combine_async_wait = ctx.compile_function[combine_wait]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var combine_async_stat_m: Float64 = 0
@@ -264,21 +278,16 @@ def test_combine[
     var e2e_stat_m: Float64 = 0
     var e2e_stat_m2: Float64 = 0
 
-    @always_inline
-    @parameter
-    def run_full_dispatch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_full_dispatch(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], 1](
-            fill={}
-        )
-        var recv_count_ptrs = InlineArray[
-            UnsafePointer[UInt64, MutAnyOrigin], 1
-        ](fill={})
-        recv_buf_ptrs[0] = recv_buf
-        recv_count_ptrs[0] = recv_count
+        var recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [recv_buf]
+        var recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [
+            recv_count
+        ]
 
-        ctx.enqueue_function(
-            func,
+        func._call_with_pack_checked(
+            ctx,
             input_tokens_tensor,
             topk_ids_tensor,
             send_buf,
@@ -286,6 +295,7 @@ def test_combine[
             recv_count_ptrs,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
+            host_args=(EP_NO_INPUT_SCALES,),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -299,68 +309,52 @@ def test_combine[
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
-            OptionalReg[
-                TileTensor[
-                    input_type,
-                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                    ImmutAnyOrigin,
-                ]
-            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
         shmem_barrier_all_on_stream(ctx.stream())
 
-    @always_inline
-    @parameter
-    def run_combine_async(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_combine_async(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var combine_recv_buf_ptrs = InlineArray[
-            UnsafePointer[UInt8, MutAnyOrigin], 1
-        ](fill={})
-        var combine_recv_count_ptrs = InlineArray[
-            UnsafePointer[UInt64, MutAnyOrigin], 1
-        ](fill={})
-        combine_recv_buf_ptrs[0] = send_buf
-        combine_recv_count_ptrs[0] = recv_count
+        var combine_recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [
+            send_buf
+        ]
+        var combine_recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [
+            recv_count
+        ]
 
         ctx.enqueue_function(
             func_combine_async,
-            output_tensor.as_immut(),
-            src_token_info_tensor.as_immut(),
+            output_tensor.as_imm(),
+            src_token_info_tensor.as_imm(),
             recv_buf,
             combine_recv_buf_ptrs,
             combine_recv_count_ptrs,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
-            OptionalReg[
-                TileTensor[
-                    input_type,
-                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                    MutAnyOrigin,
-                ]
-            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
 
-    @always_inline
-    @parameter
-    def run_combine_async_wait(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
-            func_combine_async_wait,
-            output_2_tensor,
+    @inline(.always)
+    def run_combine_async_wait(
+        ctx: DeviceContext,
+    ) raises {var atomic_counter, imm}:
+        func_combine_async_wait._call_with_pack_checked(
+            ctx,
+            Int32(n_tokens_per_rank),
             send_buf,
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
+            host_args=(store_output_2, EP_NO_ROUTER_WEIGHTS),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
 
-    @always_inline
-    @parameter
-    def run_e2e(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_e2e(ctx: DeviceContext) raises {imm}:
         run_combine_async(ctx)
         run_combine_async_wait(ctx)
 
@@ -388,7 +382,7 @@ def test_combine[
 
         # First, bench kernel overhead
         run_full_dispatch(ctx)
-        new_value = Float64(ctx.execution_time[run_combine_async](1)) * 1e-3
+        new_value = Float64(ctx.execution_time(run_combine_async, 1)) * 1e-3
         welford_update(
             combine_async_stat_m, combine_async_stat_m2, i + 1, new_value
         )
@@ -397,7 +391,7 @@ def test_combine[
         std.time.sleep(1e-2)
 
         new_value = (
-            Float64(ctx.execution_time[run_combine_async_wait](1)) * 1e-3
+            Float64(ctx.execution_time(run_combine_async_wait, 1)) * 1e-3
         )
         welford_update(
             combine_wait_stat_m, combine_wait_stat_m2, i + 1, new_value
@@ -406,12 +400,12 @@ def test_combine[
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
         run_full_dispatch(ctx)
-        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
+        new_value = Float64(ctx.execution_time(run_e2e, 1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 
         if not is_benchmark():
-            var host_output_2 = alloc[Scalar[input_type]](
+            var host_output_2 = unsafe_alloc[Scalar[input_type]](
                 n_tokens_per_rank * top_k * hidden_size
             )
             ctx.enqueue_copy(host_output_2, device_output_2_buf)
@@ -420,13 +414,13 @@ def test_combine[
 
             # Check the results
             for token_idx in range(n_tokens_per_rank):
-                var ref_token = host_input_tokens + token_idx * hidden_size
+                var ref_token = host_input_tokens.unsafe_offset(
+                    token_idx * hidden_size
+                )
                 for topk_idx in range(top_k):
-                    var received_token = (
-                        host_output_2
-                        + token_idx * top_k * hidden_size
-                        + topk_idx * hidden_size
-                    )
+                    var received_token = host_output_2.unsafe_offset(
+                        token_idx * top_k * hidden_size
+                    ).unsafe_offset(topk_idx * hidden_size)
                     for i in range(hidden_size):
                         assert_equal(
                             received_token[i],

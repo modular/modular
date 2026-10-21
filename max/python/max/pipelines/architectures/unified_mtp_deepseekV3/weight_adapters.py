@@ -48,6 +48,13 @@ def convert_with_mtp_state_dict(
         for before, after in DEEPSEEK_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
 
+        # Drop FP8 KV-cache static scales emitted by modelopt NVFP4
+        # checkpoints (e.g. `k_proj.k_scale`, `v_proj.v_scale`). MAX reads
+        # KV cache scales from a separate configuration path, so these keys
+        # would otherwise trigger a strict load_state_dict failure.
+        if max_name.endswith((".k_scale", ".v_scale")):
+            continue
+
         mtp_prefix = f"layers.{mtp_layer_idx}."
         if max_name.startswith(mtp_prefix):
             suffix = max_name[len(mtp_prefix) :]
@@ -56,9 +63,7 @@ def convert_with_mtp_state_dict(
             for before, after in _MTP_LAYER_MAP.items():
                 if suffix.startswith(before):
                     new_name = after + suffix[len(before) :]
-                    if new_name.startswith(
-                        "embed_tokens."
-                    ) or new_name.startswith("lm_head."):
+                    if new_name.startswith(("embed_tokens.", "lm_head.")):
                         mapped = True
                         break
                     new_state_dict[new_name] = value.data()

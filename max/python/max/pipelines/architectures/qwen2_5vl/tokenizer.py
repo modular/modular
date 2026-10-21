@@ -16,18 +16,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
-    EOSTracker,
-    ImageMetadata,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TokenBuffer,
-)
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_rope_index,
     get_seqlens,
@@ -35,15 +29,31 @@ from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
+    MAX_PIXELS,
     fetch_image,
     process_vision_info,
 )
+from max.pipelines.context import (
+    EOSTracker,
+    ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
+    VisionPreprocessCache,
     float32_to_bfloat16_as_uint16,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.tokenizer import encode_dkv_cache_hint
+from max.pipelines.modeling.types import (
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    VisionPreprocessCacheStats,
+)
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer, Qwen2_5_VLConfig
@@ -160,6 +170,10 @@ def qwen2_5vl_image_preprocessing(
     image_grid_thw = (grid_t, grid_h, grid_w)
 
     return flatten_patches_uint16, image_grid_thw
+
+
+# One image's patchified pixels and its (t, h, w) grid, as cached.
+_PreprocessedImage = tuple[npt.NDArray[np.uint16], npt.NDArray[np.int32]]
 
 
 class Qwen2_5VLImageProcessor:
@@ -292,14 +306,13 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             merge_size=self.spatial_merge_size,
         )
 
-        # Initialize EOS token IDs
-        self._default_eos_token_ids = set([self.eos])
+        self._preprocess_cache: VisionPreprocessCache[_PreprocessedImage] = (
+            VisionPreprocessCache.for_images(pipeline_config.runtime)
+        )
 
-        if eos_token_id := getattr(config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._default_eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._default_eos_token_ids.update(eos_token_id)
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
+        )
 
         self.image_token_id = config.image_token_id
         self.video_token_id = config.video_token_id
@@ -316,16 +329,62 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self.executor: ThreadPoolExecutor | None = None
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
     ) -> str:
-        """Apply chat template using tokenizer directly (not processor)."""
+        """Apply chat template using tokenizer directly (not processor).
 
-        messages_dicts = [msg.model_dump() for msg in messages]
+        Args:
+            messages: List of messages for the chat template.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
+
+        Returns:
+            The templated chat message as a string.
+        """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
+        messages_dicts = [msg.model_dump(exclude_none=True) for msg in messages]
         templated_message = self.delegate.apply_chat_template(
-            messages_dicts, tokenize=False, add_generation_prompt=True
+            messages_dicts,
+            tokenize=False,
+            tools=tools,
+            **chat_template_options,
         )
         assert isinstance(templated_message, str)
         return templated_message
+
+    def _build_eos_tracker(self, request: TextGenerationRequest) -> EOSTracker:
+        """Builds an EOSTracker synchronously for use in new_context_blocking.
+
+        All tokenizer access must happen in the same executor to avoid
+        concurrent borrow errors from the HuggingFace tokenizer's Rust internals.
+        """
+        params = request.sampling_params
+        eos_token_ids = set(self._eos_token_ids)
+        eos_sequences: list[list[int]] = []
+        if params.ignore_eos:
+            eos_token_ids = set()
+        else:
+            if params.stop_token_ids:
+                eos_token_ids.update(params.stop_token_ids)
+            if params.stop:
+                for stop_string in params.stop:
+                    tokenized = self.delegate.encode(
+                        stop_string, add_special_tokens=False
+                    )
+                    if tokenized:
+                        eos_sequences.append(list(tokenized))
+        return EOSTracker(
+            eos_token_ids=eos_token_ids,
+            eos_sequences=eos_sequences,
+            eos_stop_strings=params.stop or [],
+        )
 
     async def new_context(
         self, request: TextGenerationRequest
@@ -337,68 +396,137 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         """
         if self.executor is None:
             # lazy init the executor because the tokenizer gets pickled
-            # when launching the model worker, and the executor is not pickle-safe
-            self.executor = ThreadPoolExecutor(max_workers=2)
+            # when launching the model worker, and the executor is not pickle-safe.
+            # max_workers=1 to serialize all tokenizer access — the HF
+            # tokenizer's Rust internals are not thread-safe and concurrent
+            # calls to delegate.encode trigger a borrow error.
+            self.executor = ThreadPoolExecutor(max_workers=1)
 
-        eos_tracker = await self.create_eos_tracker(request)
         return await asyncio.get_running_loop().run_in_executor(
             self.executor,
             self.new_context_blocking,
             request,
-            eos_tracker,
         )
 
-    def _retrieve_prompt(self, request: TextGenerationRequest) -> str:
-        # If a text prompt is provided, immediately pass through.
+    def _retrieve_prompt(
+        self, request: TextGenerationRequest
+    ) -> str | Sequence[int]:
+        # A prompt, text or token ids, passes through.
         if request.prompt is not None:
-            if not isinstance(request.prompt, str):
-                raise ValueError(
-                    "Qwen2.5VL tokenizer only supports string prompts, not token sequences"
-                )
             return request.prompt
 
         if request.messages:
-            return self.apply_chat_template(request.messages)
+            return self.apply_chat_template(
+                request.messages,
+                request.tools,
+                **(request.chat_template_options or {}),
+            )
 
         raise ValueError(f"{request} does not provide messages or prompt.")
+
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's :class:`PreprocessCacheStatsProbe` snapshot.
+
+        Image only: this architecture caches no preprocessed video, so the
+        ``video`` key is structurally absent rather than reported as zero.
+        """
+        return {"image": self._preprocess_cache.stats()}
+
+    def _preprocess_image(
+        self, image_hash: int | None, image: Image.Image
+    ) -> _PreprocessedImage:
+        """Preprocesses one image, reusing a cached result when available.
+
+        The cache key is the digest of the raw encoded bytes plus the
+        resolution size class -- the same key ``new_context`` hands to the
+        vision encoder cache, computed once and shared by both. Hitting here
+        skips the smart-resize, rescale and patchify that the encoder cache
+        cannot skip, since it is consulted only after that work has run.
+
+        ``Qwen2_5VLImageProcessor`` calls
+        :func:`qwen2_5vl_image_preprocessing` once per image with no
+        cross-image state and only stacks at the end, so preprocessing one
+        image at a time and stacking afterwards is bit-identical to the
+        batched call it replaces.
+
+        Args:
+            image_hash: The image's content digest, or ``None`` when no media
+                caching needs one, or when the image arrived without raw bytes
+                to key on.
+            image: The decoded image to preprocess.
+
+        Returns:
+            The image's patchified pixels and its ``(t, h, w)`` grid.
+        """
+
+        def preprocess() -> _PreprocessedImage:
+            processed_dict, pixel_values_list = self.img_processor(
+                images=[image],
+                return_tensors="np",
+            )
+            return pixel_values_list[0], processed_dict["image_grid_thw"][0]
+
+        return self._preprocess_cache.get_or_preprocess(image_hash, preprocess)
 
     def _process_images(
         self, request: TextGenerationRequest
     ) -> tuple[
-        npt.NDArray[Any], npt.NDArray[Any], list[npt.NDArray[np.uint16]]
+        npt.NDArray[Any],
+        npt.NDArray[Any],
+        list[npt.NDArray[np.uint16]],
+        list[int | None],
     ]:
         image_inputs = None
+        image_hashes: list[int | None] = []
         if request.images:
+            # fetch_image accepts both a PIL.Image and raw bytes.
             image_inputs = [
-                fetch_image({"image": image_data})
-                for image_data in request.images
+                fetch_image({"image": image})
+                for image in request.images_for_processing()
             ]
+            # Key each image on its raw encoded bytes (+ the resolution size
+            # class), not on hash_image(pixel_values): the raw-byte key is
+            # byte-identical across torch/BLAS/device so a separate encoder can
+            # reproduce it for cache-aware routing, whereas the post-resize
+            # float hash cannot. smart_resize is deterministic from the encoded
+            # bytes + fixed config, so the process-wide max-pixels resolution
+            # bound is the size tier. request.images is 1:1 with image_inputs.
+            image_hashes = (
+                [
+                    hash_image(raw_bytes, MAX_PIXELS)
+                    for raw_bytes in request.images
+                ]
+                if self.enable_prefix_caching or self._preprocess_cache.enabled
+                else [None] * len(request.images)
+            )
         elif request.messages:
             image_inputs, _, _ = process_vision_info(
                 [msg.model_dump() for msg in request.messages]
             )
+            # Images embedded in the messages arrive already decoded, with no
+            # raw encoded bytes to key on, so they are preprocessed uncached
+            # rather than keyed on something the encoder could not reproduce.
+            image_hashes = [None] * len(image_inputs or [])
 
         if image_inputs is None:
             raise ValueError("No images provided in the request")
 
-        # Process PIL images through the image processor
-        processed_dict, pixel_values_list = self.img_processor(
-            images=image_inputs,
-            return_tensors="np",
-        )
-
-        if "concatenated_pixel_values" not in processed_dict:
-            raise ValueError(
-                "concatenated_pixel_values is not provided in image inputs"
+        per_image = [
+            self._preprocess_image(image_hash, image)
+            for image_hash, image in zip(
+                image_hashes, image_inputs, strict=True
             )
-
-        if "image_grid_thw" not in processed_dict:
-            raise ValueError("image_grid_thw is not provided in image inputs")
-
+        ]
+        pixel_values_list = [pixels for pixels, _ in per_image]
+        # Reassembles exactly what the batched call returned, so every caller
+        # downstream sees the same arrays it always did.
         return (
-            processed_dict["concatenated_pixel_values"],
-            processed_dict["image_grid_thw"],
+            np.vstack(pixel_values_list),
+            np.array([grid for _, grid in per_image], dtype=np.int32),
             pixel_values_list,
+            image_hashes,
         )
 
     def _tokenize_inputs(
@@ -406,19 +534,31 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         request: TextGenerationRequest,
         image_grid_thw: npt.NDArray[np.int32] | None,
     ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
-        tokenized_inputs = self.delegate(
-            self._retrieve_prompt(request), padding=True, return_tensors="np"
-        )
-
-        input_ids = tokenized_inputs["input_ids"].squeeze(0)
-        attention_mask = tokenized_inputs["attention_mask"].squeeze(0)
+        prompt = self._retrieve_prompt(request)
+        if isinstance(prompt, str):
+            tokenized_inputs = self.delegate(
+                prompt, padding=True, return_tensors="np"
+            )
+            input_ids = tokenized_inputs["input_ids"].squeeze(0)
+            attention_mask = tokenized_inputs["attention_mask"].squeeze(0)
+        elif image_grid_thw is not None:
+            raise ValueError(
+                "A prompt given as token ids can't carry images. Send the "
+                "images with messages instead."
+            )
+        else:
+            input_ids = np.asarray(prompt, dtype=np.int64)
+            if np.any(input_ids == self.image_token_id):
+                raise ValueError(
+                    "The prompt has image placeholder tokens, but the request "
+                    "has no images."
+                )
+            attention_mask = np.ones_like(input_ids)
 
         # Expand input_ids/attention_mask for image token ids
         if image_grid_thw is None:
             if self.max_length and input_ids.shape[0] > self.max_length:
-                raise ValueError(
-                    "input_ids is greater than the max_length of the tokenizer"
-                )
+                raise PromptTooLongError(input_ids.shape[0], self.max_length)
 
             return input_ids, attention_mask
 
@@ -448,9 +588,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )
 
         if self.max_length and input_ids.shape[0] > self.max_length:
-            raise ValueError(
-                "input_ids is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(input_ids.shape[0], self.max_length)
 
         return input_ids, attention_mask
 
@@ -525,8 +663,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Handle JSON schema if provided
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
+            json.dumps(request.response_format.json_schema)
             if request.response_format
+            and request.response_format.json_schema is not None
             else None
         )
 
@@ -539,7 +678,11 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             tokens=TokenBuffer(input_ids),
             max_length=max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
+            target_endpoint=request.target_endpoint,
+            dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
             images=images,
             vision_token_ids=[self.image_token_id],
             spatial_merge_size=self.spatial_merge_size,
@@ -551,13 +694,15 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             image_token_indices=image_token_indices,
             decoder_position_ids=decoder_position_ids,
             vision_data=vision_data,
+            vocab_size=self.tokenizer_vocab_size,
+            cache_salt=request.cache_salt,
         )
 
     def new_context_blocking(
         self,
         request: TextGenerationRequest,
-        eos_tracker: EOSTracker,
     ) -> Qwen2_5VLTextAndVisionContext:
+        eos_tracker = self._build_eos_tracker(request)
         # Exit early, if no images are provided.
         if not request.images:
             input_ids, attention_mask = self._tokenize_inputs(request, None)
@@ -573,9 +718,12 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )
 
         # Get Image Inputs (already processed by img_processor inside _process_images)
-        concatenated_pixel_values, image_grid_thw, pixel_values_list = (
-            self._process_images(request)
-        )
+        (
+            concatenated_pixel_values,
+            image_grid_thw,
+            pixel_values_list,
+            image_hashes,
+        ) = self._process_images(request)
 
         # Tokenize (and expand the input ids)
         input_ids, attention_mask = self._tokenize_inputs(
@@ -636,17 +784,24 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             start_and_end_idxs = find_contiguous_ranges(
                 input_ids, [self.image_token_id]
             )
+            # Reuses the digests _process_images already computed for the
+            # preprocessed-tensor cache (see there for why the key is the raw
+            # encoded bytes rather than the post-resize pixels); computing them
+            # again here would hash every image's bytes twice.
             images = [
                 ImageMetadata(
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
-                    image_hash=hash_image(pixel_values)
+                    image_hash=image_hash
                     if self.enable_prefix_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixel_values in zip(
-                    start_and_end_idxs, pixel_values_list, strict=True
+                for (start_idx, end_idx), pixel_values, image_hash in zip(
+                    start_and_end_idxs,
+                    pixel_values_list,
+                    image_hashes,
+                    strict=True,
                 )
             ]
         else:

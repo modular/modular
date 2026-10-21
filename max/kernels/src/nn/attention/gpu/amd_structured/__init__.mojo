@@ -10,4 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Structured AMD GPU attention kernels (TileTensor hot path)."""
+"""TileTensor-native attention kernels for AMD gfx950 (MI355X).
+
+This module provides gfx950-only attention implementation using
+TileTensor throughout. Supports MHA prefill (depth=64, 128, 256, 512),
+MHA decode (token generation), MLA prefill, and MLA decode.
+"""

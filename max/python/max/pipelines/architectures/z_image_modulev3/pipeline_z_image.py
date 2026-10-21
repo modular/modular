@@ -31,13 +31,9 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.interfaces import TokenBuffer
-from max.pipelines.core import PixelContext
-from max.pipelines.lib.interfaces import (
-    DenoisingCacheState,
-    DiffusionPipeline,
-)
-from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.context import PixelContext, TokenBuffer
+from max.pipelines.diffusion.cache import DenoisingCacheState
+from max.pipelines.diffusion.interface import DiffusionPipeline, max_compile
 from max.profiler import Tracer, traced
 
 from ..autoencoders import AutoencoderKLModel
@@ -71,7 +67,7 @@ def _validate_z_image_context(context: PixelContext) -> None:
         if not hasattr(context, name):
             raise TypeError(
                 f"ZImagePipeline requires PixelGenerationContext with attribute "
-                f"{name!r} (e.g. max.pipelines.core.PixelContext); "
+                f"{name!r} (e.g. max.pipelines.context.PixelContext); "
                 f"{type(context).__name__} has no {name!r}."
             )
         arr = getattr(context, name)
@@ -86,7 +82,7 @@ class ZImageModelInputs:
     """Z-Image execution inputs with device tensors and host metadata.
 
     Scalar and NumPy fields are populated from :class:`PixelGenerationContext`
-    (concrete type :class:`~max.pipelines.core.PixelContext`) via
+    (concrete type :class:`~max.pipelines.context.PixelContext`) via
     :meth:`kwargs_from_context`; ``latents_tensor``, ``sigmas_tensor``, and
     shape carriers are required device tensors supplied by
     :meth:`ZImagePipeline.prepare_inputs` in one shot.
@@ -216,15 +212,13 @@ class ZImageModelInputs:
 
 @dataclass
 class ZImagePipelineOutput:
-    """Container for Z-Image pipeline results.
-
-    Attributes:
-        images:
-            Decoded image data as a NumPy array or MAX :class:`~max.experimental.tensor.Tensor`,
-            depending on decode path and ``output_type``.
-    """
+    """Container for Z-Image pipeline results."""
 
     images: np.ndarray | Tensor
+    """Decoded image data as a NumPy array or MAX Tensor.
+
+    The format depends on decode path and ``output_type``.
+    """
 
 
 class ZImagePipeline(DiffusionPipeline):
@@ -276,7 +270,7 @@ class ZImagePipeline(DiffusionPipeline):
     @traced(message="ZImagePipeline.prepare_inputs")
     def prepare_inputs(
         self,
-        context: PixelContext,  # type: ignore[override]
+        context: PixelContext,
     ) -> ZImageModelInputs:
         """Convert a :class:`PixelGenerationContext` into model inputs with device tensors."""
         _validate_z_image_context(context)
@@ -400,30 +394,22 @@ class ZImagePipeline(DiffusionPipeline):
         residual_dim, output_dim = cfg.fbcache_dims()
         state = DenoisingCacheState()
 
-        def _device_zeros(shape: tuple[int, ...]) -> Tensor:
-            return Tensor(
-                storage=Buffer.zeros(
-                    shape, self._cache_dtype, device=self._cache_device
-                )
-            )
-
         if self.cache_config.first_block_caching:
-            state.prev_residual = _device_zeros(
-                (batch_size, seq_len, residual_dim)
+            assert self._fbc is not None
+            fbc_state = self._fbc.create_state(
+                batch_size, seq_len, residual_dim, output_dim
             )
-            state.prev_output = _device_zeros((batch_size, seq_len, output_dim))
+            state.prev_residual = fbc_state.prev_residual
+            state.prev_output = fbc_state.prev_output
 
         if self.cache_config.taylorseer:
-            for attr in (
-                "taylor_factor_0",
-                "taylor_factor_1",
-                "taylor_factor_2",
-            ):
-                setattr(
-                    state,
-                    attr,
-                    _device_zeros((batch_size, seq_len, output_dim)),
-                )
+            assert self._taylorseer is not None
+            ts_state = self._taylorseer.create_state(
+                batch_size, seq_len, output_dim
+            )
+            state.taylor_factor_0 = ts_state.factor_0
+            state.taylor_factor_1 = ts_state.factor_1
+            state.taylor_factor_2 = ts_state.factor_2
 
         return state
 

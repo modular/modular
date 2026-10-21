@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.memory import OwnedPointer
+from std.memory.alloc import unsafe_alloc
 from std.testing import *
 
 
-def kernel(res: UnsafePointer[UInt32, MutAnyOrigin]):
+def kernel(res: MutPointer[UInt32, MutAnyOrigin]):
     res[] = 0
 
 
@@ -26,14 +27,12 @@ def test_function_error(ctx: DeviceContext) raises:
     # CHECK: test_function_error
     print("== test_function_error")
     try:
-        var ptr = alloc[UInt32](1)
+        var ptr = unsafe_alloc[UInt32](1)
         var ptr_owned = OwnedPointer[UInt32](unsafe_from_raw_pointer=ptr)
-        var res_host = DeviceBuffer[DType.uint32](
+        var res_host = DeviceBuffer[.uint32](
             ctx, ptr_owned.unsafe_ptr(), 1, owning=False
         )
-        ctx.enqueue_function[kernel, kernel](
-            res_host, block_dim=(1), grid_dim=(1)
-        )
+        ctx.enqueue_function[kernel](res_host, block_dim=(1), grid_dim=(1))
         ctx.synchronize()
 
         _ = ptr_owned^
@@ -45,5 +44,5 @@ def test_function_error(ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        # CHECK-NOT: To get more accurate error information, set MODULAR_DEVICE_CONTEXT_SYNC_MODE=true
+        # CHECK-NOT: To get more accurate error information, set MODULAR_DEBUG=device-sync-mode
         test_function_error(ctx)

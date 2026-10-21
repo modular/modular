@@ -24,6 +24,7 @@ from .transformer import (
     ReturnLogits,
     Transformer,
     TransformerBlock,
+    forward_sequential_layers,
     logits_postprocess,
 )
 
@@ -37,5 +38,6 @@ __all__ = [
     "Transformer",
     "TransformerBlock",
     "distributed_logits_postprocess",
+    "forward_sequential_layers",
     "logits_postprocess",
 ]

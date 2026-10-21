@@ -11,19 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Tile scheduler for SM100 structured matmul kernels using Cluster Launch Control.
+
+Provides work distribution across CTAs and clusters via CLC barriers, a
+throttle pipeline to pace the scheduler warp against the load warp, and
+per-warp work iterators that own pipeline consumer state.
+"""
+
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
 
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_int as lane_id,
-)
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu import block_id_in_cluster, block_idx, lane_id
+from max.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
 from std.utils.fast_div import FastDiv
@@ -38,6 +41,13 @@ from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 @fieldwise_init
 struct WorkInfo(TrivialRegisterPassable, Writable):
+    """Describes a single output tile's work assignment.
+
+    Holds the (m, n) coordinates of the tile in the output matrix, the
+    starting k index for the MMA accumulation, and a flag indicating
+    whether the tile is in-bounds.
+    """
+
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -46,16 +56,16 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     # Whether work tile is completely OOB.
     var is_valid_tile: Bool
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         return self.is_valid_tile
 
-    @always_inline
+    @inline(.always)
     def coord(self) -> Tuple[Int, Int]:
         """Get (m, n) tile coordinates as a tuple."""
         return (Int(self.m), Int(self.n))
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
@@ -70,85 +80,6 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         )
 
 
-# =============================================================================
-# Work Iteration Context Managers
-# =============================================================================
-#
-# Two patterns exist for iterating over work items in warp-specialized kernels:
-#
-# 1. ADVANCE AFTER WORK (Load/Scheduler/Epilogue warps):
-#    - Do work with current work_info
-#    - Then fetch next, assign, step
-#    Usage:
-#      with scheduler.advance_after_work(work_info, state) as current:
-#          do_work(current)
-#      # After: work_info updated, state stepped
-#
-# 2. PREFETCH BEFORE WORK (MMA warp - software pipelining):
-#    - Fetch next and step BEFORE doing work
-#    - Do work with current work_info
-#    - Then assign prefetched value
-#    Usage:
-#      with scheduler.prefetch_before_work(work_info, state) as current:
-#          do_mma(current)
-#      # After: work_info updated to prefetched value
-# =============================================================================
-
-
-struct AdvanceAfterWorkContext[
-    work_origin: MutOrigin,
-    state_origin: MutOrigin,
-    num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32],
-    rasterize_order: RasterOrder,
-    block_swizzle_size: Int,
-](TrivialRegisterPassable):
-    """Context for warps that do work THEN advance (Load/Scheduler/Epilogue).
-
-    - __enter__: Returns current work_info for use in the block
-    - __exit__: Fetches next work, assigns to work_info, steps state
-    """
-
-    comptime SchedulerType = TileScheduler[
-        Self.num_stages,
-        Self.cluster_shape,
-        Self.rasterize_order,
-        Self.block_swizzle_size,
-    ]
-
-    var scheduler: Self.SchedulerType
-    var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
-    var consumer_state_ptr: Pointer[
-        PipelineState[Self.num_stages], Self.state_origin
-    ]
-
-    @always_inline
-    def __init__(
-        out self,
-        scheduler: Self.SchedulerType,
-        work_info_ptr: Pointer[WorkInfo, Self.work_origin],
-        consumer_state_ptr: Pointer[
-            PipelineState[Self.num_stages], Self.state_origin
-        ],
-    ):
-        self.scheduler = scheduler
-        self.work_info_ptr = work_info_ptr
-        self.consumer_state_ptr = consumer_state_ptr
-
-    @always_inline
-    def __enter__(self) -> WorkInfo:
-        return self.work_info_ptr[]
-
-    @always_inline
-    def __exit__(mut self):
-        var next = self.scheduler.fetch_next_work(
-            self.work_info_ptr[],
-            self.consumer_state_ptr[],
-        )
-        self.work_info_ptr[] = next
-        self.consumer_state_ptr[].step()
-
-
 struct WaitAndAdvanceContext[
     work_origin: MutOrigin,
 ](TrivialRegisterPassable):
@@ -158,6 +89,10 @@ struct WaitAndAdvanceContext[
     - Construction: Waits for CLC response, fetches next work
     - __enter__: Returns current work_info for processing
     - __exit__: Assigns fetched work as current
+
+    Parameters:
+        work_origin: Memory origin of the `work_info_ptr` pointer
+            (inferred).
 
     Usage:
         with work_iter.wait_and_advance() as current:
@@ -169,7 +104,7 @@ struct WaitAndAdvanceContext[
     var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
     var next_work: WorkInfo
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         work_info_ptr: Pointer[WorkInfo, Self.work_origin],
@@ -178,39 +113,83 @@ struct WaitAndAdvanceContext[
         self.work_info_ptr = work_info_ptr
         self.next_work = next_work
 
-    @always_inline
+    @inline(.always)
     def __enter__(self) -> WorkInfo:
         return self.work_info_ptr[]
 
-    @always_inline
+    @inline(.always)
     def __exit__(mut self):
         self.work_info_ptr[] = self.next_work
 
 
-# =============================================================================
-# WorkIterator - Per-warp iterator encapsulating scheduler + pipeline state
-# =============================================================================
+struct WaitAndAdvanceHandle[
+    work_origin: MutOrigin,
+]:
+    """RAII handle for waiting on CLC barrier and advancing work iterator.
+
+    Uses the origin system (__init__/__deinit__) instead of context managers.
+    The current work_info is captured on construction. On destruction, the
+    prefetched next work is written back to the iterator's work_info.
+
+    Parameters:
+        work_origin: Memory origin of the `work_info_ptr` pointer
+            (inferred).
+
+    Usage:
+        var handle = work_iter.wait_and_advance_linear()
+        process(handle.work_info)
+        handle^.release()
+        # After release, work_iter.work_info is the NEXT work item
+    """
+
+    var work_info: WorkInfo
+    var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
+    var next_work: WorkInfo
+
+    @inline(.always)
+    def __init__(
+        out self,
+        work_info_ptr: Pointer[WorkInfo, Self.work_origin],
+        next_work: WorkInfo,
+    ):
+        self.work_info = work_info_ptr[]
+        self.work_info_ptr = work_info_ptr
+        self.next_work = next_work
+
+    @inline(.always)
+    def release(deinit self):
+        """Release the handle and advance to next work."""
+        self.work_info_ptr[] = self.next_work
 
 
 struct WorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32],
+    cluster_shape: IndexList[3, element_type=.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterPassable):
+](Copyable, Iterable, Iterator, RegisterPassable):
     """Per-warp work iterator that owns work_info and pipeline state.
 
     Each warp creates its own WorkIterator which internally manages both
     the current work item and the CLC pipeline consumer state. Throttle
     pipeline is obtained from the scheduler.
 
+    Parameters:
+        num_stages: Number of CLC pipeline stages for work distribution.
+        cluster_shape: Cluster tile counts as `(m, n, k)`.
+        rasterize_order: Order CLC rasterizes tiles across the cluster
+            grid.
+        block_swizzle_size: Block swizzle factor for tile remapping, one
+            of 0, 1, 2, 4, or 8.
+
     Usage:
         var work_iter = scheduler.work_iterator()
-        while work_iter.has_work():
-            with work_iter.next() as current:
-                work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
-                do_work(current)
+        for current in work_iter:
+            scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
+            do_work(current)
     """
+
+    comptime Element = WorkInfo
 
     comptime SchedulerType = TileScheduler[
         Self.num_stages,
@@ -218,87 +197,55 @@ struct WorkIterator[
         Self.rasterize_order,
         Self.block_swizzle_size,
     ]
-    comptime ThrottlePipeline = Self.SchedulerType.ThrottlePipeline
 
     var scheduler: Self.SchedulerType
     var work_info: WorkInfo
     var consumer_state: PipelineState[Self.num_stages]
-    var throttle_pipeline: Self.ThrottlePipeline
+    var needs_fetch: Bool
 
-    @always_inline
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    @inline(.always)
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
-        """Create work iterator with initial work_info. Throttle from scheduler.
+        """Create work iterator with initial work_info.
+
+        Args:
+            scheduler: TileScheduler owning the CLC and throttle state.
+            work_info: Initial work item for the iterator.
         """
         self.scheduler = scheduler
         self.work_info = work_info
         self.consumer_state = PipelineState[Self.num_stages]()
-        self.throttle_pipeline = scheduler.throttle_pipeline
+        self.needs_fetch = False
 
-    @always_inline
-    def has_work(self) -> Bool:
-        """Check if there is more work to process."""
-        return self.work_info.is_valid()
+    @inline(.always)
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
 
-    @always_inline
-    def next[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> AdvanceAfterWorkContext[
-        origin_of(self.work_info),
-        origin_of(self.consumer_state),
-        Self.num_stages,
-        Self.cluster_shape,
-        Self.rasterize_order,
-        Self.block_swizzle_size,
-    ]:
-        """Get next work item (advance AFTER work pattern)."""
-        return AdvanceAfterWorkContext(
-            self.scheduler,
-            Pointer(to=self.work_info),
-            Pointer(to=self.consumer_state),
-        )
+    @inline(.always)
+    def __next__(mut self) raises StopIteration -> WorkInfo:
+        """Return current work item, deferring fetch to next call.
 
-    @always_inline
-    def wait_and_advance[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> WaitAndAdvanceContext[
-        origin_of(self.work_info)
-    ]:
-        """Wait for next work from CLC and advance iterator.
+        On the first call, returns the initial work_info without fetching.
+        On subsequent calls, fetches next work (deferred from previous
+        iteration) before returning. This allows the caller to signal
+        throttle between iterations, avoiding deadlock with the scheduler
+        warp.
 
-        Encapsulates the CLC barrier wait:
-        - __enter__: Waits for CLC response, returns current work
-        - __exit__: Assigns fetched work as current
-
-        Usage:
-            with work_iter.wait_and_advance() as current:
-                # Process current work item
-            # After exit, work_iter points to next work
+        Raises:
+            StopIteration: When there is no more work to process.
         """
-        var next = self.scheduler.fetch_next_work(
-            self.work_info, self.consumer_state
-        )
-        self.consumer_state.step()
-        return WaitAndAdvanceContext(Pointer(to=self.work_info), next)
-
-    # ========== CLC Throttle (Producer Side) ==========
-
-    @always_inline
-    def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
-        """Signal CLC throttle if this is the first CTA in cluster.
-
-        The Load warp acts as producer for CLC throttle, signaling that it has
-        started processing a new work item. This prevents the scheduler from
-        getting too far ahead.
-
-        Args:
-            is_first_cta_in_cluster: Only first CTA signals to avoid duplicates.
-        """
-        if is_first_cta_in_cluster:
-            self.throttle_pipeline.producer_signal_and_step()
+        if self.needs_fetch:
+            self.work_info = self.scheduler.fetch_next_work(
+                self.work_info, self.consumer_state
+            )
+            self.consumer_state.step()
+        if not self.work_info.is_valid():
+            raise StopIteration()
+        self.needs_fetch = True
+        return self.work_info
 
 
 # =============================================================================
@@ -308,24 +255,32 @@ struct WorkIterator[
 
 struct SchedulerWorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32],
+    cluster_shape: IndexList[3, element_type=.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterPassable):
+](Copyable, Iterable, Iterator, RegisterPassable):
     """Work iterator for Scheduler warp - owns work_info and both pipeline states.
 
     The Scheduler warp uniquely needs to:
-    1. Consume work responses (like other warps) via next()
+    1. Consume work responses (like other warps) via __next__
     2. Signal throttle and produce new work requests via signal_and_advance()
     3. Drain pending requests at exit via drain()
 
+    Parameters:
+        num_stages: Number of CLC pipeline stages for work distribution.
+        cluster_shape: Cluster tile counts as `(m, n, k)`.
+        rasterize_order: Order CLC rasterizes tiles across the cluster grid.
+        block_swizzle_size: Block swizzle factor for tile remapping, one
+            of 0, 1, 2, 4, or 8.
+
     Usage:
         var sched_iter = scheduler.scheduler_iterator()
-        while sched_iter.has_work():
-            with sched_iter.next():
-                sched_iter.signal_and_advance()
+        for _ in sched_iter:
+            sched_iter.signal_and_advance()
         sched_iter.drain()
     """
+
+    comptime Element = WorkInfo
 
     comptime SchedulerType = TileScheduler[
         Self.num_stages,
@@ -340,46 +295,51 @@ struct SchedulerWorkIterator[
     var consumer_state: PipelineState[Self.num_stages]
     var producer_state: PipelineState[Self.num_stages]
     var throttle_pipeline: Self.ThrottlePipeline
+    var needs_fetch: Bool
 
-    @always_inline
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    @inline(.always)
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
-        """Create scheduler iterator. Throttle pipeline from scheduler."""
+        """Create scheduler iterator. Throttle pipeline from scheduler.
+
+        Args:
+            scheduler: TileScheduler owning the CLC and throttle state.
+            work_info: Initial work item for the iterator.
+        """
         self.scheduler = scheduler
         self.work_info = work_info
         self.consumer_state = PipelineState[Self.num_stages]()
         self.producer_state = PipelineState[Self.num_stages](0, 1, 0)
         self.throttle_pipeline = scheduler.throttle_pipeline
+        self.needs_fetch = False
 
-    @always_inline
-    def has_work(self) -> Bool:
-        """Check if there is more work to process."""
-        return self.work_info.is_valid()
+    @inline(.always)
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
 
-    # ========== Work Iteration (Consumer Side) ==========
+    @inline(.always)
+    def __next__(mut self) raises StopIteration -> WorkInfo:
+        """Return current work item, deferring fetch to next call.
 
-    @always_inline
-    def next[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> AdvanceAfterWorkContext[
-        origin_of(self.work_info),
-        origin_of(self.consumer_state),
-        Self.num_stages,
-        Self.cluster_shape,
-        Self.rasterize_order,
-        Self.block_swizzle_size,
-    ]:
-        """Get next work item."""
-        return AdvanceAfterWorkContext(
-            self.scheduler,
-            Pointer(to=self.work_info),
-            Pointer(to=self.consumer_state),
-        )
+        Raises:
+            StopIteration: When there is no more work to process.
+        """
+        if self.needs_fetch:
+            self.work_info = self.scheduler.fetch_next_work(
+                self.work_info, self.consumer_state
+            )
+            self.consumer_state.step()
+        if not self.work_info.is_valid():
+            raise StopIteration()
+        self.needs_fetch = True
+        return self.work_info
 
     # ========== CLC Throttle + Work Request ==========
 
-    @always_inline
+    @inline(.always)
     def signal_and_advance(mut self):
         """Signal CLC throttle consumer and advance to next work request.
 
@@ -394,7 +354,7 @@ struct SchedulerWorkIterator[
 
     # ========== Cleanup ==========
 
-    @always_inline
+    @inline(.always)
     def drain(mut self):
         """Drain all pending CLC requests before kernel exit.
 
@@ -411,18 +371,36 @@ struct SchedulerWorkIterator[
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+    cluster_shape: IndexList[3, element_type=.uint32] = Index[
         dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ](TrivialRegisterPassable):
+    """Schedules output-tile work across CTAs and clusters via Cluster Launch Control.
+
+    Owns the CLC response, full/empty barrier, and throttle pipeline state
+    used to distribute and pace work for SM100 structured matmul kernels.
+    Provides work iterators for both worker warps and the scheduler warp,
+    along with rasterization and block-swizzle remapping of cluster-local
+    tile coordinates to global output-matrix coordinates.
+
+    Parameters:
+        num_stages: Number of CLC pipeline stages for work distribution.
+        cluster_shape: Cluster tile counts as `(m, n, k)` (defaults to
+            `(1, 1, 1)`).
+        rasterize_order: Order CLC rasterizes tiles across the cluster
+            grid (defaults to `RasterOrder.AlongM`).
+        block_swizzle_size: Block swizzle factor for tile remapping, one
+            of 0, 1, 2, 4, or 8 (defaults to 8).
+    """
+
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]
-    comptime log_cluster_m = FastDiv[DType.uint32](Self.cluster_shape[0])
-    comptime log_cluster_n = FastDiv[DType.uint32](Self.cluster_shape[1])
-    comptime log_cluster_k = FastDiv[DType.uint32](Self.cluster_shape[2])
+    comptime log_cluster_m = FastDiv[.uint32](Self.cluster_shape[0])
+    comptime log_cluster_n = FastDiv[.uint32](Self.cluster_shape[1])
+    comptime log_cluster_k = FastDiv[.uint32](Self.cluster_shape[2])
 
     comptime ThrottlePipeline = ProducerConsumerPipeline[Self.num_stages]
 
@@ -434,9 +412,9 @@ struct TileScheduler[
     ]
 
     var cluster_dim: StaticTuple[Int32, 3]
-    var log_cluster_dim_m: FastDiv[DType.uint32]
-    var log_cluster_dim_n: FastDiv[DType.uint32]
-    var log_cluster_dim_k: FastDiv[DType.uint32]
+    var log_cluster_dim_m: FastDiv[.uint32]
+    var log_cluster_dim_n: FastDiv[.uint32]
+    var log_cluster_dim_k: FastDiv[.uint32]
 
     var clc_response: SMemPtr[UInt128]
     var full_mbar: SMemPtr[SharedMemBarrier]
@@ -450,11 +428,16 @@ struct TileScheduler[
         consumer_arv_count: Int32,
     ):
         """Initialize throttle pipeline barriers. Called once by elect_one thread.
+
+        Args:
+            storage_ptr: Shared memory storage for the throttle barriers.
+            producer_arv_count: Arrival count for producer-side barriers.
+            consumer_arv_count: Arrival count for consumer-side barriers.
         """
         var pipeline = Self.ThrottlePipeline(storage_ptr)
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
@@ -463,7 +446,17 @@ struct TileScheduler[
         clc_empty: Self.ClcBarrierArray,
         clc_throttle: Self.ThrottleBarrierArray,
     ):
-        """Initialize from typed barrier arrays."""
+        """Initialize from typed barrier arrays.
+
+        Args:
+            cluster_dim: Grid cluster dimensions as `(m, n, k)` used for
+                fast division rasterization.
+            clc_response: Shared memory array storing CLC response payloads.
+            clc_full: Barriers signaled when CLC response data is ready.
+            clc_empty: Barriers signaled when a response slot is available.
+            clc_throttle: Barriers for the throttle pipeline pacing the
+                scheduler against the load warp.
+        """
         comptime assert Self.block_swizzle_size in [
             0,
             1,
@@ -473,15 +466,15 @@ struct TileScheduler[
         ], "block_swizzle_size must be 0, 1, 2, 4, or 8"
 
         self.cluster_dim = cluster_dim
-        self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
-        self.log_cluster_dim_n = FastDiv[DType.uint32](Int(cluster_dim[1]))
-        self.log_cluster_dim_k = FastDiv[DType.uint32](Int(cluster_dim[2]))
+        self.log_cluster_dim_m = FastDiv[.uint32](Int(cluster_dim[0]))
+        self.log_cluster_dim_n = FastDiv[.uint32](Int(cluster_dim[1]))
+        self.log_cluster_dim_k = FastDiv[.uint32](Int(cluster_dim[2]))
         self.clc_response = clc_response.ptr
         self.full_mbar = clc_full.ptr
         self.empty_mbar = clc_empty.ptr
         self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def work_info_from_clc_response(result: SMemPtr[UInt128]) -> WorkInfo:
         comptime asm = """{
@@ -508,19 +501,19 @@ struct TileScheduler[
             is_valid_tile=(ret_val[3] == 1),
         )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def work_info_from_cluster(
         work_info: WorkInfo,
         cluster_dim: StaticTuple[Int32, 3],
-        log_cluster_dim_m: FastDiv[DType.uint32],
-        log_cluster_dim_n: FastDiv[DType.uint32],
+        log_cluster_dim_m: FastDiv[.uint32],
+        log_cluster_dim_n: FastDiv[.uint32],
     ) -> WorkInfo:
-        comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
+        comptime FastUInt = Scalar[FastDiv[.uint32].uint_type]
 
         var normalized_m = FastUInt(work_info.m) / Self.log_cluster_m
         var normalized_n = FastUInt(work_info.n) / Self.log_cluster_n
-        comptime log_block_swizzle_size = FastDiv[DType.uint32](
+        comptime log_block_swizzle_size = FastDiv[.uint32](
             Self.block_swizzle_size
         )
 
@@ -528,6 +521,8 @@ struct TileScheduler[
             normalized_m * FastUInt(cluster_dim[1]) + normalized_n
         )
 
+        var new_normalized_m: FastUInt
+        var new_normalized_n: FastUInt
         # CLC rasterize along M by default.
         comptime if Self.rasterize_order == RasterOrder.AlongM:
             new_normalized_m = normalized_m
@@ -536,6 +531,8 @@ struct TileScheduler[
             new_normalized_m = linear_cluster_id % log_cluster_dim_m
             new_normalized_n = linear_cluster_id / log_cluster_dim_m
 
+        var new_m_global: FastUInt
+        var new_n_global: FastUInt
         comptime if Self.block_swizzle_size != 0:
             var swizzle_m_size = (
                 FastUInt(cluster_dim[0]) / log_block_swizzle_size
@@ -573,17 +570,17 @@ struct TileScheduler[
         return WorkInfo(
             m=UInt32(
                 Int(new_m_global) * Self.cluster_shape[0]
-                + Int(block_id_in_cluster.x)
+                + block_id_in_cluster.x
             ),
             n=UInt32(
                 Int(new_n_global) * Self.cluster_shape[1]
-                + Int(block_id_in_cluster.y)
+                + block_id_in_cluster.y
             ),
             k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,
         )
 
-    @always_inline
+    @inline(.always)
     def initial_work_info(self) -> WorkInfo:
         return self.work_info_from_cluster(
             WorkInfo(
@@ -597,7 +594,7 @@ struct TileScheduler[
             self.log_cluster_dim_n,
         )
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work(
         self,
         work_info: WorkInfo,
@@ -610,7 +607,7 @@ struct TileScheduler[
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
         var work_tile = self.work_info_from_clc_response(
-            self.clc_response + consumer_state.index()
+            self.clc_response.unsafe_offset(consumer_state.index())
         )
         # Only cta 0 in a cluster is used for scheduling.
         self.empty_mbar[consumer_state.index()].arrive_cluster(0)
@@ -622,39 +619,28 @@ struct TileScheduler[
         )
 
     # =========================================================================
+    # CLC Throttle (Producer Side)
+    # =========================================================================
+
+    @inline(.always)
+    def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
+        """Signal CLC throttle if this is the first CTA in cluster.
+
+        The Load warp acts as producer for CLC throttle, signaling that it has
+        started processing a new work item. This prevents the scheduler from
+        getting too far ahead.
+
+        Args:
+            is_first_cta_in_cluster: Only first CTA signals to avoid duplicates.
+        """
+        if is_first_cta_in_cluster:
+            self.throttle_pipeline.producer_signal_and_step()
+
+    # =========================================================================
     # Work Iteration Context Managers
     # =========================================================================
 
-    @always_inline
-    def advance_after_work[
-        work_origin: MutOrigin, state_origin: MutOrigin, //
-    ](
-        self,
-        ref[work_origin] work_info: WorkInfo,
-        ref[state_origin] consumer_state: PipelineState[Self.num_stages],
-    ) -> AdvanceAfterWorkContext[
-        work_origin,
-        state_origin,
-        Self.num_stages,
-        Self.cluster_shape,
-        Self.rasterize_order,
-        Self.block_swizzle_size,
-    ]:
-        """Context for warps that do work THEN advance (Load/Scheduler/Epilogue).
-
-        Usage:
-            with scheduler.advance_after_work(work_info, state) as current:
-                do_work(current)
-                syncwarp()
-            # After: work_info updated, state stepped
-        """
-        return AdvanceAfterWorkContext(
-            self,
-            Pointer(to=work_info),
-            Pointer(to=consumer_state),
-        )
-
-    @always_inline
+    @inline(.always)
     def wait_and_advance_work[
         work_origin: MutOrigin, //
     ](
@@ -666,6 +652,16 @@ struct TileScheduler[
 
         Encapsulates the CLC barrier wait (called on scheduler directly).
 
+        Parameters:
+            work_origin: Memory origin of the `work_info` reference
+                (inferred).
+
+        Args:
+            work_info: Reference to the current work item, updated to the
+                next work item on context exit.
+            consumer_state: Consumer pipeline state, stepped after the
+                fetch.
+
         Usage:
             with scheduler.wait_and_advance_work(work_info, state) as current:
                 do_mma(current)
@@ -675,7 +671,7 @@ struct TileScheduler[
         consumer_state.step()
         return WaitAndAdvanceContext(Pointer(to=work_info), next)
 
-    @always_inline
+    @inline(.always)
     def work_iterator(
         self,
     ) -> WorkIterator[
@@ -684,21 +680,20 @@ struct TileScheduler[
         Self.rasterize_order,
         Self.block_swizzle_size,
     ]:
-        """Create a per-warp work iterator with internally managed state.
+        """Create a per-warp work iterator using __next__-style iteration.
 
         Each warp should create its own work iterator. The iterator owns
-        work_info, pipeline state, and throttle internally.
+        work_info and pipeline state internally.
 
         Usage:
             var work_iter = scheduler.work_iterator()
-            while work_iter.has_work():
-                with work_iter.next() as current:
-                    work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
-                    do_work(current)
+            for current in work_iter:
+                scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
+                do_work(current)
         """
         return WorkIterator(self, self.initial_work_info())
 
-    @always_inline
+    @inline(.always)
     def scheduler_iterator(
         self,
     ) -> SchedulerWorkIterator[
@@ -714,14 +709,13 @@ struct TileScheduler[
 
         Usage:
             var sched_iter = scheduler.scheduler_iterator()
-            while sched_iter.has_work():
-                with sched_iter.next():
-                    sched_iter.signal_and_advance()
+            for _ in sched_iter:
+                sched_iter.signal_and_advance()
             sched_iter.drain()
         """
         return SchedulerWorkIterator(self, self.initial_work_info())
 
-    @always_inline
+    @inline(.always)
     def advance_to_next_work(
         self,
         mut clc_state: PipelineState[Self.num_stages],
@@ -740,8 +734,10 @@ struct TileScheduler[
 
         if elect_one_sync():
             clusterlaunchcontrol_try_cancel[multicast=multicast](
-                self.clc_response + clc_state.index(),
-                (self.full_mbar + clc_state.index()).bitcast[Int64](),
+                self.clc_response.unsafe_offset(clc_state.index()),
+                self.full_mbar.unsafe_offset(clc_state.index()).unsafe_bitcast[
+                    Int64
+                ](),
             )
 
         return clc_state.next()

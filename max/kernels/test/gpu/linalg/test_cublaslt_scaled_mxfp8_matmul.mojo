@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, align_up
+from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.matmul.vendor.blas import matmul
@@ -27,8 +28,8 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     set_scale_factor,
 )
-from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from linalg.block_scaled_quantization import naive_block_scaled_matmul
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def test_scaled_mxfp8_cublaslt[
@@ -44,9 +45,9 @@ def test_scaled_mxfp8_cublaslt[
         transpose_b == True
     ), "Only transpose_b = True is supported for scaled FP8 matmul"
 
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var cublaslt_version = cublasLtGetVersion()
 
@@ -69,18 +70,18 @@ def test_scaled_mxfp8_cublaslt[
     var c_shape = Coord(m, n)
 
     var a_scales_shape = Coord(
-        Idx(ceildiv(M, SF_MN_GROUP_SIZE)),
-        Idx(ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(M, SF_MN_GROUP_SIZE),
+        ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(N, SF_MN_GROUP_SIZE)),
-        Idx(ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(N, SF_MN_GROUP_SIZE),
+        ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -98,8 +99,12 @@ def test_scaled_mxfp8_cublaslt[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_size
+    )
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        b_scales_size
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
@@ -108,10 +113,10 @@ def test_scaled_mxfp8_cublaslt[
     var b_size = N * K
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[input_type]](a_size)
-    var b_host_ptr = alloc[Scalar[input_type]](b_size)
-    var c_host_ptr = alloc[Scalar[output_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[output_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](b_size)
+    var c_host_ptr = unsafe_alloc[Scalar[output_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[output_type]](c_size)
 
     var a_device = ctx.enqueue_create_buffer[input_type](a_size)
     var b_device = ctx.enqueue_create_buffer[input_type](b_size)
@@ -131,7 +136,7 @@ def test_scaled_mxfp8_cublaslt[
             if idx0 < M and idx1 < K:
                 var scale_value = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_type]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
@@ -153,7 +158,7 @@ def test_scaled_mxfp8_cublaslt[
             if idx0 < N and idx1 < K:
                 var scale_value = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_type]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
@@ -164,8 +169,8 @@ def test_scaled_mxfp8_cublaslt[
                     b_scales_host_tt, idx0, idx1, Scalar[scales_type](0.0)
                 )
 
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -173,40 +178,36 @@ def test_scaled_mxfp8_cublaslt[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var a_scales = TileTensor(
-        a_scales_device.unsafe_ptr(), row_major(a_scales_shape)
-    )
-    var b_scales = TileTensor(
-        b_scales_device.unsafe_ptr(), row_major(b_scales_shape)
-    )
+    var a = TileTensor(a_device, row_major(a_shape))
+    var b = TileTensor(b_device, row_major(b_shape))
+    var c = TileTensor(c_device, row_major(c_shape))
+    var a_scales = TileTensor(a_scales_device, row_major(a_scales_shape))
+    var b_scales = TileTensor(b_scales_device, row_major(b_scales_shape))
 
     matmul(
         ctx,
         c,
         a,
         b,
-        a_scales=a_scales.as_immut(),
-        b_scales=b_scales.as_immut(),
+        a_scales=a_scales.as_imm(),
+        b_scales=b_scales.as_imm(),
         transpose_b=True,
         c_row_major=True,
     )
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
-    var c_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
+    var c_ref = TileTensor(c_device_ref, row_major(c_shape))
     naive_block_scaled_matmul[
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
         SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](
-        c_ref.to_layout_tensor(),
-        a.to_layout_tensor(),
-        b.to_layout_tensor(),
-        a_scales.to_layout_tensor(),
-        b_scales.to_layout_tensor(),
+        c_ref,
+        a,
+        b,
+        a_scales,
+        b_scales,
         ctx,
     )
 
@@ -222,59 +223,53 @@ def test_scaled_mxfp8_cublaslt[
         rtol=0.01,
     )
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-
 
 def main() raises:
     with DeviceContext() as ctx:
         test_scaled_mxfp8_cublaslt[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             True,
-        ](ctx, Idx(128), Idx[128](), Idx[128]())
+        ](ctx, Idx[128], Idx[128], Idx[128])
 
         test_scaled_mxfp8_cublaslt[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             True,
-        ](ctx, Idx(256), Idx[256](), Idx[256]())
+        ](ctx, Idx[256], Idx[256], Idx[256])
 
         test_scaled_mxfp8_cublaslt[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             True,
-        ](ctx, Idx(128), Idx[3 * 128](), Idx[256]())
+        ](ctx, Idx[128], Idx[3 * 128], Idx[256])
 
         test_scaled_mxfp8_cublaslt[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             True,
-        ](ctx, Idx(3 * 128), Idx[128](), Idx[3 * 128]())
+        ](ctx, 3 * 128, Idx[128], Idx[3 * 128])
 
         test_scaled_mxfp8_cublaslt[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             True,
-        ](ctx, Idx(2560), Idx[4096](), Idx[1024]())
+        ](ctx, Idx[2560], Idx[4096], Idx[1024])
 
         test_scaled_mxfp8_cublaslt[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096](), Idx[1024]())
+        ](ctx, Idx[1000], Idx[4096], Idx[1024])
 
         test_scaled_mxfp8_cublaslt[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096 + 64](), Idx[1024]())
+        ](ctx, Idx[1000], Idx[4096 + 64], Idx[1024])
 
         test_scaled_mxfp8_cublaslt[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096 + 64](), Idx[1024 + 64]())
+        ](ctx, Idx[1000], Idx[4096 + 64], Idx[1024 + 64])

@@ -26,7 +26,7 @@ def find_ops_in_graph(
 
     Args:
         graph: The Graph object to search
-        op_name: The name of the operation (e.g., "mo.custom", "mo.layer_norm")
+        op_name: The name of the operation (e.g., "mo.custom", "mo.reduce.layer_norm")
         custom_symbol: For "mo.custom" ops, the symbol to search for in attributes
 
     Returns:

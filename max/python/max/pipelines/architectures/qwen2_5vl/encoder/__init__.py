@@ -12,5 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .model import Qwen25VLEncoderModel
+from .multimodal_encoder import Qwen25VLMultimodalEncoderModel
 
-__all__ = ["Qwen25VLEncoderModel"]
+__all__ = ["Qwen25VLEncoderModel", "Qwen25VLMultimodalEncoderModel"]

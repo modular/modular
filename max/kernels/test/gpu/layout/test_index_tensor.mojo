@@ -13,7 +13,7 @@
 
 from std.random import random_ui64
 
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from layout import Idx, TileTensor, coord_to_index_list, row_major
 from nn.index_tensor import _index_tensor_impl
 from std.testing import assert_equal, assert_true
@@ -26,11 +26,9 @@ def execute_index_tensor_test[
     //,
     batch_dims: Int,
 ](
-    data_device: TileTensor[data_type, address_space=AddressSpace.GENERIC, ...],
-    indices_device: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    expected_output_device: TileTensor[
-        data_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    data_device: TileTensor[data_type, address_space=.GENERIC, ...],
+    indices_device: TileTensor[address_space=.GENERIC, ...],
+    expected_output_device: TileTensor[data_type, address_space=.GENERIC, ...],
     expected_output_device_buffer: DeviceBuffer[data_type],
     ctx: DeviceContext,
 ) raises:
@@ -48,8 +46,8 @@ def execute_index_tensor_test[
     )
     # Convert all tensors to dynamic layouts before calling the kernel
     _index_tensor_impl[batch_dims, target="gpu"](
-        data_device.make_dynamic[DType.int64](),
-        indices_device.make_dynamic[DType.int64](),
+        data_device.make_dynamic[.int64](),
+        indices_device.make_dynamic[.int64](),
         actual_output_tensor,
         ctx,
     )
@@ -83,9 +81,7 @@ def test_index_tensor_DLRM(ctx: DeviceContext) raises:
     comptime index_len = 45
 
     # dim_0 x dim_1 x dim_2 input tensor.
-    comptime input_layout = row_major(
-        (Idx[dim_0](), Idx[dim_1](), Idx[dim_2]())
-    )
+    comptime input_layout = row_major((Idx[dim_0], Idx[dim_1], Idx[dim_2]))
     var input = ctx.enqueue_create_buffer[input_type](dim_0 * dim_1 * dim_2)
     var input_tensor = TileTensor(input, input_layout)
 
@@ -95,8 +91,8 @@ def test_index_tensor_DLRM(ctx: DeviceContext) raises:
             input_host[i] = Int32(i)
 
     # We have a 2D tensor of shape (index_len, 2).
-    comptime indices_layout = row_major(Idx[index_len](), Idx[2]())
-    var indices = ctx.enqueue_create_buffer[DType.uint64](index_len * 2)
+    comptime indices_layout = row_major(Idx[index_len], Idx[2])
+    var indices = ctx.enqueue_create_buffer[.uint64](index_len * 2)
     with indices.map_to_host() as indices_host:
         var indices_host_tensor = TileTensor(indices_host, indices_layout)
         for i in range(index_len):
@@ -110,7 +106,7 @@ def test_index_tensor_DLRM(ctx: DeviceContext) raises:
     # where x = [0, input.dim(0)), n = [0, indices.dim(0))
 
     # Reference output of shape dim_0 x index_len.
-    comptime output_layout = row_major(Idx[dim_0](), Idx[index_len]())
+    comptime output_layout = row_major(Idx[dim_0], Idx[index_len])
     var ref_output = ctx.enqueue_create_buffer[input_type](dim_0 * index_len)
     with ref_output.map_to_host() as ref_output_host:
         with input.map_to_host() as input_host:
@@ -133,7 +129,7 @@ def test_index_tensor_DLRM(ctx: DeviceContext) raises:
     execute_index_tensor_test[batch_dims](
         input_tensor,
         indices_tensor,
-        ref_output_tensor.as_immut(),
+        ref_output_tensor.as_imm(),
         ref_output,
         ctx,
     )
@@ -154,7 +150,7 @@ def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
 
     # dim_0 x dim_1 x dim_2 x dim_3 input tensor.
     comptime input_layout = row_major(
-        (Idx[dim_0](), Idx[dim_1](), Idx[dim_2](), Idx[dim_3]())
+        (Idx[dim_0], Idx[dim_1], Idx[dim_2], Idx[dim_3])
     )
     var input = ctx.enqueue_create_buffer[input_type](
         dim_0 * dim_1 * dim_2 * dim_3
@@ -167,8 +163,8 @@ def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
             input_host[i] = Int32(i)
 
     # We have a 2D tensor of shape (index_len, 2).
-    comptime indices_layout = row_major(Idx[index_len](), Idx[2]())
-    var indices = ctx.enqueue_create_buffer[DType.uint64](index_len * 2)
+    comptime indices_layout = row_major(Idx[index_len], Idx[2])
+    var indices = ctx.enqueue_create_buffer[.uint64](index_len * 2)
     with indices.map_to_host() as indices_host:
         var indices_host_tensor = TileTensor(indices_host, indices_layout)
         for i in range(index_len):
@@ -182,9 +178,7 @@ def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     # where x = [0, input.dim(0)), y = [0, input.dim(1)) and n = [0, indices.dim(0))
 
     # Reference output of shape dim_0 x dim_1 x index_len.
-    comptime output_layout = row_major(
-        (Idx[dim_0](), Idx[dim_1](), Idx[index_len]())
-    )
+    comptime output_layout = row_major((Idx[dim_0], Idx[dim_1], Idx[index_len]))
     var ref_output = ctx.enqueue_create_buffer[input_type](
         dim_0 * dim_1 * index_len
     )
@@ -211,7 +205,7 @@ def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     execute_index_tensor_test[batch_dims](
         input_tensor,
         indices_tensor,
-        ref_output_tensor.as_immut(),
+        ref_output_tensor.as_imm(),
         ref_output,
         ctx,
     )

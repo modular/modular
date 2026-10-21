@@ -19,10 +19,23 @@ Cache configuration
    :toctree: generated
    :template: autosummary/class.rst
 
+   CacheLeafParamInterface
+   HostStagingAlloc
+   KVCacheAssignments
    KVCacheBuffer
+   KVCacheBufferInterface
    KVCacheParamInterface
    KVCacheParams
+   KVCacheGroupId
+   MHAKVCacheParams
+   MLAKVCacheParams
+   MSAKVCacheParams
    KVCacheQuantizationConfig
+   KVConnectorType
+   KVConnectorConfigInterface
+   NullKVConnectorConfig
+   KVCacheMemory
+   MultiKVCacheBuffer
    MultiKVCacheParams
 
 Cache inputs
@@ -33,11 +46,29 @@ Cache inputs
    :toctree: generated
    :template: autosummary/class.rst
 
-   AttentionDispatchMetadata
    KVCacheInputs
    KVCacheInputsPerDevice
-   NestedIterableDataclass
+   BatchCharacteristics
    PagedCacheValues
+
+Recurrent state
+---------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   CacheLeafKind
+   KVLeafRegion
+   PagedKVLeafRegion
+   RecurrentKVLeafRegion
+   RecurrentLeafInputs
+   RecurrentStateBuffer
+   RecurrentStateInputsPerDevice
+   RecurrentStateParams
+   RecurrentStateRegion
+   ScratchKVLeafRegion
 
 Attention dispatch
 ------------------
@@ -47,7 +78,11 @@ Attention dispatch
    :toctree: generated
    :template: autosummary/class.rst
 
-   AttentionDispatchResolver
+   AttnKey
+   AttnKeyInterface
+   MHAAttnKey
+   MLAAttnKey
+   MSAAttnKey
 
 Metrics
 -------
@@ -59,6 +94,17 @@ Metrics
 
    KVCacheMetrics
 
+Constants
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   KVHashAlgo
+   PACKED_PAGE_STRIDE
+
 Functions
 ---------
 
@@ -67,11 +113,12 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   attention_dispatch_metadata
-   attention_dispatch_metadata_list
-   build_max_lengths_tensor
+   build_max_lengths_tensors
    compute_max_seq_len_fitting_in_cache
    compute_num_device_blocks
-   compute_num_host_blocks
    estimated_memory_size
-   unflatten_ragged_attention_inputs
+   packed_page_stride
+   padded_lut_cols
+   recurrent_leaf
+   recurrent_leaves
+   spec_decode_cache_slack

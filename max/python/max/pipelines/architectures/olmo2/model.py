@@ -16,10 +16,9 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from max.driver import Buffer
-from max.engine import InferenceSession, Model
-from max.graph import Graph
-from max.graph.weights import Weights, WeightsAdapter
-from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.engine import Model
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
+from typing_extensions import override
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Olmo2Config
@@ -35,7 +34,7 @@ class Olmo2Model(LlamaModelBase):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization layer."""
 
     attention_bias: bool = False
@@ -44,19 +43,11 @@ class Olmo2Model(LlamaModelBase):
     state_dict: dict[str, Any]
     """Weights to load into the model."""
 
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        """Override to use Olmo2Config and Olmo2 model instead of Llama3."""
-
-        # Retrieve config using Olmo2Config instead of Llama3Config
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Olmo2Config:
+        model_config = Olmo2Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
-        model_config = Olmo2Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
@@ -64,38 +55,26 @@ class Olmo2Model(LlamaModelBase):
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
         )
+        return model_config
 
-        # Build Graph - only single GPU for now
+    @override
+    def graph_specs(self, model_config: Olmo2Config) -> dict[str, GraphSpec]:
+        """Returns the single-device decoder."""
         if len(self.devices) > 1:
             raise NotImplementedError("Multi-GPU OLMo2 is not implemented yet")
 
         nn_model = Olmo2(model_config)
-
-        # Get Graph Inputs
         graph_inputs = nn_model.input_types(self.kv_params)
-
-        # Load weights.
         nn_model.load_state_dict(
-            state_dict,
+            self.state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
         )
-
-        self.state_dict = nn_model.state_dict()
-
-        with Graph(
-            "olmo2",
-            input_types=graph_inputs,
-        ) as graph:
-            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                graph.inputs
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "olmo2",
+                graph_inputs,
+                weights=nn_model.state_dict(),
             )
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-            outputs = nn_model(
-                tokens.tensor,
-                kv_collections[0],
-                input_row_offsets=input_row_offsets.tensor,
-                return_n_logits=return_n_logits.tensor,
-            )
-            graph.output(*outputs)
-            return graph
+        }

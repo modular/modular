@@ -13,27 +13,33 @@
 
 """Figure 14.2: Parallel odd-even sort kernel implementation in Mojo."""
 
-from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import DeviceContext
+from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64
 
 
 def sort_kernel(
-    data: UnsafePointer[UInt32, MutAnyOrigin],
-    hasChanged: UnsafePointer[UInt32, MutAnyOrigin],
-    N: Int,
-    isOddStep: Int,
-    block_dim_x: Int,
+    data: MutPointer[UInt32, MutAnyOrigin],
+    hasChanged: MutPointer[UInt32, MutAnyOrigin],
+    N_dev: Int32,
+    isOddStep_dev: Int32,
+    block_dim_x_dev: Int32,
 ):
     """Parallel odd-even sort kernel.
 
     Args:
         data: Array to sort.
         hasChanged: Flag to indicate if any swaps were made.
-        N: Size of array.
-        isOddStep: 1 for odd phase, 0 for even phase.
-        block_dim_x: Block dimension.
+        N_dev: Size of array.
+        isOddStep_dev: 1 for odd phase, 0 for even phase.
+        block_dim_x_dev: Block dimension.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var isOddStep = Int(isOddStep_dev)
+    var block_dim_x = Int(block_dim_x_dev)
     var i = 2 * (block_idx.x * block_dim_x + thread_idx.x) + (
         1 if isOddStep == 1 else 0
     )
@@ -46,7 +52,7 @@ def sort_kernel(
             hasChanged[0] = 1
 
 
-def cpu_odd_even_sort(data: UnsafePointer[UInt32, MutAnyOrigin], N: Int):
+def cpu_odd_even_sort(data: MutPointer[UInt32, _], N: Int):
     """CPU reference implementation of odd-even sort.
 
     Args:
@@ -74,7 +80,7 @@ def cpu_odd_even_sort(data: UnsafePointer[UInt32, MutAnyOrigin], N: Int):
                 sorted = False
 
 
-def verify_sorted(data: UnsafePointer[UInt32, _], N: Int) -> Bool:
+def verify_sorted(data: Pointer[UInt32, _], N: Int) -> Bool:
     """Verify if array is sorted.
 
     Args:
@@ -94,8 +100,8 @@ def main() raises:
     var N = 10000
 
     # Allocate host memory
-    var h_data = alloc[UInt32](N)
-    var h_ref = alloc[UInt32](N)
+    var h_data = unsafe_alloc[UInt32](N)
+    var h_ref = unsafe_alloc[UInt32](N)
 
     # Initialize with random data
     print("Initializing array with", N, "random elements")
@@ -114,15 +120,15 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_data = ctx.enqueue_create_buffer[DType.uint32](N)
-    var d_hasChanged = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_data = ctx.enqueue_create_buffer[.uint32](N)
+    var d_hasChanged = ctx.enqueue_create_buffer[.uint32](1)
 
     # Copy to device
     ctx.enqueue_copy(d_data, h_data)
 
     # Launch configuration
     var threads_per_block = 256
-    var num_blocks = (N // 2 + threads_per_block - 1) // threads_per_block
+    var num_blocks = ceildiv(N // 2, threads_per_block)
 
     print("\nLaunching odd-even sort kernel (Fig 14.2)")
     print("Array size:", N, "elements")
@@ -140,7 +146,7 @@ def main() raises:
     # Odd-even sort main loop
     var iteration = 0
     var max_iterations = N
-    var h_hasChanged = alloc[UInt32](1)
+    var h_hasChanged = unsafe_alloc[UInt32](1)
 
     while iteration < max_iterations:
         # Reset hasChanged flag
@@ -148,23 +154,23 @@ def main() raises:
         ctx.enqueue_copy(d_hasChanged, h_hasChanged)
 
         # Odd phase
-        ctx.enqueue_function_experimental[sort_kernel](
+        ctx.enqueue_function[sort_kernel](
             d_data,
             d_hasChanged,
-            N,
-            1,
-            threads_per_block,
+            Int32(N),
+            Int32(1),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )
 
         # Even phase
-        ctx.enqueue_function_experimental[sort_kernel](
+        ctx.enqueue_function[sort_kernel](
             d_data,
             d_hasChanged,
-            N,
-            0,
-            threads_per_block,
+            Int32(N),
+            Int32(0),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )
@@ -224,6 +230,6 @@ def main() raises:
         print("ERROR: Found", errors, "mismatches between GPU and CPU")
 
     # Cleanup
-    h_data.free()
-    h_ref.free()
-    h_hasChanged.free()
+    h_data.unsafe_free()
+    h_ref.unsafe_free()
+    h_hasChanged.unsafe_free()

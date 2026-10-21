@@ -11,17 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import List
 from spmv_utils import COOMatrix, generate_sparse_matrix, spmv_cpu, verify
-from std.gpu import block_idx, thread_idx, block_dim
-from std.gpu.host import DeviceContext
-from std.os import Atomic
+from max.gpu import block_idx, thread_idx, block_dim
+from max.gpu.host import DeviceContext
+from std.atomic import Atomic
+from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 
 def spmv_coo_kernel(
     cooMatrix: COOMatrix,
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    y: UnsafePointer[Float32, MutAnyOrigin],
+    x: ImmPointer[Float32, ImmutAnyOrigin],
+    y: MutPointer[Float32, MutAnyOrigin],
 ):
     var i = block_idx.x * block_dim.x + thread_idx.x
     if i < cooMatrix.numNonzeros:
@@ -30,7 +31,7 @@ def spmv_coo_kernel(
         var val = cooMatrix.value[i]
 
         # Atomic add to y[row]
-        _ = Atomic.fetch_add(y + row, x[col] * val)
+        _ = Atomic.fetch_add(y.unsafe_offset(row), x[col] * val)
 
 
 def main() raises:
@@ -59,11 +60,11 @@ def main() raises:
     spmv_cpu(rows, cols, h_row_idx, h_col_idx, h_values, h_x, h_y_ref)
 
     # Prepare host pointers
-    var h_rowIdx_ptr = alloc[UInt32](numNonzeros)
-    var h_colIdx_ptr = alloc[UInt32](numNonzeros)
-    var h_value_ptr = alloc[Float32](numNonzeros)
-    var h_x_ptr = alloc[Float32](cols)
-    var h_y_ptr = alloc[Float32](rows)  # Output on host
+    var h_rowIdx_ptr = unsafe_alloc[UInt32](numNonzeros)
+    var h_colIdx_ptr = unsafe_alloc[UInt32](numNonzeros)
+    var h_value_ptr = unsafe_alloc[Float32](numNonzeros)
+    var h_x_ptr = unsafe_alloc[Float32](cols)
+    var h_y_ptr = unsafe_alloc[Float32](rows)  # Output on host
 
     for i in range(numNonzeros):
         h_rowIdx_ptr[i] = h_row_idx[i]
@@ -79,11 +80,11 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Device allocation
-    var d_rowIdx_buf = ctx.enqueue_create_buffer[DType.uint32](numNonzeros)
-    var d_colIdx_buf = ctx.enqueue_create_buffer[DType.uint32](numNonzeros)
-    var d_value_buf = ctx.enqueue_create_buffer[DType.float32](numNonzeros)
-    var d_x_buf = ctx.enqueue_create_buffer[DType.float32](cols)
-    var d_y_buf = ctx.enqueue_create_buffer[DType.float32](rows)
+    var d_rowIdx_buf = ctx.enqueue_create_buffer[.uint32](numNonzeros)
+    var d_colIdx_buf = ctx.enqueue_create_buffer[.uint32](numNonzeros)
+    var d_value_buf = ctx.enqueue_create_buffer[.float32](numNonzeros)
+    var d_x_buf = ctx.enqueue_create_buffer[.float32](cols)
+    var d_y_buf = ctx.enqueue_create_buffer[.float32](rows)
 
     # Copy to device
     ctx.enqueue_copy(d_rowIdx_buf, h_rowIdx_ptr)
@@ -91,25 +92,25 @@ def main() raises:
     ctx.enqueue_copy(d_value_buf, h_value_ptr)
     ctx.enqueue_copy(d_x_buf, h_x_ptr)
     # Initialize y on device to 0
-    var h_y_zeros = alloc[Float32](rows)
+    var h_y_zeros = unsafe_alloc[Float32](rows)
     for i in range(rows):
         h_y_zeros[i] = 0.0
     ctx.enqueue_copy(d_y_buf, h_y_zeros)
-    h_y_zeros.free()
+    h_y_zeros.unsafe_free()
 
     var d_cooMatrix = COOMatrix(
         numNonzeros,
         rows,
         cols,
-        d_rowIdx_buf.unsafe_ptr(),
-        d_colIdx_buf.unsafe_ptr(),
-        d_value_buf.unsafe_ptr(),
+        d_rowIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_colIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_value_buf.unsafe_ptr().as_unsafe_any_origin(),
     )
 
     var blockSize = 256
-    var numBlocks = (numNonzeros + blockSize - 1) // blockSize
+    var numBlocks = ceildiv(numNonzeros, blockSize)
 
-    ctx.enqueue_function_experimental[spmv_coo_kernel](
+    ctx.enqueue_function[spmv_coo_kernel](
         d_cooMatrix,
         d_x_buf,
         d_y_buf,
@@ -126,8 +127,8 @@ def main() raises:
     else:
         print("COO Kernel Test Failed!")
 
-    h_rowIdx_ptr.free()
-    h_colIdx_ptr.free()
-    h_value_ptr.free()
-    h_x_ptr.free()
-    h_y_ptr.free()
+    h_rowIdx_ptr.unsafe_free()
+    h_colIdx_ptr.unsafe_free()
+    h_value_ptr.unsafe_free()
+    h_x_ptr.unsafe_free()
+    h_y_ptr.unsafe_free()

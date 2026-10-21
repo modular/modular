@@ -15,49 +15,67 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from dataclasses import fields, replace
-from typing import Any
+from dataclasses import dataclass, fields, replace
+from typing import Any, ClassVar
 
-import numpy as np
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, Value
+from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
-from max.pipelines.lib import CompilationTimer, ModelInputs, UnifiedEagleOutputs
+from max.pipelines.lib import UnifiedSpecDecodeInputs
+from max.pipelines.lib.graph_specs import GraphRole
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
+from max.pipelines.speculative import (
+    DraftAliases,
+    validate_draft_state_dict,
+)
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
+from ..deepseekV3.model_config import DeepseekV3Config
 from ..deepseekV3_nextn.model_config import DeepseekV3NextNConfig
+from .batch_processor import UnifiedMTPDeepseekV3BatchProcessor
 from .unified_mtp_deepseekV3 import UnifiedMTPDeepseekV3
 
 logger = logging.getLogger("max.pipelines")
 
 
-class UnifiedMTPDeepseekV3Inputs(DeepseekV3Inputs):
-    """Inputs for the UnifiedMTPDeepseekV3 model."""
+@dataclass
+class UnifiedMTPDeepseekV3Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
+    """Inputs for the UnifiedMTPDeepseekV3 model.
 
-    draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
+    Target-prefix fields come from :class:`DeepseekV3Inputs`; the spec-decode
+    fields and trailing buffer packing come from
+    :class:`UnifiedSpecDecodeInputs`. The MTP graph binds the per-row
+    ``in_thinking_phase`` flag (consumed by relaxed acceptance).
+    """
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        buffers = super().buffers
-        if self.draft_tokens is not None:
-            buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
-        return buffers
+        return super().buffers + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=True
+        )
 
 
-class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
+class UnifiedMTPDeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
     """DeepseekV3 with MTP: merge + target + rejection + shift in one graph."""
+
+    batch_processor_cls: ClassVar[type[UnifiedMTPDeepseekV3BatchProcessor]] = (
+        UnifiedMTPDeepseekV3BatchProcessor
+    )
+
+    _draft_state_dict: dict[str, Any]
+    _draft_config: DeepseekV3NextNConfig
 
     def __init__(self, *args, **kwargs):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
@@ -65,279 +83,178 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         super().__init__(*args, **kwargs)
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
-        with CompilationTimer("with_mtp_model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=self.huggingface_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-
-            # Create target config from target-only keys (strip "target." prefix).
-            target_state_dict = {
-                k[len("target.") :]: v
-                for k, v in state_dict.items()
-                if k.startswith("target.")
-            }
-            config = self._create_model_config(target_state_dict)
-
-            n_devices = len(self.devices)
-            if (
-                n_devices > 1
-                and self.pipeline_config.runtime.ep_size != n_devices
-            ):
-                raise ValueError("Only the EP strategy is supported.")
-
-            self.ep_comm_initializer = None
-            self.draft_ep_comm_initializer = None
-            if config.ep_config is not None and not is_virtual_device_mode():
-                # Allocate EP buffers with BF16 dispatch dtype (the larger dtype)
-                # so both target (FP4) and draft (BF16) can share the same buffers.
-                ep_cfg = replace(
-                    config.ep_config,
-                    dispatch_dtype=DType.bfloat16,
-                    dispatch_quant_config=None,
-                )
-                self.ep_comm_initializer = EPCommInitializer(ep_cfg)
-                self.ep_comm_initializer.ep_init(session)
-                config.ep_config.node_id = (
-                    self.ep_comm_initializer.config.node_id
-                )
-                if config.ep_config.node_id == -1:
-                    raise ValueError(
-                        "EP node ID is not set. Please check if the EP "
-                        "initialization is successful."
-                    )
-                self.draft_ep_comm_initializer = self.ep_comm_initializer
-
-            # Create draft config from draft-only keys (strip "draft." prefix).
-            draft_state_dict = {
-                k[len("draft.") :]: v
-                for k, v in state_dict.items()
-                if k.startswith("draft.")
-            }
-            draft_config = self._create_draft_config(draft_state_dict)
-
-            if (
-                draft_config.ep_config is not None
-                and config.ep_config is not None
-            ):
-                draft_config.ep_config.node_id = config.ep_config.node_id
-
-            # TODO: don't hard code number of layers
-            assert isinstance(self.kv_params, KVCacheParams)
-            self._draft_kv_params = replace(self.kv_params, num_layers=1)
-
-            draft_config.return_hidden_states = ReturnHiddenStates.LAST
-
-            logger.info(
-                f"[DEBUG] load_model: target config devices={config.devices}, "
-                f"draft config devices={draft_config.devices}"
+    def _load_state_dict(self) -> dict[str, Any]:
+        if self.adapter:
+            raw_state_dict = self.adapter(
+                dict(self.weights.items()),
+                huggingface_config=self.huggingface_config,
+                pipeline_config=self.pipeline_config,
             )
-            nn_model = UnifiedMTPDeepseekV3(config, draft_config)
-
-            # Share embed_tokens and lm_head BEFORE loading so state_dict()
-            # deduplicates them — the adapter only emits target.* copies.
-            assert nn_model.draft is not None
-            nn_model.draft.embed_tokens = nn_model.target.embed_tokens
-            nn_model.draft.lm_head = nn_model.target.lm_head
-
-            target_sd = {
-                k[len("target.") :]: v
-                for k, v in state_dict.items()
-                if k.startswith("target.")
+        else:
+            raw_state_dict = {
+                key: value.data() for key, value in self.weights.items()
             }
-            nn_model.target.load_state_dict(
-                target_sd, weight_alignment=1, strict=True
+
+        self._draft_state_dict = {
+            k[len("draft.") :]: v
+            for k, v in raw_state_dict.items()
+            if k.startswith("draft.")
+        }
+        # Some checkpoints share shared_head_norm with the base model's final
+        # norm and don't emit it as a draft weight.
+        if (
+            "shared_head_norm.weight" not in self._draft_state_dict
+            and "target.norm.weight" in raw_state_dict
+        ):
+            self._draft_state_dict["shared_head_norm.weight"] = raw_state_dict[
+                "target.norm.weight"
+            ]
+
+        return {
+            k[len("target.") :]: v
+            for k, v in raw_state_dict.items()
+            if k.startswith("target.")
+        }
+
+    @override
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> DeepseekV3Config:
+        config = DeepseekV3Model._create_model_config(self, state_dict)
+
+        n_devices = len(self.devices)
+        if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
+            raise ValueError("Only the EP strategy is supported.")
+
+        draft_config = self._create_draft_config(self._draft_state_dict)
+        if draft_config.ep_config is not None and config.ep_config is not None:
+            draft_config.ep_config.node_id = config.ep_config.node_id
+
+        # TODO: don't hard code number of layers
+        assert isinstance(self.kv_params, KVCacheParams)
+        self._draft_kv_params = replace(self.kv_params, num_layers=1)
+        self.kv_params = MultiKVCacheParams.from_params(
+            {"target": self.kv_params, "draft": self._draft_kv_params}
+        )
+
+        draft_config.return_hidden_states = ReturnHiddenStates.LAST
+        self._draft_config = draft_config
+        return config
+
+    @override
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Any,
+    ) -> None:
+        assert isinstance(model_config, DeepseekV3Config)
+        self.ep_comm_initializer = None
+        self.draft_ep_comm_initializer = None
+        if model_config.ep_config is None or is_virtual_device_mode():
+            return
+
+        # Allocate EP buffers with BF16 dispatch dtype (the larger dtype)
+        # so both target (FP4) and draft (BF16) can share the same buffers.
+        ep_cfg = replace(
+            model_config.ep_config,
+            dispatch_dtype=DType.bfloat16,
+            dispatch_quant_config=None,
+        )
+        self.ep_comm_initializer = EPCommInitializer(ep_cfg)
+        self.ep_comm_initializer.ep_init(session)
+        model_config.ep_config.node_id = ep_cfg.node_id
+        if model_config.ep_config.node_id == -1:
+            raise ValueError(
+                "EP node ID is not set. Please check if the EP "
+                "initialization is successful."
             )
-            # strict=False because shared weights (embed_tokens, lm_head) are
-            # aliased to target's and won't have keys in draft_state_dict.
-            nn_model.draft.load_state_dict(
-                draft_state_dict, weight_alignment=1, strict=False
+        self.draft_ep_comm_initializer = self.ep_comm_initializer
+
+    @override
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the decoder graph through :meth:`load_model`."""
+        # TODO(kathywu): Build this graph through `graph_specs`.
+        return {GraphRole.DECODER: self.load_model(session)}
+
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert isinstance(model_config, DeepseekV3Config)
+        assert self.pipeline_config.speculative is not None
+
+        nn_model = UnifiedMTPDeepseekV3(
+            model_config,
+            self._draft_config,
+            speculative_config=self.pipeline_config.speculative,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
+        )
+
+        # Share embed_tokens and lm_head BEFORE loading so state_dict()
+        # deduplicates them — the adapter only emits target.* copies.
+        assert nn_model.draft is not None
+        nn_model.draft.embed_tokens = nn_model.target.embed_tokens
+        nn_model.draft.lm_head = nn_model.target.lm_head
+
+        nn_model.target.load_state_dict(
+            state_dict, weight_alignment=1, strict=True
+        )
+        # strict=False because shared weights (embed_tokens, lm_head) are
+        # aliased to target's and won't have keys in draft_state_dict.
+        nn_model.draft.load_state_dict(
+            self._draft_state_dict, weight_alignment=1, strict=False
+        )
+
+        # The NextN head ships in the target checkpoint, so the draft
+        # inherits both.
+        validate_draft_state_dict(
+            nn_model.draft.raw_state_dict().keys(),
+            self._draft_state_dict.keys(),
+            DraftAliases(always=("embed_tokens.", "lm_head.")),
+        )
+
+        weights_registry = {
+            **nn_model.draft.state_dict(),
+            **nn_model.target.state_dict(),
+        }
+
+        with Graph(
+            "deepseekV3_with_mtp_graph",
+            input_types=nn_model.input_types(self.kv_params),
+        ) as graph:
+            graph_inputs = nn_model.decode_inputs(graph.inputs, self.kv_params)
+
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target"),
+                return_n_logits=graph_inputs.return_n_logits,
+                host_input_row_offsets=graph_inputs.host_offsets,
+                data_parallel_splits=graph_inputs.dp_splits,
+                batch_context_lengths=graph_inputs.batch_context_lengths,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                ep_inputs=graph_inputs.ep_inputs or None,
+                draft_kv_collections=graph_inputs.kv("draft"),
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
             )
 
-            draft_expected = set(nn_model.draft.raw_state_dict().keys())
-            draft_provided = set(draft_state_dict.keys())
-            shared_prefixes = ("embed_tokens.", "lm_head.")
-            missing = {
-                k
-                for k in draft_expected - draft_provided
-                if not k.startswith(shared_prefixes)
-            }
-            extra = draft_provided - draft_expected
-            if missing:
-                raise ValueError(
-                    f"Draft model has unloaded non-shared weights: {sorted(missing)}"
-                )
-            if extra:
-                logger.warning(
-                    f"Draft state_dict has unused keys: {sorted(extra)}"
-                )
+            graph.output(*outputs)
 
-            self.state_dict = {
-                **nn_model.draft.state_dict(),
-                **nn_model.target.state_dict(),
-            }
-
-            with Graph(
-                "deepseekV3_with_mtp_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
-            ) as graph:
-                (
-                    tokens,
-                    devices_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
-
-                variadic_args_iter = iter(variadic_args)
-                signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
-
-                fetch_types = self.kv_params.get_symbolic_inputs()[0]
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-                kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
-                )
-
-                logger.info(
-                    f"[DEBUG] load_model graph build: "
-                    f"n_devices={len(self.devices)}, "
-                    f"n_signal_buffers={len(signal_buffers)}, "
-                    f"n_kv_caches_per_dev={len(kv_caches_per_dev)}, "
-                    f"target_kv_params.n_devices={len(self.kv_params.get_symbolic_inputs())}, "
-                    f"draft_kv_params.n_devices={len(self._draft_kv_params.get_symbolic_inputs())}"
-                )
-
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
-
-                target_ep_inputs: list[Value[Any]] | None = None
-                if nn_model.target.ep_manager is not None:
-                    n_target_ep = len(nn_model.target.ep_manager.input_types())
-                    target_ep_inputs = [
-                        next(variadic_args_iter) for _ in range(n_target_ep)
-                    ]
-
-                draft_tokens = next(variadic_args_iter).tensor
-
-                # Draft KV: only kv_blocks per device; cache_lengths, lookup_table,
-                # max_lengths, and dispatch_metadata are shared from target.
-                draft_kv_collections: list[PagedCacheValues] = []
-                for dev_idx in range(len(self.devices)):
-                    draft_kv_blocks = next(variadic_args_iter).buffer
-                    draft_kv_collections.append(
-                        PagedCacheValues(
-                            kv_blocks=draft_kv_blocks,
-                            cache_lengths=kv_caches_per_dev[
-                                dev_idx
-                            ].cache_lengths,
-                            lookup_table=kv_caches_per_dev[
-                                dev_idx
-                            ].lookup_table,
-                            max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                            dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].dispatch_metadata,
-                        )
-                    )
-
-                outputs = nn_model(
-                    tokens=tokens.tensor,
-                    input_row_offsets=devices_input_row_offsets.tensor,
-                    draft_tokens=draft_tokens.tensor,
-                    signal_buffers=signal_buffers,
-                    kv_collections=kv_caches_per_dev,
-                    return_n_logits=return_n_logits.tensor,
-                    host_input_row_offsets=host_input_row_offsets.tensor,
-                    data_parallel_splits=data_parallel_splits.tensor,
-                    batch_context_lengths=batch_context_lengths,
-                    ep_inputs=target_ep_inputs,
-                    draft_kv_collections=draft_kv_collections,
-                )
-
-                graph.output(*outputs)
-
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-
-        return model
-
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-    ) -> UnifiedEagleOutputs:
-        """Execute and return all 3 graph outputs for speculative decoding."""
-        model_outputs = self.model.execute(*model_inputs.buffers)
-        assert len(model_outputs) == 3, (
-            f"Expected 3 outputs, got {len(model_outputs)}"
-        )
-
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> UnifiedMTPDeepseekV3Inputs:
-        base = DeepseekV3Model.prepare_initial_token_inputs(
-            self, replica_batches, kv_cache_inputs, return_n_logits
-        )
-
-        return UnifiedMTPDeepseekV3Inputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedMTPDeepseekV3Inputs:
-        raise NotImplementedError("MTP does not support Multistep execution")
+        return graph, weights_registry
 
     def _create_draft_config(
         self, draft_state_dict: dict[str, WeightData]
@@ -380,13 +297,5 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                 f.name: getattr(base_config, f.name)
                 for f in fields(base_config)
             }
-        )
-        logger.info(
-            f"[DEBUG] _create_draft_config: "
-            f"devices={draft_config.devices}, "
-            f"dp={draft_config.data_parallel_degree}, "
-            f"ep_config={draft_config.ep_config is not None}, "
-            f"num_hidden_layers={draft_config.num_hidden_layers}, "
-            f"dtype={draft_config.dtype}"
         )
         return draft_config

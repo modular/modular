@@ -10,64 +10,65 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""FLUX.2 ModuleV3 normalization layers."""
+
+from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.norm import LayerNorm, RMSNorm
+from max.experimental.nn import Module
+from max.experimental.nn.linear import Linear
+from max.experimental.nn.norm import LayerNorm
 from max.experimental.tensor import Tensor
 
 
-class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
+class AdaLayerNormContinuous(Module[..., Tensor]):
+    """Adaptive LayerNorm with continuous timestep conditioning.
+
+    Mirrors the legacy
+    :class:`max.pipelines.architectures.flux2.layers.normalizations.AdaLayerNormContinuous`.
+
+    The conditioning embedding is passed through ``silu`` and a
+    ``Linear(cond_dim -> 2 * embed_dim)`` projection.  The result is
+    chunked into ``(scale, shift)`` which modulate the LayerNorm-ed
+    input as ``x_norm * (1 + scale) + shift`` (broadcast over the
+    sequence dimension).
+    """
+
     def __init__(
         self,
         embedding_dim: int,
         conditioning_embedding_dim: int,
         elementwise_affine: bool = True,
+        *,
         eps: float = 1e-5,
         bias: bool = True,
-        norm_type: str = "layer_norm",
-    ):
-        """Initialize AdaLayerNormContinuous.
-
-        Args:
-            embedding_dim: Dimension of the input embeddings to normalize.
-            conditioning_embedding_dim: Dimension of the conditioning embeddings.
-            elementwise_affine: If True, learn affine parameters.
-            eps: Small value for numerical stability in LayerNorm.
-            bias: Whether to use bias in the linear projection.
-            norm_type: Type of normalization to use ("layer_norm" or "rms_norm").
-        """
-        self.silu = F.silu
+    ) -> None:
         self.linear = Linear(
             conditioning_embedding_dim, embedding_dim * 2, bias=bias
         )
-        self.norm: LayerNorm | RMSNorm
-        if norm_type == "layer_norm":
-            self.norm = LayerNorm(
-                embedding_dim,
-                eps=eps,
-                elementwise_affine=elementwise_affine,
-                use_bias=bias,
-            )
-        elif norm_type == "rms_norm":
-            self.norm = RMSNorm(embedding_dim, eps=eps)
-        else:
-            raise ValueError(
-                f"Unsupported `norm_type` ({norm_type}) provided. Supported ones are: 'layer_norm', 'rms_norm'."
-            )
+        self.norm = LayerNorm(
+            embedding_dim,
+            eps=eps,
+            elementwise_affine=elementwise_affine,
+            use_bias=bias,
+        )
 
-    def forward(self, x: Tensor, conditioning_embedding: Tensor) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        conditioning_embedding: Tensor,
+    ) -> Tensor:
         """Apply adaptive layer normalization.
 
         Args:
-            x: Input tensor of shape [B, S, D].
-            conditioning_embedding: Conditioning embedding (timestep) of shape [B, D_cond].
+            x: Input tensor of shape ``[B, S, D]``.
+            conditioning_embedding: Conditioning embedding (the FLUX.2
+                fused time+guidance vector) of shape ``[B, D_cond]``.
 
         Returns:
-            Normalized and modulated tensor of shape [B, S, D].
+            Tensor of shape ``[B, S, D]``.
         """
-        emb = self.linear(self.silu(conditioning_embedding))
-
-        scale, shift = F.chunk(emb, 2, axis=1)
-        x = self.norm(x) * (1 + scale)[:, None, :] + shift[:, None, :]
-        return x
+        conditioning_embedding = conditioning_embedding.cast(x.dtype)
+        emb = self.linear(F.silu(conditioning_embedding))
+        scale, shift = F.chunk(emb, chunks=2, axis=1)
+        return self.norm(x) * (1 + scale)[:, None, :] + shift[:, None, :]

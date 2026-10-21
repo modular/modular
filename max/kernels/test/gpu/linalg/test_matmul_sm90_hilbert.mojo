@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 
 from std.utils.index import Index
@@ -44,12 +43,12 @@ def main() raises:
         print("Test configuration: M=", M, ", N=", N, ", K=", K)
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),
             block_tile_shape[64],
             wgmma_shape[64],
-        ](ctx, Idx(Int(M)), Idx[N](), Idx[K]())
+        ](ctx, Int(M), Idx[N], Idx[K])
 
         print("Test completed successfully")

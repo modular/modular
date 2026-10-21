@@ -14,10 +14,8 @@
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
-from linalg.utils import elementwise_epilogue_type
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -84,11 +82,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             c_type,
             ") ",
             " problem shape=(",
-            m.value(),
+            Int(m),
             ", ",
-            n.value(),
+            Int(n),
             ", ",
-            k.value(),
+            Int(k),
             ") ",
             "mma_shape=",
             mma_shape,
@@ -108,51 +106,47 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             sep="",
         )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k) if transpose_b else Int(k) * Int(n)
+    var c_size = Int(m) * Int(n)
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Initialize matmul operands
     if simple_init():
-        for m in range(m.value()):
-            for k in range(k.value()):
+        for m in range(Int(m)):
+            for k in range(Int(k)):
                 comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = Float32(k).cast[a_type]()
-        for n in range(n.value()):
-            for k in range(k.value()):
-                b_host[(Idx(n), Idx(k))] = Float32(1 if n == k else 0).cast[
-                    b_type
-                ]()
+                a_host[m, k] = Float32(k).cast[a_type]()
+        for n in range(Int(n)):
+            for k in range(Int(k)):
+                b_host[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -169,50 +163,46 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
     )
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
-    @parameter
-    @always_inline
-    @__copy_capture(c_tensor_lt)
     def epilogue_fn[
-        _dtype: DType,
-        width: Int,
-        *,
-        alignment: Int = 1,
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[alignment=alignment * size_of[c_type](),](
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c_tensor.store[alignment=alignment * size_of[c_type]()](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    comptime epi = Optional[elementwise_epilogue_type](
-        epilogue_fn
-    ) if normal_epilogue else None
+    comptime if normal_epilogue:
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](
+            IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+            a_tensor,
+            b_tensor,
+            epilogue_fn,
+            ctx,
+        )
+    else:
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            ctx,
+        )
 
-    blackwell_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        config=matmul_config,
-        elementwise_lambda_fn=epi,
-    ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        ctx,
-    )
-
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -225,8 +215,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
@@ -234,10 +224,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -273,7 +259,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -283,16 +269,16 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(1000)),
-                        Idx(1024),
-                        Idx[1024 + 16](),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024 + 16],
                     )
 
                     comptime for swapAB in [False, True]:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.bfloat16,
+                            .bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -303,15 +289,15 @@ def main() raises:
                             normal_epilogue=True,
                         ](
                             ctx,
-                            Idx(Int(512)),
-                            Idx(4096),
-                            Idx[1024](),
+                            Int(512),
+                            Idx[4096],
+                            Idx[1024],
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.bfloat16,
+                            .bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -323,15 +309,15 @@ def main() raises:
                             normal_epilogue=True,
                         ](
                             ctx,
-                            Idx(Int(500)),
-                            Idx(2048),
-                            Idx(4096),
+                            Int(500),
+                            Idx[2048],
+                            Idx[4096],
                         )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
@@ -341,15 +327,15 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(999)),
-                        Idx(256),
-                        Idx(128),
+                        Int(999),
+                        Idx[256],
+                        Idx[128],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -359,7 +345,7 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(777)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(777),
+                        Idx[2560],
+                        Idx[8192],
                     )

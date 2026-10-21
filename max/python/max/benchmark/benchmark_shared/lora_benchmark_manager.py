@@ -14,7 +14,6 @@
 """LoRA adapter generation and management utilities for benchmarking."""
 
 import asyncio
-import enum
 import json
 import logging
 import os
@@ -31,13 +30,6 @@ from .request import async_request_lora_load, async_request_lora_unload
 logger = logging.getLogger(__name__)
 
 
-class LoRAOutputFormat(str, enum.Enum):
-    """Output format for LoRA adapter configurations."""
-
-    PATH = "path"  # Returns just paths
-    NAME_PATH = "name_path"  # Returns 'name=path' format for TTS benchmarks
-
-
 # TODO: make lora_configs a dataclass type than a dict[str, str]
 class LoRABenchmarkManager:
     """Manages LoRA adapters for benchmarking including configuration,
@@ -45,7 +37,7 @@ class LoRABenchmarkManager:
 
     This class coordinates all LoRA-related operations for benchmarking:
     - Parses LoRA adapter paths and configurations
-    - Reads adapter metadata (rank, target modules, etc.)
+    - Reads adapter metadata (rank, target modules and so on)
     - Optionally manages traffic distribution across adapters
     - Provides interface for loading/unloading operations
     """

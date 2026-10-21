@@ -14,1591 +14,44 @@
 
 from __future__ import annotations
 
-import argparse
-import sys
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 import yaml
-
-# Import the utility functions from benchmark_shared.config
-from max.benchmark.benchmark_shared.config import (
-    BaseBenchmarkConfig,
-    ServingBenchmarkConfig,
-    SweepServingBenchmarkConfig,
-    _add_config_file_arg_to_parser,
-    _load_user_provided_config,
-    _resolve_user_provided_config_file_cli_arg,
-    parse_benchmark_args,
+from max.benchmark import benchmark_serving
+from max.benchmark.benchmark_serving import (
+    _load_workload_yaml,
+    main_with_parsed_args,
+    parse_args,
 )
-from pydantic import Field
-
-
-# Helper functions for creating test config files
-def create_test_config_file(content: Any, suffix: str = ".yaml") -> Path:
-    """Create a temporary config file for testing."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=suffix, delete=False
-    ) as f:
-        yaml.dump(content, f)
-        return Path(f.name)
-
-
-def create_test_default_config() -> dict:  # type: ignore[type-arg]
-    """Create a test default config dictionary."""
-    return {
-        "name": "Test Default Config",
-        "description": "Default configuration for testing",
-        "version": "1.0.0",
-        "benchmark_config": {
-            "model": "test-model",
-            "dataset_name": "test-dataset",
-            "num_prompts": 100,
-            "seed": 42,
-        },
-    }
-
-
-def create_test_user_config() -> dict:  # type: ignore[type-arg]
-    """Create a test user config dictionary."""
-    return {
-        "name": "Test User Config",
-        "description": "User configuration for testing",
-        "version": "1.1.0",
-        "benchmark_config": {
-            "model": "user-model",  # Override default
-            "num_prompts": 200,  # Override default
-        },
-    }
-
-
-class TestAddConfigFileArgToParser:
-    """Test class for _add_config_file_arg_to_parser function."""
-
-    def test_basic_functionality(self) -> None:
-        """Test basic functionality of _add_config_file_arg_to_parser."""
-        parser = argparse.ArgumentParser()
-
-        # Add the config file argument
-        result_parser = _add_config_file_arg_to_parser(parser)
-
-        # Verify the parser is returned (should be the same object)
-        assert result_parser is parser
-
-        # Test parsing with --config-file argument
-        test_args = ["--config-file", "/path/to/config.yaml"]
-        args = parser.parse_args(test_args)
-
-        # Verify the argument was parsed correctly
-        assert args.config_file == Path("/path/to/config.yaml")
-
-    def test_without_config_file(self) -> None:
-        """Test _add_config_file_arg_to_parser when --config-file is not provided."""
-        parser = argparse.ArgumentParser()
-        _add_config_file_arg_to_parser(parser)
-
-        # Test parsing without --config-file argument (empty args)
-        test_args: list[str] = []
-        args = parser.parse_args(test_args)
-
-        # Verify config_file is None when not provided
-        assert args.config_file is None
-
-    def test_help_text(self) -> None:
-        """Test that the help text is correctly set for --config-file argument."""
-        parser = argparse.ArgumentParser()
-        _add_config_file_arg_to_parser(parser)
-
-        # Get help text
-        help_text = parser.format_help()
-
-        # Verify help text contains expected content
-        assert "--config-file" in help_text
-        assert "Path to configuration file" in help_text
-        assert "inherit from the default config" in help_text
-
-    def test_type_conversion(self) -> None:
-        """Test that --config-file argument correctly converts to Path type."""
-        parser = argparse.ArgumentParser()
-        _add_config_file_arg_to_parser(parser)
-
-        # Test with different path formats
-        test_cases = [
-            "/absolute/path/config.yaml",
-            "relative/path/config.yaml",
-            "./config.yaml",
-            "../config.yaml",
-            "config.yaml",
-        ]
-
-        for path_str in test_cases:
-            test_args = ["--config-file", path_str]
-            args = parser.parse_args(test_args)
-
-            # Verify the argument is converted to Path type
-            assert isinstance(args.config_file, Path)
-            # Use Path comparison instead of string comparison to handle normalization
-            assert args.config_file == Path(path_str)
-
-
-class TestResolveUserProvidedConfigFileCliArg:
-    """Test class for _resolve_user_provided_config_file_cli_arg function."""
-
-    def test_with_config_file(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg when --config-file is provided."""
-        test_args = [
-            "--config-file",
-            "/path/to/config.yaml",
-            "--other-arg",
-            "value",
-        ]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is extracted correctly
-        assert config_file_path == Path("/path/to/config.yaml")
-
-        # Verify remaining args exclude --config-file and its value
-        assert remaining_args == ["--other-arg", "value"]
-
-    def test_without_config_file(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg when --config-file is not provided."""
-        test_args = ["--other-arg", "value", "--another-arg", "another-value"]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is None
-        assert config_file_path is None
-
-        # Verify all args remain unchanged
-        assert remaining_args == test_args
-
-    def test_empty_args(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with empty args list."""
-        test_args: list[str] = []
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is None
-        assert config_file_path is None
-
-        # Verify remaining args is empty
-        assert remaining_args == []
-
-    def test_none_args(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with None args (uses sys.argv)."""
-        # Mock sys.argv to simulate command line arguments
-        test_argv = [
-            "script.py",
-            "--config-file",
-            "/path/to/config.yaml",
-            "--other-arg",
-            "value",
-        ]
-
-        with patch.object(sys, "argv", test_argv):
-            config_file_path, remaining_args = (
-                _resolve_user_provided_config_file_cli_arg(args=None)
-            )
-
-            # Verify config file path is extracted correctly
-            assert config_file_path == Path("/path/to/config.yaml")
-
-            # Verify remaining args exclude script name, --config-file and its value
-            assert remaining_args == ["--other-arg", "value"]
-
-    def test_none_args_no_config(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with None args and no --config-file."""
-        # Mock sys.argv to simulate command line arguments without --config-file
-        test_argv = [
-            "script.py",
-            "--other-arg",
-            "value",
-            "--another-arg",
-            "another-value",
-        ]
-
-        with patch.object(sys, "argv", test_argv):
-            config_file_path, remaining_args = (
-                _resolve_user_provided_config_file_cli_arg(args=None)
-            )
-
-            # Verify config file path is None
-            assert config_file_path is None
-
-            # Verify remaining args exclude script name
-            assert remaining_args == [
-                "--other-arg",
-                "value",
-                "--another-arg",
-                "another-value",
-            ]
-
-    def test_multiple_config_files(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with multiple --config-file arguments."""
-        # argparse.parse_known_args will parse the last occurrence of --config-file
-        test_args = [
-            "--config-file",
-            "/path/to/first.yaml",
-            "--other-arg",
-            "value",
-            "--config-file",
-            "/path/to/second.yaml",
-        ]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify the last config file path is extracted (argparse behavior)
-        assert config_file_path == Path("/path/to/second.yaml")
-
-        # Verify remaining args exclude both --config-file arguments
-        assert remaining_args == ["--other-arg", "value"]
-
-    def test_config_file_at_end(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with --config-file at the end."""
-        test_args = [
-            "--other-arg",
-            "value",
-            "--config-file",
-            "/path/to/config.yaml",
-        ]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is extracted correctly
-        assert config_file_path == Path("/path/to/config.yaml")
-
-        # Verify remaining args exclude --config-file and its value
-        assert remaining_args == ["--other-arg", "value"]
-
-    def test_invalid_config_file(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with invalid --config-file value."""
-        # Test with --config-file but no value (should cause argparse error)
-        test_args = ["--config-file", "--other-arg", "value"]
-
-        with pytest.raises(SystemExit):
-            # This should raise SystemExit due to missing argument value
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-
-    def test_unknown_args(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with unknown arguments."""
-        test_args = [
-            "--unknown-arg",
-            "value",
-            "--config-file",
-            "/path/to/config.yaml",
-            "--another-unknown",
-        ]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is extracted correctly
-        assert config_file_path == Path("/path/to/config.yaml")
-
-        # Verify remaining args include unknown arguments
-        assert remaining_args == ["--unknown-arg", "value", "--another-unknown"]
-
-    def test_help_flag(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with --help flag."""
-        test_args = ["--help", "--config-file", "/path/to/config.yaml"]
-
-        # The preliminary parser has add_help=False, so --help won't cause SystemExit
-        # Instead, it will be treated as an unknown argument and passed through
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is extracted correctly
-        assert config_file_path == Path("/path/to/config.yaml")
-
-        # Verify --help is in remaining args
-        assert remaining_args == ["--help"]
-
-    def test_help_flag_only(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with only --help flag."""
-        test_args = ["--help"]
-
-        # The preliminary parser has add_help=False, so --help won't cause SystemExit
-        # Instead, it will be treated as an unknown argument and passed through
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is None
-        assert config_file_path is None
-
-        # Verify --help is in remaining args
-        assert remaining_args == ["--help"]
-
-    def test_verbose_flag(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with -v flag (should be ignored)."""
-        test_args = [
-            "-v",
-            "--config-file",
-            "/path/to/config.yaml",
-            "--other-arg",
-            "value",
-        ]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is extracted correctly
-        assert config_file_path == Path("/path/to/config.yaml")
-
-        # Verify remaining args include -v and other args
-        assert remaining_args == ["-v", "--other-arg", "value"]
-
-    def test_positional_args(self) -> None:
-        """Test _resolve_user_provided_config_file_cli_arg with positional arguments."""
-        test_args = [
-            "positional_arg",
-            "--config-file",
-            "/path/to/config.yaml",
-            "another_positional",
-        ]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is extracted correctly
-        assert config_file_path == Path("/path/to/config.yaml")
-
-        # Verify remaining args include positional arguments
-        assert remaining_args == ["positional_arg", "another_positional"]
-
-    def test_return_types(self) -> None:
-        """Test that _resolve_user_provided_config_file_cli_arg returns correct types."""
-        test_args = [
-            "--config-file",
-            "/path/to/config.yaml",
-            "--other-arg",
-            "value",
-        ]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify return types
-        assert isinstance(config_file_path, Path)
-        assert isinstance(remaining_args, list)
-        assert all(isinstance(arg, str) for arg in remaining_args)
-
-    def test_no_config_file_return_types(self) -> None:
-        """Test return types when no --config-file is provided."""
-        test_args = ["--other-arg", "value"]
-
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify return types
-        assert config_file_path is None
-        assert isinstance(remaining_args, list)
-        assert all(isinstance(arg, str) for arg in remaining_args)
-
-
-class TestLoadUserProvidedConfig:
-    """Test class for _load_user_provided_config function."""
-
-    def test_basic_functionality(self) -> None:
-        """Test basic functionality of _load_user_provided_config."""
-        default_config = create_test_default_config()
-        user_config = create_test_user_config()
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            # Load user config with inheritance
-            result_config = _load_user_provided_config(
-                user_path, default_path, BaseBenchmarkConfig
-            )
-
-            # Verify it's a BaseBenchmarkConfig instance
-            assert isinstance(result_config, BaseBenchmarkConfig)
-
-            # Verify inherited values from default config
-            assert result_config.dataset_name == "test-dataset"
-            assert result_config.seed == 42
-
-            # Verify overridden values from user config
-            assert result_config.model == "user-model"  # Overridden
-            assert result_config.num_prompts == 200  # Overridden
-
-        finally:
-            # Clean up temporary files
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_empty_user_config(self) -> None:
-        """Test _load_user_provided_config with empty user config."""
-        default_config = create_test_default_config()
-        user_config: dict = {  # type: ignore[type-arg]
-            "benchmark_config": {}
-        }  # Empty user config  # type: ignore[type-arg]
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            result_config = _load_user_provided_config(
-                user_path, default_path, BaseBenchmarkConfig
-            )
-
-            # Should inherit all default values
-            assert result_config.model == "test-model"
-            assert result_config.dataset_name == "test-dataset"
-            assert result_config.num_prompts == 100
-            assert result_config.seed == 42
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_invalid_user_config_not_dict(self) -> None:
-        """Test _load_user_provided_config with invalid user config (not a dict)."""
-        default_config = create_test_default_config()
-        # Create a YAML file with a list at the top level (not a dict)
-        user_config = ["invalid", "config", "list"]
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            with pytest.raises(
-                ValueError, match="must contain a dictionary at the top level"
-            ):
-                _load_user_provided_config(
-                    user_path, default_path, BaseBenchmarkConfig
-                )
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_invalid_default_config_not_dict(self) -> None:
-        """Test _load_user_provided_config with invalid default config (not a dict)."""
-        default_config = ["invalid", "config", "list"]
-        user_config = create_test_user_config()
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            with pytest.raises(
-                ValueError, match="must contain a dictionary at the top level"
-            ):
-                _load_user_provided_config(
-                    user_path, default_path, BaseBenchmarkConfig
-                )
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_nonexistent_user_config(self) -> None:
-        """Test _load_user_provided_config with nonexistent user config file."""
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-        nonexistent_path = Path("/nonexistent/user_config.yaml")
-
-        try:
-            with pytest.raises(FileNotFoundError):
-                _load_user_provided_config(
-                    nonexistent_path, default_path, BaseBenchmarkConfig
-                )
-
-        finally:
-            default_path.unlink(missing_ok=True)
-
-    def test_nonexistent_default_config(self) -> None:
-        """Test _load_user_provided_config with nonexistent default config file."""
-        user_config = create_test_user_config()
-        user_path = create_test_config_file(user_config)
-        nonexistent_path = Path("/nonexistent/default_config.yaml")
-
-        try:
-            with pytest.raises(FileNotFoundError):
-                _load_user_provided_config(
-                    user_path, nonexistent_path, BaseBenchmarkConfig
-                )
-
-        finally:
-            user_path.unlink(missing_ok=True)
-
-    def test_invalid_yaml_user_config(self) -> None:
-        """Test _load_user_provided_config with invalid YAML in user config file."""
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-
-        # Create invalid YAML file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
-            f.write("invalid: yaml: content: [")
-            user_path = Path(f.name)
-
-        try:
-            with pytest.raises(yaml.YAMLError):
-                _load_user_provided_config(
-                    user_path, default_path, BaseBenchmarkConfig
-                )
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_invalid_yaml_default_config(self) -> None:
-        """Test _load_user_provided_config with invalid YAML in default config file."""
-        user_config = create_test_user_config()
-        user_path = create_test_config_file(user_config)
-
-        # Create invalid YAML file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
-            f.write("invalid: yaml: content: [")
-            default_path = Path(f.name)
-
-        try:
-            with pytest.raises(yaml.YAMLError):
-                _load_user_provided_config(
-                    user_path, default_path, BaseBenchmarkConfig
-                )
-
-        finally:
-            user_path.unlink(missing_ok=True)
-            default_path.unlink(missing_ok=True)
-
-    def test_missing_benchmark_config_section(self) -> None:
-        """Test _load_user_provided_config with user config missing benchmark_config section."""
-        default_config = create_test_default_config()
-        # Create user config without the benchmark_config section
-        user_config = {
-            "name": "Test User Config",
-            "description": "User configuration without benchmark_config section",
-            "version": "1.1.0",
-            # Missing "benchmark_config" section
-        }
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            with patch(
-                "max.benchmark.benchmark_shared.config.logger"
-            ) as mock_logger:
-                result_config = _load_user_provided_config(
-                    user_path, default_path, BaseBenchmarkConfig
-                )
-
-            # Verify warning was logged
-            mock_logger.warning.assert_called_once()
-            warning_call = mock_logger.warning.call_args[0][0]
-            assert "Cannot find benchmark_config section" in warning_call
-            assert str(user_path) in warning_call
-            assert (
-                "Will not override benchmark config values from default config"
-                in warning_call
-            )
-
-            # Verify it still loads with default values (no overrides)
-            assert isinstance(result_config, BaseBenchmarkConfig)
-            assert result_config.model == "test-model"  # From default
-            assert result_config.dataset_name == "test-dataset"  # From default
-            assert result_config.num_prompts == 100  # From default
-            assert result_config.seed == 42  # From default
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_missing_benchmark_config_section_serving(self) -> None:
-        """Test _load_user_provided_config with ServingBenchmarkConfig and missing section."""
-        default_config = {
-            "benchmark_config": {
-                "model": "test-model",
-                "dataset_name": "test-dataset",
-                "num_prompts": 100,
-                "seed": 42,
-                "backend": "modular",
-                "host": "localhost",
-                "port": 8000,
-            }
-        }
-        # Create user config without the benchmark_config section
-        user_config = {
-            "name": "Test User Config",
-            "description": "User configuration without benchmark_config section",
-            "version": "1.1.0",
-            # Missing "benchmark_config" section
-        }
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            with patch(
-                "max.benchmark.benchmark_shared.config.logger"
-            ) as mock_logger:
-                result_config = _load_user_provided_config(
-                    user_path, default_path, ServingBenchmarkConfig
-                )
-
-            # Verify warning was logged
-            mock_logger.warning.assert_called_once()
-            warning_call = mock_logger.warning.call_args[0][0]
-            assert "Cannot find benchmark_config section" in warning_call
-            assert str(user_path) in warning_call
-            assert (
-                "Will not override benchmark config values from default config"
-                in warning_call
-            )
-
-            # Verify it still loads with default values (no overrides)
-            assert isinstance(result_config, ServingBenchmarkConfig)
-            assert result_config.model == "test-model"  # From default
-            assert result_config.dataset_name == "test-dataset"  # From default
-            assert result_config.backend == "modular"  # From default
-            assert result_config.host == "localhost"  # From default
-            assert result_config.port == 8000  # From default
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_empty_benchmark_config_section(self) -> None:
-        """Test _load_user_provided_config with empty benchmark_config section (should not warn)."""
-        default_config = create_test_default_config()
-        # Create user config with empty benchmark_config section
-        user_config = {
-            "name": "Test User Config",
-            "description": "User configuration with empty benchmark_config section",
-            "version": "1.1.0",
-            "benchmark_config": {},  # Empty but present section
-        }
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            with patch(
-                "max.benchmark.benchmark_shared.config.logger"
-            ) as mock_logger:
-                result_config = _load_user_provided_config(
-                    user_path, default_path, BaseBenchmarkConfig
-                )
-
-            # Verify no warning was logged (section exists, even if empty)
-            mock_logger.warning.assert_not_called()
-
-            # Verify it loads with default values (empty section means no overrides)
-            assert isinstance(result_config, BaseBenchmarkConfig)
-            assert result_config.model == "test-model"  # From default
-            assert result_config.dataset_name == "test-dataset"  # From default
-            assert result_config.num_prompts == 100  # From default
-            assert result_config.seed == 42  # From default
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-
-class TestParseBenchmarkArgs:
-    """Test class for parse_benchmark_args function with user-provided configs."""
-
-    def test_with_user_config(self) -> None:
-        """Test parse_benchmark_args with user-provided config file."""
-        # Create test config files
-        default_config = create_test_default_config()
-        user_config = create_test_user_config()
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            # Test with user config file
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--model",
-                "cli-override-model",
-            ]
-
-            with patch(
-                "max.benchmark.benchmark_shared.config.logger"
-            ) as mock_logger:
-                args = parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test benchmark",
-                    args=test_args,
-                )
-
-            # Verify the config file was used
-            mock_logger.info.assert_any_call(
-                f"Using user-provided configuration file: {user_path} (will inherit from {default_path})"
-            )
-
-            # Verify CLI overrides work
-            assert args.model == "cli-override-model"
-
-            # Verify inherited values
-            assert args.dataset_name == "test-dataset"
-            assert args.seed == 42
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_without_user_config(self) -> None:
-        """Test parse_benchmark_args without user-provided config file."""
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-
-        try:
-            # Test without config file
-            test_args = ["--model", "cli-model"]
-
-            with patch(
-                "max.benchmark.benchmark_shared.config.logger"
-            ) as mock_logger:
-                args = parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test benchmark",
-                    args=test_args,
-                )
-
-            # Verify default config was used
-            mock_logger.info.assert_any_call(
-                f"No configuration file path provided, using default {default_path} file"
-            )
-
-            # Verify CLI overrides work
-            assert args.model == "cli-model"
-
-            # Verify default values
-            assert args.dataset_name == "test-dataset"
-            assert args.seed == 42
-
-        finally:
-            default_path.unlink(missing_ok=True)
-
-    def test_same_as_default_config(self) -> None:
-        """Test parse_benchmark_args when user config is same as default config."""
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-
-        try:
-            # Test with same file as default
-            test_args = [
-                "--config-file",
-                str(default_path),
-                "--model",
-                "cli-model",
-            ]
-
-            with patch(
-                "max.benchmark.benchmark_shared.config.logger"
-            ) as mock_logger:
-                args = parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test benchmark",
-                    args=test_args,
-                )
-
-            # Verify it detected same file as default
-            mock_logger.info.assert_any_call(
-                f"Using default configuration file: {default_path}"
-            )
-
-            # Verify CLI overrides work
-            assert args.model == "cli-model"
-
-        finally:
-            default_path.unlink(missing_ok=True)
-
-    def test_with_serving_config(self) -> None:
-        """Test parse_benchmark_args with ServingBenchmarkConfig."""
-        # Create a serving-specific default config
-        default_config = {
-            "benchmark_config": {
-                "model": "test-model",
-                "dataset_name": "test-dataset",
-                "num_prompts": 100,
-                "seed": 42,
-                "backend": "modular",
-                "host": "localhost",
-                "port": 8000,
-            }
-        }
-        user_config = {
-            "benchmark_config": {
-                "backend": "vllm",  # Override default
-                "dataset_name": "sharegpt",  # Override default
-                "request_rate": "10.0",  # New serving-specific param
-            }
-        }
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--model",
-                "test-model",
-                "--dataset-name",
-                "sharegpt",
-            ]
-
-            args = parse_benchmark_args(
-                config_class=ServingBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test serving benchmark",
-                args=test_args,
-            )
-
-            # Verify it's a ServingBenchmarkConfig
-            assert isinstance(args, argparse.Namespace)
-
-            # Verify overridden values
-            assert args.backend == "vllm"
-            assert args.dataset_name == "sharegpt"
-
-            # Verify new serving-specific values
-            assert args.request_rate == "10.0"
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_invalid_user_config(self) -> None:
-        """Test parse_benchmark_args with invalid user config file."""
-        default_config = create_test_default_config()
-        # Create invalid YAML content
-        invalid_config = ["invalid", "yaml", "content"]
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(invalid_config)
-
-        try:
-            test_args = ["--config-file", str(user_path)]
-
-            with pytest.raises((ValueError, yaml.YAMLError)):
-                parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test benchmark",
-                    args=test_args,
-                )
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_nonexistent_user_config(self) -> None:
-        """Test parse_benchmark_args with nonexistent user config file."""
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-        nonexistent_path = Path("/nonexistent/config.yaml")
-
-        try:
-            test_args = ["--config-file", str(nonexistent_path)]
-
-            with pytest.raises(FileNotFoundError):
-                parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test benchmark",
-                    args=test_args,
-                )
-
-        finally:
-            default_path.unlink(missing_ok=True)
-
-    def test_nonexistent_default_config(self) -> None:
-        """Test parse_benchmark_args with nonexistent default config file."""
-        nonexistent_default_path = Path("/nonexistent/default.yaml")
-
-        test_args = ["--model", "test-model"]
-
-        with pytest.raises(FileNotFoundError):
-            parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=nonexistent_default_path,
-                description="Test benchmark",
-                args=test_args,
-            )
-
-    def test_with_sys_argv(self) -> None:
-        """Test parse_benchmark_args using sys.argv (args=None)."""
-        default_config = create_test_default_config()
-        user_config = create_test_user_config()
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            # Mock sys.argv
-            test_argv = [
-                "script.py",
-                "--config-file",
-                str(user_path),
-                "--model",
-                "cli-model",
-            ]
-
-            with patch.object(sys, "argv", test_argv):
-                with patch(
-                    "max.benchmark.benchmark_shared.config.logger"
-                ) as mock_logger:
-                    args = parse_benchmark_args(
-                        config_class=BaseBenchmarkConfig,
-                        default_config_path=default_path,
-                        description="Test benchmark",
-                        args=None,  # Use sys.argv
-                    )
-
-            # Verify user config was used
-            mock_logger.info.assert_any_call(
-                f"Using user-provided configuration file: {user_path} (will inherit from {default_path})"
-            )
-
-            # Verify CLI overrides work
-            assert args.model == "cli-model"
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_complex_inheritance(self) -> None:
-        """Test parse_benchmark_args with complex inheritance scenario."""
-        # Create a more complex default config
-        default_config = {
-            "benchmark_config": {
-                "model": "base-model",
-                "dataset_name": "base-dataset",
-                "num_prompts": 100,
-                "seed": 42,
-            }
-        }
-
-        # Create a user config that overrides some params
-        user_config = {
-            "benchmark_config": {
-                "model": "user-model",  # Override
-                "num_prompts": 200,  # Override
-            }
-        }
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(user_config)
-
-        try:
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--model",
-                "cli-model",  # CLI override
-            ]
-
-            args = parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test complex inheritance",
-                args=test_args,
-            )
-
-            # Verify CLI overrides take precedence
-            assert args.model == "cli-model"
-
-            # Verify user config overrides
-            assert args.num_prompts == 200
-
-            # Verify inherited values from default
-            assert args.dataset_name == "base-dataset"
-            assert args.seed == 42
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_empty_user_config(self) -> None:
-        """Test parse_benchmark_args with empty user config file."""
-        default_config = create_test_default_config()
-        empty_user_config: dict = {"benchmark_config": {}}  # type: ignore[type-arg]
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(empty_user_config)
-
-        try:
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--model",
-                "cli-model",
-            ]
-
-            args = parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test empty user config",
-                args=test_args,
-            )
-
-            # Should inherit all default values
-            assert args.model == "cli-model"  # CLI override
-            assert args.dataset_name == "test-dataset"  # From default
-            assert args.seed == 42  # From default
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_partial_user_config(self) -> None:
-        """Test parse_benchmark_args with partial user config (only some overrides)."""
-        default_config = create_test_default_config()
-        partial_user_config = {
-            "benchmark_config": {
-                "model": "partial-user-model",  # Override only this
-                # Leave other values to inherit from default
-            }
-        }
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(partial_user_config)
-
-        try:
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--model",
-                "cli-model",
-            ]
-
-            args = parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test partial user config",
-                args=test_args,
-            )
-
-            # Verify CLI override takes precedence
-            assert args.model == "cli-model"
-
-            # Verify inherited values from default
-            assert args.dataset_name == "test-dataset"
-            assert args.seed == 42
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_complete_config_file_no_required_args(self) -> None:
-        """Test that complete config file doesn't require CLI arguments for required fields."""
-        # Create a complete config file with all required fields
-        complete_config = {
-            "benchmark_config": {
-                "model": "google/gemma-3-27b-it",
-                "dataset_name": "arxiv-summarization",
-                "num_prompts": 50,
-                "seed": 42,
-            }
-        }
-
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(complete_config)
-
-        try:
-            # Test with complete config file - should not require any CLI args
-            test_args = ["--config-file", str(user_path)]
-
-            args = parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test complete config",
-                args=test_args,
-            )
-
-            # Verify all required fields are loaded from config
-            assert args.model == "google/gemma-3-27b-it"
-            assert args.dataset_name == "arxiv-summarization"
-            assert args.num_prompts == 50
-            assert args.seed == 42
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_incomplete_config_file_requires_missing_args(self) -> None:
-        """Test that incomplete config file requires CLI arguments for missing required fields."""
-        # Create an incomplete config file missing the model field
-        # Note: dataset_name has a default value so it's never missing
-        incomplete_config = {
-            "benchmark_config": {
-                "num_prompts": 50,
-                "seed": 42,
-                # Missing model (dataset_name has default value so not missing)
-            }
-        }
-
-        # Create a default config with null values for required fields (like the real base config)
-        default_config = {
-            "name": "Test Default Config",
-            "description": "Default configuration for testing",
-            "version": "1.0.0",
-            "benchmark_config": {
-                "model": None,  # Required field set to None
-                "dataset_name": None,  # This will be overridden by dataclass default
-                "num_prompts": 100,
-                "seed": 42,
-            },
-        }
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(incomplete_config)
-
-        try:
-            # Test with incomplete config file - should require missing CLI args
-            test_args = ["--config-file", str(user_path)]
-
-            with pytest.raises(SystemExit) as exc_info:
-                parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test incomplete config",
-                    args=test_args,
-                )
-
-            # Verify the error message mentions the missing required arguments
-            # The exact error message format depends on argparse, but should mention required args
-            assert (
-                exc_info.value.code == 2
-            )  # argparse exit code for missing required args
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_partial_config_file_requires_some_args(self) -> None:
-        """Test that partial config file requires CLI arguments only for missing required fields."""
-        # Create a partial config file with some required fields
-        partial_config = {
-            "benchmark_config": {
-                "model": "google/gemma-3-27b-it",
-                "num_prompts": 50,
-                "seed": 42,
-                # Missing dataset_name
-            }
-        }
-
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(partial_config)
-
-        try:
-            # Test with partial config file - should require only missing CLI args
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--dataset-name",
-                "arxiv-summarization",
-            ]
-
-            args = parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test partial config",
-                args=test_args,
-            )
-
-            # Verify all fields are loaded (some from config, some from CLI)
-            assert args.model == "google/gemma-3-27b-it"  # From config
-            assert args.dataset_name == "arxiv-summarization"  # From CLI
-            assert args.num_prompts == 50  # From config
-            assert args.seed == 42  # From config
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_serving_config_smart_required_fields(self) -> None:
-        """Test smart required fields logic with ServingBenchmarkConfig."""
-        # Create a serving config with some required fields
-        serving_config = {
-            "benchmark_config": {
-                "model": "google/gemma-3-27b-it",
-                "backend": "modular",
-                "host": "localhost",
-                "port": 8000,
-                # Missing dataset_name
-            }
-        }
-
-        default_config = {
-            "benchmark_config": {
-                "model": "test-model",
-                "dataset_name": "test-dataset",
-                "num_prompts": 100,
-                "seed": 42,
-                "backend": "modular",
-                "host": "localhost",
-                "port": 8000,
-            }
-        }
-
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(serving_config)
-
-        try:
-            # Test with serving config - should require only missing CLI args
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--dataset-name",
-                "arxiv-summarization",
-            ]
-
-            args = parse_benchmark_args(
-                config_class=ServingBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test serving config",
-                args=test_args,
-            )
-
-            # Verify all fields are loaded correctly
-            assert args.model == "google/gemma-3-27b-it"  # From config
-            assert args.dataset_name == "arxiv-summarization"  # From CLI
-            assert args.backend == "modular"  # From config
-            assert args.host == "localhost"  # From config
-            assert args.port == 8000  # From config
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_none_values_in_config_require_cli_args(self) -> None:
-        """Test that None values in config file require CLI arguments."""
-        # Create a config file with None values for required fields
-        none_config = {
-            "benchmark_config": {
-                "model": None,  # Explicitly None
-                "dataset_name": None,  # Explicitly None
-                "num_prompts": 50,
-                "seed": 42,
-            }
-        }
-
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(none_config)
-
-        try:
-            # Test with None values - should require CLI args
-            test_args = ["--config-file", str(user_path)]
-
-            with pytest.raises(SystemExit) as exc_info:
-                parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test None values",
-                    args=test_args,
-                )
-
-            # Verify the error message mentions the missing required arguments
-            assert (
-                exc_info.value.code == 2
-            )  # argparse exit code for missing required args
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_empty_string_values_in_config_require_cli_args(self) -> None:
-        """Test that empty string values in config file require CLI arguments."""
-        # Create a config file with empty string values for required fields
-        # Note: dataset_name has a default value so empty string gets overridden
-        empty_config = {
-            "benchmark_config": {
-                "model": "",  # Empty string - should require CLI arg
-                "dataset_name": "",  # Empty string - but has default value so not missing
-                "num_prompts": 50,
-                "seed": 42,
-            }
-        }
-
-        # Create a default config with null values for required fields (like the real base config)
-        default_config = {
-            "name": "Test Default Config",
-            "description": "Default configuration for testing",
-            "version": "1.0.0",
-            "benchmark_config": {
-                "model": None,  # Required field set to None
-                "dataset_name": None,  # This will be overridden by dataclass default
-                "num_prompts": 100,
-                "seed": 42,
-            },
-        }
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(empty_config)
-
-        try:
-            # Test with empty string values - should require CLI args
-            test_args = ["--config-file", str(user_path)]
-
-            with pytest.raises(SystemExit) as exc_info:
-                parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test empty strings",
-                    args=test_args,
-                )
-
-            # Verify the error message mentions the missing required arguments
-            assert (
-                exc_info.value.code == 2
-            )  # argparse exit code for missing required args
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_cli_overrides_config_values(self) -> None:
-        """Test that CLI arguments override config file values."""
-        # Create a complete config file
-        complete_config = {
-            "benchmark_config": {
-                "model": "config-model",
-                "dataset_name": "sharegpt",  # Use valid dataset name
-                "num_prompts": 50,
-                "seed": 42,
-            }
-        }
-
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(complete_config)
-
-        try:
-            # Test with CLI overrides - CLI should take precedence
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--model",
-                "cli-model",
-                "--dataset-name",
-                "arxiv-summarization",  # Use valid dataset name
-            ]
-
-            args = parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test CLI overrides",
-                args=test_args,
-            )
-
-            # Verify CLI overrides take precedence
-            assert args.model == "cli-model"  # From CLI
-            assert args.dataset_name == "arxiv-summarization"  # From CLI
-            assert args.num_prompts == 50  # From config
-            assert args.seed == 42  # From config
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_mixed_required_fields_scenario(self) -> None:
-        """Test a complex scenario with mixed required and optional fields."""
-        # Create a config with some required fields and some missing
-        mixed_config = {
-            "benchmark_config": {
-                "model": "config-model",  # Provided in config
-                "num_prompts": 200,  # Provided in config
-                "seed": 99,  # Provided in config
-                # Missing dataset_name
-            }
-        }
-
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-        user_path = create_test_config_file(mixed_config)
-
-        try:
-            # Test with mixed scenario - should require only missing CLI args
-            test_args = [
-                "--config-file",
-                str(user_path),
-                "--dataset-name",
-                "arxiv-summarization",  # Use valid dataset name
-            ]
-
-            args = parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test mixed scenario",
-                args=test_args,
-            )
-
-            # Verify the correct mix of config and CLI values
-            assert args.model == "config-model"  # From config
-            assert args.dataset_name == "arxiv-summarization"  # From CLI
-            assert args.num_prompts == 200  # From config
-            assert args.seed == 99  # From config
-
-        finally:
-            default_path.unlink(missing_ok=True)
-            user_path.unlink(missing_ok=True)
-
-    def test_no_config_file_requires_all_args(self) -> None:
-        """Test that without config file, all required fields are required as CLI args."""
-        # Create a default config with null values for required fields (like the real base config)
-        # Note: dataset_name has a default value so it's never missing
-        default_config = {
-            "name": "Test Default Config",
-            "description": "Default configuration for testing",
-            "version": "1.0.0",
-            "benchmark_config": {
-                "model": None,  # Required field set to None
-                "dataset_name": None,  # This will be overridden by dataclass default
-                "num_prompts": 100,
-                "seed": 42,
-            },
-        }
-        default_path = create_test_config_file(default_config)
-
-        try:
-            # Test without config file - should require model CLI arg
-            test_args: list[str] = []  # Missing model
-
-            with pytest.raises(SystemExit) as exc_info:
-                parse_benchmark_args(
-                    config_class=BaseBenchmarkConfig,
-                    default_config_path=default_path,
-                    description="Test no config file",
-                    args=test_args,
-                )
-
-            # Verify the error message mentions the missing required arguments
-            assert (
-                exc_info.value.code == 2
-            )  # argparse exit code for missing required args
-
-        finally:
-            default_path.unlink(missing_ok=True)
-
-    def test_no_config_file_with_all_args_works(self) -> None:
-        """Test that without config file, providing all required CLI args works."""
-        default_config = create_test_default_config()
-        default_path = create_test_config_file(default_config)
-
-        try:
-            # Test without config file but with all required CLI args
-            test_args = [
-                "--model",
-                "cli-model",
-                "--dataset-name",
-                "arxiv-summarization",  # Use valid dataset name
-            ]
-
-            args = parse_benchmark_args(
-                config_class=BaseBenchmarkConfig,
-                default_config_path=default_path,
-                description="Test no config file with all args",
-                args=test_args,
-            )
-
-            # Verify all values are loaded from CLI
-            assert args.model == "cli-model"
-            assert args.dataset_name == "arxiv-summarization"
-            assert args.num_prompts == 100  # From default config
-            assert args.seed == 42  # From default config
-
-        finally:
-            default_path.unlink(missing_ok=True)
-
-
-class TestIntegration:
-    """Integration tests for multiple functions working together."""
-
-    def test_add_config_file_arg_to_parser_integration_with_resolve(
-        self,
-    ) -> None:
-        """Test integration between _add_config_file_arg_to_parser and _resolve_user_provided_config_file_cli_arg."""
-        # Create a parser and add the config file argument
-        parser = argparse.ArgumentParser()
-        _add_config_file_arg_to_parser(parser)
-
-        # Test with arguments that include --config-file
-        test_args = ["--config-file", "/path/to/config.yaml"]
-
-        # Use resolve function to extract config file
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify the config file was extracted
-        assert config_file_path == Path("/path/to/config.yaml")
-
-        # Parse remaining args with the parser (should be empty)
-        parsed_args = parser.parse_args(remaining_args)
-
-        # Verify the parser can handle the remaining args (empty in this case)
-        assert (
-            parsed_args.config_file is None
-        )  # Should be None since it was already parsed
-
-    def test_help_integration(self) -> None:
-        """Test that help integration works correctly with both functions."""
-        parser = argparse.ArgumentParser()
-        _add_config_file_arg_to_parser(parser)
-
-        # Test help with --config-file in args
-        test_args = ["--help", "--config-file", "/path/to/config.yaml"]
-
-        # The preliminary parser has add_help=False, so --help won't cause SystemExit
-        config_file_path, remaining_args = (
-            _resolve_user_provided_config_file_cli_arg(args=test_args)
-        )
-
-        # Verify config file path is extracted correctly
-        assert config_file_path == Path("/path/to/config.yaml")
-
-        # Verify --help is in remaining args
-        assert remaining_args == ["--help"]
-
-
-class TestSweepServingBenchmarkConfig:
-    """Test class for SweepServingBenchmarkConfig."""
-
-    def test_sweep_config_creation(self) -> None:
-        """Test that SweepServingBenchmarkConfig can be created with default values."""
-        config = SweepServingBenchmarkConfig()
-
-        # Test that all sweep-specific fields have correct default values
-        assert config.workload_config == ""
+from max.benchmark.benchmark_shared.config import (
+    DEFAULT_BENCHMARK_SEED,
+    ServingBenchmarkConfig,
+)
+from max.benchmark.benchmark_shared.datasets import DistributionParameter
+from max.benchmark.benchmark_shared.datasets.all import (
+    _resolve_agentic_tool_profiles,
+)
+from max.benchmark.benchmark_shared.iteration import resolve_seed
+from max.benchmark.benchmark_shared.workload import (
+    apply_workload,
+    load_workload_file,
+)
+from pydantic import ValidationError
+from pytest_mock import MockerFixture
+
+
+class TestServingSweepFields:
+    """Test that sweep/workload-related fields exist on ServingBenchmarkConfig."""
+
+    def test_sweep_fields_on_serving_config(self) -> None:
+        """Test that sweep-related fields exist on ServingBenchmarkConfig with correct defaults."""
+        config = ServingBenchmarkConfig()
+
+        assert config.workload_config is None
         assert config.log_dir is None
         assert config.dry_run is False
         assert config.upload_results is False
@@ -1608,53 +61,22 @@ class TestSweepServingBenchmarkConfig:
         assert config.metadata == []
         assert config.latency_percentiles == "50,90,95,99"
         assert config.num_iters == 1
-        assert config.max_concurrency is None
-        assert config.request_rate == "inf"
-
-    def test_sweep_config_inheritance(self) -> None:
-        """Test that SweepServingBenchmarkConfig inherits from ServingBenchmarkConfig."""
-        config = SweepServingBenchmarkConfig()
-
-        # Test that it inherits serving-specific fields
-        assert hasattr(config, "backend")
-        assert hasattr(config, "host")
-        assert hasattr(config, "port")
-        assert hasattr(config, "endpoint")
-
-        # Test that it inherits base fields
-        assert hasattr(config, "model")
-        assert hasattr(config, "dataset_name")
-        assert hasattr(config, "num_prompts")
-        assert hasattr(config, "seed")
-
-    def test_sweep_config_required_fields(self) -> None:
-        """Test that SweepServingBenchmarkConfig has correct required fields."""
-        required_fields = (
-            SweepServingBenchmarkConfig.get_default_required_fields()
-        )
-
-        # Should include workload_config as required
-        assert "workload_config" in required_fields
-
-        # Should include inherited required fields
-        assert "model" in required_fields
-        # dataset_name is not required for SweepServingBenchmarkConfig
-        # (it's parsed from workload config instead)
+        assert config.num_prompts_multiplier is None
+        assert config.flush_prefix_cache is True
+        assert list(config.max_concurrency) == [None]
+        assert list(config.request_rate) == [float("inf")]
 
     def test_sweep_config_field_metadata(self) -> None:
-        """Test that SweepServingBenchmarkConfig fields have proper json_schema_extra metadata."""
-        model_fields = SweepServingBenchmarkConfig.model_fields
+        """Test that sweep-related fields have proper json_schema_extra metadata."""
+        model_fields = ServingBenchmarkConfig.model_fields
 
         for name, field_info in model_fields.items():
             extra = field_info.json_schema_extra
             if extra is None or not isinstance(extra, dict):
                 continue
-            if name in ["workload_config", "log_dir", "dry_run"]:
+            if name == "workload_config":
                 assert "group" in extra
-                assert extra["group"] in [
-                    "Workload Configuration",
-                    "Logging and Debugging",
-                ]
+                assert extra["group"] == "Workload Configuration"
             elif name in [
                 "upload_results",
                 "benchmark_sha",
@@ -1663,547 +85,930 @@ class TestSweepServingBenchmarkConfig:
             ]:
                 assert "group" in extra
                 assert extra["group"] == "Result Upload Configuration"
-            elif name in ["metadata", "latency_percentiles"]:
-                assert "group" in extra
-                assert extra["group"] == "Metadata and Result Tracking"
-            elif name in ["num_iters"]:
+            elif name in [
+                "num_iters",
+                "flush_prefix_cache",
+                "num_prompts_multiplier",
+            ]:
                 assert "group" in extra
                 assert extra["group"] == "Sweep Configuration"
-            elif name in ["max_concurrency"]:
+            elif name == "max_concurrency":
                 assert "group" in extra
                 assert extra["group"] == "Request Configuration"
-            elif name in ["request_rate"]:
+            elif name == "request_rate":
                 assert "group" in extra
                 assert extra["group"] == "Traffic Control"
 
 
 # ===----------------------------------------------------------------------=== #
-# Sweepable Type Tests
+# ConfigFileModel / cyclopts config-file loading tests
 # ===----------------------------------------------------------------------=== #
 
 
-class TestSweepableConfig(BaseBenchmarkConfig):
-    """Test configuration class with sweepable_type fields for testing."""
-
-    # Integer sweepable field
-    max_concurrency: str | None = Field(
-        default=None,
-        description="Maximum concurrent requests. Can be a single integer, 'None', or comma-separated string for sweep configs.",
-        json_schema_extra={
-            "group": "Request Configuration",
-            "group_description": "Parameters controlling request concurrency and processing",
-            "sweepable_type": "int",
-        },
-    )
-
-    # Float sweepable field
-    request_rate: str | None = Field(
-        default="inf",
-        description="Requests per second. Can be a single float value or comma-separated string for sweep configs.",
-        json_schema_extra={
-            "group": "Traffic Control",
-            "group_description": "Parameters controlling request rate and traffic patterns",
-            "sweepable_type": "float",
-        },
-    )
-
-    # Non-sweepable field for comparison
-    model: str = Field(
-        default="test-model",
-        description="Model name (not sweepable).",
-        json_schema_extra={
-            "group": "Model Configuration",
-            "group_description": "Model configuration parameters",
-        },
-    )
+def _write_yaml(path: Path, data: dict[str, Any]) -> None:
+    with open(path, "w") as f:
+        yaml.dump(data, f)
 
 
-def parse_sweepable_values(
-    value: str | None, sweepable_type: type
-) -> list[int | float | None]:
+class TestServingConfigFileLoading:
+    """Tests for ``--config-file`` loading with ServingBenchmarkConfig.
+
+    These verify that the cyclopts/ConfigFileModel approach works correctly
+    after removal of the legacy argparse infrastructure.
+
+    Config YAML format notes
+    ------------------------
+    ``ServingBenchmarkConfig`` uses ``section_name = "benchmark_config"`` as
+    its default. The section is extracted when the file has it; a file
+    without it is read from the top level.
+
+    Two valid file formats therefore exist:
+
+    * **Flat** (no section wrapper)::
+
+          model: myorg/model
+          host: 10.0.0.1
+
+    * **Sectioned**::
+
+          benchmark_config:
+              model: myorg/model
+              host: 10.0.0.1
     """
-    Parse comma-separated values according to sweepable_type.
 
-    This function mimics the parsing logic used in sweep-benchmark-serving.py
-    for handling sweepable_type fields.
-
-    Args:
-        value: Comma-separated string of values to parse
-        sweepable_type: Type to parse values as (int or float)
-
-    Returns:
-        List of parsed values
-
-    Raises:
-        ValueError: If value cannot be parsed as the specified type
-    """
-    if not value or value.lower() == "none":
-        return []
-
-    # Handle "inf" for float types
-    if sweepable_type is float and value.lower() == "inf":
-        return [float("inf")]
-
-    try:
-        # Split by comma and parse each value
-        values = [x.strip() for x in value.split(",")]
-        parsed_values: list[int | float | None] = []
-
-        for val in values:
-            if not val:  # Handle empty strings
-                parsed_values.append(None)
-            elif val.lower() == "none":
-                parsed_values.append(None)
-            elif val.lower() == "inf" and sweepable_type is float:
-                parsed_values.append(float("inf"))
-            else:
-                # Handle float values that can be converted to int
-                if sweepable_type is int and "." in val:
-                    # Convert float string to int (truncates decimal part)
-                    parsed_values.append(int(float(val)))
-                else:
-                    parsed_values.append(sweepable_type(val))
-
-        return parsed_values
-    except (ValueError, TypeError) as e:
-        raise ValueError(
-            f"Cannot parse '{value}' as {sweepable_type.__name__}: {e}"
-        ) from e
-
-
-class TestSweepableTypeParsing:
-    """Test class for sweepable_type parsing functionality."""
-
-    def test_parse_int_values_basic(self) -> None:
-        """Test basic integer parsing for sweepable_type: int fields."""
-        # Test single integer
-        result = parse_sweepable_values("5", int)
-        assert result == [5]
-
-        # Test comma-separated integers
-        result = parse_sweepable_values("1,2,3,4,5", int)
-        assert result == [1, 2, 3, 4, 5]
-
-        # Test with spaces
-        result = parse_sweepable_values("1, 2, 3, 4, 5", int)
-        assert result == [1, 2, 3, 4, 5]
-
-    def test_parse_int_values_with_none(self) -> None:
-        """Test integer parsing with None values."""
-        # Test "None" string
-        result = parse_sweepable_values("None", int)
-        assert result == []
-
-        # Test mixed with None
-        result = parse_sweepable_values("1,None,3", int)
-        assert result == [1, None, 3]
-
-        # Test all None
-        result = parse_sweepable_values("None,None,None", int)
-        assert result == [None, None, None]
-
-    def test_parse_float_values_basic(self) -> None:
-        """Test basic float parsing for sweepable_type: float fields."""
-        # Test single float
-        result = parse_sweepable_values("1.5", float)
-        assert result == [1.5]
-
-        # Test comma-separated floats
-        result = parse_sweepable_values("1.0,2.5,3.14,4.0", float)
-        assert result == [1.0, 2.5, 3.14, 4.0]
-
-        # Test with spaces
-        result = parse_sweepable_values("1.0, 2.5, 3.14, 4.0", float)
-        assert result == [1.0, 2.5, 3.14, 4.0]
-
-    def test_parse_float_values_with_inf(self) -> None:
-        """Test float parsing with infinity values."""
-        # Test "inf" string
-        result = parse_sweepable_values("inf", float)
-        assert result == [float("inf")]
-
-        # Test mixed with inf
-        result = parse_sweepable_values("1.0,inf,3.0", float)
-        assert result == [1.0, float("inf"), 3.0]
-
-        # Test all inf
-        result = parse_sweepable_values("inf,inf,inf", float)
-        assert result == [float("inf"), float("inf"), float("inf")]
-
-    def test_parse_float_values_with_none(self) -> None:
-        """Test float parsing with None values."""
-        # Test "None" string
-        result = parse_sweepable_values("None", float)
-        assert result == []
-
-        # Test mixed with None
-        result = parse_sweepable_values("1.0,None,3.0", float)
-        assert result == [1.0, None, 3.0]
-
-    def test_parse_empty_values(self) -> None:
-        """Test parsing empty values."""
-        # Test empty string
-        result = parse_sweepable_values("", int)
-        assert result == []
-
-        result = parse_sweepable_values("", float)
-        assert result == []
-
-    def test_parse_single_value(self) -> None:
-        """Test parsing single values without commas."""
-        # Test single integer
-        result = parse_sweepable_values("42", int)
-        assert result == [42]
-
-        # Test single float
-        result = parse_sweepable_values("3.14", float)
-        assert result == [3.14]
-
-    def test_parse_whitespace_handling(self) -> None:
-        """Test that whitespace is properly handled."""
-        # Test leading/trailing spaces
-        result = parse_sweepable_values(" 1 , 2 , 3 ", int)
-        assert result == [1, 2, 3]
-
-        # Test multiple spaces
-        result = parse_sweepable_values("1,  2,   3", int)
-        assert result == [1, 2, 3]
-
-    def test_parse_invalid_values(self) -> None:
-        """Test parsing invalid values raises appropriate errors."""
-        # Test invalid integer
-        with pytest.raises(ValueError, match="Cannot parse 'abc' as int"):
-            parse_sweepable_values("abc", int)
-
-        # Test invalid float
-        with pytest.raises(ValueError, match="Cannot parse 'xyz' as float"):
-            parse_sweepable_values("xyz", float)
-
-        # Test mixed valid/invalid
-        with pytest.raises(ValueError, match="Cannot parse '1,abc,3' as int"):
-            parse_sweepable_values("1,abc,3", int)
-
-    def test_parse_edge_cases(self) -> None:
-        """Test edge cases in parsing."""
-        # Test zero values
-        result = parse_sweepable_values("0,0.0", int)
-        assert result == [0, 0]
-
-        result = parse_sweepable_values("0,0.0", float)
-        assert result == [0.0, 0.0]
-
-        # Test negative values
-        result = parse_sweepable_values("-1,-2.5", int)
-        assert result == [-1, -2]
-
-        result = parse_sweepable_values("-1,-2.5", float)
-        assert result == [-1.0, -2.5]
-
-        # Test scientific notation
-        result = parse_sweepable_values("1e2,2.5e-1", float)
-        assert result == [100.0, 0.25]
-
-    def test_parse_large_values(self) -> None:
-        """Test parsing large values."""
-        # Test large integers
-        result = parse_sweepable_values("1000000,2000000", int)
-        assert result == [1000000, 2000000]
-
-        # Test large floats
-        result = parse_sweepable_values("1e6,2e6", float)
-        assert result == [1000000.0, 2000000.0]
-
-    def test_parse_mixed_types_in_string(self) -> None:
-        """Test that string contains mixed types that can be parsed."""
-        # Test integers that can be parsed as floats
-        result = parse_sweepable_values("1,2,3", float)
-        assert result == [1.0, 2.0, 3.0]
-
-        # Test floats that can be parsed as integers (truncated)
-        result = parse_sweepable_values("1.0,2.0,3.0", int)
-        assert result == [1, 2, 3]
-
-    def test_parse_case_insensitive_none_inf(self) -> None:
-        """Test that None and inf parsing is case insensitive."""
-        # Test case insensitive None
-        result = parse_sweepable_values("NONE", int)
-        assert result == []
-
-        result = parse_sweepable_values("none", int)
-        assert result == []
-
-        result = parse_sweepable_values("None", int)
-        assert result == []
-
-        # Test case insensitive inf
-        result = parse_sweepable_values("INF", float)
-        assert result == [float("inf")]
-
-        result = parse_sweepable_values("inf", float)
-        assert result == [float("inf")]
-
-        result = parse_sweepable_values("Inf", float)
-        assert result == [float("inf")]
-
-    def test_parse_complex_combinations(self) -> None:
-        """Test complex combinations of values."""
-        # Test complex integer combination
-        result = parse_sweepable_values("1,None,3,None,5", int)
-        assert result == [1, None, 3, None, 5]
-
-        # Test complex float combination
-        result = parse_sweepable_values("1.0,inf,3.14,None,5.0", float)
-        assert result == [1.0, float("inf"), 3.14, None, 5.0]
-
-    def test_parse_duplicate_values(self) -> None:
-        """Test parsing duplicate values."""
-        # Test duplicate integers
-        result = parse_sweepable_values("1,1,1", int)
-        assert result == [1, 1, 1]
-
-        # Test duplicate floats
-        result = parse_sweepable_values("1.0,1.0,1.0", float)
-        assert result == [1.0, 1.0, 1.0]
-
-    def test_parse_single_comma(self) -> None:
-        """Test parsing single comma (edge case)."""
-        # Test single comma
-        result = parse_sweepable_values(",", int)
-        assert result == [None, None]  # Empty strings become None
-
-        result = parse_sweepable_values(",", float)
-        assert result == [None, None]
-
-    def test_parse_trailing_comma(self) -> None:
-        """Test parsing with trailing comma."""
-        # Test trailing comma
-        result = parse_sweepable_values("1,2,", int)
-        assert result == [1, 2, None]  # Empty string becomes None
-
-        result = parse_sweepable_values("1.0,2.0,", float)
-        assert result == [1.0, 2.0, None]
-
-    def test_parse_leading_comma(self) -> None:
-        """Test parsing with leading comma."""
-        # Test leading comma
-        result = parse_sweepable_values(",1,2", int)
-        assert result == [None, 1, 2]  # Empty string becomes None
-
-        result = parse_sweepable_values(",1.0,2.0", float)
-        assert result == [None, 1.0, 2.0]
-
-
-_SWEEPABLE_TYPE_MAP: dict[str, type] = {"int": int, "float": float}
-
-
-class TestSweepableTypeIntegration:
-    """Integration tests for sweepable_type with actual config classes."""
-
-    @staticmethod
-    def _get_extra(cls: type[BaseBenchmarkConfig], name: str) -> dict[str, Any]:
-        """Get json_schema_extra dict for a pydantic model field."""
-        extra = cls.model_fields[name].json_schema_extra
-        return extra if isinstance(extra, dict) else {}
-
-    @staticmethod
-    def _get_sweepable_type(
-        cls: type[BaseBenchmarkConfig], name: str
-    ) -> type | None:
-        """Resolve the sweepable_type string to an actual Python type."""
-        extra = cls.model_fields[name].json_schema_extra
-        if not isinstance(extra, dict):
-            return None
-        raw = extra.get("sweepable_type")
-        return _SWEEPABLE_TYPE_MAP.get(raw) if isinstance(raw, str) else None
-
-    def test_config_field_metadata(self) -> None:
-        """Test that config fields have correct sweepable_type metadata."""
-        # Test max_concurrency field
-        mc_extra = self._get_extra(TestSweepableConfig, "max_concurrency")
-        assert "sweepable_type" in mc_extra
-        assert mc_extra["sweepable_type"] == "int"
-
-        # Test request_rate field
-        rr_extra = self._get_extra(TestSweepableConfig, "request_rate")
-        assert "sweepable_type" in rr_extra
-        assert rr_extra["sweepable_type"] == "float"
-
-        # Test model field (not sweepable)
-        model_extra = self._get_extra(TestSweepableConfig, "model")
-        assert "sweepable_type" not in model_extra
-
-    def test_sweepable_type_parsing_integration(self) -> None:
-        """Test integration of sweepable_type parsing with config values."""
-        # Test with max_concurrency (int type)
-        config = TestSweepableConfig(max_concurrency="1,2,3")
-
-        if config.max_concurrency:
-            sweepable_type = self._get_sweepable_type(
-                TestSweepableConfig, "max_concurrency"
-            )
-            if sweepable_type:
-                parsed_values = parse_sweepable_values(
-                    config.max_concurrency, sweepable_type
-                )
-                assert parsed_values == [1, 2, 3]
-
-        # Test with request_rate (float type)
-        config = TestSweepableConfig(request_rate="1.0,2.5,inf")
-
-        if config.request_rate:
-            sweepable_type = self._get_sweepable_type(
-                TestSweepableConfig, "request_rate"
-            )
-            if sweepable_type:
-                parsed_values = parse_sweepable_values(
-                    config.request_rate, sweepable_type
-                )
-                assert parsed_values == [1.0, 2.5, float("inf")]
-
-    def test_sweepable_type_with_none_values(self) -> None:
-        """Test sweepable_type parsing with None values in config."""
-        config = TestSweepableConfig(max_concurrency=None)
-
-        if config.max_concurrency:
-            sweepable_type = self._get_sweepable_type(
-                TestSweepableConfig, "max_concurrency"
-            )
-            if sweepable_type:
-                parsed_values = parse_sweepable_values(
-                    config.max_concurrency, sweepable_type
-                )
-                assert parsed_values == []
-        else:
-            assert True
-
-    def test_sweepable_type_with_default_values(self) -> None:
-        """Test sweepable_type parsing with default values."""
-        config = TestSweepableConfig()
-
-        sweepable_type = self._get_sweepable_type(
-            TestSweepableConfig, "request_rate"
+    # ------------------------------------------------------------------
+    # Flat YAML (no section wrapper)
+    # ------------------------------------------------------------------
+
+    def test_flat_yaml_loads_model_and_host(self, tmp_path: Path) -> None:
+        """Flat YAML values are applied to ServingBenchmarkConfig."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(cfg_path, {"model": "myorg/llama", "host": "10.0.0.1"})
+
+        config = ServingBenchmarkConfig(config_file=str(cfg_path))
+        assert config.model == "myorg/llama"
+        assert config.host == "10.0.0.1"
+
+    def test_flat_yaml_applies_port_and_backend(self, tmp_path: Path) -> None:
+        """Numeric and string fields from flat YAML are applied correctly."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(
+            cfg_path, {"model": "myorg/llama", "port": 9000, "backend": "vllm"}
         )
-        if sweepable_type:
-            parsed_values = parse_sweepable_values(
-                config.request_rate, sweepable_type
-            )
-            assert parsed_values == [float("inf")]
 
-    def test_sweepable_type_error_handling(self) -> None:
-        """Test error handling in sweepable_type parsing."""
-        config = TestSweepableConfig(max_concurrency="1,abc,3")
+        config = ServingBenchmarkConfig(config_file=str(cfg_path))
+        assert config.port == 9000
+        assert config.backend == "vllm"
 
-        sweepable_type = self._get_sweepable_type(
-            TestSweepableConfig, "max_concurrency"
+    def test_flat_yaml_with_tempfile(self) -> None:
+        """config_file works with a real NamedTemporaryFile."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
+            yaml.dump({"model": "tmp/model", "port": 8080}, f)
+            tmp_name = f.name
+
+        config = ServingBenchmarkConfig(config_file=tmp_name)
+        assert config.model == "tmp/model"
+        assert config.port == 8080
+
+    # ------------------------------------------------------------------
+    # Sectioned YAML (benchmark_config section, explicit section_name)
+    # ------------------------------------------------------------------
+
+    def test_sectioned_yaml_with_explicit_section_name(
+        self, tmp_path: Path
+    ) -> None:
+        """Sectioned YAML is parsed correctly when section_name is explicit."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(
+            cfg_path,
+            {
+                "benchmark_config": {
+                    "model": "myorg/llama",
+                    "host": "10.0.0.1",
+                    "port": 9000,
+                },
+                "other_section": {"ignored": True},
+            },
         )
-        if sweepable_type:
-            with pytest.raises(
-                ValueError, match="Cannot parse '1,abc,3' as int"
-            ):
-                parse_sweepable_values(config.max_concurrency, sweepable_type)
 
-    def test_sweepable_type_with_real_serving_config(self) -> None:
-        """Test sweepable_type parsing with actual ServingBenchmarkConfig fields."""
         config = ServingBenchmarkConfig(
-            max_concurrency="1,2,4,8", request_rate="1.0,2.0,4.0,8.0"
+            config_file=str(cfg_path), section_name="benchmark_config"
         )
+        assert config.model == "myorg/llama"
+        assert config.host == "10.0.0.1"
+        assert config.port == 9000
 
-        # Test max_concurrency parsing
-        sweepable_type = self._get_sweepable_type(
-            ServingBenchmarkConfig, "max_concurrency"
-        )
-        if sweepable_type and config.max_concurrency:
-            parsed_values = parse_sweepable_values(
-                config.max_concurrency, sweepable_type
+    def test_missing_section_raises_key_error(self, tmp_path: Path) -> None:
+        """A KeyError is raised when the requested section is absent."""
+        cfg_path = tmp_path / "config.yaml"
+        _write_yaml(cfg_path, {"other_section": {"model": "x"}})
+
+        with pytest.raises(KeyError, match="benchmark_config"):
+            ServingBenchmarkConfig(
+                config_file=str(cfg_path), section_name="benchmark_config"
             )
-            assert parsed_values == [1, 2, 4, 8]
 
-        # Test request_rate parsing
-        sweepable_type = self._get_sweepable_type(
-            ServingBenchmarkConfig, "request_rate"
+    def test_non_dict_yaml_raises_type_error(self, tmp_path: Path) -> None:
+        """A TypeError is raised when the YAML root is not a mapping."""
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text("- item1\n- item2\n")
+
+        with pytest.raises(TypeError, match="mapping"):
+            ServingBenchmarkConfig(config_file=str(cfg_path))
+
+    # ------------------------------------------------------------------
+    # Precedence: explicit kwargs beat config file
+    # ------------------------------------------------------------------
+
+    def test_explicit_kwarg_beats_flat_yaml(self, tmp_path: Path) -> None:
+        """An explicitly supplied kwarg takes precedence over flat YAML."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(
+            cfg_path,
+            {"model": "file/model", "host": "10.0.0.1", "port": 9000},
         )
-        if sweepable_type and config.request_rate:
-            parsed_values = parse_sweepable_values(
-                config.request_rate, sweepable_type
+
+        config = ServingBenchmarkConfig(
+            config_file=str(cfg_path), model="cli/model"
+        )
+        assert config.model == "cli/model"
+        assert config.host == "10.0.0.1"  # still from file
+        assert config.port == 9000  # still from file
+
+    def test_multiple_overrides_beat_config_file(self, tmp_path: Path) -> None:
+        """Multiple explicit kwargs all override the corresponding file values."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(
+            cfg_path, {"model": "file/model", "host": "1.2.3.4", "port": 9000}
+        )
+
+        config = ServingBenchmarkConfig(
+            config_file=str(cfg_path),
+            model="cli/model",
+            host="localhost",
+        )
+        assert config.model == "cli/model"
+        assert config.host == "localhost"
+        assert config.port == 9000  # not overridden → from file
+
+    # ------------------------------------------------------------------
+    # model_fields_set semantics
+    # ------------------------------------------------------------------
+
+    def test_model_fields_set_includes_both_cli_and_file_fields(
+        self, tmp_path: Path
+    ) -> None:
+        """Both explicit kwargs and config-file fields appear in model_fields_set.
+
+        ``ConfigFileModel.load_config_file`` is a ``model_validator(mode="before")``
+        that injects file values into the input dict before Pydantic validation.
+        Pydantic therefore treats them as explicitly supplied, so both the CLI
+        kwarg (``model``) and the file value (``host``) end up in
+        ``model_fields_set``.
+        """
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(cfg_path, {"model": "file/model", "host": "10.0.0.1"})
+
+        config = ServingBenchmarkConfig(
+            config_file=str(cfg_path), model="cli/model"
+        )
+        # Both the explicit kwarg and the file-sourced field are tracked.
+        assert "model" in config.model_fields_set
+        assert "host" in config.model_fields_set
+        # The CLI value still wins over the file value.
+        assert config.model == "cli/model"
+
+
+# ===----------------------------------------------------------------------=== #
+# Workload YAML max-concurrency Tests
+# ===----------------------------------------------------------------------=== #
+
+
+@pytest.mark.usefixtures("offline_dryrun_mocks")
+class TestWorkloadMaxConcurrency:
+    """Tests that max-concurrency from a workload YAML is applied correctly."""
+
+    def test_workload_max_concurrency_applied_when_cli_not_set(
+        self, tmp_path: Path
+    ) -> None:
+        """Workload YAML max-concurrency is used when the caller did not set one."""
+        workload = tmp_path / "workload.yaml"
+        workload.write_text("max-concurrency: 1\nnum-prompts: 10\n")
+
+        config = ServingBenchmarkConfig(
+            model="HuggingFaceTB/SmolLM2-135M",
+            workload_config=str(workload),
+            dry_run=True,
+        )
+
+        results = list(main_with_parsed_args(config))
+        assert len(results) == 1
+        assert results[0].max_concurrency == 1
+
+    def test_cli_max_concurrency_beats_workload_yaml(
+        self, tmp_path: Path
+    ) -> None:
+        """Explicitly supplied max_concurrency takes precedence over workload YAML."""
+        workload = tmp_path / "workload.yaml"
+        workload.write_text("max-concurrency: 1\nnum-prompts: 10\n")
+
+        config = ServingBenchmarkConfig(
+            model="HuggingFaceTB/SmolLM2-135M",
+            workload_config=str(workload),
+            max_concurrency=[4],
+            dry_run=True,
+        )
+
+        results = list(main_with_parsed_args(config))
+        assert len(results) == 1
+        assert results[0].max_concurrency == 4
+
+
+@pytest.mark.usefixtures("offline_dryrun_mocks")
+def test_live_run_stats_json_reflects_server_clamped_limit(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """A live run writes --workload-stats-json after the server-ready clamp.
+
+    The clamp adopts the server's tighter ``max_model_len`` once it is
+    reachable; writing the stats before it would describe a workload the
+    server would truncate.
+    """
+    stats_path = tmp_path / "stats.json"
+    # The server is unreachable while the session builds (the first probe
+    # misses) and reports a tighter limit once ready.
+    mocker.patch.object(
+        benchmark_serving,
+        "fetch_server_max_model_len",
+        side_effect=[None, 2048],
+    )
+    mocker.patch.object(
+        benchmark_serving, "wait_for_server_ready", return_value=None
+    )
+    mocker.patch.object(
+        benchmark_serving, "_run_benchmark_sweep", return_value=iter(())
+    )
+
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        workload_stats_json=str(stats_path),
+    )
+    list(main_with_parsed_args(config))
+
+    blob = json.loads(stats_path.read_text())
+    assert blob["context_limit"] == 2048
+
+
+# ===----------------------------------------------------------------------=== #
+# Seed handling (PERF-2587)
+# ===----------------------------------------------------------------------=== #
+
+
+class TestSeedDefaultAndOverride:
+    """The seed is pinned by default; ``none`` opts into a fresh random draw."""
+
+    def test_default_seed_is_pinned(self) -> None:
+        """An unset seed defaults to the fixed constant, not ``None``."""
+        assert ServingBenchmarkConfig().seed == DEFAULT_BENCHMARK_SEED
+
+    def test_explicit_int_is_kept(self) -> None:
+        """An explicit integer seed is preserved verbatim."""
+        assert ServingBenchmarkConfig(seed=1234).seed == 1234
+
+    def test_explicit_none_is_kept(self) -> None:
+        """A ``null`` seed (Python ``None``) is preserved as ``None``."""
+        assert ServingBenchmarkConfig(seed=None).seed is None
+
+    def test_parse_args_default(self) -> None:
+        """``parse_args`` with no ``--seed`` yields the pinned default."""
+        assert parse_args(["--model", "m"]).seed == DEFAULT_BENCHMARK_SEED
+
+    def test_parse_args_int(self) -> None:
+        """``--seed 7`` parses to the integer 7."""
+        assert parse_args(["--model", "m", "--seed", "7"]).seed == 7
+
+    @pytest.mark.parametrize("value", ["none", "None", "NONE"])
+    def test_cli_none_maps_to_random(self, value: str) -> None:
+        """``--seed none`` (any case) parses to ``None`` (draw a random seed)."""
+        assert parse_args(["--model", "m", "--seed", value]).seed is None
+
+
+class TestSeedConfigFileLoading:
+    """Seed loaded from a YAML config/workload file."""
+
+    def test_yaml_null_maps_to_random(self, tmp_path: Path) -> None:
+        """YAML ``seed: null`` loads as ``None`` (draw a random seed)."""
+        cfg_path = tmp_path / "serving.yaml"
+        cfg_path.write_text("model: myorg/llama\nseed: null\n")
+
+        assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed is None
+
+    def test_yaml_string_none_maps_to_random(self, tmp_path: Path) -> None:
+        """YAML ``seed: none`` (string) loads as ``None`` via the validator."""
+        cfg_path = tmp_path / "serving.yaml"
+        cfg_path.write_text("model: myorg/llama\nseed: none\n")
+
+        assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed is None
+
+    def test_yaml_int_is_kept(self, tmp_path: Path) -> None:
+        """YAML ``seed: 1234`` loads as the integer 1234."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(cfg_path, {"model": "myorg/llama", "seed": 1234})
+
+        assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed == 1234
+
+    def test_yaml_unset_uses_pinned_default(self, tmp_path: Path) -> None:
+        """A YAML file that omits ``seed`` uses the pinned default."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(cfg_path, {"model": "myorg/llama"})
+
+        config = ServingBenchmarkConfig(config_file=str(cfg_path))
+        assert config.seed == DEFAULT_BENCHMARK_SEED
+
+
+class TestResolveSeed:
+    """``resolve_seed`` draws a concrete seed only when one was not pinned."""
+
+    def test_random_seed_is_drawn(self) -> None:
+        """A ``None`` seed is resolved to a concrete int in ``[0, 10000)``."""
+        config = ServingBenchmarkConfig(model="m", seed=None)
+        resolve_seed(config)
+        assert isinstance(config.seed, int)
+        assert 0 <= config.seed < 10000
+
+    def test_pinned_seed_is_unchanged(self) -> None:
+        """A pinned seed is left exactly as supplied."""
+        config = ServingBenchmarkConfig(model="m", seed=1234)
+        resolve_seed(config)
+        assert config.seed == 1234
+
+
+# ===----------------------------------------------------------------------=== #
+# extra_body validator
+# ===----------------------------------------------------------------------=== #
+
+
+class TestExtraBodyValidator:
+    """``ServingBenchmarkConfig.extra_body`` accepts dict / inline JSON / file."""
+
+    # Covers the shapes the merge must preserve verbatim: a top-level array
+    # (with a tricky ``}``), a scalar, and a nested object.
+    _NESTED = {
+        "stop": ["}"],
+        "max_tokens": 15,
+        "chat_template_kwargs": {"reasoning_effort": "low"},
+    }
+
+    @staticmethod
+    def _build_with_extra(value: object) -> ServingBenchmarkConfig:
+        """Build a config routing ``value`` through the ``extra_body`` validator.
+
+        ``extra_body`` is typed ``dict[str, Any]`` (its resolved form), but the
+        CLI/file forms feed it a ``str``. ``model_validate`` accepts ``Any``, so
+        this exercises the same validator without a type-checker complaint at the
+        call site (mirroring how cyclopts hands the raw token to the model).
+        """
+        return ServingBenchmarkConfig.model_validate(
+            {"model": "m", "extra_body": value}
+        )
+
+    def test_dict_passthrough_preserves_nested(self) -> None:
+        """A mapping is stored verbatim with nested objects/arrays intact."""
+        config = ServingBenchmarkConfig(model="m", extra_body=self._NESTED)
+        assert config.extra_body == self._NESTED
+
+    def test_inline_json_string(self) -> None:
+        """An inline JSON string parses into the equivalent mapping."""
+        config = self._build_with_extra(json.dumps(self._NESTED))
+        assert config.extra_body == self._NESTED
+
+    def test_file_path(self, tmp_path: Path) -> None:
+        """A path to a YAML/JSON file is read and parsed."""
+        payload = tmp_path / "payload.yaml"
+        _write_yaml(payload, self._NESTED)
+        config = self._build_with_extra(str(payload))
+        assert config.extra_body == self._NESTED
+
+    def test_missing_file_rejected(self) -> None:
+        """A path that does not exist surfaces a clear, dual-cause error."""
+        with pytest.raises(ValueError, match="not a readable file path"):
+            self._build_with_extra("/nonexistent/payload.yaml")
+
+    def test_file_beside_a_workload_resolves(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A path in a workload YAML is relative to that file, not to cwd."""
+        _write_yaml(tmp_path / "payload.yaml", self._NESTED)
+        workload = tmp_path / "workload.yaml"
+        workload.write_text("extra-body: payload.yaml\nnum-prompts: 4\n")
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        args = ServingBenchmarkConfig(model="m", workload_config=str(workload))
+        _load_workload_yaml(args)
+        assert args.extra_body == self._NESTED
+
+    def test_inline_json_in_a_workload_is_not_a_path(
+        self, tmp_path: Path
+    ) -> None:
+        """Path resolution must not touch a value that is the content itself."""
+        workload = tmp_path / "workload.yaml"
+        workload.write_text(
+            f"extra-body: '{json.dumps(self._NESTED)}'\nnum-prompts: 4\n"
+        )
+        args = ServingBenchmarkConfig(model="m", workload_config=str(workload))
+        _load_workload_yaml(args)
+        assert args.extra_body == self._NESTED
+
+
+_RESPONSE_FORMAT: dict[str, Any] = {"type": "json_object"}
+_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {"name": "f", "parameters": {"type": "object"}},
+    }
+]
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["extra_body", "agentic_tool_profiles", "response_format", "tools"],
+)
+@pytest.mark.parametrize("content", ["", "null\n", "# only a comment\n"])
+def test_empty_file_rejected(tmp_path: Path, field: str, content: str) -> None:
+    """A file that loads as nothing is an error, not an unset field."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text(content)
+    with pytest.raises(ValueError, match=rf"{field} \(file .*\) is empty"):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: str(payload)}
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["extra_body", "agentic_tool_profiles", "response_format", "tools"],
+)
+def test_at_prefixed_file_path_rejected(tmp_path: Path, field: str) -> None:
+    """``@`` is part of the path, not a prefix to strip."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text("{}\n")
+    with pytest.raises(ValueError, match=rf"{field} .* not a readable file"):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: f"@{payload}"}
+        )
+
+
+@pytest.mark.parametrize("field", ["extra_body", "agentic_tool_profiles"])
+@pytest.mark.parametrize("content", ["- stop\n", "42\n"])
+def test_non_mapping_file_rejected(
+    tmp_path: Path, field: str, content: str
+) -> None:
+    """A file holding something other than a mapping is an error."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text(content)
+    with pytest.raises(ValidationError, match=field):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: str(payload)}
+        )
+
+
+class TestApplyWorkload:
+    """`apply_workload` applies an in-memory workload like a YAML file."""
+
+    def test_resolves_paths_against_base_dir(self, tmp_path: Path) -> None:
+        (tmp_path / "payload.yaml").write_text("k: v\n")
+        args = ServingBenchmarkConfig(model="m")
+        apply_workload(
+            args,
+            {"extra-body": "payload.yaml", "num-prompts": 7},
+            base_dir=tmp_path,
+        )
+        assert args.extra_body == {"k": "v"}
+        assert args.num_prompts == 7
+
+    def test_resolves_response_format_and_tools_against_base_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Bare paths resolve beside the workload, not in cwd."""
+        (tmp_path / "schema.json").write_text(json.dumps(_RESPONSE_FORMAT))
+        (tmp_path / "tools.json").write_text(json.dumps(_TOOLS))
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        args = ServingBenchmarkConfig(model="m")
+        apply_workload(
+            args,
+            {"response-format": "schema.json", "tools": "tools.json"},
+            base_dir=tmp_path,
+        )
+        assert args.response_format == _RESPONSE_FORMAT
+        assert args.tools == _TOOLS
+
+    def test_falls_back_to_cwd_when_nothing_is_beside_the_workload(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A repo-root path in a workload written elsewhere still resolves."""
+        (tmp_path / "repo" / "tools").mkdir(parents=True)
+        (tmp_path / "repo" / "tools" / "t.json").write_text(json.dumps(_TOOLS))
+        (tmp_path / "workloads").mkdir()
+        monkeypatch.chdir(tmp_path / "repo")
+
+        args = ServingBenchmarkConfig(model="m")
+        apply_workload(
+            args, {"tools": "tools/t.json"}, base_dir=tmp_path / "workloads"
+        )
+        assert args.tools == _TOOLS
+
+    def test_at_prefixed_path_rejected(self, tmp_path: Path) -> None:
+        """A workload path keeps its ``@``, so the file it names is missing."""
+        (tmp_path / "tools.json").write_text(json.dumps(_TOOLS))
+
+        args = ServingBenchmarkConfig(model="m")
+        with pytest.raises(ValueError, match="not a readable file path"):
+            apply_workload(args, {"tools": "@tools.json"}, base_dir=tmp_path)
+
+    def test_inline_response_format_and_tools_are_not_paths(
+        self, tmp_path: Path
+    ) -> None:
+        """Path resolution must not touch a value that is the content itself."""
+        for options in (
+            {"response-format": _RESPONSE_FORMAT, "tools": _TOOLS},
+            {
+                "response-format": json.dumps(_RESPONSE_FORMAT),
+                "tools": json.dumps(_TOOLS),
+            },
+        ):
+            args = ServingBenchmarkConfig(model="m")
+            apply_workload(args, options, base_dir=tmp_path)
+            assert args.response_format == _RESPONSE_FORMAT
+            assert args.tools == _TOOLS
+
+    def test_invalid_response_format_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid response_format"):
+            ServingBenchmarkConfig.model_validate(
+                {"model": "m", "response_format": '{"type": "nope"}'}
             )
-            assert parsed_values == [1.0, 2.0, 4.0, 8.0]
 
 
-class TestSweepableTypeValidation:
-    """Test validation and error handling for sweepable_type functionality."""
+class TestLoadWorkloadFile:
+    """Options must be at the root or inside of a native block."""
 
-    def test_validate_sweepable_type_metadata(self) -> None:
-        """Test that sweepable_type metadata is properly validated."""
-        model_fields = TestSweepableConfig.model_fields
+    _OPTIONS = {"dataset-name": "random", "num-prompts": 7}
 
-        # Check max_concurrency field
-        mc_extra = model_fields["max_concurrency"].json_schema_extra
-        assert isinstance(mc_extra, dict)
-        sweepable_type = mc_extra.get("sweepable_type")
-        assert sweepable_type in ["int", "float"]
+    def test_flat(self, tmp_path: Path) -> None:
+        path = tmp_path / "workload.yaml"
+        _write_yaml(path, self._OPTIONS)
+        assert load_workload_file(path) == self._OPTIONS
 
-        # Check request_rate field
-        rr_extra = model_fields["request_rate"].json_schema_extra
-        assert isinstance(rr_extra, dict)
-        sweepable_type = rr_extra.get("sweepable_type")
-        assert sweepable_type in ["int", "float"]
+    @pytest.mark.parametrize(
+        "document",
+        [
+            {"runner": "native", "native": _OPTIONS},
+            {"native": _OPTIONS},
+        ],
+        ids=["explicit-runner", "implicit-runner"],
+    )
+    def test_native_block(
+        self, tmp_path: Path, document: dict[str, Any]
+    ) -> None:
+        path = tmp_path / "workload.yaml"
+        _write_yaml(path, document)
+        assert load_workload_file(path) == self._OPTIONS
 
-    def test_validate_parsed_values_types(self) -> None:
-        """Test that parsed values have correct types."""
-        # Test integer parsing returns integers
-        result = parse_sweepable_values("1,2,3", int)
-        assert all(isinstance(x, int) or x is None for x in result)
+    @pytest.mark.parametrize(
+        ("document", "match"),
+        [
+            (
+                {"runner": "other", "other": {"dataset-name": "random"}},
+                "selects runner 'other'",
+            ),
+            ({"runner": "other", "native": _OPTIONS}, "selects runner"),
+            (
+                {"runner": "native", "native": _OPTIONS, "num-prompts": 3},
+                "must hold flat options",
+            ),
+            ({"runner": "native", "native": "random"}, "must hold flat"),
+            ({"runner": "native"}, "has no 'native:' block"),
+        ],
+        ids=[
+            "other-runner",
+            "mismatched-block",
+            "extra-top-level-key",
+            "non-mapping-block",
+            "missing-block",
+        ],
+    )
+    def test_rejected(
+        self, tmp_path: Path, document: dict[str, Any], match: str
+    ) -> None:
+        path = tmp_path / "workload.yaml"
+        _write_yaml(path, document)
+        with pytest.raises(ValueError, match=match):
+            load_workload_file(path)
 
-        # Test float parsing returns floats
-        result = parse_sweepable_values("1.0,2.0,3.0", float)
-        assert all(isinstance(x, float) or x is None for x in result)
+    def test_non_mapping_document_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "workload.yaml"
+        path.write_text("- dataset-name: random\n")
+        with pytest.raises(ValueError, match="must be a dict"):
+            load_workload_file(path)
 
-    def test_validate_error_messages(self) -> None:
-        """Test that error messages are informative."""
-        # Test integer error message
-        with pytest.raises(ValueError) as exc_info:
-            parse_sweepable_values("abc", int)
-        assert "Cannot parse 'abc' as int" in str(exc_info.value)
 
-        # Test float error message
-        with pytest.raises(ValueError) as exc_info:
-            parse_sweepable_values("xyz", float)
-        assert "Cannot parse 'xyz' as float" in str(exc_info.value)
+# ---------------------------------------------------------------------------
+# --agentic-tool-profiles validation
+# ---------------------------------------------------------------------------
 
-    def test_validate_edge_case_handling(self) -> None:
-        """Test that edge cases are handled correctly."""
-        # Test empty string
-        result = parse_sweepable_values("", int)
-        assert result == []
+_PROFILES: dict[str, Any] = {"tools": [{"input-len": "10", "output-len": "5"}]}
 
-        # Test single comma
-        result = parse_sweepable_values(",", int)
-        assert result == [None, None]
 
-        # Test multiple commas
-        result = parse_sweepable_values(",,,", int)
-        assert result == [None, None, None, None]
+def _fitted_config(
+    *,
+    agentic_tool_profiles: dict[str, Any] | None = None,
+    agentic_rounds_per_turn: DistributionParameter | None = None,
+) -> ServingBenchmarkConfig:
+    """A fitted multiturn run, the only shape that reaches the agent loop."""
+    return ServingBenchmarkConfig(
+        model="m",
+        dataset_name="instruct-coder",
+        fit_distributions=True,
+        num_chat_sessions=4,
+        agentic_tool_profiles=agentic_tool_profiles,
+        agentic_rounds_per_turn=agentic_rounds_per_turn,
+    )
 
-    def test_validate_infinity_handling(self) -> None:
-        """Test that infinity is handled correctly for float types."""
-        # Test inf for float
-        result = parse_sweepable_values("inf", float)
-        assert result == [float("inf")]
-        assert all(x == float("inf") for x in result)
 
-        # Test inf should not work for int
-        with pytest.raises(ValueError):
-            parse_sweepable_values("inf", int)
+def test_agentic_tool_profiles_accepts_every_spelling(tmp_path: Path) -> None:
+    """A mapping, an inline JSON string and a file path resolve alike."""
+    profiles = {"tools": [{"input-len": "10", "output-len": "5"}]}
+    config = tmp_path / "tools.yaml"
+    _write_yaml(config, profiles)
+    for value in (profiles, json.dumps(profiles), str(config)):
+        # model_validate takes Any, so the str forms reach the validator the
+        # way cyclopts hands it the raw token.
+        args = ServingBenchmarkConfig.model_validate(
+            {"model": "m", "agentic_tool_profiles": value}
+        )
+        assert args.agentic_tool_profiles == profiles
 
-    def test_validate_none_handling(self) -> None:
-        """Test that None is handled correctly."""
-        # Test None for both types
-        result_int = parse_sweepable_values("None", int)
-        result_float = parse_sweepable_values("None", float)
 
-        assert result_int == []
-        assert result_float == []
+def test_agentic_tool_profiles_missing_file_is_reported() -> None:
+    """A path that does not exist names the field, not a bare parse error."""
+    with pytest.raises(
+        ValueError, match=r"agentic_tool_profiles .* not a readable file path"
+    ):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", "agentic_tool_profiles": "/nonexistent/tools.yaml"}
+        )
 
-        # Test mixed None values
-        result = parse_sweepable_values("1,None,3", int)
-        assert result == [1, None, 3]
+
+def test_agentic_absent_by_default() -> None:
+    assert (
+        _resolve_agentic_tool_profiles(ServingBenchmarkConfig(model="m"))
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_profiles", "rounds_per_turn"),
+    [(_PROFILES, None), (None, 3)],
+    ids=["tools-without-rounds", "rounds-without-tools"],
+)
+def test_agentic_flags_must_be_set_together(
+    tool_profiles: dict[str, Any] | None,
+    rounds_per_turn: DistributionParameter | None,
+) -> None:
+    args = _fitted_config(
+        agentic_tool_profiles=tool_profiles,
+        agentic_rounds_per_turn=rounds_per_turn,
+    )
+    with pytest.raises(ValueError, match="must be set together"):
+        _resolve_agentic_tool_profiles(args)
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "fit_distributions", "num_chat_sessions"),
+    [
+        ("instruct-coder", False, 4),
+        # Any dataset off the fitted list takes the same branch.
+        ("random", True, 4),
+        # The agent loop lives on the multiturn path; a single-turn run would
+        # otherwise accept the flags and silently send plain requests.
+        ("instruct-coder", True, None),
+    ],
+)
+def test_agentic_needs_a_run_that_reaches_the_builder(
+    dataset_name: str, fit_distributions: bool, num_chat_sessions: int | None
+) -> None:
+    """Only a fitted multiturn run on the three datasets assembles it."""
+    args = ServingBenchmarkConfig(
+        model="m",
+        dataset_name=dataset_name,
+        fit_distributions=fit_distributions,
+        num_chat_sessions=num_chat_sessions,
+        agentic_tool_profiles=_PROFILES,
+        agentic_rounds_per_turn=3,
+    )
+    with pytest.raises(ValueError, match="needs --fit-distributions with"):
+        _resolve_agentic_tool_profiles(args)
+
+
+def test_agentic_resolves_when_fully_specified() -> None:
+    args = _fitted_config(
+        agentic_tool_profiles=_PROFILES,
+        agentic_rounds_per_turn="NB(33,0.3)",
+    )
+    tools = _resolve_agentic_tool_profiles(args)
+    assert tools is not None and len(tools) == 1
+
+
+# ---------------------------------------------------------------------------
+# The agent loop in a workload YAML
+# ---------------------------------------------------------------------------
+
+_WORKLOAD_BASE = (
+    "dataset-name: instruct-coder\n"
+    "fit-distributions: true\n"
+    "num-chat-sessions: 4\n"
+    "agentic-rounds-per-turn: '3'\n"
+)
+
+_NESTED = """agentic-tool-profiles:
+  tools:
+    - weight: 5
+      input-len: 'N(30,20)'
+      output-len: 'N(25,8)'
+"""
+_QUOTED = (
+    "agentic-tool-profiles:"
+    ' \'{"tools":[{"weight":5,"input-len":"N(30,20)",'
+    '"output-len":"N(25,8)"}]}\'\n'
+)
+_BY_FILENAME = "agentic-tool-profiles: agentic_tools.yaml\n"
+_BY_FILENAME_NO_EXT = "agentic-tool-profiles: agentic_tools\n"
+
+
+def _workload(tmp_path: Path, profiles: str) -> Path:
+    """A workload file, with a tool file beside it for the by-filename form."""
+    body = (
+        "tools:\n"
+        "  - weight: 5\n"
+        "    input-len: N(30,20)\n"
+        "    output-len: N(25,8)\n"
+    )
+    (tmp_path / "agentic_tools.yaml").write_text(body)
+    # A tool file need not be named for its format to be found.
+    (tmp_path / "agentic_tools").write_text(body)
+    workload = tmp_path / "workload.yaml"
+    workload.write_text(_WORKLOAD_BASE + profiles)
+    return workload
+
+
+@pytest.mark.parametrize(
+    "profiles",
+    [_NESTED, _QUOTED, _BY_FILENAME, _BY_FILENAME_NO_EXT],
+    ids=[
+        "nested-mapping",
+        "quoted-string",
+        "by-filename",
+        "by-filename-no-extension",
+    ],
+)
+def test_workload_yaml_spellings_agree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profiles: str
+) -> None:
+    """Three ways to write one tool resolve to that one tool.
+
+    Run from an unrelated directory, so the by-filename form is resolved
+    against the workload file rather than the caller's cwd.
+    """
+    workload = _workload(tmp_path, profiles)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    args = ServingBenchmarkConfig(model="m", workload_config=str(workload))
+    _load_workload_yaml(args)
+    tools = _resolve_agentic_tool_profiles(args)
+
+    assert tools is not None
+    assert [(t.weight, t.input_len, t.output_len) for t in tools] == [
+        (5.0, "N(30,20)", "N(25,8)")
+    ]
+
+
+# ===----------------------------------------------------------------------=== #
+# General image-mixing flags
+# ===----------------------------------------------------------------------=== #
+
+
+class TestGpuMetricsPrometheus:
+    """A Prometheus GPU source needs a selector, checked at parse time."""
+
+    def test_url_without_selector_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="requires --gpu-metrics-selector"):
+            ServingBenchmarkConfig(
+                gpu_metrics_prometheus_url="http://prom:9090"
+            )
+
+    def test_blank_selector_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="requires --gpu-metrics-selector"):
+            ServingBenchmarkConfig(
+                gpu_metrics_prometheus_url="http://prom:9090",
+                gpu_metrics_selector="  ",
+            )
+
+    def test_url_with_selector_is_accepted(self) -> None:
+        config = ServingBenchmarkConfig(
+            gpu_metrics_prometheus_url="http://prom:9090",
+            gpu_metrics_selector='namespace="bench"',
+        )
+        assert config.gpu_metrics_selector == 'namespace="bench"'
+
+
+class TestImageFlags:
+    """--image-fraction is mutually exclusive with --random-image-*."""
+
+    def test_defaults_allow_construction(self) -> None:
+        config = ServingBenchmarkConfig()
+        assert config.image_fraction == 0.0
+        assert config.image_turn == "first"
+
+    def test_conflicts_with_random_image_count(self) -> None:
+        with pytest.raises(ValueError, match="cannot be combined"):
+            ServingBenchmarkConfig(image_fraction=0.1, random_image_count=1)
+
+    def test_conflicts_with_random_image_size(self) -> None:
+        with pytest.raises(ValueError, match="cannot be combined"):
+            ServingBenchmarkConfig(
+                image_fraction=0.1, random_image_size="512,512"
+            )
+
+    def test_rejects_unknown_image_turn(self) -> None:
+        """Rejected by the TurnSelector literal itself, so there is no hand-rolled
+        check to keep in sync with the type.
+
+        Goes through ``model_validate`` rather than the constructor: mypy now
+        rejects a bad literal statically, which is the point of the change, so
+        the runtime check has to come in through the untyped parsing entry
+        point the CLI itself uses.
+        """
+        with pytest.raises(ValidationError, match="image_turn"):
+            ServingBenchmarkConfig.model_validate(
+                {"image_fraction": 0.1, "image_turn": "middle"}
+            )
+
+    def test_accepts_every_image_turn_value(self) -> None:
+        for value in ("first", "last", "every"):
+            config = ServingBenchmarkConfig(
+                image_fraction=0.1, image_turn=value
+            )
+            assert config.image_turn == value
+
+    def test_rejects_out_of_range_fraction(self) -> None:
+        """The description promises 0.0-1.0; -0.1 used to slip past `> 0` and
+        silently produce a text-only run."""
+        for bad in (-0.1, 1.5, float("nan"), float("inf")):
+            with pytest.raises(ValidationError):
+                ServingBenchmarkConfig(image_fraction=bad)
+
+    def test_rejects_pixel_generation_task(self) -> None:
+        with pytest.raises(ValueError, match="does not apply"):
+            ServingBenchmarkConfig(
+                image_fraction=0.1, benchmark_task="text-to-image"
+            )
+
+    def test_rejects_text_only_endpoint(self) -> None:
+        """A text-only driver would drop the images while stats still count them."""
+        with pytest.raises(ValueError, match="image-capable endpoint"):
+            ServingBenchmarkConfig(
+                image_fraction=0.1, endpoint="/v1/completions"
+            )
+
+    def test_rejects_responses_endpoint(self) -> None:
+        """/v1/responses only routes to OpenResponsesRequestDriver for
+        pixel-generation tasks, and that driver takes only
+        PixelGenerationRequestFuncInput, so it never carries input images."""
+        with pytest.raises(ValueError, match="image-capable endpoint"):
+            ServingBenchmarkConfig(image_fraction=0.1, endpoint="/v1/responses")
+
+    def test_allows_chat_completions_endpoint(self) -> None:
+        config = ServingBenchmarkConfig(
+            image_fraction=0.1, endpoint="/v1/chat/completions"
+        )
+        assert config.image_fraction == 0.1
+
+    def test_accepts_distribution_strings(self) -> None:
+        config = ServingBenchmarkConfig(
+            image_fraction=0.2,
+            image_count="DU(1,3)",
+            image_long_side="U(256,1024)",
+            image_aspect_ratio=1.0,
+            image_turn="last",
+        )
+        assert config.image_count == "DU(1,3)"
+        assert config.image_long_side == "U(256,1024)"
+        assert config.image_turn == "last"

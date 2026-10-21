@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements RoI Align, which extracts fixed-size feature maps from regions of interest using bilinear interpolation."""
 
 from std.math import ceil
 
@@ -34,7 +35,7 @@ struct Weighted2DPoint[dtype: DType](TrivialRegisterPassable):
         self.w = weight
 
 
-@always_inline
+@inline(.always)
 def _bilinear_interpolate[
     dtype: DType
 ](
@@ -108,7 +109,7 @@ def _bilinear_interpolate[
     return (p1, p2, p3, p4)
 
 
-@always_inline
+@inline(.always)
 def roi_align_nhwc[
     dtype: DType,
     //,
@@ -125,7 +126,7 @@ def roi_align_nhwc[
 ):
     """
     Compute ROIAlign a batch of rois of shape [M, 5] where the first dim is the
-    batch index, followed by region box coordinates (y0, x0) (y1, x1). For
+    batch index, followed by region box coordinates (x0, y0) (x1, y1). For
     inputs of NHWC format. The output shape is
     [M, output_height, output_width, C].
 
@@ -161,13 +162,14 @@ def roi_align_nhwc[
 
     assert mode == "AVG" or mode == "MAX", "mode must be AVG or MAX"
 
-    var spatial_scale = in_spatial_scale.cast[DType.float32]()
-    var sampling_ratio = in_sampling_ratio.cast[DType.float32]()
+    var spatial_scale = in_spatial_scale.cast[.float32]()
+    var sampling_ratio = in_sampling_ratio.cast[.float32]()
 
-    var n_regions = rois.static_shape[0]
-    var height = input.static_shape[1]
-    var width = input.static_shape[2]
-    var channels = input.static_shape[3]
+    # Runtime extents: `static_shape` reports -1 for a symbolic dim.
+    var n_regions = Int(rois.dim[0]())
+    var height = Int(input.dim[1]())
+    var width = Int(input.dim[2]())
+    var channels = Int(input.dim[3]())
 
     var pooled_height = output_height
     var pooled_width = output_width
@@ -206,16 +208,14 @@ def roi_align_nhwc[
         var pool_elemn_num = max(roi_bin_grid_h * roi_bin_grid_w, 1)
 
         # Pooling init/update/finalize functions parameterized by mode
-        @parameter
-        @always_inline
+        @inline(.always)
         def init_fn[dtype: DType]() -> Scalar[dtype]:
             comptime if mode == "AVG":
                 return 0
             else:
                 return min_or_neg_inf[dtype]()
 
-        @parameter
-        @always_inline
+        @inline(.always)
         def update_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
@@ -224,8 +224,7 @@ def roi_align_nhwc[
             else:
                 return max(a, b)
 
-        @parameter
-        @always_inline
+        @inline(.always)
         def reduce_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:

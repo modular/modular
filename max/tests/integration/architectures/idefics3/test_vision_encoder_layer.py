@@ -181,7 +181,6 @@ def generate_max_outputs(
         device=DeviceRef.GPU(),
     )
 
-    # Convert weights to CPU before loading (MAX expects CPU weights)
     cpu_weights = {key: weight.cpu() for key, weight in encoder_weights.items()}
     max_encoder.load_state_dict(cpu_weights)
 

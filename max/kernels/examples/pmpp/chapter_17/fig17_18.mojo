@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import List
 from spmv_utils import CSCMatrix, generate_sparse_matrix, spmv_cpu, verify
-from std.gpu import block_idx, thread_idx, block_dim
-from std.gpu.host import DeviceContext
-from std.os import Atomic
+from max.gpu import block_idx, thread_idx, block_dim
+from max.gpu.host import DeviceContext
+from std.atomic import Atomic
+from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 
 @fieldwise_init
@@ -32,21 +33,11 @@ struct Element(Comparable, ImplicitlyCopyable):
     def __eq__(self, other: Self) -> Bool:
         return self.c == other.c and self.r == other.r
 
-    def __init__(out self, *, deinit take: Self):
-        self.r = take.r
-        self.c = take.c
-        self.v = take.v
-
-    def __init__(out self, *, copy: Self):
-        self.r = copy.r
-        self.c = copy.c
-        self.v = copy.v
-
 
 def spmv_csc_kernel(
     cscMatrix: CSCMatrix,
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    y: UnsafePointer[Float32, MutAnyOrigin],
+    x: ImmPointer[Float32, ImmutAnyOrigin],
+    y: MutPointer[Float32, MutAnyOrigin],
 ):
     var col = block_idx.x * block_dim.x + thread_idx.x
     if col < cscMatrix.numCols:
@@ -56,7 +47,7 @@ def spmv_csc_kernel(
         for i in range(Int(start), Int(end)):
             var row = cscMatrix.rowIdxs[i]
             var val = cscMatrix.values[i]
-            _ = Atomic.fetch_add(y + Int(row), inValue * val)
+            _ = Atomic.fetch_add(y.unsafe_offset(Int(row)), inValue * val)
 
 
 def main() raises:
@@ -108,11 +99,11 @@ def main() raises:
     print("CSC Matrix: ", rows, "x", cols, ", ", numNonzeros, " non-zeros.")
 
     # Prepare host pointers
-    var h_colPtrs_ptr = alloc[UInt32](cols + 1)
-    var h_rowIdxs_ptr = alloc[UInt32](numNonzeros)
-    var h_values_ptr = alloc[Float32](numNonzeros)
-    var h_x_ptr = alloc[Float32](cols)
-    var h_y_ptr = alloc[Float32](rows)
+    var h_colPtrs_ptr = unsafe_alloc[UInt32](cols + 1)
+    var h_rowIdxs_ptr = unsafe_alloc[UInt32](numNonzeros)
+    var h_values_ptr = unsafe_alloc[Float32](numNonzeros)
+    var h_x_ptr = unsafe_alloc[Float32](cols)
+    var h_y_ptr = unsafe_alloc[Float32](rows)
 
     for i in range(cols + 1):
         h_colPtrs_ptr[i] = h_csc_colPtrs[i]
@@ -127,11 +118,11 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Device allocation
-    var d_colPtrs_buf = ctx.enqueue_create_buffer[DType.uint32](cols + 1)
-    var d_rowIdxs_buf = ctx.enqueue_create_buffer[DType.uint32](numNonzeros)
-    var d_values_buf = ctx.enqueue_create_buffer[DType.float32](numNonzeros)
-    var d_x_buf = ctx.enqueue_create_buffer[DType.float32](cols)
-    var d_y_buf = ctx.enqueue_create_buffer[DType.float32](rows)
+    var d_colPtrs_buf = ctx.enqueue_create_buffer[.uint32](cols + 1)
+    var d_rowIdxs_buf = ctx.enqueue_create_buffer[.uint32](numNonzeros)
+    var d_values_buf = ctx.enqueue_create_buffer[.float32](numNonzeros)
+    var d_x_buf = ctx.enqueue_create_buffer[.float32](cols)
+    var d_y_buf = ctx.enqueue_create_buffer[.float32](rows)
 
     # Copy to device
     ctx.enqueue_copy(d_colPtrs_buf, h_colPtrs_ptr)
@@ -140,25 +131,25 @@ def main() raises:
     ctx.enqueue_copy(d_x_buf, h_x_ptr)
 
     # Initialize y on device to 0
-    var h_y_zeros = alloc[Float32](rows)
+    var h_y_zeros = unsafe_alloc[Float32](rows)
     for i in range(rows):
         h_y_zeros[i] = 0.0
     ctx.enqueue_copy(d_y_buf, h_y_zeros)
-    h_y_zeros.free()
+    h_y_zeros.unsafe_free()
 
     var d_cscMatrix = CSCMatrix(
         rows,
         cols,
         numNonzeros,
-        d_colPtrs_buf.unsafe_ptr(),
-        d_rowIdxs_buf.unsafe_ptr(),
-        d_values_buf.unsafe_ptr(),
+        d_colPtrs_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_rowIdxs_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_values_buf.unsafe_ptr().as_unsafe_any_origin(),
     )
 
     var blockSize = 256
-    var numBlocks = (cols + blockSize - 1) // blockSize
+    var numBlocks = ceildiv(cols, blockSize)
 
-    ctx.enqueue_function_experimental[spmv_csc_kernel](
+    ctx.enqueue_function[spmv_csc_kernel](
         d_cscMatrix,
         d_x_buf,
         d_y_buf,
@@ -175,8 +166,8 @@ def main() raises:
     else:
         print("CSC Kernel Test Failed!")
 
-    h_colPtrs_ptr.free()
-    h_rowIdxs_ptr.free()
-    h_values_ptr.free()
-    h_x_ptr.free()
-    h_y_ptr.free()
+    h_colPtrs_ptr.unsafe_free()
+    h_rowIdxs_ptr.unsafe_free()
+    h_values_ptr.unsafe_free()
+    h_x_ptr.unsafe_free()
+    h_y_ptr.unsafe_free()

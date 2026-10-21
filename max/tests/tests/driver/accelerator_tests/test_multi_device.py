@@ -11,8 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os
+
 import numpy as np
-from max.driver import CPU, Accelerator, Buffer, DevicePinnedBuffer
+import pytest
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    Usage,
+    batch_inplace_copy,
+    enable_all_peer_access,
+)
 from max.dtype import DType
 
 
@@ -74,10 +84,11 @@ def _test_pinned_device_copy(
     cpu_device = CPU()
 
     # Create pinned memory on specified GPU
-    pinned_cpu_tensor = DevicePinnedBuffer(
+    pinned_cpu_tensor = Buffer(
         dtype=DType.int8,
         shape=(tensor_size,),
         device=gpus[pinned_gpu_id],
+        usage=Usage.STAGING,
     )
 
     # Fill with pattern_before
@@ -164,3 +175,136 @@ def test_non_pinned_cross_device_copy() -> None:
         "Cross-device copy of non-pinned memory failed. "
         "Expected tensor to contain 42."
     )
+
+
+def test_batch_inplace_copy_mixed_destination_devices_parity() -> None:
+    """Destinations spanning two GPUs are grouped by the driver, not rejected.
+
+    A submission only orders the writes on its own stream, so the driver splits
+    the batch per destination device. Interleave the destinations so a naive
+    single-stream submit would be observable as a wrong-stream write.
+    """
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+
+    n = 4
+    srcs = [
+        Buffer.from_numpy(np.full((8,), float(i + 1), dtype=np.float32))
+        for i in range(n)
+    ]
+    devices = [gpu0, gpu1, gpu0, gpu1]
+    batch_dsts = [Buffer(DType.float32, (8,), device=dev) for dev in devices]
+    loop_dsts = [Buffer(DType.float32, (8,), device=dev) for dev in devices]
+
+    batch_inplace_copy(batch_dsts, srcs)
+    for dst, src in zip(loop_dsts, srcs, strict=True):
+        dst.inplace_copy_from(src)
+
+    gpu0.synchronize()
+    gpu1.synchronize()
+    for i, (batch_dst, loop_dst) in enumerate(
+        zip(batch_dsts, loop_dsts, strict=True)
+    ):
+        np.testing.assert_array_equal(
+            batch_dst.to(CPU()).to_numpy(),
+            loop_dst.to(CPU()).to_numpy(),
+            err_msg=f"mixed-destination batch vs per-copy mismatch at {i}",
+        )
+
+
+def test_batch_inplace_copy_mixed_source_devices_parity() -> None:
+    """One destination device fed by local, peer and host sources at once.
+
+    The driver brackets each foreign source stream around the single submit
+    rather than de-batching, so the mix must match a per-copy loop.
+    """
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+    assert gpu0.can_access(gpu1), "peer access required for peer DtoD batch"
+
+    values = [np.full((8,), float(i + 1), dtype=np.float32) for i in range(3)]
+    srcs = [
+        Buffer.from_numpy(values[0]).to(gpu0),
+        Buffer.from_numpy(values[1]).to(gpu1),
+        Buffer.from_numpy(values[2]),
+    ]
+    batch_dsts = [Buffer(DType.float32, (8,), device=gpu0) for _ in srcs]
+    loop_dsts = [Buffer(DType.float32, (8,), device=gpu0) for _ in srcs]
+
+    gpu0.synchronize()
+    gpu1.synchronize()
+    batch_inplace_copy(batch_dsts, srcs)
+    for dst, src in zip(loop_dsts, srcs, strict=True):
+        dst.inplace_copy_from(src)
+
+    gpu0.synchronize()
+    for i, (batch_dst, loop_dst) in enumerate(
+        zip(batch_dsts, loop_dsts, strict=True)
+    ):
+        np.testing.assert_array_equal(
+            batch_dst.to(CPU()).to_numpy(),
+            loop_dst.to(CPU()).to_numpy(),
+            err_msg=f"mixed-source batch vs per-copy mismatch at index {i}",
+        )
+
+
+def test_batch_inplace_copy_peer_device_parity() -> None:
+    """Batched peer DtoD (GPU1→GPU0) matches a per-copy inplace_copy_from loop.
+
+    All destinations share one device (GPU0); sources live on GPU1. Exercises
+    the memBatchCopy peer path vs sequential enqueueCopyDeviceToDevice.
+    """
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+    assert gpu0.can_access(gpu1), "peer access required for peer DtoD batch"
+
+    n = 5
+    srcs = [
+        Buffer.from_numpy(np.full((8,), float(i + 1), dtype=np.float32)).to(
+            gpu1
+        )
+        for i in range(n)
+    ]
+    batch_dsts = [Buffer(DType.float32, (8,), device=gpu0) for _ in range(n)]
+    loop_dsts = [Buffer(DType.float32, (8,), device=gpu0) for _ in range(n)]
+
+    gpu1.synchronize()
+    batch_inplace_copy(batch_dsts, srcs)
+    for dst, src in zip(loop_dsts, srcs, strict=True):
+        dst.inplace_copy_from(src)
+
+    gpu0.synchronize()
+    for i, (batch_dst, loop_dst) in enumerate(
+        zip(batch_dsts, loop_dsts, strict=True)
+    ):
+        np.testing.assert_array_equal(
+            batch_dst.to(CPU()).to_numpy(),
+            loop_dst.to(CPU()).to_numpy(),
+            err_msg=f"peer DtoD batch vs per-copy mismatch at index {i}",
+        )
+
+
+def test_distinct_accelerator_ids_open_distinct_devices() -> None:
+    """`Accelerator(1)` must not open physical device 0."""
+    dev0 = Accelerator(id=0)
+    dev1 = Accelerator(id=1)
+    assert dev0.id == 0
+    assert dev1.id == 1
+
+
+def test_enable_all_peer_access_is_idempotent() -> None:
+    enable_all_peer_access()
+    enable_all_peer_access()
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+    # `can_access` reports hardware capability, not enabled state.
+    assert gpu0.can_access(gpu1) == gpu1.can_access(gpu0)
+
+
+# `MODULAR_DRIVER_PLUGINS` is set only for the HAL backend.
+@pytest.mark.skipif(
+    not os.environ.get("MODULAR_DRIVER_PLUGINS"),
+    reason="legacy AsyncRT answers True for Accelerator(1) vs CPU()",
+)
+def test_accelerator_cannot_access_cpu() -> None:
+    assert not Accelerator(id=1).can_access(CPU())

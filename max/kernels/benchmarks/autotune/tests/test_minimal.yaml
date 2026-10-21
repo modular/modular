@@ -1,0 +1,25 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Minimal kbench config used by the ubsan-only e2e tests.
+#
+# Points at tests/minimal_fixture.mojo (no kernel imports) so the under-ubsan
+# compile fits well under the test shard timeout. Three runtime $x variants
+# share one compiled .so so the test still exercises the kbench multi-instance
+# scheduling path.
+
+name: minimal
+file: $KERNEL_BENCHMARKS_ROOT/autotune/tests/minimal_fixture.mojo
+
+params:
+  - $x: "[i for i in range(3)]"

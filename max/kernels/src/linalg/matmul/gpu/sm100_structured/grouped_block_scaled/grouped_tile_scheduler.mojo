@@ -26,19 +26,19 @@ Key features:
 Usage:
     var scheduler = GroupedTileScheduler[...](problem_sizes, tile_shape)
     var work_iter = scheduler.work_iterator()
-    while work_iter.has_work():
-        with work_iter.next() as current:
-            if current.group_changed:
-                update_tensormaps(current.group_idx)
-            process_tile(current)
+    for current in work_iter:
+        if current.group_changed:
+            update_tensormaps(current.group_idx)
+        process_tile(current)
 """
 
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
-from std.gpu import block_idx_int as block_idx, grid_dim_int as grid_dim
-from std.gpu.primitives.cluster import elect_one_sync
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu import block_idx, grid_dim
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.memory import fence_async_view_proxy
+from layout import TensorEngine
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
@@ -46,56 +46,6 @@ from std.utils.static_tuple import StaticTuple
 
 from linalg.structuring import SMemPtr
 from structured_kernels.pipeline import ProducerConsumerPipeline
-
-
-# =============================================================================
-# GroupedAdvanceContext - Context manager for advancing work iterator
-# =============================================================================
-
-
-struct GroupedAdvanceContext[
-    work_origin: MutOrigin,
-    idx_origin: MutOrigin,
-](TrivialRegisterPassable):
-    """Context manager that returns current work and advances on exit.
-
-    This follows the same pattern as the working kernel's WaitAndAdvanceContext:
-    - Pre-compute next work during construction
-    - __enter__ returns current work for processing
-    - __exit__ assigns pre-computed next work and updates linear index
-
-    Usage:
-        with work_iter.next() as current:
-            # Process current work
-        # After: work_iter.work_info updated to next work
-    """
-
-    var work_info_ptr: Pointer[GroupedWorkInfo, Self.work_origin]
-    var linear_idx_ptr: Pointer[UInt32, Self.idx_origin]
-    var next_work: GroupedWorkInfo
-    var next_linear_idx: UInt32
-
-    @always_inline
-    def __init__(
-        out self,
-        work_info_ptr: Pointer[GroupedWorkInfo, Self.work_origin],
-        linear_idx_ptr: Pointer[UInt32, Self.idx_origin],
-        next_work: GroupedWorkInfo,
-        next_linear_idx: UInt32,
-    ):
-        self.work_info_ptr = work_info_ptr
-        self.linear_idx_ptr = linear_idx_ptr
-        self.next_work = next_work
-        self.next_linear_idx = next_linear_idx
-
-    @always_inline
-    def __enter__(self) -> GroupedWorkInfo:
-        return self.work_info_ptr[]
-
-    @always_inline
-    def __exit__(mut self):
-        self.work_info_ptr[] = self.next_work
-        self.linear_idx_ptr[] = self.next_linear_idx
 
 
 # =============================================================================
@@ -133,7 +83,7 @@ struct GroupedWorkInfo(
     var group_changed: Bool
     """True if group changed since last tile (triggers tensormap update)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Create an invalid/empty work info."""
         self.m = 0
@@ -144,17 +94,17 @@ struct GroupedWorkInfo(
         self.k_tile_count = 0
         self.group_changed = False
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         """Check if this work tile is valid."""
         return self.is_valid_tile
 
-    @always_inline
+    @inline(.always)
     def coord(self) -> Tuple[Int, Int]:
         """Get (m, n) tile coordinates as a tuple."""
         return (Int(self.m), Int(self.n))
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "GroupedWorkInfo(m=",
@@ -186,8 +136,10 @@ struct GroupedWorkIterator[
     tile_k: Int,
     max_groups: Int,
     cta_group: Int = 1,
-](TrivialRegisterPassable):
-    """Per-warp work iterator for grouped GEMM.
+    *,
+    problem_sizes_engine: TensorEngine,
+](Copyable, Iterable, Iterator, RegisterPassable):
+    """Per-warp work iterator for grouped GEMM using __next__-style iteration.
 
     This iterator traverses tiles across all groups, tracking when groups change
     to trigger tensormap updates. It uses linear iteration instead of CLC.
@@ -196,15 +148,27 @@ struct GroupedWorkIterator[
     The cluster index (block_idx.x // cta_group) is used for tile assignment,
     and advance step is grid_dim.x // cta_group (number of clusters).
 
+    Parameters:
+        tile_m: M dimension of output tiles.
+        tile_n: N dimension of output tiles.
+        tile_k: K dimension of input tiles.
+        max_groups: Maximum number of groups.
+        cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
+
     Usage:
         var work_iter = scheduler.work_iterator()
-        while work_iter.has_work():
-            var current = work_iter.current()
+        for current in work_iter:
             if current.group_changed:
                 update_tensormaps(current.group_idx)
             process_tile(current)
-            work_iter.advance()
     """
+
+    comptime Element = GroupedWorkInfo
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
 
     var work_info: GroupedWorkInfo
     """Current work item."""
@@ -227,10 +191,12 @@ struct GroupedWorkIterator[
     var num_groups: UInt32
     """Number of active groups."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         grid_size: UInt32,
     ):
@@ -294,106 +260,36 @@ struct GroupedWorkIterator[
         self.work_info = self._delinearize_to_group(self.linear_tile_idx)
         self.work_info.group_changed = True  # First tile always triggers update
 
-    @always_inline
-    def has_work(self) -> Bool:
-        """Check if there is more work to process."""
-        return self.work_info.is_valid()
+    @inline(.always)
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
 
-    @always_inline
-    def current(self) -> GroupedWorkInfo:
-        """Get current work item."""
-        return self.work_info
+    @inline(.always)
+    def __next__(mut self) raises StopIteration -> GroupedWorkInfo:
+        """Return current work item, deferring advance to next call.
 
-    @always_inline
-    def advance(mut self):
-        """Advance to next tile."""
+        Raises:
+            StopIteration: When there is no more work to process.
+        """
+        if not self.work_info.is_valid():
+            raise StopIteration()
+        var current = self.work_info
+
+        # Advance to next tile
         self.prev_group_idx = self.work_info.group_idx
-
-        # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
         self.linear_tile_idx += UInt32(ufloordiv(grid_dim.x, Self.cta_group))
 
         if self.linear_tile_idx >= self.total_tiles:
             self.work_info = GroupedWorkInfo()  # Invalid
-            return
-
-        self.work_info = self._delinearize_to_group(self.linear_tile_idx)
-        self.work_info.group_changed = (
-            self.work_info.group_idx != self.prev_group_idx
-        )
-
-    @always_inline
-    def next[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> GroupedAdvanceContext[
-        origin_of(self.work_info), origin_of(self.linear_tile_idx)
-    ]:
-        """Get context manager that returns current work and advances on exit.
-
-        Compatible with the working kernel's pattern:
-            with work_iter.next() as current:
-                process_tile(current)
-            # After: work_iter.work_info updated to next work
-
-        Pre-computes next state, then on __exit__ updates work_info and linear_idx.
-        """
-        # Pre-compute next state (read-only computation)
-        # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
-        var advance_step = UInt32(ufloordiv(grid_dim.x, Self.cta_group))
-        var next_linear_idx = self.linear_tile_idx + advance_step
-        var next_work: GroupedWorkInfo
-
-        if next_linear_idx >= self.total_tiles:
-            next_work = GroupedWorkInfo()  # Invalid
         else:
-            next_work = self._delinearize_to_group(next_linear_idx)
-            next_work.group_changed = (
-                next_work.group_idx != self.work_info.group_idx
+            self.work_info = self._delinearize_to_group(self.linear_tile_idx)
+            self.work_info.group_changed = (
+                self.work_info.group_idx != self.prev_group_idx
             )
 
-        return GroupedAdvanceContext(
-            Pointer(to=self.work_info),
-            Pointer(to=self.linear_tile_idx),
-            next_work,
-            next_linear_idx,
-        )
+        return current
 
-    @always_inline
-    def wait_and_advance[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> GroupedAdvanceContext[
-        origin_of(self.work_info), origin_of(self.linear_tile_idx)
-    ]:
-        """Same as next() - no CLC waiting for grouped GEMM.
-
-        For compatibility with MMA warp pattern. Since we don't use CLC,
-        this behaves identically to next().
-        """
-        # Pre-compute next state (same as next() for grouped GEMM)
-        # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
-        var advance_step = UInt32(ufloordiv(grid_dim.x, Self.cta_group))
-        var next_linear_idx = self.linear_tile_idx + advance_step
-        var next_work: GroupedWorkInfo
-
-        if next_linear_idx >= self.total_tiles:
-            next_work = GroupedWorkInfo()  # Invalid
-        else:
-            next_work = self._delinearize_to_group(next_linear_idx)
-            next_work.group_changed = (
-                next_work.group_idx != self.work_info.group_idx
-            )
-
-        return GroupedAdvanceContext(
-            Pointer(to=self.work_info),
-            Pointer(to=self.linear_tile_idx),
-            next_work,
-            next_linear_idx,
-        )
-
-    @always_inline
+    @inline(.always)
     def _delinearize_to_group(self, linear_idx: UInt32) -> GroupedWorkInfo:
         """Map linear tile index to group + local coordinates.
 
@@ -455,6 +351,8 @@ struct GroupedTileScheduler[
     max_groups: Int,
     num_stages: Int = 0,
     cta_group: Int = 1,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](TrivialRegisterPassable):
     """Tile scheduler for grouped block-scaled GEMM.
 
@@ -468,17 +366,24 @@ struct GroupedTileScheduler[
         max_groups: Maximum number of groups.
         num_stages: Pipeline stages (0 = single wave).
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
     """
 
     var num_groups: Int
     """Number of active groups."""
-    var problem_sizes: _ProblemSizesTile[Self.max_groups]
+
+    @__allow_legacy_any_origin_fields
+    var problem_sizes: _ProblemSizesTile[
+        Self.max_groups, Self.problem_sizes_engine
+    ]
     """Problem sizes tensor (num_groups, 4) with [M, N, K, L] per group."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
     ):
         """Initialize scheduler with problem sizes.
@@ -490,11 +395,16 @@ struct GroupedTileScheduler[
         self.problem_sizes = problem_sizes
         self.num_groups = num_groups
 
-    @always_inline
+    @inline(.always)
     def work_iterator(
         self,
     ) -> GroupedWorkIterator[
-        Self.tile_m, Self.tile_n, Self.tile_k, Self.max_groups, Self.cta_group
+        Self.tile_m,
+        Self.tile_n,
+        Self.tile_k,
+        Self.max_groups,
+        Self.cta_group,
+        problem_sizes_engine=Self.problem_sizes_engine,
     ]:
         """Create a per-warp work iterator.
 
@@ -509,13 +419,14 @@ struct GroupedTileScheduler[
             Self.tile_k,
             Self.max_groups,
             Self.cta_group,
+            problem_sizes_engine=Self.problem_sizes_engine,
         ](
             self.problem_sizes,
             self.num_groups,
             UInt32(grid_dim.x),
         )
 
-    @always_inline
+    @inline(.always)
     def total_tiles(self) -> Int:
         """Compute total number of tiles across all groups."""
         var total = 0
@@ -526,49 +437,6 @@ struct GroupedTileScheduler[
             var n_tiles = ceildiv(n, Self.tile_n)
             total += m_tiles * n_tiles
         return total
-
-
-# =============================================================================
-# GroupedCLCWaitAndAdvanceContext - Context for CLC-based wait and advance
-# =============================================================================
-
-
-struct GroupedCLCWaitAndAdvanceContext[
-    work_origin: MutOrigin,
-](TrivialRegisterPassable):
-    """Context for waiting on CLC barrier and advancing work iterator.
-
-    Encapsulates CLC response barrier synchronization:
-    - Construction: Waits for CLC response, fetches next work
-    - __enter__: Returns current work_info for processing
-    - __exit__: Assigns fetched work as current
-
-    Usage:
-        with work_iter.wait_and_advance() as current:
-            # current is the work item to process NOW
-            process(current)
-        # After exit, work_iter.work_info is the NEXT work item
-    """
-
-    var work_info_ptr: Pointer[GroupedWorkInfo, Self.work_origin]
-    var next_work: GroupedWorkInfo
-
-    @always_inline
-    def __init__(
-        out self,
-        work_info_ptr: Pointer[GroupedWorkInfo, Self.work_origin],
-        next_work: GroupedWorkInfo,
-    ):
-        self.work_info_ptr = work_info_ptr
-        self.next_work = next_work
-
-    @always_inline
-    def __enter__(self) -> GroupedWorkInfo:
-        return self.work_info_ptr[]
-
-    @always_inline
-    def __exit__(mut self):
-        self.work_info_ptr[] = self.next_work
 
 
 # =============================================================================
@@ -583,26 +451,38 @@ struct GroupedCLCWorkIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
-](TrivialRegisterPassable):
+    *,
+    problem_sizes_engine: TensorEngine,
+](Copyable, Iterable, Iterator, RegisterPassable):
     """Per-warp work iterator for grouped GEMM with CLC barrier support.
 
     This iterator combines grouped GEMM features with CLC-based synchronization
     for 2SM support. It uses CLC barriers to ensure both CTAs in a cluster
     process the same tile at the same time.
 
-    Key features:
-    - Uses CLC barriers for inter-CTA synchronization (like working kernel)
-    - Tracks group_idx, k_tile_count, group_changed (like grouped scheduler)
-    - wait_and_advance() actually waits on CLC barriers
+    Parameters:
+        tile_m: M dimension of output tiles.
+        tile_n: N dimension of output tiles.
+        tile_k: K dimension of input tiles.
+        max_groups: Maximum number of groups.
+        num_clc_stages: Number of CLC pipeline stages for barrier-based
+            synchronization.
+        cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
 
     Usage:
         var work_iter = scheduler.clc_work_iterator()
-        while work_iter.has_work():
-            with work_iter.wait_and_advance() as current:
-                if current.group_changed:
-                    update_tensormaps(current.group_idx)
-                process_tile(current)
+        for current in work_iter:
+            if current.group_changed:
+                update_tensormaps(current.group_idx)
+            process_tile(current)
     """
+
+    comptime Element = GroupedWorkInfo
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
 
     comptime ThrottlePipeline = ProducerConsumerPipeline[Self.num_clc_stages]
 
@@ -635,16 +515,22 @@ struct GroupedCLCWorkIterator[
     var total_tiles: UInt32
     """Total tiles across all groups."""
 
-    @always_inline
+    var use_clc_fetch: Bool
+    """If True, __next__ waits on CLC barriers (for MMA warp)."""
+
+    @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],
         clc_response: SMemPtr[UInt128],
         throttle_ptr: SMemPtr[SharedMemBarrier],
         initial_work: GroupedWorkInfo,
+        use_clc_fetch: Bool = False,
     ):
         """Initialize CLC work iterator.
 
@@ -656,8 +542,10 @@ struct GroupedCLCWorkIterator[
             clc_response: CLC response storage pointer.
             throttle_ptr: Throttle pipeline barrier pointer.
             initial_work: Initial work item (first tile).
+            use_clc_fetch: If True, __next__ waits on CLC barriers (for MMA warp).
         """
         self.work_info = initial_work
+        self.use_clc_fetch = use_clc_fetch
         self.consumer_state = PipelineState[Self.num_clc_stages]()
         self.throttle_pipeline = Self.ThrottlePipeline(throttle_ptr)
         self.full_mbar = full_mbar
@@ -694,72 +582,31 @@ struct GroupedCLCWorkIterator[
 
         self.total_tiles = cumsum
 
-    @always_inline
-    def has_work(self) -> Bool:
-        """Check if there is more work to process."""
-        return self.work_info.is_valid()
+    @inline(.always)
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
 
-    @always_inline
-    def wait_and_advance[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> GroupedCLCWaitAndAdvanceContext[
-        origin_of(self.work_info)
-    ]:
-        """Wait for next work from CLC and advance iterator.
+    @inline(.always)
+    def __next__(mut self) raises StopIteration -> GroupedWorkInfo:
+        """Return current work item and advance.
 
-        This method waits on CLC full barriers to synchronize all CTAs
-        in the cluster before advancing to the next work item.
+        When use_clc_fetch is True (MMA warp), waits on CLC barriers for
+        synchronization. Otherwise uses simple linear advance.
 
-        Usage:
-            with work_iter.wait_and_advance() as current:
-                # Process current work item
-            # After exit, work_iter points to next work
+        Raises:
+            StopIteration: When there is no more work to process.
         """
-        var next = self._fetch_next_work()
-        self.consumer_state.step()
-        return GroupedCLCWaitAndAdvanceContext(Pointer(to=self.work_info), next)
+        if not self.work_info.is_valid():
+            raise StopIteration()
+        var current = self.work_info
+        if self.use_clc_fetch:
+            self.work_info = self._fetch_next_work()
+            self.consumer_state.step()
+        else:
+            self.work_info = self._compute_next_work()
+        return current
 
-    @always_inline
-    def next[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> GroupedAdvanceContext[
-        origin_of(self.work_info), origin_of(self.total_tiles)
-    ]:
-        """Get context manager for advance-after-work pattern.
-
-        Does NOT wait on CLC - use wait_and_advance() for MMA warp.
-        """
-        # For non-MMA warps, just advance without CLC wait
-        var next_linear_idx = UInt32(0)  # Placeholder, not used
-        var next_work = self._compute_next_work()
-
-        return GroupedAdvanceContext(
-            Pointer(to=self.work_info),
-            Pointer(to=self.total_tiles),  # Placeholder
-            next_work,
-            next_linear_idx,
-        )
-
-    @always_inline
-    def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
-        """Signal CLC throttle if this is the first CTA in cluster.
-
-        NOTE: For software CLC simulation, this is a no-op. The throttle
-        pattern causes a deadlock because both Scheduler and TMA Load wait
-        on each other's barriers on the first iteration. The CLC full/empty
-        barriers provide sufficient synchronization without the throttle.
-
-        Args:
-            is_first_cta_in_cluster: Only first CTA signals to avoid duplicates.
-        """
-        # No-op for software CLC - throttle causes deadlock
-        pass
-
-    @always_inline
+    @inline(.always)
     def _fetch_next_work(self) -> GroupedWorkInfo:
         """Fetch next work item with CLC barrier synchronization.
 
@@ -790,20 +637,22 @@ struct GroupedCLCWorkIterator[
         # Delinearize to grouped work info
         return self._delinearize_to_group(linear_idx, self.work_info.group_idx)
 
-    @always_inline
+    @inline(.always)
     def _read_linear_idx_from_clc(self) -> UInt32:
         """Read linear tile index from CLC response.
 
         The CLC response contains: (linear_idx, 0, 0, is_valid).
         """
-        var response_ptr = self.clc_response + self.consumer_state.index()
+        var response_ptr = self.clc_response.unsafe_offset(
+            self.consumer_state.index()
+        )
         # Read the 128-bit response and extract linear_idx (first 32 bits)
-        var response = response_ptr[].cast[DType.uint32]()
+        var response = response_ptr[].cast[.uint32]()
         return response
         # Note: The working kernel uses inline assembly here, but for simplicity
         # we just cast the UInt128 to UInt32 to get the first component
 
-    @always_inline
+    @inline(.always)
     def _compute_next_work(self) -> GroupedWorkInfo:
         """Compute next work item without CLC wait (for non-MMA warps)."""
         # Simple linear advance
@@ -814,7 +663,7 @@ struct GroupedCLCWorkIterator[
             return GroupedWorkInfo()  # Invalid
         return self._delinearize_to_group(linear_idx, self.work_info.group_idx)
 
-    @always_inline
+    @inline(.always)
     def _current_linear_idx(self) -> UInt32:
         """Compute current linear tile index from work_info."""
         var g = Int(self.work_info.group_idx)
@@ -825,7 +674,7 @@ struct GroupedCLCWorkIterator[
             + self.work_info.m
         )
 
-    @always_inline
+    @inline(.always)
     def _delinearize_to_group(
         self, linear_idx: UInt32, prev_group_idx: UInt32
     ) -> GroupedWorkInfo:
@@ -879,19 +728,36 @@ struct GroupedCLCSchedulerIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
-](TrivialRegisterPassable):
+    *,
+    problem_sizes_engine: TensorEngine,
+](Copyable, Iterable, Iterator, RegisterPassable):
     """Scheduler warp iterator for grouped GEMM with CLC.
 
     The scheduler warp produces work items for other warps via CLC.
     It iterates through all tiles across all groups and signals CLC barriers.
 
+    Parameters:
+        tile_m: M dimension of output tiles.
+        tile_n: N dimension of output tiles.
+        tile_k: K dimension of input tiles.
+        max_groups: Maximum number of groups.
+        num_clc_stages: Number of CLC pipeline stages for barrier-based
+            synchronization.
+        cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
+
     Usage:
         var sched_iter = scheduler.scheduler_iterator()
-        while sched_iter.has_work():
-            with sched_iter.next():
-                sched_iter.signal_and_advance()
+        for _ in sched_iter:
+            sched_iter.signal_and_advance()
         sched_iter.drain()
     """
+
+    comptime Element = GroupedWorkInfo
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
 
     comptime ThrottlePipeline = ProducerConsumerPipeline[Self.num_clc_stages]
 
@@ -918,10 +784,12 @@ struct GroupedCLCSchedulerIterator[
     var signal_count: UInt32
     """Number of signals sent (for pipeline fill tracking)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],
@@ -929,7 +797,17 @@ struct GroupedCLCSchedulerIterator[
         throttle_ptr: SMemPtr[SharedMemBarrier],
         initial_work: GroupedWorkInfo,
     ):
-        """Initialize scheduler iterator."""
+        """Initialize scheduler iterator.
+
+        Args:
+            problem_sizes: (num_groups, 4) tensor with [M, N, K, L] per group.
+            num_groups: Number of active groups.
+            full_mbar: CLC full barrier pointer.
+            empty_mbar: CLC empty barrier pointer.
+            clc_response: CLC response storage pointer.
+            throttle_ptr: Throttle pipeline barrier pointer.
+            initial_work: Initial work item (first tile).
+        """
         self.work_info = initial_work
         # Each cluster starts at its own linear tile index
         # block_idx.x // cta_group gives the cluster's starting tile
@@ -972,40 +850,36 @@ struct GroupedCLCSchedulerIterator[
 
         self.total_tiles = cumsum
 
-    @always_inline
-    def has_work(self) -> Bool:
-        """Check if there is more work to process."""
-        return self.work_info.is_valid()
+    @inline(.always)
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
 
-    @always_inline
-    def next[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> GroupedAdvanceContext[
-        origin_of(self.work_info), origin_of(self.linear_tile_idx)
-    ]:
-        """Get context manager for advance-after-work pattern."""
-        # For 2SM: advance by number of clusters (each cluster processes different tiles)
+    @inline(.always)
+    def __next__(mut self) raises StopIteration -> GroupedWorkInfo:
+        """Return current work item, deferring advance to next call.
+
+        Raises:
+            StopIteration: When there is no more work to process.
+        """
+        if not self.work_info.is_valid():
+            raise StopIteration()
+        var current = self.work_info
+
+        # Advance to next tile
         var num_clusters = UInt32(ufloordiv(grid_dim.x, Self.cta_group))
         var next_linear_idx = self.linear_tile_idx + num_clusters
-        var next_work: GroupedWorkInfo
 
         if next_linear_idx >= self.total_tiles:
-            next_work = GroupedWorkInfo()
+            self.work_info = GroupedWorkInfo()
         else:
-            next_work = self._delinearize_to_group(
-                next_linear_idx, self.work_info.group_idx
+            self.work_info = self._delinearize_to_group(
+                next_linear_idx, current.group_idx
             )
+        self.linear_tile_idx = next_linear_idx
 
-        return GroupedAdvanceContext(
-            Pointer(to=self.work_info),
-            Pointer(to=self.linear_tile_idx),
-            next_work,
-            next_linear_idx,
-        )
+        return current
 
-    @always_inline
+    @inline(.always)
     def signal_and_advance(mut self):
         """Signal CLC throttle and produce next work request.
 
@@ -1046,7 +920,9 @@ struct GroupedCLCSchedulerIterator[
         # signals the barriers. Without this, all 32 threads would each do
         # arrive_cluster(), causing 32 arrivals on barriers expecting only 1.
         if elect_one_sync():
-            var response_ptr = self.clc_response + self.producer_state.index()
+            var response_ptr = self.clc_response.unsafe_offset(
+                self.producer_state.index()
+            )
             response_ptr[] = UInt128(Int(next_linear_idx))
 
             comptime for cta in range(Self.cta_group):
@@ -1066,7 +942,7 @@ struct GroupedCLCSchedulerIterator[
                 next_linear_idx, self.work_info.group_idx
             )
 
-    @always_inline
+    @inline(.always)
     def drain(mut self):
         """Drain all pending CLC requests before kernel exit.
 
@@ -1087,7 +963,7 @@ struct GroupedCLCSchedulerIterator[
             var phase = UInt32(i // Self.num_clc_stages) & 1
             self.empty_mbar[stage].wait(phase)
 
-    @always_inline
+    @inline(.always)
     def _delinearize_to_group(
         self, linear_idx: UInt32, prev_group_idx: UInt32
     ) -> GroupedWorkInfo:

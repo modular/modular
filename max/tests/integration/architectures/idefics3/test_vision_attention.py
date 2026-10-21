@@ -64,7 +64,7 @@ def create_idefics3_attention_weights(
 
     weights = {}
 
-    # Create separate Q, K, V weights (since stacked_qkv=False)
+    # Create separate Q, K, V weights using HuggingFace parameter names.
     weights["q_proj.weight"] = std * torch.randn(
         hidden_size, hidden_size, dtype=dtype, device=device
     )
@@ -75,7 +75,7 @@ def create_idefics3_attention_weights(
         hidden_size, hidden_size, dtype=dtype, device=device
     )
 
-    # Create separate Q, K, V biases (since qkv_has_bias=True)
+    # Create separate Q, K, V biases.
     weights["q_proj.bias"] = std * torch.randn(
         hidden_size, dtype=dtype, device=device
     )
@@ -86,7 +86,7 @@ def create_idefics3_attention_weights(
         hidden_size, dtype=dtype, device=device
     )
 
-    # Output projection weight and bias (both PyTorch and MAX now use out_proj)
+    # Output projection weight and bias.
     weights["out_proj.weight"] = std * torch.randn(
         hidden_size, hidden_size, dtype=dtype, device=device
     )
@@ -108,7 +108,7 @@ def generate_pytorch_outputs(
     config_obj = create_config_object(config)
     torch_attention = PyTorchIdefics3VisionAttention(config_obj).cuda()
 
-    # Load weights and biases
+    # Load weights and biases using HuggingFace parameter names.
     torch_attention.q_proj.weight.data = attention_weights["q_proj.weight"]
     torch_attention.k_proj.weight.data = attention_weights["k_proj.weight"]
     torch_attention.v_proj.weight.data = attention_weights["v_proj.weight"]
@@ -141,16 +141,9 @@ def generate_max_outputs(
         dtype=dtype,
     )
 
-    # Prepare state dict for MAX (now using out_proj to match PyTorch naming)
     state_dict = {
-        "q_proj.weight": attention_weights["q_proj.weight"].cpu(),
-        "k_proj.weight": attention_weights["k_proj.weight"].cpu(),
-        "v_proj.weight": attention_weights["v_proj.weight"].cpu(),
-        "out_proj.weight": attention_weights["out_proj.weight"].cpu(),
-        "q_proj.bias": attention_weights["q_proj.bias"].cpu(),
-        "k_proj.bias": attention_weights["k_proj.bias"].cpu(),
-        "v_proj.bias": attention_weights["v_proj.bias"].cpu(),
-        "out_proj.bias": attention_weights["out_proj.bias"].cpu(),
+        weight_name: value.cpu()
+        for weight_name, value in attention_weights.items()
     }
 
     attention.load_state_dict(state_dict)

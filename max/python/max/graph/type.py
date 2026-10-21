@@ -104,7 +104,9 @@ class DeviceKind(str, Enum):
     """A device type representation."""
 
     CPU = "cpu"
+    """A device on the host CPU."""
     GPU = "gpu"
+    """A GPU accelerator device."""
 
     def __str__(self) -> str:
         return self.value
@@ -157,8 +159,7 @@ class DeviceRef:
             self.device_type = device_type
         else:
             self.device_type = DeviceKind(device_type)
-        if id < 0:
-            id = 0
+        id = max(id, 0)
         self.id = id
 
     def __str__(self) -> str:
@@ -167,7 +168,7 @@ class DeviceRef:
     def __repr__(self) -> str:
         return str(self)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Returns ``True`` if devices are equal."""
         if not isinstance(other, DeviceRef):
             return False
@@ -218,18 +219,16 @@ class Type(Generic[MlirType]):
     This type may be inspected to get finer-grained types and learn more
     about an individual Value.
 
-    The following example shows how to work with types in a graph:
+    The following example shows how to inspect a tensor type:
 
     .. code-block:: python
 
-        from max.graph import Graph, TensorType
         from max.dtype import DType
-        with Graph() as g:
-            # Create a tensor constant with a specific type
-            tensor_type = TensorType(DType.float32, [2, 3])
-            # The type can be inspected to get information about the value
-            print(f"Tensor element type: {tensor_type.dtype}")  # Outputs: DType.float32
-            print(f"Tensor shape: {tensor_type.shape}")  # Outputs: [2, 3]
+        from max.graph import DeviceRef, TensorType
+
+        tensor_type = TensorType(DType.float32, [2, 3], device=DeviceRef.CPU())
+        print(f"Tensor element type: {tensor_type.dtype}")  # Outputs: DType.float32
+        print(f"Tensor shape: {tensor_type.shape}")  # Outputs: [Dim(2), Dim(3)]
     """
 
     def to_mlir(self) -> MlirType:
@@ -295,7 +294,7 @@ class _TensorTypeBase(Type[MlirType]):
         """
         return len(self.shape)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Checks whether the two tensors have the same type, shape, and device.
 
         Args:
@@ -421,7 +420,7 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
             The tensor type represented by the MLIR Type value.
         """
         device_ref = DeviceRef.from_mlir(type.device_ref)
-        self = cls(type.dtype, Shape.from_mlir(type.shape_attr), device_ref)
+        self = cls(type.dtype, Shape.from_mlir(type.shape), device_ref)
         for name, attr in type.metadata.value:
             if name == "layout":
                 assert isinstance(attr, mo.LayoutAttr)
@@ -466,7 +465,7 @@ class BufferType(_TensorTypeBase[mo.BufferType]):
             The buffer type represented by the MLIR Type value.
         """
         device_ref = DeviceRef.from_mlir(type.device_ref)
-        return cls(type.dtype, Shape.from_mlir(type.shape_attr), device_ref)
+        return cls(type.dtype, Shape.from_mlir(type.shape), device_ref)
 
     def to_mlir(self) -> mo.BufferType:
         """Converts to an ``mlir.Type`` instance.

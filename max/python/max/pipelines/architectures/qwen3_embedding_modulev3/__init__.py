@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen3 architecture for embeddings generation."""
 
 from .arch import qwen3_embedding_modulev3_arch
-from .model import Qwen3EmbeddingInputs, Qwen3EmbeddingModel
-
-# Expose ARCHITECTURES list for custom architecture loading
-ARCHITECTURES = [qwen3_embedding_modulev3_arch]
+from .inputs import Qwen3EmbeddingInputs
+from .model import Qwen3EmbeddingModel
+from .model_config import Qwen3EmbeddingConfig
 
 __all__ = [
+    "Qwen3EmbeddingConfig",
     "Qwen3EmbeddingInputs",
     "Qwen3EmbeddingModel",
     "qwen3_embedding_modulev3_arch",

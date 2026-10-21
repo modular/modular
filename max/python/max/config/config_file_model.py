@@ -14,12 +14,63 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, ValidationInfo, model_validator
 
 from .base_model import MAXBaseModel
+
+_RECIPE_PREFIX = "max/pipelines/architectures/"
+
+
+def _resolve_config_file(config_file: str) -> str:
+    """Resolve a config file path, handling built-in recipe prefixes.
+
+    Paths starting with ``max/pipelines/architectures/`` are resolved relative
+    to the installed ``max`` package so that users and CI can reference bundled
+    recipe YAML files without hard-coding a repo root or relying on the current
+    working directory.
+
+    All other paths are returned unchanged (resolved by the caller's cwd as
+    before).
+    """
+    if not config_file.startswith(_RECIPE_PREFIX):
+        return config_file
+
+    suffix = config_file[len(_RECIPE_PREFIX) :]
+    # Navigate from this file (max/config/config_file_model.py) up to the max
+    # package root, then down into pipelines/architectures.  This avoids
+    # importing max.pipelines.architectures which would be a circular dep.
+    max_pkg_dir = Path(__file__).parent.parent
+    resolved = max_pkg_dir / "pipelines" / "architectures" / suffix
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"Built-in recipe not found: {config_file} (resolved to {resolved})"
+        )
+    return str(resolved)
+
+
+def _deep_merge(
+    base: dict[str, Any], override: dict[str, Any]
+) -> dict[str, Any]:
+    """Recursively merge ``override`` onto ``base``; ``override`` wins at leaves.
+
+    Nested mappings are merged key by key, so a partial override (such as a single
+    CLI flag deep in a subtree) keeps the sibling values from ``base`` instead of
+    replacing the whole subtree. A shallow ``base | override`` would drop those
+    siblings — for example, ``--load.max-concurrency`` would wipe the rest of the config
+    file's ``benchmark`` object.
+    """
+    merged = dict(base)
+    for key, value in override.items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(existing, value)
+        else:
+            merged[key] = value
+    return merged
 
 
 class ConfigFileModel(MAXBaseModel):
@@ -63,6 +114,16 @@ class ConfigFileModel(MAXBaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _load_config_file(
+        cls, data: dict[str, Any], info: ValidationInfo
+    ) -> dict[str, Any]:
+        # Construction already merged the file. Merging it again on assignment
+        # would bring file keys back into dict fields the CLI replaced.
+        if info.field_name is not None:
+            return data
+        return cls.load_config_file(data)
+
+    @classmethod
     def load_config_file(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Load configuration from YAML file if config_file is provided.
 
@@ -94,6 +155,7 @@ class ConfigFileModel(MAXBaseModel):
             Dictionary with config file values merged in if config_file was provided.
         """
         if (config_file := data.get("config_file")) is not None:
+            config_file = _resolve_config_file(config_file)
             with open(config_file) as f:
                 loaded_data = yaml.safe_load(f) or {}
 
@@ -102,10 +164,25 @@ class ConfigFileModel(MAXBaseModel):
                     f"Configuration file must contain a mapping at the root, got {type(loaded_data)}"
                 )
 
-            explicit_section_name = data.get("section_name")
-            if explicit_section_name is not None:
-                # Caller explicitly requested a section.
-                section_data = loaded_data.get(explicit_section_name)
+            section_name = data.get("section_name")
+            # Field defaults are not applied yet in a "before" validator. A file
+            # without the class's default section is read as a flat config.
+            if section_name is None:
+                default = cls.model_fields["section_name"].default
+                if default is not None and default in loaded_data:
+                    if dropped := sorted(
+                        k
+                        for k in loaded_data
+                        if k != default and k in cls.model_fields
+                    ):
+                        raise ValueError(
+                            f"Top-level keys {dropped} would be ignored because "
+                            f"section '{default}' is read. Move them into the "
+                            "section."
+                        )
+                    section_name = default
+            if section_name is not None:
+                section_data = loaded_data.get(section_name)
                 if section_data is None:
                     available_sections = [
                         key
@@ -113,16 +190,19 @@ class ConfigFileModel(MAXBaseModel):
                         if isinstance(value, dict)
                     ]
                     raise KeyError(
-                        f"Section '{explicit_section_name}' not found in configuration file. "
+                        f"Section '{section_name}' not found in configuration file. "
                         f"Available sections: {available_sections}."
                     )
                 if not isinstance(section_data, dict):
                     raise TypeError(
-                        f"Section '{explicit_section_name}' must be a mapping, got {type(section_data)}"
+                        f"Section '{section_name}' must be a mapping, got {type(section_data)}"
                     )
                 loaded_data = section_data
 
-            # Merge: config file values are loaded, then overridden by CLI args + env vars.
+            # Merge: config file values are loaded, then overridden by CLI args +
+            # env vars. The merge is recursive so a partial CLI override (e.g. one
+            # flag under a nested subtree) keeps the config file's sibling values
+            # instead of replacing the whole subtree.
             # Note: Due to cyclopts processing order, env vars override config files.
-            data = loaded_data | data
+            data = _deep_merge(loaded_data, data)
         return data

@@ -14,21 +14,29 @@
 
 from __future__ import annotations
 
-import re
+import logging
 import weakref
 
 import pytest
 from max import driver
-from max.driver import CPU, Accelerator, accelerator_count
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
+from max.experimental.compilation import CompiledCallable
 from max.experimental.nn.module import (
     Module,
-    PinnedDeviceTensor,
     module_dataclass,
 )
-from max.experimental.tensor import Tensor, TensorType, defaults
+from max.experimental.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Replicated,
+    Sharded,
+    TensorLayout,
+)
+from max.experimental.tensor import Tensor, defaults
+from max.experimental.testing import assert_all_close
 
 
 @module_dataclass
@@ -176,85 +184,6 @@ def test_module_descendants(
     assert dict(test_module.sub.descendants) == {}
 
 
-def test_apply_to_local_parameters(test_module: TestModule) -> None:
-    a = test_module.a
-    b = test_module.sub.b
-
-    test_module.apply_to_local_parameters(lambda _, t: t + 1)
-    # Applied to a
-    assert test_module.a.item() == (a + 1).item()
-    # Not applied to submodule
-    assert test_module.sub.b.item() == b.item()
-
-
-def test_apply_to_parameters(test_module: TestModule) -> None:
-    a = test_module.a
-    b = test_module.sub.b
-
-    test_module.apply_to_parameters(lambda _, t: t + 1)
-    # Applied to a
-    assert test_module.a.item() == (a + 1).item()
-    # Also applied to submodule
-    assert test_module.sub.b.item() == (b + 1).item()
-
-
-def test_apply_to_parameters__qualified_names(test_module: TestModule) -> None:
-    names = set()
-    expected = dict(test_module.parameters).keys()
-
-    def lookup(name: str, tensor: Tensor):  # noqa: ANN202
-        names.add(name)
-        return tensor
-
-    test_module.apply_to_parameters(lookup)
-    assert expected == names
-
-
-def test_map_parameters(test_module: TestModule) -> None:
-    a = test_module.a
-    b = test_module.sub.b
-
-    m2 = test_module.map_parameters(lambda _, t: t + 1)
-    # Test parameters were mapped
-    assert m2.a.item() == (a + 1).item()
-    assert m2.sub.b.item() == (b + 1).item()
-    # Not updated in the original module
-    assert test_module.a.item() == a.item()
-    assert test_module.sub.b.item() == b.item()
-
-
-def test_load_state_simple_dict(test_module: TestModule) -> None:
-    weights = {
-        "a": Tensor(5),
-        "sub.b": Tensor(6),
-    }
-    test_module.load_state(lambda name, _: weights[name])
-    assert test_module.a.item() == 5
-    assert test_module.sub.b.item() == 6
-
-
-def test_load_state_simple_dict_lookup_failure(test_module: TestModule) -> None:
-    weights: dict[str, Tensor] = {}
-    # No guarantee on the resulting state here!
-    with pytest.raises(KeyError):
-        test_module.load_state(lambda name, _: weights[name])
-
-
-def test_load_state_name_remapping(test_module: TestModule) -> None:
-    def remap_name(name: str):  # noqa: ANN202
-        name = re.sub(r"\bsub\.", "feed_forward.", name)
-        return name
-
-    weights = {
-        "a": Tensor(5),
-        "feed_forward.b": Tensor(6),
-    }
-
-    test_module.load_state(lambda name, _: weights[remap_name(name)])
-    assert test_module.a.item() == 5
-    assert test_module.sub.b.item() == 6
-
-
 def test_load_state_dict(test_module: TestModule) -> None:
     weights = {
         "a": Tensor(5),
@@ -367,99 +296,200 @@ def test_load_state_dict_valid_types() -> None:
     assert module.weight[0, 0].item() == 1.0
 
 
-@pytest.mark.skipif(not accelerator_count(), reason="requires multiple devices")
-def test_to(test_module: TestModule) -> None:
-    assert all(t.device == Accelerator() for _, t in test_module.parameters)
-    module = test_module.to(CPU())
-    assert module is test_module
-    assert all(t.device == CPU() for _, t in test_module.parameters)
+_AUTO_CAST_LOGGER = "max.experimental.nn._weight_utils"
 
 
-@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
-def test_pinned_device_tensor_unchanged_by_to() -> None:
-    """`PinnedDeviceTensor` fields are not moved by `Module.to`."""
+def _auto_cast_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> list[logging.LogRecord]:
+    return [
+        r
+        for r in caplog.records
+        if r.name == _AUTO_CAST_LOGGER and "auto-cast" in r.getMessage()
+    ]
+
+
+def test_load_state_dict_safe_cast_float32_to_bfloat16(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """float32 -> bfloat16 auto-casts with a summary log flagged lossy."""
 
     @module_dataclass
-    class ScaledModule(Module[[Tensor], Tensor]):
+    class SimpleModule(Module[[Tensor], Tensor]):
         weight: Tensor
-        scale: PinnedDeviceTensor
 
         def forward(self, x: Tensor) -> Tensor:
             return x + self.weight
 
-    module = ScaledModule(
-        weight=Tensor.ones([3, 3]),
-        scale=Tensor.full([], 1.0, dtype=DType.float32),
-    )
-    original_scale_device = module.scale.device
-    module.to(Accelerator())
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
 
-    assert module.weight.device == Accelerator()
-    assert module.scale.device == original_scale_device
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights, auto_cast=True)
+
+    assert module.weight.dtype == DType.bfloat16
+    assert module.weight[0, 0].item() == 1.0
+    # Narrowing cast must be flagged so users can tell precision was lost.
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "precision loss" in logs[0].getMessage()
 
 
-@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
-def test_pinned_device_tensor_in_child_module() -> None:
-    """`PinnedDeviceTensor` fields in child modules are not moved by `Module.to`."""
+def test_load_state_dict_safe_cast_bfloat16_to_float32(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """bfloat16 -> float32 auto-casts with a summary log (lossless)."""
 
     @module_dataclass
-    class Inner(Module[[Tensor], Tensor]):
+    class SimpleModule(Module[[Tensor], Tensor]):
         weight: Tensor
-        scale: PinnedDeviceTensor
 
         def forward(self, x: Tensor) -> Tensor:
             return x + self.weight
 
-    @module_dataclass
-    class Outer(Module[[Tensor], Tensor]):
-        inner: Inner
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.bfloat16)}
 
-        def forward(self, x: Tensor) -> Tensor:
-            return self.inner(x)
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights, auto_cast=True)
 
-    module = Outer(
-        inner=Inner(
-            weight=Tensor.ones([3, 3]),
-            scale=Tensor.full([], 2.0, dtype=DType.float32),
-        )
-    )
-    original_scale_device = module.inner.scale.device
-    module.to(Accelerator())
-
-    assert module.inner.weight.device == Accelerator()
-    assert module.inner.scale.device == original_scale_device
+    assert module.weight.dtype == DType.float32
+    assert module.weight[0, 0].item() == 1.0
+    # Widening cast: must not be flagged as lossy.
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "precision loss" not in logs[0].getMessage()
 
 
-@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
-def test_pinned_device_tensor_inherited() -> None:
-    """`PinnedDeviceTensor` annotations are respected through inheritance."""
+def test_load_state_dict_no_warning_when_dtypes_match(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Matching-dtype loads must not emit an auto-cast log."""
 
     @module_dataclass
-    class Base(Module[[Tensor], Tensor]):
+    class SimpleModule(Module[[Tensor], Tensor]):
         weight: Tensor
-        scale: PinnedDeviceTensor
 
         def forward(self, x: Tensor) -> Tensor:
             return x + self.weight
 
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights)
+
+    assert not _auto_cast_logs(caplog)
+
+
+def test_load_state_dict_safe_cast_summary_aggregates(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A single summary log aggregates counts across all cast parameters."""
+
     @module_dataclass
-    class Child(Base):
-        pass
+    class TwoWeightModule(Module[[Tensor], Tensor]):
+        a: Tensor
+        b: Tensor
 
-    module = Child(
-        weight=Tensor.ones([3, 3]),
-        scale=Tensor.full([], 1.0, dtype=DType.float32),
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.a + self.b
+
+    module = TwoWeightModule(
+        a=Tensor.zeros([3, 3], dtype=DType.bfloat16),
+        b=Tensor.zeros([3, 3], dtype=DType.bfloat16),
     )
-    original_scale_device = module.scale.device
-    module.to(Accelerator())
+    weights = {
+        "a": Tensor.ones([3, 3], dtype=DType.float32),
+        "b": Tensor.ones([3, 3], dtype=DType.float32),
+    }
 
-    assert module.weight.device == Accelerator()
-    assert module.scale.device == original_scale_device
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights, auto_cast=True)
+
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "2 parameter(s)" in logs[0].getMessage()
+
+
+def test_load_state_dict_default_does_not_auto_cast() -> None:
+    """``auto_cast`` defaults to False; safe-cast pairs still raise unless opted in."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.load_state_dict(weights)
+
+
+def test_load_state_dict_auto_cast_false_arg_disables(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Passing ``auto_cast=False`` reverts to hard-fail on dtype mismatch."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        with pytest.raises(ValueError, match="not assignable"):
+            module.load_state_dict(weights, auto_cast=False)
+    # No auto-cast log line should fire when the feature is disabled.
+    assert not _auto_cast_logs(caplog)
+
+
+def test_compile_with_weights_auto_cast_false_arg_disables() -> None:
+    """Passing ``auto_cast=False`` to ``compile`` raises on dtype mismatch."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    _, device = defaults()
+    input_type = TensorLayout(DType.bfloat16, [3, 3], device=device)
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.compile(input_type, weights=weights, auto_cast=False)
+
+
+def test_load_state_dict_unwhitelisted_float_dtype_still_raises() -> None:
+    """Float dtypes outside the safe set (e.g. float16) still hard-fail."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    weights = {"weight": Tensor.zeros([3, 3], dtype=DType.float16)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.load_state_dict(weights)
 
 
 def test_compile(test_module: TestModule) -> None:
     dtype, device = defaults()
-    type = TensorType(dtype, ["batch", "n"], device=device)
+    type = TensorLayout(dtype, ["batch", "n"], device=device)
     compiled = test_module.compile(type)
 
     input = random.uniform([3, 3])
@@ -467,6 +497,18 @@ def test_compile(test_module: TestModule) -> None:
     result_compiled = compiled(input)
 
     assert all((result_eager == result_compiled)._values())
+
+
+def test_compile_accepts_buffers(test_module: TestModule) -> None:
+    dtype, mesh = defaults()
+    device = mesh.devices[0]
+    type = TensorLayout(dtype, ["batch", "n"], device=device)
+    compiled: CompiledCallable[..., Tensor] = test_module.compile(type)
+
+    input = random.uniform([3, 3])
+    buffer = driver.Buffer.from_numpy(input.to_numpy()).to(device)
+
+    assert all((compiled(buffer) == test_module(input))._values())
 
 
 def test_compile_with_weights_shape_mismatch() -> None:
@@ -479,7 +521,7 @@ def test_compile_with_weights_shape_mismatch() -> None:
 
     module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
     dtype, device = defaults()
-    type = TensorType(dtype, [3, 3], device=device)
+    type = TensorLayout(dtype, [3, 3], device=device)
     weights = {
         "weight": Tensor.zeros([4, 4], dtype=DType.float32),
     }
@@ -498,13 +540,38 @@ def test_compile_with_weights_dtype_mismatch() -> None:
 
     module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
     dtype, device = defaults()
-    type = TensorType(dtype, [3, 3], device=device)
+    type = TensorLayout(dtype, [3, 3], device=device)
     weights = {
         "weight": Tensor.zeros([3, 3], dtype=DType.int32),
     }
 
     with pytest.raises(ValueError, match="not assignable"):
         module.compile(type, weights=weights)
+
+
+def test_compile_with_weights_safe_cast(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """compile(weights=...) auto-casts safe dtypes and logs a summary."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    _, device = defaults()
+    input_type = TensorLayout(DType.bfloat16, [3, 3], device=device)
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.compile(input_type, weights=weights, auto_cast=True)
+
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "precision loss" in logs[0].getMessage()
 
 
 def test_compile_with_weights_missing_parameter_raises() -> None:
@@ -517,7 +584,7 @@ def test_compile_with_weights_missing_parameter_raises() -> None:
 
     module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
     dtype, device = defaults()
-    type = TensorType(dtype, [3, 3], device=device)
+    type = TensorLayout(dtype, [3, 3], device=device)
 
     with pytest.raises(KeyError, match="is missing"):
         module.compile(type, weights={})
@@ -525,8 +592,9 @@ def test_compile_with_weights_missing_parameter_raises() -> None:
 
 def test_compile_with_weights(lazy_test_module: TestModule) -> None:
     test_module = lazy_test_module
-    dtype, device = defaults()
-    type = TensorType(dtype, ["batch", "n"], device=device)
+    dtype, mesh = defaults()
+    device = mesh.devices[0]
+    type = TensorLayout(dtype, ["batch", "n"], device=device)
 
     parameters = weakref.WeakValueDictionary(test_module.parameters)
 
@@ -545,7 +613,7 @@ def test_compile_with_weights(lazy_test_module: TestModule) -> None:
     assert not any(param.real for param in parameters.values())
     assert not any(param.real for _, param in test_module.parameters)
 
-    input = driver.Buffer.zeros([3, 3], dtype, device)
+    input = Tensor(storage=driver.Buffer.zeros([3, 3], dtype, device))
     _ = compiled(input)
 
     assert not any(param.real for param in parameters.values())
@@ -557,13 +625,12 @@ def test_compile_with_weights_never_realized(
 ) -> None:
     test_module = lazy_test_module
     dtype, device = defaults()
-    type = TensorType(dtype, ["batch", "n"], device=device)
+    type = TensorLayout(dtype, ["batch", "n"], device=device)
 
     parameters = weakref.WeakValueDictionary(test_module.parameters)
 
     weights = {
-        name: Tensor.zeros_like(param.type)
-        for name, param in test_module.parameters
+        name: Tensor.zeros_like(param) for name, param in test_module.parameters
     }
 
     assert not any(param.real for param in parameters.values())
@@ -579,6 +646,90 @@ def test_compile_with_weights_never_realized(
 
     assert not any(param.real for param in parameters.values())
     assert not any(param.real for _, param in test_module.parameters)
+
+
+# ---------------------------------------------------------------------------
+# Sharding and transferring provided weights inside the compiled graph.
+#
+# Covers the weight-loading path that shards/transfers a single-device weight
+# for a distributed parameter in-graph, and the preserved path where an
+# already-sharded weight passes through untouched. A two-way mesh on CPU
+# matches the trace shape and numerics of a real two-GPU mesh.
+# ---------------------------------------------------------------------------
+
+_F32 = DType.float32
+_MESH = DeviceMesh(devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",))
+_REPLICATED = DeviceMapping(_MESH, (Replicated(),))
+_COLUMN = DeviceMapping(_MESH, (Sharded(1),))
+_ROW = DeviceMapping(_MESH, (Sharded(0),))
+
+
+def cpu_tensor(*shape: int) -> Tensor:
+    return Tensor.zeros(list(shape), dtype=_F32, device=CPU())
+
+
+def test_load_state_dict_single_device_weight_keeps_distribution() -> None:
+    """Loading a single-device weight into a distributed parameter keeps it distributed."""
+    module = SubModule(b=F.transfer_to(cpu_tensor(4, 8), _COLUMN))
+    assert module.b.is_distributed
+    assert module.b.mapping == _COLUMN
+
+    module.load_state_dict({"b": cpu_tensor(4, 8)})
+
+    assert module.b.is_distributed
+    assert module.b.mapping == _COLUMN
+
+
+@module_dataclass
+class _ColumnParallelLinear(Module[[Tensor], Tensor]):
+    """Column-parallel matmul, all-gathered back to a replicated output."""
+
+    w: Tensor  # [D, H], column-parallel
+
+    def forward(self, x: Tensor) -> Tensor:  # x replicated [batch, D]
+        return F.transfer_to(x @ self.w, _REPLICATED)
+
+
+def test_compile_shards_single_device_weight_in_graph() -> None:
+    """A single-device weight provided for a sharded parameter is sharded and
+    transferred inside the compiled graph, and produces correct numerics.
+
+    Loading the same weight pre-sharded must produce identical results,
+    confirming the in-graph transfer matches the previously-eager behavior.
+    """
+    random.set_seed(0)
+    w = random.normal([4, 8], dtype=_F32, device=CPU())
+    x = random.normal([2, 4], dtype=_F32, device=CPU())
+    # Eager (non-compile) reference. Flattened to 1-D so `assert_all_close`
+    # reduces over every element rather than only the last axis.
+    expected = (x @ w).reshape([16])
+
+    input_type = TensorLayout(
+        _F32, ["batch", 4], DeviceMapping(_MESH, (Replicated(),))
+    )
+    replicated_x = F.transfer_to(x, _REPLICATED)
+
+    # Placeholder distributed parameter; the real weight arrives via compile().
+    module = _ColumnParallelLinear(w=F.transfer_to(cpu_tensor(4, 8), _COLUMN))
+
+    # Single-device weight: sharded and transferred in-graph. `materialize`
+    # gathers the replicated result back to a single local tensor to compare.
+    compiled = module.compile(input_type, weights={"w": w})
+    single_device = compiled(replicated_x)
+    assert single_device.placements == (Replicated(),)
+    single_device_local = single_device.materialize().reshape([16])
+    assert_all_close(expected, single_device_local, rtol=1e-4, atol=1e-4)
+
+    # Pre-sharded weight: preserved path, must match.
+    compiled_presharded = module.compile(
+        input_type,
+        weights={"w": F.transfer_to(w, _COLUMN)},
+    )
+    presharded = compiled_presharded(replicated_x)
+    presharded_local = presharded.materialize().reshape([16])
+    assert_all_close(
+        single_device_local, presharded_local, rtol=1e-6, atol=1e-6
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -617,7 +768,7 @@ def test_compile_with_custom_extensions(
     device = CPU()
     dtype = DType.float32
     module = CustomAddModule(bias=Tensor.ones([64], dtype=dtype, device=device))
-    input_type = TensorType(dtype, [64], device=device)
+    input_type = TensorLayout(dtype, [64], device=device)
 
     compiled = module.compile(
         input_type,
@@ -667,7 +818,7 @@ def test_compile_with_custom_extensions_struct_params(
     device = CPU()
     dtype = DType.float32
     module = StructParamModule(_kernel_name=kernel_name, _parameters=parameters)
-    input_type = TensorType(dtype, [64], device=device)
+    input_type = TensorLayout(dtype, [64], device=device)
 
     compiled = module.compile(
         input_type,

@@ -17,52 +17,65 @@ import pytest
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
+
+_CASES = [
+    pytest.param(np.empty((0, 3), dtype=np.float32), DType.float32, id="empty"),
+    pytest.param(
+        np.ones((2, 3), dtype=np.int32), DType.int32, id="all-nonzero"
+    ),
+    pytest.param(
+        np.array([0, 4, 0, -2, 0], dtype=np.int64),
+        DType.int64,
+        id="rank-1-mixed",
+    ),
+    pytest.param(
+        np.array([[0.0, -0.0, np.nan], [2.0, 0.0, -3.0]], dtype=np.float32),
+        DType.float32,
+        id="nan-negative-zero",
+    ),
+    pytest.param(
+        np.array(
+            [[[0, 1], [2, 0]], [[0, 0], [3, 4]]],
+            dtype=np.uint8,
+        ),
+        DType.uint8,
+        id="rank-3-ordering",
+    ),
+    pytest.param(
+        np.array([[False, True], [True, False]], dtype=np.bool_),
+        DType.bool,
+        id="bool",
+    ),
+]
 
 
-def test_nonzero_1d(session: InferenceSession) -> None:
-    """nonzero on a 1D CPU tensor returns correct row-major indices."""
+@pytest.mark.parametrize("device_name", ["cpu", "gpu"])
+@pytest.mark.parametrize(("input_data", "dtype"), _CASES)
+def test_nonzero(
+    session: InferenceSession,
+    device_name: str,
+    input_data: np.ndarray,
+    dtype: DType,
+) -> None:
+    """Returns exact row-major coordinates and data-dependent output shapes."""
+    if device_name == "gpu" and accelerator_count() == 0:
+        pytest.skip("requires a GPU")
+
+    device = DeviceRef.CPU() if device_name == "cpu" else DeviceRef.GPU()
+    symbolic_shape = [f"dim_{axis}" for axis in range(input_data.ndim)]
     with Graph(
-        "nonzero_1d",
-        input_types=[TensorType(DType.int32, [5], device=DeviceRef.CPU())],
+        f"nonzero_{device_name}_{dtype.name}_{input_data.ndim}d",
+        input_types=[TensorType(dtype, symbolic_shape, device=device)],
     ) as graph:
-        result = ops.nonzero(graph.inputs[0].tensor, out_dim=2)
+        result = ops.nonzero(graph.inputs[0].tensor, out_dim="nnz")
         graph.output(result)
 
     model = session.load(graph)
-    # Input [0, 1, 0, 2, 0] has nonzero elements at indices 1 and 3.
-    input_data = np.array([0, 1, 0, 2, 0], dtype=np.int32)
-    output = model.execute(Buffer.from_dlpack(input_data))[0]
+    input_buffer = Buffer.from_numpy(input_data).to(model.input_devices[0])
+    output = model.execute(input_buffer)[0]
     assert isinstance(output, Buffer)
-    np.testing.assert_array_equal(output.to_numpy(), np.array([[1], [3]]))
-
-
-def test_nonzero_2d(session: InferenceSession) -> None:
-    """nonzero on a 2D CPU tensor returns correct row-major indices."""
-    with Graph(
-        "nonzero_2d",
-        input_types=[TensorType(DType.int32, [2, 2], device=DeviceRef.CPU())],
-    ) as graph:
-        result = ops.nonzero(graph.inputs[0].tensor, out_dim=2)
-        graph.output(result)
-
-    model = session.load(graph)
-    # Input [[0, 1], [2, 0]] has nonzero elements at (0,1) and (1,0).
-    input_data = np.array([[0, 1], [2, 0]], dtype=np.int32)
-    output = model.execute(Buffer.from_dlpack(input_data))[0]
-    assert isinstance(output, Buffer)
-    np.testing.assert_array_equal(output.to_numpy(), np.array([[0, 1], [1, 0]]))
-
-
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="requires a GPU to test device check"
-)
-def test_nonzero_raises_on_gpu() -> None:
-    """ops.nonzero raises ValueError at graph construction time on GPU input."""
-    with pytest.raises(ValueError, match=r"ops\.nonzero"):
-        with Graph(
-            "nonzero_gpu",
-            input_types=[TensorType(DType.int32, [5], device=DeviceRef.GPU())],
-            strict_device_placement=DevicePlacementPolicy.Error,
-        ):
-            ops.nonzero(Graph.current.inputs[0].tensor, out_dim=2)
+    assert output.device == model.input_devices[0]
+    expected = np.argwhere(input_data != 0).astype(np.int64)
+    assert output.shape == expected.shape
+    np.testing.assert_array_equal(output.to_numpy(), expected)
