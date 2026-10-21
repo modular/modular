@@ -156,6 +156,7 @@
     "docs/reference/simple-statements",
     "docs/reference/compound-statements",
     "docs/reference/function-declarations",
+    "docs/reference/function-overloads",
     "docs/reference/closure-declarations",
     "docs/reference/lambda-expressions",
     "docs/reference/struct-declarations",

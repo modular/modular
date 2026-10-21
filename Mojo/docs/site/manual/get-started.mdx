@@ -132,14 +132,14 @@ Improve performance by replacing individual prints with a single string.
 This solution uses *comprehensions*:
 
 ```mojo
-    def print_grid(self):
-        var grid_str = "".join(
-            [(("X" if value else ".") + 
-              ("\n" if (index + 1) % Self.num_cols == 0 else ""))
-              for index, value in enumerate(self.cells)
-            ]
-        )
-        print(grid_str)
+def print_grid(grid: List[Int], num_cols: Int):
+    var grid_str = "".join(
+        [(("X" if value else ".") + 
+            ("\n" if (index + 1) % num_cols == 0 else ""))
+            for index, value in enumerate(grid)
+        ]
+    )
+    print(grid_str)
 ```
 
 When running the program with larger grids and many generations, this
@@ -156,7 +156,7 @@ print_grid(glider_grid, num_cols)
 ### Takeaways
 
 - Comprehensions are a shorthand for creating lists and other
-  collections.`print_grid()` uses a list comprehension to transform each
+  collections. `print_grid()` uses a list comprehension to transform each
   cell into a `String`, then joins them (`join()`) for printing.
 - Enumeration (`enumerate()`) accesses each cell's index and value,
   selecting "X" for live cells or "." for inactive cells. It also adds
@@ -398,9 +398,9 @@ valid. Add `raises` to the signature before the arrow, and call `raise`:
         return self.cells[Self.to_index(coord[0], coord[1])]
 ```
 
-A *TString* starts with `t"` and creates a template format. `print()`
-statements automatically convert to strings, but everywhere else explicitly
-call `String()`.
+A *TString* starts with `t"` and creates a template format. They are
+`Writable`, so you can pass them to `print()` and any `Writer`. To use
+them as strings, you must convert them with an explicit call to `String()`.
 
 Once `__getitem__()` raises, every caller must either raise or handle
 the error using Mojo's `try/except` error handling.
