@@ -2132,8 +2132,11 @@ struct Pointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        comptime if not CurrentPlugin.has_generic_address_space:
-            # See `unsafe_gather`.
+        comptime if not CurrentPlugin.has_generic_address_space or (
+            Self.address_space != .GENERIC and Self.address_space != .GLOBAL
+        ):
+            # `Int(self)` on a shared or local pointer is an offset into its
+            # window, not a generic address; see `unsafe_gather`.
             comptime for i in range(width):
                 if mask[i]:
                     self.unsafe_store[alignment=alignment](

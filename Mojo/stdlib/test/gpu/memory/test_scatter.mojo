@@ -10,162 +10,84 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for scatter operations on GPU with different address spaces.
+"""Tests `Pointer.unsafe_scatter` on GPU in global and shared memory.
 
-Verifies that scatter works correctly for both global memory (using the
-llvm.masked.scatter intrinsic) and shared memory (using the scalar fallback
-that avoids CUDA_ERROR_ILLEGAL_ADDRESS).
+Scattering into shared memory used to rebuild each lane's pointer from the
+shared-window offset as if it were a generic address, which faulted with
+`CUDA_ERROR_ILLEGAL_ADDRESS`.
 """
 
-from std.gpu import sync, thread_idx
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
-from std.testing import assert_equal, TestSuite
+from std.memory import unsafe_stack_allocation
+from std.testing import TestSuite, assert_equal
+
+from max.gpu.host import DeviceBuffer, DeviceContext
+
+comptime _OFFSETS = SIMD[.int32, 4](3, 2, 1, 0)
+comptime _VALUES = SIMD[.float32, 4](1, 2, 3, 4)
+comptime _EVEN_LANES = SIMD[.bool, 4](True, False, True, False)
 
 
-# ===-----------------------------------------------------------------------===#
-# Global memory scatter
-# ===-----------------------------------------------------------------------===#
+def _scatter_global_kernel(output: MutPointer[Float32, MutAnyOrigin]):
+    output.unsafe_scatter(_OFFSETS, _VALUES)
 
 
-def scatter_global_kernel(
-    output: UnsafePointer[Float32, MutAnyOrigin],
-):
-    """Scatters values into global memory using reversed offsets."""
-    var tid = Int(thread_idx.x)
-    comptime N = 4
+def _scatter_shared_kernel[
+    masked: Bool
+](output: MutPointer[Float32, MutAnyOrigin]):
+    var shared = unsafe_stack_allocation[
+        4, DType.float32, address_space=.SHARED
+    ]()
+    for i in range(4):
+        shared.unsafe_offset(i).unsafe_store(Float32(-1))
 
-    # Each thread scatters its thread ID to the reversed position.
-    var offset = SIMD[DType.int32, 1](N - 1 - tid)
-    output.scatter(offset, SIMD[DType.float32, 1](Float32(tid + 1)))
+    comptime if masked:
+        shared.unsafe_scatter(_OFFSETS, _VALUES, _EVEN_LANES)
+    else:
+        shared.unsafe_scatter(_OFFSETS, _VALUES)
+
+    for i in range(4):
+        output.unsafe_offset(i).unsafe_store(
+            shared.unsafe_offset(i).unsafe_load()
+        )
+
+
+def _check(
+    ctx: DeviceContext,
+    out_device: DeviceBuffer[DType.float32],
+    expected: SIMD[DType.float32, 4],
+) raises:
+    ctx.synchronize()
+    with out_device.map_to_host() as out_host:
+        for i in range(4):
+            assert_equal(out_host[i], expected[i], msg=String("lane ", i))
 
 
 def test_scatter_global() raises:
-    comptime N = 4
-
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](N)
-        ctx.enqueue_function_experimental[scatter_global_kernel](
-            buf, grid_dim=1, block_dim=N
+        var out_device = ctx.enqueue_create_buffer[.float32](4)
+        ctx.enqueue_function[_scatter_global_kernel](
+            out_device, grid_dim=1, block_dim=1
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result, buf)
-        ctx.synchronize()
-
-        # Thread 0 writes 1.0 to index 3, thread 1 writes 2.0 to index 2, etc.
-        assert_equal(result[0], Float32(4.0))
-        assert_equal(result[1], Float32(3.0))
-        assert_equal(result[2], Float32(2.0))
-        assert_equal(result[3], Float32(1.0))
-
-
-# ===-----------------------------------------------------------------------===#
-# Shared memory scatter
-# ===-----------------------------------------------------------------------===#
-
-
-def scatter_shared_kernel(
-    output: UnsafePointer[Float32, MutAnyOrigin],
-):
-    """Scatters values into shared memory, then copies to global output."""
-    var tid = Int(thread_idx.x)
-    comptime N = 4
-
-    var sram = stack_allocation[
-        N, Float32, address_space=AddressSpace.SHARED
-    ]()
-
-    # Initialize shared memory to zero.
-    sram[tid] = 0.0
-    sync.barrier()
-
-    # Scatter: each thread writes its value to the reversed position
-    # in shared memory.
-    var offset = SIMD[DType.int32, 1](N - 1 - tid)
-    sram.scatter(offset, SIMD[DType.float32, 1](Float32(tid + 1)))
-    sync.barrier()
-
-    # Copy shared memory result to global output.
-    output[tid] = sram[tid]
+        _check(ctx, out_device, SIMD[DType.float32, 4](4, 3, 2, 1))
 
 
 def test_scatter_shared() raises:
-    comptime N = 4
-
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](N)
-        ctx.enqueue_function_experimental[scatter_shared_kernel](
-            buf, grid_dim=1, block_dim=N
+        var out_device = ctx.enqueue_create_buffer[.float32](4)
+        ctx.enqueue_function[_scatter_shared_kernel[masked=False]](
+            out_device, grid_dim=1, block_dim=1
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result, buf)
-        ctx.synchronize()
-
-        # Same result: reversed mapping.
-        assert_equal(result[0], Float32(4.0))
-        assert_equal(result[1], Float32(3.0))
-        assert_equal(result[2], Float32(2.0))
-        assert_equal(result[3], Float32(1.0))
-
-
-# ===-----------------------------------------------------------------------===#
-# Masked scatter in shared memory
-# ===-----------------------------------------------------------------------===#
-
-
-def scatter_shared_masked_kernel(
-    output: UnsafePointer[Float32, MutAnyOrigin],
-):
-    """Scatters values into shared memory with a mask applied."""
-    var tid = Int(thread_idx.x)
-    comptime N = 4
-
-    var sram = stack_allocation[
-        N, Float32, address_space=AddressSpace.SHARED
-    ]()
-
-    # Initialize shared memory to -1 so we can verify masked-off lanes.
-    sram[tid] = -1.0
-    sync.barrier()
-
-    # Only even-indexed threads scatter their values.
-    var masked = (tid % 2) == 0
-    var offset = SIMD[DType.int32, 1](tid)
-    sram.scatter(
-        offset,
-        SIMD[DType.float32, 1](Float32(tid + 1)),
-        SIMD[DType.bool, 1](masked),
-    )
-    sync.barrier()
-
-    output[tid] = sram[tid]
+        _check(ctx, out_device, SIMD[DType.float32, 4](4, 3, 2, 1))
 
 
 def test_scatter_shared_masked() raises:
-    comptime N = 4
-
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](N)
-        ctx.enqueue_function_experimental[scatter_shared_masked_kernel](
-            buf, grid_dim=1, block_dim=N
+        var out_device = ctx.enqueue_create_buffer[.float32](4)
+        ctx.enqueue_function[_scatter_shared_kernel[masked=True]](
+            out_device, grid_dim=1, block_dim=1
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result, buf)
-        ctx.synchronize()
-
-        # Thread 0 (even) writes 1.0 to index 0.
-        assert_equal(result[0], Float32(1.0))
-        # Thread 1 (odd) is masked off, so index 1 stays -1.0.
-        assert_equal(result[1], Float32(-1.0))
-        # Thread 2 (even) writes 3.0 to index 2.
-        assert_equal(result[2], Float32(3.0))
-        # Thread 3 (odd) is masked off, so index 3 stays -1.0.
-        assert_equal(result[3], Float32(-1.0))
-
-
-# ===-----------------------------------------------------------------------===#
-# Main
-# ===-----------------------------------------------------------------------===#
+        # Lanes 0 and 2 write values 1 and 3 to offsets 3 and 1.
+        _check(ctx, out_device, SIMD[DType.float32, 4](-1, 3, -1, 1))
 
 
 def main() raises:
