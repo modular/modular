@@ -401,13 +401,10 @@ def bench_matmul[
             transpose_b=transpose_b,
         )
 
-    @__copy_capture(
-        cb_a,
-        cb_b,
-        cb_c,
-    )
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {var cb_a, var cb_b, var cb_c, imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )

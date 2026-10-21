@@ -44,7 +44,7 @@ dependencies = [
   "logbar",
   "markupsafe",
   "matplotlib",
-  "mcp>=1.19",
+  "mcp>=1.30.0",
   "msgspec",
   "munch",
   "mypy",
@@ -64,7 +64,7 @@ dependencies = [
   "pyarrow",
   "pydantic",
   "pydantic_core",
-  "pydantic-settings>=2.5.2", # >=2.5.2 required by mcp>=1.19
+  "pydantic-settings>=2.5.2", # >=2.5.2 required by mcp>=1.30.0
   "pygame-ce",
   "pygments",
   "pytest-asyncio==0.23.7",
@@ -193,8 +193,14 @@ common = [
   "openai==2.11.0",
   # vllm 0.30.0 needs mcp 2.x (see template.py)
   "idna==3.8",
-  "mcp==1.28.1",
+  "mcp==1.30.0",
   "sse-starlette==2.1.2",
+  # aiperf needs newer versions of these; pinning keeps the other groups
+  # on the versions template.py's @multiple aliases select.
+  "mteb==1.29.12",
+  "plotly==6.0.1",
+  "rich==13.7.1",
+  "tqdm==4.66.5",
 ]
 
 amd = [
@@ -268,6 +274,12 @@ nvidia-vllm = [
   "idna==3.20",
   "mcp==2.3.0",
   "sse-starlette==3.5.0",
+  # aiperf needs newer versions of these; pinning keeps the other groups
+  # on the versions template.py's @multiple aliases select.
+  "mteb==1.29.12",
+  "plotly==6.0.1",
+  "rich==13.7.1",
+  "tqdm==4.66.5",
 ]
 
 nvidia-sglang = [
@@ -287,8 +299,14 @@ nvidia-sglang = [
   # sglang 0.5.12.post1 pins this exact version
   "openai==2.6.1",
   "idna==3.8",
-  "mcp==1.28.1",
+  "mcp==1.30.0",
   "sse-starlette==2.1.2",
+  # aiperf needs newer versions of these; pinning keeps the other groups
+  # on the versions template.py's @multiple aliases select.
+  "mteb==1.29.12",
+  "plotly==6.0.1",
+  "rich==13.7.1",
+  "tqdm==4.66.5",
 ]
 
 aiperf = [

@@ -220,6 +220,7 @@ def modular_py_test(
         main = None,
         imports = [],
         per_test_tags = {},
+        per_test_target_compatible_with = {},
         test_name_prefix = "",
         shard_count = None,
         per_test_shard_count = {},
@@ -246,6 +247,9 @@ def modular_py_test(
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
         imports: Additional python import paths
         per_test_tags: A mapping of source files to extra tags to apply to that test file.
+        per_test_target_compatible_with: A mapping of source files to extra
+            constraints for that test file's target, added to
+            `target_compatible_with` (multi-source only).
         test_name_prefix: Prefix added to per-src py_test target names (multi-source only).
         shard_count: Forwarded to the underlying test target.
         per_test_shard_count: Forwarded to the underlying test target for the specified source(s).
@@ -270,6 +274,9 @@ def modular_py_test(
 
     if len(set(per_test_shard_count.keys()) - set(srcs)) != 0:
         fail("keys specified in per_test_shard_count that are not source files: {}".format(set(per_test_shard_count.keys()) - set(srcs)))
+
+    if len(set(per_test_target_compatible_with.keys()) - set(srcs)) != 0:
+        fail("keys specified in per_test_target_compatible_with that are not source files: {}".format(set(per_test_target_compatible_with.keys()) - set(srcs)))
 
     if "gpu" in tags and "enable-sanitizers" in tags:
         fail("gpu + sanitizers are able to be run manually, but not in CI. remove `enable-sanitizers`.")
@@ -425,7 +432,7 @@ def modular_py_test(
                     mojo_deps = mojo_deps,
                     imports = imports,
                     gpu_constraints = gpu_constraints,
-                    target_compatible_with = target_compatible_with,
+                    target_compatible_with = target_compatible_with + per_test_target_compatible_with.get(src, []),
                 )
             py_test(
                 name = test_name,
@@ -441,7 +448,7 @@ def modular_py_test(
                 shard_count = n_shards,
                 srcs = test_srcs_with_runner,
                 exec_properties = default_exec_properties | get_resources_exec_properties(test_name, test = True) | exec_properties,
-                target_compatible_with = gpu_constraints + target_compatible_with,
+                target_compatible_with = gpu_constraints + target_compatible_with + per_test_target_compatible_with.get(src, []),
                 tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []) + replay.tags,
                 imports = imports,
                 **kwargs
@@ -457,6 +464,8 @@ def modular_py_test(
             fail("Don't use `per_test_tags` if only one source file is specified, use `tags` directly.")
         if per_test_shard_count:
             fail("do not use per_test_shard_count with only one test, use shard_count")
+        if per_test_target_compatible_with:
+            fail("Don't use `per_test_target_compatible_with` if only one source file is specified, use `target_compatible_with` directly.")
 
         # If a custom main is used, it is responsible for sharding via
         # TEST_SHARD_INDEX and TEST_TOTAL_SHARDS env vars.

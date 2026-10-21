@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from std.random import random_si64
 
 from max.gpu import WARP_SIZE, block_idx
@@ -241,12 +242,12 @@ def run_mma_fp32_tf32(
 ) raises:
     print("== run_matmul fp32.tf32 tensor core kernel")
 
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float32](M * K)
+    var b_host = unsafe_alloc[Float32](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -410,12 +411,12 @@ def run_mma_fp32_bf16(
 ) raises:
     print("== run_matmul fp32.bf16 1688 tensor core kernel")
 
-    var a_host = alloc[BFloat16](M * K)
-    var b_host = alloc[BFloat16](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[BFloat16](M * K)
+    var b_host = unsafe_alloc[BFloat16](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -575,12 +576,12 @@ def run_mma_fp32_bf16_2(
 ) raises:
     print("== run_matmul fp32.bf16 16816 tensor core kernel")
 
-    var a_host = alloc[BFloat16](M * K)
-    var b_host = alloc[BFloat16](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[BFloat16](M * K)
+    var b_host = unsafe_alloc[BFloat16](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -740,12 +741,12 @@ def run_mma_fp32_fp16(
 ) raises:
     print("== run_matmul fp32.fp16 tensor core kernel")
 
-    var a_host = alloc[Float16](M * K)
-    var b_host = alloc[Float16](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float16](M * K)
+    var b_host = unsafe_alloc[Float16](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -905,12 +906,12 @@ def run_mma_fp16_fp16(
 ) raises:
     print("== run_matmul fp16.fp16 tensor core kernel")
 
-    var a_host = alloc[Float16](M * K)
-    var b_host = alloc[Float16](K * N)
-    var c_host = alloc[Float16](M * N)
-    var a_host_ref = alloc[Float32](M * K)
-    var b_host_ref = alloc[Float32](K * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float16](M * K)
+    var b_host = unsafe_alloc[Float16](K * N)
+    var c_host = unsafe_alloc[Float16](M * N)
+    var a_host_ref = unsafe_alloc[Float32](M * K)
+    var b_host_ref = unsafe_alloc[Float32](K * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)

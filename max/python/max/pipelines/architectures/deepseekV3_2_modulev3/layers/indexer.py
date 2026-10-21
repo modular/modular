@@ -74,8 +74,8 @@ def act_quant(
     return x, x_scales
 
 
-def _indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
-    """Return the quant config used for dynamic FP8 activation quant in the indexer.
+def indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
+    """Returns the quant config used for dynamic FP8 activation quant in the indexer.
 
     Full FP8 checkpoints reuse the model quant config. Mixed-precision paths
     (for example NVFP4 MoE with bf16 MLA) still dynamic-quantize indexer
@@ -146,7 +146,7 @@ class Indexer(
         self.index_topk = index_topk
         self.q_lora_rank = q_lora_rank
         self.softmax_scale = self.head_dim**-0.5
-        self.quant_config = _indexer_act_quant_config(quant_config)
+        self.quant_config = indexer_act_quant_config(quant_config)
 
         indexer_weights_fp8 = quant_config.format == QuantFormat.BLOCKSCALED_FP8
         linear_quant_config = quant_config if indexer_weights_fp8 else None

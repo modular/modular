@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s | FileCheck %s
+# RUN: %mojo-docs-isolated %s | FileCheck %s
 
 # Regression test: a trait method's implicit `self` must render as `self`, not
 # as the internal `_Self` placeholder. A trait method is parented by the trait

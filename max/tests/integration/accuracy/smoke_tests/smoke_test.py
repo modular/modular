@@ -122,6 +122,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3-Flash__tpep_mi355_modulev3": "max/pipelines/architectures/glm5_next_modulev3/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
@@ -135,11 +136,6 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/unified_dflash2_qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
 })
 # fmt: on
-
-# Aliases whose eval cannot finish inside the runner's 600 s timer.
-# TODO(anand): drop the GLM-5.3 MI355 entry once device graph capture and
-# blockwise-FP8 tuning land (~3 s/question, ~17 min for 320 today).
-SLOW_EVAL_MODELS = frozenset({"zai-org/GLM-5.3__fp8_tpep_mi355"})
 
 
 class RecipeConfig(BaseModel):
@@ -740,8 +736,6 @@ def smoke_test(
     if output_path is not None:
         result_dir = output_path / safe_model_name(model)
         result_dir.mkdir(parents=True, exist_ok=True)
-
-    disable_timeouts = disable_timeouts or model in SLOW_EVAL_MODELS
 
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cascade = recipe_path is not None and _load_recipe(recipe_path).cascade

@@ -89,27 +89,23 @@ def _launch_norm_full[
     var out_buf = TileTensor(out_ptr, row_major(Coord(rows, num_cols)))
 
     @inline(.always)
-    @__copy_capture(in_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var in_buf} -> SIMD[in_dtype, width]:
         return in_buf.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(out_buf)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[in_dtype, width]) {var out_buf} -> None:
         out_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
-        input_fn,
-        output_fn,
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=True,
-    ](Coord(rows, num_cols), gamma, ctx)
+    ](input_fn, output_fn, Coord(rows, num_cols), gamma, ctx)
 
 
 def _verify_results[

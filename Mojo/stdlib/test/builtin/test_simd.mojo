@@ -429,7 +429,7 @@ def test_issue_1625() raises:
 
 
 def test_issue_20421() raises:
-    var a_layout = Layout[UInt8, alignment=.of_bytes[64]()](count=16 * 64)
+    var a_layout = Layout[UInt8, alignment=.of_bytes[64]()](length=16 * 64)
     var allocation = alloc(a_layout).into_managed()
     var ptr = allocation.unsafe_ptr()
     for i in range(16 * 64):

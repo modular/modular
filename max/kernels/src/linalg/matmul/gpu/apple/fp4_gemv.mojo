@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only NVFP4 (W4A16) GEMV: `out = x @ dequant(W)^T` at M=1.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`). The batch-1 decode
+Apple silicon GPU (Metal 4, `compute_capability >= 5`). The batch-1 decode
 regime (`M == 1`) is a matrix-vector product, NOT a matrix-matrix product: there
 is exactly one activation row, so there is no MMA to feed. Routing it through the
 prefill cooperative-SMEM MMA path (`AppleM5Fp4MatMul`) wastes the simdgroup

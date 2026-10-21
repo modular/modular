@@ -32,6 +32,7 @@ from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from linalg.matmul.gpu import _matmul_gpu
 from std.memory import unsafe_memcpy
+from std.memory.alloc import unsafe_alloc
 from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,
     _matmul_k_cache_ragged_impl,
@@ -84,7 +85,7 @@ def _initialize_ragged_inputs[
 
     # Initialize ragged hidden state.
     var ragged_size = total_length * hidden_size
-    var hidden_state_ragged_host_ptr = alloc[Scalar[dtype]](ragged_size)
+    var hidden_state_ragged_host_ptr = unsafe_alloc[Scalar[dtype]](ragged_size)
     var hidden_state_ragged_host = TileTensor(
         hidden_state_ragged_host_ptr,
         row_major(total_length, Idx[hidden_size]),
@@ -98,7 +99,7 @@ def _initialize_ragged_inputs[
 
     # Initialize padded hidden state.
     var padded_size = batch_size * max_seq_length_batch * hidden_size
-    var hidden_state_padded_host_ptr = alloc[Scalar[dtype]](padded_size)
+    var hidden_state_padded_host_ptr = unsafe_alloc[Scalar[dtype]](padded_size)
 
     # Copy over the ragged values to the padded tensor.
     # Only the unpadded rows are checked against the reference output.
@@ -122,8 +123,8 @@ def _initialize_ragged_inputs[
     # Sync here so that HtoD transfers complete prior to host buffer dtor.
     ctx.synchronize()
 
-    hidden_state_ragged_host_ptr.free()
-    hidden_state_padded_host_ptr.free()
+    hidden_state_ragged_host_ptr.unsafe_free()
+    hidden_state_padded_host_ptr.unsafe_free()
 
     return (
         input_row_offsets_device,
@@ -179,7 +180,7 @@ def execute_matmul_kv_cache_ragged[
     )
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host_ptr = unsafe_alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -191,7 +192,7 @@ def execute_matmul_kv_cache_ragged[
 
     # Initialize the weights.
     var weight_size = 2 * kv_hidden_size * hidden_size
-    var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
+    var weight_host_ptr = unsafe_alloc[Scalar[dtype]](weight_size)
     var weight_shape = IndexList[2](2 * kv_hidden_size, hidden_size)
     var weight_host = TileTensor(
         weight_host_ptr,
@@ -205,7 +206,7 @@ def execute_matmul_kv_cache_ragged[
     # Initialize reference output.
     var padded_batch_dim = batch_size * max_seq_length_batch
     var ref_output_size = padded_batch_dim * 2 * kv_hidden_size
-    var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
+    var ref_output_host_ptr = unsafe_alloc[Scalar[dtype]](ref_output_size)
     var ref_output_shape = IndexList[2](padded_batch_dim, 2 * kv_hidden_size)
     var ref_output_host = TileTensor(
         ref_output_host_ptr,
@@ -378,9 +379,9 @@ def execute_matmul_kv_cache_ragged[
                 )
 
     # Cleanup host memory
-    input_row_offsets_host_ptr.free()
-    weight_host_ptr.free()
-    ref_output_host_ptr.free()
+    input_row_offsets_host_ptr.unsafe_free()
+    weight_host_ptr.unsafe_free()
+    ref_output_host_ptr.unsafe_free()
 
     # Cleanup device buffers
     _ = hidden_state_ragged_device^
@@ -491,7 +492,7 @@ def execute_matmul_k_cache_ragged[
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host_ptr = unsafe_alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -504,7 +505,7 @@ def execute_matmul_k_cache_ragged[
     # Initialize the weights.
     var weight_size = kv_hidden_size * hidden_size
     var weight_shape = IndexList[2](kv_hidden_size, hidden_size)
-    var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
+    var weight_host_ptr = unsafe_alloc[Scalar[dtype]](weight_size)
     var weight_host = TileTensor(
         weight_host_ptr, row_major(Idx[kv_hidden_size], Idx[hidden_size])
     )
@@ -518,7 +519,7 @@ def execute_matmul_k_cache_ragged[
     max_seq_length_batch = init_max_seq_length_batch
     var ref_output_size = padded_batch_dim * kv_hidden_size
     var ref_output_shape = IndexList[2](padded_batch_dim, kv_hidden_size)
-    var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
+    var ref_output_host_ptr = unsafe_alloc[Scalar[dtype]](ref_output_size)
     var ref_output_host = TileTensor(
         ref_output_host_ptr,
         row_major(padded_batch_dim, Idx[kv_hidden_size]),
@@ -582,9 +583,9 @@ def execute_matmul_k_cache_ragged[
                 )
 
     # Cleanup host memory
-    input_row_offsets_host_ptr.free()
-    weight_host_ptr.free()
-    ref_output_host_ptr.free()
+    input_row_offsets_host_ptr.unsafe_free()
+    weight_host_ptr.unsafe_free()
+    ref_output_host_ptr.unsafe_free()
 
     # Cleanup device buffers
     _ = hidden_state_ragged_device^
@@ -619,14 +620,14 @@ def generic_assert_output_equals[
 
     # Allocate host memory and copy from device
     var ref_output_size = ref_output_shape[0] * ref_output_shape[1]
-    var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
+    var ref_output_host_ptr = unsafe_alloc[Scalar[dtype]](ref_output_size)
     var ref_output_host = TileTensor(
         ref_output_host_ptr,
         row_major(ref_output_shape[0], Idx[fused_hidden_size]),
     )
 
     var test_output_size = test_output_shape[0] * test_output_shape[1]
-    var test_output_host_ptr = alloc[Scalar[dtype]](test_output_size)
+    var test_output_host_ptr = unsafe_alloc[Scalar[dtype]](test_output_size)
     var test_output_host = TileTensor(
         test_output_host_ptr,
         row_major(test_output_shape[0], Idx[hidden_size]),
@@ -699,8 +700,8 @@ def generic_assert_output_equals[
         ragged_offset += prompt_len
 
     # Cleanup host memory
-    ref_output_host_ptr.free()
-    test_output_host_ptr.free()
+    ref_output_host_ptr.unsafe_free()
+    test_output_host_ptr.unsafe_free()
 
 
 # HACK: `k_cache` and `v_cache` use disjoint regions within each block
@@ -756,7 +757,7 @@ def generic_execute_fused_qkv_cache_ragged[
     )
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host_ptr = unsafe_alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -769,7 +770,7 @@ def generic_execute_fused_qkv_cache_ragged[
     # Initialize the weights
     var weight_size = fused_hidden_size * hidden_size
     var weight_shape = IndexList[2](fused_hidden_size, hidden_size)
-    var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
+    var weight_host_ptr = unsafe_alloc[Scalar[dtype]](weight_size)
     var weight_host = TileTensor(
         weight_host_ptr,
         row_major(Idx[fused_hidden_size], Idx[hidden_size]),
@@ -833,8 +834,8 @@ def generic_execute_fused_qkv_cache_ragged[
     )
 
     # Cleanup host memory
-    input_row_offsets_host_ptr.free()
-    weight_host_ptr.free()
+    input_row_offsets_host_ptr.unsafe_free()
+    weight_host_ptr.unsafe_free()
 
     # Cleanup device buffers that are no longer needed
     _ = hidden_state_ragged_device^
@@ -880,7 +881,7 @@ def execute_paged_fused_qkv_matmul[
         cache_sizes
     ), "expected prompt_lens and cache_sizes size to be equal"
 
-    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
+    var cache_lengths_host_ptr = unsafe_alloc[UInt32](batch_size)
 
     var kv_block_size = (
         num_paged_blocks
@@ -1010,7 +1011,7 @@ def execute_cont_batch_fused_qkv_matmul[
 
     # Initialize our KVCache
     var batch_size = len(cache_sizes)
-    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
+    var cache_lengths_host_ptr = unsafe_alloc[UInt32](batch_size)
     var max_seq_length_batch = -1
     var max_context_length = 0
 
@@ -1041,10 +1042,10 @@ def execute_cont_batch_fused_qkv_matmul[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    var kv_block_host_ptr = alloc[Scalar[dtype]](kv_block_size)
+    var kv_block_host_ptr = unsafe_alloc[Scalar[dtype]](kv_block_size)
     var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)
 
-    var lookup_table_host_ptr = alloc[UInt32](batch_size)
+    var lookup_table_host_ptr = unsafe_alloc[UInt32](batch_size)
 
     # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
     # the original draw range `[0, num_blocks - 1]` is a population of
@@ -1141,9 +1142,9 @@ def execute_cont_batch_fused_qkv_matmul[
     )
 
     # Cleanup host memory
-    cache_lengths_host_ptr.free()
-    kv_block_host_ptr.free()
-    lookup_table_host_ptr.free()
+    cache_lengths_host_ptr.unsafe_free()
+    kv_block_host_ptr.unsafe_free()
+    lookup_table_host_ptr.unsafe_free()
 
     # Cleanup device buffers
     _ = kv_block_device^

@@ -161,22 +161,6 @@ def stable_allreduce_test[
     for i in range(ngpus):
         out_capture[i] = out_tensors[i]
 
-    @inline(.always)
-    @__copy_capture(out_capture)
-    def store_epilogue[
-        input_index: Int,
-        _dtype: DType,
-        _width: SIMDLength,
-        *,
-        _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing -> None:
-        out_capture[input_index].store_linear[
-            width=_width, alignment=_alignment
-        ](
-            rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[dtype, _width]](val),
-        )
-
     var two_stage_cfg = AllReduceTuningConfig(
         ngpus=ngpus,
         num_bytes=length * size_of[dtype](),
@@ -189,13 +173,27 @@ def stable_allreduce_test[
         group_start()
         comptime for i in range(ngpus):
             comptime if force_2stage:
-                _allreduce_p2p[
-                    ngpus=ngpus,
-                    output_lambda=store_epilogue[input_index=i, ...],
-                    pdl_level=PDLLevel(),
-                ](
+
+                @inline(.always)
+                def store_epilogue[
+                    _dtype: DType,
+                    _width: SIMDLength,
+                    *,
+                    alignment: Int,
+                ](coords: Coord, val: SIMD[_dtype, _width]) {
+                    var out_capture
+                } -> None:
+                    out_capture[i].store_linear[
+                        width=_width, alignment=alignment
+                    ](
+                        rebind[IndexList[1]](coord_to_index_list(coords)),
+                        rebind[SIMD[dtype, _width]](val),
+                    )
+
+                _allreduce_p2p[ngpus=ngpus, pdl_level=PDLLevel()](
                     in_tensors,
                     out_tensors[i].layout,
+                    store_epilogue,
                     rank_sigs,
                     two_stage_cfg,
                     ctxs[i],

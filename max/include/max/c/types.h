@@ -218,7 +218,7 @@ typedef struct M_WeightsRegistry M_WeightsRegistry;
 typedef struct M_Safetensors M_Safetensors;
 
 /// Represents the type of device. `M_HOST` is the CPU; `M_ACCELERATOR`
-/// is any non-CPU compute device (GPU or NPU). The closed set of valid
+/// is any non-CPU compute device. The closed set of valid
 /// device labels is enforced by `EngineContext::create` -- see
 /// `Support/DeviceSpecs.h` for the label constants and
 /// `max/lib/max_license/API/c/EngineContext.cpp` for the validating guard.

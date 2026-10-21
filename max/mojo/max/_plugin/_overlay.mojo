@@ -25,16 +25,12 @@ from .cuda import CudaMaxPlugin
 from .hip import HipMaxPlugin
 from .metal import MetalMaxPlugin
 
-from max.gpu.host.info import foldable_default_accelerator
-
 comptime MAX_PLUGINS = PluginSelector[
     DefaultMaxPlugin,
     MetalMaxPlugin,
     CudaMaxPlugin,
     HipMaxPlugin,
 ]
-
-comptime max_default_accelerator = foldable_default_accelerator
 
 comptime TARGETS = TypeList.of[
     Trait=TargetAcceleratorCollection,

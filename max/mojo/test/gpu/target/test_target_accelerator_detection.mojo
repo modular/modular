@@ -45,6 +45,10 @@
 # RUN:   --target-accelerator apple-m4 -D EXPECT=apple %s -o %t
 # RUN: %mojo-build --emit object --target-triple arm64-apple-darwin \
 # RUN:   --target-accelerator metal:4  -D EXPECT=apple %s -o %t
+# RUN: %mojo-build --emit object --target-triple arm64-apple-darwin \
+# RUN:   --target-accelerator apple-m6 -D EXPECT=apple %s -o %t
+# RUN: %mojo-build --emit object --target-triple arm64-apple-darwin \
+# RUN:   --target-accelerator metal:6  -D EXPECT=apple %s -o %t
 
 # Unknown/unrecognized accelerator: none of the vendor predicates fire (the
 # False-on-unknown contract). "wombat42" contains none of the vendor-relevant

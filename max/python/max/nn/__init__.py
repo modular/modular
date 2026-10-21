@@ -67,7 +67,7 @@ from .kv_cache import (
     build_max_lengths_tensors,
 )
 from .layer import Layer, LayerList, MissingLayer, Module, Shardable
-from .linear import MLP, ColumnParallelLinear, FusedMLP, GPTQLinear, Linear
+from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
 from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
 from .quant_config import (
@@ -120,7 +120,6 @@ __all__ = [
     "DistributedTransformerBlock",
     "DynamicRotaryEmbedding",
     "Embedding",
-    "FusedMLP",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinear",

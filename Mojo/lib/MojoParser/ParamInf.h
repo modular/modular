@@ -93,6 +93,10 @@ private:
   /// constraints.
   LogicalResult inferFromBodyConstraints();
 
+  /// Bind each still-unbound singleton `Origin` parameter whose underlying
+  /// `!lit.origin` is already known.
+  void inferOriginParams();
+
   /// Convenience getters for fields from paramBindings.
   ASTDecl &getDeclScope() const { return paramBindings.declScope; }
   SharedState &getShared() const { return paramBindings.shared; }
@@ -201,8 +205,6 @@ private:
   /// Given an incomplete parameter binding set, try to infer parameters on
   /// Self of a method from the first argument.
   LogicalResult inferCTADParams();
-
-  LogicalResult inferSelfFromInitResult();
 
   LogicalResult inferResultSlot(RefType expectedRef, size_t argIdx,
                                 const ExprDest &dest);

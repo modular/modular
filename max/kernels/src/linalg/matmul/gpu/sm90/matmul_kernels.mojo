@@ -945,10 +945,11 @@ struct HopperMatmulSM90Kernel[
             c_tensor_layout: Memory layout of output matrix C.
             EpilogueFnType: Type of `epilogue_fn`.
             has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
-                with `host_arg=epilogue_fn`.
+                with `epilogue_fn` as the first `host_args` element.
             ComputeFnType: Type of `compute_fn`.
             has_compute_fn: Whether `compute_fn` maps each output before it
-                is stored. Launch with `host_arg2=compute_fn`.
+                is stored. Launch with `compute_fn` as the second
+                `host_args` element.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -1129,10 +1130,11 @@ struct HopperMatmulSM90Kernel[
             c_tensor_layout: Memory layout of output matrix C.
             EpilogueFnType: Type of `epilogue_fn`.
             has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
-                with `host_arg=epilogue_fn`.
+                with `epilogue_fn` as the first `host_args` element.
             ComputeFnType: Type of `compute_fn`.
             has_compute_fn: Whether `compute_fn` maps each output before it
-                is stored. Launch with `host_arg2=compute_fn`.
+                is stored. Launch with `compute_fn` as the second
+                `host_args` element.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -1375,10 +1377,11 @@ struct HopperMatmulSM90Kernel[
             c_tensor_layout: Memory layout of output matrix C.
             EpilogueFnType: Type of `epilogue_fn`.
             has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
-                with `host_arg=epilogue_fn`.
+                with `epilogue_fn` as the first `host_args` element.
             ComputeFnType: Type of `compute_fn`.
             has_compute_fn: Whether `compute_fn` maps each output before it
-                is stored. Launch with `host_arg2=compute_fn`.
+                is stored. Launch with `compute_fn` as the second
+                `host_args` element.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -1536,9 +1539,9 @@ struct HopperMatmulSM90Kernel[
                     var col = Int(idx[1])
                     var row_idx = Coord(row, col)
                     comptime if has_compute_fn:
-                        c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
-                            alignment=alignment
-                        ](
+                        c_ptr.unsafe_offset(row * N).unsafe_offset(
+                            col
+                        ).unsafe_store[alignment=alignment](
                             rebind[SIMD[Self.c_type, width]](
                                 compute_fn[dtype, width, alignment=alignment](
                                     row_idx, val

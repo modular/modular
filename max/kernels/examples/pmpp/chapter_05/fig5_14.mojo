@@ -19,6 +19,7 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
@@ -117,7 +118,7 @@ def matmul_tiled_boundary(
     var d_c = ctx.enqueue_create_buffer[dtype](size)
 
     # Initialize d_c to zero
-    var zeros = alloc[Float32](size)
+    var zeros = unsafe_alloc[Float32](size)
     for i in range(size):
         zeros[i] = 0.0
 
@@ -147,7 +148,7 @@ def matmul_tiled_boundary(
     ctx.synchronize()
 
     # Cleanup
-    zeros.free()
+    zeros.unsafe_free()
 
 
 # ========================== TEST CODE ==========================
@@ -197,10 +198,10 @@ def main() raises:
     var size = width * width
 
     # Allocate host memory
-    var h_a = alloc[Float32](size)
-    var h_b = alloc[Float32](size)
-    var h_c = alloc[Float32](size)
-    var h_ref = alloc[Float32](size)
+    var h_a = unsafe_alloc[Float32](size)
+    var h_b = unsafe_alloc[Float32](size)
+    var h_c = unsafe_alloc[Float32](size)
+    var h_ref = unsafe_alloc[Float32](size)
 
     # Initialize buffers
     initialize(h_a, h_b, width)
@@ -240,7 +241,7 @@ def main() raises:
         print("Success")
 
     # Cleanup
-    h_a.free()
-    h_b.free()
-    h_c.free()
-    h_ref.free()
+    h_a.unsafe_free()
+    h_b.unsafe_free()
+    h_c.unsafe_free()
+    h_ref.unsafe_free()

@@ -27,6 +27,7 @@ from std.benchmark import (
     ThroughputMeasure,
     BenchMetric,
 )
+from std.memory.alloc import unsafe_alloc
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout._fillers import random
@@ -61,12 +62,10 @@ def bench_1d1d_quantization[
     var in_device = ctx.enqueue_create_buffer[in_dtype](rows * cols)
     var input_tensor = TileTensor(in_device, row_major(rows, Idx[cols]))
 
-    var out_device = ctx.enqueue_create_buffer[out_dtype](
-        rows * ceildiv(cols, 2)
-    )
-    var output_tensor = TileTensor(
-        out_device, row_major(rows, Idx[ceildiv(cols, 2)])
-    )
+    # Packed FP4 holds two values a byte; MXFP8 one.
+    comptime out_cols = ceildiv(cols, 2) if is_fp4 else cols
+    var out_device = ctx.enqueue_create_buffer[out_dtype](rows * out_cols)
+    var output_tensor = TileTensor(out_device, row_major(rows, Idx[out_cols]))
 
     var scales_shape = IndexList[5](
         ceildiv(rows, SF_MN_GROUP_SIZE),
@@ -176,11 +175,11 @@ def bench_grouped_quantization[
     # tile. That makes the occupied tile count track the expert count rather
     # than the row count. The `spread=False` layout parks every row on one
     # expert and is the easy case, kept only as a contrast.
-    var host_row_offsets = alloc[UInt32](num_experts + 1)
-    var host_scales_offsets = alloc[UInt32](num_experts)
-    var host_expert_ids = alloc[Int32](num_experts)
-    var host_sf = alloc[Float32](num_experts)
-    var tile_starts = alloc[Int](num_experts + 1)
+    var host_row_offsets = unsafe_alloc[UInt32](num_experts + 1)
+    var host_scales_offsets = unsafe_alloc[UInt32](num_experts)
+    var host_expert_ids = unsafe_alloc[Int32](num_experts)
+    var host_sf = unsafe_alloc[Float32](num_experts)
+    var tile_starts = unsafe_alloc[Int](num_experts + 1)
 
     host_row_offsets[0] = 0
     tile_starts[0] = 0
@@ -216,7 +215,7 @@ def bench_grouped_quantization[
     # The group max feeds a data-dependent branch, so the input has to be
     # defined: an all-zero buffer skips the reciprocal path that real
     # activations always take.
-    var host_input = alloc[Scalar[in_dtype]](rows * cols)
+    var host_input = unsafe_alloc[Scalar[in_dtype]](rows * cols)
     var host_input_tensor = TileTensor(host_input, row_major(rows, Idx[cols]))
     random(host_input_tensor, min=-1.0, max=1.0)
     ctx.enqueue_copy(dev_in, host_input)

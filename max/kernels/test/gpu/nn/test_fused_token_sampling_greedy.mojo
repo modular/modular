@@ -17,9 +17,8 @@ min-p. Greedy rows take an argmax on every target, and the test pins its rules
 exactly: the lowest tied index wins (`numpy.argmax`), NaN never wins, and an
 all-NaN or all -inf row returns 0. On AMD, the large-vocabulary cases split
 each row across several blocks. Rows with k > 1 in the same batch must still
-land inside their top-k set. Greedy rows also match `argmax_gpu`, the kernel
-behind `ops.argmax`, and a sampled row draws the same token whether its
-neighbours are greedy or sampled.
+land inside their top-k set, and a sampled row draws the same token whether
+its neighbours are greedy or sampled.
 """
 
 from std.random import random_float64, seed
@@ -27,7 +26,6 @@ from std.utils.numerics import inf, nan, neg_inf
 
 from max.gpu.host import DeviceContext, HostBuffer
 from layout import TileTensor, row_major
-from nn.argmaxmin_gpu import argmax_gpu
 from nn.topk import fused_token_sampling_gpu
 
 comptime LARGE_VOCAB = 163840
@@ -109,23 +107,17 @@ def _draw[
     ks: List[Int],
     max_k: Int,
     mut samples: List[Int],
-    mut argmaxes: List[Int],
     temperature: Float32 = 1.0,
     top_p: Float32 = 1.0,
     min_p: Float32 = 0.0,
 ) raises:
-    """Samples every row once and also takes `argmax_gpu` of every row.
-
-    `argmax_gpu` is the kernel behind `ops.argmax`, which the speculative
-    verdict relies on greedy rows to reproduce exactly.
-    """
+    """Samples every row once."""
     var k_host = ctx.enqueue_create_host_buffer[DType.int64](batch)
     var temp_host = ctx.enqueue_create_host_buffer[DType.float32](batch)
     var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](batch)
     var min_p_host = ctx.enqueue_create_host_buffer[DType.float32](batch)
     var seed_host = ctx.enqueue_create_host_buffer[DType.uint64](batch)
     var out_host = ctx.enqueue_create_host_buffer[DType.int64](batch)
-    var argmax_host = ctx.enqueue_create_host_buffer[DType.int64](batch)
     ctx.synchronize()
 
     for b in range(batch):
@@ -142,7 +134,6 @@ def _draw[
     var min_p_dev = ctx.enqueue_create_buffer[DType.float32](batch)
     var seed_dev = ctx.enqueue_create_buffer[DType.uint64](batch)
     var out_dev = ctx.enqueue_create_buffer[DType.int64](batch)
-    var argmax_dev = ctx.enqueue_create_buffer[DType.int64](batch)
     ctx.enqueue_copy(in_dev, in_host)
     ctx.enqueue_copy(k_dev, k_host)
     ctx.enqueue_copy(temp_dev, temp_host)
@@ -150,7 +141,6 @@ def _draw[
     ctx.enqueue_copy(min_p_dev, min_p_host)
     ctx.enqueue_copy(seed_dev, seed_host)
     ctx.enqueue_memset(out_dev, -7)
-    ctx.enqueue_memset(argmax_dev, -7)
 
     var min_top_p = top_p
     fused_token_sampling_gpu(
@@ -173,20 +163,12 @@ def _draw[
         .as_unsafe_any_origin()
         .as_imm(),
     )
-    argmax_gpu(
-        ctx,
-        TileTensor(in_dev, row_major(batch, vocab)),
-        TileTensor(argmax_dev, row_major(batch, 1)),
-    )
     ctx.enqueue_copy(out_host, out_dev)
-    ctx.enqueue_copy(argmax_host, argmax_dev)
     ctx.synchronize()
 
     samples.clear()
-    argmaxes.clear()
     for b in range(batch):
         samples.append(Int(out_host[b]))
-        argmaxes.append(Int(argmax_host[b]))
 
     _ = in_dev^
     _ = k_dev^
@@ -195,7 +177,6 @@ def _draw[
     _ = min_p_dev^
     _ = seed_dev^
     _ = out_dev^
-    _ = argmax_dev^
 
 
 def _check[
@@ -221,7 +202,6 @@ def _check[
         _fill_row(in_rows, b, kinds[b], tie_idxs)
 
     var samples = List[Int]()
-    var argmaxes = List[Int]()
     _draw[dtype](
         ctx,
         in_host,
@@ -230,7 +210,6 @@ def _check[
         ks,
         max_k,
         samples,
-        argmaxes,
         temperature=temperature,
         top_p=top_p,
         min_p=min_p,
@@ -265,10 +244,6 @@ def _check[
         var expected = _first_argmax(in_rows, b)
         if got != expected:
             raise Error(desc + " expected the first argmax " + String(expected))
-        if got != argmaxes[b]:
-            raise Error(
-                desc + " differs from argmax_gpu " + String(argmaxes[b])
-            )
 
 
 def _check_sampled_rows_unchanged[dtype: DType](ctx: DeviceContext) raises:
@@ -287,7 +262,6 @@ def _check_sampled_rows_unchanged[dtype: DType](ctx: DeviceContext) raises:
 
     var mixed = List[Int]()
     var sampled = List[Int]()
-    var argmaxes = List[Int]()
     for temperature in [Float32(0.6), Float32(1.0), Float32(1.4)]:
         _draw[dtype](
             ctx,
@@ -297,7 +271,6 @@ def _check_sampled_rows_unchanged[dtype: DType](ctx: DeviceContext) raises:
             [20, 1, -1, 1],
             -1,
             mixed,
-            argmaxes,
             temperature=temperature,
             top_p=0.9,
         )
@@ -309,7 +282,6 @@ def _check_sampled_rows_unchanged[dtype: DType](ctx: DeviceContext) raises:
             [20, 50, -1, 50],
             -1,
             sampled,
-            argmaxes,
             temperature=temperature,
             top_p=0.9,
         )

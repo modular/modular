@@ -15,11 +15,11 @@
 # opted into stability tracking ("std" or "test_std_mock"), and that isStable
 # reflects the presence of the @stable decorator.
 #
-# RUN 1: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages on test_std_mock (an opted-in package).
-# RUN 2: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages on this file (outside any opted-in package).
+# RUN 1: docs for test_std_mock (an opted-in package).
+# RUN 2: docs for this file (outside any opted-in package).
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %S/inputs/test_std_mock | FileCheck %s --check-prefix TRACKED
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s | FileCheck %s --check-prefix UNTRACKED
+# RUN: %mojo-docs-isolated %S/inputs/test_std_mock | FileCheck %s --check-prefix TRACKED
+# RUN: %mojo-docs-isolated %s | FileCheck %s --check-prefix UNTRACKED
 
 # ---- Stability-tracked package: test_std_mock ----
 

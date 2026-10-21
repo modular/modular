@@ -21,6 +21,7 @@ This serves as a baseline reference implementation.
 """
 
 from std.math import sqrt
+from std.memory.alloc import unsafe_alloc
 
 from dcs_utils import GridDim, init_atoms, compute_total_energy
 
@@ -81,8 +82,8 @@ def main() raises:
     var grid_size = grid.x * grid.y
 
     # Allocate memory
-    var h_atoms = alloc[Float32](atoms_size)
-    var h_energygrid = alloc[Float32](grid_size)
+    var h_atoms = unsafe_alloc[Float32](atoms_size)
+    var h_energygrid = unsafe_alloc[Float32](grid_size)
 
     # Initialize
     init_atoms(h_atoms, numatoms, gridspacing, grid.x, grid.y, 1)
@@ -101,5 +102,5 @@ def main() raises:
     print("Total Energy:", total_energy)
 
     # Cleanup
-    h_atoms.free()
-    h_energygrid.free()
+    h_atoms.unsafe_free()
+    h_energygrid.unsafe_free()

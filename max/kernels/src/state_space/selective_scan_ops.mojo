@@ -79,7 +79,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         z: InputTensor[dtype=dtype, rank=3, ...],
         delta_bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
 
@@ -348,7 +348,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         B: InputTensor[dtype=dtype, rank=4, ...],
         C: InputTensor[dtype=dtype, rank=4, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
 
@@ -576,7 +576,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         z: InputTensor[dtype=dtype, rank=2, ...],
         dt_bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var batch = state_out.dim_size(0)
         var dim = state_out.dim_size(1)
         var dstate = state_out.dim_size(2)

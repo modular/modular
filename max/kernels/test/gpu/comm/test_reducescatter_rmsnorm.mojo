@@ -512,27 +512,23 @@ def _rms_norm_shard[
     )
 
     @inline(.always)
-    @__copy_capture(src_view)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var src_view} -> SIMD[in_dtype, width]:
         return src_view.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(dst_view)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[in_dtype, width]) {var dst_view} -> None:
         dst_view.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
-        input_fn,
-        output_fn,
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=True,
-    ](Coord(Index(rows, num_cols)), gamma_view, ctx)
+    ](input_fn, output_fn, Coord(Index(rows, num_cols)), gamma_view, ctx)
 
 
 def _run_prod_oracle_case[

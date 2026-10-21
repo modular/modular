@@ -25,6 +25,7 @@ from linalg.fp8_quantization import (
     quantize_static_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
 )
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal, assert_true
 
 from std.utils.numerics import (
@@ -43,8 +44,8 @@ def test_static_scaled_fp8_quant[
     var shape = row_major(Int64(m), Int64(n))
     var total_size = m * n
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
-    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
 
     var in_host = TileTensor(in_host_ptr, shape)
     var out_host = TileTensor(out_host_ptr, shape)
@@ -85,8 +86,8 @@ def test_static_scaled_fp8_quant[
                 out_host[i, j][0].cast[.float64](),
             )
 
-    in_host_ptr.free()
-    out_host_ptr.free()
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
 
 
 def test_dynamic_scaled_fp8_quant[
@@ -106,9 +107,9 @@ def test_dynamic_scaled_fp8_quant[
     var total_size = Int(m) * Int(n)
     var scales_size = num_groups * Int(m)
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
-    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
 
     var in_host = TileTensor(in_host_ptr, shape)
     var out_host = TileTensor(out_host_ptr, shape)
@@ -194,9 +195,9 @@ def test_dynamic_scaled_fp8_quant[
                 msg="At [" + String(i) + ", " + String(j) + "]",
             )
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    scales_host_ptr.free()
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
+    scales_host_ptr.unsafe_free()
 
 
 def test_dynamic_fp8_quant[
@@ -215,9 +216,9 @@ def test_dynamic_fp8_quant[
     var total_size = Int(m) * Int(n)
     var scales_size = (Int(n) // group_size) * Int(m)
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
-    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
 
     var in_host = TileTensor(in_host_ptr, shape)
     var out_host = TileTensor(out_host_ptr, shape)
@@ -304,9 +305,9 @@ def test_dynamic_fp8_quant[
                     + "]",
                 )
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    scales_host_ptr.free()
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
+    scales_host_ptr.unsafe_free()
 
 
 def test_dynamic_fp8_quant_amax_floor[
@@ -336,11 +337,11 @@ def test_dynamic_fp8_quant_amax_floor[
     var scales_size = (Int(n) // group_size) * Int(m)
     var num_groups = Int(n) // group_size
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
-    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
-    var base_out_host_ptr = alloc[Scalar[out_dtype]](total_size)
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var base_scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var base_out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
+    var base_scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
 
     for i in range(Int(m)):
         for g in range(num_groups):
@@ -463,11 +464,11 @@ def test_dynamic_fp8_quant_amax_floor[
                         base_out_host[i, col].cast[.float32](),
                     )
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    base_out_host_ptr.free()
-    scales_host_ptr.free()
-    base_scales_host_ptr.free()
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
+    base_out_host_ptr.unsafe_free()
+    scales_host_ptr.unsafe_free()
+    base_scales_host_ptr.unsafe_free()
 
 
 def test_batched_dynamic_fp8_quant[
@@ -487,9 +488,9 @@ def test_batched_dynamic_fp8_quant[
     var total_size = Int(bs) * Int(m) * Int(k)
     var scales_size = Int(bs) * (Int(k) // group_size) * Int(m)
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
-    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
 
     var in_host = TileTensor(in_host_ptr, shape)
     var out_host = TileTensor(out_host_ptr, shape)
@@ -576,9 +577,9 @@ def test_batched_dynamic_fp8_quant[
                         + "]",
                     )
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    scales_host_ptr.free()
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
+    scales_host_ptr.unsafe_free()
 
 
 def test_dynamic_fp8_quant_row_bounded[
@@ -607,13 +608,13 @@ def test_dynamic_fp8_quant_row_bounded[
     var total_size = rows * cols
     var scales_size = num_groups * rows
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
-    var ref_out_ptr = alloc[Scalar[out_dtype]](total_size)
-    var ref_scales_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var got_out_ptr = alloc[Scalar[out_dtype]](total_size)
-    var got_scales_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var zero_out_ptr = alloc[Scalar[out_dtype]](total_size)
-    var zero_scales_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var ref_out_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var ref_scales_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
+    var got_out_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var got_scales_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
+    var zero_out_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var zero_scales_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
 
     var in_host = TileTensor(in_host_ptr, shape)
     var ref_out = TileTensor(ref_out_ptr, shape)
@@ -635,7 +636,7 @@ def test_dynamic_fp8_quant_row_bounded[
     random(in_host, -1.0, 1.0)
     ctx.enqueue_copy(in_device, in_host_ptr)
 
-    var offsets_host_ptr = alloc[UInt32](4)
+    var offsets_host_ptr = unsafe_alloc[UInt32](4)
     offsets_host_ptr.unsafe_store(UInt32(0))
     offsets_host_ptr.unsafe_offset(1).unsafe_store(UInt32(live_rows // 3))
     offsets_host_ptr.unsafe_offset(2).unsafe_store(UInt32(live_rows // 2))
@@ -736,14 +737,14 @@ def test_dynamic_fp8_quant_row_bounded[
         msg="unbounded run left the skipped rows zero, so the skip is untested",
     )
 
-    in_host_ptr.free()
-    ref_out_ptr.free()
-    ref_scales_ptr.free()
-    got_out_ptr.free()
-    got_scales_ptr.free()
-    zero_out_ptr.free()
-    zero_scales_ptr.free()
-    offsets_host_ptr.free()
+    in_host_ptr.unsafe_free()
+    ref_out_ptr.unsafe_free()
+    ref_scales_ptr.unsafe_free()
+    got_out_ptr.unsafe_free()
+    got_scales_ptr.unsafe_free()
+    zero_out_ptr.unsafe_free()
+    zero_scales_ptr.unsafe_free()
+    offsets_host_ptr.unsafe_free()
 
 
 def test_dynamic_fp8_quant_near_zero[
@@ -769,9 +770,9 @@ def test_dynamic_fp8_quant_near_zero[
     var total_size = Int(m) * Int(n)
     var scales_size = (Int(n) // group_size) * Int(m)
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
-    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
 
     # Fill the whole input with a near-zero magnitude (~1e-38) and a zero lane
     # at the start of each group — so every group's max-abs is a tiny denormal
@@ -831,9 +832,9 @@ def test_dynamic_fp8_quant_near_zero[
     assert_equal(n_nonfinite, 0)
     assert_equal(n_nonzero, 0)
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    scales_host_ptr.free()
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
+    scales_host_ptr.unsafe_free()
 
 
 def test_dynamic_tensor_fp8_quant_near_zero[
@@ -859,9 +860,9 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     var total_size = Int(m) * Int(n)
     var scales_size = (Int(n) // group_size) * Int(m)
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
-    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
 
     # Every group's max-abs is a tiny f32 denormal (~1e-38) with an exactly-zero
     # lane at each group start (the 0*Inf lane). With num_rows > 1 the per-tensor
@@ -921,9 +922,9 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     assert_equal(n_nonfinite, 0)
     assert_equal(n_nonzero, 0)
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    scales_host_ptr.free()
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
+    scales_host_ptr.unsafe_free()
 
 
 def main() raises:

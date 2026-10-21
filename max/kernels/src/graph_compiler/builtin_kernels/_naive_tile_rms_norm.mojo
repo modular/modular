@@ -158,7 +158,7 @@ struct RMSNormTileSM100:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         # The tile programming model (`tile_based_fusion=True`) binds `output`
         # to `_FusedOutputTile`, and the selection filter routes the op to
         # this sm_100a registration. Naive, correctness-only GPU rms_norm on

@@ -16,6 +16,7 @@ from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 
 @fieldwise_init
@@ -98,11 +99,11 @@ def main() raises:
     print("CSC Matrix: ", rows, "x", cols, ", ", numNonzeros, " non-zeros.")
 
     # Prepare host pointers
-    var h_colPtrs_ptr = alloc[UInt32](cols + 1)
-    var h_rowIdxs_ptr = alloc[UInt32](numNonzeros)
-    var h_values_ptr = alloc[Float32](numNonzeros)
-    var h_x_ptr = alloc[Float32](cols)
-    var h_y_ptr = alloc[Float32](rows)
+    var h_colPtrs_ptr = unsafe_alloc[UInt32](cols + 1)
+    var h_rowIdxs_ptr = unsafe_alloc[UInt32](numNonzeros)
+    var h_values_ptr = unsafe_alloc[Float32](numNonzeros)
+    var h_x_ptr = unsafe_alloc[Float32](cols)
+    var h_y_ptr = unsafe_alloc[Float32](rows)
 
     for i in range(cols + 1):
         h_colPtrs_ptr[i] = h_csc_colPtrs[i]
@@ -130,11 +131,11 @@ def main() raises:
     ctx.enqueue_copy(d_x_buf, h_x_ptr)
 
     # Initialize y on device to 0
-    var h_y_zeros = alloc[Float32](rows)
+    var h_y_zeros = unsafe_alloc[Float32](rows)
     for i in range(rows):
         h_y_zeros[i] = 0.0
     ctx.enqueue_copy(d_y_buf, h_y_zeros)
-    h_y_zeros.free()
+    h_y_zeros.unsafe_free()
 
     var d_cscMatrix = CSCMatrix(
         rows,
@@ -165,8 +166,8 @@ def main() raises:
     else:
         print("CSC Kernel Test Failed!")
 
-    h_colPtrs_ptr.free()
-    h_rowIdxs_ptr.free()
-    h_values_ptr.free()
-    h_x_ptr.free()
-    h_y_ptr.free()
+    h_colPtrs_ptr.unsafe_free()
+    h_rowIdxs_ptr.unsafe_free()
+    h_values_ptr.unsafe_free()
+    h_x_ptr.unsafe_free()
+    h_y_ptr.unsafe_free()

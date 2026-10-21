@@ -75,19 +75,15 @@ void M::KGEN::printFunctionSignature(LIT::DefASTDecl &decl,
     selfType = ASTType(TraitASTDecl::computeSelfType(parentTrait));
 
   SmallVector<ParameterInfo, 2> params;
-  ParameterEvaluator evaluator =
-      populateParameterInfos(decl, signature.getInputParamTypes(),
-                             signature.getParamListAttrs(), params, selfType);
+  ParameterEvaluator evaluator = populateParameterInfos(decl, params, selfType);
 
   // Function-level constraints (the trailing "where ...").
   std::string fnConstraints;
   if (auto cs = signature.getParamListAttrs().getBodyConstraints(); !cs.empty())
     fnConstraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
 
-  SmallVector<ArgumentInfo, 2> args;
-  populateArgumentInfos(
-      decl, signature, fnOp.getArgumentTypes(), selfType, evaluator,
-      [&] { return fnOp.getSpecialFunctionInfo().hasSelfResult(); }, args);
+  SmallVector<ArgumentInfo, 2> args =
+      getArgumentInfos(decl, evaluator, selfType);
 
   // Pre-render the return type for the shared printer; suppressed entirely
   // for `__init__`-style functions whose out-arg gets hoisted to the front.

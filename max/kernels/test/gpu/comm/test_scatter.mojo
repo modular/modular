@@ -77,9 +77,11 @@ def _test_pull[
     var input_devbufs = List[DeviceBuffer[dtype]]()
     var host_buf = ctxs[0].enqueue_create_host_buffer[dtype](max_chunk_size)
 
-    comptime InputTileType = TileTensor[
-        dtype, type_of(row_major(Int(0))), ImmutAnyOrigin
-    ]
+    comptime InputTileType = type_of(
+        TileTensor(input_devbufs[0], row_major(Int(0)))
+        .as_unsafe_any_origin()
+        .as_imm()
+    )
     var tt_input_bufs = Array[InputTileType, dp_size](uninitialized=True)
 
     for dp in range(dp_size):
@@ -89,7 +91,9 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(n)).as_imm()
+        tt_input_bufs[dp] = (
+            TileTensor(dev_buf, row_major(n)).as_unsafe_any_origin().as_imm()
+        )
         input_devbufs.append(dev_buf)
 
     # Output buffers on each GPU (sized to its replica's chunk).

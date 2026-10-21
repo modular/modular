@@ -295,14 +295,15 @@ def _run_case[
         )
         var ctx_i = list_of_ctx[i]
 
-        # `@__copy_capture` is mandatory: without it these locals reach the
-        # device as host-stack pointers and the stores land out of bounds.
-        @__copy_capture(quant_view, scale_view)
-        @__parameter
+        # The `{var}` copies are mandatory: captured by reference, these
+        # locals reach the device as host-stack pointers and the stores land
+        # out of bounds.
         @inline(.always)
         def mx_epilogue[
             width: Int
-        ](row: Int, col: Int, val: SIMD[in_dtype, width]):
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) {
+            var quant_view, var scale_view
+        }:
             comptime if route_two_launch:
                 # Poison: `threshold = 0` forces the two-launch branch, so the
                 # fused kernel must never reach this epilogue. Storing a byte
@@ -355,7 +356,7 @@ def _run_case[
                 )
                 quantize_mx_amd(ctx_i, quant_view, scale_view, normed_view)
 
-        _dispatch_ag_norm_quant[quant_epilogue=mx_epilogue,](
+        _dispatch_ag_norm_quant(
             in_shards,
             normed_view,
             sum_view,
@@ -364,6 +365,7 @@ def _run_case[
             weight_offset,
             rank_sigs,
             ctx_i,
+            mx_epilogue,
             two_launch_with_quant,
             threshold=threshold,
         )

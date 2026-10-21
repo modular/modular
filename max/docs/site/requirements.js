@@ -30,18 +30,16 @@ const wslDetails = (
 );
 
 const gpuDetails = (
-  <ul>
-    <li>NVIDIA B200, H100, H200, A100, A10, L4, L40, RTX 50XX, RTX 40XX, RTX 30XX
-      <ul>
-        <li>NVIDIA GPU driver 580 or later</li>
-      </ul>
-    </li>
-    <li>AMD Instinct MI355X, MI300X, MI325X
-      <ul>
-        <li>AMD GPU driver 6.3.3 or later</li>
-      </ul>
-    </li>
-  </ul>
+  <>
+    <ul>
+      <li>NVIDIA GPU driver 580 or later</li>
+      <li>AMD GPU driver 6.3.3 or later</li>
+      <li>Tested for serving: NVIDIA B200 and AMD MI355X</li>
+    </ul>
+    <p>For all compatible GPUs, see <DocLink
+      to="/gpu/hardware-compatibility/"
+      >GPU compatibility</DocLink>.</p>
+  </>
 );
 
 const dockerDetails = (

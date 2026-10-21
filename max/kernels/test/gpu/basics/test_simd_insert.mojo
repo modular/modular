@@ -32,7 +32,7 @@ def run_insert[
         comptime for i in range(width):
             vec[i] = Scalar[dtype](i)
         var sub = SIMD[dtype, input_width](Scalar[dtype](100))
-        output.store(0, vec.insert[offset=offset](sub))
+        output.unsafe_store(0, vec.insert[offset=offset](sub))
 
     ctx.enqueue_function[kernel](output_buffer, grid_dim=1, block_dim=1)
     ctx.enqueue_copy(output_host, output_buffer)

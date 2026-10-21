@@ -151,7 +151,7 @@ def _check_verification_result[
     )
 
     var result_host_alloc = alloc[Float32](
-        {count = NUM_BLOCKS * 5}
+        {length = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
@@ -248,9 +248,10 @@ def bench_matmul_tma_epilogue[
     # Initialize epilogue tensor with values in a narrow range (same as test files use rand).
     cb_epilogue.init_on_device(init_type, ctx)
 
-    @__copy_capture(cb_a, cb_b, cb_c, cb_epilogue)
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {var cb_a, var cb_b, var cb_c, var cb_epilogue, imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -426,11 +427,11 @@ def bench_matmul_tma_epilogue[
         comptime if variant != "plain":
             # Add epilogue tensor to reference output on the host.
             var epilogue_host_alloc = alloc[Scalar[dtype]](
-                {count = c_size}
+                {length = c_size}
             ).into_managed()
             var epilogue_host = epilogue_host_alloc.unsafe_ptr()
             var c_ref_host_alloc = alloc[Scalar[dtype]](
-                {count = c_size}
+                {length = c_size}
             ).into_managed()
             var c_ref_host = c_ref_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(epilogue_host, epilogue_ver_dev)

@@ -34,6 +34,7 @@ Host reference (per query row):
 from std.math import ceildiv, exp2, sqrt
 from std.math.constants import log2e
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn
 
 from max.gpu import *
@@ -155,7 +156,7 @@ def host_reference[
                 var q_base = bs * num_heads * qk_depth + h * qk_depth
 
                 var mi = Float64(min_or_neg_inf[.float32]())
-                var s_buf = alloc[Float64](n_valid)
+                var s_buf = unsafe_alloc[Float64](n_valid)
 
                 for k in range(n_valid):
                     var kv_base = (bs * topk + k) * qk_depth
@@ -209,7 +210,7 @@ def host_reference[
                         )
                     output_ptr[o_base + d] = acc.cast[q_type]()
 
-                s_buf.free()
+                s_buf.unsafe_free()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -322,7 +323,7 @@ def run_test_prefill_sparse_fp8[
     # Page lookup table (same coprime shuffle as BF16 test).
     # -----------------------------------------------------------------------
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
     var page_offset = 0
     for bi in range(batch_size):
         var np = ceildiv(num_kv_tokens, PAGE_SIZE)
@@ -341,7 +342,7 @@ def run_test_prefill_sparse_fp8[
     # matching the kernel's `scales_ptr[get_tma_row(raw) * scales_per_token]`.
     # -----------------------------------------------------------------------
     var kv_total = batch_size * num_kv_tokens * QK_DEPTH
-    var kv_bf16_host = alloc[BFloat16](kv_total)
+    var kv_bf16_host = unsafe_alloc[BFloat16](kv_total)
     randn[.bfloat16](kv_bf16_host, kv_total, mean=0.0, standard_deviation=0.5)
 
     # scale_block_size == 0 => no-scale mode (unit scale): FP8 latents are
@@ -355,11 +356,11 @@ def run_test_prefill_sparse_fp8[
         QK_DEPTH, eff_block
     )  # 1 for tensorwise/no-scale
     var total_phys_rows = total_pages * num_layers * PAGE_SIZE
-    var scales_host = alloc[Float32](total_phys_rows * scales_per_token)
+    var scales_host = unsafe_alloc[Float32](total_phys_rows * scales_per_token)
     for i in range(total_phys_rows * scales_per_token):
         scales_host[i] = Float32(1.0)
 
-    var blocks_fp8_host = alloc[Float8_e4m3fn](block_elems)
+    var blocks_fp8_host = unsafe_alloc[Float8_e4m3fn](block_elems)
     # Multi-layer: seed every layer with a distinct nonzero pattern so a
     # gather into the wrong layer (the num_layers>1 addressing bug) reads it
     # and decorrelates the output. Layer `layer_idx` is overwritten with the
@@ -374,7 +375,7 @@ def run_test_prefill_sparse_fp8[
             blocks_fp8_host[i] = Float8_e4m3fn(0)
 
     # dequantized BF16 values for host reference.
-    var kv_dequant_host = alloc[BFloat16](kv_total)
+    var kv_dequant_host = unsafe_alloc[BFloat16](kv_total)
 
     for bi in range(batch_size):
         for t in range(num_kv_tokens):
@@ -423,13 +424,13 @@ def run_test_prefill_sparse_fp8[
     # Q tensor: [total_q_tokens, num_heads, qk_depth]  (BF16)
     # -----------------------------------------------------------------------
     var q_elems = total_q_tokens * num_heads * QK_DEPTH
-    var q_host = alloc[BFloat16](q_elems)
+    var q_host = unsafe_alloc[BFloat16](q_elems)
     randn[.bfloat16](q_host, q_elems, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Per-query token selection (same coprime rotation).
     # -----------------------------------------------------------------------
-    var selected_tokens = alloc[Int](total_q_tokens * topk)
+    var selected_tokens = unsafe_alloc[Int](total_q_tokens * topk)
     var sel_mult = _coprime_multiplier(num_kv_tokens)
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -444,7 +445,7 @@ def run_test_prefill_sparse_fp8[
     # Sparse KV ref from DEQUANTIZED values.
     # -----------------------------------------------------------------------
     var kv_sparse_size = total_q_tokens * topk * QK_DEPTH
-    var kv_sparse = alloc[BFloat16](kv_sparse_size)
+    var kv_sparse = unsafe_alloc[BFloat16](kv_sparse_size)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
@@ -459,7 +460,7 @@ def run_test_prefill_sparse_fp8[
     # Host reference output.
     # -----------------------------------------------------------------------
     var out_elems = total_q_tokens * num_heads * V_DEPTH
-    var ref_host = alloc[BFloat16](out_elems)
+    var ref_host = unsafe_alloc[BFloat16](out_elems)
     host_reference[.bfloat16](
         q_host,
         kv_sparse,
@@ -480,7 +481,7 @@ def run_test_prefill_sparse_fp8[
     var blocks_device = ctx.enqueue_create_buffer[.float8_e4m3fn](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_fp8_host)
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
     for bi in range(batch_size):
         cache_lengths_host[bi] = UInt32(num_kv_tokens)
 
@@ -506,7 +507,7 @@ def run_test_prefill_sparse_fp8[
     # Build per-query gather4 indices.
     # -----------------------------------------------------------------------
     var total_indices = total_q_tokens * topk
-    var h_indices = alloc[UInt32](total_indices)
+    var h_indices = unsafe_alloc[UInt32](total_indices)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
@@ -536,7 +537,7 @@ def run_test_prefill_sparse_fp8[
     var reported_len = (
         valid_topk if topk_lengths_override < 0 else topk_lengths_override
     )
-    var h_topk_lengths = alloc[UInt32](total_q_tokens)
+    var h_topk_lengths = unsafe_alloc[UInt32](total_q_tokens)
     for i in range(total_q_tokens):
         h_topk_lengths[i] = UInt32(reported_len)
 
@@ -636,12 +637,12 @@ def run_test_prefill_sparse_fp8[
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
     var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
-        var sink_host = alloc[Float32](len(sink_values))
+        var sink_host = unsafe_alloc[Float32](len(sink_values))
         for i in range(len(sink_values)):
             sink_host[i] = sink_values[i]
         ctx.enqueue_copy(sink_device, sink_host)
         ctx.synchronize()
-        sink_host.free()
+        sink_host.unsafe_free()
         attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](
             sink_device.unsafe_ptr()
             .unsafe_bitcast[Float32]()
@@ -673,7 +674,7 @@ def run_test_prefill_sparse_fp8[
     # -----------------------------------------------------------------------
     # Verify output.
     # -----------------------------------------------------------------------
-    var out_host = alloc[BFloat16](out_elems)
+    var out_host = unsafe_alloc[BFloat16](out_elems)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -855,19 +856,19 @@ def run_test_prefill_sparse_fp8[
     _ = scales_device
     _ = sink_device
 
-    blocks_fp8_host.free()
-    kv_bf16_host.free()
-    kv_dequant_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    q_host.free()
-    kv_sparse.free()
-    selected_tokens.free()
-    ref_host.free()
-    out_host.free()
-    h_indices.free()
-    h_topk_lengths.free()
-    scales_host.free()
+    blocks_fp8_host.unsafe_free()
+    kv_bf16_host.unsafe_free()
+    kv_dequant_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    q_host.unsafe_free()
+    kv_sparse.unsafe_free()
+    selected_tokens.unsafe_free()
+    ref_host.unsafe_free()
+    out_host.unsafe_free()
+    h_indices.unsafe_free()
+    h_topk_lengths.unsafe_free()
+    scales_host.unsafe_free()
 
 
 # ===-----------------------------------------------------------------------===#

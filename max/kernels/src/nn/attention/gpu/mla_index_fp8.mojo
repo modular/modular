@@ -16,7 +16,8 @@ from std.bit import log2_floor, pop_count
 from std.builtin.device_passable import DeviceTypeEncoder
 from std.sys import get_defined_int, size_of
 from std.math import align_up, ceildiv, clamp
-from std.utils.numerics import neg_inf
+from std.utils.numerics import inf, neg_inf
+from std.utils.static_tuple import StaticTuple
 
 from layout import (
     DefaultEngine,
@@ -28,7 +29,13 @@ from layout.coord import Coord, Idx
 from layout.tile_layout import Layout as InternalLayout
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
 
-from max.gpu import WARP_SIZE, lane_id
+from max.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    block_idx,
+    lane_id,
+    thread_idx,
+)
 import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 
@@ -41,6 +48,7 @@ from kv_cache.types import (
 )
 
 from nn.index_fp8 import (
+    _AMD_DMA_PASS_BYTES,
     IndexSmemStorage,
     _has_gfx950_accelerator,
     fp8_index_kernel,
@@ -73,6 +81,7 @@ from nn.indexer_k_store import (
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
     RowBound,
+    RowBoundsPtr,
     TopkSink,
     _elems_per_16b,
     persistent_topk_block_split,
@@ -173,13 +182,186 @@ struct BlockSplitTopk(IndexerTopk):
         )
 
 
-struct BlockMaxScoreHook[block_size: Int](IndexerScoreHook):
-    """Writes each row's maximum score per block of `block_size` keys.
+@inline(.always)
+def _store_block_max[
+    dtype: DType, //, block_size: Int, lane_keys: Int
+](
+    block_max: MutPointer[Float32, MutUntrackedOrigin],
+    num_blocks: Int32,
+    value: Scalar[dtype],
+    row: Int32,
+    key: Int32,
+    key_live: Bool,
+    row_live: Bool,
+):
+    """Folds one score into its row's maximum for its block of keys.
 
-    Block `b` covers keys `[b * block_size, (b + 1) * block_size)`; its
-    maximum is over the keys below the scorer's bound for the row, `-inf` if
-    none is. The maxima are taken in the scorer's epilogue, on the stored
-    scores.
+    Parameters:
+        dtype: Score element type.
+        block_size: Keys per block, a power of two.
+        lane_keys: Consecutive keys a warp holds.
+
+    Args:
+        block_max: Per-block maxima, `[rows, num_blocks]` float32.
+        num_blocks: Blocks per row.
+        value: The score.
+        row: Row of `block_max` the score belongs to.
+        key: Key column.
+        key_live: Whether the key is below the scorer's bound.
+        row_live: Whether the row is in the window.
+    """
+    comptime assert (
+        1 << log2_floor(block_size) == block_size
+        and lane_keys % block_size == 0
+    ), "a block must be a power of two of keys within one warp's span"
+    # Keys past the scorer's bound count as `-inf`; a dead row stores nothing.
+    var best = value.cast[DType.float32]() if key_live else neg_inf[
+        DType.float32
+    ]()
+    best = warp.lane_group_max[num_lanes=block_size](best)
+    var blk = key // Int32(block_size)
+    store_global_pred(
+        block_max.unsafe_offset(Int(row) * Int(num_blocks) + Int(blk)),
+        best,
+        Int32(row_live and key % Int32(block_size) == 0 and blk < num_blocks),
+    )
+
+
+@inline(.always)
+def _block_kept_score[
+    dtype: DType, //, block_size: Int, lane_keys: Int
+](
+    keep: ImmPointer[UInt8, ImmUntrackedOrigin],
+    num_blocks: Int32,
+    value: Scalar[dtype],
+    row: Int32,
+    key: Int32,
+    row_live: Bool,
+) -> Scalar[dtype]:
+    """Returns `value` if its row keeps its block of keys, else `-inf`.
+
+    Parameters:
+        dtype: Score element type.
+        block_size: Keys per block.
+        lane_keys: Consecutive keys a warp holds.
+
+    Args:
+        keep: Nonzero for each kept block, `[rows, num_blocks]`.
+        num_blocks: Blocks per row; keys past the last block are dropped.
+        value: The score.
+        row: Row of `keep` the score belongs to.
+        key: Key column.
+        row_live: Whether the row is in the window.
+
+    Returns:
+        The score to store.
+    """
+    comptime assert (
+        lane_keys % block_size == 0
+    ), "a block must lie within one warp's span of keys"
+    var blk = key // Int32(block_size)
+    var in_range = row_live and blk < num_blocks
+    # A dead row or block reads entry 0 and is dropped regardless. The load is
+    # invariant and unbranched so it does not stall the epilogue.
+    var kept = (
+        keep.unsafe_offset(
+            Int(row) * Int(num_blocks) + Int(blk) if in_range else 0
+        )
+        .unsafe_address_space_cast[.GLOBAL]()
+        .unsafe_load[invariant=True]()
+    )
+    return value if in_range and kept != 0 else neg_inf[dtype]()
+
+
+# Threads per CTA of the kept-block selection's pre- and post-pass.
+comptime _KEEP_PASS_THREADS = 256
+
+
+def _pin_kept_block_kernel[
+    block_size: Int
+](
+    block_max: MutPointer[Float32, MutAnyOrigin],
+    positions: ImmPointer[Int32, ImmutAnyOrigin],
+    live: MutPointer[Int32, MutAnyOrigin],
+    num_blocks: Int32,
+    rows: Int32,
+    ratio: Int32,
+):
+    """Writes each row's live block count and pins its newest visible block.
+
+    A row's live blocks are those up to the block of its newest visible key,
+    `((position + 1) // ratio - 1) // block_size`; that block's maximum
+    becomes `+inf` so the selection always keeps it. One thread per row.
+    """
+    var row = Int(block_idx.x) * _KEEP_PASS_THREADS + Int(thread_idx.x)
+    if row >= Int(rows):
+        return
+    var n = Int(num_blocks)
+    # Floor division: a token before the first key pins nothing.
+    var pinned = ((Int(positions[row]) + 1) // Int(ratio) - 1) // block_size
+    live[row] = Int32(clamp(pinned + 1, 0, n))
+    if pinned >= 0 and pinned < n:
+        block_max[row * n + pinned] = inf[DType.float32]()
+
+
+def _drop_dead_kept_blocks_kernel(
+    block_max: ImmPointer[Float32, ImmutAnyOrigin],
+    ids: MutPointer[Int32, MutAnyOrigin],
+    num_blocks: Int32,
+    top_k: Int32,
+    slots: Int32,
+):
+    """Clears each selected id whose block has no visible key to `-1`.
+
+    One thread per id slot.
+    """
+    var i = Int(block_idx.x) * _KEEP_PASS_THREADS + Int(thread_idx.x)
+    if i >= Int(slots):
+        return
+    var b = Int(ids[i])
+    if b < 0:
+        return
+    var row = i // Int(top_k)
+    if not (block_max[row * Int(num_blocks) + b] > neg_inf[DType.float32]()):
+        ids[i] = -1
+
+
+# Threads per row expanding kept block ids into flags.
+comptime _EXPAND_THREADS = 256
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(_EXPAND_THREADS))
+)
+def _expand_kept_blocks_kernel(
+    ids: ImmPointer[Int32, ImmutAnyOrigin],
+    keep: MutPointer[UInt8, MutAnyOrigin],
+    num_blocks: Int32,
+    top_k: Int32,
+):
+    """Sets the flag of each kept block id, one row per CTA."""
+    var row = Int(block_idx.x)
+    var k = Int(top_k)
+    var n = Int(num_blocks)
+    for j in range(Int(thread_idx.x), k, _EXPAND_THREADS):
+        var b = Int(ids[row * k + j])
+        if b >= 0 and b < n:
+            keep[row * n + b] = 1
+
+
+struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
+    """Writes the ids of each row's `top_k` best blocks of `block_size` keys.
+
+    A block's value is the maximum score of its keys below the scorer's bound,
+    `-inf` if none is. Each row keeps the block of its newest visible key,
+    `((position + 1) // ratio - 1) // block_size`, then the best of the
+    blocks before it; `-inf` blocks are never kept. Which of the blocks tied
+    with the k-th best are kept is unspecified. A row's ids come in no
+    particular order, with `-1` in the slots it leaves unused.
+
+    The maxima of one score row-window at a time live in a scratch buffer of
+    `max_rows` rows, and the selection runs after each window is scored, so
+    no `[tokens, num_blocks]` buffer exists.
 
     Parameters:
         block_size: Keys per block, a power of two.
@@ -192,55 +374,136 @@ struct BlockMaxScoreHook[block_size: Int](IndexerScoreHook):
     """Always runs."""
 
     var block_max: MutPointer[Float32, MutUntrackedOrigin]
-    """Per-block maxima, `[tokens, num_blocks]` float32."""
+    """Window scratch, `[max_rows, num_blocks]` float32."""
     var num_blocks: Int32
     """Blocks per row."""
+    var max_rows: Int32
+    """Rows the scratch holds; caps the score window."""
+    var live: MutPointer[Int32, MutUntrackedOrigin]
+    """Window scratch, `[max_rows]` int32 live block counts."""
+    var ids: MutPointer[Int32, MutUntrackedOrigin]
+    """Kept block ids output, `[tokens, top_k]`."""
+    var top_k: Int32
+    """Blocks kept per row."""
+    var positions: ImmPointer[Int32, ImmUntrackedOrigin]
+    """Position of each query token, `[tokens]`."""
+    var ratio: Int32
+    """Tokens per key."""
 
     def __init__(
         out self,
         block_max: MutPointer[Float32, MutAnyOrigin],
         num_blocks: Int,
+        max_rows: Int,
+        live: MutPointer[Int32, MutAnyOrigin],
+        ids: MutPointer[Int32, MutAnyOrigin],
+        top_k: Int,
+        positions: ImmPointer[Int32, ImmutAnyOrigin],
+        ratio: Int,
     ):
         """Creates the hook.
 
         Args:
-            block_max: Per-block maxima output, `[tokens, num_blocks]`.
+            block_max: Window scratch, `[max_rows, num_blocks]` float32, 16 B
+                aligned.
             num_blocks: Blocks per row.
+            max_rows: Rows the scratch holds, at least 1.
+            live: Window scratch, `[max_rows]` int32.
+            ids: Kept block ids output, `[tokens, top_k]`.
+            top_k: Blocks kept per row, at most `PERSISTENT_TOPK_MAX_N`.
+            positions: Position of each query token, `[tokens]`.
+            ratio: Tokens per key.
         """
         self.block_max = block_max.unsafe_origin_cast[MutUntrackedOrigin]()
         self.num_blocks = Int32(num_blocks)
+        self.max_rows = Int32(max_rows)
+        self.live = live.unsafe_origin_cast[MutUntrackedOrigin]()
+        self.ids = ids.unsafe_origin_cast[MutUntrackedOrigin]()
+        self.top_k = Int32(top_k)
+        self.positions = positions.unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.ratio = Int32(ratio)
+
+    def window_rows(self) -> Int:
+        """Returns the rows the scratch holds.
+
+        Returns:
+            `max_rows`.
+        """
+        return Int(self.max_rows)
 
     def window(
         self, ctx: DeviceContext, first_row: Int, rows: Int
     ) raises -> Self:
         """Sets the window's maxima to `-inf` and returns its hook.
 
-        The scorer streams only the keys a row can see, so blocks past them
-        keep this `-inf`.
-
         Args:
             ctx: Device context.
             first_row: Query token of the window's row 0.
-            rows: Rows in the window.
+            rows: Rows in the window, at most `max_rows`.
 
         Returns:
-            The hook whose row 0 is query token `first_row`.
+            The hook; its scratch row 0 is query token `first_row`.
         """
-        var block_max = self.block_max.unsafe_offset(
-            first_row * Int(self.num_blocks)
-        )
         ctx.enqueue_memset(
             DeviceBuffer(
                 ctx,
-                block_max.as_unsafe_any_origin(),
+                self.block_max.as_unsafe_any_origin(),
                 rows * Int(self.num_blocks),
                 owning=False,
             ),
             neg_inf[DType.float32](),
         )
-        var hook = self
-        hook.block_max = block_max
-        return hook
+        return self
+
+    def after_window(
+        self, ctx: DeviceContext, first_row: Int, rows: Int
+    ) raises:
+        """Selects the window's kept blocks into rows of `ids`.
+
+        Args:
+            ctx: Device context.
+            first_row: Query token of the window's row 0.
+            rows: Rows in the window.
+        """
+        var k = Int(self.top_k)
+        if k == 0 or rows == 0:
+            return
+        if k > PERSISTENT_TOPK_MAX_N:
+            raise Error(
+                "BlockTopKScoreHook keeps at most ",
+                PERSISTENT_TOPK_MAX_N,
+                " blocks per row, got ",
+                k,
+            )
+        var ids = self.ids.unsafe_offset(first_row * k)
+        ctx.enqueue_function[_pin_kept_block_kernel[Self.block_size]](
+            self.block_max.as_unsafe_any_origin(),
+            self.positions.unsafe_offset(first_row).as_unsafe_any_origin(),
+            self.live.as_unsafe_any_origin(),
+            self.num_blocks,
+            Int32(rows),
+            self.ratio,
+            grid_dim=ceildiv(rows, _KEEP_PASS_THREADS),
+            block_dim=_KEEP_PASS_THREADS,
+        )
+        persistent_topk_block_split(
+            ctx,
+            self.block_max.as_imm().as_unsafe_any_origin(),
+            ids.as_unsafe_any_origin(),
+            Int(self.num_blocks),
+            k,
+            rows,
+            Optional(RowBoundsPtr(self.live.as_imm().as_unsafe_any_origin())),
+        )
+        ctx.enqueue_function[_drop_dead_kept_blocks_kernel](
+            self.block_max.as_imm().as_unsafe_any_origin(),
+            ids.as_unsafe_any_origin(),
+            self.num_blocks,
+            self.top_k,
+            Int32(rows * k),
+            grid_dim=ceildiv(rows * k, _KEEP_PASS_THREADS),
+            block_dim=_KEEP_PASS_THREADS,
+        )
 
     @inline(.always)
     def score[
@@ -269,27 +532,8 @@ struct BlockMaxScoreHook[block_size: Int](IndexerScoreHook):
         Returns:
             `value`.
         """
-        comptime assert (
-            1 << log2_floor(Self.block_size) == Self.block_size
-            and lane_keys % Self.block_size == 0
-        ), "a block must be a power of two of keys within one warp's span"
-        # Keys past the scorer's bound count as `-inf`; a dead row stores
-        # nothing.
-        var best = value.cast[DType.float32]() if key_live else neg_inf[
-            DType.float32
-        ]()
-        best = warp.lane_group_max[num_lanes=Self.block_size](best)
-        var block = key // Int32(Self.block_size)
-        store_global_pred(
-            self.block_max.unsafe_offset(
-                Int(row) * Int(self.num_blocks) + Int(block)
-            ),
-            best,
-            Int32(
-                row_live
-                and key % Int32(Self.block_size) == 0
-                and block < self.num_blocks
-            ),
+        _store_block_max[Self.block_size, lane_keys](
+            self.block_max, self.num_blocks, value, row, key, key_live, row_live
         )
         return value
 
@@ -303,17 +547,19 @@ struct BlockMaxScoreHook[block_size: Int](IndexerScoreHook):
         """Returns the type name for runtime diagnostics.
 
         Returns:
-            Always `"BlockMaxScoreHook"`.
+            Always `"BlockTopKScoreHook"`.
         """
-        return "BlockMaxScoreHook"
+        return "BlockTopKScoreHook"
 
 
-struct BlockMaskScoreHook[block_size: Int](IndexerScoreHook):
+struct BlockTopKMaskScoreHook[block_size: Int](IndexerScoreHook):
     """Drops every key whose block of `block_size` keys a row does not keep.
 
-    A dropped key scores `-inf`. The top-k still takes every key below a
-    row's bound when it has at most `top_k`, so each row must keep at least
-    `min(top_k, bound)` keys for no dropped key to be selected.
+    Each row names its kept blocks as `top_k` ids, `-1` for none; a dropped
+    key scores `-inf`. Before a score row-window is scored, its rows' ids
+    expand into a flag scratch of `max_rows` rows. The top-k still takes every
+    key below a row's bound when it has at most `top_k` of them, so each row
+    must keep at least that many keys for no dropped key to be selected.
 
     Parameters:
         block_size: Keys per block.
@@ -325,39 +571,92 @@ struct BlockMaskScoreHook[block_size: Int](IndexerScoreHook):
     comptime enabled = True
     """Always runs."""
 
-    var keep: ImmPointer[UInt8, ImmUntrackedOrigin]
-    """Nonzero for each kept block, `[tokens, num_blocks]`."""
+    var ids: ImmPointer[Int32, ImmUntrackedOrigin]
+    """Kept block ids, `[tokens, top_k]`."""
+    var top_k: Int32
+    """Ids per row."""
+    var keep: MutPointer[UInt8, MutUntrackedOrigin]
+    """Window flag scratch, `[max_rows, num_blocks]`."""
     var num_blocks: Int32
     """Blocks per row; keys past the last block are dropped."""
+    var max_rows: Int32
+    """Rows the scratch holds; caps the score window."""
 
     def __init__(
-        out self, keep: ImmPointer[UInt8, ImmutAnyOrigin], num_blocks: Int
+        out self,
+        ids: ImmPointer[Int32, ImmutAnyOrigin],
+        top_k: Int,
+        keep: MutPointer[UInt8, MutAnyOrigin],
+        num_blocks: Int,
+        max_rows: Int,
     ):
         """Creates the hook.
 
         Args:
-            keep: Nonzero for each kept block, `[tokens, num_blocks]`.
+            ids: Kept block ids, `[tokens, top_k]`.
+            top_k: Ids per row.
+            keep: Window flag scratch, `[max_rows, num_blocks]`.
             num_blocks: Blocks per row.
+            max_rows: Rows the scratch holds, at least 1.
         """
-        self.keep = keep.unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.ids = ids.unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.top_k = Int32(top_k)
+        self.keep = keep.unsafe_origin_cast[MutUntrackedOrigin]()
         self.num_blocks = Int32(num_blocks)
+        self.max_rows = Int32(max_rows)
+
+    def window_rows(self) -> Int:
+        """Returns the rows the scratch holds.
+
+        Returns:
+            `max_rows`.
+        """
+        return Int(self.max_rows)
 
     def window(
         self, ctx: DeviceContext, first_row: Int, rows: Int
     ) raises -> Self:
-        """Returns the hook whose row 0 is query token `first_row`.
+        """Expands the window's kept ids into flags and returns its hook.
+
+        Args:
+            ctx: Device context.
+            first_row: Query token of the window's row 0.
+            rows: Rows in the window, at most `max_rows`.
+
+        Returns:
+            The hook; its scratch row 0 is query token `first_row`.
+        """
+        ctx.enqueue_memset(
+            DeviceBuffer(
+                ctx,
+                self.keep.as_unsafe_any_origin(),
+                rows * Int(self.num_blocks),
+                owning=False,
+            ),
+            UInt8(0),
+        )
+        var ids = self.ids.unsafe_offset(first_row * Int(self.top_k))
+        ctx.enqueue_function[_expand_kept_blocks_kernel](
+            ids.as_unsafe_any_origin(),
+            self.keep.as_unsafe_any_origin(),
+            self.num_blocks,
+            self.top_k,
+            grid_dim=rows,
+            block_dim=_EXPAND_THREADS,
+        )
+        return self
+
+    def after_window(
+        self, ctx: DeviceContext, first_row: Int, rows: Int
+    ) raises:
+        """Does nothing; the flags are rebuilt before each window.
 
         Args:
             ctx: Device context.
             first_row: Query token of the window's row 0.
             rows: Rows in the window.
-
-        Returns:
-            The window's hook.
         """
-        var hook = self
-        hook.keep = self.keep.unsafe_offset(first_row * Int(self.num_blocks))
-        return hook
+        pass
 
     @inline(.always)
     def score[
@@ -386,24 +685,9 @@ struct BlockMaskScoreHook[block_size: Int](IndexerScoreHook):
         Returns:
             The score to store.
         """
-        comptime assert (
-            lane_keys % Self.block_size == 0
-        ), "a block must lie within one warp's span of keys"
-        var block = key // Int32(Self.block_size)
-        var in_range = row_live and block < self.num_blocks
-        # A dead row or block reads entry 0 and is dropped regardless. The
-        # load is invariant and unbranched so it does not stall the epilogue.
-        var kept = (
-            (
-                self.keep.unsafe_offset(
-                    Int(row) * Int(self.num_blocks)
-                    + Int(block) if in_range else 0
-                )
-            )
-            .unsafe_address_space_cast[.GLOBAL]()
-            .unsafe_load[invariant=True]()
+        return _block_kept_score[Self.block_size, lane_keys](
+            self.keep.as_imm(), self.num_blocks, value, row, key, row_live
         )
-        return value if in_range and kept != 0 else neg_inf[dtype]()
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -415,9 +699,9 @@ struct BlockMaskScoreHook[block_size: Int](IndexerScoreHook):
         """Returns the type name for runtime diagnostics.
 
         Returns:
-            Always `"BlockMaskScoreHook"`.
+            Always `"BlockTopKMaskScoreHook"`.
         """
-        return "BlockMaskScoreHook"
+        return "BlockTopKMaskScoreHook"
 
 
 struct _IndexerSink[R: SparseIndexRemap, write_logical: Bool](TopkSink):
@@ -1226,8 +1510,9 @@ def mla_indexer_ragged_mxfp4_paged[
     """Computes the MXFP4 indexer's top-k key positions with a score hook.
 
     The hook sees each score in the scorer's epilogue as it is stored for the
-    top-k, so it can read the scores (`BlockMaxScoreHook`) or drop keys from
-    the selection (`BlockMaskScoreHook`).
+    top-k, so it can read the scores or drop keys from the selection. The op
+    scores at most `score_hook.window_rows()` rows per window and calls the
+    hook's `after_window` once each window is scored.
 
     Parameters:
         oi_layout: Layout of the top-k index output.
@@ -1378,6 +1663,7 @@ def _mla_indexer_paged_impl[
         _has_gfx950_accelerator()
         and num_heads % 32 == 0
         and depth % 64 == 0
+        and _AMD_DMA_PASS_BYTES % depth == 0
         and dtype == .float8_e4m3fn
         and type_of(k_operand).dtype == .float8_e4m3fn
     )
@@ -1401,6 +1687,12 @@ def _mla_indexer_paged_impl[
         cache_row_width == depth or cache_row_width * kpool == depth
     ), "the indexer cache row must hold a whole key or one token's share of it"
     comptime pool_row_tokens = 1 if cache_row_width == depth else kpool
+    # The gfx950 scorer DMAs a wave's 32 keys from one page at a fixed
+    # `head_size` row stride, which holds only for a single-head cache.
+    comptime assert not use_amd_scorer or CacheType.kv_params.num_heads == 1, (
+        "the gfx950 scorer reads a page's key rows at a head_size stride, so"
+        " the indexer cache must hold one head"
+    )
 
     # The scalar fallback is f32-only, so `scores_dtype` is
     # a preference, not a contract: no caller can observe which arm ran, and an
@@ -1453,10 +1745,10 @@ def _mla_indexer_paged_impl[
     # and every stage after the scorer is row-parallel over a base pointer and a
     # count, so they slice by pointer arithmetic alone.
     #
-    # Only the SM100 scorers take a window, so the scalar fallback stays one
+    # The SM100 and gfx950 scorers take a window; the scalar fallback stays one
     # whole-batch chunk.
     var rows_per_chunk = total_seq_len
-    comptime if use_sm100_scorer:
+    comptime if use_sm100_scorer or use_amd_scorer:
         var row_bytes = max_num_keys * size_of[scores_dt]()
         # Largest window the budget allows, remainder to a short final chunk.
         # Spreading the rows evenly instead -- same chunk count, no runt --
@@ -1466,7 +1758,9 @@ def _mla_indexer_paged_impl[
         # almost nothing, while an even split turns that nearly-free tail into a
         # full-price one.
         rows_per_chunk = clamp(
-            scores_budget_bytes // row_bytes, 1, total_seq_len
+            min(scores_budget_bytes // row_bytes, score_hook.window_rows()),
+            1,
+            total_seq_len,
         )
 
     var scores_buf = ctx.enqueue_create_buffer[scores_dt](
@@ -1509,6 +1803,7 @@ def _mla_indexer_paged_impl[
                 max_new_tokens,
                 max_num_keys,
                 ctx,
+                chunk_begin,
             )
         elif use_sm100_scorer:
             # The split `(block, row_in_block)` descriptor: folding the block
@@ -1554,6 +1849,7 @@ def _mla_indexer_paged_impl[
                     chunk_begin,
                     score_hook.window(ctx, chunk_begin, chunk_rows),
                 )
+                score_hook.after_window(ctx, chunk_begin, chunk_rows)
             else:
                 fp8_index_score_sm100[
                     dtype,

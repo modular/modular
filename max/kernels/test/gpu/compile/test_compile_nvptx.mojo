@@ -97,11 +97,10 @@ def test_compile_function_with_path_func() raises:
     # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
-        var out_file_name = "my_file_2.ptx"
+        comptime out_file_name = "my_file_2.ptx"
         comptime out_dir = Path("/tmp")
 
-        @__parameter
-        def dummy_fn() capturing -> Path:
+        def dummy_fn() -> Path:
             return out_dir / out_file_name
 
         _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=dummy_fn]()

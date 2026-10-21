@@ -285,13 +285,13 @@ struct SharedMemBarrier(TrivialRegisterPassable):
             o: Origin of self.
         """
 
-        comptime asm = """
-        .reg .pred p;
-        .reg .b32 remAddr32;
-        setp.eq.u32 p, $2, 1;
-        @p mapa.shared::cluster.u32  remAddr32, $0, $1;
-        @p mbarrier.arrive.expect_tx.shared::cluster.b64  _, [remAddr32], $3;
-        """
+        comptime asm = """{
+            .reg .pred p;
+            .reg .b32 remAddr32;
+            setp.eq.u32 p, $2, 1;
+            @p mapa.shared::cluster.u32  remAddr32, $0, $1;
+            @p mbarrier.arrive.expect_tx.shared::cluster.b64  _, [remAddr32], $3;
+        }"""
 
         inlined_assembly[asm, NoneType, constraints="r,r,r,r"](
             Int32(Int(self.unsafe_ptr())), cta_id, pred, bytes
@@ -2332,10 +2332,12 @@ struct TMATensorTile[
         comptime descriptor_bytes = 128
 
         comptime for src_idx in range(descriptor_bytes // simd_width):
-            var src_vec = (src_desc).load[
+            var src_vec = (src_desc).unsafe_load[
                 width=simd_width, alignment=src_align
             ](src_idx * simd_width)
-            dst_desc.store[alignment=dst_align](src_idx * simd_width, src_vec)
+            dst_desc.unsafe_store[alignment=dst_align](
+                src_idx * simd_width, src_vec
+            )
 
     @inline(.always)
     def replace_tensormap_global_address_in_gmem[

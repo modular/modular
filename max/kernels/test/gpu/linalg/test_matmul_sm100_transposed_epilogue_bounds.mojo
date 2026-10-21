@@ -29,6 +29,7 @@ from std.sys import size_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from internal_utils import assert_almost_equal
 from std.random import rand, seed
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -85,10 +86,10 @@ def test_transposed_epilogue_row_straddle[
     var b_size = N * K if transpose_b else K * N
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[c_type]](c_size)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
@@ -170,10 +171,10 @@ def test_transposed_epilogue_row_straddle[
 
     print("=== TEST PASSED ===")
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_host_ref_ptr.unsafe_free()
     _ = a_device^
     _ = b_device^
     _ = c_device^

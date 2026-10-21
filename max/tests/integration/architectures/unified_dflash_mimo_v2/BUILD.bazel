@@ -104,7 +104,7 @@ precompiled_mefs(
         "fused_k7_accept_one_extra",
         "fused_k7_sampled",
     ],
-    # Built only as the postsubmit GPU tests' data.
+    # Built only as the manual GPU tests' data.
     tags = ["manual"],
     target_compatible_with = ["//:b200_gpu"],
 )
@@ -140,6 +140,7 @@ modular_py_test(
         ":mimo_dflash_harness",
         "//max/python/max/driver",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2",
         "//max/python/max/pipelines/lib",
@@ -164,11 +165,10 @@ modular_py_test(
         "//:b200_gpu",
         "//:has_multi_gpu",
     ],
-    # Postsubmit: an expensive B200 test that presubmit would rerun on any
-    # change to its dependencies.
+    # Manual: MiMo GPU model checks time out on shared CI workers.
     tags = [
         "gpu",
-        "postsubmit",
+        "manual",
     ],
     deps = [
         ":mimo_dflash_harness",
@@ -196,11 +196,10 @@ modular_py_test(
         "//:b200_gpu",
         "//:has_multi_gpu",
     ],
-    # Postsubmit: an expensive B200 test that presubmit would rerun on any
-    # change to its dependencies.
+    # Manual: MiMo GPU model checks time out on shared CI workers.
     tags = [
         "gpu",
-        "postsubmit",
+        "manual",
     ],
     deps = [
         ":mimo_dflash_harness",

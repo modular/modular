@@ -13,10 +13,10 @@
 
 """Tests for where clause (constraints) documentation generation."""
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s | FileCheck %s
+# RUN: %mojo-docs-isolated %s | FileCheck %s
 
 # Ensure no warnings are emitted alongside the JSON output.
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG --implicit-check-not=warning
+# RUN: %mojo-docs-isolated %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG --implicit-check-not=warning
 # CHECK-DIAG-NOT: warning
 
 

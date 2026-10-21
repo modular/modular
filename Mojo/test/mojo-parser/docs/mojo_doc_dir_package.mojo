@@ -15,7 +15,7 @@
 # __init__.mojo), so their API surface must show up in generated docs too.
 # `dir` here is a plain directory inside the package.
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %S/inputs/test_dir_package | FileCheck %s
+# RUN: %mojo-docs-isolated %S/inputs/test_dir_package | FileCheck %s
 
 # CHECK:  "kind": "package"
 # CHECK:  "modules":

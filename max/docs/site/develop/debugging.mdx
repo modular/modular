@@ -70,9 +70,9 @@ Environment variable and config file options use kebab-case names
 <!-- rumdl-disable MD013 -->
 The Python API provides the most direct way to enable debugging options. Most
 options live on
-[`InferenceSession.debug`](/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.debug)
+[`InferenceSession.debug`](/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.debug)
 except for `source_tracebacks`, which lives on
-[`Graph.debug`](/api/python/generated/max.graph.Graph#max.graph.Graph.debug) because it's
+[`Graph.debug`](/api/python/generated/max.graph.Graph/#max.graph.Graph.debug) because it's
 consumed during graph construction.
 <!-- rumdl-enable MD013 -->
 
@@ -120,7 +120,7 @@ debug option names. For options that take a value, use `=`.
 export MODULAR_DEBUG=nan-check,device-sync-mode,source-tracebacks,assert-level=safe
 ```
 
-See the [Debugging section](/environment-variables#debugging) of the
+See the [Debugging section](/environment-variables/#debugging) of the
 environment variables reference for every option you can pass to
 `MODULAR_DEBUG`.
 

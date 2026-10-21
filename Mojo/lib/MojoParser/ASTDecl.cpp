@@ -20,6 +20,7 @@
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/lib/MojoParser/Traits.h"
 #include "MojoUtils.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -30,10 +31,8 @@ using namespace LIT;
 static FnTypeGeneratorType getToolingSignature(ASTDecl *decl) {
   if (!decl)
     return nullptr;
-  if (auto defDecl = dyn_cast<DefASTDecl>(decl))
-    return defDecl->getOp().getFuncTypeGenerator();
-  if (auto typeValue = decl->getIfTypeValue())
-    return dyn_cast_or_null<FnTypeGeneratorType>(typeValue);
+  if (auto functionDecl = dyn_cast<FnSignatureASTDecl>(decl))
+    return functionDecl->getSignature();
   return nullptr;
 }
 
@@ -54,11 +53,42 @@ ASTType ASTDecl::getToolingType() {
     return varDecl->getOp().getType();
   if (auto *defDecl = dyn_cast<DefASTDecl>(this))
     return defDecl->getOp().getFullSignature();
+  if (auto *functionTypeDecl = dyn_cast<FunctionTypeASTDecl>(this))
+    return functionTypeDecl->getSignature();
   if (auto *structDecl = dyn_cast<StructASTDecl>(this))
     return StructASTDecl::computeSelfType(structDecl->getOp());
   if (auto *traitDecl = dyn_cast<TraitASTDecl>(this))
     return TraitASTDecl::computeSelfType(traitDecl->getOp());
   return {};
+}
+
+/// Returns this argument's ABI convention. Asserts if this is not an
+/// argument declaration.
+ArgConvention ASTDecl::getArgConvention() const {
+  ssize_t argNumber = getArgNumber();
+  assert(argNumber >= 0 && "argument convention requested for non-argument");
+  auto *parent = cast<FnSignatureASTDecl>(getParentDecl());
+  FnTypeGeneratorType signature = parent->getSignature();
+  assert(signature && "function argument must have a resolved signature");
+  assert(static_cast<size_t>(argNumber) < signature.getNumArguments() &&
+         "argument number is out of range");
+  return signature.getArgConventions()[argNumber];
+}
+
+/// Returns whether this argument appears in the user-visible signature.  This
+/// filters out implicitly declared error slots and result slots, but keeps
+/// user-declared "out" argument slots.
+bool ASTDecl::isUserArgument() const {
+  ArgConvention convention = getArgConvention();
+  if (convention == ArgConvention::ByRefError)
+    return false;
+  // Result slots are considered user arguments if they were explicitly
+  // declared.
+  if (convention != ArgConvention::ByRefResult)
+    return true;
+
+  auto *parent = cast<FnSignatureASTDecl>(getParentDecl());
+  return parent->getSignature().getArgName(getArgNumber()) != "__result__";
 }
 
 std::optional<StringRef> ASTDecl::getName() {
@@ -82,12 +112,20 @@ std::optional<StringRef> ASTDecl::getName() {
   if (auto name = getFromOp(getIfOperation()))
     return name;
 
-  if (auto irDecl = dyn_cast<IRASTDecl>(this);
-      irDecl && irDecl->getArgNumber() >= 0) {
+  if (getArgNumber() >= 0) {
     FnTypeGeneratorType signature = getToolingSignature(getParentDecl());
-    size_t argNumber = static_cast<size_t>(irDecl->getArgNumber());
+    size_t argNumber = static_cast<size_t>(getArgNumber());
     if (signature && argNumber < signature.getNumArguments())
       return signature.getArgName(argNumber);
+  }
+
+  if (getParamNumber() >= 0) {
+    auto *parentDecl = dyn_cast<DefASTDecl>(getParentDecl());
+    size_t paramNumber = static_cast<size_t>(getParamNumber());
+    if (parentDecl && paramNumber < parentDecl->getOp().getParams().size())
+      return demangleParameterName(
+          parentDecl->getOp().getParams()[paramNumber].getName(),
+          /*forUser=*/true);
   }
 
   if (auto irDecl = dyn_cast<IRASTDecl>(this);
@@ -141,7 +179,85 @@ IRASTDecl::IRASTDecl(SharedState &shared, CValue value, llvm::SMLoc loc,
                      LexerCursor endCursor, ssize_t indentation)
     : ASTDecl(Kind::IR, shared, loc, parentDecl, cursor, endCursor,
               indentation),
-      value(std::move(value)), argOrParamNumber(-1) {}
+      value(std::move(value)), argOrParamNumber(-1),
+      isParameter(this->value.getIfPValue()) {}
+
+void DefASTDecl::createIRSignatureDecls(DeclResolver &resolver) {
+  assert(getParamDecls().empty() && getArgDecls().empty() &&
+         "signature declarations already created");
+  FnOp fnOp = getOp();
+  FnTypeGeneratorType signature = fnOp.getFuncTypeGenerator();
+
+  SmallVector<ASTDecl *> newParamDecls;
+  ArrayRef<ParamDeclAttr> params =
+      fnOp.getParams().drop_back(signature.getNumImplicitOriginDecls());
+  for (size_t paramIndex : llvm::seq(params.size())) {
+    auto &paramDecl =
+        resolver.addFullyResolvedDecl(CValue(), StringAttr(), getLoc(), this);
+    paramDecl.setArgOrParamNumber(static_cast<ssize_t>(paramIndex),
+                                  /*newIsParameter=*/true);
+    newParamDecls.push_back(&paramDecl);
+  }
+  setParamDecls(newParamDecls);
+
+  SmallVector<ASTDecl *> newArgDecls;
+  for (size_t argIndex : llvm::seq(signature.getNumArguments())) {
+    auto convention = signature.getArgConventions()[argIndex];
+    auto argName = signature.getArgListAttrs().getPogs()[argIndex].getName();
+    if (convention == ArgConvention::ByRefError ||
+        (convention == ArgConvention::ByRefResult && argName == "__result__"))
+      continue;
+    auto &argDecl =
+        resolver.addFullyResolvedDecl(CValue(), StringAttr(), getLoc(), this);
+    argDecl.setArgOrParamNumber(static_cast<ssize_t>(argIndex),
+                                /*newIsParameter=*/false);
+    newArgDecls.push_back(&argDecl);
+  }
+  setArgDecls(newArgDecls);
+}
+
+FnSignatureASTDecl::FnSignatureASTDecl(Kind kind, SharedState &shared,
+                                       llvm::SMLoc loc, ASTDecl *parentDecl,
+                                       LexerCursor cursor,
+                                       LexerCursor endCursor,
+                                       ssize_t indentation)
+    : ASTDecl(kind, shared, loc, parentDecl, cursor, endCursor, indentation) {}
+
+void FnSignatureASTDecl::setParamDecls(ArrayRef<ASTDecl *> decls) {
+  paramDecls = shared.persistentAllocator.internElements(decls);
+}
+
+void FnSignatureASTDecl::setArgDecls(ArrayRef<ASTDecl *> decls) {
+  argDecls = shared.persistentAllocator.internElements(decls);
+}
+
+/// Return a list of user-declared argument declarations that we'd want to
+/// show in document generation, for example.  This filters out implicitly
+/// declared error slots and result slots, but keeps user-declared "out"
+/// argument slots.
+SmallVector<ASTDecl *> FnSignatureASTDecl::getUserArgDecls() const {
+  SmallVector<ASTDecl *> result;
+  for (ASTDecl *decl : getArgDecls())
+    if (decl->isUserArgument())
+      result.push_back(decl);
+  return result;
+}
+
+FunctionTypeASTDecl::FunctionTypeASTDecl(SharedState &shared, llvm::SMLoc loc,
+                                         ASTDecl *parentDecl,
+                                         LexerCursor cursor,
+                                         LexerCursor endCursor,
+                                         ssize_t indentation)
+    : FnSignatureASTDecl(Kind::FnSignature, shared, loc, parentDecl, cursor,
+                         endCursor, indentation) {}
+
+void FunctionTypeASTDecl::setSignature(FnTypeGeneratorType newSignature,
+                                       ArrayRef<ASTDecl *> params,
+                                       ArrayRef<ASTDecl *> args) {
+  signature = newSignature;
+  setParamDecls(params);
+  setArgDecls(args);
+}
 
 OtherOpASTDecl::OtherOpASTDecl(SharedState &shared, Operation &op,
                                llvm::SMLoc loc, ASTDecl *parentDecl,
@@ -209,8 +325,9 @@ PackageASTDecl::PackageASTDecl(SharedState &shared, PackageOp packageOp,
 DefASTDecl::DefASTDecl(SharedState &shared, FnOp fnOp, llvm::SMLoc loc,
                        ASTDecl *parentDecl, LexerCursor cursor,
                        LexerCursor endCursor, ssize_t indentation)
-    : OpASTDecl(Kind::Def, shared, *fnOp.getOperation(), loc, parentDecl,
-                cursor, endCursor, indentation) {}
+    : FnSignatureASTDecl(Kind::Def, shared, loc, parentDecl, cursor, endCursor,
+                         indentation),
+      operation(fnOp) {}
 
 TypeScopeASTDecl::TypeScopeASTDecl(Kind kind, SharedState &shared,
                                    Operation &op, llvm::SMLoc loc,
@@ -435,6 +552,20 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
 TypeScopeASTDecl *DefASTDecl::tryGetMethodParentDecl() const {
   // Don't return non-null for nested functions or module-level functions.
   return dyn_cast_if_present<TypeScopeASTDecl>(getParentDecl());
+}
+
+void StructASTDecl::setParamDecls(ArrayRef<ASTDecl *> decls) {
+  paramDecls = shared.persistentAllocator.internElements(decls);
+}
+
+ASTDecl *StructASTDecl::getParamByName(StringAttr name) const {
+  for (ASTDecl *paramDecl : paramDecls) {
+    auto paramValue = paramDecl->getIfIRValue().getIfPValue();
+    if (paramValue && isa<ParamDeclRefAttr>(paramValue.get()) &&
+        cast<ParamDeclRefAttr>(paramValue.get()).getName() == name)
+      return paramDecl;
+  }
+  return nullptr;
 }
 
 /// Collect the struct/trait declaration and all visible extension declarations

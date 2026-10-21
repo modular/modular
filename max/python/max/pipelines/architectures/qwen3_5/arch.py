@@ -39,6 +39,7 @@ qwen3_5_arch = SupportedArchitecture(
     pipeline_model=Qwen3_5Model,
     tokenizer=Qwen3_5Tokenizer,
     context_type=Qwen3VLTextAndVisionContext,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3_5_state_dict,
     },

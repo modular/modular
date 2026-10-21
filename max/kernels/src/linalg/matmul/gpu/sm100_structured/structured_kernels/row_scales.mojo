@@ -203,6 +203,25 @@ struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
             `(lane % 4) * 2 + 8 * r + j`, or the expert scale everywhere
             when `RowScalesT` is disabled.
         """
+        return self.pairs_at[repeats](lane, stage_row)
+
+    @inline(.always)
+    def pairs_at[
+        repeats: Int
+    ](self, lane: UInt32, stage_row: Int) -> SIMD[DType.float32, 2 * repeats]:
+        """Returns `pairs[repeats, stage_row](lane)` for a stage row known
+        only at run time.
+
+        Parameters:
+            repeats: Number of 8-column repeats per fragment.
+
+        Args:
+            lane: Lane index within the warp.
+            stage_row: Tile row of the stage's fragment column 0.
+
+        Returns:
+            The factors, laid out as `pairs` returns them.
+        """
         comptime if not Self.RowScalesT.Enabled:
             return SIMD[.float32, 2 * repeats](self.scale)
         else:
@@ -210,12 +229,11 @@ struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
             var lane_col = (lane % 4) * 2
             comptime for r in range(repeats):
                 # An 8-row group never straddles two lanes' slots.
-                comptime group_row = stage_row + 8 * r
-                comptime slot = group_row // WARP_SIZE
+                var slot, group_lane = divmod(stage_row + 8 * r, WARP_SIZE)
                 comptime for j in range(2):
                     result[2 * r + j] = warp.shuffle_idx(
                         self.values[slot],
-                        UInt32(group_row % WARP_SIZE + j) + lane_col,
+                        UInt32(group_lane + j) + lane_col,
                     )
             return result
 

@@ -198,6 +198,11 @@ def register_all_models() -> None:
         _LazyArch(
             "Glm5NextForConditionalGeneration", ".glm5_next", "glm5_next_arch"
         ),
+        _LazyArch(
+            "Glm5NextForConditionalGeneration_ModuleV3",
+            ".glm5_next_modulev3",
+            "glm5_next_modulev3_arch",
+        ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
         _LazyArch(
             "GlmMoeDsaForCausalLM_ModuleV3",

@@ -3002,15 +3002,17 @@ def mha_single_batch[
             var sink_logit_log2 = (
                 sink_weights.value()[Int(head_idx)].cast[accum_type]() * log2e
             )
-            rowmax.store(
+            rowmax.unsafe_store(
                 i,
                 SIMD[accum_type, 2](sink_logit_log2),
             )
             # exp(sink_val-sink_val) = exp(0) = 1
-            rowsum.store(i, SIMD[accum_type, 2](1))
+            rowsum.unsafe_store(i, SIMD[accum_type, 2](1))
         else:
-            rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
-            rowsum.store(i, SIMD[accum_type, 2](0))
+            rowmax.unsafe_store(
+                i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]())
+            )
+            rowsum.unsafe_store(i, SIMD[accum_type, 2](0))
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
@@ -3679,20 +3681,20 @@ def mha_single_batch_pipelined[
             var sink_logit_log2 = (
                 sink_weights.value()[Int(head_idx)].cast[accum_type]() * log2e
             )
-            rowmax.store(
+            rowmax.unsafe_store(
                 i,
                 SIMD[accum_type, p_frag_simdwidth](sink_logit_log2),
             )
             # exp(sink_val-sink_val) = exp(0) = 1
-            rowsum.store(i, SIMD[accum_type, p_frag_simdwidth](1))
+            rowsum.unsafe_store(i, SIMD[accum_type, p_frag_simdwidth](1))
         else:
-            rowmax.store(
+            rowmax.unsafe_store(
                 i,
                 SIMD[accum_type, p_frag_simdwidth](
                     min_or_neg_inf[accum_type]()
                 ),
             )
-            rowsum.store(i, SIMD[accum_type, p_frag_simdwidth](0))
+            rowsum.unsafe_store(i, SIMD[accum_type, p_frag_simdwidth](0))
 
     # Shared memory for P = Q * K^t
     # Only use BN/BK tiles. Setting circular so that the prefetch in matmul
@@ -6198,10 +6200,10 @@ def _bmm0_bs[
         def accum_fn[
             width: Int
         ](offset: Int) {q, y, _num_heads, _depth, k_ptr, mut}:
-            var q_val = q.load[
+            var q_val = q.unsafe_load[
                 width=width, alignment=align_of[SIMD[q_type, width]]()
             ](y * _num_heads * _depth + offset)
-            var k_val = k_ptr.load[
+            var k_val = k_ptr.unsafe_load[
                 width=width, alignment=align_of[SIMD[k_type, width]]()
             ](offset)
             var qk_val = q_val.cast[p_type]() * k_val.cast[p_type]()

@@ -91,27 +91,21 @@ def _run_rms_norm[
     var gamma_view = TileTensor(gamma_ptr, row_major(Coord(K)))
 
     @inline(.always)
-    @__copy_capture(in_view)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def input_fn[width: Int](coords: Coord) {var in_view} -> SIMD[dtype, width]:
         return in_view.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(out_view)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_view} -> None:
         out_view.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,  # rank
-        input_fn,
-        output_fn,
         epsilon=epsilon,
         weight_offset=Float32(0),
         multiply_before_cast=True,
-    ](Coord(shape), gamma_view, ctx)
+    ](input_fn, output_fn, Coord(shape), gamma_view, ctx)
 
 
 # ---------------------------------------------------------------------------

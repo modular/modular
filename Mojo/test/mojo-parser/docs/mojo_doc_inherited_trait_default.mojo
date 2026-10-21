@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s | FileCheck %s
+# RUN: %mojo-docs-isolated %s | FileCheck %s
 
 # A refining trait does not materialize the defaults it inherits, so a default
 # is documented only on the trait that declares it.

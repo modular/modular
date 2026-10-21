@@ -496,7 +496,7 @@ def run_slot_indexed_gpu[
                     )
                     conv_sum = conv_sum + input_value * w
 
-                conv_output_ref_heap.unsafe_ptr().store(
+                conv_output_ref_heap.unsafe_ptr().unsafe_store(
                     UInt32(seq_start + t) * conv_output_seqlen_stride
                     + UInt32(c) * conv_output_channel_stride,
                     Scalar[work_dtype](conv_sum),
@@ -532,7 +532,7 @@ def run_slot_indexed_gpu[
                         var old_slot = KERNEL_SIZE_MINUS_ONE + src
                         if old_slot >= 0:
                             v = old_window[old_slot]
-                    pool_ref_heap.unsafe_ptr().store(
+                    pool_ref_heap.unsafe_ptr().unsafe_store(
                         UInt32(slot) * conv_state_pool_stride
                         + UInt32(c) * conv_state_channel_stride
                         + UInt32(j) * conv_state_window_stride,

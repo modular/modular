@@ -266,16 +266,18 @@ void ParameterCollector::collectUsesFromAttrImpl(
   bool hasNestedCtxEvalExpr = false;
   size_t nestedRequiredDepth = 0;
 
-  // Recursively check for any nested types/attributes, e.g. the elements of an
-  // array attribute.
   attr.walkImmediateSubElements(
       [&](Attribute attr) {
+        size_t innerRequiredDepth = 0;
         collectUsesFromAttr(attr, uses, hasNestedCtxEvalExpr,
-                            nestedRequiredDepth);
+                            innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       },
       [&](Type type) {
+        size_t innerRequiredDepth = 0;
         collectUsesFromType(type, uses, hasNestedCtxEvalExpr,
-                            nestedRequiredDepth);
+                            innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       });
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
@@ -336,12 +338,14 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // function type, types like !kgen.scalar<ty> etc.
   type.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr,
-                            nestedRequiredDepth);
+        size_t innerRequiredDepth = 0;
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr, innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       },
       [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr,
-                            nestedRequiredDepth);
+        size_t innerRequiredDepth = 0;
+        collectUsesFromType(type, uses, hasNestedConstExpr, innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       });
 
   // If the type had parameter uses or constant expressions, don't consider it

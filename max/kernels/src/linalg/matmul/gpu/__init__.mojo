@@ -488,7 +488,7 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -514,7 +514,7 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -961,7 +961,7 @@ def _matmul_gpu_impl[
             # decode reaches this line on every matmul.
             if (
                 apple_gemv_small_batch_supported(m, k)
-                and ctx.compute_capability() == 5
+                and ctx.compute_capability() >= 5
             ):
                 logger.info("Executing: Apple M5 small-batch GEMV kernel")
                 enqueue_apple_gemv[
@@ -982,7 +982,7 @@ def _matmul_gpu_impl[
             m > 1
             and n >= 64
             and k >= 16
-            and ctx.compute_capability() == 5
+            and ctx.compute_capability() >= 5
             and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
         ):
             logger.info("Executing: Apple M5 simdgroup-tiled MATMUL kernel")
@@ -1016,7 +1016,7 @@ def _matmul_gpu_impl[
                 and k >= 16
                 and k % 16 == 0
                 and (
-                    ctx.compute_capability() != 5
+                    ctx.compute_capability() < 5
                     or (f32_in and not _apple_m5_allow_lossy_f32_matmul())
                 )
             ):
@@ -1841,7 +1841,7 @@ def _matmul_gpu_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=epilogue_fn,
+                    host_args=(epilogue_fn,),
                     grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
                     block_dim=(NUM_WARPS * WARP_SIZE,),
                 )
@@ -1873,7 +1873,7 @@ def _matmul_gpu_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=compute_fn,
+                    host_args=(compute_fn,),
                     grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
                     block_dim=(NUM_WARPS * WARP_SIZE,),
                 )
@@ -2165,7 +2165,7 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=grid,
                 block_dim=kernel_config.num_threads(),
             )
@@ -2183,7 +2183,7 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=grid,
                 block_dim=kernel_config.num_threads(),
             )
@@ -2229,7 +2229,7 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=matmul_config.grid_dim(M, N),
                 block_dim=matmul_config.block_dim(),
             )
@@ -2247,7 +2247,7 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=matmul_config.grid_dim(M, N),
                 block_dim=matmul_config.block_dim(),
             )
@@ -2460,7 +2460,7 @@ def multistage_gemm[
             c,
             a,
             b,
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
@@ -2540,7 +2540,7 @@ def multistage_gemm[
             c,
             a,
             b,
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
@@ -2818,7 +2818,7 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
@@ -2844,7 +2844,7 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),

@@ -626,6 +626,15 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         return Self._is_arch["apple-m5"]()
 
     @staticmethod
+    def is_apple_m6() -> Bool:
+        """Check if the target is an Apple M6 system.
+
+        Returns:
+            True if the host system is an Apple M6, False otherwise.
+        """
+        return Self._is_arch["apple-m6"]()
+
+    @staticmethod
     def is_apple_silicon() -> Bool:
         """Check if the host system is an Apple Silicon with AMX support.
 
@@ -639,6 +648,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             or Self.is_apple_m3()
             or Self.is_apple_m4()
             or Self.is_apple_m5()
+            or Self.is_apple_m6()
         )
 
     @staticmethod
@@ -1014,6 +1024,21 @@ def is_apple_m5() -> Bool:
         True if the target is Apple M5 and False otherwise.
     """
     return is_apple_gpu() and CompilationTarget.is_apple_m5()
+
+
+@inline(.nodebug)
+def is_apple_m6() -> Bool:
+    """Returns True if the target is an Apple M6 GPU and False otherwise.
+
+    Returns:
+        True if the target is Apple M6 and False otherwise.
+    """
+    return is_apple_gpu() and CompilationTarget.is_apple_m6()
+
+
+@inline(.nodebug)
+def _is_apple_m5_or_newer() -> Bool:
+    return is_apple_m5() or is_apple_m6()
 
 
 @inline(.nodebug)

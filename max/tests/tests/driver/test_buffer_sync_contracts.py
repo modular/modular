@@ -141,6 +141,48 @@ def test_to_numpy_observes_a_pending_write(gpu: Accelerator) -> None:
     np.testing.assert_array_equal(value, filled)
 
 
+@pytest.mark.parametrize("usage", [Usage.DEFAULT, Usage.STAGING])
+@pytest.mark.parametrize("sliced", [False, True])
+def test_to_numpy_observes_a_pending_memset(
+    gpu: Accelerator, usage: Usage, sliced: bool
+) -> None:
+    """A read of a buffer or slice waits for its gated memset.
+
+    The device read is ordered by its copy; the tracked staging read, which
+    is a zero-copy host view, by the memset's write stamp.
+    """
+    buf = Buffer.zeros((2, 4), DType.uint8, device=gpu, usage=usage)
+    gpu.synchronize()
+    target = buf[1, :] if sliced else buf
+
+    completed_while_gated, value = _run_gated_read(
+        gpu,
+        enqueue_gated_write=lambda: target.memset(0xA5),
+        read_under_test=lambda: target.to_numpy().copy(),
+    )
+
+    assert not completed_while_gated, (
+        "to_numpy() returned before the gated memset completed"
+    )
+    assert isinstance(value, np.ndarray)
+    np.testing.assert_array_equal(value, 0xA5)
+
+
+def test_memset_does_not_block_the_host(gpu: Accelerator) -> None:
+    """``memset`` enqueues the fill and returns while its stream is gated."""
+    buf = Buffer.zeros((4,), DType.uint8, device=gpu)
+    gpu.synchronize()
+
+    completed_while_gated, _ = _run_gated_read(
+        gpu,
+        enqueue_gated_write=lambda: None,
+        read_under_test=lambda: buf.memset(0xA5),
+    )
+
+    assert completed_while_gated, "memset() blocked on the gated stream"
+    np.testing.assert_array_equal(buf.to_numpy(), 0xA5)
+
+
 def test_item_synchronizes(gpu: Accelerator) -> None:
     """``item()`` observes previously enqueued work.
 

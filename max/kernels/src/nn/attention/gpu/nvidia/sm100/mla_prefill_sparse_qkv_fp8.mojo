@@ -132,13 +132,23 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLAPrefillSparseCommon,
     MLASparseConfig,
 )
+from nn.attention.gpu.nvidia.sm100.mla_decode_utils import ld_shared_v4_u32
+from nn.attention.gpu.nvidia.sm100.nvfp4_kv_dequant import (
+    NVFP4_MLA_ROPE_DIM,
+    mla_kv_is_nvfp4,
+    nvfp4_dequant_group,
+    nvfp4_mla_row_bytes,
+    nvfp4_mla_scale_row_bytes,
+)
 
 
 comptime FP8_TYPE = DType.float8_e4m3fn
 comptime SW64 = TensorMapSwizzle.SWIZZLE_64B
 
 
-struct MLASparseSharedMemoryQKVFP8[config: MLASparseConfig]:
+struct MLASparseSharedMemoryQKVFP8[
+    config: MLASparseConfig, nvfp4_kv: Bool = False
+]:
     """Native-FP8 SMEM layout: FP8 Q/KV/P + FP8-agnostic softmax scratch.
 
     Unlike `MLASparseSharedMemoryFP8`, there is no BF16 K/V region and no FP8
@@ -252,7 +262,12 @@ struct MLASparseSharedMemoryQKVFP8[config: MLASparseConfig]:
     # producer arrives the leader's cross-CTA barrier (init cta_group) after its
     # own local TMA lands.
     comptime CG2_MBARS = Self.num_mbars if Self.is_cg2 else 1
-    var k_ready: Array[SharedMemBarrier, Self.CG2_MBARS]
+    # An NVFP4 cache also hands K from the dequant warpgroup to the MMA warp
+    # through `k_ready` at cg1.
+    comptime K_READY_MBARS = Self.num_mbars if (
+        Self.is_cg2 or Self.nvfp4_kv
+    ) else 1
+    var k_ready: Array[SharedMemBarrier, Self.K_READY_MBARS]
     var v_ready: Array[SharedMemBarrier, Self.CG2_MBARS]
     var v_tma_done: Array[SharedMemBarrier, Self.CG2_MBARS]
 
@@ -302,7 +317,47 @@ struct MLAPrefillSparseQKVFP8[
     comptime V_SMEM_COLS_PER_CTA = Self.V_BMN_PER_ATOM * Self.NUM_SV_ATOMS
     comptime O_ATOM_PHYS_COLS = Self.SV_ATOM_MMA_N // 2  # 128
 
-    comptime SMemType = MLASparseSharedMemoryQKVFP8[Self.config]
+    # Packed NVFP4 cache (sm_100): the gather lands the packed rows (e2m1
+    # latent, then the FP8 rope bytes) in the upper part of the K/V stage they
+    # are about to fill, and the producer warpgroup expands the latent in place
+    # and copies the rope bytes into the FP8 SW64 tile the MMA reads. The FP8
+    # path is unchanged. The scales are paged apart from the values, so an
+    # NVFP4 index row (`indices_stride` entries) holds `indices_stride / 2` value
+    # rows followed by that many scale-pool rows, resolved by the indexer.
+    comptime is_nvfp4 = mla_kv_is_nvfp4[Self.KVLUTType]()
+    comptime dual_k_producers = Self.is_nvfp4 and not Self.is_cg2
+    comptime SMemType = MLASparseSharedMemoryQKVFP8[Self.config, Self.is_nvfp4]
+    # One scale group is 16 elements = 8 packed bytes.
+    comptime NVFP4_GROUP = 16
+    comptime NVFP4_ROW_BYTES = nvfp4_mla_row_bytes[Self.config.input_qk_depth]()
+    comptime NVFP4_SF_ROW_BYTES = nvfp4_mla_scale_row_bytes[
+        Self.config.input_qk_depth
+    ]()
+    # K is expanded in 16 B packed chunks (two scale groups, 32 elements).
+    comptime NVFP4_K_QCHUNKS = Self.NVFP4_SF_ROW_BYTES // 2
+    comptime NVFP4_K_ITEMS = Self.B_TOPK_PER_CTA * Self.NVFP4_K_QCHUNKS // WARPGROUP_SIZE
+    # The latent's width, and where its packed bytes end and the FP8 rope
+    # bytes start within a packed row.
+    comptime NVFP4_LATENT_DIM = Self.config.input_qk_depth - NVFP4_MLA_ROPE_DIM
+    comptime NVFP4_ROPE_ROW_OFF = Self.NVFP4_LATENT_DIM // 2
+    # 16 B chunks of FP8 rope bytes per row, and the ones a thread copies.
+    comptime NVFP4_K_ROPE_CHUNKS = NVFP4_MLA_ROPE_DIM // 16
+    comptime NVFP4_K_ROPE_ITEMS = (
+        Self.B_TOPK_PER_CTA * Self.NVFP4_K_ROPE_CHUNKS // WARPGROUP_SIZE
+    )
+    # K: the packed rows land right below the end of the used (non-tail) part
+    # of the stage, so the NoPE-tail zero fill stays intact.
+    comptime NVFP4_K_ZONE_OFF = Self.B_TOPK_PER_CTA * (
+        Self.config.input_qk_depth - Self.NVFP4_ROW_BYTES
+    )
+    # V (cg2): this CTA's slice of both atoms, `V_BMN_PER_ATOM` columns each.
+    comptime NVFP4_V_ATOM_BYTES = Self.V_BMN_PER_ATOM // 2
+    comptime NVFP4_V_ATOM_GROUPS = Self.V_BMN_PER_ATOM // Self.NVFP4_GROUP
+    comptime NVFP4_V_ZONE_OFF = Self.SMemType.V_STAGE_SIZE // 2
+    # Scale bytes of one V row slice, as u32 words.
+    comptime NVFP4_V_SF_WORDS = (
+        Self.NUM_SV_ATOMS * Self.NVFP4_V_ATOM_GROUPS // 4
+    )
 
     # ---- TMA tile shapes ----
     comptime q_tile_shape = coord[
@@ -313,11 +368,33 @@ struct MLAPrefillSparseQKVFP8[
     ]()
     comptime Q_SWIZZLE_COLS = Self.q_desc_shape.element_types[2].static_value
 
+    # The gather descriptor reads the cache as int64 words when it is packed
+    # NVFP4 (one full 320-byte row per box, no swizzle), else as k-major SW64
+    # FP8 col-groups.
+    comptime KV_TMA_DTYPE = DType.int64 if Self.is_nvfp4 else FP8_TYPE
+    comptime KV_GATHER_SWIZZLE = (
+        TensorMapSwizzle.SWIZZLE_NONE if Self.is_nvfp4 else SW64
+    )
+    comptime KV_GATHER_TILE_WIDTH = (
+        Self.NVFP4_ROW_BYTES
+        // 8 if Self.is_nvfp4 else Self.config.input_qk_depth
+    )
     comptime kv_gather_box = _gather4_box_width[
-        FP8_TYPE, Self.config.input_qk_depth, SW64
+        Self.KV_TMA_DTYPE, Self.KV_GATHER_TILE_WIDTH, Self.KV_GATHER_SWIZZLE
     ]()
     comptime kv_tile_shape = coord[Self.B_TOPK, Self.kv_gather_box]
     comptime kv_desc_shape = coord[1, Self.kv_gather_box]
+    # cg2 NVFP4 V gathers only this CTA's slice of each atom, so it needs a
+    # narrower box over the same cache rows.
+    comptime V_GATHER_TILE_WIDTH = (
+        Self.NVFP4_V_ATOM_BYTES
+        // 8 if (Self.is_nvfp4 and Self.is_cg2) else Self.KV_GATHER_TILE_WIDTH
+    )
+    comptime v_gather_box = _gather4_box_width[
+        Self.KV_TMA_DTYPE, Self.V_GATHER_TILE_WIDTH, Self.KV_GATHER_SWIZZLE
+    ]()
+    comptime v_tile_shape = coord[Self.B_TOPK, Self.v_gather_box]
+    comptime v_desc_shape = coord[1, Self.v_gather_box]
 
     # O TMA store: bf16 SWIZZLE_128B (unchanged from the BF16-KV kernel).
     comptime o_tile_shape = coord[Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth]
@@ -440,7 +517,7 @@ struct MLAPrefillSparseQKVFP8[
     @staticmethod
     def _load_kv_fp8(
         kv_tma_op: TMATensorTile[
-            FP8_TYPE, Self.kv_tile_shape, Self.kv_desc_shape
+            Self.KV_TMA_DTYPE, Self.kv_tile_shape, Self.kv_desc_shape
         ],
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
@@ -451,6 +528,7 @@ struct MLAPrefillSparseQKVFP8[
         indices_base: UInt32,
         local_warp_idx: UInt32,
         cta_id: UInt32,
+        bar_slot: Int32 = 0,
     ):
         # Map this CTA's B_TOPK_PER_CTA sparse indices for the block to physical
         # gather rows.  At cg2 each CTA owns the [cta_id*B_TOPK_PER_CTA, +...)
@@ -477,10 +555,15 @@ struct MLAPrefillSparseQKVFP8[
         # Arm the transaction before flushing d_indices so the expect is
         # globally visible before any TMA arrival can satisfy the mbarrier.
         if local_warp_idx == 0 and elect_one_sync():
-            kv_ready[].expect_bytes(
-                Int32(Self.B_TOPK_PER_CTA * Self.config.input_qk_depth)
-            )
-        named_barrier[Int32(WARPGROUP_SIZE)](3)
+            comptime if Self.is_nvfp4:
+                kv_ready[].expect_bytes(
+                    Int32(Self.B_TOPK_PER_CTA * Self.NVFP4_ROW_BYTES)
+                )
+            else:
+                kv_ready[].expect_bytes(
+                    Int32(Self.B_TOPK_PER_CTA * Self.config.input_qk_depth)
+                )
+        named_barrier[Int32(WARPGROUP_SIZE)](3 + bar_slot)
 
         # Issue the gather4 col-group placement in parallel across WG1's 4
         # warps (the single-thread `async_copy_gather4_tile` serializes all
@@ -489,28 +572,60 @@ struct MLAPrefillSparseQKVFP8[
         # SW64 offset `cg*BN*box_w + c*4*box_w` the k-major descriptor reads.
         comptime BN = Self.B_TOPK_PER_CTA
         comptime box_w = Self.kv_gather_box
-        comptime NUM_CG = Self.config.input_qk_depth // box_w
         comptime NUM_CHUNKS = BN // 4
         comptime NUM_PROD_WARPS = WARPGROUP_SIZE // WARP_SIZE  # 4
         comptime CHUNKS_PER_WARP = NUM_CHUNKS // NUM_PROD_WARPS
-        if elect_one_sync():
-            comptime for lc in range(CHUNKS_PER_WARP):
-                var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(lc)
-                var base_i = c * UInt32(4)
-                var r0 = d_indices_buf[base_i]
-                var r1 = d_indices_buf[base_i + 1]
-                var r2 = d_indices_buf[base_i + 2]
-                var r3 = d_indices_buf[base_i + 3]
-                comptime for cg in range(NUM_CG):
+        comptime if Self.is_nvfp4:
+            # One gather4 per 4-row chunk: whole packed rows, linear, into the
+            # staging zone (128 B-aligned: each chunk is 4 * 320 B).
+            var zone = (
+                kv_smem_buf.unsafe_bitcast[UInt8]().unsafe_offset(
+                    Self.NVFP4_K_ZONE_OFF
+                )
+            ).unsafe_bitcast[Scalar[Self.KV_TMA_DTYPE]]()
+            if elect_one_sync():
+                comptime for lc in range(CHUNKS_PER_WARP):
+                    var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(
+                        lc
+                    )
+                    var base_i = c * UInt32(4)
                     var dst = TileTensor(
-                        kv_smem_buf.unsafe_offset(
-                            Int(c) * 4 * box_w
-                        ).unsafe_offset(cg * BN * box_w),
+                        zone.unsafe_offset(Int(c) * 4 * box_w),
                         row_major[4, box_w](),
                     )
                     kv_tma_op.async_copy_gather4[cta_group=1](
-                        dst, kv_ready[], Int32(cg * box_w), r0, r1, r2, r3
+                        dst,
+                        kv_ready[],
+                        Int32(0),
+                        d_indices_buf[base_i],
+                        d_indices_buf[base_i + 1],
+                        d_indices_buf[base_i + 2],
+                        d_indices_buf[base_i + 3],
                     )
+        else:
+            comptime NUM_CG = Self.config.input_qk_depth // box_w
+            if elect_one_sync():
+                comptime for lc in range(CHUNKS_PER_WARP):
+                    var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(
+                        lc
+                    )
+                    var base_i = c * UInt32(4)
+                    var r0 = d_indices_buf[base_i]
+                    var r1 = d_indices_buf[base_i + 1]
+                    var r2 = d_indices_buf[base_i + 2]
+                    var r3 = d_indices_buf[base_i + 3]
+                    comptime for cg in range(NUM_CG):
+                        var dst = TileTensor(
+                            kv_smem_buf.unsafe_bitcast[
+                                Scalar[Self.KV_TMA_DTYPE]
+                            ]()
+                            .unsafe_offset(Int(c) * 4 * box_w)
+                            .unsafe_offset(cg * BN * box_w),
+                            row_major[4, box_w](),
+                        )
+                        kv_tma_op.async_copy_gather4[cta_group=1](
+                            dst, kv_ready[], Int32(cg * box_w), r0, r1, r2, r3
+                        )
 
     # ------------------------------------------------------------------
     # V producer (WG2, cg2 only): gather ALL B_TOPK keys, this CTA's v_depth
@@ -524,7 +639,7 @@ struct MLAPrefillSparseQKVFP8[
     @staticmethod
     def _load_v_fp8(
         kv_tma_op: TMATensorTile[
-            FP8_TYPE, Self.kv_tile_shape, Self.kv_desc_shape
+            Self.KV_TMA_DTYPE, Self.v_tile_shape, Self.v_desc_shape
         ],
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
@@ -553,9 +668,14 @@ struct MLAPrefillSparseQKVFP8[
                 d_indices_buf[Int(tid) * 4 + j] = rows[j]
 
         if local_warp_idx == 0 and elect_one_sync():
-            v_tma_done[].expect_bytes(
-                Int32(Self.B_TOPK * Self.V_SMEM_COLS_PER_CTA)
-            )
+            comptime if Self.is_nvfp4:
+                v_tma_done[].expect_bytes(
+                    Int32(Self.B_TOPK * Self.V_SMEM_COLS_PER_CTA // 2)
+                )
+            else:
+                v_tma_done[].expect_bytes(
+                    Int32(Self.B_TOPK * Self.V_SMEM_COLS_PER_CTA)
+                )
         named_barrier[Int32(WARPGROUP_SIZE)](4)
 
         # Placement mirrors the K gather (k-major SW64: col-group `v_cg` at
@@ -570,50 +690,366 @@ struct MLAPrefillSparseQKVFP8[
         # depth slice of atom `v_cg // CG_PER_ATOM_LOCAL`: global atom start
         # `atom*CG_PER_ATOM_GLOBAL` + this CTA's within-atom offset
         # `cta_id*CG_PER_ATOM_LOCAL` + `j`.
-        comptime BN = Self.B_TOPK
-        comptime box_w = Self.kv_gather_box
-        comptime CG_PER_ATOM_GLOBAL = Self.SV_ATOM_MMA_N // box_w
-        comptime CG_PER_ATOM_LOCAL = Self.V_BMN_PER_ATOM // box_w
-        comptime NUM_V_CG = Self.V_SMEM_COLS_PER_CTA // box_w
-        comptime NUM_CHUNKS = BN // 4
-        comptime NUM_PROD_WARPS = WARPGROUP_SIZE // WARP_SIZE  # 4
-        comptime CHUNKS_PER_WARP = NUM_CHUNKS // NUM_PROD_WARPS
-        comptime CHUNKS_PER_KHALF = Self.PV_BK // 4
-        if elect_one_sync():
-            comptime for lc in range(CHUNKS_PER_WARP):
-                var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(lc)
-                var khalf = c / UInt32(CHUNKS_PER_KHALF)
-                var local_c = c % UInt32(CHUNKS_PER_KHALF)
-                var base_i = c * UInt32(4)
-                var r0 = d_indices_buf[base_i]
-                var r1 = d_indices_buf[base_i + 1]
-                var r2 = d_indices_buf[base_i + 2]
-                var r3 = d_indices_buf[base_i + 3]
-                comptime for v_cg in range(NUM_V_CG):
-                    comptime atom = v_cg // CG_PER_ATOM_LOCAL
-                    comptime j = v_cg % CG_PER_ATOM_LOCAL
-                    var src_cg = (
-                        UInt32(atom * CG_PER_ATOM_GLOBAL)
-                        + cta_id * UInt32(CG_PER_ATOM_LOCAL)
-                        + UInt32(j)
+        comptime if Self.is_nvfp4:
+            # This CTA's `V_BMN_PER_ATOM`-column slice of each atom, as packed
+            # bytes: one gather4 per 4-row chunk and atom, landing linearly
+            # (atom-major, 64 B rows) in the staging zone.
+            comptime box_w = Self.v_gather_box
+            comptime NUM_CHUNKS = Self.B_TOPK // 4
+            comptime CHUNKS_PER_WARP = NUM_CHUNKS // (
+                WARPGROUP_SIZE // WARP_SIZE
+            )
+            comptime ATOM_WORDS = Self.B_TOPK * box_w
+            var zone = (
+                v_smem_buf.unsafe_bitcast[UInt8]().unsafe_offset(
+                    Self.NVFP4_V_ZONE_OFF
+                )
+            ).unsafe_bitcast[Scalar[Self.KV_TMA_DTYPE]]()
+            if elect_one_sync():
+                comptime for lc in range(CHUNKS_PER_WARP):
+                    var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(
+                        lc
                     )
-                    var dst = TileTensor(
-                        v_smem_buf.unsafe_offset(
-                            Int(khalf) * Self.V_KHALF_STRIDE
+                    var base_i = c * UInt32(4)
+                    var r0 = d_indices_buf[base_i]
+                    var r1 = d_indices_buf[base_i + 1]
+                    var r2 = d_indices_buf[base_i + 2]
+                    var r3 = d_indices_buf[base_i + 3]
+                    comptime for atom in range(Self.NUM_SV_ATOMS):
+                        var dst = TileTensor(
+                            zone.unsafe_offset(
+                                atom * ATOM_WORDS + Int(c) * 4 * box_w
+                            ),
+                            row_major[4, box_w](),
                         )
-                        .unsafe_offset(Int(local_c) * 4 * box_w)
-                        .unsafe_offset(v_cg * Self.PV_BK * box_w),
-                        row_major[4, box_w](),
+                        kv_tma_op.async_copy_gather4[cta_group=1](
+                            dst,
+                            v_tma_done[],
+                            Int32(
+                                atom * (Self.SV_ATOM_MMA_N // 16)
+                                + Int(cta_id) * box_w
+                            ),
+                            r0,
+                            r1,
+                            r2,
+                            r3,
+                        )
+        else:
+            comptime BN = Self.B_TOPK
+            comptime box_w = Self.kv_gather_box
+            comptime CG_PER_ATOM_GLOBAL = Self.SV_ATOM_MMA_N // box_w
+            comptime CG_PER_ATOM_LOCAL = Self.V_BMN_PER_ATOM // box_w
+            comptime NUM_V_CG = Self.V_SMEM_COLS_PER_CTA // box_w
+            comptime NUM_CHUNKS = BN // 4
+            comptime NUM_PROD_WARPS = WARPGROUP_SIZE // WARP_SIZE  # 4
+            comptime CHUNKS_PER_WARP = NUM_CHUNKS // NUM_PROD_WARPS
+            comptime CHUNKS_PER_KHALF = Self.PV_BK // 4
+            if elect_one_sync():
+                comptime for lc in range(CHUNKS_PER_WARP):
+                    var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(
+                        lc
                     )
-                    kv_tma_op.async_copy_gather4[cta_group=1](
-                        dst,
-                        v_tma_done[],
-                        Int32(src_cg * UInt32(box_w)),
-                        r0,
-                        r1,
-                        r2,
-                        r3,
-                    )
+                    var khalf = c / UInt32(CHUNKS_PER_KHALF)
+                    var local_c = c % UInt32(CHUNKS_PER_KHALF)
+                    var base_i = c * UInt32(4)
+                    var r0 = d_indices_buf[base_i]
+                    var r1 = d_indices_buf[base_i + 1]
+                    var r2 = d_indices_buf[base_i + 2]
+                    var r3 = d_indices_buf[base_i + 3]
+                    comptime for v_cg in range(NUM_V_CG):
+                        comptime atom = v_cg // CG_PER_ATOM_LOCAL
+                        comptime j = v_cg % CG_PER_ATOM_LOCAL
+                        var src_cg = (
+                            UInt32(atom * CG_PER_ATOM_GLOBAL)
+                            + cta_id * UInt32(CG_PER_ATOM_LOCAL)
+                            + UInt32(j)
+                        )
+                        var dst = TileTensor(
+                            v_smem_buf.unsafe_bitcast[
+                                Scalar[Self.KV_TMA_DTYPE]
+                            ]()
+                            .unsafe_offset(Int(khalf) * Self.V_KHALF_STRIDE)
+                            .unsafe_offset(Int(local_c) * 4 * box_w)
+                            .unsafe_offset(v_cg * Self.PV_BK * box_w),
+                            row_major[4, box_w](),
+                        )
+                        kv_tma_op.async_copy_gather4[cta_group=1](
+                            dst,
+                            v_tma_done[],
+                            Int32(src_cg * UInt32(box_w)),
+                            r0,
+                            r1,
+                            r2,
+                            r3,
+                        )
+
+    # ------------------------------------------------------------------
+    # NVFP4 dequant (producer warpgroups).  The packed rows sit linearly in the
+    # staging zone of the stage they expand into; every thread first pulls its
+    # share into registers, so the in-place expansion below cannot overwrite
+    # bytes another thread still needs.  Each FP8 byte is `e2m1 * sf` rounded
+    # once to e4m3, so the MMA sees exactly what an FP8 cache holding the
+    # dequantized values would give it.  An invalid row gets zero scales (its
+    # TMA-zeroed packed bytes already dequantize to zero).
+    # ------------------------------------------------------------------
+    @inline(.always)
+    @staticmethod
+    def _live_scale_row(
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
+        scale_rows_base: UInt32,
+        slot: UInt32,
+        top_k_length: UInt32,
+    ) -> Int:
+        """The scale-pool row of top-k slot `slot`, or -1 if it is unused.
+
+        The indexer wrote it beside the value rows: an NVFP4 cache pages its
+        scales apart, so it is not derivable from the value row. `slot` past
+        `top_k_length` is a tile's padding and may lie past the scale rows.
+        """
+        if slot >= top_k_length:
+            return -1
+        var row = indices.load[width=1](Coord(scale_rows_base + slot)).cast[
+            DType.int32
+        ]()
+        return Int(row[0])
+
+    @inline(.always)
+    @staticmethod
+    def _k_scale_rows(
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
+        scale_rows_base: UInt32,
+        slot0: UInt32,
+        top_k_length: UInt32,
+    ) -> SIMD[DType.int32, 2]:
+        """The scale-pool rows of the K rows this thread expands.
+
+        A thread expands chunks of two rows (see `_dequant_k_nvfp4`).
+        Needs only the indices, so a producer issues it ahead of the tile's
+        wait and hides its latency.
+        """
+        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        var row0 = 16 * (tid // WARP_SIZE) + (tid % WARP_SIZE) // 4
+        var rows = SIMD[DType.int32, 2](-1)
+        comptime for m in range(2):
+            rows[m] = Int32(
+                Self._live_scale_row(
+                    indices,
+                    scale_rows_base,
+                    slot0 + UInt32(row0 + 8 * m),
+                    top_k_length,
+                )
+            )
+        return rows
+
+    @inline(.always)
+    @staticmethod
+    def _load_k_scales(
+        live_rows: SIMD[DType.int32, 2],
+        kv_lut: Self.KVLUTType,
+    ) -> SIMD[DType.uint16, 8]:
+        """Loads the scales of the chunks this thread expands.
+
+        Entry `i` holds the two scale bytes (groups `2 * qc` and `2 * qc + 1`)
+        of chunk `qc` of the row item `i` expands, as `_dequant_k_nvfp4` maps
+        its items.
+        """
+        var qc0 = (Int(thread_idx.x) % WARPGROUP_SIZE) % 4
+        var src = kv_lut.scales_raw_ptr().unsafe_bitcast[UInt16]()
+        var sf = SIMD[DType.uint16, 8](0)
+        comptime for m in range(2):
+            var live_row = Int(live_rows[m])
+            if live_row >= 0:
+                comptime for qg in range(4):
+                    sf[4 * m + qg] = src.unsafe_offset(
+                        live_row * (Self.NVFP4_SF_ROW_BYTES // 2) + 4 * qg + qc0
+                    ).unsafe_load[width=1, alignment=2]()[0]
+        return sf
+
+    @inline(.always)
+    @staticmethod
+    def _dequant_k_nvfp4(
+        kv_smem_buf: MutPointer[Scalar[FP8_TYPE], address_space=.SHARED, ...],
+        sf: SIMD[DType.uint16, 8],
+        bar_slot: Int32 = 0,
+    ):
+        """Expands this CTA's packed K tile in place into the SW64 FP8 tile.
+
+        Shared memory serves a 16 B access one quarter-warp (eight lanes) at
+        a time, so the lanes of a quarter are laid out to hit eight different
+        16 B bank slots on both sides. A quarter covers two adjacent rows by
+        four consecutive packed chunks (32 elements, two scale groups each).
+        The rows differ in parity and the chunks in the swizzled destination
+        column, which takes all four (row parity, chunk) slots once the lanes
+        alternate which of a chunk's two groups they store first. The FP8
+        rope bytes are copied unchanged, a quarter covering two rows by the
+        four 16 B chunks of a row.
+        """
+        comptime assert Self.B_TOPK_PER_CTA == 64 and Self.NVFP4_K_QCHUNKS == 16
+        comptime P_SW = make_ldmatrix_swizzle[
+            FP8_TYPE, row_size=64, log2_vector_width=4
+        ]()
+        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        var w = tid // WARP_SIZE
+        var l = tid % WARP_SIZE
+        var j = l % 8
+        var zone = kv_smem_buf.unsafe_bitcast[UInt8]().unsafe_offset(
+            Self.NVFP4_K_ZONE_OFF
+        )
+        # Eight rows per warp step, twice per warp; lane `j` of the quarter
+        # takes row `row0` (j // 4) and chunk `4 * qg + j % 4` of step item.
+        var row0 = 16 * w + l // 4
+        var src = zone.unsafe_offset(row0 * Self.NVFP4_ROW_BYTES + (j % 4) * 16)
+        var pk = StaticTuple[SIMD[DType.uint32, 4], Self.NVFP4_K_ITEMS]()
+        comptime for i in range(Self.NVFP4_K_ITEMS):
+            pk[i] = ld_shared_v4_u32(
+                src,
+                (i // 4) * 8 * Self.NVFP4_ROW_BYTES + (i % 4) * 4 * 16,
+            )
+        var rope_row0 = 8 * w + l // 4
+        var rope_src = zone.unsafe_offset(
+            rope_row0 * Self.NVFP4_ROW_BYTES
+            + Self.NVFP4_ROPE_ROW_OFF
+            + (j % 4) * 16
+        )
+        var rope = StaticTuple[SIMD[DType.uint32, 4], Self.NVFP4_K_ROPE_ITEMS]()
+        comptime for r in range(Self.NVFP4_K_ROPE_ITEMS):
+            rope[r] = ld_shared_v4_u32(rope_src, r * 32 * Self.NVFP4_ROW_BYTES)
+        named_barrier[Int32(WARPGROUP_SIZE)](5 + bar_slot)
+
+        # A lane stores the group `g ^ swap` of its chunk at step `g`. The
+        # swizzle acts on offset bits [7, 9), which neither the row-octet
+        # (512 B) nor the column-group terms touch.
+        var swap = (j // 2) % 2 == 1
+        var cg = (j % 4) // 2
+        var d0 = P_SW(row0 * 64 + (j % 2) * 32 + (16 if swap else 0))
+        var d1 = P_SW(row0 * 64 + (j % 2) * 32 + (0 if swap else 16))
+        comptime for i in range(Self.NVFP4_K_ITEMS):
+            comptime oct = i // 4
+            comptime qg = i % 4
+            var q = pk[i]
+            var sfi = sf[i]
+            if swap:
+                q = SIMD[DType.uint32, 4](q[2], q[3], q[0], q[1])
+                sfi = (sfi >> 8) | (sfi << 8)
+            var base = (cg + 2 * qg) * (Self.B_TOPK_PER_CTA * 64) + oct * 512
+            comptime for g in range(2):
+                var scale = bitcast[FP8_TYPE, 1](
+                    SIMD[DType.uint8, 1](UInt8((sfi >> UInt16(8 * g)) & 0xFF))
+                ).cast[DType.float32]()[0]
+                var words = SIMD[DType.uint32, 2](q[2 * g], q[2 * g + 1])
+                st_shared_v4_b32(
+                    kv_smem_buf,
+                    base + (d1 if g == 1 else d0),
+                    nvfp4_dequant_group(bitcast[DType.uint8, 8](words), scale),
+                )
+        # The rope chunk `rc` of a row lands at col `NVFP4_LATENT_DIM + 16 * rc`.
+        var rope_dst = P_SW(rope_row0 * 64 + (j % 4) * 16)
+        comptime ROPE_CG = Self.NVFP4_LATENT_DIM // 64
+        comptime for r in range(Self.NVFP4_K_ROPE_ITEMS):
+            st_shared_v4_b32(
+                kv_smem_buf,
+                ROPE_CG * (Self.B_TOPK_PER_CTA * 64) + rope_dst + r * 32 * 64,
+                rope[r],
+            )
+        fence_async_view_proxy()
+        named_barrier[Int32(WARPGROUP_SIZE)](5 + bar_slot)
+
+    @inline(.always)
+    @staticmethod
+    def _v_scale_row(
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
+        scale_rows_base: UInt32,
+        slot0: UInt32,
+        top_k_length: UInt32,
+    ) -> Int:
+        """The scale-pool row of the V row this thread dequantizes."""
+        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        return Self._live_scale_row(
+            indices, scale_rows_base, slot0 + UInt32(tid), top_k_length
+        )
+
+    @inline(.always)
+    @staticmethod
+    def _load_v_scales(
+        live_row: Int,
+        kv_lut: Self.KVLUTType,
+        cta_id: UInt32,
+    ) -> SIMD[DType.uint32, Self.NVFP4_V_SF_WORDS]:
+        """Loads the scales of this CTA's slice of the V row at `live_row`."""
+        comptime WORDS = Self.NVFP4_V_ATOM_GROUPS // 4
+        var sf = SIMD[DType.uint32, Self.NVFP4_V_SF_WORDS](0)
+        if live_row >= 0:
+            var src = (
+                kv_lut.scales_raw_ptr()
+                .unsafe_bitcast[UInt32]()
+                .unsafe_offset(
+                    live_row * (Self.NVFP4_SF_ROW_BYTES // 4)
+                    + Int(cta_id) * WORDS
+                )
+            )
+            comptime for a in range(Self.NUM_SV_ATOMS):
+                comptime for w in range(WORDS):
+                    sf[a * WORDS + w] = src.unsafe_offset(
+                        a * (Self.SV_ATOM_MMA_N // 16 // 4) + w
+                    ).unsafe_load[width=1, alignment=4]()[0]
+        return sf
+
+    @inline(.always)
+    @staticmethod
+    def _dequant_v_nvfp4(
+        v_smem_buf: MutPointer[Scalar[FP8_TYPE], address_space=.SHARED, ...],
+        sf_words: SIMD[DType.uint32, Self.NVFP4_V_SF_WORDS],
+    ):
+        """Expands this CTA's packed V slice in place into the SW64 FP8 tile.
+
+        One thread owns one key row, so a thread dequantizes one row's
+        `V_BMN_PER_ATOM` columns of each atom.
+        """
+        comptime assert Self.B_TOPK == WARPGROUP_SIZE
+        comptime AG = Self.NVFP4_V_ATOM_GROUPS
+        comptime NQ = AG // 2
+        comptime CG_PER_ATOM = Self.V_BMN_PER_ATOM // 64
+        comptime P_SW = make_ldmatrix_swizzle[
+            FP8_TYPE, row_size=64, log2_vector_width=4
+        ]()
+        var row = Int(thread_idx.x) % WARPGROUP_SIZE
+        var src = v_smem_buf.unsafe_bitcast[UInt8]().unsafe_offset(
+            Self.NVFP4_V_ZONE_OFF + row * Self.NVFP4_V_ATOM_BYTES
+        )
+        var pk = StaticTuple[SIMD[DType.uint32, 4], Self.NUM_SV_ATOMS * NQ]()
+        comptime for a in range(Self.NUM_SV_ATOMS):
+            comptime for i in range(NQ):
+                pk[a * NQ + i] = ld_shared_v4_u32(
+                    src, a * (Self.B_TOPK * Self.NVFP4_V_ATOM_BYTES) + i * 16
+                )
+        named_barrier[Int32(WARPGROUP_SIZE)](6)
+
+        var sf = bitcast[DType.uint8, Self.NUM_SV_ATOMS * AG](sf_words)
+        var khalf = row // Self.PV_BK
+        var rr = row % Self.PV_BK
+        comptime for a in range(Self.NUM_SV_ATOMS):
+            comptime for gi in range(AG):
+                var q = pk[a * NQ + gi // 2]
+                var words = SIMD[DType.uint32, 2](
+                    q[(gi % 2) * 2], q[(gi % 2) * 2 + 1]
+                )
+                var scale = bitcast[FP8_TYPE, 1](
+                    SIMD[DType.uint8, 1](sf[a * AG + gi])
+                ).cast[DType.float32]()[0]
+                comptime v_cg = a * CG_PER_ATOM + gi // 4
+                comptime within = (gi % 4) * Self.NVFP4_GROUP
+                var off = (
+                    khalf * Self.V_KHALF_STRIDE
+                    + v_cg * Self.PV_BK * 64
+                    + P_SW(rr * 64 + within)
+                )
+                st_shared_v4_b32(
+                    v_smem_buf,
+                    off,
+                    nvfp4_dequant_group(bitcast[DType.uint8, 8](words), scale),
+                )
+        fence_async_view_proxy()
+        named_barrier[Int32(WARPGROUP_SIZE)](6)
 
     # ------------------------------------------------------------------
     # Q load prologue (FP8 SW64).  For head==64 a plain 3D async_copy; for
@@ -697,6 +1133,7 @@ struct MLAPrefillSparseQKVFP8[
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(kv_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(o_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
     @__llvm_metadata(
         `nvvm.cluster_dim`=StaticTuple[Int32, 3](
             Int32(Self.config.cta_group), 1, 1
@@ -714,7 +1151,7 @@ struct MLAPrefillSparseQKVFP8[
     ](
         q_tma_op: TMATensorTile[FP8_TYPE, Self.q_tile_shape, Self.q_desc_shape],
         kv_tma_op: TMATensorTile[
-            FP8_TYPE, Self.kv_tile_shape, Self.kv_desc_shape
+            Self.KV_TMA_DTYPE, Self.kv_tile_shape, Self.kv_desc_shape
         ],
         o_tma_op: TMATensorTile[
             Self.output_dtype, Self.o_tile_shape, Self.o_desc_shape
@@ -729,6 +1166,9 @@ struct MLAPrefillSparseQKVFP8[
         scale: Float32,
         attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
         indices_stride: Int32,
+        v_tma_op: TMATensorTile[
+            Self.KV_TMA_DTYPE, Self.v_tile_shape, Self.v_desc_shape
+        ],
     ) where (topk_lengths.flat_rank == 1 and indices.flat_rank == 1):
         var cta_id = UInt32(block_idx.x % Self.config.cta_group)
         var seq_idx = UInt32(block_idx.x // Self.config.cta_group)
@@ -741,6 +1181,8 @@ struct MLAPrefillSparseQKVFP8[
         )
         var num_kv_rows = kv_lut.num_kv_rows()
         var indices_base = seq_idx * UInt32(indices_stride)
+        # An NVFP4 index row is the value rows, then the scale rows.
+        var scale_rows_base = indices_base + UInt32(indices_stride) // 2
 
         if thread_idx.x == 0:
             q_tma_op.prefetch_descriptor()
@@ -836,11 +1278,15 @@ struct MLAPrefillSparseQKVFP8[
                     p_free_ptr[i].init(
                         Int32(WARPGROUP_SIZE * Self.config.cta_group)
                     )
+                comptime if Self.is_cg2 or Self.is_nvfp4:
+                    comptime for i in range(Self.SMemType.K_READY_MBARS):
+                        # cg2: each CTA's producer arrives once (the 2SM MMA
+                        # reads both CTAs' K/V), so init count = cta_group.
+                        # An NVFP4 cache also arrives it at cg1, once the
+                        # producer has expanded K (cta_group == 1).
+                        k_ready_ptr[i].init(Int32(Self.config.cta_group))
                 comptime if Self.is_cg2:
                     comptime for i in range(Self.SMemType.CG2_MBARS):
-                        # Cross-CTA: each CTA's producer arrives once (the 2SM
-                        # MMA reads both CTAs' K/V), so init count = cta_group.
-                        k_ready_ptr[i].init(Int32(Self.config.cta_group))
                         v_ready_ptr[i].init(Int32(Self.config.cta_group))
                         # Local V TMA transaction barrier.
                         v_tma_done_ptr[i].init(1)
@@ -909,19 +1355,49 @@ struct MLAPrefillSparseQKVFP8[
                 seq_idx,
                 cta_id,
             )
-        elif warpgroup_idx == 1:
+        elif warpgroup_idx == 1 or (
+            Self.dual_k_producers and warpgroup_idx == 2
+        ):
             # K producer.  cg2 frees WG2 to be the V producer; both cg2
             # producers dealloc to 64 (fp8 gather is light -- no dequant
             # staging) so WG0's softmax epilogue can absorb the freed regs,
             # mirroring cg1's WG2/WG3 dealloc[88] idle/mma pattern.
+            # An NVFP4 cg1 cache has no V producer, so WG2 expands every other
+            # K block alongside WG1: one warp per scheduler cannot hide the
+            # expansion's latency.
             comptime if Self.is_cg2:
-                warpgroup_reg_dealloc[64]()
+                # An NVFP4 producer holds a row-half of packed K in registers.
+                warpgroup_reg_dealloc[80 if Self.is_nvfp4 else 64]()
+            elif Self.dual_k_producers:
+                warpgroup_reg_dealloc[112]()
             else:
                 warpgroup_reg_alloc[168]()
-            var local_warp_idx = UInt32(warp_id() - 4)
-            for k in range(num_k_blocks):
+            # Only the dual-producer path needs a per-producer barrier id; a
+            # runtime id on the single cg2 producer costs h128 about 6%.
+            var producer = UInt32(0)
+            comptime if Self.dual_k_producers:
+                producer = UInt32(warpgroup_idx - 1)
+            var bar_slot = Int32(producer)
+            var local_warp_idx = UInt32(warp_id() - 4) - producer * 4
+            comptime k_stride = UInt32(2 if Self.dual_k_producers else 1)
+            for k in range(
+                producer if Self.dual_k_producers else UInt32(0),
+                num_k_blocks,
+                k_stride,
+            ):
                 var buf = k % UInt32(Self.config.num_mbars)
                 var phase = (k / UInt32(Self.config.num_mbars)) & 1
+                # An NVFP4 scale row comes from the indices alone, so its
+                # load overlaps the buffer-free wait below.
+                var scale_rows = SIMD[DType.int32, 2](-1)
+                comptime if Self.is_nvfp4:
+                    scale_rows = Self._k_scale_rows(
+                        indices,
+                        scale_rows_base,
+                        k * UInt32(Self.config.B_TOPK)
+                        + cta_id * UInt32(Self.B_TOPK_PER_CTA),
+                        UInt32(top_k_length),
+                    )
                 # Free the previous occupant (block k-num_mbars): cg1's shared
                 # buffer frees after PV (sv_done); cg2's K-only buffer frees
                 # after QK consumes it (qk_done).  qk_done is indexed by
@@ -961,24 +1437,52 @@ struct MLAPrefillSparseQKVFP8[
                     indices_base,
                     local_warp_idx,
                     cta_id,
+                    bar_slot,
                 )
-                # cg2: wait the local K TMA, then arrive the leader's cross-CTA
-                # k_ready (the 2SM MMA on CTA0 reads BOTH CTAs' K).
-                comptime if Self.is_cg2:
+                comptime if Self.is_nvfp4:
+                    # Scales are fetched while the gather is in flight; once
+                    # it lands, expand K in place and hand it to the MMA.
+                    var sf = Self._load_k_scales(scale_rows, kv_lut)
                     kv_ready_ptr[buf].wait(phase)
+                    Self._dequant_k_nvfp4(
+                        kv_ptr.unsafe_offset(
+                            buf * UInt32(Self.SMemType.KV_STAGE_SIZE)
+                        ),
+                        sf,
+                        bar_slot,
+                    )
                     if local_warp_idx == 0 and elect_one_sync():
-                        k_ready_ptr[buf].arrive_cluster(UInt32(0))
+                        comptime if Self.is_cg2:
+                            k_ready_ptr[buf].arrive_cluster(UInt32(0))
+                        else:
+                            _ = k_ready_ptr[buf].arrive()
+                else:
+                    # cg2: wait the local K TMA, then arrive the leader's
+                    # cross-CTA k_ready (the 2SM MMA on CTA0 reads BOTH CTAs'
+                    # K).
+                    comptime if Self.is_cg2:
+                        kv_ready_ptr[buf].wait(phase)
+                        if local_warp_idx == 0 and elect_one_sync():
+                            k_ready_ptr[buf].arrive_cluster(UInt32(0))
         elif warpgroup_idx == 2:
             comptime if Self.is_cg2:
                 # V producer (cg2): gather all B_TOPK keys' per-CTA depth
                 # slice.  Dealloc to 64, same rationale as WG1 above -- this
                 # WG previously had no setmaxnreg call at all and fell
                 # through to the 128-reg launch default.
-                warpgroup_reg_dealloc[64]()
+                warpgroup_reg_dealloc[80 if Self.is_nvfp4 else 64]()
                 var local_warp_idx = UInt32(warp_id() - 8)
                 for k in range(num_k_blocks):
                     var buf = k % UInt32(Self.config.num_mbars)
                     var phase = (k / UInt32(Self.config.num_mbars)) & 1
+                    var scale_row = -1
+                    comptime if Self.is_nvfp4:
+                        scale_row = Self._v_scale_row(
+                            indices,
+                            scale_rows_base,
+                            k * UInt32(Self.config.B_TOPK),
+                            UInt32(top_k_length),
+                        )
                     # Free the V buffer's previous occupant after PV consumed it.
                     if k >= UInt32(Self.config.num_mbars):
                         var free_k = k - UInt32(Self.config.num_mbars)
@@ -988,7 +1492,7 @@ struct MLAPrefillSparseQKVFP8[
                         ) & 1
                         sv_done_ptr[free_buf].wait(free_phase)
                     Self._load_v_fp8(
-                        kv_tma_op,
+                        v_tma_op,
                         indices,
                         kv_lut,
                         v_ptr.unsafe_offset(
@@ -1003,7 +1507,17 @@ struct MLAPrefillSparseQKVFP8[
                         local_warp_idx,
                         cta_id,
                     )
-                    v_tma_done_ptr[buf].wait(phase)
+                    comptime if Self.is_nvfp4:
+                        var sf = Self._load_v_scales(scale_row, kv_lut, cta_id)
+                        v_tma_done_ptr[buf].wait(phase)
+                        Self._dequant_v_nvfp4(
+                            v_ptr.unsafe_offset(
+                                buf * UInt32(Self.SMemType.V_STAGE_SIZE)
+                            ),
+                            sf,
+                        )
+                    else:
+                        v_tma_done_ptr[buf].wait(phase)
                     if local_warp_idx == 0 and elect_one_sync():
                         v_ready_ptr[buf].arrive_cluster(UInt32(0))
             else:
@@ -1083,7 +1597,7 @@ struct MLAPrefillSparseQKVFP8[
                 # cg1: MMA waits the local K TMA barrier directly.  cg2: waits
                 # the cross-CTA k_ready that both CTAs arrive after their local
                 # K gather (the 2SM MMA reads both CTAs' K).
-                comptime if Self.is_cg2:
+                comptime if Self.is_cg2 or Self.is_nvfp4:
                     k_ready[buf].wait(phase)
                 else:
                     kv_ready[buf].wait(phase)
@@ -1502,7 +2016,7 @@ struct MLAPrefillSparseQKVFP8[
                         smem_offset * (1 - pad_row)
                         + (Self.SMemType.O_SIZE - 2) * pad_row
                     )
-                    (o_ptr.unsafe_offset(store_off)).store[width=2](v)
+                    (o_ptr.unsafe_offset(store_off)).unsafe_store[width=2](v)
 
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
         if warp_idx == 0:
@@ -1567,9 +2081,17 @@ def mla_prefill_sparse_qkv_fp8[
         " or a multiple of 8 in (0, 64] (cta_group=1)"
     )
     comptime assert config.num_kv_heads == 1
+    comptime assert (
+        not mla_kv_is_nvfp4[KVCacheMHAOperand[cache_t]]()
+        or config.input_qk_depth == config.v_depth + NVFP4_MLA_ROPE_DIM
+    ), "an NVFP4 row is the packed latent (V) followed by FP8 rope dims"
     # Operands are native FP8; the output is `config.qkv_dtype` (bf16). Q is FP8
     # (unlike the BF16-KV path where Q stays bf16), so `q_type == FP8_TYPE`.
     comptime assert q_type == FP8_TYPE
+    comptime assert (
+        cache_t.dtype == FP8_TYPE
+        or mla_kv_is_nvfp4[KVCacheMHAOperand[cache_t]]()
+    ), "the cache must be unit-scale FP8 or packed NVFP4"
     comptime assert output_dtype == config.qkv_dtype
     # Unit-scale (scale_block_size == 0) is the DSv3.2 production path: FP8
     # latents read at scale 1, so kv_scale == v_scale == 1 and the softmax /
@@ -1589,17 +2111,43 @@ def mla_prefill_sparse_qkv_fp8[
         swizzle_mode=SW64,
     ](ctx, q)
 
+    comptime Kernel = MLAPrefillSparseQKVFP8[
+        KVLUTType=type_of(kv_operand),
+        output_dtype=output_dtype,
+        config=config,
+    ]
+
     # k-major SW64 FP8 gather (box_width 64, one col-group per 64 columns of the
     # row as stored).  The K producer gathers this CTA's B_TOPK/cta_group rows.
     # The cg2 V producer reuses this SAME descriptor to gather all B_TOPK keys'
-    # per-CTA depth slice.
+    # per-CTA depth slice.  A packed NVFP4 cache is gathered as whole rows of
+    # int64 words instead, and its cg2 V producer gets a narrower descriptor.
     var kv_tma_op = kv_operand.create_gather4_tma_tile[
-        tile_width=config.input_qk_depth,
-        tile_stride=config.input_qk_depth,
-        swizzle_mode=SW64,
+        tile_width=Kernel.KV_GATHER_TILE_WIDTH,
+        tile_stride=Kernel.KV_GATHER_TILE_WIDTH,
+        swizzle_mode=Kernel.KV_GATHER_SWIZZLE,
         tile_height=config.B_TOPK,
-        tma_dtype=FP8_TYPE,
+        tma_dtype=Kernel.KV_TMA_DTYPE,
     ](ctx)
+    # Only the cg2 NVFP4 V producer needs its own descriptor; every other
+    # configuration reuses K's (the two types are then identical, but the
+    # compiler sees them as unfolded expressions, hence the rebinds).
+    comptime VTMA = TMATensorTile[
+        Kernel.KV_TMA_DTYPE, Kernel.v_tile_shape, Kernel.v_desc_shape
+    ]
+    var v_tma_op: VTMA
+    comptime if Kernel.is_nvfp4 and Kernel.is_cg2:
+        v_tma_op = rebind[VTMA](
+            kv_operand.create_gather4_tma_tile[
+                tile_width=Kernel.V_GATHER_TILE_WIDTH,
+                tile_stride=Kernel.KV_GATHER_TILE_WIDTH,
+                swizzle_mode=Kernel.KV_GATHER_SWIZZLE,
+                tile_height=config.B_TOPK,
+                tma_dtype=Kernel.KV_TMA_DTYPE,
+            ](ctx)
+        )
+    else:
+        v_tma_op = rebind[VTMA](kv_tma_op)
 
     var output_2d = output.reshape(
         row_major(num_q_rows * config.num_q_heads, config.v_depth)
@@ -1614,18 +2162,14 @@ def mla_prefill_sparse_qkv_fp8[
     comptime assert type_of(indices).flat_rank == 1
     comptime assert topk_lengths.element_size == 1
     comptime assert indices.element_size == 1
-    comptime kernel = MLAPrefillSparseQKVFP8[
-        KVLUTType=type_of(kv_operand),
-        output_dtype=output_dtype,
-        config=config,
-    ].kernel[
+    comptime kernel = Kernel.kernel[
         type_of(topk_lengths).LayoutType,
         type_of(indices).LayoutType,
         type_of(topk_lengths).Engine,
         type_of(indices).Engine,
     ]
 
-    comptime smem_size = size_of[MLASparseSharedMemoryQKVFP8[config]]()
+    comptime smem_size = size_of[Kernel.SMemType]()
 
     ctx.enqueue_function[kernel](
         q_tma_op,
@@ -1637,6 +2181,7 @@ def mla_prefill_sparse_qkv_fp8[
         scale,
         attn_sink_ptr,
         indices_stride,
+        v_tma_op,
         grid_dim=(config.cta_group * num_q_rows, 1, 1),
         block_dim=(config.num_threads, 1, 1),
         shared_mem_bytes=smem_size,

@@ -15,6 +15,7 @@ from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.block_scaled_quantization import (
+    quantize_dynamic_scaled_fp4_async,
     quantize_dynamic_scaled_fp4fp8,
 )
 from std.math import ceildiv
@@ -258,6 +259,96 @@ def test_dynamic_mxfp8_quant_degenerate_blocks(
                         raise Error("E8M0-floor MXFP8 block dequantized wrong")
 
 
+def test_mxfp8_async_matches_sync[N: Int](ctx: DeviceContext, m: Int) raises:
+    """Checks the TMA-async MXFP8 quantize writes the sync kernel's bytes.
+
+    Rows span 2^-8..2^8 and include an all-zero block, an E8M0-floor block
+    and large outliers. Both kernels write into buffers pre-filled with a
+    sentinel, so a byte either skips, padded scale rows included, differs.
+    """
+    comptime in_dtype = DType.bfloat16
+    comptime out_dtype = DType.float8_e4m3fn
+    comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
+    comptime blocks = N // SF_VECTOR_SIZE
+    # 2^-119: values in [-1, 1] scaled by this land at the E8M0 floor scale.
+    comptime tiny = Float32(1.504632769052528e-36)
+
+    var input_layout = row_major(m, Idx[N])
+    var scales_layout = row_major(
+        ceildiv(m, SF_MN_GROUP_SIZE),
+        ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
+    )
+    var in_device = ctx.enqueue_create_buffer[in_dtype](input_layout.size())
+    var out_sync = ctx.enqueue_create_buffer[DType.uint8](input_layout.size())
+    var out_async = ctx.enqueue_create_buffer[DType.uint8](input_layout.size())
+    var sf_sync = ctx.enqueue_create_buffer[DType.uint8](scales_layout.size())
+    var sf_async = ctx.enqueue_create_buffer[DType.uint8](scales_layout.size())
+    out_sync.enqueue_fill(0xAB)
+    out_async.enqueue_fill(0xAB)
+    sf_sync.enqueue_fill(0xAB)
+    sf_async.enqueue_fill(0xAB)
+
+    with in_device.map_to_host() as in_host:
+        var t = TileTensor(in_host, input_layout)
+        random(t, min=-1.0, max=1.0)
+        for row in range(m):
+            var row_scale = Float32(2.0) ** Float32(row % 17 - 8)
+            for col in range(N):
+                var block = col // SF_VECTOR_SIZE
+                var v = t[row, col].cast[DType.float32]() * row_scale
+                if block == 1 % blocks:
+                    v = 0
+                elif blocks > 3 and block == 3:
+                    v = t[row, col].cast[DType.float32]() * tiny
+                elif col % 37 == row % 37:
+                    v *= 1000
+                t[row, col] = v.cast[in_dtype]()
+
+    var input_tensor = TileTensor(in_device, input_layout)
+    quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        ctx,
+        TileTensor(
+            out_sync.unsafe_ptr().unsafe_bitcast[Scalar[out_dtype]](),
+            input_layout,
+        ).as_unsafe_any_origin(),
+        TileTensor(
+            sf_sync.unsafe_ptr().unsafe_bitcast[Scalar[MXFP8_SF_DTYPE]](),
+            scales_layout,
+        ).as_unsafe_any_origin(),
+        input_tensor.as_unsafe_any_origin(),
+        num_cols=N,
+        num_cols_padded=N,
+    )
+    quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        ctx,
+        TileTensor(
+            out_async.unsafe_ptr().unsafe_bitcast[Scalar[out_dtype]](),
+            input_layout,
+        ).as_unsafe_any_origin(),
+        TileTensor(
+            sf_async.unsafe_ptr().unsafe_bitcast[Scalar[MXFP8_SF_DTYPE]](),
+            scales_layout,
+        ).as_unsafe_any_origin(),
+        input_tensor.as_unsafe_any_origin(),
+    )
+    ctx.synchronize()
+
+    with out_sync.map_to_host() as a, out_async.map_to_host() as b:
+        for i in range(len(a)):
+            if a[i] != b[i]:
+                print("M =", m, "N =", N, "output byte", i, a[i], "vs", b[i])
+                raise Error("async MXFP8 output differs from the sync kernel")
+    with sf_sync.map_to_host() as a, sf_async.map_to_host() as b:
+        for i in range(len(a)):
+            if a[i] != b[i]:
+                print("M =", m, "N =", N, "scale byte", i, a[i], "vs", b[i])
+                raise Error("async MXFP8 scales differ from the sync kernel")
+    print("async matches sync: M =", m, "N =", N)
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_dynamic_mxfp8_quant_degenerate_blocks(ctx, 1)
@@ -282,3 +373,12 @@ def main() raises:
                 MXFP8_SF_VECTOR_SIZE,
                 N=N,
             ](ctx, 999, N, tensor_scale=32.0)
+
+        for m in [1, 96, 126, 129, 1000]:
+            test_mxfp8_async_matches_sync[128](ctx, m)
+            test_mxfp8_async_matches_sync[160](ctx, m)
+            test_mxfp8_async_matches_sync[1280](ctx, m)
+            test_mxfp8_async_matches_sync[2304](ctx, m)
+            test_mxfp8_async_matches_sync[4096](ctx, m)
+            test_mxfp8_async_matches_sync[5120](ctx, m)
+            test_mxfp8_async_matches_sync[8192](ctx, m)

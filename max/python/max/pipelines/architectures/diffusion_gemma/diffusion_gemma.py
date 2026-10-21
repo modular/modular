@@ -60,7 +60,10 @@ from max.pipelines.architectures.gemma4.layers.attention import Gemma4Attention
 from max.pipelines.architectures.gemma4.layers.decoder_layer import (
     Gemma4TextDecoderLayer,
 )
-from max.pipelines.architectures.gemma4.layers.moe import Gemma4MoEGate
+from max.pipelines.architectures.gemma4.layers.moe import (
+    Gemma4MoE,
+    Gemma4MoEGate,
+)
 from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalRotaryEmbedding,
@@ -406,7 +409,7 @@ class _DiffusionGemmaTextModelBase(DistributedLogitsPostprocessMixin, Module):
                 quant_config=quant_config,
             )
         else:
-            moe_block = MoE(
+            moe_block = Gemma4MoE(
                 devices=config.devices,
                 hidden_dim=text_config.hidden_size,
                 num_experts=text_config.num_experts,

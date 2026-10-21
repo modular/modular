@@ -406,6 +406,16 @@ struct GroupedWorkIterator1D1D[
         return GroupedWorkContext1D1D(info, expert_scale, m_end)
 
     @inline(.always)
+    def next_without_scale(mut self) -> GroupedWorkContext1D1D:
+        """Fetch next work tile without reading its expert scale.
+
+        Returns:
+            The tile's context with an expert scale of 1.
+        """
+        var info, m_end = self._fetch_next_work()
+        return GroupedWorkContext1D1D(info, Float32(1.0), m_end)
+
+    @inline(.always)
     def _fetch_next_work(mut self) -> Tuple[GroupedWorkInfo1D1D, UInt32]:
         """Internal method to compute next work tile."""
         self.current_iter += 1

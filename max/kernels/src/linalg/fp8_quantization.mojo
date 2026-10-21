@@ -1744,7 +1744,7 @@ def naive_blockwise_scaled_fp8_matmul[
         b,
         a_scales,
         b_scales,
-        host_arg=epilogue_fn,
+        host_args=(epilogue_fn,),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )

@@ -15,6 +15,7 @@ from spmv_utils import ELLMatrix, generate_sparse_matrix, spmv_cpu, verify
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 
 def spmv_ell_kernel(
@@ -93,10 +94,10 @@ def main() raises:
         current_nnz[r] += 1
 
     # Prepare host pointers
-    var h_colIdx_ptr = alloc[UInt32](rows * max_nnz)
-    var h_value_ptr = alloc[Float32](rows * max_nnz)
-    var h_x_ptr = alloc[Float32](cols)
-    var h_y_ptr = alloc[Float32](rows)
+    var h_colIdx_ptr = unsafe_alloc[UInt32](rows * max_nnz)
+    var h_value_ptr = unsafe_alloc[Float32](rows * max_nnz)
+    var h_x_ptr = unsafe_alloc[Float32](cols)
+    var h_y_ptr = unsafe_alloc[Float32](rows)
 
     for i in range(rows * max_nnz):
         h_colIdx_ptr[i] = h_ell_colIdx[i]
@@ -120,11 +121,11 @@ def main() raises:
     ctx.enqueue_copy(d_x_buf, h_x_ptr)
 
     # Initialize y on device
-    var h_y_zeros = alloc[Float32](rows)
+    var h_y_zeros = unsafe_alloc[Float32](rows)
     for i in range(rows):
         h_y_zeros[i] = 0.0
     ctx.enqueue_copy(d_y_buf, h_y_zeros)
-    h_y_zeros.free()
+    h_y_zeros.unsafe_free()
 
     var d_ellMatrix = ELLMatrix(
         rows,
@@ -153,7 +154,7 @@ def main() raises:
     else:
         print("ELL Kernel Test Failed!")
 
-    h_colIdx_ptr.free()
-    h_value_ptr.free()
-    h_x_ptr.free()
-    h_y_ptr.free()
+    h_colIdx_ptr.unsafe_free()
+    h_value_ptr.unsafe_free()
+    h_x_ptr.unsafe_free()
+    h_y_ptr.unsafe_free()

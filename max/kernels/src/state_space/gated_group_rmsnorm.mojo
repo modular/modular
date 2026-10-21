@@ -13,7 +13,7 @@
 """Fused gated group-RMSNorm for the Mamba-2 mixer (`norm_before_gate=False`).
 
 Portable GPU/CPU kernel; the immediate target is Apple M5 Metal
-(`compute_capability == 5`) batch-1 decode. Collapses the four-op decode-graph
+(`compute_capability >= 5`) batch-1 decode. Collapses the four-op decode-graph
 chain that HF `Zamba2RMSNormGated` lowers to -- `cast(y -> f32)`,
 `silu(gate) * y`, group `rms_norm` (a reduction, a hard dispatch boundary), and
 `* norm_weight` + cast -- into ONE kernel dispatch per Mamba layer. On the
@@ -328,7 +328,7 @@ def gated_group_rmsnorm_gpu[
                 Int32(n_rows),
                 Int32(num_groups),
                 eps,
-                host_arg=gate_fn,
+                host_args=(gate_fn,),
                 grid_dim=ceildiv(total_warps * WARP_SIZE, VEC_BLK),
                 block_dim=VEC_BLK,
             )
@@ -356,7 +356,7 @@ def gated_group_rmsnorm_gpu[
         Int32(num_groups),
         Int32(group_size),
         eps,
-        host_arg=gate_fn,
+        host_args=(gate_fn,),
         grid_dim=grid,
         block_dim=BLK,
     )

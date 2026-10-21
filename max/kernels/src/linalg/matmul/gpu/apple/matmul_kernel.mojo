@@ -1282,7 +1282,7 @@ struct AppleM5MatMul[
     ):
         """Same as `run`, storing the output through `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             c_layout: `TensorLayout` of the output `C` operand.
@@ -1329,7 +1329,7 @@ struct AppleM5MatMul[
         """Same as `run`, mapping each output through `compute_fn` before it
         is stored to `c`.
 
-        Launch with `host_arg=compute_fn`.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             c_layout: `TensorLayout` of the output `C` operand.
@@ -1586,8 +1586,17 @@ struct AppleM5MatMul[
             log2_grid_n: Base-2 logarithm of the N-axis grid extent; the grid
                 spans `1<<log2_grid_n` threadgroups along N.
         """
-        Self._run_conv[c_aligned=c_aligned, has_epilogue_fn=False](
-            c, input, b, conv, log2_grid_m, log2_grid_n, no_epilogue_fn
+        Self._run_conv[
+            c_aligned=c_aligned, has_epilogue_fn=False, has_compute_fn=False
+        ](
+            c,
+            input,
+            b,
+            conv,
+            log2_grid_m,
+            log2_grid_n,
+            no_epilogue_fn,
+            no_compute_fn,
         )
 
     @__name(
@@ -1616,7 +1625,7 @@ struct AppleM5MatMul[
     ):
         """Same as `run_conv`, storing the output through `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             c_layout: `TensorLayout` of the output `C` operand.
@@ -1638,8 +1647,79 @@ struct AppleM5MatMul[
             log2_grid_n: Base-2 logarithm of the N-axis grid extent.
             epilogue_fn: Stores each output element at its `(row, col)`.
         """
-        Self._run_conv[c_aligned=c_aligned, has_epilogue_fn=True](
-            c, input, b, conv, log2_grid_m, log2_grid_n, epilogue_fn
+        Self._run_conv[
+            c_aligned=c_aligned, has_epilogue_fn=True, has_compute_fn=False
+        ](
+            c,
+            input,
+            b,
+            conv,
+            log2_grid_m,
+            log2_grid_n,
+            epilogue_fn,
+            no_compute_fn,
+        )
+
+    @__name(
+        t"apple_conv2d_run_compute_fn_{Self.in_type}_{Self.c_type}_ca{c_aligned}"
+    )
+    @staticmethod
+    def run_conv_with_compute_fn[
+        c_layout: TensorLayout,
+        input_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        input_engine: TensorEngine,
+        b_engine: TensorEngine,
+        ComputeFnType: ElementwiseComputeFn,
+        c_aligned: Bool = False,
+    ](
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        input: TileTensor[
+            Self.in_type, input_layout, ImmutAnyOrigin, Engine=input_engine
+        ],
+        b: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        conv: ConvIm2colParams,
+        log2_grid_m: UInt32,
+        log2_grid_n: UInt32,
+        compute_fn: ComputeFnType,
+    ):
+        """Same as `run_conv`, mapping each output through `compute_fn` before
+        it is stored to `c`.
+
+        Launch with `host_args=(compute_fn,)`.
+
+        Parameters:
+            c_layout: `TensorLayout` of the output `C` operand.
+            input_layout: `TensorLayout` of the NHWC `input` operand.
+            b_layout: `TensorLayout` of the filter `B` operand.
+            c_engine: `TensorEngine` of the output `C` operand.
+            input_engine: `TensorEngine` of the NHWC `input` operand.
+            b_engine: `TensorEngine` of the filter `B` operand.
+            ComputeFnType: Type of `compute_fn`.
+            c_aligned: When True, assume `conv.C` is a multiple of 8 (defaults
+                to False).
+
+        Args:
+            c: Output matrix `(M, N)` row-major.
+            input: 4-D NHWC source tensor.
+            b: Filter operand `(N, K)` with `transpose_b=True` (NK layout).
+            conv: Conv geometry for the im2col gather.
+            log2_grid_m: Base-2 logarithm of the M-axis grid extent.
+            log2_grid_n: Base-2 logarithm of the N-axis grid extent.
+            compute_fn: Maps each output element at its `(row, col)`.
+        """
+        Self._run_conv[
+            c_aligned=c_aligned, has_epilogue_fn=False, has_compute_fn=True
+        ](
+            c,
+            input,
+            b,
+            conv,
+            log2_grid_m,
+            log2_grid_n,
+            no_epilogue_fn,
+            compute_fn,
         )
 
     @staticmethod
@@ -1652,10 +1732,12 @@ struct AppleM5MatMul[
         input_engine: TensorEngine,
         b_engine: TensorEngine,
         EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
         //,
         *,
         c_aligned: Bool,
         has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
         input: TileTensor[
@@ -1666,6 +1748,7 @@ struct AppleM5MatMul[
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
         epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         comptime assert (
             Self.transpose_b
@@ -1702,6 +1785,7 @@ struct AppleM5MatMul[
         Self._run_gemm_body[
             W=DenseWeightLoader[Self.b_type, Self.accum_type],
             has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             loader,
             c,
@@ -1711,7 +1795,7 @@ struct AppleM5MatMul[
             log2_grid_m,
             log2_grid_n,
             epilogue_fn=epilogue_fn,
-            compute_fn=no_compute_fn,
+            compute_fn=compute_fn,
         )
 
     # === Split-K kernels =================================================== #
@@ -1955,7 +2039,7 @@ struct AppleM5MatMul[
         """Same as `run_split_k_reduce`, storing each output through
         `epilogue_fn` at its absolute `(row, col)`.
 
-        Launch with `host_arg=epilogue_fn`.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             c_layout: `TensorLayout` of the output `C` operand.
@@ -1987,7 +2071,7 @@ struct AppleM5MatMul[
         """Same as `run_split_k_reduce`, mapping each output through
         `compute_fn` at its absolute `(row, col)` before it is stored.
 
-        Launch with `host_arg=compute_fn`.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             c_layout: `TensorLayout` of the output `C` operand.
@@ -2104,7 +2188,7 @@ def enqueue_apple_matmul[
         b: B operand matrix, `(K, N)` for `transpose_b=False` or `(N, K)` for
             `transpose_b=True`.
         ctx: Device context to enqueue the kernel on; must be Apple M5
-            (`compute_capability == 5`).
+            (`compute_capability >= 5`).
         force_split_k: K-reduction strategy override; `None` auto-routes
             under-occupied shapes to split-K, `True` always uses split-K,
             `False` always uses the single-pass kernel (defaults to None).
@@ -2112,9 +2196,10 @@ def enqueue_apple_matmul[
         compute_fn: Compute epilogue applied to each output.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability != 5`).
-        M1-M4 lack GPU `neural accelerator`; future generations require
-        re-validation.
+        If the attached GPU is older than Apple M5 (`compute_capability < 5`).
+        M1-M4 lack GPU `neural accelerator`. M6 and newer run the M5 tile
+        configurations and split-K heuristics, which have not been validated
+        on that hardware.
     """
     # use_x2 needs transpose_b=True (K-contiguous B); k_unroll is the NN
     # equivalent win and the two regress badly combined (see AppleM5MatMul's
@@ -2137,18 +2222,17 @@ def enqueue_apple_matmul[
         k_unroll=k_unroll,
     ]
 
+    # TODO(HWB-694): M6 reuses the M5 tile configs and split-K heuristics
+    # without having run on M6; validate with the Apple kernel suite there.
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_apple_matmul requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "enqueue_apple_matmul requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
-            (
-                ". Route M1-M4 to the naive matmul path; re-validate for"
-                " future generations."
-            ),
+            ". Route M1-M4 to the naive matmul path.",
         )
 
     comptime assert (
@@ -2295,7 +2379,7 @@ def enqueue_apple_matmul[
                 b,
                 log2_m,
                 log2_n,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=(grid_dim),
                 block_dim=(MM.THREADS_PER_BLOCK),
             )
@@ -2315,7 +2399,7 @@ def enqueue_apple_matmul[
                 b,
                 log2_m,
                 log2_n,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=(grid_dim),
                 block_dim=(MM.THREADS_PER_BLOCK),
             )
@@ -2347,10 +2431,12 @@ def enqueue_apple_matmul[
 @inline(.always)
 def enqueue_apple_conv2d[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     in_type: DType,
     c_type: DType = .float32,
     has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     input: TileTensor[in_type, ...],
@@ -2358,10 +2444,11 @@ def enqueue_apple_conv2d[
     conv: ConvIm2colParams,
     ctx: DeviceContext,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Enqueue the fused online-im2col conv2d (`AppleM5MatMul.run_conv`).
 
-    SM100/Apple M5 (`compute_capability == 5`). No `[M, K]` scratch is
+    SM100/Apple M5 (`compute_capability >= 5`). No `[M, K]` scratch is
     materialised: the A operand is gathered from `input` (4-D NHWC) on the fly.
     `filter_nk` is the filter pre-transposed to `(C_out, K=R*S*C_in)` row-major
     (the NK layout `dispatch_im2col_matmul_conv2d` already builds); the GEMM uses
@@ -2371,12 +2458,15 @@ def enqueue_apple_conv2d[
 
     Parameters:
         EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         in_type: Element type of the NHWC `input` and `filter_nk` operands (bf16
             for now).
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32
             (defaults to `float32`).
         has_epilogue_fn: Whether `epilogue_fn` stores each output at its
             absolute `(row, col)` in place of `c` (defaults to False).
+        has_compute_fn: Whether `compute_fn` maps each output at its absolute
+            `(row, col)` before it is stored to `c` (defaults to False).
 
     Args:
         c: Output matrix `(M, N)` row-major with `M = N_batch*H_out*W_out` and
@@ -2387,12 +2477,16 @@ def enqueue_apple_conv2d[
             (the NK layout); used with `transpose_b=True`.
         conv: Conv geometry for the im2col gather.
         ctx: Device context to enqueue the kernel on; must be Apple M5
-            (`compute_capability == 5`).
+            (`compute_capability >= 5`).
         epilogue_fn: Epilogue that stores each output.
+        compute_fn: Transform applied to each output before it is stored.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability != 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability < 5`).
     """
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "epilogue_fn and compute_fn are mutually exclusive"
     # Conv tile config: differs from the dense GEMM only in BK=32 (vs 16) for
     # the width-8 gather. NB: keep sg_m=sg_n=32 -- sg=16 (1 fragment) measured
     # ~1.7-1.9x SLOWER. Full config sweep: KB `kernels/apple-conv2d-im2col`.
@@ -2408,11 +2502,11 @@ def enqueue_apple_conv2d[
     ]
 
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_apple_conv2d requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "enqueue_apple_conv2d requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -2491,7 +2585,29 @@ def enqueue_apple_conv2d[
                 conv,
                 log2_m,
                 log2_n,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
+                grid_dim=(grid_dim),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            )
+        elif has_compute_fn:
+            comptime kernel = MM.run_conv_with_compute_fn[
+                type_of(c).LayoutType,
+                type_of(input).LayoutType,
+                type_of(filter_nk).LayoutType,
+                type_of(c).Engine,
+                type_of(input).Engine,
+                type_of(filter_nk).Engine,
+                ComputeFnType,
+                c_aligned=c_aligned,
+            ]
+            ctx.enqueue_function[kernel](
+                c,
+                input.as_imm(),
+                filter_nk.as_imm(),
+                conv,
+                log2_m,
+                log2_n,
+                host_args=(compute_fn,),
                 grid_dim=(grid_dim),
                 block_dim=(MM.THREADS_PER_BLOCK),
             )
@@ -2569,14 +2685,14 @@ def enqueue_apple_matmul_split_k[
         b: B operand matrix, `(K, N)` for `transpose_b=False` or `(N, K)` for
             `transpose_b=True`.
         ctx: Device context to enqueue the kernels on; must be Apple M5
-            (`compute_capability == 5`).
+            (`compute_capability >= 5`).
         num_splits_hint: Upper bound on the K-axis split count; the actual
             split count is capped so no split is empty (defaults to 4).
         epilogue_fn: Epilogue that stores each output.
         compute_fn: Compute epilogue applied to each output.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability != 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability < 5`).
     """
     # Same NT-x2 / NN-k_unroll dispatch as enqueue_apple_matmul, so split-K
     # gets the same measured wins as the single-pass kernel instead of
@@ -2599,11 +2715,11 @@ def enqueue_apple_matmul_split_k[
     ]
 
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_apple_matmul_split_k requires Apple M5"
-                " (compute_capability == 5); got "
+                "enqueue_apple_matmul_split_k requires Apple M5 or newer"
+                " (compute_capability >= 5); got "
             ),
             cc,
         )
@@ -2706,7 +2822,7 @@ def enqueue_apple_matmul_split_k[
             c,
             partials.unsafe_ptr(),
             Int32(actual_splits),
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
             block_dim=(MM.REDUCE_BLOCK),
         )
@@ -2718,7 +2834,7 @@ def enqueue_apple_matmul_split_k[
             c,
             partials.unsafe_ptr(),
             Int32(actual_splits),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
             block_dim=(MM.REDUCE_BLOCK),
         )

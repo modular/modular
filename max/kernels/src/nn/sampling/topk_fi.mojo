@@ -58,7 +58,7 @@ from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.utils.static_tuple import StaticTuple
-from ..argmaxmin_gpu import _argmaxmin_block_partial
+from ..argmaxmin_gpu import _argmax_block_partial
 from ..normalization import _APPLE_STATIC_SHMEM_MAX_BYTES
 from ..topk import _block_reduce_topk
 from .coop_row import (
@@ -845,10 +845,10 @@ def TopKSamplingFromProbKernel[
         var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
         var k = _top_k_val
         if case .Some(top_k_arr) = top_k_arr:
-            k = Int(top_k_arr.load(bx))
+            k = Int(top_k_arr.unsafe_load(bx))
         var row_idx = bx
         if case .Some(indices) = indices:
-            row_idx = Int(indices.load(bx))
+            row_idx = Int(indices.unsafe_load(bx))
 
         var probs_row = probs.tile(Coord(Idx[1], _d), Coord(row_idx, 0))
 
@@ -1987,7 +1987,7 @@ def TopKTopPSamplingFromProbKernel[
 
     var row_idx = bx
     if case .Some(indices) = indices:
-        row_idx = Int(indices.load(bx))
+        row_idx = Int(indices.unsafe_load(bx))
 
     with PDL():
         var seed_val = UInt64(0)
@@ -2001,7 +2001,7 @@ def TopKTopPSamplingFromProbKernel[
 
         var k = _top_k_val
         if case .Some(top_k_arr) = top_k_arr:
-            k = Int(top_k_arr.load(row_idx))
+            k = Int(top_k_arr.unsafe_load(row_idx))
         if k == -1:
             k = _top_k_val
         if k <= 0 or k > _d:
@@ -2057,7 +2057,7 @@ def TopKTopPSamplingFromProbKernel[
             if k == 1:
                 comptime vec_bytes = align_of[SIMD[dtype, vec_size]]()
                 var best = _block_reduce_topk[ascending=True](
-                    _argmaxmin_block_partial[dtype, True, vec_size, 4](
+                    _argmax_block_partial[dtype, vec_size, 4](
                         probs_ptr.as_unsafe_any_origin(),
                         0,
                         _d,
@@ -2559,7 +2559,7 @@ def TopKTopPSamplingFromProbKernel[
         # Temperature 0 arrives as top_k=1. Every token tied at the row
         # maximum passes the accept test, so the seed would pick among exact
         # ties; greedy decoding is argmax with the lowest index, the rule of
-        # `argmaxmin_gpu`, whose block reduction this reuses.
+        # `_argmax_block_partial`, which this reuses.
         if k == 1:
             comptime if is_apple_gpu():
                 if tx == 0:
@@ -2572,7 +2572,7 @@ def TopKTopPSamplingFromProbKernel[
                             sampled_id = j
             else:
                 var best = _block_reduce_topk[ascending=True](
-                    _argmaxmin_block_partial[dtype, True, vec_size, 1](
+                    _argmax_block_partial[dtype, vec_size, 1](
                         probs_ptr.as_unsafe_any_origin(),
                         vec_begin * vec_size,
                         (vec_end - vec_begin) * vec_size,
@@ -3430,7 +3430,7 @@ def TopKTopPMaskedProbsKernel[
 
     var k = Int(top_k_val)
     if case .Some(top_k_arr) = top_k_arr:
-        k = Int(top_k_arr.load(bx))
+        k = Int(top_k_arr.unsafe_load(bx))
     if k <= 0 or k > _d:
         k = _d
 

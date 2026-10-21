@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -72,6 +73,7 @@ modular_py_test(
     data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/kv_cache",
@@ -151,6 +153,64 @@ modular_py_test(
     ],
 )
 
+# Guards the overlap spec-decode step order the DSpark verify lookback relies
+# on: pipelines/lib/pipeline_variants/overlap_text_generation.py (the
+# in-flight marks and the realized cache lengths) and
+# pipelines/lib/pipeline_variants/utils.py
+# (update_spec_decode_context_and_prepare_responses).
+modular_py_test(
+    name = "test_dspark_engram_lookback_overlap",
+    srcs = ["test_dspark_engram_lookback_overlap.py"],
+    args = [
+        "-k",
+        "cpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+# Runs the GPU cases of the same file: the lookback graph on the GPU and the
+# graph-capture replay. The CPU target above runs the CPU cases.
+modular_py_test(
+    name = "test_dspark_engram_lookback_overlap_gpu",
+    srcs = ["test_dspark_engram_lookback_overlap.py"],
+    args = [
+        "-k",
+        "'gpu or replay'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
 # Guards graph capture and replay input binding in
 # pipelines/lib/graph_capture.py (ServeGraphCaptureRunner), and the
 # data-parallel splits from pipelines/lib/utils.py
@@ -185,6 +245,26 @@ modular_py_test(
     ],
 )
 
+# Guards that the trunk and DSpark drafter rotary tables cover speculative
+# positions past max_seq_len (nn/kv_cache spec_decode_cache_slack), and that
+# memory_planner.py reserves the candidate keep step the graph builds. CPU only.
+modular_py_test(
+    name = "test_position_capacity",
+    srcs = ["test_position_capacity.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
 # Guards strict state-dict loading (nn/layer Module.load_state_dict).
 modular_py_test(
     name = "test_dspark_weight_adapter",
@@ -210,6 +290,9 @@ modular_py_test(
     data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
     gpu_constraints = ["//:b200_gpu"],
     tags = ["gpu"],
+    # Needs mo.engram.hash_gather and mo.engram.hash_gather_shard, registered
+    # only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
@@ -233,6 +316,21 @@ modular_py_test(
     name = "test_engram_shared_host",
     srcs = ["test_engram_shared_host.py"],
     deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+# Under data parallelism a device must skip other replicas' image rows; a
+# wrapped index overwrites its last token row.
+modular_py_test(
+    name = "test_vision_merge_rows",
+    srcs = ["test_vision_merge_rows.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
     ],

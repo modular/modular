@@ -113,7 +113,6 @@ modular_py_test(
             "test_fused_qkv_mxfp8_matmul_gpu.py",
             "test_grouped_matmul_swiglu_nvfp4_gpu.py",
             "test_int8_w8a8_apple_gpu.py",
-            "test_linear_fp8_amd_gpu.py",
             "test_linear_nvfp4_apple_gpu.py",
             "test_lora_kernels_gpu.py",
             "test_mlp_fp4_gpu.py",
@@ -356,34 +355,6 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "amd_tests",
-    size = "large",
-    srcs = [
-        "conftest.py",
-        "test_linear_fp8_amd_gpu.py",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    tags = [
-        "gpu",
-        # TODO: GEX-2676
-        "manual",
-    ],
-    target_compatible_with = ["//:amd_gpu"],
-    deps = [
-        "//max/python/max:tensor",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("hypothesis"),
-        requirement("torch"),
-    ],
-)
-
-modular_py_test(
     name = "apple_tests",
     size = "large",
     srcs = [
@@ -483,8 +454,6 @@ modular_py_test(
     ],
 )
 
-# Split out of :amd_tests, which is tagged "manual" for an unrelated timeout
-# (GEX-2676) and so never ran this in CI.
 modular_py_test(
     name = "router_gate_mixed_gemv_tests",
     size = "large",

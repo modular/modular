@@ -85,7 +85,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         cache_indices: InputTensor[dtype=.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var dim = u.dim_size(0)
         var dstate = A.dim_size(1)
         var ngroups = B.dim_size(0)
@@ -465,7 +465,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         dt_bias: InputTensor[dtype=dtype, rank=2, ...],
         state_batch_indices: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var batch = x.dim_size(0)
         var nheads = x.dim_size(1)
         var dim = x.dim_size(2)

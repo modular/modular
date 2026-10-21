@@ -18,7 +18,7 @@
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
-from layout import TileTensor
+from layout import Coord, TileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -28,7 +28,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_VECTOR_SIZE,
     get_scaling_kind,
 )
-from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from std.collections import Optional
 from linalg.utils import (
     ElementwiseComputeFn,
@@ -38,6 +38,8 @@ from linalg.utils import (
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys import size_of
+from std.sys.info import simd_width_of
+from max.algorithm import elementwise
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     _blackwell_block_scaled_matmul_impl,
@@ -56,6 +58,10 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 comptime logger = Logger()
+
+# Largest M whose compute closure runs in a separate elementwise pass instead
+# of inside the GEMM epilogue; B200 measurements cover M <= 512.
+comptime compute_fn_unfused_m_cap = 512
 
 comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
@@ -380,7 +386,18 @@ def _heuristic_and_outliers_dispatch_impl[
     # m == 1 GEMV plus small-batch / speculative-decode m ~ 8, 16). It is
     # optimized for skinny GEMMs; MMA_N=8 tiles the M dim (m=16 -> 2 tiles).
     # Larger M keeps the cta_group=2 prefill heuristic below.
-    if m <= 16:
+    #
+    # For MXFP8, m in (8, 16] needs two M tiles, so every weight tile is
+    # launched twice. When that exceeds one wave of SMs (N >= ~9.5K, e.g. the
+    # fused M3.1 QKV projection), the heuristic config wins: 14us vs 22us at
+    # M=16, N=9856, K=6144 on B200. FP4 formats keep the small-BN kernel.
+    # The wave estimate uses B200's SM count; revisit for other SM10x parts.
+    # Skipping small-BN exposes heuristic misses to the vendor fallback.
+    comptime two_m_tiles_fit_one_wave = (
+        scaling_kind != UMMAKind.KIND_MXF8F6F4
+        or ceildiv(static_N, 128) * 2 <= B200.sm_count
+    )
+    if m <= 8 or (m <= 16 and two_m_tiles_fit_one_wave):
         # Larger k-groups shorten the mainloop for this latency-bound skinny
         # decode GEMM (K=6144 -> 48 k-iters; kg=4 -> 12 groups vs 24), which an
         # isolated B200 sweep at the served QKV shapes (N in {2304,2560}, K=6144,
@@ -517,10 +534,56 @@ def _block_scaled_matmul_with_epilogue[
 
     comptime K_phys = a.static_shape[1]
 
-    # The kernel fuses the elementwise epilogue in-kernel across all regimes
-    # (`TileWriter` fires the store-redirect on both the main and small-BN
-    # paths), so redirect the store through `epilogue_fn` directly rather than
-    # falling back to a separate elementwise pass at small M.
+    # At decode-sized M the compute closure runs inside the single-tile
+    # mainloop tail, once per scalar element behind dependent global loads, and
+    # costs several microseconds on top of a GEMM that is itself ~10us. Writing
+    # the plain GEMM result to `c` and applying `compute_fn` from an
+    # elementwise kernel hides those latencies across threads. The small-BN
+    # kernel keeps the fused closure: its epilogue is cheap there, and the
+    # extra launch would lose.
+    comptime if (
+        has_compute_fn
+        and not config.is_small_bn
+        and config.scaling_kind == UMMAKind.KIND_MXF8F6F4
+    ):
+        if m <= compute_fn_unfused_m_cap:
+            _block_scaled_matmul_with_epilogue[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+                config=config,
+                pdl_level=pdl_level,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                tensor_sf,
+                no_epilogue_fn,
+                no_compute_fn,
+                ctx,
+            )
+
+            def apply_compute_fn[
+                width: Int, alignment: Int = 1
+            ](idx: Coord) {var c, var compute_fn}:
+                c.store[alignment=alignment * size_of[c_type]()](
+                    idx,
+                    compute_fn[c_type, width, alignment=alignment](
+                        idx, c.load[width=width](idx)
+                    ),
+                )
+
+            comptime simd_size = simd_width_of[c_type, target=ctx.target]()
+            elementwise[
+                simd_size,
+                target="gpu",
+                _trace_description="elementwise_block_scaled_matmul_compute",
+            ](apply_compute_fn, (m, n), ctx)
+            return
+
+    # Store-redirect epilogues and the remaining compute closures stay fused
+    # through TileWriter on both the main and small-BN paths.
     _blackwell_block_scaled_matmul_impl[
         transpose_b=transpose_b,
         K=K_phys,

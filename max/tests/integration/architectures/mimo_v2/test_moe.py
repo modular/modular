@@ -14,8 +14,10 @@
 
 from __future__ import annotations
 
+import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.moe import NvMxf4f8Strategy, moe_fp8
 from max.pipelines.architectures.mimo_v2.layers.moe import mimo_v2_moe
 from max.pipelines.architectures.mimo_v2.quant import parse_quant_scheme
 from transformers.configuration_utils import PretrainedConfig
@@ -23,8 +25,8 @@ from transformers.configuration_utils import PretrainedConfig
 EXPERTS, HIDDEN, WIDTH = 2, 256, 512
 
 
-def test_declares_the_checkpoint_experts() -> None:
-    config = PretrainedConfig(
+def _config() -> PretrainedConfig:
+    return PretrainedConfig(
         num_hidden_layers=2,
         moe_layer_freq=[0, 1],
         quantization_config={
@@ -36,13 +38,16 @@ def test_declares_the_checkpoint_experts() -> None:
             "mxfp4_block_size": 32,
         },
     )
+
+
+def test_declares_the_checkpoint_experts() -> None:
     moe = mimo_v2_moe(
         hidden_dim=HIDDEN,
         num_experts=EXPERTS,
         num_experts_per_tok=2,
         moe_dim=WIDTH,
         norm_topk_prob=True,
-        quant_config=parse_quant_scheme(config).experts,
+        quant_config=parse_quant_scheme(_config()).experts,
         devices=[DeviceRef.CPU()],
     )
 
@@ -66,3 +71,21 @@ def test_declares_the_checkpoint_experts() -> None:
         name: (weight.dtype, list(weight.shape))
         for name, weight in moe.raw_state_dict().items()
     } == expected
+
+
+def test_experts_quantize_inputs_to_mxfp8_on_nvidia(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(moe_fp8, "accelerator_api", lambda: "cuda")
+    moe = mimo_v2_moe(
+        hidden_dim=HIDDEN,
+        num_experts=EXPERTS,
+        num_experts_per_tok=2,
+        moe_dim=WIDTH,
+        norm_topk_prob=True,
+        quant_config=parse_quant_scheme(_config()).experts,
+        devices=[DeviceRef.CPU()],
+    )
+    strategy = moe._strategy()
+    assert isinstance(strategy, NvMxf4f8Strategy)
+    assert strategy.dtype == DType.float8_e4m3fn

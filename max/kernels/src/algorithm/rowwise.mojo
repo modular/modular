@@ -399,19 +399,23 @@ def strided_load[
       A vector containing the loaded data.
     """
     comptime if simd_width == 1:
-        return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
+        return addr.unsafe_load[invariant=invariant]() if mask else Scalar[
+            dtype
+        ]()
 
     # Contiguous / broadcast fast paths. Both touch every lane, so they require
     # a fully-active mask; otherwise fall through to the masked gather. With the
     # default all-true mask the guard constant-folds away.
     comptime if not is_apple_gpu() and stride == 1:
         if Bool(mask.reduce_and()):
-            return addr.load[
+            return addr.unsafe_load[
                 width=simd_width, alignment=alignment, invariant=invariant
             ]()
     comptime if not is_apple_gpu() and stride == 0:
         if Bool(mask.reduce_and()):
-            return SIMD[dtype, simd_width](addr.load[invariant=invariant]())
+            return SIMD[dtype, simd_width](
+                addr.unsafe_load[invariant=invariant]()
+            )
 
     # General case (Apple GPU, |stride| > 1, or a partially-masked load):
     # delegate to the runtime-stride overload — no logic duplicated.
@@ -962,7 +966,7 @@ struct RowCache[
             var sh = MutPointer[
                 Scalar[Self.T], MutUntrackedOrigin, address_space=.SHARED
             ](unsafe_from_address=self._shmem_addr)
-            return sh.load[width=w, alignment=al](
+            return sh.unsafe_load[width=w, alignment=al](
                 warp_off + Int(coord.coord[Self.axis])
             )
         else:
@@ -1562,7 +1566,7 @@ struct Row[
                             idx,
                         )
                         out._owned[chunk] = v
-                        sh.store[alignment=al](warp_off + pos, v)
+                        sh.unsafe_store[alignment=al](warp_off + pos, v)
                 out._shmem_addr = Int(sh)
                 # Publish this row's writes to all participants.
                 Self._row_sync()

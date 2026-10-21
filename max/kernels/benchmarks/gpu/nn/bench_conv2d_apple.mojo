@@ -157,7 +157,6 @@ def bench_shape[
         dtype,
         dtype,
         block_size,
-        None,
         input_tt.Engine,
         filter_tt.Engine,
         output_tt.Engine,

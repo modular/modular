@@ -64,7 +64,6 @@ Linear layers
 
    ColumnParallelLinear
    Embedding
-   FusedMLP
    GPTQLinear
    Linear
    MLP

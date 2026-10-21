@@ -11,14 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
 from std.math import inf, isnan, log, nan, sqrt
 from std.sys import simd_width_of
 
 from std.algorithm import vectorize
 
-from max.algorithm import elementwise, mean, sum
-from std.algorithm.functional import unswitch
+from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 
 from std.utils.coord import Coord
@@ -63,11 +61,11 @@ def kl_div[
     def kl_div_elementwise[
         simd_width: Int, alignment: Int = 1
     ](idx: Coord) {var}:
-        output.store(
+        output.unsafe_store(
             idx[0].value(),
             kl_div(
-                x.load[width=simd_width](idx[0].value()),
-                y.load[width=simd_width](idx[0].value()),
+                x.unsafe_load[width=simd_width](idx[0].value()),
+                y.unsafe_load[width=simd_width](idx[0].value()),
             ),
         )
 
@@ -88,8 +86,8 @@ def kl_div[
     var accum_scalar = Scalar[out_type](0)
 
     def kl_div_elementwise[simd_width: Int](idx: Int) {x, y, mut}:
-        var xi = x.load[width=simd_width](idx).cast[out_type]()
-        var yi = y.load[width=simd_width](idx).cast[out_type]()
+        var xi = x.unsafe_load[width=simd_width](idx).cast[out_type]()
+        var yi = y.unsafe_load[width=simd_width](idx).cast[out_type]()
         var kl = kl_div(xi, yi)
 
         # TODO: should use VDPBF16PS when applicable
@@ -109,93 +107,6 @@ def kl_div[
 # ===----------------------------------------------------------------------=== #
 
 
-def correlation[
-    dtype: DType, //, out_type: DType = dtype
-](
-    u: ImmPointer[Scalar[dtype], _],
-    v: ImmPointer[Scalar[dtype], _],
-    len: Int,
-    ctx: DeviceContext,
-    *,
-    w: OptionalPointer[mut=True, u.T, _] = Optional[
-        MutPointer[u.T, MutUntrackedOrigin]
-    ](),
-    centered: Bool = True,
-) raises -> Scalar[out_type]:
-    """Compute the correlation distance between two 1-D arrays.
-
-    The correlation distance between `u` and `v`, is
-    defined as
-
-    $$
-        1 - \\frac{(u - \\bar{u}) \\cdot (v - \\bar{v})}
-                  {{\\|(u - \\bar{u})\\|}_2 {\\|(v - \\bar{v})\\|}_2}
-    $$
-
-    where $`\\bar{u}`$ is the mean of the elements of `u`
-    and $`x \\cdot y`$ is the dot product of $x$ and $y$.
-    """
-    var umu = Scalar[out_type]()
-    var vmu = Scalar[out_type]()
-    var w_list = List[Scalar[dtype]]()
-    if case .Some(w) = w:
-        w_list = List[Scalar[dtype]](capacity=len)
-        _div(w_list.unsafe_ptr(), w, _sum(w, len), len, ctx)
-    if centered:
-        if w:
-            umu = _dot[out_type=out_type](u, w_list.unsafe_ptr(), len)
-            vmu = _dot[out_type=out_type](v, w_list.unsafe_ptr(), len)
-        else:
-            umu = _mean(u, len).cast[out_type]()
-            vmu = _mean(v, len).cast[out_type]()
-
-    var uv = Scalar[out_type]()
-    var uu = Scalar[out_type]()
-    var vv = Scalar[out_type]()
-
-    comptime simd_width = simd_width_of[dtype]()
-    var uv_simd = SIMD[out_type, simd_width]()
-    var uu_simd = SIMD[out_type, simd_width]()
-    var vv_simd = SIMD[out_type, simd_width]()
-
-    var w_val = w_list.unsafe_ptr()
-
-    def accumulate[weighted: Bool]() {u, v, len, mut}:
-        def apply_wfn[simd_width: Int](idx: Int) {u, v, mut}:
-            var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
-            var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
-            var uw = ui
-            var vw = vi
-
-            comptime if weighted:
-                var wi = w_val.load[width=simd_width](idx).cast[out_type]()
-                uw *= wi
-                vw *= wi
-
-            var uvw = ui * vw
-            var uuw = ui * uw
-            var vvw = vi * vw
-
-            comptime if simd_width == 1:
-                uv += uvw[0]
-                uu += uuw[0]
-                vv += vvw[0]
-            else:
-                uv_simd += rebind[type_of(uv_simd)](uvw)
-                uu_simd += rebind[type_of(uu_simd)](uuw)
-                vv_simd += rebind[type_of(vv_simd)](vvw)
-
-        vectorize[simd_width](len, apply_wfn)
-
-    unswitch(w.__bool__(), accumulate)
-
-    uv += uv_simd.reduce_add()
-    uu += uu_simd.reduce_add()
-    vv += vv_simd.reduce_add()
-
-    return (uv / sqrt(uu * vv)).clamp(-1, 1)
-
-
 def uncentered_unweighted_correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
@@ -205,7 +116,6 @@ def uncentered_unweighted_correlation[
 ) -> Scalar[out_type]:
     """Compute the uncentered and unweighted correlation
     distance between two 1-D arrays.
-    Unlike `correlation` with arguments set, this does not raise.
 
     The correlation distance between `u` and `v`, is
     defined as
@@ -286,79 +196,6 @@ def relative_difference[
 # ===----------------------------------------------------------------------=== #
 
 
-def _sqrt[
-    dtype: DType, //
-](
-    output: MutPointer[Scalar[dtype], _],
-    x: ImmPointer[Scalar[dtype], _],
-    len: Int,
-    ctx: DeviceContext,
-) raises:
-    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store(
-            idx[0].value(),
-            rebind[SIMD[dtype, simd_width]](
-                sqrt(x.load[width=simd_width](idx[0].value()))
-            ),
-        )
-
-    elementwise[simd_width_of[dtype]()](apply_fn, Coord(len), ctx)
-
-
-def _mul[
-    dtype: DType, //
-](
-    output: MutPointer[Scalar[dtype], _],
-    x: ImmPointer[Scalar[dtype], _],
-    y: ImmPointer[Scalar[dtype], _],
-    len: Int,
-    ctx: DeviceContext,
-) raises:
-    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store(
-            idx[0].value(),
-            rebind[SIMD[dtype, simd_width]](
-                x.load[width=simd_width](idx[0].value())
-                * y.load[width=simd_width](idx[0].value())
-            ),
-        )
-
-    elementwise[simd_width_of[dtype]()](apply_fn, Coord(len), ctx)
-
-
-def _div[
-    dtype: DType, //
-](
-    output: MutPointer[Scalar[dtype], _],
-    x: ImmPointer[Scalar[dtype], _],
-    c: Scalar[dtype],
-    len: Int,
-    ctx: DeviceContext,
-) raises:
-    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store(
-            idx[0].value(),
-            rebind[SIMD[dtype, simd_width]](
-                x.load[width=simd_width](idx[0].value())
-            )
-            / c,
-        )
-
-    elementwise[simd_width_of[dtype]()](apply_fn, Coord(len), ctx)
-
-
-def _sum[
-    dtype: DType, //
-](src: ImmPointer[Scalar[dtype], _], len: Int) raises -> Scalar[dtype]:
-    return sum(Span[Scalar[dtype]](unsafe_ptr=src, length=len))
-
-
-def _mean[
-    dtype: DType, //
-](src: ImmPointer[Scalar[dtype], _], len: Int) raises -> Scalar[dtype]:
-    return mean(Span[Scalar[dtype]](unsafe_ptr=src, length=len))
-
-
 def _dot[
     dtype: DType, //, out_type: DType = dtype
 ](
@@ -373,8 +210,8 @@ def _dot[
     var accum_scalar = Scalar[out_type](0)
 
     def apply_fn[simd_width: Int](idx: Int) {x, y, mut}:
-        var xi = x.load[width=simd_width](idx).cast[out_type]()
-        var yi = y.load[width=simd_width](idx).cast[out_type]()
+        var xi = x.unsafe_load[width=simd_width](idx).cast[out_type]()
+        var yi = y.unsafe_load[width=simd_width](idx).cast[out_type]()
 
         # TODO: should use VDPBF16PS when applicable
         # (i.e., host has avx512_bf16, type = bf16, out_type = float32)

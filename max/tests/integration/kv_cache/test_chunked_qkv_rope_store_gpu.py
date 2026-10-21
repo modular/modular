@@ -49,6 +49,7 @@ class _Layout:
     v_head_dim: int = 128
     cache_head_dim: int = 256
     rotary_dim: int = 64
+    chunk_padding: int = 0
 
     @property
     def q_rows(self) -> int:
@@ -69,6 +70,9 @@ _LAYOUTS = [
     _Layout("published-tp4-one-chunk", 1, 16, 2),
     _Layout("published-tp1-four-chunks", 4, 64, 8),
     _Layout("no-padding-full-rotary", 2, 8, 4, 128, 128, 128, 128),
+    _Layout("full-published-tp2", 2, 32, 2, chunk_padding=64),
+    _Layout("full-published-tp4", 1, 16, 1, chunk_padding=64),
+    _Layout("full-published-tp1", 4, 64, 4, chunk_padding=64),
 ]
 
 
@@ -76,7 +80,7 @@ def _projection(tokens: int, epoch: int, layout: _Layout) -> torch.Tensor:
     token = np.arange(tokens, dtype=np.int64)[:, None, None]
     chunk = np.arange(layout.chunks, dtype=np.int64)[None, :, None]
     q_rows, k_rows = layout.q_rows, layout.k_rows
-    chunk_width = q_rows + k_rows + layout.v_rows
+    chunk_width = q_rows + k_rows + layout.v_rows + layout.chunk_padding
     row = np.arange(chunk_width, dtype=np.int64)[None, None, :]
     q_heads = layout.num_q_heads // layout.chunks
     kv_heads = layout.num_kv_heads // layout.chunks
@@ -103,11 +107,19 @@ def _projection(tokens: int, epoch: int, layout: _Layout) -> torch.Tensor:
         [0x3F81, 0x3EAB, 0xBF83, 0x8000, 0x3F7F, 0x4081], np.uint16
     )
     bits = np.where(dim < 8, sensitive[(dim + epoch) % len(sensitive)], bits)
+    if layout.chunk_padding:
+        bits[..., -layout.chunk_padding :] = 0x7FC0
     return torch.from_numpy(bits.view(np.int16)).view(torch.bfloat16)
 
 
 def _graph(
-    params: MHAKVCacheParams, scale: float, *, fused: bool, layout: _Layout
+    params: MHAKVCacheParams,
+    scale: float,
+    *,
+    fused: bool,
+    layout: _Layout,
+    observe_cache: bool = True,
+    frequency_positions: int = 512,
 ) -> Graph:
     q_rows, k_rows, v_rows = layout.q_rows, layout.k_rows, layout.v_rows
     with Graph(
@@ -115,12 +127,18 @@ def _graph(
         input_types=[
             TensorType(
                 DType.bfloat16,
-                ["tokens", layout.chunks, q_rows + k_rows + v_rows],
+                [
+                    "tokens",
+                    layout.chunks,
+                    q_rows + k_rows + v_rows + layout.chunk_padding,
+                ],
                 DeviceRef.GPU(),
             ),
             TensorType(DType.uint32, ["offsets"], DeviceRef.GPU()),
             TensorType(
-                DType.bfloat16, [512, layout.rotary_dim], DeviceRef.GPU()
+                DType.bfloat16,
+                [frequency_positions, layout.rotary_dim],
+                DeviceRef.GPU(),
             ),
             *params.flattened_kv_inputs(),
         ],
@@ -139,6 +157,7 @@ def _graph(
                 num_q_heads=layout.num_q_heads,
                 qk_head_dim=layout.qk_head_dim,
                 v_head_dim=layout.v_head_dim,
+                chunk_padding=layout.chunk_padding,
             )
         else:
             q = prepare_qkv_unfused(
@@ -155,8 +174,11 @@ def _graph(
             )
         # This is a graph consumer of the mutated cache, not a host readback
         # after execution. buffer_load reads the device's mutation chain.
-        consumed = ops.cast(ops.buffer_load(cache.kv_blocks), DType.float32)
-        graph.output(q, consumed)
+        if observe_cache:
+            consumed = ops.cast(ops.buffer_load(cache.kv_blocks), DType.float32)
+            graph.output(q, consumed)
+        else:
+            graph.output(q)
     return graph
 
 
@@ -327,6 +349,25 @@ def test_registered_chunked_qkv_rope_store(
             )
             actual = [_bits(cache.kv_blocks) for cache in caches]
             assert torch.equal(actual[0], actual[1])
+            q_bits = _bits(outputs[1][0])
+            assert torch.count_nonzero(q_bits[..., layout.qk_head_dim :]) == 0
+            lut = caches[1].lookup_table.to_numpy()
+            for batch, length in enumerate(prompt_lens):
+                for local in range(length):
+                    pos = cache_lens[batch] + epoch + local
+                    page = int(lut[batch, pos // 128])
+                    for plane, real_depth in (
+                        (0, layout.qk_head_dim),
+                        (1, layout.v_head_dim),
+                    ):
+                        assert (
+                            torch.count_nonzero(
+                                actual[1][
+                                    page, plane, 1, pos % 128, :, real_depth:
+                                ]
+                            )
+                            == 0
+                        )
             # The in-graph consumer must see the final writes, including the
             # FP32 value scale supplied as a CPU operand.
             for consumed, cache in zip(observed, caches, strict=True):
@@ -362,6 +403,7 @@ def _unchecked_graph(
     chunk_width: int = 1408,
     output_width: int = 256,
     rotary_width: int = 64,
+    chunk_padding: int = 0,
 ) -> Graph:
     params = MHAKVCacheParams(
         dtype=DType.bfloat16,
@@ -396,7 +438,11 @@ def _unchecked_graph(
             out_types=[
                 TensorType(DType.bfloat16, [1, 8, output_width], device)
             ],
-            parameters={"qk_head_dim": 192, "v_head_dim": 128},
+            parameters={
+                "qk_head_dim": 192,
+                "v_head_dim": 128,
+                "chunk_padding": chunk_padding,
+            },
         )[0].tensor
         graph.output(q)
     return graph
@@ -406,18 +452,24 @@ def _unchecked_graph(
     "Invalid graphs produce no MEF; this test requires the actual compiler diagnostic"
 )
 @pytest.mark.parametrize(
-    "case", ["chunk_width", "output_width", "rotary_width"]
+    "case", ["chunk_width", "output_width", "rotary_width", "chunk_padding"]
 )
 def test_registered_chunked_qkv_rejects_malformed_shapes(case: str) -> None:
     device = Accelerator()
     session = InferenceSession(devices=[device])
     # Bypass the Python wrapper: the builtin must protect its own static layout.
-    arguments = {"chunk_width": 1408, "output_width": 256, "rotary_width": 64}
+    arguments = {
+        "chunk_width": 1408,
+        "output_width": 256,
+        "rotary_width": 64,
+        "chunk_padding": 0,
+    }
     arguments[case] -= 2
     diagnostic = {
         "chunk_width": "Invalid QKV chunk width",
         "output_width": "Query output width must match cache head size",
         "rotary_width": "cache head and rotary widths must be aligned to 8 elements",
+        "chunk_padding": "QKV chunk padding must be nonnegative and aligned to 8 elements",
     }[case]
     with pytest.raises(
         RuntimeError, match="Failed to compile the model"

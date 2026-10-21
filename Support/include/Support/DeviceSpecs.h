@@ -141,7 +141,6 @@ struct DeviceRef {
 /// any device that carries the new value.
 constexpr const char *kCPULabel = "cpu";
 constexpr const char *kGPULabel = "gpu";
-constexpr const char *kNPULabel = "npu";
 
 } // namespace M
 

@@ -29,6 +29,7 @@ from .architectures import register_all_models
 from .diffusion.pipeline import PixelGenerationPipeline
 from .lib.auto_model import AutoModel, AutoTokenizer
 from .lib.auto_pipeline import AutoPipeline
+from .lib.auto_processor import AutoProcessor
 from .lib.config import (
     KVCacheConfig,
     LoRAConfig,
@@ -83,6 +84,7 @@ __all__ = [
     "PIPELINE_REGISTRY",
     "AutoModel",
     "AutoPipeline",
+    "AutoProcessor",
     "AutoTokenizer",
     "EagerUsageValidator",
     "EagerValidatorMode",

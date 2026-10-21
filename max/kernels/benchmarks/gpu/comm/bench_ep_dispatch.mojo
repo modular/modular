@@ -106,6 +106,7 @@ from shmem.ep_comm import (
 )
 
 from std.math import align_up
+from std.memory.alloc import unsafe_alloc
 from linalg.fp4_utils import (
     MXFP4_SF_VECTOR_SIZE,
     NVFP4_SF_VECTOR_SIZE,
@@ -649,7 +650,7 @@ def bench_dispatch_common[
         ctx.enqueue_memset(atomic_counters_list[i], Int32(0))
         ctx.enqueue_memset(recv_count_bufs_list[i], UInt64.MAX_FINITE)
 
-        host_topk_ids_list[i] = alloc[Int32](n_slots * n_tokens_per_rank * top_k)
+        host_topk_ids_list[i] = unsafe_alloc[Int32](n_slots * n_tokens_per_rank * top_k)
 
         device_topk_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * n_tokens_per_rank * top_k))
         device_input_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * hidden_size))
@@ -693,9 +694,9 @@ def bench_dispatch_common[
         )
 
     # fmt: off
-    var send_ptrs_inputs = alloc[UInt64](n_slots * n_ranks)
-    var recv_ptrs_inputs = alloc[UInt64](n_slots * n_ranks)
-    var recv_count_ptrs_inputs = alloc[UInt64](n_slots * n_ranks)
+    var send_ptrs_inputs = unsafe_alloc[UInt64](n_slots * n_ranks)
+    var recv_ptrs_inputs = unsafe_alloc[UInt64](n_slots * n_ranks)
+    var recv_count_ptrs_inputs = unsafe_alloc[UInt64](n_slots * n_ranks)
 
     for slot_idx in range(n_slots):
         for dev_idx in range(n_ranks):
@@ -1026,7 +1027,7 @@ def bench_dispatch_common[
     b_final.dump_report()
 
     for dev_idx in range(n_ranks):
-        host_topk_ids_list[dev_idx].free()
+        host_topk_ids_list[dev_idx].unsafe_free()
 
 
 def bench_dispatch_nvfp4[

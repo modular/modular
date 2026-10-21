@@ -118,6 +118,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506 (paged KV + matmul, same as sibling)
+    "gpu/nn/bench_group_norm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-3587 — Metal compilation failure (same as test_group_norm)
     "gpu/nn/bench_rms_norm_gemm_pdl.mojo": ["//:nvidia_gpu"],  # SM100 consumer GEMM
     "gpu/linalg/bench_apple_gpu_matmul.mojo": ["//:apple_gpu"],  # Apple M5 simdgroup matmul (incl. split-K) — Metal only
     "gpu/linalg/bench_apple_fp4_matmul.mojo": ["//:apple_gpu"],  # Apple M5 weight-only NVFP4 (W4A16) matmul — Metal only
@@ -571,7 +575,12 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = ["//:b200_gpu"],  # tcgen05 / TMA / SS-UMMA
+    # SM100 tcgen05 / TMA / SS-UMMA scorer, or the gfx950 MFMA scorer.
+    target_compatible_with = select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//max:internal_utils",
         "//max:layout",

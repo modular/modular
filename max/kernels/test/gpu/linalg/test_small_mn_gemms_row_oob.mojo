@@ -27,6 +27,7 @@
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from internal_utils import assert_almost_equal, assert_equal
 from std.random import rand
 from layout import TileTensor, row_major, Idx
@@ -104,12 +105,12 @@ def run_case[
     var c_size = m_alloc * N
     var c_logical = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_ref_host_ptr = alloc[Scalar[c_type]](c_logical)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
+    var c_ref_host_ptr = unsafe_alloc[Scalar[c_type]](c_logical)
     # Sentinel reference for the guard region: what guard rows must still be.
-    var sentinel_ref_ptr = alloc[Scalar[c_type]](guard_rows * N)
+    var sentinel_ref_ptr = unsafe_alloc[Scalar[c_type]](guard_rows * N)
 
     # Random activations/weights for the logical [M, K] x [N, K] problem.
     rand(a_host_ptr, M * K, min=-1.0, max=1.0)
@@ -197,11 +198,11 @@ def run_case[
     print("    guard rows intact (no OOB row write)")
     print("    PASS")
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_ref_host_ptr.free()
-    sentinel_ref_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_ref_host_ptr.unsafe_free()
+    sentinel_ref_ptr.unsafe_free()
     _ = a_dev^
     _ = b_dev^
     _ = c_dev^

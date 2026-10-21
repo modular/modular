@@ -237,8 +237,10 @@ def _run_case[
 
 def main() raises:
     with DeviceContext() as ctx:
-        if ctx.compute_capability() != 5:
-            print("skip: Apple grouped matmul requires Apple M5 (cc==5)")
+        if ctx.compute_capability() < 5:
+            print(
+                "skip: Apple grouped matmul requires Apple M5 or newer (cc>=5)"
+            )
             return
 
         comptime BF16 = DType.bfloat16

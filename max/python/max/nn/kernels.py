@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Mapping, MutableMapping, MutableSequence
 from typing import Any, cast
 
@@ -296,6 +297,7 @@ def fused_chunked_qkv_rope_store_ragged(
     num_q_heads: int,
     qk_head_dim: int,
     v_head_dim: int,
+    chunk_padding: int = 0,
 ) -> TensorValue:
     """Prepares chunked QKV projections and appends to a paged KV cache.
 
@@ -314,6 +316,7 @@ def fused_chunked_qkv_rope_store_ragged(
         num_q_heads: Total query heads across all input chunks.
         qk_head_dim: Unpadded query/key head width.
         v_head_dim: Unpadded value head width.
+        chunk_padding: Trailing projection rows to ignore per chunk, aligned to 8.
 
     Returns:
         Padded rotated queries, ``[tokens, num_q_heads, cache_head_width]``.
@@ -371,6 +374,11 @@ def fused_chunked_qkv_rope_store_ragged(
     expected_width = (
         num_q_heads * qk_head_dim + kv_heads * (qk_head_dim + v_head_dim)
     ) // chunks
+    if chunk_padding < 0 or chunk_padding % 8:
+        raise ValueError(
+            "chunk padding must be nonnegative and aligned to 8 elements"
+        )
+    expected_width += chunk_padding
     if chunk_width != expected_width:
         raise ValueError(
             f"chunk width must be {expected_width}, got {chunk_width}"
@@ -419,7 +427,11 @@ def fused_chunked_qkv_rope_store_ragged(
                 device=qkv.device,
             )
         ],
-        parameters={"qk_head_dim": qk_head_dim, "v_head_dim": v_head_dim},
+        parameters={
+            "qk_head_dim": qk_head_dim,
+            "v_head_dim": v_head_dim,
+            "chunk_padding": chunk_padding,
+        },
     )[0].tensor
 
 
@@ -3275,8 +3287,16 @@ def _mla_fp8_index_top_k(
         )
 
     mask_str = _mask_str(mask_variant)
+    # An NVFP4 MLA cache pages its scales apart from its values, so its rows
+    # carry each selection's scale-pool row after the value row.
+    nvfp4_mla = (
+        mla_collection is not None
+        and mla_collection.kv_blocks.dtype == DType.uint8
+    )
     out_type = TensorType(
-        dtype=DType.int32, shape=(q.shape[0], top_k), device=q.device
+        dtype=DType.int32,
+        shape=(q.shape[0], 2 * top_k if nvfp4_mla else top_k),
+        device=q.device,
     )
     parameters: dict[str, bool | int | str | DType] = {
         "num_heads": int(q.shape[1]),
@@ -3301,6 +3321,18 @@ def _mla_fp8_index_top_k(
         assert kpool == 1, "physical indices need token positions"
         op_name = "mo.mla.indexer.ragged.float8.paged.remap"
         values += [mla_collection.kv_blocks, mla_collection.lookup_table]
+        if nvfp4_mla:
+            op_name += ".nvfp4"
+            assert (
+                mla_collection.kv_scales is not None
+                and mla_collection.scales_page_stride is not None
+                and mla_collection.scales_lookup_table is not None
+            ), "an NVFP4 MLA cache must carry its scale operands"
+            values += [
+                mla_collection.kv_scales,
+                mla_collection.scales_page_stride,
+                mla_collection.scales_lookup_table,
+            ]
         parameters["write_logical"] = write_logical
         # Without the logical store the kernel never touches that output, so
         # it has no rows.
@@ -3412,7 +3444,10 @@ def mla_fp8_index_top_k_with_physical(
     Returns:
         The logical indices, as :func:`mla_fp8_index_top_k` returns them, and
         a tensor of the same shape holding their physical rows, ``-1`` where
-        the logical index is ``-1`` or its page is unmapped.
+        the logical index is ``-1`` or its page is unmapped. For an NVFP4
+        ``mla_collection`` the rows are twice as wide: the physical rows, then
+        each selection's row in the scale pool, which its scales lookup table
+        pages apart from the values.
 
     Raises:
         ValueError: If ``top_k`` is not in ``[1, 2048]`` or ``mask_variant``
@@ -3464,7 +3499,9 @@ def mla_fp8_index_top_k_physical(
     Returns:
         A ``[total_seq_len, top_k]`` tensor of the selected positions'
         physical rows in ``mla_collection``, ``-1`` past a token's candidates
-        or where a page is unmapped.
+        or where a page is unmapped. For an NVFP4 ``mla_collection`` the
+        tensor is ``[total_seq_len, 2 * top_k]``: the physical rows, then each
+        selection's row in the scale pool.
 
     Raises:
         ValueError: If ``top_k`` is not in ``[1, 2048]`` or ``mask_variant``
@@ -5123,6 +5160,7 @@ def flare_mla_decode_ragged(
         )
 
     assert kv_params.page_size is not None
+    _reject_nvfp4_mla_kv_cache(kv_params, "mo.mla.decode.ragged.paged")
     parameters = _mha_parameters(mask_variant)
 
     # Output dtype: always bfloat16 for FP8 Q (native FP8 path produces
@@ -5221,6 +5259,7 @@ def flare_mla_decode_ragged_scaled(
         )
 
     assert kv_params.page_size is not None
+    _reject_nvfp4_mla_kv_cache(kv_params, "mo.mla.decode.ragged.paged.scaled")
     parameters = _mha_parameters(mask_variant)
     if per_token_scale_rope_aware:
         parameters["per_token_scale_rope_aware"] = 1
@@ -5327,6 +5366,7 @@ def flare_mla_prefill_ragged(
         )
 
     assert kv_params.page_size is not None
+    _reject_nvfp4_mla_kv_cache(kv_params, "mo.mla.prefill.ragged.paged")
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
@@ -5402,7 +5442,11 @@ def flare_mla_prefill_plan(
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            # The plan reads only lengths, so every cache format shares one
+            # registration.
+            *kv_collection.flatten_without_attention_dispatch_metadata(
+                include_scales=False
+            ),
             layer_idx,
             buffer_size_tensor,
         ],
@@ -5459,6 +5503,133 @@ def _validate_mla_prefill_decode_graph_inputs(
         )
 
     assert kv_params.page_size is not None
+
+
+def _reject_nvfp4_mla_kv_cache(kv_params: KVCacheParams, op_name: str) -> None:
+    """Raises if ``op_name`` would read an NVFP4 latent cache it cannot decode."""
+    if kv_params.is_nvfp4_kv_cache:
+        raise ValueError(
+            f"{op_name} does not support an NVFP4 KV cache. Only the sparse"
+            " BF16-weight MLA ops (mla_decode_graph and"
+            " mla_prefill_decode_graph with sparse_indices) read one."
+        )
+
+
+NVFP4_MLA_PREFILL_CONVERT_RATIO = 150
+"""Default most context rows per query token at which sparse MLA prefill over
+an NVFP4 cache converts the context to FP8 once instead of expanding each
+selected row per query token. Override with
+``MODULAR_MLA_NVFP4_PREFILL_CONVERT_RATIO``; 0 turns the conversion off."""
+
+NVFP4_MLA_PREFILL_CONVERT_MAX_ROWS = 262144
+"""Default most context rows that conversion converts (576 bytes each). Past
+it the NVFP4 kernel runs. Override with
+``MODULAR_MLA_NVFP4_PREFILL_CONVERT_MAX_ROWS``."""
+
+
+def nvfp4_mla_prefill_convert_ratio() -> int:
+    """Returns the rows-per-query-token bound of the NVFP4 prefill conversion."""
+    return int(
+        os.environ.get(
+            "MODULAR_MLA_NVFP4_PREFILL_CONVERT_RATIO",
+            NVFP4_MLA_PREFILL_CONVERT_RATIO,
+        )
+    )
+
+
+def nvfp4_mla_prefill_convert_max_rows() -> int:
+    """Returns the most rows the NVFP4 prefill conversion converts."""
+    return int(
+        os.environ.get(
+            "MODULAR_MLA_NVFP4_PREFILL_CONVERT_MAX_ROWS",
+            NVFP4_MLA_PREFILL_CONVERT_MAX_ROWS,
+        )
+    )
+
+
+_MLA_SPARSE_PREFILL_MAX_B_TOPK = 128
+"""Widest top-k tile of the sparse MLA prefill kernel, to which the
+conversion pads each query token's remapped index row."""
+
+
+def nvfp4_mla_prefill_convert_bytes(
+    max_query_tokens: int, top_k: int, row_dim: int, page_size: int
+) -> int:
+    """Returns the most one sparse MLA prefill call over an NVFP4 cache
+    allocates, on one device, to convert its context to FP8 once.
+
+    The call allocates the FP8 copy of at most ``max_rows`` context rows, and
+    of at most ``ratio`` rows per query token; each query token's ``top_k``
+    indices rewritten into that copy as ``int32``; and a ``uint32`` per cache
+    block mapping it to its page of the copy. A step's query tokens are rows
+    of its context, so they too are at most ``max_rows``. Cache rows are
+    addressed as ``int32``, which bounds the blocks at ``2**31 / page_size``.
+
+    Args:
+        max_query_tokens: Most query tokens in one prefill step.
+        top_k: Context rows each query token attends to.
+        row_dim: Elements of one latent cache row (latent plus rope).
+        page_size: Tokens per KV cache page.
+
+    Returns:
+        The bytes, or 0 when the conversion is off.
+    """
+    ratio = nvfp4_mla_prefill_convert_ratio()
+    if ratio <= 0:
+        return 0
+    max_rows = nvfp4_mla_prefill_convert_max_rows()
+    rows = min(max_rows, ratio * max_query_tokens)
+    tokens = min(max_rows, max_query_tokens)
+    tile = _MLA_SPARSE_PREFILL_MAX_B_TOPK
+    index_row = (top_k + tile - 1) // tile * tile
+    return (
+        rows * row_dim * DType.float8_e4m3fn.size_in_bytes
+        + tokens * index_row * DType.int32.size_in_bytes
+        + (2**31 // page_size) * DType.uint32.size_in_bytes
+    )
+
+
+def _nvfp4_mla_op_suffix(
+    kv_params: KVCacheParams,
+    op_name: str,
+    *,
+    sparse: bool,
+    quant_config: QuantConfig | None,
+    physical_indices: bool | None,
+    sparse_indices_stride: int | None,
+) -> str:
+    """Returns the suffix of the op that reads ``kv_params``'s latent cache.
+
+    An NVFP4 cache passes its scale operands, which only the ``.nvfp4``
+    registrations of the sparse BF16-weight ops take. It pages its scales
+    apart from its values, so those ops read each selected token's scale-pool
+    row from the second half of its index row.
+
+    Raises:
+        ValueError: If the cache is NVFP4 and the op cannot read it, or its
+            ``sparse_indices`` are not the indexer's value rows followed by
+            scale rows.
+    """
+    if not kv_params.is_nvfp4_kv_cache:
+        return ""
+    if not sparse or quant_config is not None:
+        _reject_nvfp4_mla_kv_cache(
+            kv_params,
+            f"{op_name} {'with FP8 weights' if sparse else 'without sparse_indices'}",
+        )
+    if (
+        physical_indices is not True
+        or sparse_indices_stride is None
+        or sparse_indices_stride % 2
+    ):
+        raise ValueError(
+            f"{op_name} over an NVFP4 KV cache takes the indexer's physical"
+            " rows followed by its scale rows: physical_indices=True and an"
+            " even sparse_indices_stride, twice the top-k. Got"
+            f" physical_indices={physical_indices},"
+            f" sparse_indices_stride={sparse_indices_stride}."
+        )
+    return ".nvfp4"
 
 
 def _build_mla_prefill_decode_out_type(
@@ -5576,6 +5747,7 @@ def mla_prefill_graph(
         op_name="mla_prefill_graph",
         expected_dtype=kv_params.dtype,
     )
+    _reject_nvfp4_mla_kv_cache(kv_params, "mla_prefill_graph")
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
@@ -5791,7 +5963,11 @@ def mla_decode_graph(
         sparse_attn_sink: Per-batch attention sink weights, ``float32`` rank-1.
             ``None`` means no sink.
         sparse_indices_stride: Row stride in ``sparse_indices`` (max top-k across
-            the batch). Required when ``sparse_indices`` is set.
+            the batch). Required when ``sparse_indices`` is set. Over an NVFP4
+            cache, whose scales are paged apart from its values, a row is the
+            top-k physical rows followed by as many scale-pool rows, as
+            :func:`mla_fp8_index_top_k_physical` returns them, so the stride is
+            twice the top-k.
         index_share: Whether the folded MTP query positions share one top-k
             list, so the FP8 sparse decode gathers it once. The fold masks
             each position by logical key position, so it requires logical
@@ -5893,6 +6069,15 @@ def mla_decode_graph(
             # share one identical top-k list, so the decode kernel gathers it
             # once. Only emitted when True -> the off path is byte-identical.
             parameters["index_share"] = True
+
+    op_name += _nvfp4_mla_op_suffix(
+        kv_params,
+        "mla_decode_graph",
+        sparse=sparse,
+        quant_config=quant_config,
+        physical_indices=physical_indices,
+        sparse_indices_stride=sparse_indices_stride,
+    )
 
     # Capturable-graph scalar is appended after the optional sparse
     # tensors so the input order matches the MoGG op signature
@@ -6076,6 +6261,21 @@ def mla_prefill_decode_graph(
             # inert. Emitted only when True, so off is byte-identical.
             parameters["attn_sink_inert"] = True
 
+    nvfp4_suffix = _nvfp4_mla_op_suffix(
+        kv_params,
+        "mla_prefill_decode_graph",
+        sparse=sparse,
+        quant_config=quant_config,
+        physical_indices=physical_indices,
+        sparse_indices_stride=sparse_indices_stride,
+    )
+    if nvfp4_suffix:
+        op_name += nvfp4_suffix
+        parameters["nvfp4_convert_ratio"] = nvfp4_mla_prefill_convert_ratio()
+        parameters["nvfp4_convert_max_rows"] = (
+            nvfp4_mla_prefill_convert_max_rows()
+        )
+
     # Capturable-graph scalar appended after the optional sparse tensors
     # (see MoGG op signature).
     input_values += [num_partitions_scalar]
@@ -6127,6 +6327,9 @@ def flare_mla_decompress_k_cache(
         )
 
     assert kv_params.page_size is not None
+    _reject_nvfp4_mla_kv_cache(
+        kv_params, "mo.mla.decompress.k.cache.ragged.paged"
+    )
 
     results = ops.inplace_custom(
         "mo.mla.decompress.k.cache.ragged.paged",
@@ -12091,7 +12294,7 @@ def scatter_nd_skip_oob_indices(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return ops.custom(
-        "mo.scatter_nd.skip_neg_indices",
+        "mo.scatter_nd.skip_oob_indices",
         device=input.device,
         values=[input, updates, indices],
         out_types=[TensorType(input.dtype, input.shape, device=input.device)],

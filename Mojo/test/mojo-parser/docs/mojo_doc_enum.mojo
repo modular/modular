@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages --diagnose-missing-doc-strings %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=DIAG
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s | FileCheck %s
+# RUN: %mojo-docs-isolated --diagnose-missing-doc-strings %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=DIAG
+# RUN: %mojo-docs-isolated %s | FileCheck %s
 
 """Doc strings on `__enum` cases."""
 

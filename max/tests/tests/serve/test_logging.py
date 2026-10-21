@@ -28,7 +28,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import DummyKVCache
-from max.pipelines.modeling.types import RequestID, TextGenerationInputs
+from max.pipelines.modeling.types import (
+    BatchType,
+    CompletedBatchStats,
+    RequestID,
+    TextGenerationInputs,
+)
 from max.serve import request as request_module
 from max.serve.config import KernelTraceLevel, Settings
 from max.serve.request import register_request
@@ -153,7 +158,7 @@ def _configure_structured(log_path: Path) -> None:
     configure_logging(
         Settings(
             logs_console_level=None,
-            logs_file_level="WARNING",
+            logs_file_level="INFO",
             logs_file_path=str(log_path),
             structured_logging=True,
             disable_telemetry=True,
@@ -243,6 +248,10 @@ def test_middleware_stamps_both_ids_on_an_arbitrary_route(
     record = json.loads(lines[0])
     assert record["request_id"] == response.headers["X-Request-ID"]
     assert record["dd.trace_id"] == _TRACE_ID_HEX
+    rid = record["request_id"]
+    done = json.loads(structured.read_text().splitlines()[-1])
+    assert done["message"] == f"Request {rid} returned status 200"
+    assert (done["request_id"], done["dd.trace_id"]) == (rid, _TRACE_ID_HEX)
 
 
 def _run_forward_pass(
@@ -250,10 +259,15 @@ def _run_forward_pass(
         [TextGenerationInputs[TextContext]],
         dict[RequestID, TextGenerationOutput],
     ],
+    stats: CompletedBatchStats | None = None,
 ) -> None:
-    """Schedules one empty batch, numbered 41, through ``execute``."""
-    pipeline = Mock()
-    pipeline.execute = Mock(side_effect=execute)
+    """Runs one scheduler iteration, whose empty batch is numbered 41."""
+    # A spec, so the scheduler's other hasattr probes fail.
+    pipeline = Mock(
+        spec=["execute", "take_completed_batch_stats"],
+        execute=Mock(side_effect=execute),
+        take_completed_batch_stats=Mock(return_value=stats),
+    )
     scheduler = TokenGenerationScheduler(
         scheduler_config=TokenGenerationSchedulerConfig(
             max_batch_size=1, target_tokens_per_batch_ce=32
@@ -263,16 +277,23 @@ def _run_forward_pass(
         response_queue=queue.Queue(),
         cancel_queue=queue.Queue(),
         kv_cache=DummyKVCache(),
+        support_empty_batches=True,
     )
     scheduler._batch_counter = 41
-    scheduler._schedule(TextGenerationInputs(batches=[[]]))
+    scheduler.run_iteration()
 
 
+@pytest.mark.parametrize(
+    "stats", [None, CompletedBatchStats(BatchType.TG, 1, 1, 1, 0.01)]
+)
 def test_batch_id_is_scoped_to_the_forward_pass(
-    structured: Path, monkeypatch: pytest.MonkeyPatch
+    structured: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stats: CompletedBatchStats | None,
 ) -> None:
     # The record the pipeline logs mid-pass carries the batch ID; one logged
-    # after the pass must not keep the finished batch's ID.
+    # after the pass must not keep the finished batch's ID. The batch_metrics
+    # line names the pass it reports: under overlap, the completed one.
     monkeypatch.setattr(
         text_generation_scheduler, "_tracing_enabled", lambda: True
     )
@@ -283,7 +304,7 @@ def test_batch_id_is_scoped_to_the_forward_pass(
         logging.getLogger("max.pipelines").warning("in-batch")
         return {}
 
-    _run_forward_pass(execute)
+    _run_forward_pass(execute, stats)
     _emit("max.serve", logging.WARNING, "after-batch")
 
     records = {
@@ -291,7 +312,9 @@ def test_batch_id_is_scoped_to_the_forward_pass(
         for record in map(json.loads, structured.read_text().splitlines())
     }
     assert records["in-batch"]["batch_id"] == 41
-    assert records["after-batch"]["batch_id"] is None
+    assert "batch_id" not in records["after-batch"]
+    (metrics,) = [r for r in records.values() if "event" in r]
+    assert metrics["batch_id"] == (40 if stats else 41)
 
 
 def test_batch_id_is_not_set_without_tracing(
@@ -313,6 +336,7 @@ def test_batch_id_is_not_set_without_tracing(
     _run_forward_pass(execute)
 
     assert seen == [None]
+    assert "batch_id" not in structured.read_text()
 
 
 @pytest.mark.parametrize("tracing", [False, True], ids=["off", "tracing"])
@@ -378,6 +402,7 @@ def test_structured_logging_without_tracing_adds_only_the_request_id(
     record = json.loads(line)
     assert record["request_id"] == response.headers["X-Request-ID"]
     assert "dd.trace_id" not in record
+    assert "returned status" not in log_path.read_text()
 
 
 @pytest.fixture

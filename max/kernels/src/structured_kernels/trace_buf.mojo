@@ -182,7 +182,7 @@ struct GmemTrace(TraceBuf):
             offset: Slot index.
             val: Timestamp value (ns).
         """
-        self.ptr.store(offset, val)
+        self.ptr.unsafe_store(offset, val)
 
     @inline(.always)
     def load(self, offset: Int) -> UInt64:
@@ -194,7 +194,7 @@ struct GmemTrace(TraceBuf):
         Returns:
             The stored `u64`.
         """
-        return self.ptr.load(offset)
+        return self.ptr.unsafe_load(offset)
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]

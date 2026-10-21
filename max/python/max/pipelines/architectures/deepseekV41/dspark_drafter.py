@@ -52,7 +52,7 @@ from .layers.dspark import (
 from .layers.dspark_moe import DeepseekV41DSparkMoE
 from .layers.ragged import ReplicaTokens
 from .layers.ragged import V41RaggedRows as RaggedRows
-from .model_config import DeepseekV41Config
+from .model_config import DeepseekV41Config, position_capacity
 from .weight_adapters import DSPARK_MODULE_PREFIX
 
 
@@ -99,7 +99,9 @@ class DeepseekV41DSparkDrafter(Module):
             raise ValueError("DSpark needs dspark_target_layer_ids")
         self.config = config
         self.block_size = config.dspark_block_size
-        max_seq_len = config.max_seq_len if max_seq_len is None else max_seq_len
+        max_seq_len = (
+            position_capacity(config) if max_seq_len is None else max_seq_len
+        )
         hidden = config.hidden_size
         n_taps = len(config.dspark_target_layer_ids)
 
@@ -154,22 +156,6 @@ class DeepseekV41DSparkDrafter(Module):
         """
         return self.main_norm(self.main_proj(taps))
 
-    def context_kv(
-        self, main_x: TensorValue, positions: TensorValue
-    ) -> list[TensorValue]:
-        """Every stage's context KV for ``main_x``'s tokens, in stage order.
-
-        Args:
-            main_x: ``[1, T, hidden]``, :meth:`combine`'s output.
-            positions: ``[T]`` int32 absolute positions of those tokens.
-
-        Returns:
-            One ``[T, head_dim]`` tensor per stage.
-        """
-        return [
-            attn.context_kv(main_x, positions) for attn in self._attentions()
-        ]
-
     def store_context(
         self,
         taps: TensorValue,
@@ -193,7 +179,7 @@ class DeepseekV41DSparkDrafter(Module):
     def windows(
         self, starts: TensorValue, swa_collection: PagedCacheValues
     ) -> list[DSparkWindow]:
-        """Reads every stage's :class:`DSparkWindow` from the KV cache.
+        """Names every stage's :class:`DSparkWindow` in the KV cache.
 
         Args:
             starts: ``[b]`` int32 start position of each draft block.
@@ -486,9 +472,7 @@ class DeepseekV41WithDSpark(DeepseekV41):
             engram_host_tables=engram_host_tables,
             engram_token_map=engram_token_map,
         )
-        self.dspark = DeepseekV41DSparkDrafter(
-            config, self.device, config.max_seq_len
-        )
+        self.dspark = DeepseekV41DSparkDrafter(config, self.device)
         assert DSPARK_MODULE_PREFIX == "dspark"  # this attribute's name
 
     def tensor_parallel_replicas(

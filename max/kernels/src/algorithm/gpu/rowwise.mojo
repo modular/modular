@@ -61,6 +61,7 @@ from std.memory import stack_allocation
 from std.sys import size_of, get_defined_int
 from std.sys.info import is_apple_gpu
 from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
+from std.utils.fast_div import FastDiv
 from std.utils.static_tuple import StaticTuple
 
 from algorithm.rowwise_types import (
@@ -78,6 +79,9 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
 
 comptime _PDL_LEVEL = PDLLevel.ON
+
+# Kernel-name suffix of the 64-bit row-decode instantiations.
+comptime _wide_tag[wide: Bool]: StaticString = "_wide" if wide else ""
 comptime _SM_OVERPROVISION = 32
 
 # Output rows per SM the long-reduce-axis tiled kernel needs to beat
@@ -1001,6 +1005,100 @@ def _pointwise_splitk_combine[
 
 
 # ===-----------------------------------------------------------------------===#
+# Row decode: flat output-row index -> n-d coordinates.
+# ===-----------------------------------------------------------------------===#
+
+
+struct _RowIndexer[rank: Int, axis: Int, wide: Bool = False](
+    TrivialRegisterPassable
+):
+    """Decodes a flat output-row index into n-d coordinates with `axis`
+    pinned to 0, as `_get_nd_indices_from_flat_index` does.
+
+    A runtime 64-bit divide per dim, run by every warp of every row, made
+    narrow rows issue-bound (about 40% of the issued instructions of a
+    4096-wide bf16 row), so the per-dim reciprocals are built on the host
+    and the decode is a multiply and a shift. Only the non-axis dims past the
+    outermost one need a reciprocal: the outermost quotient is discarded, and
+    every in-range row is below its extent. With a single non-axis dim (rank
+    2) there is nothing to decode and this struct has no fields, so those
+    kernels compile to the pre-reciprocal code.
+
+    `wide` selects the 64-bit divide path for row counts that do not fit in
+    32 bits. `launch` picks it on the host and routes it to a single
+    grid-strided block kernel, so the common kernels carry neither the
+    check nor the fallback's registers.
+    """
+
+    comptime Coords = DynamicCoord[.int64, Self.rank]
+    comptime _first = 0 if Self.axis != 0 else 1
+    comptime _fast = not Self.wide and Self.rank > 2
+    comptime _num_divs = Self.rank - 2 if Self._fast else 0
+
+    var _divs: StaticTuple[FastDiv[.uint32], Self._num_divs]
+
+    @staticmethod
+    @inline(.always)
+    def _slot[dim: Int]() -> Int:
+        """Index of `dim`'s reciprocal: its rank among the divided dims."""
+        return (
+            dim
+            - (1 if Self.axis < dim else 0)
+            - (1 if Self._first < dim else 0)
+        )
+
+    @inline(.always)
+    def __init__(out self, shape: Self.Coords):
+        self._divs = StaticTuple[FastDiv[.uint32], Self._num_divs]()
+        comptime if Self._fast:
+            comptime for i in range(Self.rank):
+                comptime if i != Self.axis and i != Self._first:
+                    self._divs[Self._slot[i]()] = FastDiv[.uint32](
+                        max(Int(shape[i].value()), 1)
+                    )
+
+    @inline(.always)
+    def coords(self, shape: Self.Coords, row_idx: Int) -> Self.Coords:
+        """Returns the coordinates of output row `row_idx`.
+
+        Args:
+            shape: The shape this indexer was built from.
+            row_idx: Flat index in `[0, num_rows)`; below 2**32 unless `wide`.
+
+        Returns:
+            The row's coordinates, with `axis` pinned to 0.
+        """
+        comptime if not Self._fast:
+            # The same `Coord[Int64 x rank]` as `Self.Coords`, spelled through
+            # a different comptime expression.
+            return rebind[Self.Coords](
+                _get_nd_indices_from_flat_index[out_dtype=DType.int64](
+                    row_idx, shape, Self.axis
+                )
+            )
+
+        var res = Self.Coords()
+        comptime FastUInt = Scalar[FastDiv[.uint32].uint_type]
+        var rem = FastUInt(row_idx)
+        comptime for i in reversed(range(Self.rank)):
+            comptime if i == Self.axis:
+                res[i] = rebind[Self.Coords.element_types[i]](Scalar[.int64](0))
+            elif i == Self._first:
+                res[i] = rebind[Self.Coords.element_types[i]](
+                    Scalar[.int64](rem.cast[.int64]())
+                )
+            else:
+                var quot, dim_coord = self._divs[Self._slot[i]()].__divmod__(
+                    rem
+                )
+                res[i] = rebind[Self.Coords.element_types[i]](
+                    Scalar[.int64](dim_coord.cast[.int64]())
+                )
+                rem = quot
+        return res
+
+
+# ===-----------------------------------------------------------------------===#
 # Kernels — one per tier; each binds `ctx` and calls the body.
 # ===-----------------------------------------------------------------------===#
 
@@ -1016,13 +1114,14 @@ def _pointwise_splitk_combine[
 # moves onto `__call__` (mirrors `linalg/fp8_quantization.mojo`).
 
 
-struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
-    ImplicitlyCopyable, RegisterPassable, def() -> None
-):
+struct _BlockKernel[
+    rank: Int, params: ContextParams, Body: RowBody, wide: Bool = False
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Block-per-row kernel: one block per row, grid-strided over rows."""
 
     var body: Self.Body
     var shape: DynamicCoord[.int64, Self.rank]
+    var rows: _RowIndexer[Self.rank, Self.params.axis, Self.wide]
 
     @inline(.always)
     def __init__(
@@ -1035,9 +1134,10 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
         # copy-captured value.
         self.body = body
         self.shape = shape
+        self.rows = _RowIndexer[Self.rank, Self.params.axis, Self.wide](shape)
 
     @__name(
-        t"{Self.params.name}_block_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+        t"{Self.params.name}_block_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}{_wide_tag[Self.wide]}",
     )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -1050,20 +1150,19 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
         with PDL():
             var ctx = Context[Self.params].empty()
             for row_idx in range(block_idx.x, num_rows, grid_dim.x):
-                var row_coords = _get_nd_indices_from_flat_index(
-                    row_idx, self.shape, Self.params.axis
-                )
+                var row_coords = self.rows.coords(self.shape, row_idx)
                 self.body[Self.params](row_coords, ctx)
 
 
-struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
-    ImplicitlyCopyable, RegisterPassable, def() -> None
-):
+struct _WarpKernel[
+    rank: Int, params: ContextParams, Body: RowBody, wide: Bool = False
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Warp-per-row kernel: one warp per row, multiple rows per block,
     grid-strided over row groups."""
 
     var body: Self.Body
     var shape: DynamicCoord[.int64, Self.rank]
+    var rows: _RowIndexer[Self.rank, Self.params.axis, Self.wide]
 
     @inline(.always)
     def __init__(
@@ -1073,9 +1172,10 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     ):
         self.body = body
         self.shape = shape
+        self.rows = _RowIndexer[Self.rank, Self.params.axis, Self.wide](shape)
 
     @__name(
-        t"{Self.params.name}_warp_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+        t"{Self.params.name}_warp_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}{_wide_tag[Self.wide]}",
     )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -1095,21 +1195,20 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
             ):
                 var row_idx = block_base + warp_id()
                 if row_idx < num_rows:
-                    var row_coords = _get_nd_indices_from_flat_index(
-                        row_idx, self.shape, Self.params.axis
-                    )
+                    var row_coords = self.rows.coords(self.shape, row_idx)
                     self.body[Self.params](row_coords, ctx)
 
 
-struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
-    ImplicitlyCopyable, RegisterPassable, def() -> None
-):
+struct _TiledKernel[
+    rank: Int, params: ContextParams, Body: RowBody, wide: Bool = False
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Tiled outer-axis kernel: each thread handles `params.emit_tile_width`
     consecutive flat-output positions of the innermost non-axis dim.
     Grid-strided over output tiles."""
 
     var body: Self.Body
     var shape: DynamicCoord[.int64, Self.rank]
+    var rows: _RowIndexer[Self.rank, Self.params.axis, Self.wide]
 
     @inline(.always)
     def __init__(
@@ -1119,9 +1218,10 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
     ):
         self.body = body
         self.shape = shape
+        self.rows = _RowIndexer[Self.rank, Self.params.axis, Self.wide](shape)
 
     @__name(
-        t"{Self.params.name}_tiled_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_ew{Self.params.emit_tile_width}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+        t"{Self.params.name}_tiled_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_ew{Self.params.emit_tile_width}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}{_wide_tag[Self.wide]}",
     )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -1152,16 +1252,14 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
         with PDL():
             var ctx = Context[Self.params].empty()
             while base < num_outputs:
-                var row_coords = _get_nd_indices_from_flat_index(
-                    base, self.shape, Self.params.axis
-                )
+                var row_coords = self.rows.coords(self.shape, base)
                 self.body[Self.params](row_coords, ctx)
                 base += stride
 
 
-struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
-    ImplicitlyCopyable, RegisterPassable, def() -> None
-):
+struct _SplitkKernel[
+    rank: Int, params: ContextParams, Body: RowBody, wide: Bool = False
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Split-K inner-axis kernel: `blocks_per_row` blocks cooperate on
     one row. Per-block runtime values (partials/counters pointers +
     block position) ride in the `Context`'s var fields, so the body
@@ -1170,6 +1268,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
 
     var body: Self.Body
     var shape: DynamicCoord[.int64, Self.rank]
+    var rows: _RowIndexer[Self.rank, Self.params.axis, Self.wide]
     var partials: MutPointer[UInt8, MutUntrackedOrigin]
     var counters: MutPointer[Int32, MutUntrackedOrigin]
     var blocks_per_row: Int32
@@ -1185,12 +1284,13 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     ):
         self.body = body
         self.shape = shape
+        self.rows = _RowIndexer[Self.rank, Self.params.axis, Self.wide](shape)
         self.partials = partials
         self.counters = counters
         self.blocks_per_row = blocks_per_row
 
     @__name(
-        t"{Self.params.name}_splitk_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+        t"{Self.params.name}_splitk_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}{_wide_tag[Self.wide]}",
     )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -1208,9 +1308,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
 
         # `row_coords` is not data-dependent — compute it before the PDL
         # wait so it overlaps with the prior grid's tail.
-        var row_coords = _get_nd_indices_from_flat_index(
-            row_idx_, self.shape, Self.params.axis
-        )
+        var row_coords = self.rows.coords(self.shape, row_idx_)
         with PDL():
             var ctx = Context[Self.params](
                 partials_base=self.partials,
@@ -1223,9 +1321,9 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
             self.body[Self.params](row_coords, ctx)
 
 
-struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
-    ImplicitlyCopyable, RegisterPassable, def() -> None
-):
+struct _PointwiseSplitkKernel[
+    rank: Int, params: ContextParams, Body: RowBody, wide: Bool = False
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Per-element-output split-K kernel: `num_splits` blocks cooperate on
     one row for phase `phase` of the K+1-launch schedule. No PDL and no
     atomic counter — the launch boundary is the cross-block sync, so a
@@ -1234,6 +1332,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
 
     var body: Self.Body
     var shape: DynamicCoord[.int64, Self.rank]
+    var rows: _RowIndexer[Self.rank, Self.params.axis, Self.wide]
     var partials: MutPointer[UInt8, MutUntrackedOrigin]
     var num_splits: Int32
     var phase: Int32
@@ -1249,12 +1348,13 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     ):
         self.body = body
         self.shape = shape
+        self.rows = _RowIndexer[Self.rank, Self.params.axis, Self.wide](shape)
         self.partials = partials
         self.num_splits = num_splits
         self.phase = phase
 
     @__name(
-        t"{Self.params.name}_splitk_pointwise_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_ph{Self.params._num_phases}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}",
+        t"{Self.params.name}_splitk_pointwise_t{Self.params._tier.value}_r{Self.rank}_ax{Self.params.axis}_ph{Self.params._num_phases}_w{Self.params.simd_width}_bs{Self.params.BLOCK_SIZE}{_wide_tag[Self.wide]}",
     )
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -1270,9 +1370,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         if row_idx_ >= num_rows:
             return
 
-        var row_coords = _get_nd_indices_from_flat_index(
-            row_idx_, self.shape, Self.params.axis
-        )
+        var row_coords = self.rows.coords(self.shape, row_idx_)
         var ctx = Context[Self.params](
             partials_base=self.partials,
             counters_base=MutPointer[Int32, MutUntrackedOrigin](
@@ -1307,6 +1405,90 @@ def launch[
     name: StaticString = "rowwise",
 ](body: Body, shape: Coord, ctx: DeviceContext) raises:
     """Top-level scaffolder. Picks the tier from shape + axis,
+    instantiates the matching kernel, and launches. See `_launch`.
+
+    Parameters:
+        axis: Axis being reduced.
+        simd_width: SIMD width for tile dispatch.
+        supports_splitk: Whether the body can run in the split-K tier.
+        computationally_expensive: Per-element work is heavy.
+        BLOCK_SIZE: Threads per block for the inner-axis block tier.
+        COOPERATIVE_BLOCK_SIZE: Threads per block for the cooperative tier.
+        WARP_BLOCK_WARPS: Warps per block for the warp tier.
+        num_phases: Per-element-output split-K opt-in.
+        dtype_size: Byte size of the body's primary dtype.
+        name: Operation name for the tier kernels' `@__name`.
+
+    Args:
+        body: The per-row computation.
+        shape: Tensor shape.
+        ctx: Device context.
+
+    Raises:
+        If the underlying GPU kernel launch fails.
+    """
+    # The row decode's reciprocals take a 32-bit row index. A row count
+    # past that leaves the fast path here, on the host: one grid-strided
+    # block kernel that decodes with plain 64-bit divides, so the common
+    # kernels carry neither the check nor the fallback's registers, and
+    # `_launch`'s tier set elaborates once. Outputs alone for a row count
+    # past 2**32 exceed 4 GiB, so this path is correctness-only and never
+    # perf-critical. With one non-axis dim nothing is decoded, so rank 2
+    # never takes it.
+    comptime if shape.rank > 2:
+        var num_rows = _num_outputs_excluding_axis[axis](shape)
+        if num_rows > Int(UInt32.MAX):
+            comptime wide_params = ContextParams(
+                axis=axis,
+                emit_tile_width=1,
+                BLOCK_SIZE=COOPERATIVE_BLOCK_SIZE,
+                simd_width=1,
+                target="gpu",
+                name=name,
+            )
+            var num_blocks = min(
+                num_rows,
+                ctx.default_device_info.sm_count * _SM_OVERPROVISION,
+            )
+            ctx.enqueue_function(
+                _BlockKernel[shape.rank, wide_params, Body, True](
+                    body,
+                    Coord(coord_to_index_list(shape)),
+                ),
+                grid_dim=num_blocks,
+                block_dim=COOPERATIVE_BLOCK_SIZE,
+                attributes=pdl_launch_attributes(_PDL_LEVEL),
+            )
+            return
+    _launch[
+        axis=axis,
+        simd_width=simd_width,
+        supports_splitk=supports_splitk,
+        computationally_expensive=computationally_expensive,
+        BLOCK_SIZE=BLOCK_SIZE,
+        COOPERATIVE_BLOCK_SIZE=COOPERATIVE_BLOCK_SIZE,
+        WARP_BLOCK_WARPS=WARP_BLOCK_WARPS,
+        num_phases=num_phases,
+        dtype_size=dtype_size,
+        name=name,
+    ](body, shape, ctx)
+
+
+def _launch[
+    Body: RowBody,
+    //,
+    axis: Int,
+    simd_width: Int,
+    supports_splitk: Bool,
+    computationally_expensive: Bool,
+    BLOCK_SIZE: Int,
+    COOPERATIVE_BLOCK_SIZE: Int,
+    WARP_BLOCK_WARPS: Int,
+    num_phases: Int,
+    dtype_size: Int,
+    name: StaticString,
+](body: Body, shape: Coord, ctx: DeviceContext) raises:
+    """Tier dispatch behind `launch`. Picks the tier from shape + axis,
     instantiates the matching kernel, and launches.
 
     Tier choice:

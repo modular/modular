@@ -978,7 +978,7 @@ struct InferredDefaultType[dtype: DType = .uint32](Movable where False):
 
 # CHECK-LABEL: lit.fn @"test_dependent_default_param_inference()"() -> !kgen.none
 def test_dependent_default_param_inference():
-    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, 1])"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
+    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, 1]){{.*}}"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
     _ = InferredDefaultType(3)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params

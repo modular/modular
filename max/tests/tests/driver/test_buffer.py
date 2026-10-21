@@ -28,6 +28,7 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
+    DeviceQueue,
     Usage,
     accelerator_count,
     batch_inplace_copy,
@@ -1502,3 +1503,251 @@ def test_inplace_copy_from_still_copies_an_offset_view() -> None:
     backing[:2].inplace_copy_from(backing[2:])
 
     np.testing.assert_array_equal(backing.to_numpy(), [2, 3, 2, 3])
+
+
+def test_to_cpu_needs_no_after() -> None:
+    buf = Buffer(DType.int32, (8,), device=CPU())
+    assert buf.to(CPU()) is buf
+    assert buf.to([CPU()])[0] is buf
+
+
+def test_to_cpu_from_another_cpu_queue_requires_after() -> None:
+    cpu = CPU()
+    side = DeviceQueue(cpu)
+    if side == cpu.default_queue:
+        pytest.skip("this device context's CPU queues compare equal")
+    on_side = Buffer(DType.int32, (8,), stream=side)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to(cpu)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to([cpu])
+
+
+def test_to_cpu_from_another_cpu_queue_is_an_ordered_view() -> None:
+    cpu = CPU()
+    side = DeviceQueue(cpu)
+    n = 1 << 20
+    on_side = Buffer(DType.int32, (n,), stream=side)
+    on_side.inplace_copy_from(Buffer.from_numpy(np.full(n, 1, np.int32)))
+
+    view = on_side.to(cpu, after=side.record_event())
+    assert view._data_ptr() == on_side._data_ptr()
+    assert view.stream == cpu.default_queue
+    assert (view.to_numpy() == 1).all()
+
+    view.inplace_copy_from(Buffer.from_numpy(np.full(n, 2, np.int32)))
+    cpu.default_queue.synchronize()
+    assert (on_side.to_numpy() == 2).all()
+
+
+# Large enough that freeing it unmaps the pages, so a late read faults.
+_TEMP_SOURCE_ELEMENTS = 1 << 20
+
+
+def _cpu_destination(side_queue: bool) -> tuple[Buffer, DeviceQueue]:
+    shape = (_TEMP_SOURCE_ELEMENTS,)
+    if side_queue:
+        queue = DeviceQueue(CPU())
+        return Buffer(DType.int32, shape, stream=queue), queue
+    return Buffer(DType.int32, shape, device=CPU()), CPU().default_queue
+
+
+@pytest.mark.parametrize("side_queue", [False, True])
+def test_cpu_inplace_copy_keeps_a_temporary_source_alive(
+    side_queue: bool,
+) -> None:
+    dst, queue = _cpu_destination(side_queue)
+
+    dst.inplace_copy_from(
+        Buffer.from_numpy(np.full(_TEMP_SOURCE_ELEMENTS, 1, np.int32))
+    )
+    queue.synchronize()
+
+    assert (dst.to_numpy() == 1).all()
+
+
+@pytest.mark.parametrize("side_queue", [False, True])
+def test_cpu_batch_inplace_copy_keeps_a_temporary_source_alive(
+    side_queue: bool,
+) -> None:
+    dst, queue = _cpu_destination(side_queue)
+
+    batch_inplace_copy(
+        [dst], [Buffer.from_numpy(np.full(_TEMP_SOURCE_ELEMENTS, 1, np.int32))]
+    )
+    queue.synchronize()
+
+    assert (dst.to_numpy() == 1).all()
+
+
+@pytest.mark.parametrize("value", [0, 0xA5, 255])
+def test_memset_changes_only_slice_bytes(value: int) -> None:
+    buf = Buffer.from_numpy(np.full((3, 8), 0x55, dtype=np.uint8))
+    buf[1, :].memset(value)
+    expected = np.full((3, 8), 0x55, dtype=np.uint8)
+    expected[1] = value
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+def test_memset_clears_typed_slice_and_empty_buffer() -> None:
+    buf = Buffer.from_numpy(np.full((3, 4), np.nan, dtype=np.float32))
+    buf[1, :].memset(0)
+    assert np.isnan(buf.to_numpy()[0]).all()
+    np.testing.assert_array_equal(buf.to_numpy()[1], 0)
+    assert np.isnan(buf.to_numpy()[2]).all()
+    Buffer.zeros((0,), DType.uint8).memset(0)
+
+
+@pytest.mark.parametrize("value", [-1, 256])
+def test_memset_rejects_non_byte_value(value: int) -> None:
+    buf = Buffer.from_numpy(np.full(8, 0x55, dtype=np.uint8))
+    with pytest.raises(ValueError, match="between 0 and 255"):
+        buf.memset(value)
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+def test_memset_rejects_strided_slice() -> None:
+    buf = Buffer.from_numpy(np.full((3, 8), 0x55, dtype=np.uint8))
+    with pytest.raises(ValueError, match="contiguous"):
+        buf[:, ::2].memset(0)
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+def test_memset_rejects_a_strided_leading_dim() -> None:
+    buf = Buffer.from_numpy(np.full((4, 2), 0x55, dtype=np.uint8))
+    with pytest.raises(ValueError, match="contiguous"):
+        buf[::2, :].memset(0)
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+def test_memset_rejects_a_non_integer_value() -> None:
+    buf = Buffer.from_numpy(np.full(8, 0x55, dtype=np.uint8))
+    with pytest.raises(TypeError):
+        buf.memset(1.5)  # type: ignore[arg-type]
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DType.int8,
+        DType.int16,
+        DType.int32,
+        DType.int64,
+        DType.float16,
+        DType.bfloat16,
+        DType.float32,
+        DType.float64,
+        DType.float8_e4m3fn,
+    ],
+)
+def test_memset_writes_a_byte_pattern_not_an_element_value(
+    dtype: DType,
+) -> None:
+    buf = Buffer.zeros((3, 4), dtype)
+    buf[1:, :].memset(0x7F)
+    raw = buf.view(DType.uint8, (3, 4 * dtype.size_in_bytes)).to_numpy()
+    np.testing.assert_array_equal(raw[0], 0)
+    np.testing.assert_array_equal(raw[1:], 0x7F)
+
+
+def test_memset_fills_a_rank_zero_buffer() -> None:
+    buf = Buffer.from_numpy(np.array(7, dtype=np.int32))
+    buf.memset(0xFF)
+    assert buf.item() == -1
+
+
+def test_memset_through_an_aligned_typed_view_at_an_offset() -> None:
+    # The view folds its byte offset into a start offset on the same storage.
+    buf = Buffer.from_numpy(np.full(16, 0x55, dtype=np.uint8))
+    buf[4:12].view(DType.int32, (2,)).memset(0xA5)
+    expected = np.full(16, 0x55, dtype=np.uint8)
+    expected[4:12] = 0xA5
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+def test_memset_through_an_unaligned_typed_view() -> None:
+    # An offset that is not a multiple of the itemsize materializes a storage
+    # view, so the fill must start at that view's byte offset.
+    buf = Buffer.from_numpy(np.full(16, 0x55, dtype=np.uint8))
+    buf[3:11].view(DType.int32, (2,)).memset(0xA5)
+    expected = np.full(16, 0x55, dtype=np.uint8)
+    expected[3:11] = 0xA5
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+def test_memset_through_a_slice_of_a_slice() -> None:
+    host = np.arange(4 * 3 * 5, dtype=np.uint8).reshape(4, 3, 5)
+    buf = Buffer.from_numpy(host.copy())
+    buf[1:3, :, :][1, 1:, :].memset(0)
+    expected = host.copy()
+    expected[2, 1:] = 0
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+_MEMSET_DTYPES = [np.uint8, np.int16, np.float32, np.float64]
+
+
+@settings(deadline=None, max_examples=200)
+@given(
+    shape=st.lists(st.integers(1, 5), min_size=1, max_size=3),
+    np_dtype=st.sampled_from(_MEMSET_DTYPES),
+    value=st.integers(0, 255),
+    data=st.data(),
+)
+def test_memset_matches_numpy_on_any_contiguous_slice(
+    shape: list[int],
+    np_dtype: type[np.generic],
+    value: int,
+    data: st.DataObject,
+) -> None:
+    """Fixes leading dims by index, slices the next, keeps the rest whole."""
+    num_fixed = data.draw(st.integers(0, len(shape) - 1))
+    index: list[int | slice] = [
+        data.draw(st.integers(0, dim - 1)) for dim in shape[:num_fixed]
+    ]
+    start = data.draw(st.integers(0, shape[num_fixed]))
+    stop = data.draw(st.integers(start, shape[num_fixed]))
+    index.append(slice(start, stop))
+    index += [slice(None)] * (len(shape) - num_fixed - 1)
+
+    itemsize = np.dtype(np_dtype).itemsize
+    num_bytes = math.prod(shape) * itemsize
+    host = np.arange(num_bytes, dtype=np.uint8).view(np_dtype).reshape(shape)
+    buf = Buffer.from_numpy(host.copy())
+    buf[tuple(index)].memset(value)
+
+    expected = host.copy()
+    expected[tuple(index)].view(np.uint8)[...] = value
+    np.testing.assert_array_equal(
+        buf.to_numpy().view(np.uint8), expected.view(np.uint8)
+    )
+
+
+def test_memset_rejects_a_value_beyond_c_int() -> None:
+    buf = Buffer.from_numpy(np.full(8, 0x55, dtype=np.uint8))
+    with pytest.raises(ValueError, match="between 0 and 255"):
+        buf.memset(2**40)
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+def _f4_bytes(buf: Buffer) -> np.ndarray:
+    return buf.view(DType.uint8, (4,)).to_numpy()
+
+
+@pytest.mark.parametrize("start,stop", [(1, 4), (0, 3), (3, 6)])
+def test_memset_rejects_a_sub_byte_slice_that_splits_a_byte(
+    start: int, stop: int
+) -> None:
+    buf = Buffer.zeros((8,), DType.float4_e2m1fn)
+    buf.view(DType.uint8, (4,)).memset(0x55)
+    with pytest.raises(ValueError, match="byte-aligned"):
+        buf[start:stop].memset(0)
+    np.testing.assert_array_equal(_f4_bytes(buf), 0x55)
+
+
+def test_memset_fills_a_byte_aligned_sub_byte_slice() -> None:
+    buf = Buffer.zeros((8,), DType.float4_e2m1fn)
+    buf.view(DType.uint8, (4,)).memset(0x55)
+    buf[2:6].memset(0)
+    np.testing.assert_array_equal(_f4_bytes(buf), [0x55, 0, 0, 0x55])

@@ -153,9 +153,9 @@ def targets():
     native.alias(
         name = "mcp@multiple",
         actual = select({{
-            "@@//:use_sglang_setting": ":mcp@1.28.1",
+            "@@//:use_sglang_setting": ":mcp@1.30.0",
             "@@//:use_vllm_setting": ":mcp@2.3.0",
-            "//conditions:default": ":mcp@1.28.1",
+            "//conditions:default": ":mcp@1.30.0",
         }}),
     )
 

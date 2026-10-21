@@ -568,7 +568,7 @@ def _grouped_block_scaled_matmul_impl[
             # Problem sizes and group count
             problem_sizes,
             Int32(num_groups),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
@@ -600,7 +600,7 @@ def _grouped_block_scaled_matmul_impl[
             # Problem sizes and group count
             problem_sizes,
             Int32(num_groups),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,

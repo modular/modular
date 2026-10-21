@@ -127,10 +127,12 @@ def _bmm0_bs[
             width: Int
         ](offset: Int) {q, y, _num_heads, _depth, k_ptr, mut}:
             comptime alignment = align_of[SIMD[p_type, width]]()
-            var q_val = q.load[width=width, alignment=alignment](
+            var q_val = q.unsafe_load[width=width, alignment=alignment](
                 y * _num_heads * _depth + offset
             ).cast[k_type]()
-            var k_val = k_ptr.load[width=width, alignment=alignment](offset)
+            var k_val = k_ptr.unsafe_load[width=width, alignment=alignment](
+                offset
+            )
             var qk_val = (q_val * k_val).cast[p_type]()
 
             comptime if width == 1:

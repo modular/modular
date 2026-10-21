@@ -20,6 +20,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 comptime INF_DIST = Float32.MAX
 
@@ -170,8 +171,8 @@ def main() raises:
     var matrix_size = num_vertices * num_vertices
 
     # Allocate host memory
-    var h_dist = alloc[Float32](matrix_size)
-    var h_ref = alloc[Float32](matrix_size)
+    var h_dist = unsafe_alloc[Float32](matrix_size)
+    var h_ref = unsafe_alloc[Float32](matrix_size)
 
     # Initialize distance matrix
     print("Initializing", num_vertices, "x", num_vertices, "distance matrix")
@@ -287,5 +288,5 @@ def main() raises:
         print("\n✗ ERROR: Found", errors, "mismatches between GPU and CPU")
 
     # Cleanup
-    h_dist.free()
-    h_ref.free()
+    h_dist.unsafe_free()
+    h_ref.unsafe_free()

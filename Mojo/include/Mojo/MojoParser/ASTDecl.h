@@ -68,6 +68,7 @@ public:
     Conformance,
     Extension,
     Def,
+    FnSignature,
     EnumCase,
     Import,
     TopLevelModule,
@@ -105,6 +106,21 @@ public:
   std::optional<StringRef> getDeprecationWarning();
 
   virtual CValue getIfIRValue() const { return {}; }
+
+  /// Returns this function argument's number, or -1 for a non-argument.
+  virtual ssize_t getArgNumber() const { return -1; }
+
+  /// Returns this parameter's number, or -1 for a non-parameter.
+  virtual ssize_t getParamNumber() const { return -1; }
+
+  /// Returns this argument's ABI convention. Asserts if this is not an
+  /// argument declaration.
+  ArgConvention getArgConvention() const;
+
+  /// Returns whether this argument appears in the user-visible signature.  This
+  /// filters out implicitly declared error slots and result slots, but keeps
+  /// user-declared "out" argument slots.
+  bool isUserArgument() const;
 
   /// Return the operation backing this decl, or null if it does not have one.
   /// Callers that know the decl kind should downcast and use the typed
@@ -496,11 +512,31 @@ private:
   std::unique_ptr<llvm::SetVector<ConstraintAttr>> knownAssumptions;
 };
 
-/// An AST declaration backed by an MLIR operation.
+/// An AST declaration backed by an MLIR operation through shared storage.
+///
+/// Function signatures keep their `FnOp` in `DefASTDecl` so function types can
+/// share their declaration-list base without pretending to have an operation.
 class OpASTDecl : public ASTDecl {
 public:
   static bool classof(const ASTDecl *decl) {
-    return decl->getIfOperation() != nullptr;
+    switch (decl->getKind()) {
+    case Kind::OtherOp:
+    case Kind::Var:
+    case Kind::Alias:
+    case Kind::Conformance:
+    case Kind::Extension:
+    case Kind::EnumCase:
+    case Kind::Import:
+    case Kind::TopLevelModule:
+    case Kind::FileModule:
+    case Kind::Package:
+    case Kind::Struct:
+    case Kind::StructField:
+    case Kind::Trait:
+      return true;
+    default:
+      return false;
+    }
   }
 
   Operation *getIfOperation() const final { return operation; }
@@ -537,21 +573,22 @@ public:
   CValue getIfIRValue() const override { return value; }
 
   /// Returns this function argument's number, or -1 for a non-argument.
-  ssize_t getArgNumber() const {
-    if (value.getIfPValue())
+  ssize_t getArgNumber() const override {
+    if (isParameter)
       return -1;
     return argOrParamNumber;
   }
 
   /// Returns this parameter's number, or -1 for a non-parameter.
-  ssize_t getParamNumber() const {
-    if (!value.getIfPValue()) // Might be an argument.
+  ssize_t getParamNumber() const override {
+    if (!isParameter)
       return -1;
     return argOrParamNumber;
   }
 
-  void setArgOrParamNumber(ssize_t newArgOrParamNumber) {
-    argOrParamNumber = newArgOrParamNumber;
+  void setArgOrParamNumber(ssize_t argOrParamNumber, bool isParameter) {
+    this->argOrParamNumber = argOrParamNumber;
+    this->isParameter = isParameter;
   }
   StringAttr getCapturedName() const { return capturedName; }
   void setCapturedName(StringAttr newCapturedName) {
@@ -570,6 +607,7 @@ private:
 
   CValue value;
   ssize_t argOrParamNumber;
+  bool isParameter;
   StringAttr capturedName;
 };
 
@@ -609,8 +647,12 @@ public:
   }
 
   VarDeclOp getOp() const { return cast<VarDeclOp>(getOperation()); }
-  ssize_t getArgNumber() const { return argNumber; }
-  bool isArgument() const { return argNumber >= 0; }
+  ssize_t getArgNumber() const override { return argNumber; }
+  bool isArgument() const {
+    VarDeclKind kind = getOp().getKind();
+    return argNumber >= 0 || kind == VarDeclKind::Arg ||
+           kind == VarDeclKind::InitOutArg;
+  }
   void setArgNumber(ssize_t newArgNumber) { argNumber = newArgNumber; }
   CValue getIfIRValue() const override {
     VarDeclKind kind = getOp().getKind();
@@ -718,15 +760,60 @@ private:
                  ssize_t indentation);
 };
 
+/// Base class for declarations that own a function signature: this is
+/// DefASTNode and FunctionTypeASTNode.
+class FnSignatureASTDecl : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Def || decl->getKind() == Kind::FnSignature;
+  }
+
+  virtual FnTypeGeneratorType getSignature() const = 0;
+
+  ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
+  ArrayRef<ASTDecl *> getArgDecls() const { return argDecls; }
+
+  /// Return a list of user-declared argument declarations that we'd want to
+  /// show in document generation, for example.  This filters out implicitly
+  /// declared error slots and result slots, but keeps user-declared "out"
+  /// argument slots.
+  SmallVector<ASTDecl *> getUserArgDecls() const;
+
+protected:
+  FnSignatureASTDecl(Kind kind, SharedState &shared, llvm::SMLoc loc,
+                     ASTDecl *parentDecl, LexerCursor cursor,
+                     LexerCursor endCursor, ssize_t indentation);
+
+  /// Copies parameter declarations into persistent AST storage.
+  void setParamDecls(ArrayRef<ASTDecl *> decls);
+
+  /// Copies argument declarations into persistent AST storage.
+  void setArgDecls(ArrayRef<ASTDecl *> decls);
+
+private:
+  ArrayRef<ASTDecl *> paramDecls;
+  ArrayRef<ASTDecl *> argDecls;
+};
+
 /// The AST representation of a function declaration.
-class DefASTDecl final : public OpASTDecl {
+class DefASTDecl final : public FnSignatureASTDecl {
 public:
   static bool classof(const ASTDecl *decl) {
     return decl->getKind() == Kind::Def;
   }
 
-  FnOp getOp() const { return cast<FnOp>(getOperation()); }
-  void setOp(FnOp op) { setOperation(*op.getOperation()); }
+  FnOp getOp() const {
+    assert(operation && "DefASTDecl must have an operation");
+    return operation;
+  }
+  void setOp(FnOp op) { operation = op; }
+  Operation *getIfOperation() const override {
+    return operation ? const_cast<FnOp &>(operation).getOperation() : nullptr;
+  }
+
+  FnTypeGeneratorType getSignature() const override {
+    return getOp().getFuncTypeGenerator();
+  }
 
   LogicalResult resolveSignature(Lexer &lexer) override;
   LogicalResult resolveSyntheticSignature() override;
@@ -736,13 +823,45 @@ public:
   /// If this is a method of a struct, trait, or extension, return its parent.
   TypeScopeASTDecl *tryGetMethodParentDecl() const;
 
+  /// Create unlisted declarations for the parameters and arguments represented
+  /// only by this function's IR signature.
+  void createIRSignatureDecls(DeclResolver &resolver);
+
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
+  friend class ClosureEmitter;
 
   DefASTDecl(SharedState &shared, FnOp fnOp, llvm::SMLoc loc,
              ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
              ssize_t indentation);
+
+  FnOp operation;
+};
+
+/// The AST representation of an anonymous function type.
+class FunctionTypeASTDecl final : public FnSignatureASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::FnSignature;
+  }
+
+  FnTypeGeneratorType getSignature() const override { return signature; }
+
+  /// Stores the completed signature and copies its declarations into
+  /// persistent AST storage.
+  void setSignature(FnTypeGeneratorType signature, ArrayRef<ASTDecl *> params,
+                    ArrayRef<ASTDecl *> args);
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  FunctionTypeASTDecl(SharedState &shared, llvm::SMLoc loc, ASTDecl *parentDecl,
+                      LexerCursor cursor, LexerCursor endCursor,
+                      ssize_t indentation);
+
+  FnTypeGeneratorType signature;
 };
 
 /// An AST declaration that provides a `Self` type to its members.
@@ -832,13 +951,25 @@ public:
   /// Compute the `Self` type represented by a struct declaration operation.
   static Type computeSelfType(StructDeclOp structOp);
 
+  /// Return this struct's parameter declarations in signature order.
+  ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
+
+  /// Return the parameter declaration with the given internal name, if any.
+  ASTDecl *getParamByName(StringAttr name) const;
+
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
+  friend class SharedState;
+
+  /// Copies parameter declarations into persistent AST storage.
+  void setParamDecls(ArrayRef<ASTDecl *> decls);
 
   StructASTDecl(SharedState &shared, StructDeclOp structOp, llvm::SMLoc loc,
                 ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
                 ssize_t indentation);
+
+  ArrayRef<ASTDecl *> paramDecls;
 };
 
 /// The AST representation of a trait declaration.

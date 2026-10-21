@@ -486,9 +486,9 @@ def _copy_from[
         comptime num_scalars = num_elements * DstEngine.element_size
         comptime num_chunks = num_scalars // width
         comptime for i in range(num_chunks):
-            dst_ptr.store[alignment=dst_alignment](
+            dst_ptr.unsafe_store[alignment=dst_alignment](
                 i * width,
-                src_ptr.load[width=width, alignment=src_alignment](
+                src_ptr.unsafe_load[width=width, alignment=src_alignment](
                     i * width
                 ).cast[dst_dtype](),
             )
@@ -496,9 +496,9 @@ def _copy_from[
         comptime for i in range(num_elements):
             var src_offset = src_layout(Idx[i])
             var dst_offset = dst_layout(Idx[i])
-            dst_ptr.store[alignment=dst_alignment](
+            dst_ptr.unsafe_store[alignment=dst_alignment](
                 dst_offset,
-                src_ptr.load[
+                src_ptr.unsafe_load[
                     width=DstEngine.element_size, alignment=src_alignment
                 ](src_offset).cast[dst_dtype](),
             )
@@ -657,11 +657,15 @@ def _elementwise_binary_out_with_broadcast[
             var lhs_idx = lhs_layout(Idx[i])
             var rhs_idx = rhs_layout(Idx[i % rhs_size])
 
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 dst_idx,
                 func(
-                    lhs_ptr.load[width=width, alignment=alignment](lhs_idx),
-                    rhs_ptr.load[width=width, alignment=alignment](rhs_idx),
+                    lhs_ptr.unsafe_load[width=width, alignment=alignment](
+                        lhs_idx
+                    ),
+                    rhs_ptr.unsafe_load[width=width, alignment=alignment](
+                        rhs_idx
+                    ),
                 ),
             )
     else:
@@ -669,11 +673,15 @@ def _elementwise_binary_out_with_broadcast[
             var dst_idx = dst_layout(Idx[i])
             var lhs_idx = lhs_layout(Idx[i])
             var rhs_idx = rhs_layout(Idx[i])
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 dst_idx,
                 func(
-                    lhs_ptr.load[width=width, alignment=alignment](lhs_idx),
-                    rhs_ptr.load[width=width, alignment=alignment](rhs_idx),
+                    lhs_ptr.unsafe_load[width=width, alignment=alignment](
+                        lhs_idx
+                    ),
+                    rhs_ptr.unsafe_load[width=width, alignment=alignment](
+                        rhs_idx
+                    ),
                 ),
             )
 
@@ -765,22 +773,30 @@ def _elementwise_binary_with_broadcast[
             var lhs_idx = self_layout(Idx[i])
             var rhs_idx = other_layout(Idx[i % other_size])
 
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 lhs_idx,
                 func(
-                    dst_ptr.load[width=width, alignment=alignment](lhs_idx),
-                    other_ptr.load[width=width, alignment=alignment](rhs_idx),
+                    dst_ptr.unsafe_load[width=width, alignment=alignment](
+                        lhs_idx
+                    ),
+                    other_ptr.unsafe_load[width=width, alignment=alignment](
+                        rhs_idx
+                    ),
                 ),
             )
     else:
         comptime for i in range(type_of(self_layout).static_product):
             var lhs_idx = self_layout(Idx[i])
             var rhs_idx = other_layout(Idx[i])
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 lhs_idx,
                 func(
-                    dst_ptr.load[width=width, alignment=alignment](lhs_idx),
-                    other_ptr.load[width=width, alignment=alignment](rhs_idx),
+                    dst_ptr.unsafe_load[width=width, alignment=alignment](
+                        lhs_idx
+                    ),
+                    other_ptr.unsafe_load[width=width, alignment=alignment](
+                        rhs_idx
+                    ),
                 ),
             )
 
@@ -863,9 +879,11 @@ def _elementwise_unary_out[
     comptime for i in range(type_of(dst_layout).static_product):
         var dst_idx = dst_layout(Idx[i])
         var src_idx = src_layout(Idx[i])
-        dst_ptr.store[alignment=alignment](
+        dst_ptr.unsafe_store[alignment=alignment](
             dst_idx,
-            func(src_ptr.load[width=width, alignment=alignment](src_idx)),
+            func(
+                src_ptr.unsafe_load[width=width, alignment=alignment](src_idx)
+            ),
         )
 
 
@@ -2509,10 +2527,10 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
 
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
-            storage.unsafe_bitcast[Scalar[dtype]]().store(
+            storage.unsafe_bitcast[Scalar[dtype]]().unsafe_store(
                 idx,
                 func(
-                    storage.unsafe_bitcast[Scalar[dtype]]().load[
+                    storage.unsafe_bitcast[Scalar[dtype]]().unsafe_load[
                         width=Self.element_width
                     ](idx)
                 ),
@@ -2623,10 +2641,10 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         # during elaboration when passed as a function value.
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
-            storage.unsafe_bitcast[Scalar[dtype]]().store(
+            storage.unsafe_bitcast[Scalar[dtype]]().unsafe_store(
                 idx,
                 exp(
-                    storage.unsafe_bitcast[Scalar[dtype]]().load[
+                    storage.unsafe_bitcast[Scalar[dtype]]().unsafe_load[
                         width=Self.element_width
                     ](idx)
                     * scale.cast[dtype]()
@@ -3335,10 +3353,12 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         comptime for i in range(type_of(dst_layout).static_product):
             var dst_idx = dst_layout(Idx[i])
             var src_idx = src_layout(Idx[i])
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 dst_idx,
                 exp(
-                    src_ptr.load[width=width, alignment=alignment](src_idx)
+                    src_ptr.unsafe_load[width=width, alignment=alignment](
+                        src_idx
+                    )
                     * scale.cast[dtype]()
                 ),
             )
@@ -4094,12 +4114,12 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
 
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
-            _device_leaf_ptr(storage).store(
+            _device_leaf_ptr(storage).unsafe_store(
                 idx,
                 func(
-                    _device_leaf_ptr(storage).load[width=Self.element_width](
-                        idx
-                    )
+                    _device_leaf_ptr(storage).unsafe_load[
+                        width=Self.element_width
+                    ](idx)
                 ),
             )
 
@@ -4213,12 +4233,12 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         # during elaboration when passed as a function value.
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
-            _device_leaf_ptr(storage).store(
+            _device_leaf_ptr(storage).unsafe_store(
                 idx,
                 exp(
-                    _device_leaf_ptr(storage).load[width=Self.element_width](
-                        idx
-                    )
+                    _device_leaf_ptr(storage).unsafe_load[
+                        width=Self.element_width
+                    ](idx)
                     * scale.cast[dtype]()
                 ),
             )
@@ -4929,10 +4949,12 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
             var dst_idx = dst_layout(Idx[i])
             var src_idx = src_layout(Idx[i])
             # Store through the device leaf pointer, matching `iexp`.
-            _device_leaf_ptr(dst_storage).store(
+            _device_leaf_ptr(dst_storage).unsafe_store(
                 dst_idx,
                 exp(
-                    src_ptr.load[width=width, alignment=alignment](src_idx)
+                    src_ptr.unsafe_load[width=width, alignment=alignment](
+                        src_idx
+                    )
                     * scale.cast[dtype]()
                 ),
             )

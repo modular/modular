@@ -27,14 +27,17 @@ for bit-exact comparisons between MAX runs, use batch size 1 or
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import dataclasses
 import logging
 import operator
 import shlex
 import weakref
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Coroutine, Iterable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from types import TracebackType
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
@@ -52,13 +55,20 @@ from max.pipelines.context import (
 )
 from max.pipelines.kv_cache.kv_connector import KVTransfer
 from max.pipelines.modeling.types import (
+    InputModality,
     PipelineOutputsDict,
     RequestID,
     TextGenerationInputs,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
 )
 
 from .config import PipelineConfig
+from .interfaces import PipelineModel
 from .log_probabilities import _MAX_TOP_LOGPROBS
+from .pipeline_variants.block_diffusion_text_generation import (
+    BlockDiffusionTextGenerationPipeline,
+)
 from .registry import PIPELINE_REGISTRY
 
 __all__ = [
@@ -74,6 +84,8 @@ _ROW_SEED_STRIDE = 1 << 32
 _U64_MASK = (1 << 64) - 1
 
 _logger = logging.getLogger("max.pipelines")
+
+_T = TypeVar("_T")
 
 _warned_unwarmed_pipelines: weakref.WeakSet[BatchPipeline] = weakref.WeakSet()
 
@@ -106,6 +118,13 @@ class _EOSTokenSource(Protocol):
 class _VocabSizeSource(Protocol):
     @property
     def tokenizer_vocab_size(self) -> int: ...
+
+
+@runtime_checkable
+class _ContextSource(Protocol):
+    async def new_context(
+        self, request: TextGenerationRequest
+    ) -> TextContext: ...
 
 
 @runtime_checkable
@@ -159,10 +178,12 @@ class BatchPipeline(Protocol):
     ``execute`` returns the previous call's results also defines a boolean
     ``overlap_active`` property, read the way serve's schedulers read it. A
     pipeline that can replay captured device graphs defines a boolean
-    ``graph_capture_ready`` property, true once its graphs are captured.
-    GenerateIterator also reads the memory plan's max length, batch token
-    limits and LoRA adapters from the private ``_pipeline_model``, the only
-    place they live, so another implementation must define it as well.
+    ``graph_capture_ready`` property, true once its graphs are captured. For
+    a ``messages`` batch or an image-capable model, the tokenizer also
+    defines ``new_context``, which builds each row. GenerateIterator also
+    reads the memory plan's max length, batch token limits and LoRA adapters
+    from the private ``_pipeline_model``, the only place they live, so
+    another implementation must define it as well.
     """
 
     @property
@@ -207,6 +228,11 @@ class GenerateResult:
     """Each row's prompt followed by its new tokens, in input order, as in
     Hugging Face ``generate``."""
 
+    prompt_lengths: list[int]
+    """Each row's prompt length, so ``sequences[i][:prompt_lengths[i]]`` is
+    row ``i``'s prompt. A prompt built from ``messages`` has its chat
+    template applied and its image placeholders expanded."""
+
     logits: list[npt.NDArray[np.float32]] | None = None
     """Each row's next-token logits, as :attr:`GenerateIterator.logits`, when
     requested."""
@@ -238,13 +264,25 @@ _open_iterators: weakref.WeakKeyDictionary[
 ] = weakref.WeakKeyDictionary()
 
 
+def _is_message(value: object) -> bool:
+    return isinstance(value, (Mapping, TextGenerationRequestMessage))
+
+
 def _int_rows(values: Iterable[Sequence[int]], name: str) -> list[list[int]]:
+    rows: list[Sequence[int]] = []
     try:
-        return [[operator.index(value) for value in row] for row in values]
+        rows = list(values)
+        return [[operator.index(value) for value in row] for row in rows]
     except TypeError:
+        hint = "Wrap one prompt as [ids]."
+        if any(
+            _is_message(row)
+            or (isinstance(row, Sequence) and any(map(_is_message, row)))
+            for row in rows
+        ):
+            hint = "Pass conversations as messages=."
         raise TypeError(
-            f"{name} must be a list of integer lists, one per prompt. Wrap "
-            "one prompt as [ids]."
+            f"{name} must be a list of integer lists, one per prompt. {hint}"
         ) from None
 
 
@@ -265,6 +303,129 @@ def _materialize_prompts(
     return [
         [token for token, keep in zip(prompt, mask, strict=True) if keep]
         for prompt, mask in zip(prompts, masks, strict=True)
+    ]
+
+
+@dataclasses.dataclass(frozen=True)
+class _Conversation:
+    messages: list[TextGenerationRequestMessage]
+    images: list[bytes]
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _materialize_conversations(
+    pipeline_config: PipelineConfig,
+    messages: Sequence[
+        Sequence[TextGenerationRequestMessage | Mapping[str, object]]
+    ],
+    images: Sequence[Sequence[bytes]] | None,
+    caller: str,
+    max_images: int | None,
+) -> list[_Conversation]:
+    messages = list(messages)
+    if any(isinstance(row, str) or _is_message(row) for row in messages):
+        raise TypeError(
+            "messages must be a list of conversations, one per row. Wrap one "
+            "conversation as [messages]."
+        )
+    rows = [
+        [
+            message
+            if isinstance(message, TextGenerationRequestMessage)
+            else TextGenerationRequestMessage.model_validate(message)
+            for message in row
+        ]
+        for row in messages
+    ]
+    if images is None:
+        row_images: list[list[bytes]] = [[] for _ in rows]
+    else:
+        shape_error = TypeError(
+            "images must be a list of encoded image lists, one per row. Wrap "
+            "one row's images as [images]."
+        )
+        image_rows = list(images)
+        # Hugging Face takes a flat list of PIL images, whose items don't
+        # iterate.
+        if any(
+            isinstance(row, (bytes, bytearray, str))
+            or not isinstance(row, Iterable)
+            for row in image_rows
+        ):
+            raise shape_error
+        row_images = [list(row) for row in image_rows]
+        if not all(
+            isinstance(image, bytes) for row in row_images for image in row
+        ):
+            raise shape_error
+        if len(row_images) != len(rows):
+            raise ValueError(
+                f"images has {_plural(len(row_images), 'row')}, but messages "
+                f"has {len(rows)}. Pass one list of images per conversation."
+            )
+    image_parts = [
+        sum(message.number_of_images for message in conversation)
+        for conversation in rows
+    ]
+    video_rows = [
+        row
+        for row, conversation in enumerate(rows)
+        if any(message.number_of_videos for message in conversation)
+    ]
+    if any(image_parts) or video_rows:
+        arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
+        if arch is None or InputModality.IMAGE not in arch.input_modalities:
+            row = next(
+                row
+                for row, count in enumerate(image_parts)
+                if count or row in video_rows
+            )
+            media = (
+                _plural(image_parts[row], "image")
+                if image_parts[row]
+                else "a video part"
+            )
+            name = (
+                pipeline_config.model.model_path if arch is None else arch.name
+            )
+            raise ValueError(
+                f"Row {row} has {media}, but {name} takes text only."
+            )
+    if video_rows:
+        raise _unsupported(
+            pipeline_config,
+            "video inputs",
+            f"Row {video_rows[0]} has a video part, and {caller} builds text "
+            "and image rows only",
+            caller=caller,
+        )
+    if any(image_parts):
+        if max_images is not None and max(image_parts) > max_images:
+            row = next(
+                row
+                for row, count in enumerate(image_parts)
+                if count > max_images
+            )
+            raise ValueError(
+                f"Row {row} has {_plural(image_parts[row], 'image')}, but this "
+                f"pipeline takes at most {_plural(max_images, 'image')} per "
+                "row, as max serve does."
+            )
+    for row, (num_parts, encoded) in enumerate(
+        zip(image_parts, row_images, strict=True)
+    ):
+        if len(encoded) != num_parts:
+            raise ValueError(
+                f"Row {row} has {_plural(num_parts, 'image part')} but "
+                f"{_plural(len(encoded), 'image')}. Pass one encoded image "
+                "per image part, in order."
+            )
+    return [
+        _Conversation(conversation, encoded)
+        for conversation, encoded in zip(rows, row_images, strict=True)
     ]
 
 
@@ -292,14 +453,64 @@ def _resolve_sampling_params(
     )
 
 
+def _run_coroutine(coroutine: Coroutine[object, object, _T]) -> _T:
+    """Runs ``coroutine`` to completion from synchronous code.
+
+    It runs on a worker thread with its own loop and the caller's context
+    variables, so it works inside a running loop, as in Jupyter, and leaves
+    the caller's loop alone.
+    """
+    context = contextvars.copy_context()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(context.run, asyncio.run, coroutine).result()
+
+
+async def _new_contexts(
+    tokenizer: _ContextSource, requests: Sequence[TextGenerationRequest]
+) -> list[TextContext]:
+    contexts = []
+    for row, request in enumerate(requests):
+        try:
+            contexts.append(await tokenizer.new_context(request))
+        except ValueError as error:
+            error.args = (f"Row {row}: {error}",)
+            raise
+    return contexts
+
+
+def _row_request(
+    row: Sequence[int] | _Conversation, sampling_params: SamplingParams
+) -> TextGenerationRequest:
+    if isinstance(row, _Conversation):
+        return TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="",
+            messages=row.messages,
+            images=row.images,
+            sampling_params=sampling_params,
+        )
+    return TextGenerationRequest(
+        request_id=RequestID(),
+        model_name="",
+        prompt=list(row),
+        sampling_params=sampling_params,
+    )
+
+
 def _build_contexts(
     pipeline: BatchPipeline,
-    prompts: Sequence[Sequence[int]],
+    rows: Sequence[Sequence[int] | _Conversation],
     *,
     max_new_tokens: int,
     sampling_params: SamplingParams,
+    tokenizer_builds_rows: bool,
 ) -> list[TextContext]:
-    """Builds one context per prompt."""
+    """Builds one context per row.
+
+    The pipeline's tokenizer builds every row of a ``messages`` batch, and
+    every row on an image-capable model, whose context class carries fields
+    ``TextContext`` lacks.
+    """
     planned_max_length = pipeline._pipeline_model.max_seq_len
     if sampling_params.min_new_tokens > max_new_tokens:
         raise ValueError(
@@ -307,7 +518,53 @@ def _build_contexts(
             "arguments or the generation config, exceeds "
             f"max_new_tokens={max_new_tokens}. Raise max_new_tokens."
         )
+    min_new_tokens = max(sampling_params.min_new_tokens, 1)
+
+    def row_max_length(row: int, prompt_length: int) -> int:
+        if prompt_length + min_new_tokens > planned_max_length:
+            raise ValueError(
+                f"Row {row} needs at least {prompt_length + min_new_tokens} "
+                f"tokens ({prompt_length} prompt + {min_new_tokens} new), but "
+                f"the pipeline's planned max length is {planned_max_length}. "
+                "Raise max_length."
+            )
+        max_length = prompt_length + max_new_tokens
+        if sampling_params.ignore_eos and max_length > planned_max_length:
+            raise ValueError(
+                f"Row {row} needs {max_length} tokens, but the pipeline's "
+                f"planned max length is {planned_max_length}, and with "
+                "ignore_eos every row runs all max_new_tokens steps. Raise "
+                "max_length or lower max_new_tokens."
+            )
+        return min(planned_max_length, max_length)
+
+    row_sampling_params = [
+        dataclasses.replace(
+            sampling_params,
+            seed=(sampling_params.seed + row * _ROW_SEED_STRIDE) & _U64_MASK,
+        )
+        for row in range(len(rows))
+    ]
     tokenizer = pipeline.tokenizer
+    if tokenizer_builds_rows:
+        assert isinstance(tokenizer, _ContextSource)
+        contexts = _run_coroutine(
+            _new_contexts(
+                tokenizer,
+                [
+                    _row_request(row, params)
+                    for row, params in zip(
+                        rows, row_sampling_params, strict=True
+                    )
+                ],
+            )
+        )
+        for row, context in enumerate(contexts):
+            # The tokenizer clamps to its own max length, which can exceed
+            # the memory plan's.
+            context.max_length = row_max_length(row, len(context.tokens))
+        return contexts
+
     # The same set serve's tokenizer builds for a request.
     eos_token_ids: set[int] = set()
     if not sampling_params.ignore_eos:
@@ -318,36 +575,16 @@ def _build_contexts(
         if isinstance(tokenizer, _VocabSizeSource)
         else None
     )
-
-    min_new_tokens = max(sampling_params.min_new_tokens, 1)
     contexts = []
-    for row, prompt in enumerate(prompts):
-        if len(prompt) + min_new_tokens > planned_max_length:
-            raise ValueError(
-                f"Row {row} needs at least {len(prompt) + min_new_tokens} "
-                f"tokens ({len(prompt)} prompt + {min_new_tokens} new), but "
-                f"the pipeline's planned max length is {planned_max_length}. "
-                "Raise max_length."
-            )
-        max_length = len(prompt) + max_new_tokens
-        if sampling_params.ignore_eos and max_length > planned_max_length:
-            raise ValueError(
-                f"Row {row} needs {max_length} tokens, but the pipeline's "
-                f"planned max length is {planned_max_length}, and with "
-                "ignore_eos every row runs all max_new_tokens steps. Raise "
-                "max_length or lower max_new_tokens."
-            )
+    for row, prompt in enumerate(rows):
+        assert not isinstance(prompt, _Conversation)
         contexts.append(
             TextContext(
                 request_id=RequestID(),
-                max_length=min(planned_max_length, max_length),
+                max_length=row_max_length(row, len(prompt)),
                 tokens=TokenBuffer(np.asarray(prompt, dtype=np.int64)),
                 eos_tracker=EOSTracker(eos_token_ids=set(eos_token_ids)),
-                sampling_params=dataclasses.replace(
-                    sampling_params,
-                    seed=(sampling_params.seed + row * _ROW_SEED_STRIDE)
-                    & _U64_MASK,
-                ),
+                sampling_params=row_sampling_params[row],
                 vocab_size=vocab_size,
             )
         )
@@ -403,16 +640,21 @@ def _unsupported(
     with a ``max serve`` command that rebuilds this pipeline with
     ``serve_flags`` added, then ``note`` if given.
     """
-    command = shlex.join(
+    main = pipeline_config.models.get("main")
+    model_flags = (
         [
-            "max",
-            "serve",
             "--model-path",
-            pipeline_config.model.model_path,
+            main.model_path,
             *_pipeline_serve_flags(pipeline_config),
-            *serve_flags,
+        ]
+        if main is not None
+        # A diffusion pipeline has only components, all from one repo.
+        else [
+            "--model-path",
+            next(iter(pipeline_config.models.values())).model_path,
         ]
     )
+    command = shlex.join(["max", "serve", *model_flags, *serve_flags])
     message = (
         f"{caller} does not support {feature}. {reason}.\n"
         f"{caller} runs the pipeline directly, outside max serve. "
@@ -425,26 +667,39 @@ def _unsupported(
 
 def _check_supported(
     pipeline_config: PipelineConfig, caller: str = "generate()"
-) -> None:
+) -> type[TextContext]:
     """Raises if ``caller`` cannot run the pipeline's model.
 
     The error names ``caller``, the class the user built. A feature only
     serve runs gets the ``max serve`` command to use instead.
+
+    Returns:
+        The context class the model's rows use.
     """
     context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
-    # TODO(katecaldwell): Support image inputs and image generation, the
-    # first follow-up once this API lands.
-    if issubclass(context_type, TextAndVisionContext):
-        raise ValueError(
-            f"{caller} does not support image inputs yet. The model needs "
-            f"{context_type.__name__} inputs, and {caller} builds text-only "
-            "rows from token ids."
-        )
+    arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
     if not issubclass(context_type, TextContext):
-        raise ValueError(
-            f"{caller} runs text generation models only, and this model "
-            f"uses {context_type.__name__}. Image generation and other model "
-            "types are not supported yet."
+        raise _unsupported(
+            pipeline_config,
+            f"{context_type.__name__} models"
+            if arch is None
+            else arch.task.value.replace("_", " "),
+            f"The model uses {context_type.__name__}, and {caller} generates "
+            "text",
+            caller=caller,
+        )
+    if (
+        arch is not None
+        and arch.pipeline_cls is not None
+        and issubclass(arch.pipeline_cls, BlockDiffusionTextGenerationPipeline)
+    ):
+        raise _unsupported(
+            pipeline_config,
+            "block diffusion models",
+            f"{arch.name} decodes a block of tokens per step with its own "
+            "sampling, so it ignores temperature, top_k and seed and returns "
+            "no logits",
+            caller=caller,
         )
     lora = pipeline_config.lora
     if lora is not None and lora.enable_lora:
@@ -453,6 +708,7 @@ def _check_supported(
             f"{caller} runs only the base model and never activates an adapter",
             caller=caller,
         )
+    return context_type
 
 
 def _lora_unsupported(
@@ -628,6 +884,16 @@ def _check_output_options(
             "with overlap off. Pass output_logits=True and take log_softmax "
             "over the logits, or use AutoModel without device graph capture."
         )
+    model_type = type(pipeline._pipeline_model)
+    # The pipeline would warn and return no log probabilities after prefill.
+    if output_logprobs and (
+        getattr(model_type, "compute_log_probabilities", None)
+        is PipelineModel.compute_log_probabilities
+    ):
+        raise ValueError(
+            f"{model_type.__name__} does not compute log probabilities. Pass "
+            "output_logits=True and take log_softmax over the logits."
+        )
 
 
 def _align_up(value: int, alignment: int) -> int:
@@ -731,7 +997,12 @@ class GenerateIterator:
     context manager so an exception releases the rows. To run contexts built
     elsewhere, such as by the pipeline's tokenizer, use :meth:`from_contexts`.
 
-    In a batch built from ``input_ids``, row ``i`` samples with
+    A batch takes ``input_ids`` or ``messages``. With ``messages``, the
+    pipeline's tokenizer builds each row as serve builds a chat request,
+    applying the chat template and expanding each image's placeholders, so
+    read each row's prompt length from :attr:`prompt_lengths`.
+
+    In a batch built from ``input_ids`` or ``messages``, row ``i`` samples with
     ``seed + i * 2**32``. Serve deliberately makes requests with the same
     pinned seed draw identically. GenerateIterator instead gives each row its
     own stream, as Hugging Face users expect, so identical prompts draw
@@ -786,6 +1057,13 @@ class GenerateIterator:
         attention_mask: Zeros mark padding in ``input_ids``, which
             GenerateIterator drops, since it runs prompts unpadded. A
             tokenizer returns it with the ids.
+        messages: One conversation per row, instead of ``input_ids``. Each
+            message is a
+            :class:`~max.pipelines.modeling.types.TextGenerationRequestMessage`
+            or a dict in the same shape, with an image part where each image
+            goes.
+        images: One list of encoded images per conversation, matching its
+            image parts in order. Needs an architecture that takes images.
         max_new_tokens: The most tokens to generate for each row.
         min_new_tokens: The fewest tokens a row generates before EOS can end
             it. Defaults to the model's generation config.
@@ -814,27 +1092,36 @@ class GenerateIterator:
             step, for :attr:`logits`. Needs a :attr:`synchronous` pipeline.
         output_logprobs: Records the log probability of each generated token
             and of this many top candidates, for :attr:`log_probs`. A model
-            that does not compute log probabilities fails on the first step.
+            that does not compute log probabilities raises ``ValueError``.
         caller: What the user called, which errors name, such as
             ``"AutoPipeline"``.
 
     Raises:
         TypeError: If ``input_ids`` or ``attention_mask`` is not a list of
-            integer lists.
+            integer lists, ``messages`` is not a list of conversations, or
+            ``images`` is not a list of byte-string lists.
         ValueError: If the request needs a feature GenerateIterator leaves to
-            ``max serve``: LoRA, device graph capture with ``data_parallel_degree > 1`` on
-            a warmed-up pipeline, or a batch that only fits by scheduling or
-            chunked prefill (more rows than the planned max batch size, or a
-            replica's prompts over its per-replica prefill budget or the batch
-            total-token cap). Also raised for a prompt with no
+            ``max serve``: LoRA, a model that does not generate text, a block
+            diffusion model, video inputs, device graph capture with
+            ``data_parallel_degree > 1`` on a warmed-up pipeline, or a batch
+            that only fits by scheduling or chunked prefill (more rows than
+            the planned max batch size, or a replica's prompts over its
+            per-replica prefill budget or the batch total-token cap). Also
+            raised for a prompt with no
             room to generate within the planned max length, an invalid
             sampling value, penalties on a pipeline built without
             ``enable_penalties``, ``max_new_tokens`` below 1 or below
             ``min_new_tokens``, ``attention_mask`` with a different shape
-            than ``input_ids``, ``ignore_eos`` with a row that does not fit
-            or with speculative decoding, image inputs, or a model that does
-            not generate text. Also raised for ``output_logprobs`` outside
-            ``[0, 7]``, ``output_logits`` on a pipeline that is not
+            than ``input_ids``, or ``ignore_eos`` with a row that does not fit
+            or with speculative decoding. Also raised for both or neither of
+            ``input_ids`` and ``messages``, ``images`` with another row count
+            than ``messages``, images or video on an architecture that takes
+            text only, a row with more images than the tokenizer's
+            ``max_images_per_request``, a row whose image count differs from
+            its image parts, or ``images`` or ``attention_mask`` without the
+            matching prompt argument. Also raised for ``output_logprobs`` outside ``[0, 7]``,
+            ``output_logprobs`` on a model that does not compute log
+            probabilities, ``output_logits`` on a pipeline that is not
             synchronous, ``output_logits`` or ``output_logprobs`` with
             speculative decoding, or ``output_logprobs`` on an
             :class:`~max.pipelines.lib.OverlapTextGenerationPipeline`.
@@ -848,9 +1135,14 @@ class GenerateIterator:
     def __init__(
         self,
         pipeline: BatchPipeline,
-        input_ids: Iterable[Sequence[int]],
+        input_ids: Iterable[Sequence[int]] | None = None,
         attention_mask: Iterable[Sequence[int]] | None = None,
         *,
+        messages: Sequence[
+            Sequence[TextGenerationRequestMessage | Mapping[str, object]]
+        ]
+        | None = None,
+        images: Sequence[Sequence[bytes]] | None = None,
         max_new_tokens: int,
         min_new_tokens: int | None = None,
         temperature: float | None = None,
@@ -867,8 +1159,33 @@ class GenerateIterator:
         output_logprobs: int = 0,
         caller: str = "generate()",
     ) -> None:
-        prompts = _materialize_prompts(input_ids, attention_mask)
         pipeline_config = pipeline.pipeline_config
+        context_type = _check_supported(pipeline_config, caller)
+        rows: list[list[int]] | list[_Conversation]
+        if messages is None:
+            if input_ids is None:
+                raise ValueError("Pass input_ids or messages.")
+            if images is not None:
+                raise ValueError(
+                    "Pass images with messages, since each image needs an "
+                    "image part in a message."
+                )
+            rows = _materialize_prompts(input_ids, attention_mask)
+        else:
+            if input_ids is not None:
+                raise ValueError("Pass input_ids or messages, not both.")
+            if attention_mask is not None:
+                raise ValueError("Pass attention_mask only with input_ids.")
+            max_images = getattr(
+                pipeline.tokenizer, "max_images_per_request", None
+            )
+            rows = _materialize_conversations(
+                pipeline_config,
+                messages,
+                images,
+                caller,
+                max_images if isinstance(max_images, int) else None,
+            )
         penalties = {
             name: value
             for name, value, default in (
@@ -878,7 +1195,6 @@ class GenerateIterator:
             )
             if value is not None and value != default
         }
-        _check_supported(pipeline_config, caller)
         if ignore_eos and pipeline_config.speculative is not None:
             raise ValueError(
                 "ignore_eos cannot keep the batch size fixed with speculative "
@@ -912,15 +1228,20 @@ class GenerateIterator:
         _check_penalties_enabled(pipeline_config, penalties)
         contexts = _build_contexts(
             pipeline,
-            prompts,
+            rows,
             max_new_tokens=max_new_tokens,
             sampling_params=sampling_params,
+            tokenizer_builds_rows=messages is not None
+            or issubclass(context_type, TextAndVisionContext),
         )
         # After the max length check: a too-long prompt also trips these
         # limits, and their advice cannot fix it.
         dp_degree = pipeline_config.model.data_parallel_degree
         _check_batch_fits(
-            pipeline, [len(p) for p in prompts], dp_degree, caller
+            pipeline,
+            [len(context.tokens) for context in contexts],
+            dp_degree,
+            caller,
         )
         _check_graph_capture(pipeline, dp_degree, caller)
         self._start(pipeline, contexts, dp_degree)
@@ -1088,6 +1409,11 @@ class GenerateIterator:
         ]
 
     @property
+    def prompt_lengths(self) -> list[int]:
+        """Each row's prompt length, in input order."""
+        return [len(prompt) for prompt in self._prompts]
+
+    @property
     def logits(self) -> list[npt.NDArray[np.float32]]:
         """The next-token logits behind each row's new tokens, in input order.
 
@@ -1168,8 +1494,7 @@ class GenerateIterator:
         Raises:
             RuntimeError: If no rows are live, or if the pipeline returns log
                 probabilities or logits rows that do not line up one per
-                generated token, as when the model does not compute log
-                probabilities.
+                generated token.
         """
         if self.done:
             raise RuntimeError("GenerateIterator has no live rows to step.")
@@ -1301,9 +1626,14 @@ class GenerateIterator:
 
 def generate(
     pipeline: BatchPipeline,
-    input_ids: Iterable[Sequence[int]],
+    input_ids: Iterable[Sequence[int]] | None = None,
     attention_mask: Iterable[Sequence[int]] | None = None,
     *,
+    messages: Sequence[
+        Sequence[TextGenerationRequestMessage | Mapping[str, object]]
+    ]
+    | None = None,
+    images: Sequence[Sequence[bytes]] | None = None,
     max_new_tokens: int,
     min_new_tokens: int | None = None,
     temperature: float | None = None,
@@ -1330,6 +1660,9 @@ def generate(
         pipeline: The pipeline to run.
         input_ids: One token-id prompt per row, as lists or a 2D array.
         attention_mask: Zeros mark padding in ``input_ids`` to drop.
+        messages: One conversation per row, instead of ``input_ids``.
+        images: One list of encoded images per conversation, matching its
+            image parts in order.
         max_new_tokens: The most tokens to generate for each row.
         min_new_tokens: The fewest tokens a row generates before EOS can end
             it.
@@ -1354,11 +1687,12 @@ def generate(
 
     Returns:
         Each row's prompt followed by its new tokens, in input order, with
-        the requested logits and log probabilities.
+        each prompt's length and the requested logits and log probabilities.
 
     Raises:
-        TypeError: If ``input_ids`` or ``attention_mask`` is not a list of
-            integer lists.
+        TypeError: If ``input_ids``, ``attention_mask``, ``messages`` or
+            ``images`` has the wrong shape, as described for
+            :class:`GenerateIterator`.
         ValueError: If the request needs a feature GenerateIterator leaves to
             ``max serve``, such as device graph capture with
             ``data_parallel_degree > 1`` on a warmed-up pipeline, the batch
@@ -1367,13 +1701,14 @@ def generate(
         RuntimeError: If the pipeline is not synchronous and another batch
             on it is still open, or if the pipeline returns log
             probabilities or logits rows that do not line up one per
-            generated token, as when the model does not compute log
-            probabilities.
+            generated token.
     """
     with GenerateIterator(
         pipeline,
         input_ids,
         attention_mask,
+        messages=messages,
+        images=images,
         max_new_tokens=max_new_tokens,
         min_new_tokens=min_new_tokens,
         temperature=temperature,
@@ -1394,6 +1729,7 @@ def generate(
             batch.step()
         return GenerateResult(
             sequences=batch.sequences,
+            prompt_lengths=batch.prompt_lengths,
             logits=batch.logits if output_logits else None,
             log_probs=batch.log_probs if output_logprobs else None,
         )

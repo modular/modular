@@ -23,6 +23,10 @@ from max.nn.comm.ep.ep_manager import (
     _bound_fused_moe_workspace,
     _ep_sync_counter_bytes,
 )
+from max.nn.kernels import (
+    NVFP4_MLA_PREFILL_CONVERT_MAX_ROWS,
+    NVFP4_MLA_PREFILL_CONVERT_RATIO,
+)
 from max.pipelines.architectures.deepseekV3.memory_planner import (
     DeepseekV3MemoryPlanner,
 )
@@ -39,7 +43,10 @@ from max.pipelines.architectures.glm5_1_modulev3.arch import (
 from max.pipelines.architectures.unified_mtp_glm5_2.arch import (
     unified_mtp_glm5_2_arch,
 )
-from max.pipelines.kv_cache.memory_planner import ModelConfigWithKVCache
+from max.pipelines.kv_cache.memory_planner import (
+    ModelConfigWithKVCache,
+    PagedMemoryPlanner,
+)
 from max.pipelines.lib import PipelineConfig, SupportedEncoding
 
 NUM_RANKS = 8
@@ -178,6 +185,75 @@ def test_glm_without_mtp_plans_what_ep_init_adds(
     assert plan() == reserve
     pipeline_config.runtime.ep_size = 1
     assert plan() == 0
+
+
+@pytest.mark.parametrize(
+    "planner_cls", [DeepseekV3MemoryPlanner, Glm5_1MemoryPlanner]
+)
+def test_nvfp4_kv_reserves_the_convert_once_prefill_scratch(
+    monkeypatch: pytest.MonkeyPatch,
+    planner_cls: type[PagedMemoryPlanner],
+) -> None:
+    """Sparse prefill over an NVFP4 cache may convert the batch's context to
+    an FP8 copy, allocated in the op on every device. Both GLM planners (with
+    and without the MTP draft) reserve the most that copy, its remapped
+    indices and its block-to-page table take; an FP8 cache, a decode-only
+    worker and a disabled conversion reserve nothing more."""
+    monkeypatch.delenv("MODULAR_MLA_NVFP4_PREFILL_CONVERT_RATIO", raising=False)
+    monkeypatch.delenv(
+        "MODULAR_MLA_NVFP4_PREFILL_CONVERT_MAX_ROWS", raising=False
+    )
+    huggingface_config = _mock_huggingface_config()
+    huggingface_config.hidden_size = 6144
+    huggingface_config.index_topk = 2048
+    huggingface_config.kv_lora_rank = 512
+    huggingface_config.qk_rope_head_dim = 64
+
+    def plan(
+        kv_cache_format: str,
+        input_tokens: int = 8192,
+        pipeline_role: str = "prefill_and_decode",
+    ) -> int:
+        # GLM-5.3 NVFP4 at TP8/EP8, as the 8xB200 recipe serves it.
+        config = _mock_pipeline_config("float4_e2m1fnx2")
+        config.model.data_parallel_degree = 1
+        config.model.kv_cache.kv_cache_format = kv_cache_format
+        config.model.kv_cache.kv_cache_page_size = 128
+        config.runtime.max_batch_input_tokens = input_tokens
+        config.runtime.enable_chunked_prefill = True
+        config.runtime.pipeline_role = pipeline_role
+        model_config = MagicMock(spec=ModelConfigWithKVCache)
+        model_config.get_kv_params.return_value = MagicMock()
+        return planner_cls(model_config).estimate_activation_memory(
+            config, huggingface_config
+        )
+
+    assert NVFP4_MLA_PREFILL_CONVERT_MAX_ROWS == 262144
+    assert NVFP4_MLA_PREFILL_CONVERT_RATIO == 150
+    # 262144 rows of 576 FP8 bytes, 8192 tokens x 2048 int32 indices, and a
+    # uint32 for each 128-row block an int32 index can address.
+    per_device = 262144 * 576 + 8192 * 2048 * 4 + (2**31 // 128) * 4
+    assert per_device == 285212672
+    fp8 = plan("float8_e4m3fn")
+    assert plan("float4_e2m1fn") - fp8 == NUM_RANKS * per_device
+
+    # A short chunk converts at most 150 rows per query token.
+    short = 150 * 512 * 576 + 512 * 2048 * 4 + (2**31 // 128) * 4
+    assert (
+        plan("float4_e2m1fn", input_tokens=512)
+        - plan("float8_e4m3fn", input_tokens=512)
+        == NUM_RANKS * short
+    )
+
+    # Decode never converts.
+    assert plan("float4_e2m1fn", pipeline_role="decode_only") == plan(
+        "float8_e4m3fn", pipeline_role="decode_only"
+    )
+
+    # Off, NVFP4 plans as FP8 does; an FP8 cache never sees the conversion.
+    monkeypatch.setenv("MODULAR_MLA_NVFP4_PREFILL_CONVERT_RATIO", "0")
+    assert plan("float4_e2m1fn") == fp8
+    assert plan("float8_e4m3fn") == fp8
 
 
 def test_glm_modulev3_plans_through_the_deepseek_planner() -> None:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages --diagnostic-format json %s 2>&1 | FileCheck %s
+# RUN: %mojo-docs-isolated --diagnostic-format json %s 2>&1 | FileCheck %s
 # CHECK: "line":[[@LINE+2]]{{.*}}"message":"doc string summary{{.*}}"
 def x():
     """foo."""

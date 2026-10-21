@@ -15,10 +15,10 @@
 This is a module summary, that
 spills over to the next line."""
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s | FileCheck %s
+# RUN: %mojo-docs-isolated %s | FileCheck %s
 
 # Check that no diagnostics are output:
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG
+# RUN: %mojo-docs-isolated %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG
 # CHECK-DIAG-NOT: warning
 
 # """

@@ -13,6 +13,7 @@
 
 from std.math import ceildiv
 from std.memory import bitcast
+from std.memory.alloc import unsafe_alloc
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal
 from layout import Coord, Idx, TileTensor, row_major
@@ -108,11 +109,11 @@ def test_row_amax_quantization[
     comptime tile_gap = _scales_tile_gap(row_scales_stride)
     comptime tile_stride = scales_per_m_tile + tile_gap
 
-    var row_offsets_host = alloc[UInt32](num_experts + 1)
-    var scales_offsets_host = alloc[UInt32](num_experts)
-    var expert_ids_host = alloc[Int32](num_experts)
-    var ones_host = alloc[Float32](num_experts)
-    var tile_starts = alloc[Int](num_experts + 1)
+    var row_offsets_host = unsafe_alloc[UInt32](num_experts + 1)
+    var scales_offsets_host = unsafe_alloc[UInt32](num_experts)
+    var expert_ids_host = unsafe_alloc[Int32](num_experts)
+    var ones_host = unsafe_alloc[Float32](num_experts)
+    var tile_starts = unsafe_alloc[Int](num_experts + 1)
     row_offsets_host[0] = 0
     tile_starts[0] = 0
     for i in range(num_experts):
@@ -131,12 +132,12 @@ def test_row_amax_quantization[
 
     # Source rows, and the source row each output row reads.
     var src_rows = max(1, total // top_k) if gather else total
-    var src_host = alloc[Scalar[DType.bfloat16]](src_rows * N)
+    var src_host = unsafe_alloc[Scalar[DType.bfloat16]](src_rows * N)
     var state = UInt64(12345 + N)
     for r in range(src_rows):
         _fill_row(src_host.unsafe_offset(r * N), N, r % 8, state)
-    var indices_host = alloc[UInt32](max(total, 1))
-    var source_of = alloc[Int](max(total, 1))
+    var indices_host = unsafe_alloc[UInt32](max(total, 1))
+    var source_of = unsafe_alloc[Int](max(total, 1))
     for i in range(total):
         if gather:
             var token = (i * 7 + 3) % src_rows
@@ -147,11 +148,11 @@ def test_row_amax_quantization[
             indices_host[i] = UInt32(i)
 
     # Host reference of the graph chain.
-    var scaled_host = alloc[Scalar[DType.bfloat16]](max(total * N, 1))
-    var ref_row_scales = alloc[Scalar[DType.bfloat16]](max(total, 1))
+    var scaled_host = unsafe_alloc[Scalar[DType.bfloat16]](max(total * N, 1))
+    var ref_row_scales = unsafe_alloc[Scalar[DType.bfloat16]](max(total, 1))
     for i in range(total):
         var amax = Float32(0)
-        var row = alloc[Scalar[DType.bfloat16]](N)
+        var row = unsafe_alloc[Scalar[DType.bfloat16]](N)
         for c in range(N):
             var x = src_host[source_of[i] * N + c]
             comptime if apply_relu2:
@@ -166,7 +167,7 @@ def test_row_amax_quantization[
             scaled_host[i * N + c] = (row[c].cast[DType.float32]() * inv).cast[
                 DType.bfloat16
             ]()
-        row.free()
+        row.unsafe_free()
 
     var dev_src = ctx.enqueue_create_buffer[DType.bfloat16](src_rows * N)
     var dev_scaled = ctx.enqueue_create_buffer[DType.bfloat16](
@@ -234,13 +235,17 @@ def test_row_amax_quantization[
                 gather,
             )
 
-    var host_out_ref = alloc[Scalar[out_dtype]](total * output_N + output_N)
-    var host_out = alloc[Scalar[out_dtype]](total * output_N + output_N)
-    var host_scales_ref = alloc[Scalar[scales_dtype]](max(total_scales, 1))
-    var host_scales = alloc[Scalar[scales_dtype]](
+    var host_out_ref = unsafe_alloc[Scalar[out_dtype]](
+        total * output_N + output_N
+    )
+    var host_out = unsafe_alloc[Scalar[out_dtype]](total * output_N + output_N)
+    var host_scales_ref = unsafe_alloc[Scalar[scales_dtype]](
+        max(total_scales, 1)
+    )
+    var host_scales = unsafe_alloc[Scalar[scales_dtype]](
         max(total_m_tiles * tile_stride, 1)
     )
-    var host_row_scales = alloc[Scalar[DType.bfloat16]](
+    var host_row_scales = unsafe_alloc[Scalar[DType.bfloat16]](
         max(total * row_scales_stride, 1)
     )
     ctx.enqueue_copy(host_out_ref, dev_out_ref)
@@ -284,21 +289,21 @@ def test_row_amax_quantization[
                 Int(bitcast[DType.uint16, 1](_ROW_SCALE_SENTINEL)),
             )
 
-    host_out_ref.free()
-    host_out.free()
-    host_scales_ref.free()
-    host_scales.free()
-    host_row_scales.free()
-    src_host.free()
-    indices_host.free()
-    source_of.free()
-    scaled_host.free()
-    ref_row_scales.free()
-    row_offsets_host.free()
-    scales_offsets_host.free()
-    expert_ids_host.free()
-    ones_host.free()
-    tile_starts.free()
+    host_out_ref.unsafe_free()
+    host_out.unsafe_free()
+    host_scales_ref.unsafe_free()
+    host_scales.unsafe_free()
+    host_row_scales.unsafe_free()
+    src_host.unsafe_free()
+    indices_host.unsafe_free()
+    source_of.unsafe_free()
+    scaled_host.unsafe_free()
+    ref_row_scales.unsafe_free()
+    row_offsets_host.unsafe_free()
+    scales_offsets_host.unsafe_free()
+    expert_ids_host.unsafe_free()
+    ones_host.unsafe_free()
+    tile_starts.unsafe_free()
 
 
 def _run_case[
@@ -415,11 +420,10 @@ def _launch_fused[
     comptime scales_per_m_tile = K_tiles * SF_MN_GROUP_SIZE * SF_ATOM_K
     comptime output_N = N // 2
 
-    @__parameter
     @inline(.always)
     def input_fn[
         dtype: DType, width: SIMDLength
-    ](v: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
+    ](v: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime if apply_relu2:
             var r = relu(v)
             return r * r

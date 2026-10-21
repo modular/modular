@@ -36,11 +36,14 @@ NVFP4 routing (B200-tuned via ablation):
     Large prefill (avg_m > 64):    AB_swapped=True, mma_bn=128, cta_group=2
 
   Tuned stages live in `NVFP4_TUNED_STAGES`, one row per (N, K, regime).
-  A decode (shape, regime) pair with no row there uses
-  `DECODE_DEFAULT_STAGES`; the other regimes fall through to stages=auto.
+  A decode (shape, regime) pair with no row there groups two k-tiles per
+  stage at `DECODE_K_GROUP_STAGES` when its k-tile count is even, else
+  uses `DECODE_DEFAULT_STAGES`; the other regimes fall through to
+  stages=auto.
 """
 
 from std.collections import Optional
+from std.math import ceildiv
 
 from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -74,12 +77,24 @@ comptime SMALL_PREFILL_AVG_M = 64
 # auto depth (10 stages) was 3-6% slower than 6 at 8-64 tokens.
 comptime DECODE_DEFAULT_STAGES = 6
 
+# Decode stages hold two 128-byte k-tiles of each weight row when the
+# k-tile count is even. A stage's barrier and scale handoff then cover twice
+# the bytes, which bounds one CTA's rate in a partial wave. On B200, eight
+# k-tiles in four stages beat one tile per stage and the other (group,
+# depth) pairs tried.
+comptime DECODE_K_GROUP = 2
+comptime DECODE_K_GROUP_STAGES = 8
+
+# NVFP4 values in one 128-byte k-tile.
+comptime _NVFP4_K_TILE = 256
+
 # Tuned NVFP4 pipeline depths as (N, K, regime, stages), where `regime` is
 # the regime row's `upper_avg_m` bound (-1 = large prefill). A (shape,
 # regime) pair absent from this table uses stages=auto (maximum depth
 # against the SMEM budget), except decode, which uses
-# `DECODE_DEFAULT_STAGES`. Every row is a B200 ablation result
-# (bench_grouped_matmul); don't add one without a measurement.
+# `DECODE_K_GROUP_STAGES` or `DECODE_DEFAULT_STAGES`. Every row is a B200
+# ablation result (bench_grouped_matmul); don't add one without a
+# measurement.
 comptime NVFP4_TUNED_STAGES = [
     # DeepSeek-V3 up-proj.
     (4096, 7168, SMALL_PREFILL_AVG_M, 6),
@@ -92,6 +107,24 @@ comptime NVFP4_TUNED_STAGES = [
 ]
 
 
+def _k_group[K: Int, regime: Int]() -> Int:
+    """Returns the k-tiles per pipeline stage for one (K, regime).
+
+    Parameters:
+        K: Reduction dimension (unpacked element count).
+        regime: The regime row's `upper_avg_m` bound (-1 = large prefill).
+
+    Returns:
+        `DECODE_K_GROUP` for decode when it divides the k-tile count, else 1.
+    """
+    comptime if (
+        regime == DECODE_AVG_M
+        and ceildiv(K, _NVFP4_K_TILE) % DECODE_K_GROUP == 0
+    ):
+        return DECODE_K_GROUP
+    return 1
+
+
 def _tuned_stages[N: Int, K: Int, regime: Int]() -> Optional[Int]:
     """Look up the tuned pipeline depth for one (N, K, regime).
 
@@ -101,13 +134,16 @@ def _tuned_stages[N: Int, K: Int, regime: Int]() -> Optional[Int]:
         regime: The regime row's `upper_avg_m` bound (-1 = large prefill).
 
     Returns:
-        The tuned stage count. Without a table row, the decode regime gets
-        `DECODE_DEFAULT_STAGES` and the other regimes None (stages=auto).
+        The tuned stage count in k-tiles. Without a table row, the decode
+        regime gets `DECODE_K_GROUP_STAGES` when it groups k-tiles, else
+        `DECODE_DEFAULT_STAGES`, and the other regimes None (stages=auto).
     """
     comptime for row in NVFP4_TUNED_STAGES:
         comptime if row[0] == N and row[1] == K and row[2] == regime:
             return Optional[Int](row[3])
     comptime if regime == DECODE_AVG_M:
+        comptime if _k_group[K, regime]() > 1:
+            return Optional[Int](DECODE_K_GROUP_STAGES)
         return Optional[Int](DECODE_DEFAULT_STAGES)
     return Optional[Int](None)
 
@@ -118,6 +154,7 @@ def _launch_grouped_block_scaled[
     mma_bn: Int,
     cta_group: Int,
     num_pipeline_stages: Optional[Int] = None,
+    k_group_size: Int = 1,
     scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
     pdl_level: PDLLevel = PDLLevel.ON,
     fuse_swiglu: Bool = False,
@@ -152,6 +189,7 @@ def _launch_grouped_block_scaled[
         mma_bn: MMA tile N dimension.
         cta_group: CTA group size.
         num_pipeline_stages: Pipeline depth override. None = auto-compute.
+        k_group_size: K-tiles per pipeline stage.
         scaling_kind: Block-scaling format (NVFP4, MXFP4, or MXFP8).
         pdl_level: Programmatic dependent launch level.
         fuse_swiglu: When True, the kernel fuses SwiGLU + block-scaled
@@ -195,7 +233,7 @@ def _launch_grouped_block_scaled[
         block_swizzle_size=8,
         cta_group=cta_group,
         AB_swapped=AB_swapped,
-        k_group_size=1,
+        k_group_size=k_group_size,
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1 if mma_bn > 128 else 2,
         is_gmm=True,
@@ -388,6 +426,7 @@ def grouped_matmul_nvfp4_dispatch[
             mma_bn: Int,
             cta_group: Int,
             stages: Optional[Int],
+            k_group: Int,
         ]() raises {imm}:
             _launch_grouped_block_scaled[
                 transpose_b,
@@ -395,6 +434,7 @@ def grouped_matmul_nvfp4_dispatch[
                 mma_bn=mma_bn,
                 cta_group=cta_group,
                 num_pipeline_stages=stages,
+                k_group_size=k_group,
                 pdl_level=pdl_level,
                 fuse_swiglu=fuse_swiglu,
                 SwiGLUOutputT=SwiGLUOutputT,
@@ -488,7 +528,7 @@ def grouped_matmul_nvfp4_dispatch[
             comptime for r in regimes:
                 comptime _stages = _tuned_stages[N, K, r[0]]()
                 if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
-                    _regime[r[1], r[2], _stages]()
+                    _regime[r[1], r[2], _stages, _k_group[K, r[0]]()]()
                     return
 
 

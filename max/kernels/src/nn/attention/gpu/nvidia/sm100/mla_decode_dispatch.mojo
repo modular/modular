@@ -150,6 +150,10 @@ def _unbucketed_split_error(num_partitions: Int) -> Error:
     )
 
 
+from nn.attention.gpu.nvidia.sm100.nvfp4_kv_dequant import (
+    mla_kv_is_nvfp4,
+    sparse_kv_gather_row_words,
+)
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     SparseRowLayout,
     MLA_SM100_Decode_Config,
@@ -954,8 +958,11 @@ def mla_decode_sm100_dispatch[
     # (the allocation stride).  Similarly extra_indices_stride is
     # max_extra_topk.
     var effective_split_len = effective_max_cache_len
+    # An NVFP4 index row is the value rows then the scale rows, so the top-k is
+    # half its stride.
+    var topk_stride = indices_stride // (2 if mla_kv_is_nvfp4[k_t]() else 1)
     comptime if sparse:
-        var max_topk = indices_stride
+        var max_topk = topk_stride
         var max_extra_topk = extra_indices_stride
         effective_split_len = max_topk + max_extra_topk
 
@@ -976,7 +983,9 @@ def mla_decode_sm100_dispatch[
     var split_page_size = 64 if use_small_split_pages else 128
     comptime sm_count = ctx.default_device_info.sm_count
     comptime _half_sms = sm_count // 2
-    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+    comptime _is_fp8_kv = (
+        k_t.dtype == DType.float8_e4m3fn or mla_kv_is_nvfp4[k_t]()
+    )
 
     # q_len=1 sparse FP8 split-K tuning (KERN-3217): the single-token sparse
     # FP8 decode with no extra_kv / variable_topk / attn_sink is SM-underfilled
@@ -1002,7 +1011,7 @@ def mla_decode_sm100_dispatch[
         and _is_fp8_kv
         and q_max_seq_len == 1
         and batch_size <= 8
-        and indices_stride == 2048
+        and topk_stride == 2048
         and max_cache_valid_length >= 1024
         and max_cache_valid_length <= 2048
         and extra_indices_stride == 0
@@ -1206,7 +1215,9 @@ def _mla_decode_sm100_dispatch_impl[
     # The split-K output is the 512 latent (shared by both rows), not the row
     # width the model stores, so it stays 512 under NoPE.
     comptime v_depth = 512
-    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+    comptime _is_fp8_kv = (
+        k_t.dtype == DType.float8_e4m3fn or mla_kv_is_nvfp4[k_t]()
+    )
 
     # Ensure KV cache page_size is evenly divisible by split_page_size.
     # If the KV cache page_size shrinks in the future, splits must not
@@ -1639,15 +1650,27 @@ def mla_decode_sm100_sink_split_k[
     # the token that reads it.
     selection_lag: Int = 0,
 ) raises:
-    comptime _scale_block_size = k_t.quantization_granularity if k_t.quantization_enabled else 0
+    # Packed NVFP4 KV is dequantized to FP8 in SMEM by the sparse kernel, so
+    # its scales are not the blockwise-FP8 ones `_scale_block_size` tracks.
+    comptime _nvfp4_kv = mla_kv_is_nvfp4[k_t]()
+    comptime _scale_block_size = (
+        k_t.quantization_granularity if k_t.quantization_enabled
+        and not _nvfp4_kv else 0
+    )
     # Use native FP8 path when:
-    # 1. KV is FP8 tensorwise (scale_block_size == 0)
+    # 1. KV is FP8 tensorwise (scale_block_size == 0), or packed NVFP4
     # 2. Q is also FP8 (q_type must match kv_type) — the pipeline provides FP8 Q
     # When Q is BF16, fall through to the old FP8 converter or BF16 path.
     comptime _native_fp8 = (
-        k_t.dtype == .float8_e4m3fn
+        (k_t.dtype == .float8_e4m3fn or _nvfp4_kv)
         and _scale_block_size == 0
         and q_type == .float8_e4m3fn
+    )
+    comptime assert not _nvfp4_kv or (
+        _native_fp8 and sparse and not rope_aware_kv_sparse and not has_extra_k
+    ), (
+        "An NVFP4 KV cache needs FP8 Q and the sparse all-FP8 kernel, and has"
+        " no extra-KV or rope-aware variant."
     )
     # Per-tensor rope-aware: split content (FP8 tensorwise) + rope (BF16) path
     comptime _per_token_scale_rope_aware = per_token_scale_rope_aware
@@ -1859,7 +1882,9 @@ def mla_decode_sm100_sink_split_k[
             # ---------- FP8 KV sparse dispatch (default) ----------
             # Single K gather4 TMA covering full 576-byte row
             # (INT64, SWIZZLE_NONE, tile_width=72 INT64 = 576 B).
-            comptime _kv_tile_width = mla_config.input_q_depth // 8
+            comptime _kv_tile_width = sparse_kv_gather_row_words[
+                k_t, mla_config.input_q_depth
+            ]()
             var k_gather4_tma = k.create_gather4_tma_tile[
                 tile_width=_kv_tile_width,
                 tile_stride=_kv_tile_width,
@@ -3504,7 +3529,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
-                config.input_q_depth // 8,
+                sparse_kv_gather_row_words[KVLUTType, config.input_q_depth](),
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ],
@@ -3512,7 +3537,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             1,
             _gather4_box_width[
                 DType.int64,
-                config.input_q_depth // 8,
+                sparse_kv_gather_row_words[KVLUTType, config.input_q_depth](),
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ],
@@ -3544,7 +3569,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
-                config.input_q_depth // 8,
+                sparse_kv_gather_row_words[KVLUTType, config.input_q_depth](),
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ],
@@ -3552,7 +3577,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             1,
             _gather4_box_width[
                 DType.int64,
-                config.input_q_depth // 8,
+                sparse_kv_gather_row_words[KVLUTType, config.input_q_depth](),
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ],
@@ -3857,7 +3882,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
-                config.input_q_depth // 8,
+                sparse_kv_gather_row_words[KVLUTType, config.input_q_depth](),
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ],
@@ -3865,7 +3890,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             1,
             _gather4_box_width[
                 DType.int64,
-                config.input_q_depth // 8,
+                sparse_kv_gather_row_words[KVLUTType, config.input_q_depth](),
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ],
@@ -3896,7 +3921,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
-                config.input_q_depth // 8,
+                sparse_kv_gather_row_words[KVLUTType, config.input_q_depth](),
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ],
@@ -3904,7 +3929,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             1,
             _gather4_box_width[
                 DType.int64,
-                config.input_q_depth // 8,
+                sparse_kv_gather_row_words[KVLUTType, config.input_q_depth](),
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ],
@@ -3967,17 +3992,17 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Extra SMEM beyond config.smem_used (unified-gather native FP8, no
     # cvt_blk_bars -- the second KV buffer + its pipeline are already
-    # folded into config.smem_used via native_fp8_unified_gather):
+    # folded into config.smem_used via native_fp8_unified_gather, as is the
+    # TMEM pointer, which has a 4-byte slot there):
     #   - idx_bars: 2*N barriers (depth matches config.num_kv_stages, N)
-    #   - ptr_tmem_addr (4 bytes, UInt32)
-    #   - idx_smem, N-deep (N * BN_QK * sizeof(Int32))
-    #   - up to 12 bytes to 16-byte align idx_smem when the gather4 indices
+    #   - idx_smem, N-deep (N * BN_QK * sizeof(Int32)), twice that with an
+    #     NVFP4 cache, whose stages also hold the tile's scale rows
+    #   - the bytes that 16-byte align idx_smem when the gather4 indices
     #     are loaded in ld.shared.v4 batches
     comptime sparse_extra_smem = (
         2 * config.num_kv_stages * config.mbar_size
-        + 4
         + KernelType.idx_smem_align_pad
-        + config.num_kv_stages * config.BN_QK * 4
+        + config.num_kv_stages * KernelType.idx_stage_slots * 4
     )
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 

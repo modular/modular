@@ -19,6 +19,7 @@ calculations are hoisted out of the inner loops.
 """
 
 from std.math import sqrt
+from std.memory.alloc import unsafe_alloc
 
 from dcs_utils import GridDim, init_atoms, compute_total_energy
 
@@ -82,8 +83,8 @@ def main() raises:
     var atoms_size = numatoms * 4
     var grid_size = grid.x * grid.y
 
-    var h_atoms = alloc[Float32](atoms_size)
-    var h_energygrid = alloc[Float32](grid_size)
+    var h_atoms = unsafe_alloc[Float32](atoms_size)
+    var h_energygrid = unsafe_alloc[Float32](grid_size)
 
     init_atoms(h_atoms, numatoms, gridspacing, grid.x, grid.y, 1)
     for i in range(grid_size):
@@ -98,5 +99,5 @@ def main() raises:
     var total_energy = compute_total_energy(h_energygrid, grid_size)
     print("Total Energy:", total_energy)
 
-    h_atoms.free()
-    h_energygrid.free()
+    h_atoms.unsafe_free()
+    h_energygrid.unsafe_free()

@@ -15,8 +15,9 @@
 
 The defaults turn off serving features that change how a run executes: the
 overlap scheduler returns each step's tokens one step late, device graph
-capture replays recorded graphs, prefix caching makes a run depend on earlier
-ones, and chunked prefill splits a prompt the caller passed whole.
+capture replays recorded graphs, prefix caching and the vision encoder cache
+make a run depend on earlier ones, and chunked prefill splits a prompt the
+caller passed whole.
 """
 
 from __future__ import annotations
@@ -29,7 +30,10 @@ from types import TracebackType
 
 from max.driver import accelerator_api
 from max.pipelines.context import TextContext
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import (
+    PipelineTask,
+    TextGenerationRequestMessage,
+)
 from transformers import AutoTokenizer as _HFAutoTokenizer
 from transformers import BatchEncoding, PreTrainedTokenizerBase
 
@@ -54,6 +58,7 @@ _DEBUG_DEFAULTS: dict[str, object] = {
     "enable_overlap_scheduler": False,
     "enable_prefix_caching": False,
     "enable_chunked_prefill": False,
+    "vision_cache_utilization": 0.0,
 }
 
 # ``PipelineArgs.from_flat_kwargs`` lets the flat debug defaults win over the
@@ -194,10 +199,10 @@ class AutoModel:
     tested through ``max serve``.
 
     The config turns off the overlap scheduler, device graph capture, prefix
-    caching and chunked prefill. On AMD it also turns off the vendor BLAS
-    fallback, as serve does with capture on, so matmuls compile to serve's
-    kernels. As in serve, the architecture's ``required_arguments`` win over
-    the overrides.
+    caching, the vision encoder cache and chunked prefill. On AMD it also
+    turns off the vendor BLAS fallback, as serve does with capture on, so
+    matmuls compile to serve's kernels. As in serve, the architecture's
+    ``required_arguments`` win over the overrides.
 
     References to the pipeline, its KV cache manager, an open
     :class:`~max.pipelines.lib.generate.GenerateIterator`, or a live traceback
@@ -228,9 +233,9 @@ class AutoModel:
             ``model`` section, or a ``config_file``, instead of flat fields,
             or a ``model_override`` entry sets one of them whole.
         ValueError: If the config needs a feature that only ``max serve``
-            runs, such as LoRA, if the model takes image inputs or does not
-            generate text, or if ``device_graph_capture=True`` builds a
-            pipeline that cannot capture graphs.
+            runs, such as LoRA, a model that does not generate text or a
+            block diffusion model, or if ``device_graph_capture=True`` builds
+            a pipeline that cannot capture graphs.
     """
 
     def __init__(
@@ -323,9 +328,14 @@ class AutoModel:
 
     def generate(
         self,
-        input_ids: Iterable[Sequence[int]],
+        input_ids: Iterable[Sequence[int]] | None = None,
         attention_mask: Iterable[Sequence[int]] | None = None,
         *,
+        messages: Sequence[
+            Sequence[TextGenerationRequestMessage | Mapping[str, object]]
+        ]
+        | None = None,
+        images: Sequence[Sequence[bytes]] | None = None,
         max_new_tokens: int,
         min_new_tokens: int | None = None,
         temperature: float | None = None,
@@ -344,7 +354,10 @@ class AutoModel:
         """Runs :func:`~max.pipelines.lib.generate.generate` on :attr:`pipeline`.
 
         Takes the same arguments, so ``model.generate(**tokenizer(prompts),
-        max_new_tokens=16)`` works with an :class:`AutoTokenizer`.
+        max_new_tokens=16)`` works with an :class:`AutoTokenizer`. Pass
+        ``messages`` and ``images`` instead of ``input_ids`` for chat or image
+        prompts, and read each prompt's length from the result's
+        ``prompt_lengths``.
 
         Raises:
             TypeError: As described for
@@ -358,6 +371,8 @@ class AutoModel:
             self.pipeline,
             input_ids,
             attention_mask,
+            messages=messages,
+            images=images,
             max_new_tokens=max_new_tokens,
             min_new_tokens=min_new_tokens,
             temperature=temperature,
@@ -376,9 +391,14 @@ class AutoModel:
 
     def generate_iter(
         self,
-        input_ids: Iterable[Sequence[int]],
+        input_ids: Iterable[Sequence[int]] | None = None,
         attention_mask: Iterable[Sequence[int]] | None = None,
         *,
+        messages: Sequence[
+            Sequence[TextGenerationRequestMessage | Mapping[str, object]]
+        ]
+        | None = None,
+        images: Sequence[Sequence[bytes]] | None = None,
         max_new_tokens: int,
         min_new_tokens: int | None = None,
         temperature: float | None = None,
@@ -411,6 +431,8 @@ class AutoModel:
             self.pipeline,
             input_ids,
             attention_mask,
+            messages=messages,
+            images=images,
             max_new_tokens=max_new_tokens,
             min_new_tokens=min_new_tokens,
             temperature=temperature,

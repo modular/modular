@@ -69,3 +69,7 @@ def test_errored_problem_keeps_its_steps_out_of_the_score() -> None:
     assert by_index[101]["completion_tokens"] == 3
     assert by_index[101]["finish_reason"] == "stop"
     assert summary["total"] == 2
+    # Each step records when its own request was sent; the errored problem's
+    # step, which has none, takes the time the problem started.
+    assert by_index[101]["timestamp"] < by_index[102]["timestamp"]
+    assert by_index[201]["timestamp"]

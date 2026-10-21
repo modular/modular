@@ -299,7 +299,7 @@ def test_tokenizer_renders_like_the_official_template(
     assert tokenizer.delegate.chat_template == _patched()
     messages = _CASES["reversed"]
     actual = tokenizer.apply_chat_template(messages, _TYPED_TOOLS)
-    assert actual == _render(_OFFICIAL, messages, clear_thinking=True)
+    assert actual == _render(_OFFICIAL, messages)
 
 
 def test_tokenizer_warns_when_it_cannot_patch(

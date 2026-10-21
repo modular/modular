@@ -1184,6 +1184,31 @@ struct InputProducer[
         )
 
     @inline(.always)
+    def tiles_at(
+        self, stage: UInt32
+    ) -> ProducerTiles[
+        Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Get a handle to a stage this producer already acquired.
+
+        The handle does not advance or release the producer, so a load
+        split around a wait can finish a stage it has stepped past. Use it
+        without `with`, since leaving the scope would release the stage
+        again.
+
+        Args:
+            stage: Index of the acquired stage.
+
+        Returns:
+            The stage's payload and full-barrier handle.
+        """
+        return ProducerTiles(
+            pipeline_ptr=self.pipeline_ptr,
+            stage=stage,
+            barrier=self.pipeline_ptr[].producer_mbar(stage),
+        )
+
+    @inline(.always)
     def try_acquire(mut self) -> Bool:
         """Non-blocking check if next producer stage is available.
 

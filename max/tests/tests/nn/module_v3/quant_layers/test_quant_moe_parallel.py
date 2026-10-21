@@ -700,7 +700,9 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
         num_local_experts = _NUM_EXPERTS // num_devices
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
 
-        def _build(quant_config: QuantConfig) -> ExpertParallelMoE:
+        def _build(
+            quant_config: QuantConfig, swiglu_limit: float = 0.0
+        ) -> ExpertParallelMoE:
             ep_batch_manager, _ = _build_ep_batch_manager(
                 _ep_config(
                     DType.uint8,
@@ -717,10 +719,16 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
                     moe_dim=_MOE_DIM,
                     quant_config=quant_config,
                     ep_batch_manager=ep_batch_manager,
+                    swiglu_limit=swiglu_limit,
                 )
 
         chained = _build(nvfp4_quant_config)
         assert not chained._uses_fused_swiglu
+
+        # The fused kernel has no clamp, so a SwiGLU limit keeps the chained
+        # path and its unpermuted weights.
+        clamped = _build(fused, swiglu_limit=10.0)
+        assert not clamped._uses_fused_swiglu
 
         layer = _build(fused)
         assert layer._uses_fused_swiglu

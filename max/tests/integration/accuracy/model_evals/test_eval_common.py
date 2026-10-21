@@ -13,11 +13,16 @@
 """Tests for the shared eval scaffolding."""
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import eval_common
+import httpx
 import pytest
+from openai import BadRequestError
+from openai.types.chat import ChatCompletion
 
 # An endpoint that rejects every request: the score is 0.0 not because the model
 # was wrong but because nothing was measured.
@@ -398,6 +403,27 @@ def test_resume_skips_finished_rows_and_retries_errored_ones(
     assert len(_lines(tmp_path)) == len(ITEMS)
 
 
+def test_every_row_records_when_its_request_was_sent(tmp_path: Path) -> None:
+    before = datetime.now(timezone.utc)
+    results, _, _ = _run(
+        ITEMS, tmp_path, resume=False, fail=frozenset({(1, 2)})
+    )
+    after = datetime.now(timezone.utc)
+
+    for row in results:
+        sent = datetime.fromisoformat(row["timestamp"])
+        assert sent.tzinfo == timezone.utc
+        assert before <= sent <= after
+    assert {r["timestamp"] for r in _lines(tmp_path)} == {
+        r["timestamp"] for r in results
+    }
+
+    resumed, _, _ = _run(ITEMS, tmp_path, resume=True)
+    # Finished rows keep the time they were first sent.
+    kept = {r["timestamp"] for r in results if "error" not in r}
+    assert kept <= {r["timestamp"] for r in resumed}
+
+
 def test_resume_counts_duplicate_rows(tmp_path: Path) -> None:
     # --row-ids may repeat an index; each copy is its own sample.
     items = eval_common.expand_repeats([(4, {"q": "x"}), (4, {"q": "x"})], 1)
@@ -519,10 +545,12 @@ def test_resumable_config_ignores_operational_options() -> None:
     assert eval_common.resumable_config(params) == CONFIG
 
 
-def test_build_chat_kwargs_omits_chat_template_kwargs_by_default() -> None:
-    """Unset ``chat_template_kwargs`` must not add an empty ``extra_body``."""
+def test_build_chat_kwargs_omits_extra_body_when_nothing_rides_it() -> None:
+    """No ``chat_template_kwargs`` or token IDs must not add an empty one."""
     kwargs = eval_common.build_chat_kwargs(
-        "m", [{"role": "user", "content": "hi"}], eval_common.GenParams()
+        "m",
+        [{"role": "user", "content": "hi"}],
+        eval_common.GenParams(return_token_ids=False),
     )
     assert "extra_body" not in kwargs
 
@@ -532,7 +560,8 @@ def test_build_chat_kwargs_forwards_chat_template_kwargs_via_extra_body() -> (
 ):
     """``chat_template_kwargs`` rides ``extra_body``"""
     params = eval_common.GenParams(
-        chat_template_kwargs={"reasoning_effort": "low"}
+        chat_template_kwargs={"reasoning_effort": "low"},
+        return_token_ids=False,
     )
     kwargs = eval_common.build_chat_kwargs(
         "m", [{"role": "user", "content": "hi"}], params
@@ -540,3 +569,122 @@ def test_build_chat_kwargs_forwards_chat_template_kwargs_via_extra_body() -> (
     assert kwargs["extra_body"] == {
         "chat_template_kwargs": {"reasoning_effort": "low"}
     }
+
+
+def test_build_chat_kwargs_requests_token_ids_via_extra_body() -> None:
+    params = eval_common.GenParams(
+        chat_template_kwargs={"reasoning_effort": "low"},
+        return_token_ids=True,
+    )
+    kwargs = eval_common.build_chat_kwargs(
+        "m", [{"role": "user", "content": "hi"}], params
+    )
+    assert kwargs["extra_body"] == {
+        "chat_template_kwargs": {"reasoning_effort": "low"},
+        "return_token_ids": True,
+    }
+
+
+def test_response_fields_reads_token_ids_off_the_choice() -> None:
+    """MAX returns ``token_ids`` beside the message, an extra SDK field."""
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "c",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "m",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Answer: A",
+                        "reasoning": "hmm",
+                    },
+                    "token_ids": [151644, 0, 7],
+                }
+            ],
+        }
+    )
+    assert eval_common.response_fields(completion.choices[0]) == {
+        "response": "Answer: A",
+        "reasoning": "hmm",
+        "completion_token_ids": [151644, 0, 7],
+    }
+
+
+def test_response_fields_without_token_ids() -> None:
+    choice = SimpleNamespace(message=SimpleNamespace(content="Answer: A"))
+    assert eval_common.response_fields(choice) == {
+        "response": "Answer: A",
+        "reasoning": None,
+        "completion_token_ids": None,
+    }
+
+
+def test_judge_does_not_request_token_ids() -> None:
+    sent: dict[str, Any] = {}
+
+    def create(**kwargs: Any) -> SimpleNamespace:
+        sent.update(kwargs)
+        message = SimpleNamespace(content="correct: yes")
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    assert eval_common.self_judge(client, "m", "prompt")
+    assert "extra_body" not in sent
+
+
+def _bad_request(message: str) -> BadRequestError:
+    request = httpx.Request("POST", "http://host/v1/chat/completions")
+    return BadRequestError(
+        message, response=httpx.Response(400, request=request), body=None
+    )
+
+
+class _RejectingCompletions:
+    """Fails requests that ask for token IDs with ``error``, like a strict server."""
+
+    def __init__(self, error: BadRequestError) -> None:
+        self.error = error
+        self.sent: list[dict[str, Any]] = []
+        self.chat = SimpleNamespace(completions=self)
+
+    def create(self, **kwargs: Any) -> str:
+        self.sent.append(kwargs)
+        if "return_token_ids" in kwargs.get("extra_body", {}):
+            raise self.error
+        return "response"
+
+
+def test_chat_completion_drops_token_ids_a_server_rejects() -> None:
+    client = _RejectingCompletions(
+        _bad_request(
+            "Error code: 400 - Unrecognized argument: return_token_ids"
+        )
+    )
+    params = eval_common.GenParams(return_token_ids=True)
+    messages = [{"role": "user", "content": "hi"}]
+
+    assert eval_common.chat_completion(client, "m", messages, params) == (
+        "response"
+    )
+    assert "extra_body" not in client.sent[1]
+    # Later requests of the run share params and no longer ask.
+    assert not params.return_token_ids
+    eval_common.chat_completion(client, "m", messages, params)
+    assert len(client.sent) == 3
+
+
+def test_chat_completion_raises_other_rejections() -> None:
+    client = _RejectingCompletions(_bad_request("Error code: 400 - bad model"))
+    params = eval_common.GenParams(return_token_ids=True)
+    with pytest.raises(BadRequestError):
+        eval_common.chat_completion(
+            client, "m", [{"role": "user", "content": "hi"}], params
+        )
+    assert params.return_token_ids
+    assert len(client.sent) == 1

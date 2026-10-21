@@ -49,6 +49,10 @@ from .stable_tensor import (
     _StableMutableInputTensor,
     _StableMutableInputVariadicTensors,
 )
+from .tensor_arg_traits import (
+    _LegacyComputable,
+    _LegacyComputeOutput,
+)
 
 # TODO(GEX-4386): Remove once a `TensorTuple` device kernel can type a dense
 # element without rebinding to the projection.

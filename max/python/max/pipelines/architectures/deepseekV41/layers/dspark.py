@@ -28,11 +28,6 @@ from typing import TypeVar
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.embedding import Embedding
-from max.nn.kernels import (
-    KEY_CACHE_INDEX,
-    kv_cache_gather_rows_ragged,
-    store_k_cache_ragged,
-)
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import Linear
@@ -46,14 +41,22 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 
-from ...deepseekV4.layers.quantization import fp8_qat_quantize
 from ...deepseekV4.layers.ragged import arange_to
 from ...deepseekV4.layers.rope import apply_rope_tail
-from ...deepseekV4.layers.sparse_attention import (
-    sparse_attention as gathered_sparse_attention,
-)
 from ..layer_resolver import LayerInfo
-from ..model_config import DeepseekV41Config
+from ..model_config import DeepseekV41Config, woa_mxfp8_enabled
+from .attention import (
+    bf16_grouped_projection,
+    mxfp8_grouped_projection,
+    wo_a_linear,
+)
+from .csa2 import (
+    INDEX_WIDTH,
+    csa2_attention,
+    leaf_slots,
+    store_window_kv,
+)
+from .indexer import rope_cos_sin_table
 from .query import DeepseekV41Query
 from .ragged import V41RaggedRows as RaggedRows
 from .rope import rope_for_layer
@@ -291,91 +294,79 @@ class DSparkConfidenceHead(Module):
         return ops.squeeze(self.proj(combined), axis=-1)
 
 
-# One power-of-two scale per 32 elements across the whole post-RoPE KV vector.
-DSPARK_KV_QUANT_BLOCK = 32
-
-
-def dspark_kv_quantize(kv: TensorValue) -> TensorValue:
-    """Rounds KV rows onto the MXFP8 grid, keeping the input dtype.
-
-    Each block of 32 elements shares one power-of-two scale. GPU-only, like
-    every ``float8_e4m3fn`` cast.
-    """
-    return fp8_qat_quantize(kv, DSPARK_KV_QUANT_BLOCK)
-
-
 @dataclass(frozen=True)
 class DSparkWindow:
-    """One stage's context window, per request, as the block attention reads it.
+    """One stage's context window, per request, as the block attention names it.
 
     Request ``r``'s block starts at position ``L_r`` and sees context
-    positions ``L_r - window .. L_r - 1``, those below zero masked
-    (:func:`dspark_window_positions`). Row order does not matter.
+    positions ``L_r - window .. L_r - 1`` (:func:`dspark_window_slots`).
     """
 
-    kv: TensorValue
-    """``[b, window, head_dim]`` context KV rows per request, as stored."""
-    valid: TensorValue
-    """``[b, window]`` bool: which rows hold a real position."""
+    slots: TensorValue
+    """``[b, window]`` int32 absolute window-cache slots of those positions
+    in the stage's layer, ``-1`` below position zero."""
+    cache: PagedCacheValues
+    """The window cache leaf the slots name."""
 
 
-def dspark_window_positions(
-    starts: TensorValue, window: int
-) -> tuple[TensorValue, TensorValue]:
-    """The context positions each request's block reads, and which are real.
+def dspark_window_slots(
+    cache: PagedCacheValues, starts: TensorValue, window: int, layer: int
+) -> TensorValue:
+    """Returns the window-cache slots of the context each block reads.
 
     Args:
+        cache: The window cache leaf.
         starts: ``[b]`` int32, each request's first block position ``L_r``
-            (one past its last committed token, whose context KV is already
-            stored).
+            (one past its last committed token, whose context record is
+            already stored).
         window: The sliding window length.
+        layer: The stage's layer among the leaf's layers.
 
     Returns:
-        ``([b, window]`` int32 positions clamped to ``>= 0``, ``[b, window]``
-        bool validity). Column ``w`` is position ``L_r - window + w``.
+        ``[b, window]`` int32 slots; column ``w`` holds position
+        ``L_r - window + w``, ``-1`` where that is negative.
     """
     device = starts.device
+    b = starts.shape[0]
     back = ops.range(-window, 0, dtype=DType.int32, device=device)
     positions = ops.unsqueeze(
         ops.cast(starts, DType.int32), -1
     ) + ops.unsqueeze(back, 0)
-    valid = positions >= 0
-    zero = ops.constant(0, DType.int32, device)
-    return ops.max(positions, zero), valid
+    return leaf_slots(
+        cache, ops.unsqueeze(arange_to(b, b, device), -1), positions, layer
+    )
 
 
-def dspark_block_indices(valid: TensorValue, block_size: int) -> TensorValue:
-    """Builds the attention indices for each block query.
+def dspark_block_index_lists(
+    window_slots: TensorValue, block_slots: TensorValue, width: int
+) -> TensorValue:
+    """Builds each block query's attention list of window-cache slots.
 
-    Indexes ``window`` context rows followed by ``block_size`` block rows,
-    returning ``[b, block_size, window + block_size]`` int32. Every block
-    query sees every valid context row and every block row (the block is
-    non-causal). ``-1`` marks an invalid context row.
+    Every block query names its request's context slots, then every slot of
+    its own block (the block is non-causal), then ``-1`` up to ``width``.
+
+    Args:
+        window_slots: ``[b, window]`` int32 context slots, ``-1`` for none.
+        block_slots: ``[b, k]`` int32 slots of the block's rows.
+        width: The list width, at least ``window + k``.
+
+    Returns:
+        ``[b * k, width]`` int32, request major.
     """
-    device = valid.device
-    b, window = valid.shape[0], int(valid.shape[1])
-    context = ops.where(
-        valid,
-        ops.unsqueeze(
-            ops.range(0, window, dtype=DType.int32, device=device), 0
-        ),
-        ops.constant(-1, DType.int32, device),
-    )
-    block = ops.range(
-        window, window + block_size, dtype=DType.int32, device=device
-    )
-    return ops.concat(
+    b, window = window_slots.shape[0], int(window_slots.shape[1])
+    k = int(block_slots.shape[1])
+    lists = ops.concat(
         [
+            ops.broadcast_to(ops.unsqueeze(window_slots, 1), [b, k, window]),
+            ops.broadcast_to(ops.unsqueeze(block_slots, 1), [b, k, k]),
             ops.broadcast_to(
-                ops.unsqueeze(context, 1), [b, block_size, window]
-            ),
-            ops.broadcast_to(
-                ops.reshape(block, [1, 1, block_size]),
-                [b, block_size, block_size],
+                ops.constant(-1, DType.int32, window_slots.device),
+                [b, k, width - window - k],
             ),
         ],
         axis=-1,
     )
+    return ops.reshape(lists, [b * k, width])
 
 
 def grouped_output_projection(
@@ -387,12 +378,12 @@ def grouped_output_projection(
     num_heads: int,
     head_dim: int,
     o_groups: int,
-    o_lora_rank: int,
 ) -> TensorValue:
     """Projects ``[t, num_heads, head_dim]`` attention output to ``hidden``.
 
     Applies inverse RoPE at the query positions, then ``wo_a`` block-diagonal
-    over ``o_groups``, then ``wo_b``.
+    over ``o_groups`` (MXFP8 when it carries a ``weight_scale``, else bf16),
+    then ``wo_b``.
     """
     t = out.shape[0]
     out = ops.reshape(
@@ -402,25 +393,26 @@ def grouped_output_projection(
             int(freqs_cis.shape[-2]) * 2,
             inverse=True,
         ),
-        [t, num_heads, head_dim],
+        [t, num_heads * head_dim],
     )
-    group_width = num_heads * head_dim // o_groups
-    grouped = ops.transpose(ops.reshape(out, [t, o_groups, group_width]), 0, 1)
-    wo_a_weight = ops.reshape(wo_a.weight, [o_groups, o_lora_rank, group_width])
-    projected = ops.matmul(grouped, ops.transpose(wo_a_weight, -1, -2))
-    flattened = ops.reshape(
-        ops.transpose(projected, 0, 1), [t, o_groups * o_lora_rank]
-    )
-    return wo_b(flattened)
+    if wo_a.weight_scale is not None:
+        return wo_b(
+            mxfp8_grouped_projection(
+                out, wo_a.weight, wo_a.weight_scale, o_groups
+            )
+        )
+    return wo_b(bf16_grouped_projection(out, wo_a.weight, o_groups))
 
 
 class DeepseekV41DSparkAttention(Module):
     """One DSpark stage's attention.
 
-    A block query attends over the stage's context KV (projected from the
-    combined hidden states ``main_x`` and stored per verified token, see
-    :meth:`context_kv`) plus the block's own KV, projected the same way and
-    never stored. Stages are uncompressed sliding-window layers.
+    A block query attends over the stage's context records (projected from
+    the combined hidden states ``main_x`` and stored per verified token, see
+    :meth:`store_context`) plus the block's own records, projected the same
+    way and stored at the block's positions, where the next forward's
+    context store overwrites them. Stages are uncompressed sliding-window
+    layers.
     """
 
     def __init__(
@@ -445,6 +437,14 @@ class DeepseekV41DSparkAttention(Module):
         self.o_groups = config.o_groups
         self.o_lora_rank = config.o_lora_rank
         self.scale = self.head_dim**-0.5
+        # Each block query names its window and its block, in whole tiles
+        # of 64 list entries.
+        self.list_entries = -(-(self.window + self.block_size) // 64) * 64
+        if self.list_entries > INDEX_WIDTH:
+            raise ValueError(
+                f"a window of {self.window} and a block of "
+                f"{self.block_size} do not fit a CSA2 list"
+            )
         self.rope = rope_for_layer(
             config, layer_info.layer_id, max_seq_len, device
         )
@@ -467,12 +467,11 @@ class DeepseekV41DSparkAttention(Module):
             shape=(self.num_heads,),
             device=device,
         )
-        # Host-dequantized bf16: used as a raw weight in an einsum.
-        self.wo_a = Linear(
+        self.wo_a = wo_a_linear(
             self.num_heads * self.head_dim // self.o_groups,
             self.o_groups * self.o_lora_rank,
-            DType.bfloat16,
             device,
+            mxfp8=woa_mxfp8_enabled(),
         )
         self.wo_b = Linear(
             in_dim=self.o_groups * self.o_lora_rank,
@@ -485,14 +484,6 @@ class DeepseekV41DSparkAttention(Module):
     def _freqs_cis(self, positions: TensorValue) -> TensorValue:
         return ops.gather(self.rope.freqs_cis_base(), positions, axis=0)
 
-    def _kv(self, kv_raw: TensorValue, freqs_cis: TensorValue) -> TensorValue:
-        """``kv_norm``, then RoPE on the trailing dims, then the quantize."""
-        return dspark_kv_quantize(
-            apply_rope_tail(
-                self.kv_norm(kv_raw), freqs_cis, int(freqs_cis.shape[-2]) * 2
-            )
-        )
-
     def _kv_raw(self, x: TensorValue) -> TensorValue:
         """Computes ``wkv(x)`` from the KV rows of the fused ``wq_a | wkv``."""
         q_lora_rank = self.query_proj.q_lora_rank
@@ -503,38 +494,13 @@ class DeepseekV41DSparkAttention(Module):
         )
         return ops.matmul(x, ops.transpose(kv_weight, 0, 1))
 
-    def context_kv(
-        self, main_x: TensorValue, positions: TensorValue
-    ) -> TensorValue:
-        """This stage's context KV rows for ``main_x``'s tokens.
-
-        ``kv_norm(wkv(main_x))``, RoPE at each token's position, then the
-        32-wide quantize.
-
-        Args:
-            main_x: ``[1, T, hidden_size]``, the drafter's combined taps.
-            positions: ``[T]`` int32, each token's absolute position.
-
-        Returns:
-            ``[T, head_dim]``.
-        """
-        freqs_cis = self._freqs_cis(positions)
-        kv = self._kv(self._kv_raw(main_x), freqs_cis)
-        return ops.reshape(kv, [-1, self.head_dim])
-
-    def _swa_layer(self) -> TensorValue:
-        """This stage's layer index in the sliding-window cache."""
-        return ops.constant(
-            self.layer_info.layer_id, DType.uint32, DeviceRef.CPU()
-        )
-
     def store_context(
         self,
         main_x: TensorValue,
         rows: RaggedRows,
         swa_collection: PagedCacheValues,
     ) -> None:
-        """Stores :meth:`context_kv` for every token of a forward pass.
+        """Stores every stage context record of a forward pass's tokens.
 
         Args:
             main_x: ``[1, T, hidden]`` combined hidden states of the forward
@@ -544,46 +510,53 @@ class DeepseekV41DSparkAttention(Module):
                 lengths), so token ``i`` of request ``r`` lands at position
                 ``starts[r] + i``.
             swa_collection: The sliding-window KV cache.
+
+        A record is ``kv_norm(wkv(main_x))``, rotated at the token's
+        position and quantized to MXFP8 by the store.
         """
-        kv = self.context_kv(main_x, rows.positions)
-        store_k_cache_ragged(
-            swa_collection,
-            ops.reshape(
-                ops.cast(kv, swa_collection.kv_blocks.dtype),
-                [-1, 1, self.head_dim],
-            ),
-            rows.offsets,
-            self._swa_layer(),
+        self._store(self._kv_raw(main_x), rows, swa_collection)
+
+    def _store(
+        self, kv_raw: TensorValue, rows: RaggedRows, cache: PagedCacheValues
+    ) -> TensorValue:
+        """Stores ``kv_norm(kv_raw)``'s records at ``rows``' positions.
+
+        Returns:
+            ``[T]`` int32, the slot each row was stored at.
+        """
+        slots = leaf_slots(
+            cache, rows.bid, rows.positions, self.layer_info.layer_id
         )
+        latent = self.kv_norm(kv_raw)
+        store_window_kv(
+            cache.kv_blocks,
+            ops.reshape(ops.cast(latent, DType.bfloat16), [-1, self.head_dim]),
+            rows.positions,
+            rope_cos_sin_table(self.rope.freqs_cis_base()),
+            slots,
+            block_stride=cache.page_stride,
+        )
+        return slots
 
     def read_window(
         self, starts: TensorValue, swa_collection: PagedCacheValues
     ) -> DSparkWindow:
-        """Reads each request's :class:`DSparkWindow` from the cache.
+        """Names each request's :class:`DSparkWindow` in the cache.
 
-        Reads positions ``starts[r] - window .. starts[r] - 1``. Rows stored
-        for tokens not yet accepted sit at or past ``starts`` and are
-        overwritten by the next store before any window reads them.
+        Positions ``starts[r] - window .. starts[r] - 1``. Records stored for
+        tokens not yet accepted sit at or past ``starts`` and are
+        overwritten by the next store before any window names them.
 
         Args:
             starts: ``[b]`` int32, each request's first block position.
             swa_collection: The sliding-window KV cache.
-
-        Returns:
-            The window: ``[b, window, head_dim]`` KV rows and their validity.
         """
-        positions, valid = dspark_window_positions(starts, self.window)
-        device = starts.device
-        b = starts.shape[0]
-        per_request = ops.cast(arange_to(b + 1, b + 1, device), DType.uint32)
-        kv = kv_cache_gather_rows_ragged(
-            swa_collection,
-            positions,
-            per_request,
-            self._swa_layer(),
-            key_or_value=KEY_CACHE_INDEX,
+        return DSparkWindow(
+            slots=dspark_window_slots(
+                swa_collection, starts, self.window, self.layer_info.layer_id
+            ),
+            cache=swa_collection,
         )
-        return DSparkWindow(kv=kv, valid=valid)
 
     def shard_heads(self, num_devices: int) -> None:
         """Declares how the attention heads split across devices.
@@ -622,12 +595,14 @@ class DeepseekV41DSparkAttention(Module):
         """Attends each draft block over its context window and itself.
 
         Maps ``[1, b * block_size, hidden]`` normed block tokens to the same
-        shape.
+        shape. The block's records are stored at its positions in the
+        stage's window cache, then each block query attends over the slots
+        of its window and of its whole block.
 
         Args:
             h: The ``attn_norm``'d collapsed stream of ``b`` blocks, request
                 major, ``block_size`` rows each.
-            rows: The blocks' bookkeeping; only ``rows.positions`` is read.
+            rows: The blocks' bookkeeping: each row's request and position.
             cache: This stage's :class:`DSparkWindow`.
 
         Raises:
@@ -640,30 +615,43 @@ class DeepseekV41DSparkAttention(Module):
             )
         k, heads, d = self.block_size, self.num_heads, self.head_dim
         t, hidden = h.shape[1], h.shape[2]
-        b = cache.kv.shape[0]
+        b = cache.slots.shape[0]
         freqs_cis = self._freqs_cis(rows.positions)
         _, q, kv_raw = self.query_proj(h, freqs_cis)
-        block_kv = self._kv(kv_raw, freqs_cis)
+        block_slots = self._store(kv_raw, rows, cache.cache)
 
         # `t` rows are `b` blocks of `k`: rebind `t` to `b * k` to split it.
-        q = ops.reshape(
-            ops.rebind(ops.reshape(q, [t, heads, d]), [b * k, heads, d]),
-            [b, k, heads, d],
+        block_slots = ops.reshape(
+            ops.rebind(ops.reshape(block_slots, [t]), [b * k]), [b, k]
         )
-        block_kv = ops.reshape(
-            ops.rebind(ops.reshape(block_kv, [t, d]), [b * k, d]), [b, k, d]
+        lists = ops.rebind(
+            dspark_block_index_lists(
+                cache.slots, block_slots, self.list_entries
+            ),
+            [t, self.list_entries],
         )
-        table = ops.concat(
-            [ops.cast(cache.kv, block_kv.dtype), block_kv], axis=1
+        idx = ops.concat(
+            [
+                lists,
+                ops.broadcast_to(
+                    ops.constant(-1, DType.int32, lists.device),
+                    [t, INDEX_WIDTH - self.list_entries],
+                ),
+            ],
+            axis=-1,
         )
-        out = gathered_sparse_attention(
+        q = ops.reshape(q, [t, heads, d])
+        out = csa2_attention(
             q,
-            table,
+            idx,
             self.attn_sink,
-            dspark_block_indices(cache.valid, k),
-            self.scale,
+            cache.cache.kv_blocks,
+            None,
+            scale=self.scale,
+            window_stride=cache.cache.page_stride,
+            window_entries=self.list_entries,
         )
-        out = ops.rebind(ops.reshape(out, [b * k, heads, d]), [t, heads, d])
+        out = ops.cast(out, q.dtype)
         projected = grouped_output_projection(
             out,
             freqs_cis,
@@ -672,6 +660,5 @@ class DeepseekV41DSparkAttention(Module):
             num_heads=heads,
             head_dim=d,
             o_groups=self.o_groups,
-            o_lora_rank=self.o_lora_rank,
         )
         return ops.reshape(projected, [1, t, hidden])

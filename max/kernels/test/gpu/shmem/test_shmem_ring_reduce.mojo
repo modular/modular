@@ -18,6 +18,7 @@ from std.math import iota
 from std.os import abort
 from shmem import *
 from std.ffi import c_int
+from std.memory.alloc import unsafe_alloc
 from std.sys.info import size_of
 from max.gpu.host import DeviceBuffer
 
@@ -134,7 +135,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
     var dst = ctx.enqueue_create_buffer[.int32](max_ints)
     var src = ctx.enqueue_create_buffer[.int32](max_ints)
-    var data_h = alloc[Int32](max_ints)
+    var data_h = unsafe_alloc[Int32](max_ints)
     var signal = shmem_calloc[.uint64](num_blocks)
 
     # Initialize test data - each element has value equal to its index

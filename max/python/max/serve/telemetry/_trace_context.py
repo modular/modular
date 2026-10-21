@@ -177,6 +177,9 @@ def set_phase_parent(span: otel_trace.Span) -> None:
     fans out to copy the context when they are created. Does nothing for the
     span the no-op tracer returns when tracing is off.
     """
+    # Fast path for tracing off; the validity check below rejects it too.
+    if span is otel_trace.INVALID_SPAN:
+        return
     # Gates on validity, not recording: a sampled-out span is non-recording
     # but must still parent the phase spans.
     span_context = span.get_span_context()

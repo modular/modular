@@ -78,14 +78,14 @@ def _spin_until_released(flag: MutPointer[Int32, MutAnyOrigin]):
     GPU idle that a concurrent call can still find its quiesce window.
     """
     var start = global_perf_counter_ns()
-    while flag.load[volatile=True]() == 0:
+    while flag.unsafe_load[volatile=True]() == 0:
         if global_perf_counter_ns() - start > UInt64(SPIN_TIMEOUT_NS):
             return
 
 
 def _release(flag: MutPointer[Int32, MutAnyOrigin]):
     """Peer arrival: releases device 0's spin over P2P."""
-    flag.store[volatile=True](Int32(1))
+    flag.unsafe_store[volatile=True](Int32(1))
 
 
 struct _Clock(ImplicitlyCopyable, Movable):
@@ -274,8 +274,7 @@ def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
     var caller_worker = task_id_for_device(Int(ctx1.id()))
 
     @inline(.always)
-    @__parameter
-    __async def lane() -> None:
+    __async def lane() {var} -> None:
         sleep(CALLER_DELAY_SEC)
         comptime if call != _CONTROL:
             _make_call[call](ctx0, src, clock)

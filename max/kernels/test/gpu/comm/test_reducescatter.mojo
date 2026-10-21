@@ -241,24 +241,8 @@ def reducescatter_test[
             row_major(runtime_shape),
         )
 
-    @inline(.always)
-    @__parameter
-    @__copy_capture(out_bufs)
-    def outputs_lambda[
-        input_index: Int,
-        _dtype: DType,
-        _width: SIMDLength,
-        *,
-        _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-        var out_buf = out_bufs[input_index]
-        out_buf.store[alignment=_alignment](
-            coords,
-            rebind[SIMD[dtype, _width]](-val),
-        )
-
     # `reducescatter`'s outputs are world-view `Array`s, not a `StaticTuple`;
-    # convert once (`outputs_lambda` above still reads the `StaticTuple`
+    # convert once (`outputs_lambda` below still reads the `StaticTuple`
     # directly).
     var out_bufs_arr = Array[OutputTileType, ngpus](
         fill_with=lambda (k: Int) -> OutputTileType: out_bufs[k]
@@ -270,14 +254,24 @@ def reducescatter_test[
 
     comptime for i in range(ngpus):
         comptime if use_custom_epilogue:
-            reducescatter[
-                ngpus=ngpus,
-                output_lambda=outputs_lambda[input_index=i, ...],
-                axis=axis,
-                use_multimem=use_multimem,
-            ](
+
+            @inline(.always)
+            def outputs_lambda[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var out_bufs} -> None:
+                var out_buf = out_bufs[i]
+                out_buf.store[alignment=alignment](
+                    coords,
+                    rebind[SIMD[dtype, _width]](-val),
+                )
+
+            reducescatter[ngpus=ngpus, axis=axis, use_multimem=use_multimem](
                 in_bufs,
                 out_layouts,
+                outputs_lambda,
                 rank_sigs,
                 list_of_ctx[i],
                 my_rank=Optional[Int](i),

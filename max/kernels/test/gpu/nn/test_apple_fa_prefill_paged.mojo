@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """End-to-end correctness test for the Apple M5 MMA prefill kernels on PAGED KV.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`) only.
+Apple silicon GPU (Metal 4, `compute_capability >= 5`).
 
 Validates the paged-KV path of BOTH prefill kernels: a `PagedKVCacheCollection`
 (`page_size > 0`) wrapped in `KVCacheMHAOperand`, run through the ragged prefill
@@ -471,7 +471,7 @@ def main() raises:
         return
     seed(42)
     with DeviceContext() as ctx:
-        if ctx.compute_capability() != 5:
+        if ctx.compute_capability() < 5:
             print("SKIP: Apple M5 required (16x16 simdgroup MMA)")
             return
         test_apple_fa_prefill_paged(ctx)

@@ -1709,10 +1709,10 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                     row_1,
                     idx_in_group,
                 )
-                p0a_all.ptr.store((c - num_free_blocks) * 4, p[0])
-                p0b_all.ptr.store((c - num_free_blocks) * 4, p[1])
-                p1a_all.ptr.store((c - num_free_blocks) * 4, p[2])
-                p1b_all.ptr.store((c - num_free_blocks) * 4, p[3])
+                p0a_all.ptr.unsafe_store((c - num_free_blocks) * 4, p[0])
+                p0b_all.ptr.unsafe_store((c - num_free_blocks) * 4, p[1])
+                p1a_all.ptr.unsafe_store((c - num_free_blocks) * 4, p[2])
+                p1b_all.ptr.unsafe_store((c - num_free_blocks) * 4, p[3])
 
             # Single barrier: all 128 threads finish reads before the
             # overlay-aliased writes below.
@@ -1731,22 +1731,22 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     bf16_sw_0a,
-                    p0a_all.ptr.load[width=4](held),
+                    p0a_all.ptr.unsafe_load[width=4](held),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     bf16_sw_0b,
-                    p0b_all.ptr.load[width=4](held),
+                    p0b_all.ptr.unsafe_load[width=4](held),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     bf16_sw_1a,
-                    p1a_all.ptr.load[width=4](held),
+                    p1a_all.ptr.unsafe_load[width=4](held),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     bf16_sw_1b,
-                    p1b_all.ptr.load[width=4](held),
+                    p1b_all.ptr.unsafe_load[width=4](held),
                 )
                 fence_async_view_proxy()
                 _ = blk_bar0[c].arrive()

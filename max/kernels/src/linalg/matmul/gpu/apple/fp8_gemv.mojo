@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only FP8 (W8A16) GEMV: `out = x @ dequant(W)^T` at M=1.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`). The batch-1 decode
+Apple silicon GPU (Metal 4, `compute_capability >= 5`). The batch-1 decode
 regime (`M == 1`) is a matrix-vector product, NOT a matrix-matrix product: there
 is exactly one activation row, so there is no MMA to feed. This kernel is the
 GEMV -- register-resident, no SMEM, no `barrier()`, no `_mma_apple`.
@@ -292,7 +292,7 @@ def enqueue_apple_fp8_gemv[
         weight,
         Int32(n),
         Int32(k),
-        host_arg=epilogue_fn,
+        host_args=(epilogue_fn,),
         grid_dim=grid,
         block_dim=BLK,
     )
@@ -408,7 +408,7 @@ def _enqueue_apple_fp8_materialize_dense[
 
     enqueue_fp8_materialize[.bfloat16](wdense_tt, weight, ctx)
 
-    if ctx.compute_capability() == 5:
+    if ctx.compute_capability() >= 5:
         enqueue_apple_matmul[
             in_type=DType.bfloat16,
             c_type=c_type,
@@ -438,8 +438,7 @@ def _enqueue_apple_fp8_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=no_epilogue_fn,
-            host_arg2=no_compute_fn,
+            host_args=(no_epilogue_fn, no_compute_fn),
             grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
             block_dim=(4 * WARP_SIZE,),
         )
@@ -509,7 +508,7 @@ def enqueue_apple_fp8_matmul[
     # Pre-M5 (M1-M4): materialize -> dense (hardware-neutral); the M5 GEMV's
     # `float8_e4m3fn` width load / widen is unvalidated pre-M5, and the design
     # targets M5. This keeps pre-M5 correct.
-    if cc != 5:
+    if cc < 5:
         comptime if has_epilogue_fn:
             raise Error("enqueue_apple_fp8_matmul: epilogue_fn needs Apple M5")
         _enqueue_apple_fp8_materialize_dense[c_type](c, a, weight, m, n, k, ctx)

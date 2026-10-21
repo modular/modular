@@ -13,6 +13,7 @@
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.memory import OwnedPointer
+from std.memory.alloc import unsafe_alloc
 from std.testing import *
 
 
@@ -26,7 +27,7 @@ def test_function_error(ctx: DeviceContext) raises:
     # CHECK: test_function_error
     print("== test_function_error")
     try:
-        var res_ptr = alloc[UInt32](1)
+        var res_ptr = unsafe_alloc[UInt32](1)
         var res_ptr_owned = OwnedPointer[UInt32](
             unsafe_from_raw_pointer=res_ptr
         )

@@ -20,7 +20,7 @@ from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import is_gpu
 from std.math import ceildiv
-from layout import DefaultEngine, TensorLayout, TileTensor
+from layout import DefaultEngine, TensorEngine, TensorLayout, TileTensor
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import simd_width_of, size_of
 from max.gpu import WARP_SIZE
@@ -36,9 +36,9 @@ from shmem.ep_comm import (
     combine_async_kernel,
     combine_wait_kernel,
     combine_kernel,
-    ep_combine_store_type,
-    router_weights_wrapper_type,
-    input_scales_wrapper_type,
+    EPCombineStoreFn,
+    RouterWeightsFn,
+    InputScalesFn,
 )
 
 
@@ -161,38 +161,46 @@ def pack_ptrs_array[
 
 @inline(.always)
 def ep_dispatch_async_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    //,
     token_fmt_type: TokenFormat,
     n_experts: Int,
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    input_tokens: TileTensor[mut=False, Engine=DefaultEngine[], ...],
-    topk_ids: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
-    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    input_tokens: TileTensor[mut=False, Engine=InputTokensEngine, ...],
+    topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
 ) raises:
-    """Execute the Expert Parallelism async dispatch kernel.
+    """Execute the Expert Parallelism async dispatch kernel at unit input scale.
 
-    This function launches the dispatch_async_kernel from ep_comm.mojo to
-    initiate token distribution across expert devices. In multi-node
-    scenarios, all the communication buffers need to be allocated using
-    `shmem_malloc`.
+    See the overload taking `input_scales_fn`.
 
     Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
         token_fmt_type: Token format type.
         n_experts: Total experts across all devices.
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
-        input_scales_wrapper: The wrapper for the input scales.
         use_shmem: Whether to enable SHMEM communication.
 
     Arguments:
@@ -203,6 +211,97 @@ def ep_dispatch_async_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer
+    """
+
+    # Stands in for the input scales `has_input_scales=False` never reads.
+    @inline(.always)
+    def no_input_scales[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        return Scalar[dtype](1)
+
+    ep_dispatch_async_kernel_api[
+        token_fmt_type,
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        target,
+        use_shmem,
+        has_input_scales=False,
+    ](
+        atomic_counters,
+        input_tokens,
+        topk_ids,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        no_input_scales,
+    )
+
+
+@inline(.always)
+def ep_dispatch_async_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    InputScalesFnType: InputScalesFn,
+    //,
+    token_fmt_type: TokenFormat,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    target: StaticString,
+    use_shmem: Bool = (n_nodes > 1),
+    has_input_scales: Bool = True,
+](
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    input_tokens: TileTensor[mut=False, Engine=InputTokensEngine, ...],
+    topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    context: DeviceContext,
+    input_scales_fn: InputScalesFnType,
+) raises:
+    """Execute the Expert Parallelism async dispatch kernel.
+
+    This function launches the dispatch_async_kernel from ep_comm.mojo to
+    initiate token distribution across expert devices. In multi-node
+    scenarios, all the communication buffers need to be allocated using
+    `shmem_malloc`.
+
+    Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        InputScalesFnType: The type of `input_scales_fn` (inferred).
+        token_fmt_type: Token format type.
+        n_experts: Total experts across all devices.
+        max_token_per_rank: Maximum tokens any device can send.
+        n_gpus_per_node: GPUs per physical node.
+        n_nodes: Number of physical nodes.
+        target: Target.
+        use_shmem: Whether to enable SHMEM communication.
+        has_input_scales: Whether `input_scales_fn` supplies the input scale.
+            The overload without `input_scales_fn` passes `False`.
+
+    Arguments:
+        atomic_counters: EP kernel synchronization counters.
+        input_tokens: Tokens to dispatch to experts.
+        topk_ids: Expert assignments from router.
+        send_ptrs: Send buffer pointers for each local GPU.
+        recv_ptrs: Receive buffer pointers for each local GPU.
+        recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        context: Device context pointer
+        input_scales_fn: The input scales. It runs on the device, so it must
+            copy what it captures.
     """
 
     comptime assert is_gpu[target](), "EP is only supported on GPU."
@@ -246,7 +345,8 @@ def ep_dispatch_async_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         token_fmt_type,
-        input_scales_wrapper=input_scales_wrapper,
+        InputScalesFnType=InputScalesFnType,
+        has_input_scales=has_input_scales,
         use_shmem=use_shmem,
     ]
 
@@ -293,12 +393,12 @@ def ep_dispatch_async_kernel_api[
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
             MutPointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
-        gpu_ctx.enqueue_function(
-            func,
+        func._call_with_pack_checked(
+            gpu_ctx,
             input_tokens,
             topk_ids,
             send_ptr,
@@ -306,6 +406,7 @@ def ep_dispatch_async_kernel_api[
             recv_count_ptrs_arr,
             ep_counters,
             my_rank,
+            host_args=(input_scales_fn,),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -319,21 +420,26 @@ def ep_dispatch_async_kernel_api[
 @inline(.always)
 def ep_dispatch_wait_kernel_api[
     token_fmt_type: TokenFormat,
+    RowOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    AtomicCountersEngine: TensorEngine,
     //,
     n_experts: Int,
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
 ](
     token_handler: token_fmt_type,
-    row_offsets: TileTensor[.uint32, Engine=DefaultEngine[], ...],
-    expert_ids: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    src_info: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
+    expert_ids: TileTensor[.int32, Engine=ExpertIdsEngine, ...],
+    src_info: TileTensor[.int32, Engine=SrcInfoEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     context: DeviceContext,
     num_input_tokens: Int = -1,
 ) raises:
@@ -346,12 +452,17 @@ def ep_dispatch_wait_kernel_api[
 
     Parameters:
         token_fmt_type: Token format type.
+        RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
+        ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
         n_experts: Total experts across all devices.
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
-        input_scales_wrapper: The wrapper for the input scales.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -397,7 +508,6 @@ def ep_dispatch_wait_kernel_api[
         n_ranks,
         max_token_per_rank,
         token_fmt_type,
-        input_scales_wrapper=input_scales_wrapper,
     ]
 
     @inline(.always)
@@ -426,7 +536,7 @@ def ep_dispatch_wait_kernel_api[
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
             MutPointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -468,6 +578,15 @@ def ep_dispatch_wait_kernel_api[
 def ep_fused_dispatch_kernel_api[
     token_fmt_type: TokenFormat,
     dispatch_dtype: DType,
+    RowOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
     //,
     n_experts: Int,
     max_token_per_rank: Int,
@@ -475,36 +594,40 @@ def ep_fused_dispatch_kernel_api[
     n_nodes: Int,
     fused_shared_expert: Bool,
     target: StaticString,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
 ](
     token_handler: token_fmt_type,
-    row_offsets: TileTensor[.uint32, Engine=DefaultEngine[], ...],
-    expert_ids: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    src_info: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
+    expert_ids: TileTensor[.int32, Engine=ExpertIdsEngine, ...],
+    src_info: TileTensor[.int32, Engine=SrcInfoEngine, ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     input_tokens: TileTensor[
-        mut=False, dispatch_dtype, Engine=DefaultEngine[], ...
+        mut=False, dispatch_dtype, Engine=InputTokensEngine, ...
     ],
-    topk_ids: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
-    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
 ) raises:
-    """Execute the fused Expert Parallelism dispatch kernel.
+    """Execute the fused Expert Parallelism dispatch kernel at unit input scale.
 
-    This function launches the fused dispatch_kernel from ep_comm.mojo that
-    combines both dispatch_async and dispatch_wait functionality in a single
-    kernel launch. It distributes input tokens to expert devices based on
-    top-k routing decisions, then waits for all tokens to arrive and
-    aggregates them for grouped matmul computation.
+    See the overload taking `input_scales_fn`.
 
     Parameters:
         token_fmt_type: Token format type.
         dispatch_dtype: Data type of the dispatched tokens.
+        RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
+        ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
         n_experts: Total experts across all devices.
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
@@ -512,7 +635,6 @@ def ep_fused_dispatch_kernel_api[
         fused_shared_expert: Whether to pack shared expert inputs with
             routed experts' inputs.
         target: Target.
-        input_scales_wrapper: The wrapper for the input scales.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
             send tokens within the current device.
         use_shmem: Whether to enable SHMEM communication.
@@ -532,6 +654,132 @@ def ep_fused_dispatch_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
+    """
+
+    # Stands in for the input scales `has_input_scales=False` never reads.
+    @inline(.always)
+    def no_input_scales[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        return Scalar[dtype](1)
+
+    ep_fused_dispatch_kernel_api[
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        target,
+        skip_a2a,
+        use_shmem,
+        allreduce_world_size,
+        has_input_scales=False,
+    ](
+        token_handler,
+        row_offsets,
+        expert_ids,
+        src_info,
+        atomic_counters,
+        input_tokens,
+        topk_ids,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        no_input_scales,
+    )
+
+
+@inline(.always)
+def ep_fused_dispatch_kernel_api[
+    token_fmt_type: TokenFormat,
+    dispatch_dtype: DType,
+    RowOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    InputScalesFnType: InputScalesFn,
+    //,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool,
+    target: StaticString,
+    skip_a2a: Bool = False,
+    use_shmem: Bool = (n_nodes > 1),
+    allreduce_world_size: Int = 1,
+    has_input_scales: Bool = True,
+](
+    token_handler: token_fmt_type,
+    row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
+    expert_ids: TileTensor[.int32, Engine=ExpertIdsEngine, ...],
+    src_info: TileTensor[.int32, Engine=SrcInfoEngine, ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    input_tokens: TileTensor[
+        mut=False, dispatch_dtype, Engine=InputTokensEngine, ...
+    ],
+    topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    context: DeviceContext,
+    input_scales_fn: InputScalesFnType,
+) raises:
+    """Execute the fused Expert Parallelism dispatch kernel.
+
+    This function launches the fused dispatch_kernel from ep_comm.mojo that
+    combines both dispatch_async and dispatch_wait functionality in a single
+    kernel launch. It distributes input tokens to expert devices based on
+    top-k routing decisions, then waits for all tokens to arrive and
+    aggregates them for grouped matmul computation.
+
+    Parameters:
+        token_fmt_type: Token format type.
+        dispatch_dtype: Data type of the dispatched tokens.
+        RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
+        ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        InputScalesFnType: The type of `input_scales_fn` (inferred).
+        n_experts: Total experts across all devices.
+        max_token_per_rank: Maximum tokens any device can send.
+        n_gpus_per_node: GPUs per physical node.
+        n_nodes: Number of physical nodes.
+        fused_shared_expert: Whether to pack shared expert inputs with
+            routed experts' inputs.
+        target: Target.
+        skip_a2a: Whether to skip the A2A communication. If true, we will only
+            send tokens within the current device.
+        use_shmem: Whether to enable SHMEM communication.
+        allreduce_world_size: The world size of the allreduce operation. Only
+            needed for skip_a2a. Used to calculate the workload distribution for
+            the shared expert (if has one).
+        has_input_scales: Whether `input_scales_fn` supplies the input scale.
+            The overload without `input_scales_fn` passes `False`.
+
+    Arguments:
+        token_handler: Token handler. Wrapper for the output token tensor.
+        row_offsets: Row offsets for grouped matmul.
+        expert_ids: Expert IDs for grouped matmul.
+        src_info: Source routing information for combine phase.
+        atomic_counters: EP kernel synchronization counters.
+        input_tokens: Tokens to dispatch to experts.
+        topk_ids: Expert assignments from router.
+        send_ptrs: Send buffer pointers for each local GPU.
+        recv_ptrs: Receive buffer pointers for each local GPU.
+        recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        context: Device context pointer.
+        input_scales_fn: The input scales. It runs on the device, so it must
+            copy what it captures.
     """
 
     # Ensure this kernel only runs on GPU targets
@@ -581,11 +829,17 @@ def ep_fused_dispatch_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,  # p2p world size
         token_fmt_type,
+        InputScalesFnType=InputScalesFnType,
         fused_shared_expert=fused_shared_expert,
-        input_scales_wrapper=input_scales_wrapper,
+        has_input_scales=has_input_scales,
         skip_a2a=skip_a2a,
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
+        InputTokensEngine=input_tokens.Engine,
+        TopkIdsEngine=topk_ids.Engine,
+        RowOffsetsEngine=row_offsets.Engine,
+        ExpertIdsEngine=expert_ids.Engine,
+        SrcInfoEngine=src_info.Engine,
     ]
 
     @inline(.always)
@@ -640,7 +894,7 @@ def ep_fused_dispatch_kernel_api[
         ](recv_count_ptrs, my_rank)
         var ep_counters = EPLocalSyncCounters[n_experts](
             MutPointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -656,8 +910,8 @@ def ep_fused_dispatch_kernel_api[
             )
         else:
             grid_dim_x = hw_info.sm_count
-        gpu_ctx.enqueue_function(
-            func,
+        func._call_with_pack_checked(
+            gpu_ctx,
             input_tokens,
             topk_ids,
             token_handler,
@@ -669,6 +923,7 @@ def ep_fused_dispatch_kernel_api[
             recv_count_ptrs_arr,
             ep_counters,
             my_rank,
+            host_args=(input_scales_fn,),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
@@ -683,6 +938,13 @@ def ep_fused_dispatch_kernel_api[
 
 @inline(.always)
 def ep_combine_async_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    //,
     combine_dtype: DType,
     hidden_size: Int,
     top_k: Int,
@@ -693,14 +955,14 @@ def ep_combine_async_kernel_api[
     target: StaticString,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     input_tokens: TileTensor[
-        mut=False, combine_dtype, Engine=DefaultEngine[], ...
+        mut=False, combine_dtype, Engine=InputTokensEngine, ...
     ],
-    src_info: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
-    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    src_info: TileTensor[mut=False, .int32, Engine=SrcInfoEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
 ) raises:
     """Execute the Expert Parallelism combine kernel.
@@ -713,6 +975,12 @@ def ep_combine_async_kernel_api[
     allocated using `shmem_malloc`.
 
     Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
         combine_dtype: Data type for tokens during combine phase.
         hidden_size: Model hidden dimension size.
         top_k: Number of experts each token was routed to.
@@ -768,6 +1036,8 @@ def ep_combine_async_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         use_shmem=use_shmem,
+        InputTokensEngine=input_tokens.Engine,
+        SrcInfoEngine=src_info.Engine,
     ]
 
     @inline(.always)
@@ -815,7 +1085,7 @@ def ep_combine_async_kernel_api[
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
             MutPointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -840,6 +1110,11 @@ def ep_combine_async_kernel_api[
 
 @inline(.always)
 def ep_combine_wait_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    StoreFnType: EPCombineStoreFn,
+    //,
     combine_dtype: DType,
     hidden_size: Int,
     top_k: Int,
@@ -848,14 +1123,98 @@ def ep_combine_wait_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
-    store_fn: ep_combine_store_type,
-    router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
 ](
     num_tokens: Int,
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
+    store_fn: StoreFnType,
+) raises:
+    """Execute the Expert Parallelism combine completion kernel, unweighted.
+
+    Each routed expert's output is stored on its own. See the overload taking
+    `router_weights_fn`.
+
+    Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        StoreFnType: The type of `store_fn` (inferred).
+        combine_dtype: Data type for tokens during combine phase.
+        hidden_size: Model hidden dimension size.
+        top_k: Number of experts each token was routed to.
+        n_experts: Total experts across all devices.
+        max_token_per_rank: Maximum tokens any device can receive.
+        n_gpus_per_node: GPUs per physical node.
+        n_nodes: Number of physical nodes.
+        target: Target.
+
+    Arguments:
+        num_tokens: Number of output tokens.
+        atomic_counters: EP kernel synchronization counters.
+            Used to coordinate between different thread blocks.
+        recv_ptrs: Receive buffer pointers for each local GPU.
+        recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        context: Device context pointer.
+        store_fn: Stores the output tokens, called with
+            `(token_idx, topk_idx, elem)`. It runs on the device, so it must
+            copy what it captures.
+    """
+
+    # Stands in for the router weights `has_router_weights=False` never reads.
+    @inline(.always)
+    def no_router_weights[
+        width: Int
+    ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        return SIMD[.float32, width](1)
+
+    ep_combine_wait_kernel_api[
+        combine_dtype,
+        hidden_size,
+        top_k,
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        target,
+        has_router_weights=False,
+    ](
+        num_tokens,
+        atomic_counters,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        store_fn,
+        no_router_weights,
+    )
+
+
+@inline(.always)
+def ep_combine_wait_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    StoreFnType: EPCombineStoreFn,
+    RouterWeightsFnType: RouterWeightsFn,
+    //,
+    combine_dtype: DType,
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    target: StaticString,
+    has_router_weights: Bool = True,
+](
+    num_tokens: Int,
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    context: DeviceContext,
+    store_fn: StoreFnType,
+    router_weights_fn: RouterWeightsFnType,
 ) raises:
     """Execute the Expert Parallelism combine completion kernel.
 
@@ -865,6 +1224,11 @@ def ep_combine_wait_kernel_api[
     expert outputs for each token.
 
     Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        StoreFnType: The type of `store_fn` (inferred).
+        RouterWeightsFnType: The type of `router_weights_fn` (inferred).
         combine_dtype: Data type for tokens during combine phase.
         hidden_size: Model hidden dimension size.
         top_k: Number of experts each token was routed to.
@@ -873,10 +1237,9 @@ def ep_combine_wait_kernel_api[
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
-        store_fn: Stores the output tokens. Called with `(token_idx, elem)`
-            when `router_weights_wrapper` is set, and with
-            `(token_idx, topk_idx, elem)` otherwise.
-        router_weights_wrapper: Wrapper for the optional router weights.
+        has_router_weights: Whether the routed expert outputs are weighted by
+            `router_weights_fn` and summed. The overload without
+            `router_weights_fn` passes `False`.
 
     Arguments:
         num_tokens: Number of output tokens.
@@ -885,6 +1248,12 @@ def ep_combine_wait_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
+        store_fn: Stores the output tokens. Called with `(token_idx, elem)`
+            when `has_router_weights`, and with
+            `(token_idx, topk_idx, elem)` otherwise. It runs on the device,
+            so it must copy what it captures.
+        router_weights_fn: The router weights. It runs on the device, so it
+            must copy what it captures.
     """
 
     # Ensure this kernel only runs on GPU targets
@@ -916,8 +1285,9 @@ def ep_combine_wait_kernel_api[
         n_ranks,
         combine_msg_size,
         max_token_per_rank,
-        store_fn,
-        router_weights_wrapper=router_weights_wrapper,
+        StoreFnType,
+        RouterWeightsFnType,
+        has_router_weights,
     ]
 
     @inline(.always)
@@ -948,7 +1318,7 @@ def ep_combine_wait_kernel_api[
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
             MutPointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -973,6 +1343,7 @@ def ep_combine_wait_kernel_api[
             recv_count_ptr,
             ep_counters,
             my_rank,
+            host_args=(store_fn, router_weights_fn),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -986,6 +1357,13 @@ def ep_combine_wait_kernel_api[
 @inline(.always)
 def ep_fused_combine_kernel_api[
     combine_dtype: DType,
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    StoreFnType: EPCombineStoreFn,
     //,
     hidden_size: Int,
     top_k: Int,
@@ -994,23 +1372,152 @@ def ep_fused_combine_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
-    store_fn: ep_combine_store_type,
-    router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
+    *,
+    # The output goes through `store_fn`, so there is no output tile to infer
+    # the engine from.
+    OutputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     num_tokens: Int,
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     input_tokens: TileTensor[
-        mut=False, combine_dtype, Engine=DefaultEngine[], ...
+        mut=False, combine_dtype, Engine=InputTokensEngine, ...
     ],
-    src_info: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
-    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    src_info: TileTensor[mut=False, .int32, Engine=SrcInfoEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
+    store_fn: StoreFnType,
+    topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]] = None,
+) raises:
+    """Execute the fused Expert Parallelism combine kernel, unweighted.
+
+    Each routed expert's output is stored on its own. See the overload taking
+    `router_weights_fn`.
+
+    Parameters:
+        combine_dtype: Data type for tokens during combine phase.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        StoreFnType: The type of `store_fn` (inferred).
+        hidden_size: Model hidden dimension size.
+        top_k: Number of experts each token was routed to.
+        n_experts: Total experts across all devices.
+        max_token_per_rank: Maximum tokens any device can receive.
+        n_gpus_per_node: GPUs per physical node.
+        n_nodes: Number of physical nodes.
+        target: Target.
+        fused_shared_expert: Whether to add shared expert outputs to the
+            combined routed expert outputs.
+        skip_a2a: Whether to skip the A2A communication. If true, we will only
+            send tokens within the current device.
+        use_shmem: Whether to enable SHMEM communication.
+        allreduce_world_size: The world size of the allreduce operation. Only
+            needed for skip_a2a. Used to calculate the workload distribution for
+            the shared expert (if has one).
+        OutputTokensEngine: Storage engine backing the output tokens tile.
+
+    Arguments:
+        num_tokens: Number of output tokens.
+        atomic_counters: EP kernel synchronization counters.
+        input_tokens: Expert output tokens to send back.
+        src_info: Source routing information from dispatch phase.
+        send_ptrs: Send buffer pointers for each local GPU.
+        recv_ptrs: Receive buffer pointers for each local GPU.
+        recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        context: Device context pointer.
+        store_fn: Stores the output tokens, called with
+            `(token_idx, topk_idx, elem)`. It runs on the device, so it must
+            copy what it captures.
+        topk_ids_p: Pointer to the top-k IDs for each token, only required if
+            skip_a2a is True.
+    """
+
+    # Stands in for the router weights `has_router_weights=False` never reads.
+    @inline(.always)
+    def no_router_weights[
+        width: Int
+    ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        return SIMD[.float32, width](1)
+
+    ep_fused_combine_kernel_api[
+        hidden_size,
+        top_k,
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        target,
+        fused_shared_expert,
+        skip_a2a,
+        use_shmem,
+        allreduce_world_size,
+        has_router_weights=False,
+        OutputTokensEngine=OutputTokensEngine,
+    ](
+        num_tokens,
+        atomic_counters,
+        input_tokens,
+        src_info,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        store_fn,
+        no_router_weights,
+        topk_ids_p,
+    )
+
+
+@inline(.always)
+def ep_fused_combine_kernel_api[
+    combine_dtype: DType,
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    StoreFnType: EPCombineStoreFn,
+    RouterWeightsFnType: RouterWeightsFn,
+    //,
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    target: StaticString,
+    fused_shared_expert: Bool = False,
+    skip_a2a: Bool = False,
+    use_shmem: Bool = (n_nodes > 1),
+    allreduce_world_size: Int = 1,
+    has_router_weights: Bool = True,
+    *,
+    # The output goes through `store_fn`, so there is no output tile to infer
+    # the engine from.
+    OutputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
+](
+    num_tokens: Int,
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    input_tokens: TileTensor[
+        mut=False, combine_dtype, Engine=InputTokensEngine, ...
+    ],
+    src_info: TileTensor[mut=False, .int32, Engine=SrcInfoEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    context: DeviceContext,
+    store_fn: StoreFnType,
+    router_weights_fn: RouterWeightsFnType,
     topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]] = None,
 ) raises:
     """Execute the fused Expert Parallelism combine kernel.
@@ -1023,6 +1530,14 @@ def ep_fused_combine_kernel_api[
 
     Parameters:
         combine_dtype: Data type for tokens during combine phase.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        StoreFnType: The type of `store_fn` (inferred).
+        RouterWeightsFnType: The type of `router_weights_fn` (inferred).
         hidden_size: Model hidden dimension size.
         top_k: Number of experts each token was routed to.
         n_experts: Total experts across all devices.
@@ -1030,10 +1545,6 @@ def ep_fused_combine_kernel_api[
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
-        store_fn: Stores the combined output tokens. Called with
-            `(token_idx, elem)` when `router_weights_wrapper` is set, and
-            with `(token_idx, topk_idx, elem)` otherwise.
-        router_weights_wrapper: Wrapper for the optional router weights.
         fused_shared_expert: Whether to add shared expert outputs to the
             combined routed expert outputs.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
@@ -1042,6 +1553,10 @@ def ep_fused_combine_kernel_api[
         allreduce_world_size: The world size of the allreduce operation. Only
             needed for skip_a2a. Used to calculate the workload distribution for
             the shared expert (if has one).
+        has_router_weights: Whether the routed expert outputs are weighted by
+            `router_weights_fn` and summed. The overload without
+            `router_weights_fn` passes `False`.
+        OutputTokensEngine: Storage engine backing the output tokens tile.
 
     Arguments:
         num_tokens: Number of output tokens.
@@ -1051,8 +1566,15 @@ def ep_fused_combine_kernel_api[
         send_ptrs: Send buffer pointers for each local GPU.
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
-        router_weights: Router weights for the current device.
         context: Device context pointer.
+        store_fn: Stores the combined output tokens. Called with
+            `(token_idx, elem)` when `has_router_weights`, and with
+            `(token_idx, topk_idx, elem)` otherwise. It runs on the device,
+            so it must copy what it captures.
+        router_weights_fn: The router weights. It runs on the device, so it
+            must copy what it captures.
+        topk_ids_p: Pointer to the top-k IDs for each token, only required if
+            skip_a2a is True.
     """
 
     # Ensure this kernel only runs on GPU targets
@@ -1095,12 +1617,15 @@ def ep_fused_combine_kernel_api[
         combine_msg_size,
         max_token_per_rank,
         n_gpus_per_node,
-        store_fn,
-        router_weights_wrapper=router_weights_wrapper,
+        StoreFnType,
+        RouterWeightsFnType,
+        has_router_weights,
         fused_shared_expert=fused_shared_expert,
         skip_a2a=skip_a2a,
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
+        InputTokensEngine=input_tokens.Engine,
+        SrcInfoEngine=src_info.Engine,
     ]
 
     @inline(.always)
@@ -1152,7 +1677,7 @@ def ep_fused_combine_kernel_api[
         ](recv_count_ptrs, my_rank)
         var ep_counters = EPLocalSyncCounters[n_experts](
             MutPointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -1178,8 +1703,8 @@ def ep_fused_combine_kernel_api[
             )
         else:
             grid_dim_x = hw_info.sm_count
-        gpu_ctx.enqueue_function(
-            func,
+        func._call_with_pack_checked(
+            gpu_ctx,
             input_tokens,
             src_info,
             Int32(num_tokens),
@@ -1189,6 +1714,7 @@ def ep_fused_combine_kernel_api[
             ep_counters,
             topk_ids_p,
             my_rank,
+            host_args=(store_fn, router_weights_fn),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             attributes=pdl_launch_attributes(PDLLevel.ON),

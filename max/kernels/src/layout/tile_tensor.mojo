@@ -42,6 +42,8 @@ from .tensor_engine import (
 )
 from .tile_layout import (
     Layout,
+    _ModeLeaves,
+    _TileKeptLeaves,
     RowMajorLayout,
     TensorLayout,
     WeaklyCompatible,
@@ -50,6 +52,7 @@ from .tile_layout import (
 )
 from layout.coord import (
     ComptimeInt,
+    crd2idx,
     Idx,
     Coord,
     CoordLike,
@@ -536,28 +539,16 @@ struct TileTensor[
         linear_idx_type: DType = .int,
     ] = TileTensor[
         Self.dtype,
-        Layout[
-            shape_types=tile_shape_types,
-            stride_types=_NestedTileResultStrideTypes[Self.LayoutType],
-        ],
+        Self.LayoutType._NestedTileLayout[tile_shape_types],
         Self.origin,
         Engine=Self.Engine.OffsetResultType[
             TypeList.of[Scalar[linear_idx_type]]()
         ],
         address_space=Self.address_space,
     ]
-    """Result type of `.tile[]`. Per outer mode, the result stride is
-    parent's innermost sub-stride (CuTe `local_tile`): identity for
-    scalar parent strides, last-sub-element for tuple parent strides.
-
-    Trade-off: the `_NestedTileResultStrideTypes[Self.LayoutType]` wrap
-    is identity-equivalent for flat parents but nominally a different
-    `TypeList` than parent's literal `_stride_types`. Cascaded
-    `.tile[].tile[].tile[]` chains pay one `param_list.tabulate(...)`
-    wrap per level (~+20% ASAN compile on linalg matmul kernels with
-    deep cascades). Until Mojo gets dependent return types for
-    parametric aliases (so the flat path could keep parent's literal
-    name) this is the cost of a single unified `.tile[]` API.
+    """Result type of `.tile[]`. A flat mode keeps its stride. A nested mode
+    keeps the leading leaves the tile spans, with their strides, so a tile
+    within one leaf comes out flat (CuTe `local_tile`).
 
     Parameters:
         tile_shape_types: The result tile's shape `TypeList` (typically
@@ -968,7 +959,7 @@ struct TileTensor[
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Loads `width` elements at `offset` through the engine's raw
         pointer."""
-        return self.ptr.load[
+        return self.ptr.unsafe_load[
             width=width,
             alignment=alignment,
             invariant=invariant,
@@ -984,7 +975,7 @@ struct TileTensor[
         # `where Self.mut` does not narrow `Self.origin`'s mutability
         # parameter to `True`, so cast to the mutable pointer type `store`
         # requires.
-        self.ptr.unsafe_mut_cast[True]().store[
+        self.ptr.unsafe_mut_cast[True]().unsafe_store[
             alignment=alignment, non_temporal=non_temporal
         ](offset, value)
 
@@ -2106,15 +2097,18 @@ struct TileTensor[
         """Extract a sub-tile (CuTe `local_tile`). Works on both flat
         and nested parent layouts.
 
-        On a flat parent, returns the rank-`Self.rank` sub-tile whose
-        strides are the parent's strides and shape is `tile_sizes`. On
-        a nested parent of shape `((outer_h, inner_h), (outer_w, inner_w))`,
-        slices one outer index per mode and returns a flat rank-2
-        sub-tile whose strides are each parent mode's innermost
-        sub-strides.
+        Tile `c` of size `t` along a mode starts at that mode's element
+        `c * t`, which `crd2idx` splits across a nested mode's leaves. A flat
+        mode keeps the parent's stride. A nested mode keeps the leading leaves
+        the tile spans, the last one possibly cut short: on rows `(2, 16, 3)`
+        with strides `(1, 64, 2048)`, a tile of 2 rows is `2 : 1` and a tile
+        of 32 rows is `(2, 16) : (1, 64)`.
 
         Parameters:
-            tile_sizes: The dimensions of the tile along each axis.
+            tile_sizes: The dimensions of the tile along each axis. Along a
+                nested mode, the size must be a product of its leading leaves'
+                extents, the last one possibly cut short to a divisor of its
+                extent.
 
         Args:
             coordinates: The tile coordinates as a `Coord`.
@@ -4283,41 +4277,30 @@ def _distribute_with_offset[
     )
 
 
-# ===-------------------------------------------------------------------=== #
-# Result-stride machinery for `.tile[]` (CuTe `local_tile`).
-#
-# `.tile[a, b](i, j)` slices the sub-tile at outer coord `(i, j)`. Per
-# outer mode, the result's stride is the parent's innermost sub-stride
-# (identity for scalar parent strides, last sub-element for tuple
-# parent strides). One uniform helper handles both flat and nested
-# parents — the per-mode dispatch happens via `_InnermostStride`.
-# ===-------------------------------------------------------------------=== #
+@inline(.nodebug)
+def _copy_runtime_leaves[
+    SrcLeaves: TypeList[Trait=CoordLike, ...],
+    //,
+    Result: CoordLike,
+](src: Coord[*SrcLeaves]) -> Result:
+    """Builds `Result` from its static types and the runtime leaves of `src`.
 
-
-comptime _InnermostStride[T: CoordLike]: CoordLike = (
-    T.ParamListType[T.ParamListType.length - 1] if T.is_tuple else T
-)
-"""For a tuple parent stride, pick the innermost (last) sub-element. For
-a scalar parent stride, identity."""
-
-
-comptime _TileResultStrideTabulator[
-    ParentLayoutType: TensorLayout,
-    idx: Int,
-]: CoordLike = _InnermostStride[ParentLayoutType._stride_types[idx]]
-
-
-comptime _NestedTileResultStrideTypes[
-    ParentLayoutType: TensorLayout,
-] = TypeList.tabulate[
-    Trait=CoordLike,
-    ParentLayoutType._stride_types.length,
-    _TileResultStrideTabulator[ParentLayoutType, _],
-]()
-"""Result stride `TypeList` for `.tile[]`: each outer mode contributes
-its innermost sub-stride. Identity-equivalent to parent's
-`_stride_types` for flat parents; innermost-extracted for nested
-parents."""
+    `Result` is a scalar or a tuple of leading leaves of `src`, so each
+    runtime leaf has the same type as the leaf of `src` at its position.
+    """
+    comptime if Result.is_tuple:
+        var result = Coord[*Result.ParamListType]()
+        comptime for j in range(Result.ParamListType.length):
+            comptime if not Result.ParamListType[j].is_static_value:
+                Pointer(to=result[j]).write(
+                    rebind[Result.ParamListType[j]](src[j])
+                )
+        return rebind[Result](result)
+    else:
+        comptime if Result.is_static_value:
+            return Result()
+        else:
+            return rebind[Result](src[0])
 
 
 @inline(.nodebug)
@@ -4333,17 +4316,8 @@ def _tile[
 ) -> data_layout_tensor.TileResultType[
     tile_shape_types, linear_idx_type=data_layout_tensor.linear_idx_type
 ]:
-    """Extract a sub-tile from a TileTensor (CuTe `local_tile`). Works
-    on both flat and nested parents via per-mode comptime dispatch.
-
-    Per outer mode `i`:
-
-    - Nested mode (parent stride at mode `i` is a tuple): offset +=
-      `tile_coords[i] * stride[i].tuple()[0]` (outermost sub-stride).
-      Result `stride[i]` = parent's innermost sub-stride.
-    - Flat mode (parent stride at mode `i` is a scalar): offset +=
-      `tile_coords[i] * tile_shape[i] * stride[i]`. Result `stride[i]`
-      = parent stride (identity through `_InnermostStride`).
+    """Extract a sub-tile that keeps the nested modes it spans. See
+    `TileTensor.tile`.
 
     Parameters:
         dtype: Data type of the tensor elements (inferred from tensor argument).
@@ -4361,10 +4335,17 @@ def _tile[
     var offset = Scalar[data_layout_tensor.linear_idx_type](0)
     comptime for i in range(Coord[*coord_types].__len__()):
         comptime if data_layout_tensor.LayoutType._stride_types[i].is_tuple:
-            offset += Scalar[data_layout_tensor.linear_idx_type](
-                tile_coords[i].value()
-            ) * Scalar[data_layout_tensor.linear_idx_type](
-                data_layout_tensor.layout.stride[i]().tuple()[0].value()
+            # The tile starts at element `coord * size` of the mode, which
+            # `crd2idx` splits across the mode's leaves.
+            offset += crd2idx[out_type=data_layout_tensor.linear_idx_type](
+                Scalar[data_layout_tensor.linear_idx_type](
+                    tile_coords[i].value()
+                )
+                * Scalar[data_layout_tensor.linear_idx_type](
+                    tile_shape[i].value()
+                ),
+                data_layout_tensor.layout.shape[i](),
+                data_layout_tensor.layout.stride[i](),
             )
         else:
             offset += (
@@ -4402,15 +4383,54 @@ def _tile[
             rebind[ResultType.LayoutType](tile_layout),
         )
     else:
-        # Nested parent: result stride_types is innermost-extracted —
-        # different MLIR storage than parent's nested stride_coord, so
-        # a flat-style rebind isn't safe. All in-tree nested-layout
-        # uses are static (values in the type), so default-construct
-        # is sufficient. A future dynamic-nested caller would need a
-        # per-mode innermost extraction here.
+        # Nested parent: a nested mode keeps only the leaves the tile spans,
+        # so its result types differ from the parent's and the layout is
+        # built mode by mode, copying any runtime strides.
+        comptime ParentShape = data_layout_tensor.LayoutType._shape_types
+        comptime ResultShape = ResultType.LayoutType._shape_types
+        comptime ResultStride = ResultType.LayoutType._stride_types
+        var shape = Coord[*ResultShape]()
+        var stride = Coord[*ResultStride]()
+        comptime for i in range(ParentShape.length):
+            comptime if ParentShape[i].is_tuple:
+                comptime Leaves = _ModeLeaves[ParentShape[i]]
+                comptime size = tile_shape_types[i].static_value
+                comptime kept = _TileKeptLeaves[Leaves, size]
+                comptime for j in range(kept):
+                    comptime assert Leaves[j].is_static_value, String(
+                        t"tile: nested mode {i} needs static leading leaves"
+                    )
+                # The last kept leaf may be cut short, so it must split
+                # evenly or a tile would cross into the next leaf.
+                comptime assert (
+                    tile_shape_types[i].is_static_value
+                    and Coord[ResultShape[i]].static_product == size
+                    and Leaves[kept - 1].static_value
+                    % _ModeLeaves[ResultShape[i]][kept - 1].static_value
+                    == 0
+                ), String(
+                    t"tile: size {size} doesn't split nested mode {i} on"
+                    t" leaf boundaries"
+                )
+                Pointer(to=stride[i]).write(
+                    _copy_runtime_leaves[ResultStride[i]](
+                        data_layout_tensor.layout.stride_coord()[i]
+                        .tuple()
+                        .flatten()
+                    )
+                )
+            else:
+                Pointer(to=shape[i]).write(
+                    rebind[ResultShape[i]](tile_shape[i])
+                )
+                Pointer(to=stride[i]).write(
+                    rebind[ResultStride[i]](
+                        data_layout_tensor.layout.stride_coord()[i]
+                    )
+                )
         return ResultType(
             data_layout_tensor._offset_storage(offset),
-            ResultType.LayoutType(),
+            rebind[ResultType.LayoutType](Layout(shape, stride)),
         )
 
 

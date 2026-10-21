@@ -433,6 +433,50 @@ def test_nvfp4_kv_cache_rejects_other_granularity() -> None:
         _nvfp4_params(granularity=32)
 
 
+def _glm_latent_params(
+    dtype: DType, quant: KVCacheQuantizationConfig | None
+) -> MLAKVCacheParams:
+    # GLM 5.3's latent row: kv_lora_rank 512 + qk_rope_head_dim 64.
+    return MLAKVCacheParams(
+        dtype=dtype,
+        head_dim=576,
+        num_layers=3,
+        devices=[DeviceRef.GPU()],
+        page_size=128,
+        num_q_heads=8,
+        kvcache_quant_config=quant,
+    )
+
+
+_NVFP4_ROPE_FP8_QUANT = KVCacheQuantizationConfig(
+    scale_dtype=DType.float8_e4m3fn,
+    quantization_granularity=16,
+    fp8_tail_dim=64,
+)
+
+
+def test_nvfp4_mla_cache_keeps_the_rope_dims_fp8() -> None:
+    """256 packed latent bytes, 64 FP8 rope bytes and 32 E4M3 scales (one per
+    16 latent elements) per 576-element latent row."""
+    params = _glm_latent_params(DType.uint8, _NVFP4_ROPE_FP8_QUANT)
+    assert params.is_nvfp4_kv_cache
+    assert params.head_dim == 576
+    assert params.storage_head_dim == 320
+    assert params.row_bytes == 320
+    assert params.scale_row_bytes == 32
+    assert params.shape_per_block[-1] == 320
+    assert params.shape_per_scale_block[-1] == 32
+    # A page of scales stays 16-byte aligned for the scale TMA.
+    assert params.bytes_per_scale_block % 16 == 0
+
+
+def test_nvfp4_mla_cache_is_11_18ths_of_fp8() -> None:
+    """352 bytes (320 of values, 32 of scales) per row, against 576."""
+    nvfp4 = _glm_latent_params(DType.uint8, _NVFP4_ROPE_FP8_QUANT)
+    fp8 = _glm_latent_params(DType.float8_e4m3fn, None)
+    assert nvfp4.bytes_per_block * 18 == fp8.bytes_per_block * 11
+
+
 def test_uint8_without_e4m3_scales_is_not_nvfp4() -> None:
     params = MHAKVCacheParams(
         dtype=DType.uint8,

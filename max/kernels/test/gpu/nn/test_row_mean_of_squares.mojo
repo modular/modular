@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import rand
+from std.sys import align_of
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
@@ -48,9 +49,12 @@ def run_row_mean_of_squares_gpu[
 
     @inline(.always)
     def input_fn[
-        width: Int
+        width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[in_dtype, width]:
-        return data_buf.load[width=width](coords)
+        # `alignment` counts elements; `load` takes bytes.
+        return data_buf.load[
+            width=width, alignment=alignment * align_of[in_dtype]()
+        ](coords)
 
     @inline(.always)
     def output_fn[

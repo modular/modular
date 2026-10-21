@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides a single-pass GPU argmax/argmin kernel over the inner-most dimension."""
+"""Provides a GPU argmax of logits plus a bias over the inner-most dimension."""
 
 
 from std.bit import next_power_of_two
@@ -21,7 +21,7 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.math import align_down, ceildiv, iota
-from std.sys import align_of, simd_width_of, size_of
+from std.sys import align_of, size_of
 
 from max.gpu.host import DeviceContext
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -34,7 +34,6 @@ from layout import (
     row_major,
 )
 from nn.topk import TopK_2, _block_reduce_topk, _topk_dead_val
-from std.utils.index import IndexList
 
 
 # Elements each thread pulls per loop trip, as a multiple of the vector width.
@@ -43,48 +42,43 @@ from std.utils.index import IndexList
 # than at bandwidth. Four 128-bit loads per trip is enough to saturate a
 # streaming CTA while staying well inside the 64-register budget at 1024
 # threads.
-comptime _ARGMAXMIN_UNROLL = 4
+comptime _ARGMAX_UNROLL = 4
 
 # Row bytes per scan block. One block saturates at the per-SM load rate, so
 # long rows have to be split across blocks to reach device bandwidth; the
 # split costs one extra (tiny) combine launch, which is why short rows are
 # left on a single block.
-comptime _ARGMAXMIN_BYTES_PER_BLOCK = 32 * 1024
+comptime _ARGMAX_BYTES_PER_BLOCK = 32 * 1024
 
 # Cap on slices per row so the combine stays one block of at most 1024
 # threads and the scratch stays negligible.
-comptime _ARGMAXMIN_MAX_SPLITS = 64
+comptime _ARGMAX_MAX_SPLITS = 64
 
 
 @inline(.always)
-def _argmaxmin_vec_update[
-    dtype: DType, largest: Bool, simd_width: Int
+def _argmax_vec_update[
+    dtype: DType, simd_width: Int
 ](
     mut best_vals: SIMD[dtype, simd_width],
     mut best_idxs: SIMD[.int32, simd_width],
     vals: SIMD[dtype, simd_width],
     base: Int,
 ):
-    """Folds one loaded vector into the per-lane running (extremum, index).
+    """Folds one loaded vector into the per-lane running (max, index).
 
     The comparison is strict so that, scanning indices in increasing order,
     the lowest index wins a tie. NaN never compares greater and is therefore
     ignored, matching `TopK_2.insert`.
     """
     comptime lane_offsets = iota[.int32, simd_width]()
-    var better: SIMD[.bool, simd_width]
-    comptime if largest:
-        better = vals.gt(best_vals)
-    else:
-        better = vals.lt(best_vals)
+    var better = vals.gt(best_vals)
     best_vals = better.select(vals, best_vals)
     best_idxs = better.select(lane_offsets + Int32(base), best_idxs)
 
 
 @inline(.always)
-def _argmaxmin_scan[
+def _argmax_scan[
     dtype: DType,
-    largest: Bool,
     simd_width: Int,
     unroll: Int,
     alignment: Int,
@@ -96,7 +90,7 @@ def _argmaxmin_scan[
     mut best_vals: SIMD[dtype, simd_width],
     mut best_idxs: SIMD[.int32, simd_width],
 ):
-    """Streams one row once, accumulating a per-lane (extremum, index)."""
+    """Streams one row once, accumulating a per-lane (max, index)."""
     var lane_stride = block_size * simd_width
     var trip = lane_stride * unroll
     var num_trips = num_elements // trip
@@ -105,20 +99,20 @@ def _argmaxmin_scan[
     for t in range(num_trips):
         var offset = t * trip + tid * simd_width
         var staged = Array[SIMD[dtype, simd_width], unroll](
-            fill=SIMD[dtype, simd_width](_topk_dead_val[dtype, largest]())
+            fill=SIMD[dtype, simd_width](_topk_dead_val[dtype, True]())
         )
         comptime for u in range(unroll):
             staged[u] = row.unsafe_load[width=simd_width, alignment=alignment](
                 offset + u * lane_stride
             )
         comptime for u in range(unroll):
-            _argmaxmin_vec_update[dtype, largest](
+            _argmax_vec_update[dtype](
                 best_vals, best_idxs, staged[u], offset + u * lane_stride
             )
 
     var i = num_trips * trip + tid * simd_width
     while i + simd_width <= vec_end:
-        _argmaxmin_vec_update[dtype, largest](
+        _argmax_vec_update[dtype](
             best_vals,
             best_idxs,
             row.unsafe_load[width=simd_width, alignment=alignment](i),
@@ -128,35 +122,30 @@ def _argmaxmin_scan[
 
 
 @inline(.always)
-def _argmaxmin_collapse_lanes[
-    dtype: DType, largest: Bool, simd_width: Int
+def _argmax_collapse_lanes[
+    dtype: DType, simd_width: Int
 ](
     best_vals: SIMD[dtype, simd_width],
     best_idxs: SIMD[.int32, simd_width],
-) -> TopK_2[dtype, largest]:
-    """Collapses per-lane running (extremum, index) pairs into one.
+) -> TopK_2[dtype, True]:
+    """Collapses per-lane running (max, index) pairs into one.
 
     Lanes hold indices from different trips, so the tie-break has to compare
     indices explicitly rather than rely on lane order.
     """
-    var partial = TopK_2[dtype, largest]()
+    var partial = TopK_2[dtype, True]()
     comptime for lane in range(simd_width):
         var val = best_vals[lane]
         var idx = Int(best_idxs[lane])
-        var better: Bool
-        comptime if largest:
-            better = val > partial.u
-        else:
-            better = val < partial.u
-        if better or (val == partial.u and idx < partial.p):
+        if val > partial.u or (val == partial.u and idx < partial.p):
             partial.u = val
             partial.p = idx
     return partial
 
 
 @inline(.always)
-def _argmaxmin_block_partial[
-    dtype: DType, largest: Bool, simd_width: Int, unroll: Int
+def _argmax_block_partial[
+    dtype: DType, simd_width: Int, unroll: Int
 ](
     row: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     begin: Int,
@@ -164,28 +153,25 @@ def _argmaxmin_block_partial[
     aligned: Bool,
     tid: Int,
     block_size: Int,
-) -> TopK_2[dtype, largest]:
-    """Reduces `row[begin : begin + count]` to one (extremum, global index)."""
-    var best_vals = SIMD[dtype, simd_width](_topk_dead_val[dtype, largest]())
+) -> TopK_2[dtype, True]:
+    """Reduces `row[begin : begin + count]` to one (max, global index)."""
+    var best_vals = SIMD[dtype, simd_width](_topk_dead_val[dtype, True]())
     var best_idxs = SIMD[.int32, simd_width](0)
     var chunk = row.unsafe_offset(begin)
 
     if aligned:
-        _argmaxmin_scan[
+        _argmax_scan[
             dtype,
-            largest,
             simd_width,
             unroll,
             align_of[SIMD[dtype, simd_width]](),
         ](chunk, count, tid, block_size, best_vals, best_idxs)
     else:
-        _argmaxmin_scan[
-            dtype, largest, simd_width, unroll, align_of[Scalar[dtype]]()
-        ](chunk, count, tid, block_size, best_vals, best_idxs)
+        _argmax_scan[dtype, simd_width, unroll, align_of[Scalar[dtype]]()](
+            chunk, count, tid, block_size, best_vals, best_idxs
+        )
 
-    var partial = _argmaxmin_collapse_lanes[dtype, largest](
-        best_vals, best_idxs
-    )
+    var partial = _argmax_collapse_lanes[dtype](best_vals, best_idxs)
 
     # Ragged tail: fewer than `simd_width` elements, all at higher indices
     # than anything scanned above, so a strict insert keeps first-index.
@@ -197,83 +183,10 @@ def _argmaxmin_block_partial[
     return partial
 
 
-@__name(t"argmaxmin_scan_{dtype}_{largest}")
-def _argmaxmin_scan_kernel[
-    dtype: DType,
-    largest: Bool,
-    simd_width: Int,
-    unroll: Int,
-    InputLayoutType: TensorLayout,
-    InputEngine: TensorEngine,
-](
-    input: TileTensor[
-        dtype, InputLayoutType, ImmutAnyOrigin, Engine=InputEngine
-    ],
-    part_vals: MutPointer[Scalar[dtype], MutAnyOrigin],
-    part_idxs: MutPointer[Int32, MutAnyOrigin],
-    num_elements_arg: Int32,
-    split_len_arg: Int32,
-    num_splits_arg: Int32,
-    aligned_arg: Int32,
-):
-    """Streams one contiguous slice of one row and emits its local winner.
-
-    Target families: NVIDIA (SM90/SM100), AMD CDNA, Apple silicon. Grid is
-    `(rows, num_splits)`; each block reads its slice exactly once with
-    vector loads and keeps a per-lane running `(extremum, index)` in
-    registers. There is no input copy and no re-scan.
-
-    Parameters:
-        dtype: Element type of the input.
-        largest: Select the maximum (argmax) or the minimum (argmin).
-        simd_width: Elements per vector load.
-        unroll: Vector loads issued back to back per loop trip.
-        InputLayoutType: Layout of the input.
-        InputEngine: Engine of the input.
-
-    Args:
-        input: Input rows, contiguous with `num_elements` per row.
-        part_vals: Per-slice winning values, `rows * num_splits`.
-        part_idxs: Per-slice winning indices, row-relative.
-        num_elements_arg: Length of the reduced inner-most dimension.
-        split_len_arg: Elements per slice, a multiple of `simd_width`.
-        num_splits_arg: Slices per row.
-        aligned_arg: Non-zero when vector loads may assume vector alignment.
-    """
-    var num_elements = Int(num_elements_arg)
-    # Rows ride the x dimension: it is the only one whose extent is not
-    # capped at 65535, and a batch can have millions of rows.
-    var row_id = block_idx.x
-    var split = block_idx.y
-    var tid = thread_idx.x
-
-    var begin = min(split * Int(split_len_arg), num_elements)
-    var count = min(Int(split_len_arg), num_elements - begin)
-
-    with PDL():
-        var partial = _argmaxmin_block_partial[
-            dtype, largest, simd_width, unroll
-        ](
-            input.ptr.unsafe_offset(row_id * num_elements),
-            begin,
-            count,
-            aligned_arg != 0,
-            tid,
-            block_dim.x,
-        )
-        var total = _block_reduce_topk[ascending=largest](partial)
-
-        if tid == 0:
-            var slot = row_id * Int(num_splits_arg) + split
-            part_vals.unsafe_offset(slot)[] = total.u
-            part_idxs.unsafe_offset(slot)[] = Int32(total.p)
-
-
-@__name(t"argmaxmin_combine_{dtype}_{out_idx_type}_{largest}")
-def _argmaxmin_combine_kernel[
+@__name(t"argmax_combine_{dtype}_{out_idx_type}")
+def _argmax_combine_kernel[
     dtype: DType,
     out_idx_type: DType,
-    largest: Bool,
     OutIdxLayoutType: TensorLayout,
     OutIdxEngine: TensorEngine,
 ](
@@ -293,7 +206,6 @@ def _argmaxmin_combine_kernel[
     Parameters:
         dtype: Element type of the values.
         out_idx_type: Output index dtype.
-        largest: Select the maximum (argmax) or the minimum (argmin).
         OutIdxLayoutType: Layout of the output indices.
         OutIdxEngine: Engine of the output indices.
 
@@ -312,210 +224,19 @@ def _argmaxmin_combine_kernel[
         # Slices are scanned in increasing index order and carry global
         # indices, so a strict insert plus the block reduce's lowest-index
         # tie-break reproduces a single-pass first-index scan.
-        var partial = TopK_2[dtype, largest]()
+        var partial = TopK_2[dtype, True]()
         for i in range(tid, num_splits, block_dim.x):
             partial.insert(
                 part_vals.unsafe_offset(base + i)[],
                 Int(part_idxs.unsafe_offset(base + i)[]),
             )
 
-        var total = _block_reduce_topk[ascending=largest](partial)
+        var total = _block_reduce_topk[ascending=True](partial)
 
         if tid == 0:
             out_idxs.reshape(row_major(out_idxs.num_elements())).store(
                 Coord(row_id), Int(total.p).cast[out_idx_type]()
             )
-
-
-def argmaxmin_gpu[
-    dtype: DType, output_type: DType, largest: Bool
-](
-    ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
-    output: TileTensor[mut=True, output_type, ...],
-) raises:
-    """
-    Reduces the inner-most dimension to the index of its largest/smallest
-    element with a single streaming pass.
-
-    Parameters:
-        dtype: DType - The data dtype of the input tensor.
-        output_type: DType - The data dtype of the output tensor.
-        largest: Bool - Whether to perform argmax or argmin.
-    Args:
-        ctx: Device context for launching the reduction kernel.
-        input: Input tensor reduced along its inner-most dimension. Must have
-            positive rank and the same rank as `output`.
-        output: Output tensor receiving the index of the selected extreme
-            value along the inner-most dimension. Must have the same rank as
-            `input`.
-    """
-    comptime assert input.rank > 0, "Input rank must be positive"
-    comptime assert (
-        input.rank == output.rank
-    ), "Input and output rank must be the same"
-
-    var in_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
-
-    def trace_information() {imm} -> String:
-        return String(";").join(
-            Span(
-                [
-                    trace_arg("input", in_shape, dtype),
-                    "largest=" + String(largest),
-                ]
-            )
-        )
-
-    with Trace[TraceLevel.OP, target=StaticString("gpu")](
-        "argmaxmin_gpu",
-        Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
-    ):
-        var num_elements = in_shape[input.rank - 1]
-        var num_rows = in_shape.flattened_length() // num_elements
-        if num_rows == 0 or num_elements == 0:
-            return
-
-        # Per-lane indices are tracked as int32 to halve the register cost of
-        # the running argmax; a row that long is > 4GB and unreachable here.
-        if num_elements > Int(Int32.MAX):
-            raise Error(
-                "argmaxmin_gpu: inner dimension exceeds the int32 index range"
-            )
-
-        comptime simd_width = simd_width_of[dtype, target=ctx.target]()
-
-        # A single block streaming a whole row tops out at the per-SM load
-        # rate (~44 GB/s measured on B200), so a 512KB row would take ~12us.
-        # Split the row across blocks until each holds roughly
-        # `_ARGMAXMIN_BYTES_PER_BLOCK`, but never past the point where the
-        # batch alone already fills the device.
-        var row_bytes = num_elements * size_of[Scalar[dtype]]()
-        var num_splits = min(
-            ceildiv(row_bytes, _ARGMAXMIN_BYTES_PER_BLOCK),
-            max(Int(ctx.default_device_info.sm_count) // num_rows, 1),
-        )
-        num_splits = min(max(num_splits, 1), _ARGMAXMIN_MAX_SPLITS)
-
-        var split_len = (
-            ceildiv(ceildiv(num_elements, num_splits), simd_width) * simd_width
-        )
-
-        # A slice base is `input.ptr + (row * num_elements + k * split_len)`,
-        # and `split_len` is a multiple of `simd_width`, so vector loads are
-        # aligned exactly when the base pointer and the row pitch both are.
-        # Views into a larger buffer need not satisfy either.
-        comptime vec_bytes = align_of[SIMD[dtype, simd_width]]()
-        var aligned = (
-            num_elements % simd_width == 0 and Int(input.ptr) % vec_bytes == 0
-        )
-
-        # Size the block to its slice so short rows do not launch mostly-idle
-        # blocks. `_block_reduce_topk` is single-warp on Apple.
-        var block_size = min(
-            next_power_of_two(ceildiv(split_len, simd_width)), 1024
-        )
-        block_size = max(block_size, WARP_SIZE)
-        var combine_block_size = max(next_power_of_two(num_splits), WARP_SIZE)
-        comptime if ctx.target.is_apple_gpu():
-            block_size = WARP_SIZE
-            combine_block_size = WARP_SIZE
-
-        var part_vals = ctx.enqueue_create_buffer[dtype](num_rows * num_splits)
-        var part_idxs = ctx.enqueue_create_buffer[.int32](num_rows * num_splits)
-
-        comptime scan_kernel = _argmaxmin_scan_kernel[
-            dtype,
-            largest,
-            simd_width,
-            _ARGMAXMIN_UNROLL,
-            input.LayoutType,
-            type_of(input).Engine,
-        ]
-        ctx.enqueue_function[scan_kernel](
-            input.as_imm(),
-            part_vals,
-            part_idxs,
-            Int32(num_elements),
-            Int32(split_len),
-            Int32(num_splits),
-            Int32(1) if aligned else Int32(0),
-            grid_dim=(num_rows, num_splits),
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
-        )
-        comptime combine_kernel = _argmaxmin_combine_kernel[
-            dtype,
-            output_type,
-            largest,
-            output.LayoutType,
-            type_of(output).Engine,
-        ]
-        ctx.enqueue_function[combine_kernel](
-            output,
-            part_vals,
-            part_idxs,
-            Int32(num_splits),
-            grid_dim=num_rows,
-            block_dim=combine_block_size,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
-        )
-
-        _ = part_vals^
-        _ = part_idxs^
-
-
-def argmax_gpu[
-    dtype: DType, output_type: DType
-](
-    ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
-    output: TileTensor[mut=True, output_type, ...],
-) raises:
-    """
-    Computes the indices of the maximum values along the inner-most dimension of the input tensor on the GPU.
-
-    Parameters:
-        dtype: DType - The data dtype of the input tensor.
-        output_type: DType - The data dtype of the output tensor.
-    Args:
-        ctx: Device context for allocating intermediate buffers and
-            launching the reduction kernel.
-        input: Input tensor whose inner-most dimension is searched for the
-            maximum value. Must have positive rank and the same rank as
-            `output`.
-        output: Output tensor receiving the index of the maximum value along
-            the inner-most dimension. Must have the same rank as `input`.
-    """
-    argmaxmin_gpu[largest=True](ctx, input, output)
-
-
-def argmin_gpu[
-    dtype: DType, output_type: DType
-](
-    ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
-    output: TileTensor[mut=True, output_type, ...],
-) raises:
-    """
-    Computes the indices of the minimum values along the inner-most dimension of the input tensor on the GPU.
-
-    Parameters:
-        dtype: DType - The data dtype of the input tensor.
-        output_type: DType - The data dtype of the output tensor.
-    Args:
-        ctx: Device context for allocating intermediate buffers and
-            launching the reduction kernel.
-        input: Input tensor whose inner-most dimension is searched for the
-            minimum value. Must have positive rank and the same rank as
-            `output`.
-        output: Output tensor receiving the index of the minimum value along
-            the inner-most dimension. Must have the same rank as `input`.
-    """
-    argmaxmin_gpu[largest=False](ctx, input, output)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -551,7 +272,7 @@ def _argmax_biased_scan[
     mut best_vals: SIMD[.float32, simd_width],
     mut best_idxs: SIMD[.int32, simd_width],
 ):
-    """Like `_argmaxmin_scan`, over `logits + bias` added in float32.
+    """Like `_argmax_scan`, over `logits + bias` added in float32.
 
     Reads `logits[row_id, position, col_begin:]` and `bias[row_id, col_begin:]`.
     """
@@ -576,7 +297,7 @@ def _argmax_biased_scan[
                 width=simd_width, alignment=bias_alignment, invariant=False
             ]((row_id, col_begin + offset + u * lane_stride))
         comptime for u in range(unroll):
-            _argmaxmin_vec_update[.float32, True](
+            _argmax_vec_update[.float32](
                 best_vals,
                 best_idxs,
                 staged[u].cast[.float32]() + staged_bias[u].cast[.float32](),
@@ -585,7 +306,7 @@ def _argmax_biased_scan[
 
     var i = num_trips * trip + tid * simd_width
     while i + simd_width <= vec_end:
-        _argmaxmin_vec_update[.float32, True](
+        _argmax_vec_update[.float32](
             best_vals,
             best_idxs,
             logits.load[width=simd_width, alignment=alignment, invariant=False](
@@ -626,9 +347,8 @@ def _argmax_biased_scan_kernel[
 ):
     """Streams one slice of one row of `logits + bias` and emits its winner.
 
-    Same grid and partials as `_argmaxmin_scan_kernel`. Row `r` reads
-    `logits[r, position_arg, :]`, so the caller can pick one position out of a
-    `[rows, positions, n]` tensor without a copy.
+    Row `r` reads `logits[r, position_arg, :]`, so the caller can pick one
+    position out of a `[rows, positions, n]` tensor without a copy.
 
     Parameters:
         dtype: Element type of the logits.
@@ -714,10 +434,8 @@ def _argmax_biased_scan_kernel[
                 best_idxs,
             )
 
-        var partial = _argmaxmin_collapse_lanes[.float32, True](
-            best_vals, best_idxs
-        )
-        # Ragged tail, as in `_argmaxmin_block_partial`.
+        var partial = _argmax_collapse_lanes[.float32](best_vals, best_idxs)
+        # Ragged tail, as in `_argmax_block_partial`.
         var vec_end = align_down(count, simd_width)
         if tid < count - vec_end:
             partial.insert(
@@ -755,7 +473,7 @@ def argmax_with_bias_gpu[
     `float32(logits[r, position, i]) + float32(bias[r, i])`. Both inputs
     are upcast to float32 in registers and added there, which is exact for
     16-bit inputs, so the result is the same as materializing the float32 sum
-    and calling `argmax_gpu`: the lowest index wins a tie, NaN never wins,
+    and taking its argmax: the lowest index wins a tie, NaN never wins,
     and a row with nothing above -inf reports 0. No input is copied or
     relaid out: the kernel reads `logits[:, position, :]` in place.
 
@@ -820,15 +538,15 @@ def argmax_with_bias_gpu[
         # Eight 16-bit elements per load; the float32 sum stays in registers.
         comptime simd_width = 8
 
-        # Split rows as `argmaxmin_gpu` does, counting both inputs' bytes.
+        # Split rows by bytes read, counting both inputs.
         var row_bytes = num_elements * (
             size_of[Scalar[dtype]]() + size_of[Scalar[bias_dtype]]()
         )
         var num_splits = min(
-            ceildiv(row_bytes, _ARGMAXMIN_BYTES_PER_BLOCK),
+            ceildiv(row_bytes, _ARGMAX_BYTES_PER_BLOCK),
             max(Int(ctx.default_device_info.sm_count) // num_rows, 1),
         )
-        num_splits = min(max(num_splits, 1), _ARGMAXMIN_MAX_SPLITS)
+        num_splits = min(max(num_splits, 1), _ARGMAX_MAX_SPLITS)
         var split_len = (
             ceildiv(ceildiv(num_elements, num_splits), simd_width) * simd_width
         )
@@ -844,6 +562,19 @@ def argmax_with_bias_gpu[
             next_power_of_two(ceildiv(split_len, simd_width)), 1024
         )
         block_size = max(block_size, WARP_SIZE)
+        # Same-type scans with both vocabularies static use 70--77 registers per
+        # thread on B200, exceeding the 64-register budget at 1024 threads.
+        # Use 512 threads for these specializations; keep other specializations
+        # on their existing launch sizes.
+        comptime if (
+            ctx.target.is_nvidia_gpu()
+            and dtype == bias_dtype
+            and (
+                logits.LayoutType._shape_types[2].is_static_value
+                and bias.LayoutType._shape_types[1].is_static_value
+            )
+        ):
+            block_size = min(block_size, 512)
         var combine_block_size = max(next_power_of_two(num_splits), WARP_SIZE)
         comptime if ctx.target.is_apple_gpu():
             block_size = WARP_SIZE
@@ -858,7 +589,7 @@ def argmax_with_bias_gpu[
             dtype,
             bias_dtype,
             simd_width,
-            _ARGMAXMIN_UNROLL,
+            _ARGMAX_UNROLL,
             type_of(logits).LayoutType,
             type_of(logits).Engine,
             type_of(bias).LayoutType,
@@ -878,10 +609,9 @@ def argmax_with_bias_gpu[
             block_dim=block_size,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
-        comptime combine_kernel = _argmaxmin_combine_kernel[
+        comptime combine_kernel = _argmax_combine_kernel[
             .float32,
             output_type,
-            True,
             output.LayoutType,
             type_of(output).Engine,
         ]

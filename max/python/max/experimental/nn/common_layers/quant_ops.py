@@ -34,6 +34,7 @@ from max.experimental.sharding.placements import Placement, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn.activation import GatedActivation
 from max.nn.comm.ep import EPConfig
 from max.nn.kernels import (
     block_scales_interleave as _block_scales_interleave,
@@ -1049,11 +1050,14 @@ def grouped_matmul_silu(
     estimated_total_m: Tensor | None = None,
     accum_dtype: DType | None = None,
     decode_grid_m_cap: int = 0,
+    swiglu_limit: float = 0.0,
 ) -> QuantAwareTensor:
     """Gate/up grouped matmul + SwiGLU, returning the down-projection input.
 
     ``accum_dtype`` upcasts the gate/up output before the SwiGLU, which
-    DeepSeek-V3.2 does in float32.
+    DeepSeek-V3.2 does in float32. A non-zero ``swiglu_limit`` clamps the
+    activation's inputs, ``silu(min(gate, limit)) * clamp(up, -limit,
+    limit)``, which GLM-5.3-Flash needs.
     """
     # Pre-quantized EP activations carry their own per-expert scale offset;
     # single-device tokens rely on the caller-supplied one.
@@ -1070,6 +1074,7 @@ def grouped_matmul_silu(
         # carry a float32 gate/up accumulation. ``ExpertParallelMoE``'s weight
         # layout is gated on the same condition.
         and accum_dtype is None
+        and not swiglu_limit
     ):
         assert isinstance(gate_up, NVFP4Tensor) and isinstance(
             down, NVFP4Tensor
@@ -1123,6 +1128,7 @@ def grouped_matmul_silu(
         requant_weight,
         quant_config,
         scales_offset=offset,
+        swiglu_limit=swiglu_limit,
     )
 
 
@@ -1229,6 +1235,7 @@ def _silu_quantize_fp8_graph(
     input_spec: InputScaleSpec,
     weight_spec: WeightScaleSpec,
     block_k: int,
+    swiglu_limit: float = 0.0,
 ) -> tuple[TensorValue, TensorValue]:
     """Gated SiLU of a ``[gate | up]`` grouped matmul output, FP8 block-quantized.
 
@@ -1237,7 +1244,11 @@ def _silu_quantize_fp8_graph(
     activated nor quantized.
     """
     moe_dim = int(x.shape[1]) // 2
-    activated = ops.silu(x[:, :moe_dim]) * x[:, moe_dim:]
+    gate, up = x[:, :moe_dim], x[:, moe_dim:]
+    if swiglu_limit:
+        gate = ops.min(gate, swiglu_limit)
+        up = ops.min(ops.max(up, -swiglu_limit), swiglu_limit)
+    activated = ops.silu(gate) * up
     return _quantize_dynamic_scaled_float8(
         activated,
         input_spec,
@@ -1259,8 +1270,16 @@ def grouped_silu(
     quant_config: QuantConfig | None = None,
     *,
     scales_offset: Tensor | None = None,
+    swiglu_limit: float = 0.0,
 ) -> QuantAwareTensor:
-    """SiLU-gate a grouped gate/up output."""
+    """SiLU-gate a grouped gate/up output.
+
+    A non-zero ``swiglu_limit`` clamps the gate from above and the up
+    projection on both sides before the activation.
+    """
+    activation = (
+        GatedActivation("silu", limit=swiglu_limit) if swiglu_limit else None
+    )
     if isinstance(out_weight, NVFP4Tensor):
         assert quant_config is not None and scales_offset is not None
         data, scales = fused_silu_quantized(
@@ -1270,6 +1289,7 @@ def grouped_silu(
             DType.uint8,
             input_scales=out_weight.input_scale,
             scales_offsets=scales_offset,
+            activation=activation,
         )
         return NVFP4Activation(
             data=data.rebind_mapping(x.mapping),
@@ -1283,7 +1303,12 @@ def grouped_silu(
             (block_m, block_k), input_block=(1, block_k)
         )
         data, weight_scale_inv = _silu_quantize_fp8(
-            x, expert_start_indices, input_spec, weight_spec, block_k
+            x,
+            expert_start_indices,
+            input_spec,
+            weight_spec,
+            block_k,
+            swiglu_limit,
         )
         return FP8BlockTensor(
             data=data.rebind_mapping(x.mapping),
@@ -1293,7 +1318,7 @@ def grouped_silu(
     # Exhaustive: a new quantized down-weight must not silently skip its
     # re-quant by taking the plain bf16 SiLU.
     assert out_weight is None or isinstance(out_weight, Tensor)
-    return fused_silu(x, expert_start_indices)
+    return fused_silu(x, expert_start_indices, activation)
 
 
 def concat_fp8_block(*tensors: FP8BlockTensor, axis: int = 0) -> FP8BlockTensor:

@@ -17,8 +17,8 @@
 
 # HiddenStruct is banned everywhere; NOT_INLINED_ALIAS is checked separately
 # below, since it is legitimately documented under src.
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %S/inputs/test_doc_inline | FileCheck %s
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %S/inputs/test_doc_inline | FileCheck %s --check-prefix=ONCE
+# RUN: %mojo-docs-isolated %S/inputs/test_doc_inline | FileCheck %s
+# RUN: %mojo-docs-isolated %S/inputs/test_doc_inline | FileCheck %s --check-prefix=ONCE
 
 # The first module documented is __init__, which imports all of src's symbols
 # but decorates only some of them.

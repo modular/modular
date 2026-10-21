@@ -15,9 +15,11 @@
 Verification runs on the live state pools without advancing them. The conv and
 SSD kernels take an ``update_state`` flag per request, and a verify with drafts
 clears it, so the pools keep their pre-verify state until acceptance is known.
-Replay then consumes only the accepted rows of the verification's own conv and
-SSD inputs and writes the result to the same pools. No full state is recorded
-per token, none is copied, and no target projection is repeated.
+Replay then folds only the accepted rows of the verification's own conv and
+SSD inputs into the same pools, every layer in one launch. It reads those rows
+where the verify left them, each request's accepted prefix addressed by its
+own ``(start, end)``. No full state is recorded per token, no input is copied,
+and no target projection is repeated.
 
 A step either verifies drafts or it does not, and the two commit differently:
 
@@ -27,8 +29,8 @@ A step either verifies drafts or it does not, and the two commit differently:
   of them to the live rows.
 - Without drafts (``K == 0``, a prefill or any batch advancing draft-less),
   every row of every request is committed, so the verify sets ``update_state``
-  and advances the live rows itself. Replay launches nothing: its offsets are
-  all zero.
+  and advances the live rows itself. Replay changes nothing: every request's
+  accepted range is empty.
 
 Both ops are in every graph. Each takes its extent from ``K``, and the one that
 does not apply has no rows.
@@ -40,13 +42,10 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
-from max.nn.state_space import (
-    causal_conv1d_varlen_fwd,
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace,
-)
+from max.nn.state_space import mamba2_replay_fold
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 
-from ..unified_mtp_qwen3_5.state_rollback import accepted_row_plan
+from ..unified_mtp_qwen3_5.state_rollback import accepted_lengths
 from .layers.mamba2 import MambaReplayInputs
 
 __all__ = [
@@ -84,16 +83,14 @@ def replay_state_pools(
     live_ssm_pool: BufferValue,
     conv_rows: TensorValue,
     ssm_rows: TensorValue,
-    row_indices: TensorValue,
-    replay_offsets: TensorValue,
-    has_initial_state: TensorValue,
+    replay_bounds: TensorValue,
 ) -> None:
     """Commits the accepted prefix of one device's captured Mamba layers.
 
-    Uses the same conv and SSD kernels as verification. The SSD inputs were
-    produced causally, so their accepted rows already include exactly the
-    accepted conv history. The conv replay updates its persistent window;
-    recomputing its outputs is unnecessary for the SSD replay.
+    One launch for every layer. The SSD inputs were produced causally, so
+    their accepted rows already include exactly the accepted conv history,
+    and the conv window is those rows' conv inputs: the two updates are
+    independent and neither recomputes an output.
 
     Args:
         captures: One capture per Mamba layer, in row-table order.
@@ -101,36 +98,20 @@ def replay_state_pools(
         live_ssm_pool: SSM state, as the verify left it.
         conv_rows: Live ``[num_layers, batch_size]`` convolution row ids.
         ssm_rows: Live ``[num_layers, batch_size]`` SSM row ids.
-        row_indices: Gather plan returned by :func:`accepted_row_plan`.
-        replay_offsets: Ragged offsets of the accepted rows.
-        has_initial_state: The verification's per-request initialization flags.
+        replay_bounds: The ``(start, end)`` captured rows each request
+            replays, from :func:`replay_plan`.
     """
-    offsets = replay_offsets.cast(DType.int32)
-    for layer, capture in enumerate(captures):
-        causal_conv1d_varlen_fwd(
-            x=ops.gather(TensorValue(capture.conv_input), row_indices, axis=0),
-            weight=TensorValue(capture.conv_weight),
-            bias=TensorValue(capture.conv_bias),
-            conv_states=live_conv_pool,
-            query_start_loc=offsets,
-            cache_indices=conv_rows[layer].cast(DType.uint32),
-            has_initial_state=has_initial_state,
-            activation="silu",
-            channels_last=True,
-        )
-        mamba2_ssd_chunk_scan_varlen_fwd_inplace(
-            x=ops.gather(TensorValue(capture.x), row_indices, axis=0),
-            dt=ops.gather(TensorValue(capture.dt), row_indices, axis=0),
-            A=TensorValue(capture.A),
-            B=ops.gather(TensorValue(capture.B), row_indices, axis=0),
-            C=ops.gather(TensorValue(capture.C), row_indices, axis=0),
-            D=TensorValue(capture.D),
-            dt_bias=TensorValue(capture.dt_bias),
-            ssm_pool=live_ssm_pool,
-            query_start_loc=offsets,
-            has_initial_state=has_initial_state,
-            cache_indices=ssm_rows[layer].cast(DType.uint32),
-        )
+    mamba2_replay_fold(
+        conv_pool=live_conv_pool,
+        ssm_pool=live_ssm_pool,
+        conv_rows=conv_rows,
+        ssm_rows=ssm_rows,
+        replay_bounds=replay_bounds,
+        projected=[capture.projected for capture in captures],
+        convolved=[capture.convolved for capture in captures],
+        A=[capture.A for capture in captures],
+        dt_bias=[capture.dt_bias for capture in captures],
+    )
 
 
 def verify_window(
@@ -185,23 +166,23 @@ def replay_plan(
     window_offsets: TensorValue,
     num_accepted: TensorValue,
     num_draft_tokens: Dim,
-    total_rows: Dim,
     device: DeviceRef,
-) -> tuple[TensorValue, TensorValue]:
+) -> TensorValue:
     """Plans the replay over the captured windows.
 
     A request replays its ``1 + num_accepted`` accepted rows when there are
-    drafts, and none when there are not (see the module docstring).
+    drafts, and none when there are not (see the module docstring). Those rows
+    open its window, so the replay reads them in place.
 
     Args:
         window_offsets: The ``[batch + 1]`` offsets from :func:`verify_window`.
         num_accepted: ``[batch]`` accepted draft tokens per request.
         num_draft_tokens: ``K``.
-        total_rows: The row count of the captured windows.
         device: The device the plan is built on.
 
     Returns:
-        ``(row_indices, replay_offsets)`` as :func:`accepted_row_plan` does.
+        The ``[2 * batch]`` int32 ``(start, end)`` captured rows of each
+        request's replay.
     """
     k = _shape_to_scalar(num_draft_tokens, device)
     one = ops.constant(1, DType.int64, device=device)
@@ -211,6 +192,6 @@ def replay_plan(
     drafts = k + ops.max(
         one - ops.min(k, one), ops.constant(0, DType.int64, device=device)
     )
-    return accepted_row_plan(
-        window_offsets, num_accepted, drafts, total_rows, device
-    )
+    starts = ops.rebind(window_offsets.cast(DType.int64)[:-1], ["batch_size"])
+    ends = starts + accepted_lengths(window_offsets, num_accepted, drafts)
+    return ops.stack([starts, ends], axis=1).reshape([-1]).cast(DType.int32)

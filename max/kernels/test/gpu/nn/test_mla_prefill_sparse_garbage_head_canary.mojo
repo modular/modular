@@ -87,6 +87,7 @@ post-fix, 0/24 seeds fail, every element bit-exact.
 
 from std.math import ceildiv, sqrt
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, randn_float64, seed
 from std.testing import assert_equal, assert_true
 
@@ -259,14 +260,14 @@ def _run_prefill_sparse_diff[
     # Generate random BF16 KV data: [batch_size * num_kv_tokens, qk_depth]
     # -----------------------------------------------------------------------
     var kv_total = batch_size * num_kv_tokens * QK_DEPTH
-    var kv_host = alloc[Scalar[q_type]](kv_total)
+    var kv_host = unsafe_alloc[Scalar[q_type]](kv_total)
     randn[q_type](kv_host, kv_total, mean=0.0, standard_deviation=qkv_std)
 
     # -----------------------------------------------------------------------
     # Build shuffled page mapping (coprime permutation).
     # -----------------------------------------------------------------------
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
     var page_offset = 0
     for bi in range(batch_size):
         var np = ceildiv(num_kv_tokens, PAGE_SIZE)
@@ -281,7 +282,7 @@ def _run_prefill_sparse_diff[
     # -----------------------------------------------------------------------
     # Fill KV cache blocks from random data with paged layout.
     # -----------------------------------------------------------------------
-    var blocks_host = alloc[Scalar[q_type]](block_elems)
+    var blocks_host = unsafe_alloc[Scalar[q_type]](block_elems)
     # Multi-layer: seed every layer with distinct random data so a gather
     # into the wrong layer (the num_layers>1 addressing bug) reads garbage
     # and trips the cosine / tail gates. Layer `layer_idx` is overwritten
@@ -330,7 +331,7 @@ def _run_prefill_sparse_diff[
     # SMALL (small kv_std => small V), so the scale-calibrated error gates
     # stay valid (bf16 ULP ~ output_magnitude * 2^-8).
     var q_std_eff = qkv_std if q_std < 0.0 else q_std
-    var q_host = alloc[Scalar[q_type]](q_elems)
+    var q_host = unsafe_alloc[Scalar[q_type]](q_elems)
     randn[q_type](q_host, q_elems, mean=0.0, standard_deviation=q_std_eff)
     if len(q_override) > 0:
         for i in range(q_elems):
@@ -342,7 +343,7 @@ def _run_prefill_sparse_diff[
     # selections (catches per-query stride bugs in the kernel).
     # selected_tokens[bs * topk + i] = which physical-row in batch `b` to use
     # -----------------------------------------------------------------------
-    var selected_tokens = alloc[Int](total_q_tokens * topk)
+    var selected_tokens = unsafe_alloc[Int](total_q_tokens * topk)
     var sel_mult = _coprime_multiplier(num_kv_tokens)
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -358,7 +359,7 @@ def _run_prefill_sparse_diff[
     # Gather selected rows from the full KV buffer per query.
     # -----------------------------------------------------------------------
     var kv_sparse_size = total_q_tokens * topk * QK_DEPTH
-    var kv_sparse = alloc[Scalar[q_type]](kv_sparse_size)
+    var kv_sparse = unsafe_alloc[Scalar[q_type]](kv_sparse_size)
 
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -381,7 +382,7 @@ def _run_prefill_sparse_diff[
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
     for bi in range(batch_size):
         cache_lengths_host[bi] = UInt32(num_kv_tokens)
 
@@ -403,7 +404,7 @@ def _run_prefill_sparse_diff[
     # indices[bs * topk + i] = physical_block * PAGE_SIZE + tok_in_page.
     # -----------------------------------------------------------------------
     var total_indices = total_q_tokens * topk
-    var h_indices = alloc[UInt32](total_indices)
+    var h_indices = unsafe_alloc[UInt32](total_indices)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
@@ -435,7 +436,7 @@ def _run_prefill_sparse_diff[
     var reported_topk_length = (
         valid_topk if topk_lengths_override < 0 else topk_lengths_override
     )
-    var h_topk_lengths = alloc[UInt32](total_q_tokens)
+    var h_topk_lengths = unsafe_alloc[UInt32](total_q_tokens)
     for i in range(total_q_tokens):
         h_topk_lengths[i] = UInt32(reported_topk_length)
 
@@ -539,12 +540,12 @@ def _run_prefill_sparse_diff[
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
     var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
-        var sink_host = alloc[Float32](len(sink_values))
+        var sink_host = unsafe_alloc[Float32](len(sink_values))
         for i in range(len(sink_values)):
             sink_host[i] = sink_values[i]
         ctx.enqueue_copy(sink_device, sink_host)
         ctx.synchronize()
-        sink_host.free()
+        sink_host.unsafe_free()
         attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](
             sink_device.unsafe_ptr()
             .unsafe_bitcast[Float32]()
@@ -572,7 +573,7 @@ def _run_prefill_sparse_diff[
     # -----------------------------------------------------------------------
     # Read output back to host
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[q_type]](out_elems)
+    var out_host = unsafe_alloc[Scalar[q_type]](out_elems)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -592,16 +593,16 @@ def _run_prefill_sparse_diff[
     _ = topk_lengths_device
     _ = sink_device
 
-    blocks_host.free()
-    kv_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    q_host.free()
-    kv_sparse.free()
-    selected_tokens.free()
-    out_host.free()
-    h_indices.free()
-    h_topk_lengths.free()
+    blocks_host.unsafe_free()
+    kv_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    q_host.unsafe_free()
+    kv_sparse.unsafe_free()
+    selected_tokens.unsafe_free()
+    out_host.unsafe_free()
+    h_indices.unsafe_free()
+    h_topk_lengths.unsafe_free()
     return result^
 
 

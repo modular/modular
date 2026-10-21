@@ -37,6 +37,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.attention.mha_mask import MaskName
+from nn.index_fp8 import _has_gfx950_accelerator
 from std.collections import Set
 from std.testing import assert_true
 
@@ -409,3 +410,16 @@ def main() raises:
         run_case[False, PAGE_SIZE, NUM_HEADS, True, ML, LAYER, K_PAD, S_PAD](
             [4092, 0, 2, 6144], [4, 3, 1, 2], ctx
         )
+        comptime if _has_gfx950_accelerator():
+            # A 64-row page holds 16 of Flash's pools, short of the gfx950
+            # scorer's 32-pool wave, so the op must refuse it.
+            print("gfx950: a page shorter than one 32-pool wave is rejected")
+            var rejected = False
+            try:
+                run_case[False, 64]([253], [3], ctx)
+            except e:
+                assert_true(
+                    "page to hold a whole 32-key wave" in String(e), String(e)
+                )
+                rejected = True
+            assert_true(rejected, "the gfx950 scorer accepted a 64-row page")

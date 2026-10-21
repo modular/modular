@@ -1206,7 +1206,7 @@ def load_lds_fragment[
                     full_offset = swizzle_fn(full_offset)
 
                 comptime frag_idx = m_idx * k_splits + k_idx
-                reg_ptr.store(
+                reg_ptr.unsafe_store(
                     frag_idx * _reg_stride,
                     rebind[FragElement](
                         _load_from_lds[width=lds_frag_width](
@@ -1222,7 +1222,7 @@ def load_lds_fragment[
             comptime if case .Some(swizzle_fn) = swizzle:
                 full_offset = swizzle_fn(full_offset)
 
-            reg_ptr.store(
+            reg_ptr.unsafe_store(
                 i * _reg_stride,
                 rebind[FragElement](
                     _load_from_lds[width=lds_frag_width](
@@ -2802,7 +2802,7 @@ struct RegTileEpilogue[
                 offset by `lane_group * chunk_width` already.
         """
         if n + Self.chunk_width <= self.n_total:
-            self._ptr().store[
+            self._ptr().unsafe_store[
                 alignment=align_of[SIMD[Self.c_type, Self.chunk_width]]()
             ](m * self.row_stride + n, v)
         elif n < self.n_total:
@@ -2882,7 +2882,7 @@ struct RegTileEpilogue[
             comptime chunk_alignment = align_of[
                 SIMD[Self.c_type, Self.chunk_width]
             ]()
-            self._ptr().store[alignment=chunk_alignment](
+            self._ptr().unsafe_store[alignment=chunk_alignment](
                 m * self.row_stride + n,
                 compute_fn[
                     Self.c_type,

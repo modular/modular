@@ -10,13 +10,13 @@ to use depends on what's known at write time. A fixed position or range, like
 the last token in a sequence or a window of attention heads, uses Python slice
 syntax directly. Positions computed at runtime, like token IDs from a sampler or
 expert assignments from a router, require
-[`F.gather`](/api/python/experimental.functional#max.experimental.functional.gather),
+[`F.gather`](/api/python/experimental.functional/#max.experimental.functional.gather),
 which takes a tensor of indices and returns the selected values. When a boolean
 condition determines which values to keep,
-[`F.where`](/api/python/experimental.functional#max.experimental.functional.where)
+[`F.where`](/api/python/experimental.functional/#max.experimental.functional.where)
 selects element-wise from two tensors based on a mask. To write values to
 specific positions, use
-[`F.scatter`](/api/python/experimental.functional#max.experimental.functional.scatter).
+[`F.scatter`](/api/python/experimental.functional/#max.experimental.functional.scatter).
 
 :::note Coming from PyTorch or NumPy?
 Integer, range, and `...` indexing follow PyTorch and NumPy conventions. For
@@ -66,7 +66,7 @@ expert assignments from a router, use `F.gather`.
 ## Select elements by index
 
 When positions are data rather than literals,
-[`F.gather(input, indices, axis)`](/api/python/experimental.functional#max.experimental.functional.gather)
+[`F.gather(input, indices, axis)`](/api/python/experimental.functional/#max.experimental.functional.gather)
 selects elements from `input` at the positions given by `indices`, along `axis`.
 The following example uses it for a vocabulary lookup: each token ID selects one
 row from an embedding table:
@@ -102,7 +102,7 @@ which values to keep, use `F.where` instead.
 
 ## Select elements by condition
 
-[`F.where(cond, x, y)`](/api/python/experimental.functional#max.experimental.functional.where)
+[`F.where(cond, x, y)`](/api/python/experimental.functional/#max.experimental.functional.where)
 takes from `x` where `cond` is `True` and from `y` where it's `False`,
 element-wise. The `cond` argument must have a boolean dtype.
 
@@ -140,7 +140,7 @@ The expected output is:
 
 In this example, `mask` has shape `(4, 4)` and `scores` has shape `(2, 4, 4)`.
 Because `F.where` follows the same
-[broadcasting rules](/develop/broadcasting) as arithmetic operations, the
+[broadcasting rules](/develop/broadcasting/) as arithmetic operations, the
 mask applies to every sequence in the batch without any reshaping. Positions
 above the diagonal receive `-1e9`; after softmax, their contribution to the
 attention weights is negligible. All three arguments to `F.where` must be
@@ -149,14 +149,14 @@ broadcastable to a common shape. To write values to specific positions, use
 
 ## Place values by index
 
-[`F.scatter`](/api/python/experimental.functional#max.experimental.functional.scatter)
+[`F.scatter`](/api/python/experimental.functional/#max.experimental.functional.scatter)
 writes `updates` into a copy of `input` at the positions in `indices`. The
 signature is `F.scatter(input, updates, indices, axis=-1)`. `updates` comes
 before `indices`, the opposite of the argument order you might expect. The
 `indices` tensor must have the same shape as `updates`.
 
 The following example writes 4 expert outputs back into an 8-token sequence.
-[`F.tile`](/api/python/experimental.functional#max.experimental.functional.tile)
+[`F.tile`](/api/python/experimental.functional/#max.experimental.functional.tile)
 repeats the route indices across all 64 feature positions so that `indices` has
 the same shape as `expert_out`:
 
@@ -193,8 +193,8 @@ elementwise operations. When masks need to align with logits, the rules are the
 same ones from broadcasting:
 
 - **Review broadcasting for `F.where` and elementwise alignment**:
-  [Broadcasting](/develop/broadcasting)
+  [Broadcasting](/develop/broadcasting/)
 - **Create tensors and run a small forward pass**:
-  [Eager execution](/develop/eager-execution)
+  [Eager execution](/develop/eager-execution/)
 - **Follow an end-to-end model workflow**:
-  [Model bring-up workflow](/develop/model-bringup-workflow)
+  [Model bring-up workflow](/develop/model-bringup-workflow/)

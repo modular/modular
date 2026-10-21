@@ -15,8 +15,8 @@
 
 The BUILD target forces the VMM memory manager with 2 MiB granules, so each
 buffer spans many CUDA allocations, and keeps UCX off InfiniBand. If the
-granules are not exportable, UCX stages GPU data through host memory, which the
-bandwidth floor catches; if the engine registers a range that spans
+granules are not exportable, UCX moves GPU data through host memory over tcp,
+which the protocol check catches; if the engine registers a range that spans
 allocations, the transfer crashes or corrupts pages, which the content check
 catches.
 """
@@ -24,10 +24,12 @@ catches.
 from __future__ import annotations
 
 import multiprocessing as mp
-import time
+import os
+import re
+from pathlib import Path
 
 import numpy as np
-from _transfer_engine_helpers import every_leaf, kv_memory
+from _transfer_engine_helpers import every_leaf, join_peers, kv_memory
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -39,9 +41,7 @@ TOTAL_NUM_PAGES = 256
 SRC_IDXS = list(range(TOTAL_NUM_PAGES))
 DST_IDXS = list(reversed(SRC_IDXS))
 
-# Well under NVLink cuda_ipc and well over host staging through tcp, so only
-# the cuda_ipc path clears it.
-MIN_BANDWIDTH_GIB_S = 10.0
+_GPU_PUT_HEADER = re.compile(r"ucp_put\S* from cuda/GPU\d+ to cuda\b")
 
 
 def _page_pattern() -> np.ndarray:
@@ -49,11 +49,31 @@ def _page_pattern() -> np.ndarray:
     return np.repeat(pages.astype(np.int8), BYTES_PER_PAGE)
 
 
+def _gpu_put_transports(ucx_log: str) -> list[str]:
+    """Returns the transport of every row in UCX's GPU-to-GPU put tables.
+
+    With ``UCX_PROTO_INFO=y``, UCX logs one table per endpoint and operation
+    when it first selects a protocol. A row ends with the transport, such as
+    ``cuda_ipc/cuda`` for NVLink or ``tcp/lo`` for host staging.
+    """
+    transports = []
+    lines = ucx_log.splitlines()
+    for i, line in enumerate(lines):
+        if not _GPU_PUT_HEADER.search(line):
+            continue
+        # Skip the header's closing border, then read rows to the next border.
+        for row in lines[i + 2 :]:
+            cells = [c.strip() for c in row.split("|")[1:-1]]
+            if len(cells) < 3:
+                break
+            transports.append(cells[-1])
+    return transports
+
+
 def _sender(
     md_out: mp.Queue,  # type: ignore[type-arg]
     md_in: mp.Queue,  # type: ignore[type-arg]
     req_out: mp.Queue,  # type: ignore[type-arg]
-    bandwidth_out: mp.Queue,  # type: ignore[type-arg]
     done: mp.Queue,  # type: ignore[type-arg]
 ) -> None:
     buf = Buffer.from_numpy(_page_pattern()).to(Accelerator(0))
@@ -65,23 +85,15 @@ def _sender(
     remote = md_in.get()
     engine.connect(remote)
 
-    # The first transfer maps the peer's allocations; time the second.
-    for timed in (False, True):
-        start = time.perf_counter()
-        req = engine.initiate_send_transfer(
-            remote,
-            every_leaf(remote, SRC_IDXS),
-            every_leaf(remote, DST_IDXS),
-            src_replica_idx=0,
-            dst_replica_idx=0,
-        )
-        req_out.put(req)
-        engine.sync_and_release(req)
-        if timed:
-            elapsed = time.perf_counter() - start
-            bandwidth_out.put(
-                TOTAL_NUM_PAGES * BYTES_PER_PAGE / elapsed / 2**30
-            )
+    req = engine.initiate_send_transfer(
+        remote,
+        every_leaf(remote, SRC_IDXS),
+        every_leaf(remote, DST_IDXS),
+        src_replica_idx=0,
+        dst_replica_idx=0,
+    )
+    req_out.put(req)
+    engine.sync_and_release(req)
     done.get()
     engine.cleanup()
 
@@ -101,8 +113,7 @@ def _receiver(
     md_out.put(engine.metadata)
     remote = md_in.get()
     engine.connect(remote)
-    for _ in range(2):
-        engine.sync_and_release(req_in.get())
+    engine.sync_and_release(req_in.get())
 
     received = buf.to_numpy().reshape(TOTAL_NUM_PAGES, BYTES_PER_PAGE)
     sent = _page_pattern().reshape(TOTAL_NUM_PAGES, BYTES_PER_PAGE)
@@ -114,31 +125,36 @@ def _receiver(
     engine.cleanup()
 
 
-def test_vmm_buffers_transfer_over_cuda_ipc() -> None:
+def test_vmm_buffers_transfer_over_cuda_ipc(tmp_path: Path) -> None:
     ctx = mp.get_context("spawn")
     sender_md: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
     receiver_md: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
     requests: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
-    bandwidth: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
     done: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    ucx_log_path = tmp_path / "sender_ucx.log"
 
     sender = ctx.Process(
         target=_sender,
-        args=(sender_md, receiver_md, requests, bandwidth, done),
+        args=(sender_md, receiver_md, requests, done),
     )
     receiver = ctx.Process(
         target=_receiver, args=(receiver_md, sender_md, requests, done)
     )
+    # A spawned child copies the env at start(), so only the sender logs.
+    os.environ.update(UCX_PROTO_INFO="y", UCX_LOG_FILE=str(ucx_log_path))
     sender.start()
+    del os.environ["UCX_PROTO_INFO"], os.environ["UCX_LOG_FILE"]
     receiver.start()
-    sender.join(timeout=300)
-    receiver.join(timeout=300)
-
-    assert sender.exitcode == 0, f"sender exited with {sender.exitcode}"
-    assert receiver.exitcode == 0, f"receiver exited with {receiver.exitcode}"
-    gib_s = bandwidth.get(timeout=1)
-    print(f"VMM same-node transfer: {gib_s:.1f} GiB/s")
-    assert gib_s >= MIN_BANDWIDTH_GIB_S, (
-        f"{gib_s:.1f} GiB/s is below {MIN_BANDWIDTH_GIB_S} GiB/s; GPU data "
-        "is probably being staged through host memory instead of cuda_ipc"
+    join_peers([sender, receiver])
+    transports = _gpu_put_transports(ucx_log_path.read_text())
+    # UCX is pinned by @ucx_prebuilt, so the table format changes only in a
+    # UCX upgrade, which reruns this test.
+    assert transports, (
+        f"found no GPU-to-GPU put table in {ucx_log_path}; if UCX was "
+        "upgraded, update _GPU_PUT_HEADER and _gpu_put_transports to its "
+        "UCX_PROTO_INFO format"
+    )
+    assert all(t.startswith("cuda_ipc/") for t in transports), (
+        f"GPU-to-GPU puts selected {transports}, not cuda_ipc; GPU data is "
+        "being staged through host memory"
     )

@@ -165,7 +165,11 @@ async def start_process_consumer(
             await proc.ready(alive, settings.telemetry_worker_spawn_timeout)
 
             if settings.use_heartbeat:
-                proc.watch_heartbeat(alive, timeout=5)
+                # Use the same limit as the model worker. Under memory
+                # pressure the host can stall all processes for seconds.
+                # A crash is seen at once by the process sentinel, so this
+                # only needs to catch a hang.
+                proc.watch_heartbeat(alive, timeout=settings.mw_health_fail_s)
 
             yield controller
         finally:

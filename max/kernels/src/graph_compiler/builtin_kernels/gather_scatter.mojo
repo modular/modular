@@ -395,6 +395,105 @@ def _unsqueeze_shape_kernel[
     output[unsafe_offset=o * Int(output_stride)] = dim
 
 
+def squeeze_shape_gpu[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int,
+    remove_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    remove_indices_stride: Int,
+    num_input_dims: Int,
+    num_remove_indices: Int,
+    ctx: DeviceContext,
+) raises:
+    """Removes the dimensions at `remove_indices` from a GPU shape vector.
+
+    Parameters:
+        dtype: Element type of the input and output shape vectors.
+        indices_type: Element type of the indices.
+
+    Args:
+        output: The output shape vector, `num_input_dims - num_remove_indices`
+            entries long.
+        output_stride: Stride between output entries, in elements.
+        input: The input shape vector.
+        input_stride: Stride between input entries, in elements.
+        remove_indices: The dimensions to remove, possibly negative.
+        remove_indices_stride: Stride between indices, in elements.
+        num_input_dims: Length of the input shape vector.
+        num_remove_indices: Number of indices.
+        ctx: Device context to launch on.
+
+    Raises:
+        If the kernel launch fails.
+    """
+    ctx.enqueue_function[_squeeze_shape_kernel[dtype, indices_type]](
+        output,
+        Int32(output_stride),
+        input,
+        Int32(input_stride),
+        remove_indices,
+        Int32(remove_indices_stride),
+        Int32(num_input_dims),
+        Int32(num_remove_indices),
+        grid_dim=max(ceildiv(num_input_dims, _SHAPE_BLOCK), 1),
+        block_dim=_SHAPE_BLOCK,
+    )
+
+
+def unsqueeze_shape_gpu[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int,
+    padding_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    padding_indices_stride: Int,
+    num_input_dims: Int,
+    num_padding_indices: Int,
+    ctx: DeviceContext,
+) raises:
+    """Inserts size-1 dimensions at `padding_indices` into a GPU shape vector.
+
+    Parameters:
+        dtype: Element type of the input and output shape vectors.
+        indices_type: Element type of the indices.
+
+    Args:
+        output: The output shape vector, `num_input_dims + num_padding_indices`
+            entries long.
+        output_stride: Stride between output entries, in elements.
+        input: The input shape vector.
+        input_stride: Stride between input entries, in elements.
+        padding_indices: The output positions of the new dimensions, possibly
+            negative.
+        padding_indices_stride: Stride between indices, in elements.
+        num_input_dims: Length of the input shape vector.
+        num_padding_indices: Number of indices.
+        ctx: Device context to launch on.
+
+    Raises:
+        If the kernel launch fails.
+    """
+    ctx.enqueue_function[_unsqueeze_shape_kernel[dtype, indices_type]](
+        output,
+        Int32(output_stride),
+        input,
+        Int32(input_stride),
+        padding_indices,
+        Int32(padding_indices_stride),
+        Int32(num_input_dims),
+        Int32(num_padding_indices),
+        grid_dim=max(
+            ceildiv(num_input_dims + num_padding_indices, _SHAPE_BLOCK), 1
+        ),
+        block_dim=_SHAPE_BLOCK,
+    )
+
+
 @extensibility.register("mo.squeeze_shape")
 struct SqueezeShape:
     """Registers the `mo.squeeze_shape` graph op with the graph compiler."""
@@ -409,7 +508,7 @@ struct SqueezeShape:
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
         remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Removes the dimensions at `remove_indices` from `input_shape`.
 
         Raises:
@@ -433,18 +532,16 @@ struct SqueezeShape:
                 num_remove_indices,
             )
         else:
-            comptime kernel = _squeeze_shape_kernel[dtype, indices_type]
-            ctx.enqueue_function[kernel](
+            squeeze_shape_gpu(
                 output_shape.unsafe_ptr(),
-                Int32(output_shape.stride_length[0]()),
+                output_shape.stride_length[0](),
                 input_shape.unsafe_ptr(),
-                Int32(input_shape.stride_length[0]()),
+                input_shape.stride_length[0](),
                 remove_indices.unsafe_ptr(),
-                Int32(remove_indices.stride_length[0]()),
-                Int32(num_input_dims),
-                Int32(num_remove_indices),
-                grid_dim=max(ceildiv(num_input_dims, _SHAPE_BLOCK), 1),
-                block_dim=_SHAPE_BLOCK,
+                remove_indices.stride_length[0](),
+                num_input_dims,
+                num_remove_indices,
+                ctx,
             )
 
 
@@ -484,7 +581,7 @@ struct UnsqueezeShape:
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
         padding_indices: InputTensor[dtype=indices_type, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Inserts size-1 dimensions into `input_shape` at `padding_indices`.
 
         Raises:
@@ -508,21 +605,16 @@ struct UnsqueezeShape:
                 num_padding_indices,
             )
         else:
-            comptime kernel = _unsqueeze_shape_kernel[dtype, indices_type]
-            ctx.enqueue_function[kernel](
+            unsqueeze_shape_gpu(
                 output_shape.unsafe_ptr(),
-                Int32(output_shape.stride_length[0]()),
+                output_shape.stride_length[0](),
                 input_shape.unsafe_ptr(),
-                Int32(input_shape.stride_length[0]()),
+                input_shape.stride_length[0](),
                 padding_indices.unsafe_ptr(),
-                Int32(padding_indices.stride_length[0]()),
-                Int32(num_input_dims),
-                Int32(num_padding_indices),
-                grid_dim=max(
-                    ceildiv(num_input_dims + num_padding_indices, _SHAPE_BLOCK),
-                    1,
-                ),
-                block_dim=_SHAPE_BLOCK,
+                padding_indices.stride_length[0](),
+                num_input_dims,
+                num_padding_indices,
+                ctx,
             )
 
 
@@ -586,9 +678,9 @@ def scatter_nd_shape_fn(
     )
 
 
-@extensibility.register("mo.scatter_nd.skip_neg_indices")
-struct ScatterNDSkipNegIndices:
-    """Registers the `mo.scatter_nd.skip_neg_indices` graph op with the graph compiler.
+@extensibility.register("mo.scatter_nd.skip_oob_indices")
+struct ScatterNDSkipOobIndices:
+    """Registers the `mo.scatter_nd.skip_oob_indices` graph op with the graph compiler.
     """
 
     @staticmethod
@@ -601,19 +693,16 @@ struct ScatterNDSkipNegIndices:
         indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        # This is identical to mo.scatter_nd except in how we handle negative indices.
-        # In mo.scatter_nd, it is well defined to pass indices between [-dim_size, dim_size).
-        # Negative indices will be normalized by incrementing them by dim_size.
-        # This allows the kernel to support negative relative indexing.
-        # eg: x[-1] == x[dim_size - 1]
-        #
-        # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
-        # the update for that index instead.
+        # Unlike mo.scatter_nd, which requires every index to lie in
+        # [-dim_size, dim_size), this skips the update for an index outside
+        # that range. Negative indices inside it still wrap, so -1 writes the
+        # last row; a caller marking rows to skip needs a value below
+        # -dim_size, such as the dtype's min.
         scatter_nd_generator[
             oob_index_strategy=ScatterOobIndexStrategy.SKIP,
             target=target,
             atomic_update_fn=None,
-            _trace_description="scatter_nd.skip_neg_indices",
+            _trace_description="scatter_nd.skip_oob_indices",
         ](
             input.to_tile_tensor[.int64](),
             indices.to_tile_tensor[.int64](),
@@ -1829,7 +1918,7 @@ struct MutableStore(ElementwiseUnaryOp):
         buffer: MutableInputTensor,
         tensor: FusedInputTensor,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         # TODO: Remove the execute method (GEX-2453).
         raise Error("exec should never be called !")
 
@@ -1916,7 +2005,7 @@ struct Gather:
         input: FusedInputTensor[dtype=output.dtype, ...],
         indices: FusedInputTensor,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def input_fn[
             width: Int, element_alignment: Int
@@ -2073,7 +2162,7 @@ struct Concat:
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
         check_axis_in_range[axis, output.rank]()
@@ -2307,7 +2396,7 @@ struct AdvancedIndexingGetItem:
             ...,
         ],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert (
             output_rank == input_rank + index_rank - num_index_tensors
         )
@@ -2408,7 +2497,7 @@ struct AdvancedIndexingSetItemInplace:
             ...,
         ],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def updates_tensor_fn[
             dtype: DType, width: Int
@@ -2468,7 +2557,7 @@ struct AdvancedIndexingSetItem:
             ...,
         ],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Implement basic numpy-style advanced indexing with assignment but returns a copy.
         """
 

@@ -592,7 +592,7 @@ def create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_managed()
+    var host = alloc(AllocLayout[UInt32](length=num_blocks)).into_managed()
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1

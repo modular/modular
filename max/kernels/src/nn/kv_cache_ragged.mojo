@@ -13,7 +13,7 @@
 """Implements KV-cache kernels for ragged (variable-length) sequences used in continuous batching."""
 
 from std.sys.info import CompilationTarget, simd_width_of
-from std.sys import align_of
+from std.sys import align_of, size_of
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
@@ -1497,6 +1497,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     comptime assert output.flat_rank == 2
     comptime kv_type = cache_t.dtype
     comptime kv_params = cache_t.kv_params
+    comptime epilogue_simd_size = 32 // size_of[output_dtype]()
 
     var q_dim = Int(output.dim[1]())
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -1593,6 +1594,10 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
         tensor_sf,
         write_to_cache,
         context.value(),
+        # Route whole vectors only when they cannot straddle Q/K/V bands.
+        unfuse_epilogue=(
+            q_dim % epilogue_simd_size == 0 and k_dim % epilogue_simd_size == 0
+        ),
     )
 
 
@@ -2433,7 +2438,7 @@ def _matmul_common[
     comptime N = weight.static_shape[0]
 
     var c_alloc_layout = AllocLayout[Scalar[output_dtype]](
-        count=TOTAL_SEQ_LEN * N
+        length=TOTAL_SEQ_LEN * N
     )
     var c_ptr: Optional[
         MutPointer[Scalar[output_dtype], MutUntrackedOrigin]
@@ -2580,6 +2585,8 @@ def _matmul_blockwise_scaled_fp4_common[
     tensor_sf: Float32,
     epilogue_fn: EpilogueFnType,
     context: DeviceContext,
+    *,
+    unfuse_epilogue: Bool = True,
 ) raises:
     comptime assert is_gpu[
         target
@@ -2590,7 +2597,7 @@ def _matmul_blockwise_scaled_fp4_common[
 
     # Scratch C for the matmul result. With the fused (in-kernel) epilogue the
     # SM100 Mojo kernel redirects its stores through `epilogue_fn` and
-    # never writes C; the buffer only backs the vendor DISPATCH_MISS fallback.
+    # never writes C; the buffer backs vendor fallback and unfused decode.
     #
     # C is built with a STATIC N dim (dynamic M): `block_scaled_matmul` picks its
     # SM100 config from `c.static_shape[1]`. A fully-dynamic layout leaves
@@ -2666,22 +2673,67 @@ def _matmul_blockwise_scaled_fp4_common[
             context,
         )
 
-    block_scaled_matmul[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        transpose_b=True,
-        has_epilogue_fn=True,
-        target=target,
-        pdl_level=PDLLevel.ON,
-    ](
-        c_tt,
-        hidden_state,
-        weight,
-        input_scale,
-        weight_scale,
-        tensor_sf,
-        context,
-        epilogue_fn,
-    )
+    else:
+        # At decode-sized M the matmul tile is AB-swapped, so the in-kernel epilogue
+        # calls `epilogue_fn` once per scalar element, and every call walks the
+        # ragged offsets and page table through dependent global loads. Those
+        # chains serialize per thread behind the stores and dominate the kernel
+        # (~35us on top of a ~14us GEMM for the M3.1 MXFP8 QKV shape). Writing the
+        # plain GEMM result to the scratch buffer and applying `epilogue_fn` from
+        # an elementwise kernel gives every element its own thread instead. FP4 is
+        # unmeasured and keeps the fused path.
+        comptime unfused_m_cap = 512 if a_type == .float8_e4m3fn else 0
+        if TOTAL_SEQ_LEN <= unfused_m_cap and unfuse_epilogue:
+            block_scaled_matmul[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=True,
+                target=target,
+                pdl_level=PDLLevel.ON,
+            ](
+                c_tt,
+                hidden_state,
+                weight,
+                input_scale,
+                weight_scale,
+                tensor_sf,
+                context,
+            )
+
+            def apply_epilogue[
+                width: Int, alignment: Int = 1
+            ](idx: Coord) {var c_tt, var epilogue_fn}:
+                epilogue_fn[output_dtype, width, alignment=alignment](
+                    idx, c_tt.load[width=width](idx)
+                )
+
+            comptime simd_size = 32 // size_of[output_dtype]()
+            elementwise[
+                simd_size,
+                target=target,
+                _trace_description="elementwise_fused_qkv_epilogue",
+            ](
+                apply_epilogue,
+                Coord(TOTAL_SEQ_LEN, Idx[N]),
+                context,
+            )
+            return
+
+        block_scaled_matmul[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=True,
+            has_epilogue_fn=True,
+            target=target,
+            pdl_level=PDLLevel.ON,
+        ](
+            c_tt,
+            hidden_state,
+            weight,
+            input_scale,
+            weight_scale,
+            tensor_sf,
+            context,
+            epilogue_fn,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3601,7 +3653,7 @@ def _qmatmul_gguf_quantized_alloc_output[
     # CPU matmul needs workspace even when an epilogue writes the output.
     # Managed so the workspace is also released when the matmul raises.
     var c_alloc = alloc(
-        AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
+        AllocLayout[Float32](length=TOTAL_SEQ_LEN * N)
     ).into_managed()
 
     var c_nd = TileTensor(
@@ -5606,18 +5658,15 @@ def kv_cache_2m_iadd_dispatch[
     var k_cache = cache.get_key_cache(layer_idx_cast)
     var v_cache = cache.get_value_cache(layer_idx_cast)
     var m = Int(lora_end_idx[0])
-    var M = Int(batch_seq_len[0])
 
     # [2m, N]
     var elementwise_shape = IndexList[2](2 * m, Int(kv.dim[1]()))
 
-    # TODO: This elementwise body captures KV cache views (`CacheType`), which
-    # fail codegen when stored into a unified closure ('pop.store' pointer
-    # element-type verification). Keep using the deprecated parameter-closure
-    # overload until cache captures in unified closures are supported.
-    @__parameter
-    @__copy_capture(kv, k_cache, v_cache, input_row_offsets, m, M)
-    def iadd[width: Int, alignment: Int = 1](idx: Coord):
+    def iadd[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {
+        var kv, var k_cache, var v_cache, var input_row_offsets, var m
+    }:
         comptime assert idx.rank == 2, "Rank must be 2"
 
         var cache: collection_t.CacheType
@@ -5661,13 +5710,13 @@ def kv_cache_2m_iadd_dispatch[
             comptime compile_target = ctx.target
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-            elementwise[iadd, simd_width, target=target](
-                Coord(elementwise_shape), ctx
+            elementwise[simd_width, target=target](
+                iadd, Coord(elementwise_shape), ctx
             )
     else:
         comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[iadd, simd_width, target=target](
-            Coord(elementwise_shape), ctx
+        elementwise[simd_width, target=target](
+            iadd, Coord(elementwise_shape), ctx
         )

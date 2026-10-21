@@ -17,6 +17,7 @@ from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from layout import TileTensor, row_major
 
 comptime BLOCK_DIM = 8
@@ -100,8 +101,8 @@ def run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     comptime coeff2 = 4
     comptime iterations = 4
 
-    var a_host = alloc[Float32](m)
-    var b_host = alloc[Float32](m)
+    var a_host = unsafe_alloc[Float32](m)
+    var b_host = unsafe_alloc[Float32](m)
 
     for i in range(m):
         a_host[i] = Float32(i)

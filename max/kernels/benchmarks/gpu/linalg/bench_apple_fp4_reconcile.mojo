@@ -410,8 +410,8 @@ def _bench_crossover(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     print("=== FUSED vs MAT vs m2d vs DENSE across M ===")
     print("=== warmup=", WARMUP, " hot=", HOT, " best-of-", REPS, " ===")

@@ -611,8 +611,9 @@ or
 [`col_major()`](/api/mojo/layout/tile_layout/col_major/)
 instead.
 
-Once you have a nested layout, you can build a `TileTensor` from it and use
-`tile()` to extract individual fragments. See
+Once you have a nested layout whose first leaf in each mode is the fragment,
+such as the output of `blocked_product()`, you can build a `TileTensor` from it
+and use `tile()` to extract individual fragments. See
 [Extracting a tile](/tile-tensor/tensors/#extracting-a-tile)
 in the tensors guide.
 

@@ -78,6 +78,7 @@ def test_target_is_apple() raises:
     _is_apple_mx |= CompilationTarget.is_apple_m3()
     _is_apple_mx |= CompilationTarget.is_apple_m4()
     _is_apple_mx |= CompilationTarget.is_apple_m5()
+    _is_apple_mx |= CompilationTarget.is_apple_m6()
 
     # Invariant: M series implies apple silicon
     if _is_apple_mx:

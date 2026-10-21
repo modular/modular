@@ -149,7 +149,7 @@ def _topp_minp_sampling[
     var vocab_size = input_shape[1]
 
     var sorted_probs_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=batch_size * vocab_size)
+        AllocLayout[Scalar[dtype]](length=batch_size * vocab_size)
     ).into_managed()
     var sorted_probs_ptr: MutPointer[
         Scalar[dtype], origin_of(sorted_probs_alloc)
@@ -160,7 +160,7 @@ def _topp_minp_sampling[
     )
 
     var sorted_ids_alloc = alloc(
-        AllocLayout[Scalar[out_idx_type]](count=batch_size * vocab_size)
+        AllocLayout[Scalar[out_idx_type]](length=batch_size * vocab_size)
     ).into_managed()
     var sorted_ids_ptr: MutPointer[
         Scalar[out_idx_type], origin_of(sorted_ids_alloc)
@@ -342,11 +342,13 @@ def merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_keys_ptr = alloc(AllocLayout[Scalar[dtype]](count=left_size))
-    var right_keys_ptr = alloc(AllocLayout[Scalar[dtype]](count=right_size))
-    var left_ids_ptr = alloc(AllocLayout[Scalar[out_idx_type]](count=left_size))
+    var left_keys_ptr = alloc(AllocLayout[Scalar[dtype]](length=left_size))
+    var right_keys_ptr = alloc(AllocLayout[Scalar[dtype]](length=right_size))
+    var left_ids_ptr = alloc(
+        AllocLayout[Scalar[out_idx_type]](length=left_size)
+    )
     var right_ids_ptr = alloc(
-        AllocLayout[Scalar[out_idx_type]](count=right_size)
+        AllocLayout[Scalar[out_idx_type]](length=right_size)
     )
     var left_keys_data: MutPointer[
         Scalar[dtype], origin_of(left_keys_ptr._alloc)

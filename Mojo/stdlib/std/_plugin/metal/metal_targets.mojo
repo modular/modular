@@ -45,6 +45,8 @@ struct MetalTargets(TargetAcceleratorCollection):
         MetalM4Metal4._with_cli_values[["apple-m4-metal4"]],
         MetalM5      ._with_cli_values[["apple-m5"       ]],
         MetalM5Metal4._with_cli_values[["apple-m5-metal4"]],
+        MetalM6      ._with_cli_values[["apple-m6"       ]],
+        MetalM6Metal4._with_cli_values[["apple-m6-metal4"]],
     ]().values
     # fmt: on
 
@@ -171,6 +173,23 @@ comptime _metal_m5_target = CompilationTarget[
 """Target configuration for M5 Metal GPU."""
 
 
+comptime _metal_m6_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
+        `opaque_plugin = `,
+        MetalPlugin_list,
+        `,`,
+        `arch = "apple-m6", `,
+        `features = "+metal3_2,+air2_7_0", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+]()
+"""Target configuration for M6 Metal GPU."""
+
+
 comptime _metal_m1_metal4_target = CompilationTarget[
     _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
@@ -256,6 +275,23 @@ comptime _metal_m5_metal4_target = CompilationTarget[
 """Target configuration for M5 Metal GPU with Metal 4.0."""
 
 
+comptime _metal_m6_metal4_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
+        `opaque_plugin = `,
+        MetalPlugin_list,
+        `,`,
+        `arch = "apple-m6", `,
+        `features = "+metal4_0,+air2_8_0", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+]()
+"""Target configuration for M6 Metal GPU with Metal 4.0."""
+
+
 comptime MetalM1 = TargetAccelerator[
     GPUInfo.from_family(
         family=AppleMetalFamily,
@@ -326,6 +362,20 @@ comptime MetalM5 = TargetAccelerator[
 ]()
 """Apple M5 GPU configuration."""
 
+comptime MetalM6 = TargetAccelerator[
+    GPUInfo.from_family(
+        family=AppleMetalFamily,
+        name="M6",
+        api="metal",
+        arch_name="apple-m6",
+        compute=3.0,  # Metal version 3.0 for M6
+        version="metal_3",
+        sm_count=10,  # Base M5 count; unverified on M6
+    ),
+    _metal_m6_target,
+]()
+"""Apple M6 GPU configuration."""
+
 comptime MetalM1Metal4 = TargetAccelerator[
     GPUInfo.from_family(
         family=AppleMetalFamily,
@@ -395,3 +445,17 @@ comptime MetalM5Metal4 = TargetAccelerator[
     _metal_m5_metal4_target,
 ]()
 """Apple M5 GPU configuration for Metal 4."""
+
+comptime MetalM6Metal4 = TargetAccelerator[
+    GPUInfo.from_family(
+        family=AppleMetalFamily,
+        name="M6 Metal4",
+        api="metal",
+        arch_name="apple-m6-metal4",
+        compute=4.0,  # Metal 4.0, requires macOS 26
+        version="metal_4",
+        sm_count=10,  # Base M5 count; unverified on M6
+    ),
+    _metal_m6_metal4_target,
+]()
+"""Apple M6 GPU configuration for Metal 4."""

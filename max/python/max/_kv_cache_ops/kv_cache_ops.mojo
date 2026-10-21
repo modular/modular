@@ -102,12 +102,14 @@ def mla_dispatch_args_scalar(
     num_heads_obj: PythonObject,
     is_fp8_kv_obj: PythonObject,
     device_context_ptr: PythonObject,
+    sparse_indices_stride_obj: PythonObject,
 ) raises -> PythonObject:
     var batch_size = Int(py=batch_size_obj)
     var max_cache_valid_length = Int(py=max_cache_valid_length_obj)
     var q_max_seq_len = Int(py=q_max_seq_len_obj)
     var num_heads = Int(py=num_heads_obj)
     var is_fp8_kv = Int(py=is_fp8_kv_obj) != 0
+    var sparse_indices_stride = Int(py=sparse_indices_stride_obj)
     var ctx = _get_ctx(device_context_ptr)
 
     if not ctx:
@@ -120,6 +122,8 @@ def mla_dispatch_args_scalar(
         raise Error("q_max_seq_len must be positive.")
     if num_heads < 1:
         raise Error("num_heads must be positive.")
+    if sparse_indices_stride < 0:
+        raise Error("sparse_indices_stride must be non-negative.")
 
     var device_ctx = DeviceContext(ctx.unsafe_value())
 
@@ -130,6 +134,7 @@ def mla_dispatch_args_scalar(
         num_heads,
         is_fp8_kv,
         device_ctx,
+        sparse_indices_stride=sparse_indices_stride,
     )
     var result: Array[Int, 3] = [
         scalars[0],

@@ -23,7 +23,7 @@ live state. Each step therefore runs
    consumed;
 2. **accept**: the driver compares the drafts to the target's samples;
 3. **replay**: advance the live rows by exactly the accepted rows, from the
-   captured inputs, with the kernels the verify ran. A step with no drafts has
+   captured inputs, with the verify's arithmetic. A step with no drafts has
    nothing to reject, so its verify sets the flag and advances the live rows
    itself, and there is nothing to replay (see
    :mod:`..nemotron_h_modulev3.state_rollback`).
@@ -58,8 +58,8 @@ from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import broadcast_per_device
 
 from ..nemotron_h_modulev3.layers.mamba2 import (
+    MambaReplayCapture,
     MambaReplayInputs,
-    MambaReplayRows,
     NemotronHMamba2Mixer,
 )
 from ..nemotron_h_modulev3.model_config import LayerKind
@@ -108,9 +108,8 @@ def _shards(value: Tensor) -> list[TensorValue]:
 class _Verified:
     """What a verify leaves for the replay that follows it in the same step."""
 
-    replays: tuple[MambaReplayRows[Tensor], ...]
+    replays: tuple[MambaReplayCapture, ...]
     window_offsets: TensorValue
-    window_rows: TensorValue
     state: Sequence[RecurrentStateInputsPerDevice[TensorValue, Any]]
 
 
@@ -174,7 +173,6 @@ class NemotronHBlockTarget:
         self._verified = _Verified(
             replays=replays,
             window_offsets=window_offsets,
-            window_rows=window_rows,
             state=state,
         )
         assert outputs.logits is not None
@@ -196,66 +194,46 @@ class NemotronHBlockTarget:
         assert batch.num_accepted is not None
         device0 = batch.device0
         k = batch.num_draft_tokens
-        row_indices, replay_offsets = replay_plan(
-            verified.window_offsets,
-            batch.num_accepted,
-            k,
-            verified.window_rows.shape[0],
-            device0,
+        replay_bounds = replay_plan(
+            verified.window_offsets, batch.num_accepted, k, device0
         )
-        rows_per_device = broadcast_per_device(
-            row_indices, batch.signal_buffers, batch.n_devs
+        bounds_per_device = broadcast_per_device(
+            replay_bounds, batch.signal_buffers, batch.n_devs
         )
-        offsets_per_device = broadcast_per_device(
-            replay_offsets, batch.signal_buffers, batch.n_devs
-        )
-        batch_size = verified.state[0].leaves[0].live_row_ids.shape[1]
         for device in range(batch.n_devs):
             live_conv, live_ssm = verified.state[device].leaves
-            has_initial_state = ops.broadcast_to(
-                ops.constant(
-                    True, DType.bool, device=live_conv.live_row_ids.device
-                ),
-                [batch_size],
-            )
             replay_state_pools(
                 self._captures(verified.replays, device),
                 live_conv.pool,
                 live_ssm.pool,
                 live_conv.live_row_ids,
                 live_ssm.live_row_ids,
-                rows_per_device[device],
-                offsets_per_device[device],
-                has_initial_state,
+                bounds_per_device[device],
             )
 
     def _captures(
         self,
-        replays: tuple[MambaReplayRows[Tensor], ...],
+        replays: tuple[MambaReplayCapture, ...],
         device: int,
     ) -> list[MambaReplayInputs[TensorValue]]:
         """One device's replay inputs of every Mamba layer, in layer order."""
         assert len(replays) == len(self._mambas)
         captures = []
-        for mixer, rows in zip(self._mambas, replays, strict=True):
+        for mixer, capture in zip(self._mambas, replays, strict=True):
             assert isinstance(mixer, NemotronHMamba2Mixer)
-            conv_weight, conv_bias, A, D, dt_bias = (
+            A, dt_bias = (
                 TensorValue(t.local_shards[device])
                 for t in mixer.replay_statics(DType.bfloat16)
             )
             captures.append(
                 MambaReplayInputs(
-                    conv_input=TensorValue(
-                        rows.conv_input.local_shards[device]
+                    projected=TensorValue(
+                        capture.projected.local_shards[device]
                     ),
-                    conv_weight=conv_weight,
-                    conv_bias=conv_bias,
-                    x=TensorValue(rows.x.local_shards[device]),
-                    dt=TensorValue(rows.dt.local_shards[device]),
+                    convolved=TensorValue(
+                        capture.convolved.local_shards[device]
+                    ),
                     A=A,
-                    B=TensorValue(rows.B.local_shards[device]),
-                    C=TensorValue(rows.C.local_shards[device]),
-                    D=D,
                     dt_bias=dt_bias,
                 )
             )

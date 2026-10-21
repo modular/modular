@@ -184,25 +184,25 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_size = Int(m) * Int(n)
 
     var a_host_alloc = alloc(
-        AllocLayout[Scalar[a_type]](count=a_size)
+        AllocLayout[Scalar[a_type]](length=a_size)
     ).into_managed()
     var a_host_ptr: MutPointer[
         Scalar[a_type], origin_of(a_host_alloc)
     ] = a_host_alloc.unsafe_ptr()
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_alloc = alloc(
-        AllocLayout[Scalar[b_type]](count=b_size)
+        AllocLayout[Scalar[b_type]](length=b_size)
     ).into_managed()
     var b_host_ptr: MutPointer[
         Scalar[b_type], origin_of(b_host_alloc)
     ] = b_host_alloc.unsafe_ptr()
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
     var c_host = TileTensor(c_host_alloc.unsafe_ptr(), c_shape)
     var c_host_ref_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
     var c_host_ref_ptr: MutPointer[
         Scalar[c_type], origin_of(c_host_ref_alloc)
@@ -250,14 +250,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var b_scales_total = b_scales_shape.product()
 
     var a_scales_host_alloc = alloc(
-        AllocLayout[Scalar[scales_dtype]](count=a_scales_total)
+        AllocLayout[Scalar[scales_dtype]](length=a_scales_total)
     ).into_managed()
     var a_scales_host_ptr: MutPointer[
         Scalar[scales_dtype], origin_of(a_scales_host_alloc)
     ] = a_scales_host_alloc.unsafe_ptr()
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_host_alloc = alloc(
-        AllocLayout[Scalar[scales_dtype]](count=b_scales_total)
+        AllocLayout[Scalar[scales_dtype]](length=b_scales_total)
     ).into_managed()
     var b_scales_host_ptr: MutPointer[
         Scalar[scales_dtype], origin_of(b_scales_host_alloc)

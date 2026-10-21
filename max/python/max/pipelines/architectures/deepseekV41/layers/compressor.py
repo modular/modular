@@ -17,20 +17,40 @@ attention over long contexts reads fewer KV entries.
 """
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.norm.rms_norm import RMSNorm
 
+_KERNEL_HEAD_DIM = 512
+"""The only latent width the pooling ops support."""
+
+
+def workspace_bytes(compress_ratio: int, head_dim: int = 512) -> int:
+    """Returns the pooling op's scratch bytes per token row.
+
+    The group's KV and score rows in float32, the bf16 latent staging, four
+    int32 group maps and a presence flag per group slot.
+    """
+    return (
+        2 * compress_ratio * head_dim * 4
+        + head_dim * 2
+        + 4 * 4
+        + (compress_ratio)
+    )
+
 
 class DeepseekV41Compressor(Module):
-    """Pools packed token rows and returns masked pre-RoPE BF16 latents.
+    """Pools packed token rows and returns pre-RoPE BF16 latents.
 
-    Holds no state across calls: the caller keeps each request's last raw
-    row between chunks (the carry) and must reject, before launch, a request
-    that starts at an odd position without its exact predecessor row. Active
-    rows must be consecutive within each request, with padding only in the
-    packed tail.
+    A group of ``compress_ratio`` consecutive tokens of a request pools into
+    one latent, written on the row of the token closing the group. At ratio
+    two a pair can straddle forwards: every token's ``raw`` row is saved to a
+    paged state leaf, and a request starting at an odd position pools its
+    first pair with the row saved at the position before it. Nothing checks
+    that row's origin, so a request may resume at an odd position only when
+    the same request wrote that row.
 
     Args:
         compress_ratio: One for plain normalization, or two for gated pairs.
@@ -40,11 +60,11 @@ class DeepseekV41Compressor(Module):
             omit both to supply ``raw`` directly.
         device: Device of the projection weights; paired with
             ``hidden_size``.
-        head_dim: Latent width.
+        head_dim: Latent width; the pooling ops support only 512.
 
     Raises:
-        ValueError: If ``compress_ratio`` is not 1 or 2, or only one of
-            ``hidden_size`` and ``device`` is given.
+        ValueError: If ``compress_ratio`` is not 1 or 2, ``head_dim`` is not
+            512, or only one of ``hidden_size`` and ``device`` is given.
     """
 
     def __init__(
@@ -59,10 +79,16 @@ class DeepseekV41Compressor(Module):
         super().__init__()
         if compress_ratio not in (1, 2):
             raise ValueError("CSA2 compression ratio must be 1 or 2")
+        if head_dim != _KERNEL_HEAD_DIM:
+            raise ValueError(
+                f"CSA2 compressor head_dim must be {_KERNEL_HEAD_DIM}, got"
+                f" {head_dim}"
+            )
         if (hidden_size is None) != (device is None):
             raise ValueError("hidden_size and device must be given together")
         self.compress_ratio = compress_ratio
         self.head_dim = head_dim
+        self.eps = eps
         self.norm = RMSNorm(head_dim, DType.float32, eps)
         if hidden_size is not None:
             assert device is not None
@@ -98,10 +124,10 @@ class DeepseekV41Compressor(Module):
         raw: TensorValue,
         positions: TensorValue,
         offsets: TensorValue,
-        active: TensorValue,
-        prior_row: TensorValue | None = None,
-        prior_valid: TensorValue | None = None,
-    ) -> tuple[TensorValue, TensorValue]:
+        state: PagedCacheValues | None = None,
+        slots: TensorValue | None = None,
+        layer_idx: TensorValue | None = None,
+    ) -> TensorValue:
         """Normalizes raw rows, pooling complete pairs when the ratio is two.
 
         Ratio two pools the pair ``(2j, 2j + 1)`` per channel as
@@ -113,20 +139,22 @@ class DeepseekV41Compressor(Module):
         Args:
             raw: FP32 projections, ``[T, head_dim * compress_ratio]``: the
                 ``wkv`` row, then (ratio two) the ``wgate`` score row.
-            positions: Absolute int64 token positions, ``[T]``.
+            positions: Absolute token positions, ``[T]``; each request's rows
+                are consecutive.
             offsets: Packed uint32 request boundaries, ``[B + 1]``.
-            active: Boolean real-row mask, ``[T]``.
-            prior_row: Ratio-two FP32 predecessors, ``[B, 2 * head_dim]``:
-                each request's raw row at position ``start - 1``.
-            prior_valid: Boolean exact-predecessor validity, ``[B]``.
+            state: Ratio two only: the float32 state leaf, one
+                ``2 * head_dim`` row per token slot.
+            slots: Ratio two only: ``[T]`` int32 state slot of each row,
+                ``block * page_size + position % page_size``.
+            layer_idx: Ratio two only: host uint32 index of this layer in
+                ``state``.
 
         Returns:
-            ``[T, head_dim]`` BF16 latent rows (zero where invalid) and their
-            ``[T]`` boolean publication mask. A missing carry suppresses
-            publication but does not replace the caller's pre-launch check.
+            ``[T, head_dim]`` BF16 latent rows, zero on rows that close no
+            group.
 
         Raises:
-            ValueError: On wrong input dtypes/widths or carry arguments that
+            ValueError: On wrong input dtypes/widths or state arguments that
                 do not match the ratio.
         """
         if (
@@ -136,70 +164,56 @@ class DeepseekV41Compressor(Module):
             raise ValueError(
                 "CSA2 raw projections have the wrong dtype or width"
             )
-        if positions.dtype != DType.int64 or offsets.dtype != DType.uint32:
-            raise ValueError("CSA2 positions/offsets must be int64/uint32")
-        if active.dtype != DType.bool:
-            raise ValueError("CSA2 active mask must be boolean")
-        valid = active
-        pooled = raw
+        if offsets.dtype != DType.uint32:
+            raise ValueError("CSA2 offsets must be uint32")
+        given = [x is not None for x in (state, slots, layer_idx)]
+        if any(given) != (self.compress_ratio == 2) or (
+            any(given) and not all(given)
+        ):
+            raise ValueError(
+                "Ratio two requires the state leaf, slots and layer index;"
+                " ratio one takes none"
+            )
+        device = raw.device
+        rows = raw.shape[0]
+        out_types = [
+            TensorType(DType.bfloat16, [rows, self.head_dim], device),
+            TensorType(
+                DType.uint8,
+                [rows * workspace_bytes(self.compress_ratio, self.head_dim)],
+                device,
+            ),
+        ]
+        values = [
+            raw,
+            ops.cast(positions, DType.int32),
+            offsets,
+        ]
+        weight = self.norm.weight.cast(DType.float32).to(device)
         if self.compress_ratio == 1:
-            if prior_row is not None or prior_valid is not None:
-                raise ValueError("Ratio one has no carry")
-        else:
-            if prior_row is None or prior_valid is None:
-                raise ValueError("Ratio two requires carry rows and validity")
-            device = raw.device
-            rows = ops.range(0, raw.shape[0], dtype=DType.int64, device=device)
-            starts = offsets[:-1].cast(DType.int64)
-            # TODO: Replace the O(T*B) request lookup with a GPU search for
-            # production-sized packed batches.
-            request = ops.squeeze(
-                ops.sum(
-                    (ops.unsqueeze(rows, 1) >= ops.unsqueeze(starts, 0)).cast(
-                        DType.int64
-                    ),
-                    axis=1,
-                ),
-                1,
-            )
-            real_end = offsets[-1].cast(DType.int64)
-            request = ops.where(active & (rows < real_end), request, 0)
-            width = self.head_dim
-            zero_row = ops.constant(
-                [[0.0] * (2 * width)], DType.float32, device=device
-            )
-            zero_index = ops.constant([0], DType.int64, device=device)
-            false = ops.constant([False], DType.bool, device=device)
-            # Sentinel entries make empty requests and inactive tail rows safe
-            # before either gather, including a bucket with B == 0.
-            start = ops.gather(ops.concat([zero_index, starts]), request, 0)
-            first = rows == start
-            carry = ops.gather(ops.concat([zero_row, prior_row]), request, 0)
-            carry_valid = ops.gather(
-                ops.concat([false, prior_valid]), request, 0
-            )
-            previous = ops.gather(ops.concat([zero_row, raw]), rows, 0)
-            previous = ops.where(ops.unsqueeze(first, 1), carry, previous)
-            previous_position = ops.gather(
-                ops.concat([zero_index, positions]), rows, 0
-            )
-            predecessor_valid = ops.where(
-                first, carry_valid, previous_position == positions - 1
-            )
-            valid = (
-                active
-                & (rows < real_end)
-                & (positions % 2 == 1)
-                & predecessor_valid
-            )
-            kv0, score0 = previous[:, :width], previous[:, width:]
-            kv1, score1 = raw[:, :width], raw[:, width:]
-            peak = ops.max(score0, score1)
-            w0, w1 = ops.exp(score0 - peak), ops.exp(score1 - peak)
-            pooled = (kv0 * w0 + kv1 * w1) / (w0 + w1)
-        pooled = ops.where(ops.unsqueeze(valid, 1), pooled, 0.0)
-        latent = self.norm(pooled).cast(DType.bfloat16)
-        return ops.where(ops.unsqueeze(valid, 1), latent, 0.0), valid
+            return ops.custom(
+                "mo.csa.compress",
+                device=device,
+                values=[*values, weight],
+                out_types=out_types,
+                parameters={"epsilon": self.eps},
+            )[0].tensor
+        assert state is not None and slots is not None
+        assert layer_idx is not None
+        return ops.inplace_custom(
+            "mo.csa.compress.paged",
+            device=device,
+            values=[
+                *values,
+                ops.cast(slots, DType.int32),
+                weight,
+                state.kv_blocks,
+                state.page_stride,
+                layer_idx,
+            ],
+            out_types=out_types,
+            parameters={"epsilon": self.eps},
+        )[0].tensor
 
 
 def compressed_rope_positions(

@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import functools
 import itertools
 import math
 from collections.abc import Mapping
@@ -106,23 +107,42 @@ def _int16_taps(
     return indices, int_weights.astype(np.int32), precision
 
 
+# A size pair's taps are ~30 small NumPy calls, each a GIL handoff, and
+# callers only read the arrays, so images of the same size share them. A table
+# holds out_size * ksize <= 9 * max(in_size, out_size) taps, so capping both
+# sides keeps 64 entries under ~28 MB; a crafted wide image is rebuilt per call.
+_cached_int16_taps = functools.lru_cache(maxsize=64)(_int16_taps)
+_MAX_CACHED_SIZE = 4096
+
+
+# Caps one gather of taps; a 512-pixel pass still fits in a single block.
+_TAP_BLOCK_BYTES = 1 << 23
+
+
 def _resample_rows(
     pixels: npt.NDArray[np.uint8], out_size: int
 ) -> npt.NDArray[np.uint8]:
-    indices, weights, precision = _int16_taps(pixels.shape[0], out_size)
-    weights = weights[:, :, None, None]
-    out = np.empty((out_size, *pixels.shape[1:]), dtype=np.uint8)
-    # Column blocks keep the int32 accumulator in cache; unblocked, a
-    # 4000-pixel pass is ~8x slower.
-    for c in range(0, pixels.shape[1], 64):
-        block = pixels[:, c : c + 64]
-        acc = np.full(
-            (out_size, *block.shape[1:]), 1 << (precision - 1), dtype=np.int32
+    # Each NumPy call drops and retakes the GIL, and under a busy API process
+    # every retake waits; one einsum per block keeps that to a few calls
+    # per image instead of one per tap and column block.
+    in_size = pixels.shape[0]
+    taps = (
+        _cached_int16_taps
+        if max(in_size, out_size) <= _MAX_CACHED_SIZE
+        else _int16_taps
+    )
+    indices, weights, precision = taps(in_size, out_size)
+    flat = pixels.reshape(pixels.shape[0], -1)
+    out = np.empty((out_size, flat.shape[1]), dtype=np.uint8)
+    step = max(1, _TAP_BLOCK_BYTES // indices.shape[1] // flat.shape[1])
+    for r in range(0, out_size, step):
+        rows = slice(r, r + step)
+        acc = np.einsum(
+            "ok,okc->oc", weights[rows], flat[indices[rows]], dtype=np.int32
         )
-        for k in range(indices.shape[1]):
-            acc += block[indices[:, k]] * weights[:, k]
-        out[:, c : c + 64] = np.clip(acc >> precision, 0, 255)
-    return out
+        acc += 1 << (precision - 1)
+        np.clip(acc >> precision, 0, 255, out=out[rows], casting="unsafe")
+    return out.reshape(out_size, *pixels.shape[1:])
 
 
 def lanczos_resize(

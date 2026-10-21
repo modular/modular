@@ -13,10 +13,7 @@
 
 from std.os import abort
 from std.pathlib import Path
-from std.sys import (
-    has_accelerator,
-    size_of,
-)
+from std.sys import size_of
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import CStringSpan, _Global, OwnedDLHandle, _try_find_dylib
 from std.sys.defines import get_defined_int
@@ -429,15 +426,25 @@ struct _RangePop:
 # ===-----------------------------------------------------------------------===#
 
 
+def _has_annotation_library() -> Bool:
+    # NVTX and roctx are the only backends here. Any other accelerator has no
+    # range API to call, so annotation stays off rather than falling into the
+    # roctx branch and failing its AMD-only assertions at compile time.
+    return (
+        default_accelerator().is_nvidia_gpu()
+        or default_accelerator().is_amd_gpu()
+    )
+
+
 def _is_enabled_details() -> Bool:
     return (
-        has_accelerator()
+        _has_annotation_library()
         and get_defined_int["MODULAR_ENABLE_GPU_PROFILING_DETAILED", 0]() == 1
     )
 
 
 def _is_enabled() -> Bool:
-    return has_accelerator() and (
+    return _has_annotation_library() and (
         get_defined_int["MODULAR_ENABLE_GPU_PROFILING", 0]() == 1
         or _is_enabled_details()
     )

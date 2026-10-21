@@ -16,6 +16,7 @@ from std.random import random_float64
 
 from max.gpu.host import DeviceContext
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 
 from linalg.gemv import gemm_mma_cpasync
 import linalg.matmul.vendor.blas as vendor_blas
@@ -63,10 +64,10 @@ def run_gemm_mma_cpasync[
     var out_size = gemm_m * gemm_n
 
     # Host buffers.
-    var act_host = alloc[Scalar[a_type]](act_size)
-    var weight_host = alloc[Scalar[b_type]](weight_size)
-    var out_host = alloc[Scalar[c_type]](out_size)
-    var ref_host = alloc[Scalar[c_type]](out_size)
+    var act_host = unsafe_alloc[Scalar[a_type]](act_size)
+    var weight_host = unsafe_alloc[Scalar[b_type]](weight_size)
+    var out_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var ref_host = unsafe_alloc[Scalar[c_type]](out_size)
 
     for i in range(act_size):
         act_host[i] = random_float64(min=-0.5, max=0.5).cast[a_type]()
@@ -127,8 +128,8 @@ def run_gemm_mma_cpasync[
     ctx.synchronize()
 
     # Compare in f32.
-    var out_f32 = alloc[Float32](out_size)
-    var ref_f32 = alloc[Float32](out_size)
+    var out_f32 = unsafe_alloc[Float32](out_size)
+    var ref_f32 = unsafe_alloc[Float32](out_size)
     for i in range(out_size):
         out_f32[i] = out_host[i].cast[.float32]()
         ref_f32[i] = ref_host[i].cast[.float32]()
@@ -173,11 +174,11 @@ def run_gemm_mma_cpasync_residual[
     var weight_size = gemm_n * gemm_k
     var out_size = gemm_m * gemm_n
 
-    var act_host = alloc[Scalar[a_type]](act_size)
-    var weight_host = alloc[Scalar[b_type]](weight_size)
-    var residual_host = alloc[Scalar[c_type]](out_size)
-    var out_host = alloc[Scalar[c_type]](out_size)
-    var ref_host = alloc[Scalar[c_type]](out_size)
+    var act_host = unsafe_alloc[Scalar[a_type]](act_size)
+    var weight_host = unsafe_alloc[Scalar[b_type]](weight_size)
+    var residual_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var out_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var ref_host = unsafe_alloc[Scalar[c_type]](out_size)
 
     for i in range(act_size):
         act_host[i] = random_float64(min=-0.5, max=0.5).cast[a_type]()
@@ -245,8 +246,8 @@ def run_gemm_mma_cpasync_residual[
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
-    var out_f32 = alloc[Float32](out_size)
-    var ref_f32 = alloc[Float32](out_size)
+    var out_f32 = unsafe_alloc[Float32](out_size)
+    var ref_f32 = unsafe_alloc[Float32](out_size)
     for i in range(out_size):
         out_f32[i] = out_host[i].cast[.float32]()
         ref_f32[i] = (

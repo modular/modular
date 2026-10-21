@@ -1394,16 +1394,28 @@ class Buffer:
         """
 
     @overload
-    def to(self, device: Device) -> Buffer:
+    def to(self, device: Device, *, after: DeviceEvent | None = None) -> Buffer:
         """
         Returns a buffer that's guaranteed to be on the given device.
 
         The buffer is only copied if the requested device is different from the
-        device upon which the buffer is already resident.
+        device upon which the buffer is already resident. A buffer on another
+        queue of the same device becomes a view on the default queue, ordered
+        after ``after``.
+
+        Args:
+            device (Device): The device to move the buffer to.
+            after (DeviceEvent, optional): Recorded on the buffer's current
+                queue. Required when the result is a view.
+
+        Raises:
+            ValueError: If the result is a view and ``after`` is not given.
         """
 
     @overload
-    def to(self, devices: Sequence[Device]) -> list[Buffer]:
+    def to(
+        self, devices: Sequence[Device], *, after: DeviceEvent | None = None
+    ) -> list[Buffer]:
         """
         Returns a list of buffers that are guaranteed to be on the given devices.
 
@@ -1446,6 +1458,23 @@ class Buffer:
         the new dtype. A rank-0 buffer has no axis to resize, so it keeps shape
         ``()`` and only accepts a dtype of the same size. A ``ValueError`` is raised
         when no shape can be deduced.
+        """
+
+    def memset(self, value: int) -> None:
+        """
+        Fills the buffer's bytes in place with a repeated byte value.
+
+        The fill is enqueued on the buffer's device stream. Contiguous slices
+        are supported and only their bytes are changed. The value is a byte
+        pattern, not a typed element value; zero clears every byte.
+
+        Args:
+            value: The byte value, between 0 and 255 inclusive.
+
+        Raises:
+            ValueError: If the buffer is not contiguous, is a sub-byte slice
+                that does not start and end on whole bytes, or the value is
+                outside the byte range.
         """
 
     @staticmethod

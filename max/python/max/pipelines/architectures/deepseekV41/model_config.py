@@ -26,7 +26,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -65,12 +65,13 @@ def _env_switch(name: str) -> bool:
 
 
 def woa_mxfp8_enabled() -> bool:
-    """Whether the trunk's ``attn.wo_a`` runs as an MXFP8 grouped matmul.
+    """Whether ``attn.wo_a`` runs as an MXFP8 grouped matmul.
 
-    On (default): the FP8 weight and E8M0 block scale load as-is and the
-    input is quantized to MXFP8. Off (``MAX_DSV41_WOA_MXFP8=0``): the weight
-    is dequantized to bf16 on the host. DSpark's ``mtp.*`` stages always use
-    bf16.
+    Covers the trunk and DSpark's ``mtp.*`` stages. On (default): the FP8
+    weight loads as-is, its E8M0 block scale is row-expanded and
+    tile-interleaved on the host, and the input is quantized to MXFP8. Off
+    (``MAX_DSV41_WOA_MXFP8=0``): the weight is dequantized to bf16 on the
+    host.
     """
     return _env_switch(WOA_MXFP8_ENV)
 
@@ -628,6 +629,18 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             **cls.resolve_text_fields(text_config),
             **cls.resolve_quantization_fields(config),
         )
+
+
+def position_capacity(config: DeepseekV41Config) -> int:
+    """Returns the exclusive bound on any position a forward step indexes.
+
+    Speculative decoding can place a request's positions past
+    ``max_seq_len``, up to the KV pool's speculative slack, so every
+    position-indexed table (the rotary tables and the indexer's per-position
+    scratch) is sized to ``max_seq_len`` plus that slack. Without speculative
+    decoding the slack is zero.
+    """
+    return config.max_seq_len + spec_decode_cache_slack(config.kv_params)
 
 
 MAX_IMAGES_PER_REQUEST = "max_images_per_request"

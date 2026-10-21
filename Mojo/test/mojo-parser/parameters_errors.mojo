@@ -546,7 +546,8 @@ def unused_init_self_param():
 # expected-note @below {{candidate not viable: missing required argument: 'copy'}}
 # expected-note @below {{def __init__(out self, *, copy: Self)    # note - generated function}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
-    # expected-note @below {{candidate not viable: return type 'SimpleSIMD[Int(50), Int(1)]' parameter 'size' value 'Int(1)' doesn't match expected value 'Int(4)'}}
+    # expected-note @below {{candidate not viable: violated constraint}}
+    # expected-note @below {{constraint declared here evaluated to False, expected 'identical(size, Int(1))': Self type 'SimpleSIMD[arg1, size]' is not identical to the declared type 'SimpleSIMD[arg1, Int(1)]'}}
     def __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 
 def dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):

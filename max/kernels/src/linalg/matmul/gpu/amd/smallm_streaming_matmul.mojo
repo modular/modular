@@ -91,7 +91,7 @@ def _smallm_preshuffle_b_kernel[
         + i * (WARP_SIZE * 8)
         + l * 8
     )
-    dst.store(dst_off, src.load[width=8](col * k_static + k))
+    dst.unsafe_store(dst_off, src.unsafe_load[width=8](col * k_static + k))
 
 
 @__name(t"smallm_shuffle_a_{a_type}_t{m_tiles}_w{warps_per_block}_k{k_static}")
@@ -142,7 +142,7 @@ def _smallm_shuffle_a_kernel[
     )
     var src_row = min(row, Int(m) - 1)
     var a_flat = a.reshape(row_major(Int(m) * k_static))
-    dst.store(
+    dst.unsafe_store(
         dst_off,
         a_flat.load[width=8, alignment=align_of[a_type](), invariant=False](
             Coord(src_row * k_static + k)
@@ -217,7 +217,7 @@ def _gemm_smallm_streaming_kernel[
     var a_frags = Array[SIMD[a_type, 8], iters if a_in_regs else 1](fill=0)
     comptime if a_in_regs:
         comptime for i in range(iters):
-            a_frags[i] = a_base.load[width=8](i * WARP_SIZE * 8)
+            a_frags[i] = a_base.unsafe_load[width=8](i * WARP_SIZE * 8)
 
     # Pad each lane's reduce slot by one 4-word vector so the per-lane
     # stride is an odd multiple of 4 words: every ds_read_b128 phase of the
@@ -243,12 +243,12 @@ def _gemm_smallm_streaming_kernel[
 
             # Depth-2 B pipeline: the next chunk's load issues before this
             # chunk's mfma work. Deeper pipelining measures slower here.
-            var b_next = b_ptr.load[width=8, non_temporal=True](0)
+            var b_next = b_ptr.unsafe_load[width=8, non_temporal=True](0)
             comptime if a_in_regs:
                 comptime for i in range(iters):
                     var b_cur = b_next
                     comptime if i + 1 < iters:
-                        b_next = b_ptr.load[width=8, non_temporal=True](
+                        b_next = b_ptr.unsafe_load[width=8, non_temporal=True](
                             (i + 1) * WARP_SIZE * 8
                         )
                     mma(acc[0], a_frags[i], b_cur, acc[0])
@@ -256,11 +256,11 @@ def _gemm_smallm_streaming_kernel[
                 comptime for i in range(iters):
                     var b_cur = b_next
                     comptime if i + 1 < iters:
-                        b_next = b_ptr.load[width=8, non_temporal=True](
+                        b_next = b_ptr.unsafe_load[width=8, non_temporal=True](
                             (i + 1) * WARP_SIZE * 8
                         )
                     comptime for t in range(m_tiles):
-                        var a_frag = a_base.load[width=8](
+                        var a_frag = a_base.unsafe_load[width=8](
                             (t * warps_per_block) * region + i * WARP_SIZE * 8
                         )
                         mma(acc[t], a_frag, b_cur, acc[t])
@@ -268,7 +268,7 @@ def _gemm_smallm_streaming_kernel[
             # Reduce the warps' K-partials: fragments to LDS, warp 0 sums.
             if warp_in_block > 0:
                 comptime for t in range(m_tiles):
-                    c_smem.store(
+                    c_smem.unsafe_store(
                         (warp_in_block * WARP_SIZE + lane) * lane_slot + t * 4,
                         acc[t],
                     )
@@ -277,7 +277,7 @@ def _gemm_smallm_streaming_kernel[
             if warp_in_block == 0:
                 comptime for w in range(1, warps_per_block):
                     comptime for t in range(m_tiles):
-                        acc[t] += c_smem.load[width=4](
+                        acc[t] += c_smem.unsafe_load[width=4](
                             (w * WARP_SIZE + lane) * lane_slot + t * 4
                         )
 
@@ -307,19 +307,21 @@ def _gemm_smallm_streaming_kernel[
         # feeds all col_tiles column tiles.
         var b_next = Array[SIMD[b_type, 8], col_tiles](fill=0)
         comptime for u in range(col_tiles):
-            b_next[u] = b_shuffled.load[width=8, non_temporal=True](b_offs[u])
+            b_next[u] = b_shuffled.unsafe_load[width=8, non_temporal=True](
+                b_offs[u]
+            )
         comptime for i in range(iters):
             var a_frag = Array[SIMD[a_type, 8], m_tiles](fill=0)
             comptime for t in range(m_tiles):
-                a_frag[t] = a_base.load[width=8](
+                a_frag[t] = a_base.unsafe_load[width=8](
                     (t * warps_per_block) * region + i * WARP_SIZE * 8
                 )
             comptime for u in range(col_tiles):
                 var b_cur = b_next[u]
                 comptime if i + 1 < iters:
-                    b_next[u] = b_shuffled.load[width=8, non_temporal=True](
-                        b_offs[u] + (i + 1) * WARP_SIZE * 8
-                    )
+                    b_next[u] = b_shuffled.unsafe_load[
+                        width=8, non_temporal=True
+                    ](b_offs[u] + (i + 1) * WARP_SIZE * 8)
                 comptime for t in range(m_tiles):
                     mma(
                         acc[u * m_tiles + t],
@@ -331,7 +333,7 @@ def _gemm_smallm_streaming_kernel[
         # Reduce the warps' K-partials: fragments to LDS, then warp 0 sums.
         if warp_in_block > 0:
             comptime for ut in range(m_tiles * col_tiles):
-                c_smem.store(
+                c_smem.unsafe_store(
                     (
                         (warp_in_block * WARP_SIZE + lane) * m_tiles * col_tiles
                         + ut
@@ -344,7 +346,7 @@ def _gemm_smallm_streaming_kernel[
         if warp_in_block == 0:
             comptime for w in range(1, warps_per_block):
                 comptime for ut in range(m_tiles * col_tiles):
-                    acc[ut] += c_smem.load[width=4](
+                    acc[ut] += c_smem.unsafe_load[width=4](
                         ((w * WARP_SIZE + lane) * m_tiles * col_tiles + ut) * 4
                     )
 

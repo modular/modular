@@ -861,7 +861,9 @@ struct MLAPrefillSparse[
                             smem_offset * (1 - pad_row)
                             + (Self.SMemType.O_SIZE - 2) * pad_row
                         )
-                        (o_ptr.unsafe_offset(store_off)).store[width=2](v)
+                        (o_ptr.unsafe_offset(store_off)).unsafe_store[width=2](
+                            v
+                        )
 
             named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
             if warp_idx == 0:

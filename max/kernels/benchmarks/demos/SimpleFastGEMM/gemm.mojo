@@ -186,27 +186,27 @@ def main() raises:
 
     var a_alloc = alloc(
         AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
-            count=m * k
+            length=m * k
         )
     ).into_managed()
     var b_alloc = alloc(
         AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
-            count=k * n
+            length=k * n
         )
     ).into_managed()
     var b2_alloc = alloc(
         AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
-            count=k * n
+            length=k * n
         )
     ).into_managed()
     var c_alloc = alloc(
         AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
-            count=m * n
+            length=m * n
         )
     ).into_managed()
     var c2_alloc = alloc(
         AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
-            count=m * n
+            length=m * n
         )
     ).into_managed()
 

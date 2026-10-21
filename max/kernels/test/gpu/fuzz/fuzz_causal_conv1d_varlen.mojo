@@ -24,6 +24,7 @@
 # support.
 
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
@@ -176,33 +177,33 @@ def run_one_case(
         slots[j] = tmp
 
     var proj_row = spec.x_off + dim + spec.pad
-    var proj_h = alloc[Scalar[dtype]](total * proj_row)
-    var weight_h = alloc[Scalar[dtype]](dim * WIDTH)
-    var bias_h = alloc[Scalar[dtype]](dim)
-    var his_h = alloc[Scalar[.bool]](batch)
-    var qsl_h = alloc[Int32](batch + 1)
-    var slot_h = alloc[UInt32](batch)
-    var pool_h = alloc[Scalar[dtype]](pool_slots * dim * state_len)
-    var pool_ref_h = alloc[Scalar[dtype]](pool_slots * dim * state_len)
-    var y_ref_h = alloc[Scalar[dtype]](total * dim)
-    var y_gpu_h = alloc[Scalar[dtype]](total * dim)
+    var proj_h = unsafe_alloc[Scalar[dtype]](total * proj_row)
+    var weight_h = unsafe_alloc[Scalar[dtype]](dim * WIDTH)
+    var bias_h = unsafe_alloc[Scalar[dtype]](dim)
+    var his_h = unsafe_alloc[Scalar[.bool]](batch)
+    var qsl_h = unsafe_alloc[Int32](batch + 1)
+    var slot_h = unsafe_alloc[UInt32](batch)
+    var pool_h = unsafe_alloc[Scalar[dtype]](pool_slots * dim * state_len)
+    var pool_ref_h = unsafe_alloc[Scalar[dtype]](pool_slots * dim * state_len)
+    var y_ref_h = unsafe_alloc[Scalar[dtype]](total * dim)
+    var y_gpu_h = unsafe_alloc[Scalar[dtype]](total * dim)
 
     rand(proj_h, total * proj_row)
     rand(weight_h, dim * WIDTH)
     rand(bias_h, dim)
     rand(pool_h, pool_slots * dim * state_len)
     for i in range(pool_slots * dim * state_len):
-        pool_ref_h.store(i, pool_h.load(i))
+        pool_ref_h.unsafe_store(i, pool_h.unsafe_load(i))
     var cum = 0
-    qsl_h.store(0, Int32(0))
+    qsl_h.unsafe_store(0, Int32(0))
     for b in range(batch):
         cum += lens[b]
-        qsl_h.store(b + 1, Int32(cum))
-        slot_h.store(b, UInt32(slots[b]))
+        qsl_h.unsafe_store(b + 1, Int32(cum))
+        slot_h.unsafe_store(b, UInt32(slots[b]))
         var has_init = spec.init_mode == 1 or (
             spec.init_mode == 2 and random_ui64(0, 1) == 1
         )
-        his_h.store(b, Scalar[.bool](has_init))
+        his_h.unsafe_store(b, Scalar[.bool](has_init))
 
     # Mode 0 passes an empty has_initial_state tensor, which the kernels read
     # as "no sequence has an initial state".
@@ -319,16 +320,16 @@ def run_one_case(
         ):
             raise Error("causal_conv1d_varlen state pool mismatch")
 
-    proj_h.free()
-    weight_h.free()
-    bias_h.free()
-    his_h.free()
-    qsl_h.free()
-    slot_h.free()
-    pool_h.free()
-    pool_ref_h.free()
-    y_ref_h.free()
-    y_gpu_h.free()
+    proj_h.unsafe_free()
+    weight_h.unsafe_free()
+    bias_h.unsafe_free()
+    his_h.unsafe_free()
+    qsl_h.unsafe_free()
+    slot_h.unsafe_free()
+    pool_h.unsafe_free()
+    pool_ref_h.unsafe_free()
+    y_ref_h.unsafe_free()
+    y_gpu_h.unsafe_free()
     _ = proj_d
     _ = x_d
     _ = weight_d

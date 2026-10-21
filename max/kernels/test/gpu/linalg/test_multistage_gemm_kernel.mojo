@@ -216,6 +216,9 @@ def multistage_gemm_run[
         type_of(b_tensor).LayoutType,
         BLOCK_DIM,
         transpose_b,
+        c_engine=type_of(c_ref_tensor).Engine,
+        a_engine=type_of(a_tensor).Engine,
+        b_engine=type_of(b_tensor).Engine,
     ]
     ctx.enqueue_function[naive_kernel](
         c_ref_tensor,

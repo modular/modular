@@ -18,8 +18,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 from max import tree
-from max.driver import Buffer
+from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.engine import Model
 from max.nn.kv_cache import KVCacheInputs
@@ -255,8 +256,26 @@ class InklingBatchProcessor(
         ]
         assert self._vision_model is not None
         device0 = self.runtime.devices[0]
-        embeddings = self._vision_model.execute(
-            Buffer.from_numpy(np.concatenate(blocks)).to(device0)
-        )[0]
+        pixels = _pinned_copy(blocks, device0)
+        embeddings = self._vision_model.execute(pixels)[0]
         assert isinstance(embeddings, Buffer)
-        return embeddings, Buffer.from_numpy(indices).to(device0)
+        return embeddings, _pinned_copy([indices], device0)
+
+
+def _pinned_copy(
+    arrays: Sequence[npt.NDArray[np.generic]], device: Device
+) -> Buffer:
+    """Stacks arrays along their first axis into a copy on device.
+
+    The stack is written straight into pinned host memory, so the copy to the
+    device is asynchronous. The host buffer is fresh each call, so a later
+    step never overwrites one an earlier copy is still reading.
+    """
+    host = Buffer(
+        shape=(sum(len(array) for array in arrays), *arrays[0].shape[1:]),
+        dtype=DType.from_numpy(arrays[0].dtype),
+        device=device,
+        usage=Usage.STAGING | Usage.UNTRACKED,
+    )
+    np.concatenate(arrays, out=host.to_numpy())
+    return host.to(device)

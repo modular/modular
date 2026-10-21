@@ -54,6 +54,19 @@ from max.nn.quant_config import QuantFormat
 from .transforms import HadamardTransform
 
 
+def indexer_selection_width(
+    index_topk: int, index_kpool: int, always_select_tail: bool
+) -> int:
+    """Returns the width of one token's selected rows.
+
+    ``index_topk + index_kpool - 1`` when the k-pool tail is always selected,
+    ``index_topk`` otherwise.
+    """
+    if not always_select_tail or index_kpool == 1:
+        return index_topk
+    return index_topk + index_kpool - 1
+
+
 def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
     """Returns ``[0, x[0], x[0] + x[1], ...]``, one entry longer than ``x``."""
     zero = ops.constant(0, x.dtype, device=x.device).reshape([1])
@@ -679,7 +692,10 @@ class Indexer(Module, Shardable):
                 of the top k Keys selected by the Indexer for MLA to attend to
                 (``None`` when ``write_logical`` is False), and their physical
                 rows in ``mla_collection`` (``None`` without one, or when
-                pooled).
+                pooled). For an NVFP4 ``mla_collection``, whose scales are
+                paged apart from its values, each row is ``2 * index_topk``
+                wide: the physical rows, then the selections' rows in the
+                scale pool.
         """
         if not write_logical and (
             mla_collection is None or self.index_kpool > 1
@@ -816,9 +832,9 @@ class Indexer(Module, Shardable):
     def selection_width(self) -> int:
         """Output width: ``index_topk + index_kpool - 1`` = 2051 with the
         tail, ``index_topk`` without."""
-        if not self.always_select_tail or self.index_kpool == 1:
-            return self.index_topk
-        return self.index_topk + self.index_kpool - 1
+        return indexer_selection_width(
+            self.index_topk, self.index_kpool, self.always_select_tail
+        )
 
     @property
     def pooled_cache_head_dim(self) -> int:

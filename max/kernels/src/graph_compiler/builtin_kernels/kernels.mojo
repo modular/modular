@@ -27,7 +27,6 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from max.algorithm import mean
 from comm.allreduce import allreduce
 from internal_utils.fp8_utils import cast_saturating
 
@@ -137,6 +136,7 @@ from state_space.gated_group_rmsnorm import (
     gated_group_rmsnorm_cpu,
     gated_group_rmsnorm_gpu,
 )
+from state_space.mamba2_replay_fold import mamba2_replay_fold_launch
 from state_space.mamba2_ssd_chunked import (
     mamba2_ssd_chunked_fwd_inplace_gpu,
     use_chunked_ssd,
@@ -184,6 +184,7 @@ comptime logger = Logger()
 
 from std.utils import IndexList
 from std.utils.index import Index
+from std.utils.static_tuple import StaticTuple
 from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
 from nn.spatial_merge import spatial_merge
 from nn.tpool_patch_merger import (
@@ -276,7 +277,7 @@ struct Range:
         stop: Scalar[dtype],
         step: Scalar[dtype],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def func[
             width: Int, element_alignment: Int
@@ -331,7 +332,7 @@ struct Copy:
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def func[
             width: Int, element_alignment: Int
@@ -361,7 +362,7 @@ struct NanCheckCountOp:
         inf_count_out: OutputTensor[dtype=.int32, rank=1, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         from .nan_check import nan_check_count
 
         nan_check_count[dtype, rank, target](
@@ -386,7 +387,7 @@ struct NanCheckRaiseOp:
         nan_count: InputTensor[dtype=.int32, rank=1, ...],
         inf_count: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         from .nan_check import nan_check_raise
 
         nan_check_raise[label, type_str](nan_count, inf_count)
@@ -819,7 +820,7 @@ struct RepeatInterleave:
 
 @extensibility.register_shape_function("repeat_interleave")
 def repeat_interleave_kernel_shape(
-    input: Some[TileTensorable], repeats: Some[TileTensorable], axis: Scalar
+    input: Some[Tensor], repeats: Some[TileTensorable], axis: Scalar
 ) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `repeat_interleave` graph op.
 
@@ -837,13 +838,13 @@ def repeat_interleave_kernel_shape(
     comptime assert axis.dtype.is_integral(), "axis value must be integer type"
     comptime assert type_of(repeats).rank == 1, "repeats must be rank 1"
 
-    var interleave_shape = repeat_interleave_shape(
-        input.to_tile_tensor(),
+    return repeat_interleave_shape(
+        rebind[IndexList[type_of(input).rank]](
+            coord_to_index_list(input.shape().tuple())
+        ),
         repeats.to_tile_tensor(),
         Int(normalize_neg_index(axis, type_of(input).rank)),
     )
-
-    return rebind[IndexList[type_of(input).rank]](interleave_shape)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -866,7 +867,7 @@ struct RandomNormal:
         variance: Float32,
         seed_value: InputTensor[dtype=.uint64, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def output_fn[
             _width: SIMDLength
@@ -941,7 +942,7 @@ struct RandomUniform:
         upper_bound: Scalar[dtype],
         seed_value: InputTensor[dtype=.uint64, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def output_fn[
             _width: SIMDLength
@@ -1185,7 +1186,7 @@ def fold_kernel_shape[
     padding_h: Int,
     padding_w: Int,
 ](
-    input: Some[TileTensorable],
+    input: Some[Tensor],
     output_size: Some[TileTensorable],
     kernel_size: Some[TileTensorable],
 ) raises -> IndexList[4]:
@@ -1228,7 +1229,7 @@ def fold_kernel_shape[
         Int(kernel_size_tt[1]),
     )
     return fold_shape(
-        input.to_tile_tensor(),
+        rebind[IndexList[3]](coord_to_index_list(input.shape().tuple())),
         output_size_tuple,
         kernel_size_tuple,
     )
@@ -1446,7 +1447,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
 
 @extensibility.register("mo.chunked_qkv_rope_store.ragged.paged")
 struct Struct_chunked_qkv_rope_store_ragged_paged[
-    qk_head_dim: Int, v_head_dim: Int
+    qk_head_dim: Int, v_head_dim: Int, chunk_padding: Int = 0
 ]:
     """Registers chunked QKV unpacking, partial NeoX RoPE, and paged stores.
 
@@ -1456,6 +1457,7 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
     Parameters:
         qk_head_dim: Unpadded query and key head width.
         v_head_dim: Unpadded value head width.
+        chunk_padding: Trailing projection rows to ignore in each chunk.
     """
 
     @inline(.always)
@@ -1496,6 +1498,7 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         return chunked_qkv_rope_store_paged_ragged[
             qk_head_dim=Self.qk_head_dim,
             v_head_dim=Self.v_head_dim,
+            chunk_padding=Self.chunk_padding,
         ](
             qkv.to_tile_tensor[.int64](),
             input_row_offsets.to_tile_tensor[.int64](),
@@ -1761,7 +1764,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         start_pos: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def description_fn() {imm} -> String:
             return String(";").join(
@@ -1838,7 +1841,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         position_ids: InputTensor[dtype=.uint32, rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def description_fn() {imm} -> String:
             return String(";").join(
@@ -3248,7 +3251,7 @@ struct BundledAllReduceSum:
             dtype=DType.uint8, rank=1, ...
         ],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert signal_buffers.size == num_devices, (
             "expected allreduce inputs and signal buffers to have"
             " the same number of elements"
@@ -3274,24 +3277,21 @@ struct BundledAllReduceSum:
         )
 
         @inline(.always)
-        @__parameter
         def output_lambda[
             _dtype: DType,
             _width: SIMDLength,
             *,
-            _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-            output._lambda_store[width=_width, element_alignment=_alignment](
+            alignment: Int,
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var output} -> None:
+            output._lambda_store[width=_width, element_alignment=alignment](
                 rebind[IndexList[rank]](coord_to_index_list(coords)),
                 rebind[SIMD[dtype, _width]](val),
             )
 
-        allreduce[
-            ngpus=num_devices,
-            output_lambda=output_lambda,
-        ](
+        allreduce[ngpus=num_devices](
             in_tensors,
             out_layout,
+            output_lambda,
             rank_sigs,
             ctx,
         )
@@ -3309,7 +3309,7 @@ struct BundledAllReduceSum:
             dtype=DType.uint8, rank=1, ...
         ],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Per-device allreduce sum, for use with mo.parallel dispatch.
 
         This path does not take the kernel-load gate: `mo.parallel` emits N
@@ -3354,7 +3354,7 @@ struct BundledAllReduceSum:
             dtype=DType.uint8, rank=1, ...
         ],
         builder: DeviceGraphBuilder,
-    ) capturing raises:
+    ) raises:
         """Records the per-device allreduce sum into a device graph.
 
         The peers arrive as stable address slots: the recorded kernels read
@@ -3413,7 +3413,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         scale_ub: InputTensor[dtype=DType.float32, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Per-device fused allreduce.sum + add + rms_norm + fp8 quantize.
 
         Single-device analog of `DistributedAllReduceAddRMSNormQuantFP8`, for
@@ -3742,7 +3742,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         Self.launch[work_dtype, state_dtype, target, capture_input=False](
             conv_output_ragged,
             qkv_input_ragged,
@@ -3769,7 +3769,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         qkv_window: OutputTensor[dtype=work_dtype, rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Launches the conv, also copying its input to `qkv_window` when
         `capture_input`. `qkv_window` then has the output's shape and is
         otherwise never touched.
@@ -3995,7 +3995,7 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         verify_width: InputTensor[dtype=.int64, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var num_draft_tokens = verify_width.dim_size(0)
         var committed = num_draft_tokens == 0
         if Self.rollback and committed:
@@ -4202,7 +4202,7 @@ struct GatedDeltaRecurrenceFwd:
         slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var shape = _GatedDeltaRecurrenceShape.of["gated_delta_recurrence_fwd"](
             recurrence_output,
             qkv_conv_output,
@@ -4393,7 +4393,7 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         verify_width: InputTensor[dtype=.int64, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var num_draft_tokens = verify_width.dim_size(0)
         if num_draft_tokens == 0:
             GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
@@ -4598,7 +4598,7 @@ struct GatedDeltaStateFold:
         num_accepted: InputTensor[dtype=.uint32, rank=1, ...],
         verify_width: InputTensor[dtype=.int64, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         if verify_width.dim_size(0) == 0:
             return
         var num_layers = row_ids.dim_size(0)
@@ -4771,7 +4771,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         cache_indices: FusedInputTensor[dtype=.uint32, ...],
         update_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime if cache_indices.rank == 2:
             if cache_indices.dim_size(0) != 1:
                 raise Error(
@@ -4902,11 +4902,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt,
                     has_initial_state_tt,
                     update_state_tt,
-                    host_arg=x_fn,
-                    host_arg2=dt_fn,
-                    host_arg3=b_fn,
-                    host_arg4=c_fn,
-                    host_arg5=slot_fn,
+                    host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
                     grid_dim=(ceildiv(head_dim, BLOCK_SIZE), nheads, batch),
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
@@ -5002,11 +4998,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                             query_start_loc_tt,
                             has_initial_state_tt,
                             update_state_tt,
-                            host_arg=x_fn,
-                            host_arg2=dt_fn,
-                            host_arg3=b_fn,
-                            host_arg4=c_fn,
-                            host_arg5=slot_fn,
+                            host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
                             grid_dim=(
                                 ceildiv(head_dim, CH_PER_BLOCK),
                                 nheads,
@@ -5127,6 +5119,148 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
     return rebind[IndexList[3]](coord_to_index_list(x.shape().tuple()))
 
 
+@extensibility.register("mamba2_replay_fold")
+struct Mamba2ReplayFold[dt_softplus: Bool = True]:
+    """Commits a speculative verify's accepted rows to every Mamba-2 layer.
+
+    For each layer and request, sets the conv window to the last
+    `width - 1` accepted conv inputs and folds the accepted rows into the SSM
+    state, in one launch with no output. The SSM state lands bit-identical to
+    replaying the rows through `mamba2_ssd_chunk_scan_varlen_fwd_inplace`;
+    see `state_space.mamba2_replay_fold`. Every request continues its live
+    state. GPU only.
+
+    Parameters:
+        dt_softplus: If True (default), apply softplus to `dt + dt_bias`.
+
+    Tensor shapes:
+        - conv_pool: (max_slots, conv_dim, width - 1)  [MUT]
+        - ssm_pool: (max_slots, nheads, head_dim, dstate) fp32 or bf16  [MUT]
+        - conv_rows: (num_layers, batch) uint32
+        - ssm_rows: (num_layers, batch) uint32
+        - replay_bounds: (2 * batch,) int32, each request's accepted
+          `(start, end)` rows
+        - layers: `4 * num_layers` tensors, in four runs of `num_layers`:
+          each layer's `in_proj` output rows `(rows, nheads * head_dim +
+          conv_dim + nheads)`, its conv output rows `(rows, conv_dim)`, its
+          `A` as `(1, nheads)` and its `dt_bias` as `(1, nheads)`. Every
+          tensor's rows are contiguous.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        conv_dtype: DType,
+        state_dtype: DType,
+        target: StaticString,
+    ](
+        conv_pool: MutableInputTensor[dtype=conv_dtype, rank=3, ...],
+        ssm_pool: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        ssm_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        replay_bounds: InputTensor[dtype=.int32, rank=1, ...],
+        layers: InputVariadicTensors[dtype=dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        comptime if not is_gpu[target]():
+            raise Error("mamba2_replay_fold runs on GPUs only")
+        else:
+            comptime assert (
+                layers.size % 4 == 0
+            ), "layers holds four tensors per layer"
+            comptime NUM_LAYERS = layers.size // 4
+            comptime assert (
+                state_dtype == .float32 or state_dtype == .bfloat16
+            ), "ssm_pool must be float32 or bfloat16"
+            if (
+                conv_rows.dim_size(0) != NUM_LAYERS
+                or ssm_rows.dim_size(0) != NUM_LAYERS
+            ):
+                raise Error(
+                    "conv_rows and ssm_rows need one row per layer, "
+                    + String(NUM_LAYERS)
+                )
+            # Each thread moves its dstate lanes of the pool as one vector.
+            if ssm_pool.strides()[3] != 1:
+                raise Error(
+                    "the replay fold needs a unit stride on the dstate axis"
+                    " of ssm_pool"
+                )
+            var nheads = ssm_pool.dim_size(1)
+            var head_dim = ssm_pool.dim_size(2)
+            var dstate = ssm_pool.dim_size(3)
+            var conv_dim = conv_pool.dim_size(1)
+            var ngroups = (conv_dim - nheads * head_dim) // (2 * dstate)
+            var projected_stride = layers[0].strides()[0]
+            var convolved_stride = layers[NUM_LAYERS].strides()[0]
+
+            comptime Ptr = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
+            var projected = StaticTuple[Ptr, NUM_LAYERS]()
+            var convolved = StaticTuple[Ptr, NUM_LAYERS]()
+            var A = StaticTuple[Ptr, NUM_LAYERS]()
+            var dt_bias = StaticTuple[Ptr, NUM_LAYERS]()
+            comptime for i in range(NUM_LAYERS):
+                if (
+                    layers[i].dim_size(1)
+                    != nheads * head_dim + conv_dim + nheads
+                    or layers[i].strides()[0] != projected_stride
+                    or layers[i].strides()[1] != 1
+                ):
+                    raise Error(
+                        "every in_proj tensor must be (rows, intermediate +"
+                        " conv_dim + nheads) with one row stride"
+                    )
+                if (
+                    layers[NUM_LAYERS + i].dim_size(1) != conv_dim
+                    or layers[NUM_LAYERS + i].strides()[0] != convolved_stride
+                    or layers[NUM_LAYERS + i].strides()[1] != 1
+                ):
+                    raise Error(
+                        "every conv output must be (rows, conv_dim) with one"
+                        " row stride"
+                    )
+                comptime for k in range(2, 4):
+                    if (
+                        layers[k * NUM_LAYERS + i].dim_size(1) != nheads
+                        or layers[k * NUM_LAYERS + i].strides()[1] != 1
+                    ):
+                        raise Error("A and dt_bias must be (1, nheads)")
+                projected[i] = rebind[Ptr](
+                    layers[i].to_tile_tensor[.int64]().as_imm().ptr
+                )
+                convolved[i] = rebind[Ptr](
+                    layers[NUM_LAYERS + i].to_tile_tensor[.int64]().as_imm().ptr
+                )
+                A[i] = rebind[Ptr](
+                    layers[2 * NUM_LAYERS + i]
+                    .to_tile_tensor[.int64]()
+                    .as_imm()
+                    .ptr
+                )
+                dt_bias[i] = rebind[Ptr](
+                    layers[3 * NUM_LAYERS + i]
+                    .to_tile_tensor[.int64]()
+                    .as_imm()
+                    .ptr
+                )
+
+            mamba2_replay_fold_launch[dt_softplus=Self.dt_softplus](
+                projected,
+                convolved,
+                A,
+                dt_bias,
+                projected_stride,
+                convolved_stride,
+                ngroups,
+                conv_pool.to_tile_tensor(),
+                ssm_pool.to_tile_tensor(),
+                conv_rows.to_tile_tensor(),
+                ssm_rows.to_tile_tensor(),
+                replay_bounds.to_tile_tensor(),
+                ctx,
+            )
+
+
 @extensibility.register("causal_conv1d_varlen_fwd")
 struct CausalConv1DVarlenFwd[
     activation: StaticString,
@@ -5182,7 +5316,7 @@ struct CausalConv1DVarlenFwd[
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         update_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime if cache_indices.rank == 2:
             if cache_indices.dim_size(0) != 1:
                 raise Error(
@@ -5407,7 +5541,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
         weight: InputTensor[dtype=.float32, rank=1, ...],
         eps: Float32,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var n_rows = y.dim_size(0)
         var intermediate = y.dim_size(1)
         comptime gs = Self.group_size

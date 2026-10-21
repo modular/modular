@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for gpqa_eval's per-sample driver."""
 
+import csv
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -73,3 +75,14 @@ def test_rows_without_separate_reasoning() -> None:
     row = _infer(SimpleNamespace(content="<think>hmm</think>Answer: A"))
     assert row["response"] == "<think>hmm</think>Answer: A"
     assert row["reasoning"] is None
+
+
+def test_loads_local_dataset_file(tmp_path: Path) -> None:
+    # GPQA questions span lines and contain commas, so the CSV quotes them.
+    row = {**SAMPLE, "Question": "Given x, y:\nwhat is x + y?"}
+    path = tmp_path / "gpqa_diamond.csv"
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=row)
+        writer.writeheader()
+        writer.writerow(row)
+    assert gpqa_eval.load_gpqa_dataset(str(path)) == [row]

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only NVFP4 (W4A16) matmul: `out = activation @ weight^T`.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`). The FP4 weight stays
+Apple silicon GPU (Metal 4, `compute_capability >= 5`). The FP4 weight stays
 packed in DRAM (`uint8 [N, K//2]` lo-nibble + `float8_e4m3fn [N, K//16]` block
 scales); each `(BN, BK)` weight sub-tile is COOPERATIVELY dequantized to bf16
 once per K-strip into threadgroup memory (SMEM), then the dense bf16 simdgroup
@@ -750,7 +750,7 @@ def _enqueue_apple_fp4_materialize_dense[
 
     enqueue_fp4_materialize[.bfloat16](wdense_tt, packed, scales, ctx)
 
-    if ctx.compute_capability() == 5:
+    if ctx.compute_capability() >= 5:
         enqueue_apple_matmul[
             in_type=DType.bfloat16,
             c_type=c_type,
@@ -780,8 +780,7 @@ def _enqueue_apple_fp4_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=no_epilogue_fn,
-            host_arg2=no_compute_fn,
+            host_args=(no_epilogue_fn, no_compute_fn),
             grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
             block_dim=(4 * WARP_SIZE,),
         )
@@ -961,7 +960,7 @@ def enqueue_apple_fp4_matmul[
     # Pre-M5 (M1-M4): route unconditionally to materialize->dense, which
     # decodes the FP4 weight to a transient bf16 buffer (hardware-neutral) and
     # runs the pre-M5 dense bf16 `gemm_kernel_apple_8x8`.
-    if cc != 5:
+    if cc < 5:
         # NVFP4's block size is 16, so K is always a multiple of 16 (hence 8)
         # for well-formed weights, however to be safe we assert on a malformed
         # K instead of producing silently bad results.

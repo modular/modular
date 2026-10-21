@@ -23,7 +23,7 @@ from layout import (
     Layout,
     UNKNOWN_VALUE,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout, blocked_product
 from layout.tile_tensor import _SubscriptArgs, _subscript_static_offset
 from std.builtin.builtin_slice import ContiguousSlice
 from layout.swizzle import Swizzle
@@ -1141,6 +1141,131 @@ def test_num_elements_nested_layout() raises:
         ),
     )
     assert_equal(runtime_leaf.num_elements(), 2 * 16 * tiles * 16)
+
+
+def _blocked_offset(row: Int, col: Int) -> Int:
+    """Offset of (row, col) in a 3x5 row-major grid of row-major 4x4
+    blocks."""
+    return (row // 4 * 5 + col // 4) * 16 + row % 4 * 4 + col % 4
+
+
+def test_tile_nested_layout() raises:
+    """Test tile on nested modes, indexed first leaf first like crd2idx."""
+    var data = Array[Int32, 240](fill_with=lambda (i: Int) -> Int32: Int32(i))
+    var static_blocks = TileTensor(
+        data, blocked_product(row_major[4, 4](), row_major[3, 5]())
+    )
+    var row_stride = 4
+    var block_col_stride = 16
+    var runtime_blocks = TileTensor(
+        data,
+        TileLayout(
+            Coord(Coord(Idx[4], Idx[3]), Coord(Idx[4], Idx[5])),
+            Coord(Coord(row_stride, Idx[80]), Coord(Idx[1], block_col_stride)),
+        ),
+    )
+    for i in range(3):
+        for j in range(5):
+            var a = static_blocks.tile[4, 4](i, j)
+            var b = runtime_blocks.tile[4, 4](i, j)
+            for r in range(4):
+                for c in range(4):
+                    var expected = _blocked_offset(i * 4 + r, j * 4 + c)
+                    assert_equal(Int(a[r, c]), expected)
+                    assert_equal(Int(b[r, c]), expected)
+
+    # A tile smaller than a block lies within the first leaf.
+    for i in range(6):
+        for j in range(10):
+            var half = static_blocks.tile[2, 2](i, j)
+            for r in range(2):
+                for c in range(2):
+                    assert_equal(
+                        Int(half[r, c]),
+                        _blocked_offset(i * 2 + r, j * 2 + c),
+                    )
+
+
+def _row_pair_offset(row: Int, col: Int) -> Int:
+    """Offset of (row, col) in a 96x64 grid of 32x32 tiles, each pairing two
+    rows per 32-bit word, tiles row-major."""
+    return (
+        row % 2
+        + (row // 2) % 16 * 64
+        + row // 32 * 2048
+        + col % 32 * 2
+        + col // 32 * 1024
+    )
+
+
+def test_tile_nested_row_pair_grid() raises:
+    """Test tile keeps the leaves a tile spans."""
+    var data = Array[Int32, 6144](fill_with=lambda (i: Int) -> Int32: Int32(i))
+    var row_tiles = 3
+    var row_pair_stride = 64
+    var static_grid = TileTensor(
+        data,
+        TileLayout(
+            Coord(Coord(Idx[2], Idx[16], Idx[3]), Coord(Idx[32], Idx[2])),
+            Coord(Coord(Idx[1], Idx[64], Idx[2048]), Coord(Idx[2], Idx[1024])),
+        ),
+    )
+    var runtime_grid = TileTensor(
+        data,
+        TileLayout(
+            Coord(Coord(Idx[2], Idx[16], row_tiles), Coord(Idx[32], Idx[2])),
+            Coord(
+                Coord(Idx[1], row_pair_stride, Int(2048)),
+                Coord(Idx[2], Idx[1024]),
+            ),
+        ),
+    )
+    for t0 in range(3):
+        for t1 in range(2):
+            var a = static_grid.tile[32, 32](Coord(t0, t1))
+            var b = runtime_grid.tile[32, 32](Coord(t0, t1))
+            for r in range(32):
+                for c in range(32):
+                    var expected = _row_pair_offset(t0 * 32 + r, t1 * 32 + c)
+                    assert_equal(Int(a[Coord(r, c)]), expected)
+                    assert_equal(Int(b[Coord(r, c)]), expected)
+    assert_equal(
+        String(static_grid.tile[32, 32](Coord(1, 1)).layout),
+        "(((2, 16), 32):((1, 64), 2))",
+    )
+
+    # A tile can end inside a leaf: 16 rows keep (2, 8) of (2, 16, 3).
+    var half = static_grid.tile[16, 32](Coord(3, 1))
+    assert_equal(String(half.layout), "(((2, 8), 32):((1, 64), 2))")
+    for r in range(16):
+        for c in range(32):
+            assert_equal(
+                Int(half[Coord(r, c)]), _row_pair_offset(48 + r, 32 + c)
+            )
+
+    # Flat indices address the leaves of a nested tile.
+    var tile = static_grid.tile[32, 32](Coord(2, 0))
+    tile[1, 3, 5] = -1
+    assert_equal(data[_row_pair_offset(64 + 7, 5)], -1)
+    # One index per mode works too.
+    tile[6, 5] = -2
+    assert_equal(data[_row_pair_offset(64 + 6, 5)], -2)
+
+
+def test_slice_nested_layout() raises:
+    """Test that slice indexes the flattened leaves of a nested layout."""
+    var data = Array[Int32, 1024](fill_with=lambda (i: Int) -> Int32: Int32(i))
+    var tensor = TileTensor(
+        data,
+        TileLayout(
+            Coord(Coord(Idx[2], Idx[16]), Idx[32]),
+            Coord(Coord(Idx[1], Idx[64]), Idx[2]),
+        ),
+    )
+    var column = tensor.slice[:, :, 5]()
+    for r in range(2):
+        for p in range(16):
+            assert_equal(Int(column[r, p]), r + 64 * p + 10)
 
 
 def test_select_4d_to_2d() raises:

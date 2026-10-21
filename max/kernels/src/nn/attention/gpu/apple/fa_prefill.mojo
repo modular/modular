@@ -13,7 +13,7 @@
 """Apple (Metal) M5 MMA-based flash-attention (FA2) prefill kernel.
 
 Two `MmaOpApple` 16x16 simdgroup GEMMs (Q.K^T and P.V) sandwiching an online
-softmax, for Apple silicon prefill (`compute_capability == 5`), paged KV via
+softmax, for Apple silicon prefill (`compute_capability >= 5`), paged KV via
 `MHAOperand`, BF16/FP16 storage with FP32 accumulation.
 
 4 simdgroups share one threadgroup with no threadgroup memory and no

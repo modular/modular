@@ -78,14 +78,14 @@ def _spin_until_released(flag: MutPointer[Int32, MutAnyOrigin]):
     is why the small barrier kernels never reproduced this.
     """
     var start = global_perf_counter_ns()
-    while flag.load[volatile=True]() == 0:
+    while flag.unsafe_load[volatile=True]() == 0:
         if global_perf_counter_ns() - start > UInt64(SPIN_TIMEOUT_NS):
             return
 
 
 def _release(flag: MutPointer[Int32, MutAnyOrigin]):
     """Peer arrival: releases device 0's spin over P2P."""
-    flag.store[volatile=True](Int32(1))
+    flag.unsafe_store[volatile=True](Int32(1))
 
 
 def _unrelated():
@@ -332,12 +332,8 @@ def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
     # abandon it, and Coroutine is not implicitly destroyable.
     var loader_worker = task_id_for_device(Int(ctx1.id()))
 
-    @__copy_capture(a_tt)
-    @__copy_capture(b_tt)
-    @__copy_capture(c_tt)
     @inline(.always)
-    @__parameter
-    __async def loader() -> None:
+    __async def loader() {var} -> None:
         sleep(LOADER_DELAY_SEC)
         comptime if call == _HANDLE_BRING_UP:
             _bring_up_vendor_handle_on_busy_device(ctx0, clock)

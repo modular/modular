@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 int8 W8A8 matmul: `out = dequant(A_int8 @ B_int8^T)`.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`). The int32-accumulate
+Apple silicon GPU (Metal 4, `compute_capability >= 5`). The int32-accumulate
 sibling of the W4A16 kernel (`matmul2d_fp4.mojo` / `fp4_matmul.mojo`): where the
 FP4 path decodes a packed 4-bit weight to bf16 and feeds the *float* simdgroup
 MMA, this path feeds int8 A and int8 B straight to the M5 **integer widening**
@@ -59,8 +59,8 @@ from layout.tile_layout import TensorLayout
 from linalg.arch.apple.mma import MmaOpApple
 
 
-def _require_apple_m5(ctx: DeviceContext) raises:
-    """Runtime guard: reject a non-Apple-M5 GPU at the host enqueue entry.
+def _require_apple_m5_or_newer(ctx: DeviceContext) raises:
+    """Runtime guard: reject a pre-M5 Apple GPU at the host enqueue entry.
 
     The kernel body uses the Apple simdgroup MMA (`_mma_apple`), which compiles
     for any Apple GPU target, so the Metal-4 / M5 requirement is enforced at
@@ -68,11 +68,11 @@ def _require_apple_m5(ctx: DeviceContext) raises:
     with a comptime assert that would break a non-M5 Apple build.
     """
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "Apple int8 W8A8 matmul requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "Apple int8 W8A8 matmul requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -920,9 +920,9 @@ def enqueue_apple_int8_matmul[
             when `None`.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime MM = AppleM5Int8MatMul[c_type, has_bias=has_bias]
 
@@ -1133,7 +1133,7 @@ def enqueue_apple_int8_quantize_activation[
             written mutable.
         ctx: Device context used to enqueue the kernel.
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
     var m = Int(a.dim[0]())
     var k = Int(a.dim[1]())
     comptime QK = AppleInt8ActQuant[in_type]

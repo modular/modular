@@ -1953,9 +1953,9 @@ struct Dict[
         # Build old_slot -> new_slot mapping and a set of relocated old slots
         # so we can filter stale _order entries (DELETED slots won't appear
         # in relocations since resize only moves occupied entries).
-        var slot_map_alloc = alloc(Layout[Int32](count=old_capacity))
+        var slot_map_alloc = alloc(Layout[Int32](length=old_capacity))
         var slot_map = slot_map_alloc.unsafe_ptr()
-        var relocated_set_alloc = alloc(Layout[UInt8](count=old_capacity))
+        var relocated_set_alloc = alloc(Layout[UInt8](length=old_capacity))
         var relocated_set = relocated_set_alloc.unsafe_ptr()
         unsafe_memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):

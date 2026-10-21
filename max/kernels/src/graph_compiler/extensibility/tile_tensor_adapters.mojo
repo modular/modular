@@ -27,9 +27,7 @@ from .tensor_arg_traits import (
 def _not_tile_tensorable_message[TensorType: AnyType]() -> String:
     return String(
         t"to_tile_tensor requires a TileTensorable dense argument, but"
-        t" '{reflect[TensorType].name()}' is not; the graph compiler disables"
-        t" the projection on targets whose storage cannot be viewed as a"
-        t" TileTensor at the execute boundary"
+        t" '{reflect[TensorType].name()}' is not"
     )
 
 

@@ -94,6 +94,7 @@ modular_py_test(
         requirement("taskgroup"),
         requirement("transformers"),
         requirement("pillow"),
+        requirement("uvicorn"),
     ],
 )
 

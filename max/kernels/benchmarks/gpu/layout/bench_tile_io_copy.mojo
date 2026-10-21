@@ -86,14 +86,18 @@ def _manual_copy[
     comptime for i in range(rows_per_thread):
         var offset = base + i * row_stride
         comptime if direction == _CopyDirection.DRAMToSRAM:
-            smem_ptr.store[alignment=alignment](
+            smem_ptr.unsafe_store[alignment=alignment](
                 offset,
-                dram_src_ptr.load[width=simd_size, alignment=alignment](offset),
+                dram_src_ptr.unsafe_load[width=simd_size, alignment=alignment](
+                    offset
+                ),
             )
         else:
-            dram_dst_ptr.store[alignment=alignment](
+            dram_dst_ptr.unsafe_store[alignment=alignment](
                 offset,
-                smem_ptr.load[width=simd_size, alignment=alignment](offset),
+                smem_ptr.unsafe_load[width=simd_size, alignment=alignment](
+                    offset
+                ),
             )
 
 
@@ -215,8 +219,8 @@ def _assert_buffers_equal[
     """Checks host buffers a SIMD vector at a time."""
     var i = 0
     while i + simd_size <= num_elements:
-        var actual = actual_ptr.load[width=simd_size, alignment=1](i)
-        var expected = expected_ptr.load[width=simd_size, alignment=1](i)
+        var actual = actual_ptr.unsafe_load[width=simd_size, alignment=1](i)
+        var expected = expected_ptr.unsafe_load[width=simd_size, alignment=1](i)
         comptime if dtype.is_float8():
             var actual_bits = bitcast[.uint8, simd_size](actual)
             var expected_bits = bitcast[.uint8, simd_size](expected)

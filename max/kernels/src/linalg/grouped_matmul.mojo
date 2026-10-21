@@ -350,7 +350,7 @@ def grouped_matmul_amd_kernel_launcher[
         var col = Int(idx[1])
         var row_idx = Coord(Int(a_start_row) + row, col)
         comptime if has_compute_fn:
-            c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
+            c_ptr.unsafe_offset(row * N).unsafe_offset(col).unsafe_store[
                 alignment=alignment
             ](
                 rebind[SIMD[c_type, width]](
@@ -652,8 +652,7 @@ def grouped_matmul_amd[
             a_offsets,
             expert_ids,
             Int32(num_active_experts),
-            host_arg=epilogue_fn,
-            host_arg2=compute_fn,
+            host_args=(epilogue_fn, compute_fn),
             grid_dim=(ceildiv(N, config.block_tile_shape[1]), grid_y, 1),
             block_dim=(block_dim),
         )
@@ -960,7 +959,7 @@ def grouped_matmul[
             var num_active_experts = stats[1]
             # M5 has the native fp8-operand simdgroup MMA; pre-M5 Apple falls
             # back to the dtype-generic naive kernel (still correct there).
-            if ctx.compute_capability() == 5:
+            if ctx.compute_capability() >= 5:
                 # The tiled launcher is hard-typed W8A16 (bf16 A, fp8 B); rebind
                 # the dispatch's abstract-dtype operands to the concrete types
                 # the guard already proves (mirrors the dense Apple matmul
@@ -1018,7 +1017,7 @@ def grouped_matmul[
             var stats = resolve_usage_stats()
             var max_num_tokens_per_expert = stats[0]
             var num_active_experts = stats[1]
-            if ctx.compute_capability() == 5:
+            if ctx.compute_capability() >= 5:
                 enqueue_apple_grouped_matmul[
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
@@ -1184,8 +1183,7 @@ def naive_grouped_matmul[
         b.as_imm(),
         a_offsets,
         expert_ids,
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(
             ceildiv(Int(c.dim[1]()), 32),
             ceildiv(max_num_tokens_per_expert, 16),

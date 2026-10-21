@@ -99,7 +99,7 @@ def scatter_pull_kernel[
             var elem_idx = idx * simd_width
             output_flat.store[alignment=align_of[dtype]()](
                 Coord(elem_idx),
-                data_ptr.load[width=simd_width](elem_idx),
+                data_ptr.unsafe_load[width=simd_width](elem_idx),
             )
 
         # Tail elements.
@@ -108,7 +108,7 @@ def scatter_pull_kernel[
         if tail_idx < num_elems:
             output_flat.store(
                 Coord(tail_idx),
-                data_ptr.load(tail_idx),
+                data_ptr.unsafe_load(tail_idx),
             )
 
         _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, _my_rank)

@@ -22,7 +22,6 @@ from layout.tile_layout import (
     row_major,
     col_major,
     blocked_product,
-    row_major_nested,
 )
 from std.testing import assert_equal
 
@@ -134,7 +133,7 @@ def tile_tensor_from_allocation_example() raises:
     comptime columns = 1024
     comptime buf_size = rows * columns
     comptime layout = row_major[rows, columns]()
-    var allocation = alloc[Float32]({count = buf_size})
+    var allocation = alloc[Float32]({length = buf_size})
     var ptr = allocation.unsafe_ptr()
     unsafe_memset(ptr, 0, buf_size)
     var tensor = TileTensor(ptr, layout)
@@ -250,32 +249,28 @@ def tile_coordinate_loop_example() raises:
 
 def nested_tile_example() raises:
     # start-nested-tile-example
-    # A nested layout whose outer mode is a 2x2 grid of tiles and whose
-    # inner mode is a 3x4 fragment: shape ((2, 3), (2, 4)).
-    comptime grid_rows = 2
+    # A tiled layout: a 2x2 grid of 3x4 fragments. `blocked_product()`
+    # puts the fragment first in each mode: shape ((3, 2), (4, 2)).
     comptime frag_rows = 3
-    comptime grid_cols = 2
     comptime frag_cols = 4
+    comptime grid_rows = 2
+    comptime grid_cols = 2
     comptime total = grid_rows * frag_rows * grid_cols * frag_cols
-    var layout = row_major_nested(
-        Coord(
-            Coord(Idx[grid_rows], Idx[frag_rows]),
-            Coord(Idx[grid_cols], Idx[frag_cols]),
-        )
+    var layout = blocked_product(
+        row_major[frag_rows, frag_cols](), row_major[grid_rows, grid_cols]()
     )
     var storage = Array[Float32, total](
         fill_with=lambda (i: Int) -> Float32: Float32(i)
     )
     var tensor = TileTensor(storage, layout)
 
-    # On a nested parent, tile() slices one outer index per mode: the
-    # first coordinate selects the tile along the row mode, the second
-    # along the column mode. Here (1, 0) selects grid row 1, column 0,
-    # returning that (frag_rows x frag_cols) fragment.
+    # tile() indexes each mode first leaf first, so a frag_rows x frag_cols
+    # tile covers exactly one fragment. Here (1, 0) selects grid row 1,
+    # column 0.
     var fragment = tensor.tile[frag_rows, frag_cols](1, 0)
     # end-nested-tile-example
     assert_equal(fragment[0, 0], Float32(24))
-    assert_equal(fragment[2, 3], Float32(43))
+    assert_equal(fragment[2, 3], Float32(35))
 
 
 def tile_boundary_example() raises:

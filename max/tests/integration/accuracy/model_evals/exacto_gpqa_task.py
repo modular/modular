@@ -22,6 +22,8 @@ inspect_ai, openbench and datasets; bazel never imports it.
 
 from __future__ import annotations
 
+import os
+
 import exacto_gpqa_openrouter as gpqa
 from datasets import load_dataset
 from inspect_ai import Epochs, Task, task
@@ -32,10 +34,19 @@ from openbench.scorers.mcq import create_mcq_scorer
 
 
 def load_samples() -> list[Sample]:
-    """Loads the pinned GPQA-Diamond split as harness-identical samples."""
-    records = load_dataset(
-        gpqa.DATASET, revision=gpqa.DATASET_REVISION, split=gpqa.SPLIT
-    )
+    """Loads the pinned GPQA-Diamond split as harness-identical samples.
+
+    Reads ``$GPQA_DATASET_FILE`` instead of the HF dataset when it is set,
+    after checking it is the pinned revision's CSV byte for byte.
+    """
+    dataset_file = os.environ.get("GPQA_DATASET_FILE")
+    if dataset_file:
+        gpqa.check_dataset_file(dataset_file)
+        records = load_dataset("csv", data_files=dataset_file, split="train")
+    else:
+        records = load_dataset(
+            gpqa.DATASET, revision=gpqa.DATASET_REVISION, split=gpqa.SPLIT
+        )
     samples = []
     for index, record in enumerate(records):
         prompt, target = gpqa.record_to_prompt(record, index)

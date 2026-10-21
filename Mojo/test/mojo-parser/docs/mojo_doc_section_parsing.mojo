@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %s | FileCheck %s
+# RUN: %mojo-docs-isolated %s | FileCheck %s
 
 
 # CHECK: "structs"

@@ -21,12 +21,21 @@ from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
 from max.driver import Device
+from max.dtype import DType
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
+from max.pipelines.architectures.deepseekV41.layers.indexer import (
+    candidate_window_rows,
+)
 from max.pipelines.architectures.deepseekV41.memory_planner import (
     CheckpointTensor,
     DeepseekV41MemoryPlanner,
     DeviceWeightLayout,
+    csa2_activation_bytes,
     device_weight_bytes,
+    ep_receive_pool_bytes,
+    graph_arena_bytes,
+    graph_capture_pool_bytes,
+    kv_leaf_bytes_per_token,
 )
 from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
@@ -57,6 +66,7 @@ def _pipeline_config(
     config.model.device_specs = [MagicMock() for _ in range(num_devices)]
     config.runtime.max_batch_input_tokens = 8192
     config.runtime.max_num_input_tokens = max_num_input_tokens
+    config.runtime.device_graph_capture = False
     return config
 
 
@@ -67,7 +77,7 @@ def _real_huggingface_config() -> AutoConfig:
 
 def _planner() -> DeepseekV41MemoryPlanner:
     config = MagicMock(spec=ModelConfigWithKVCache)
-    config.get_kv_params.return_value = MagicMock()
+    config.get_kv_params.return_value = MagicMock(num_draft_tokens=0)
     return DeepseekV41MemoryPlanner(config)
 
 
@@ -220,14 +230,29 @@ def test_tp2_4096_row_chunk_at_40k_leaves_the_kv_pool_room(
 def test_reserve_grows_only_by_the_candidate_keep_step(
     max_length: int,
 ) -> None:
-    """Past the arena, the reserve is the indexer's score window plus the
-    ``[T, blocks]`` keep step, never a ``[T, max_length]`` score."""
+    """Past the arena and the attention's fixed workspaces, the reserve is
+    the indexer's score window plus the ``[T, kept]`` block ids and a fixed
+    window scratch, never a ``[T, blocks]`` or ``[T, max_length]`` tensor."""
     rows = 8192
     _, _, activation = _tp2_plan_inputs(
         chunk=rows, max_length=max_length, layout=_DEFAULT_LAYOUT
     )
-    keep = rows * -(-max_length // 8) * 28
-    assert activation / 2 - keep <= (1.25 + 16 + 0.5 + 0.25) * GIB
+    kept_ids = rows * 2048 * 4
+    blocks = -(-max_length // 8)
+    window = candidate_window_rows(rows, blocks, 8) * (blocks * 4 + 4)
+    keep = kept_ids + -(-window // (256 << 20)) * (256 << 20)
+    attention = csa2_activation_bytes(live_rows=rows, num_heads=64)
+    assert attention == GIB // 2
+    # Arena, score window, window scratch page and one page of headroom.
+    assert (
+        activation / 2 - keep - attention
+        <= (1.25 + 16 + 0.5 + 0.25 + 0.25) * GIB
+    )
+    # Only the window scratch grows with max_length, by at most one page.
+    _, _, short = _tp2_plan_inputs(
+        chunk=rows, max_length=40000, layout=_DEFAULT_LAYOUT
+    )
+    assert activation / 2 - short / 2 <= 256 << 20
 
 
 def test_tp2_8192_row_chunk_at_40k_fits_the_full_budget() -> None:
@@ -296,9 +321,10 @@ def _dp4_config(data_parallel_degree: int) -> NonCallableMock:
 
 
 def test_dp4_reserves_the_expert_parallel_buffers() -> None:
-    """Each DP4 device also reserves the expert-parallel buffers and 12 KiB
-    for each row its experts can receive: every replica's 8192 rows, six
-    routed copies each."""
+    """Each DP4 device also reserves the expert-parallel buffers and the
+    receive tensors for every replica's 8192 rows, six routed copies each,
+    once live and once as fragmentation headroom; its arena drops to 1.25 MiB
+    per row."""
     hf_config = _real_huggingface_config()
     extra = (
         _planner().estimate_activation_memory(_dp4_config(4), hf_config)
@@ -308,5 +334,160 @@ def test_dp4_reserves_the_expert_parallel_buffers() -> None:
         _dp4_config(4), DeepseekV41Config.get_text_config(hf_config)
     )
     assert ep is not None
-    assert ep.get_max_recv_tokens() == 4 * 8192 * 6
-    assert extra == ep.estimate_memory_usage() + 4 * 8192 * 6 * (12 << 10)
+    rows = 4 * 8192 * 6
+    assert ep.get_max_recv_tokens() == rows
+    pool = ep_receive_pool_bytes(ep)
+    # NVFP4 rows, bf16 down projection, source info, block scales.
+    assert pool >= rows * (5120 // 2 + 5120 * 2 + 8)
+    arena_drop = 8192 * ((2 << 20) - (5 << 18))
+    assert extra == (
+        ep.estimate_memory_usage() + 2 * pool - (256 << 20) - arena_drop
+    )
+
+
+# Measured on four B200s, DP4EP4, DSpark k=5, max_batch_size 128,
+# max_batch_input_tokens 8192, max_length 1048576 (MemoryManager log): the
+# largest per-forward planned pool; device 0's captured graphs' pool with one
+# graph's working memory live at a time; device 0's extra head bytes over
+# 3072 x 129280 entries (bfloat16 logits, their float32 cast, and sampling
+# and verification working memory); and device 0's eager transient peak over
+# an 8192-row prefill chunk.
+_DP4_MEASURED_FORWARD_POOL = 2_790_020_608
+_DP4_MEASURED_GRAPH_POOL = 9_620_885_504
+_DP4_MEASURED_HEAD_BYTES = 794_296_320 + 1_588_592_640 + 1_721_597_952
+_DP4_MEASURED_EAGER_PEAK = 13.05 * GIB
+
+
+def _dp4_served_config(*, graph_capture: bool) -> NonCallableMock:
+    config = _dp4_config(4)
+    config.model.max_length = 1048576
+    config.runtime.max_batch_size = 128
+    config.runtime.device_graph_capture = graph_capture
+    config.speculative = MagicMock()
+    config.speculative.is_dspark.return_value = True
+    config.speculative.num_speculative_tokens = 5
+    return config
+
+
+def test_dp4_reserves_the_measured_graph_pool_and_eager_peak() -> None:
+    """The served DP4 plan reserves at least the measured captured-graph
+    pool, and its eager terms cover the measured eager peak."""
+    hf_config = _real_huggingface_config()
+    captured = _planner().estimate_activation_memory(
+        _dp4_served_config(graph_capture=True), hf_config
+    )
+    eager_only = _planner().estimate_activation_memory(
+        _dp4_served_config(graph_capture=False), hf_config
+    )
+    ep = data_parallel_ep_config(
+        _dp4_served_config(graph_capture=True),
+        DeepseekV41Config.get_text_config(hf_config),
+    )
+    assert ep is not None
+    assert ep.get_max_recv_tokens() == (8192 + 128 * 5) * 24
+    pool = ep_receive_pool_bytes(ep)
+    assert pool >= _DP4_MEASURED_FORWARD_POOL
+    graph_pool = (captured - eager_only) // 4
+    assert graph_pool >= _DP4_MEASURED_GRAPH_POOL
+    # Within 1.5 GiB of the measurement: tight enough not to starve KV.
+    assert graph_pool <= _DP4_MEASURED_GRAPH_POOL + 1.5 * GIB
+    head = graph_capture_pool_bytes(
+        capture_rows=1,
+        head_rows=4 * 128 * 6,
+        vocab_size=129280,
+        row_bytes=0,
+        indexer_bytes=0,
+        attention_bytes=0,
+        ep_pool_bytes=0,
+    ) - graph_arena_bytes(live_rows=1, row_bytes=0)
+    assert _DP4_MEASURED_HEAD_BYTES <= head
+    assert head <= _DP4_MEASURED_HEAD_BYTES + GIB // 2
+    # Arena and receive tensors alone, without the indexer or headroom.
+    arena = -(-((5 << 28) + 8192 * (5 << 18)) // (256 << 20)) * (256 << 20)
+    assert arena + pool >= _DP4_MEASURED_EAGER_PEAK
+
+
+def test_graph_capture_pool_holds_the_csa2_workspaces() -> None:
+    """Captured decode graphs run the CSA2 attention, so the pool holds its
+    workspaces on top of the other terms."""
+    attention = csa2_activation_bytes(live_rows=128 * 6, num_heads=64)
+    assert attention > 0
+
+    def pool(attention_bytes: int) -> int:
+        return graph_capture_pool_bytes(
+            capture_rows=128 * 6,
+            head_rows=4 * 128 * 6,
+            vocab_size=129280,
+            row_bytes=0,
+            indexer_bytes=0,
+            attention_bytes=attention_bytes,
+            ep_pool_bytes=0,
+        )
+
+    assert pool(attention) == pool(0) + attention
+
+
+def _bytes_per_token(csa_records: bool) -> dict[str, float]:
+    return kv_leaf_bytes_per_token(
+        DeepseekV41Config.get_text_config(_real_huggingface_config()),
+        page_size=128,
+        cache_dtype=DType.bfloat16,
+        csa_records=csa_records,
+    )
+
+
+def test_kv_bytes_per_token_per_leaf() -> None:
+    """bf16 rows take 1 KiB per layer per token in the window and every
+    compressed leaf; records take a 544-byte slot per token in the window
+    and a 344-byte slot per compression group."""
+    unchanged = {"c2a_state": 12288.0, "idx_c2a": 102.0, "idx_c1a": 68.0}
+    assert _bytes_per_token(False) == {
+        "swa": 43 * 1024.0,
+        "c2a": 3 * 1024.0,
+        "c1a": 1024.0,
+        **unchanged,
+    }
+    assert _bytes_per_token(True) == {
+        "swa": 43 * 544.0,
+        "c2a": 3 * 344 / 2,
+        "c1a": 344.0,
+        **unchanged,
+    }
+
+
+def test_dp4_kv_capacity_per_device() -> None:
+    """Context tokens a DP4 device's KV budget holds, counting only the
+    leaves that grow with context: about 4.1x more with records, less the
+    record attention's workspaces."""
+    hf_config = _real_huggingface_config()
+    config = _dp4_config(4)
+    config.model.kv_cache.device_memory_utilization = 0.97
+    weights, _ = device_weight_bytes(
+        _REAL_CHECKPOINT, 4, layout=_DEFAULT_LAYOUT, data_parallel=True
+    )
+    activation = _planner().estimate_activation_memory(config, hf_config)
+    devices: list[Device] = []
+    for _ in range(4):
+        device = MagicMock()
+        device.stats = {
+            "free_memory": _TP2_MM97_FREE,
+            "total_memory": _TP2_MM97_FREE,
+        }
+        devices.append(device)
+    budget = (
+        MemoryEstimator._available_kv_cache_memory(
+            4 * weights, activation, config.model, devices, _TP2_SIGNAL_BYTES
+        )
+        / 4
+    )
+    windowed = ("swa", "c2a_state")
+    capacity = {
+        records: budget
+        / sum(
+            v for k, v in _bytes_per_token(records).items() if k not in windowed
+        )
+        for records in (False, True)
+    }
+    assert 60 * GIB < budget < 61 * GIB
+    assert 15.1e6 < capacity[False] < 15.2e6
+    assert 62.6e6 < capacity[True] < 62.8e6

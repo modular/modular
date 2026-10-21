@@ -19,12 +19,16 @@ ragged cell (with an empty rank) captured once and replayed across
 generations against the eager shipping reference, a batch past the capacity
 refused before any launch, and a capacity above 24 refused at EP init.
 
-GLM-5.3's 256 routed experts at EP4 are 64 local experts, past the 32 the
-fused path scans: EP init must refuse them and the memory planner must budget
-nothing for them. That case checks the refusal only.
+GLM-5.3's 256 routed experts at EP4 (64 local) at capacity 24 are served in
+both formats, MXFP8 on the decode token block and NVFP4 on token block 32;
+`test_ep_moe_fused_megaffn_ep4_wide.py` replays them. Here: the host plan for
+them, and their neighbors (65 or 128 local experts, top-k 4, MoE width 3072,
+capacity 25) refused by the plan query and, at 128 local, at EP init.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import pytest
 from fused_megaffn_gates import (
@@ -32,6 +36,7 @@ from fused_megaffn_gates import (
     Geometry,
     ep_config,
     graph_replay,
+    planned_as_refused,
     refused_at_ep_init,
     refused_capacity,
 )
@@ -49,7 +54,8 @@ CELLS = {
     "ragged": [24, 5, 0, 13],
 }
 
-GLM_ROUTED_EXPERTS = 256
+GLM = dataclasses.replace(GEO, num_experts=256)
+LOCAL_RULE = "local experts"
 
 _needs_ep4 = [
     pytest.mark.skipif(
@@ -82,32 +88,36 @@ def test_ep4_fused_refused_capacity(fmt: str) -> None:
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
-def test_ep4_glm_expert_count_planned_as_refused(fmt: str) -> None:
-    """The host plan query, exact and as the memory planner's bound, budgets
-    no fused workspace for 64 local experts and names the local-expert
+def test_ep4_glm_planned(fmt: str) -> None:
+    """The host plan query serves 64 local experts at capacity 24, MXFP8 on
+    the decode token block and NVFP4 on 32, and the memory planner's bound
+    covers it; one local expert more, 128 local experts, top-k 4, MoE width
+    3072 and capacity 25 get no fused workspace and name the local-expert
     rule."""
-    config = ep_config(
-        GEO, fmt, True, shared=False, num_experts=GLM_ROUTED_EXPERTS
-    )
-    size, token_block, reason = _plan_fused_moe_workspace(config)
-    assert (size, token_block) == (0, 0)
-    assert "local experts" in reason, reason
+    config = ep_config(GLM, fmt, True, shared=False)
+    size, block, reason = _plan_fused_moe_workspace(config)
+    assert (block, reason) == (32 if fmt == "nvfp4" else 8, ""), (block, reason)
     bound, bound_reason = _bound_fused_moe_workspace(
         config, config.dispatch_dtype
     )
-    assert bound == 0
-    assert bound_reason == reason, (bound_reason, reason)
+    assert bound >= size > 0, (bound, size)
+    assert bound_reason == "", bound_reason
+    planned_as_refused(GLM, fmt, LOCAL_RULE, num_experts=4 * 65)
+    planned_as_refused(GLM, fmt, LOCAL_RULE, num_experts=4 * 128)
+    planned_as_refused(dataclasses.replace(GLM, top_k=4), fmt, LOCAL_RULE)
+    planned_as_refused(dataclasses.replace(GLM, moe_dim=3072), fmt, LOCAL_RULE)
+    planned_as_refused(
+        dataclasses.replace(GLM, max_tokens_per_rank=25), fmt, LOCAL_RULE
+    )
 
 
 @_needs_ep4[0]
 @_needs_ep4[1]
 @_needs_ep4[2]
 @pytest.mark.parametrize("fmt", FORMATS)
-def test_ep4_glm_expert_count_refused_at_ep_init(fmt: str) -> None:
-    """EP init on devices 0-3 for 256 routed experts refuses the fused path,
-    logs why, allocates no workspace and leaves readiness off, so every MoE
-    layer keeps the shipping chain."""
-    reason = refused_at_ep_init(
-        GEO, fmt, "local experts", num_experts=GLM_ROUTED_EXPERTS
-    )
-    print(f"{fmt}: 256 experts at EP4 refused at EP init ({reason})")
+def test_ep4_glm_neighbor_refused_at_ep_init(fmt: str) -> None:
+    """EP init on devices 0-3 for 512 routed experts (128 local) refuses the
+    fused path, logs why, allocates no workspace and leaves readiness off, so
+    every MoE layer keeps the shipping chain."""
+    reason = refused_at_ep_init(GLM, fmt, LOCAL_RULE, num_experts=4 * 128)
+    print(f"{fmt}: 512 experts at EP4 refused at EP init ({reason})")

@@ -125,10 +125,14 @@ def _run_fake_memcpy(
     in_dev.enqueue_copy_to(out_dev)
 
     var out_ptr: Pointer[Int64, MutUntrackedOrigin]
+    var out_dev_owner = Optional[DeviceBuffer[.int64]]()
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:
         out_ptr = out_dev.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+        # An untracked pointer doesn't keep `out_dev` alive, and the wrappers
+        # below don't own its memory, so hold it until the copies finish.
+        out_dev_owner = out_dev^
 
     var first_out_dev = DeviceBuffer[.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
@@ -148,6 +152,7 @@ def _run_fake_memcpy(
 
     # Wait for the copies to be completed.
     ctx.synchronize()
+    _ = out_dev_owner^
 
     for i in range(length):
         var expected: Int
@@ -186,6 +191,9 @@ def _run_cpu_ctx_memcpy_async(
     host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
     cpu_ctx.synchronize()
+    # A free waits only on `dev_buf`'s own stream, not on `cpu_ctx`'s, so
+    # hold it until the copy above finishes.
+    _ = dev_buf^
 
     for i in range(length):
         assert_equal(host_buf[i], Int64(2 * i))

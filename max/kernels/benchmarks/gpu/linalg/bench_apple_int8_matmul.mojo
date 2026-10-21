@@ -124,8 +124,8 @@ def _bench_quant(m: Int, k: Int, label: String, ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     print("=== Apple M5 int8 W8A8, FLUX.2-Klein Linear shapes, M=4096 ===")
     print(

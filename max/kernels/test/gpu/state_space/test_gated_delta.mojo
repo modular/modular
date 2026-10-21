@@ -313,7 +313,7 @@ def run_slot_indexed_gpu[
                         state_col[kd] = state_col[kd] + k_n[kd] * delta
                         out_val = out_val + state_col[kd] * q_ns[kd]
 
-                    recur_out_ref_heap.unsafe_ptr().store(
+                    recur_out_ref_heap.unsafe_ptr().unsafe_store(
                         UInt32(token) * output_seqlen_stride
                         + UInt32(vh * VALUE_HEAD_DIM + vd)
                         * output_valuedim_stride,
@@ -322,7 +322,7 @@ def run_slot_indexed_gpu[
 
                 # Write final state column
                 comptime for kd in range(KEY_HEAD_DIM):
-                    pool_ref_heap.unsafe_ptr().store(
+                    pool_ref_heap.unsafe_ptr().unsafe_store(
                         UInt32(slot) * pool_slot_stride
                         + UInt32(vh) * pool_value_head_stride
                         + UInt32(kd) * pool_key_dim_stride

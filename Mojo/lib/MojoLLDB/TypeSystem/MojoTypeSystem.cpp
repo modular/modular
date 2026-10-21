@@ -1064,11 +1064,12 @@ static std::string generateParametrizedName(DebugInfo::SourceNameAttr attr) {
   return displayName;
 }
 
-LIT::OpASTDecl *MojoTypeSystem::createDeclsFromSourceNameRecursive(
+LIT::ASTDecl *MojoTypeSystem::createDeclsFromSourceNameRecursive(
     DebugInfo::SourceNameAttr sourceName) {
   LIT::OpASTDecl *parentDecl = nullptr;
   if (DebugInfo::SourceNameAttr parent = sourceName.getParent())
-    parentDecl = createDeclsFromSourceNameRecursive(parent);
+    parentDecl =
+        dyn_cast<LIT::OpASTDecl>(createDeclsFromSourceNameRecursive(parent));
 
   switch (sourceName.getKind()) {
   case DebugInfo::SourceNameKind::Package:
@@ -1156,7 +1157,7 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
   return cast<LIT::OpASTDecl>(&decl);
 }
 
-LIT::OpASTDecl *
+LIT::DefASTDecl *
 MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
                                         LIT::OpASTDecl *parentDecl) {
   if (!parentDecl)
@@ -1167,7 +1168,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
   // We first check if the function already exists, in which case we just return
   // its decl.
   if (auto decl = lookupSingleMember(*parentDecl, name))
-    return decl;
+    return cast<LIT::DefASTDecl>(decl);
 
   LIT::SharedState &sharedState = impl->parserContext->getSharedState();
   auto builder = parentDecl->getDeclEndBuilder();
@@ -1187,7 +1188,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
       name, signature);
   auto &decl = sharedState.declResolver->addDecl(
       newFunction, parentDecl->getLoc(), name, parentDecl, {}, {}, -1);
-  return cast<LIT::OpASTDecl>(&decl);
+  return cast<LIT::DefASTDecl>(&decl);
 }
 
 LIT::OpASTDecl *

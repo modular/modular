@@ -37,9 +37,10 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence, Sized
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI, UnprocessableEntityError
 from tqdm import tqdm
 
 # Root identity preamble that MiniMax prepends to every request in their own
@@ -54,6 +55,11 @@ DEFAULT_ROOT_PREAMBLE = (
 )
 # MiniMax's own traces use the generic assistant system prompt.
 DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
+
+#: Asks the server for each completion's token IDs, saved beside the decoded
+#: text. :func:`chat_completion` stops asking for the rest of a run once a
+#: server rejects the field; ``EVAL_RETURN_TOKEN_IDS=0`` never asks.
+RETURN_TOKEN_IDS = os.environ.get("EVAL_RETURN_TOKEN_IDS", "1") != "0"
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _YESNO_FIELD_RE = re.compile(r"correct\s*:\s*\**\s*(yes|no)")
@@ -76,7 +82,8 @@ class GenParams:
 
     ``top_p``, ``seed``, and ``chat_template_kwargs`` are ``Optional``: ``None``
     omits the field entirely (server default). Judges pass ``top_p=None`` since
-    they send no ``top_p``.
+    they send no ``top_p``. ``return_token_ids`` changes what the server
+    returns, not what it generates.
     """
 
     max_tokens: int = 98304
@@ -84,6 +91,7 @@ class GenParams:
     top_p: float | None = 0.95
     seed: int | None = None
     chat_template_kwargs: dict[str, Any] | None = None
+    return_token_ids: bool = RETURN_TOKEN_IDS
 
 
 def make_client(base_url: str, api_key: str | None = None) -> OpenAI:
@@ -143,11 +151,42 @@ def build_chat_kwargs(
         kwargs["top_p"] = params.top_p
     if params.seed is not None:
         kwargs["seed"] = params.seed
+    extra_body: dict[str, Any] = {}
     if params.chat_template_kwargs is not None:
-        kwargs["extra_body"] = {
-            "chat_template_kwargs": params.chat_template_kwargs
-        }
+        extra_body["chat_template_kwargs"] = params.chat_template_kwargs
+    if params.return_token_ids:
+        extra_body["return_token_ids"] = True
+    if extra_body:
+        kwargs["extra_body"] = extra_body
     return kwargs
+
+
+def chat_completion(
+    client: ChatClient,
+    model: str,
+    messages: Sequence[Mapping[str, Any]],
+    params: GenParams,
+) -> Any:
+    """Sends one request to the model under test.
+
+    A server that rejects ``return_token_ids``, as a third-party endpoint may,
+    gets the request again without it. The field is also turned off in
+    ``params``, which every request of a run shares, so the run goes on
+    without token IDs instead of failing every request.
+    """
+    sent_token_ids = params.return_token_ids
+    try:
+        return client.chat.completions.create(
+            **build_chat_kwargs(model, messages, params)
+        )
+    except (BadRequestError, UnprocessableEntityError) as e:
+        if not sent_token_ids or "return_token_ids" not in str(e):
+            raise
+        print(f"::warning::Continuing without token IDs: {e}")
+        params.return_token_ids = False
+        return client.chat.completions.create(
+            **build_chat_kwargs(model, messages, params)
+        )
 
 
 def reasoning_text(message: Any) -> str | None:
@@ -162,13 +201,21 @@ def reasoning_text(message: Any) -> str | None:
     )
 
 
-def response_fields(message: Any) -> dict[str, str | None]:
-    """Returns a message's full text as row fields.
+def response_fields(choice: Any) -> dict[str, Any]:
+    """Returns a completion choice's full output as row fields.
 
-    ``response`` is the raw ``content`` (any inline ``<think>`` span kept) and
-    ``reasoning`` the separately returned reasoning, if any.
+    ``response`` is the raw ``content`` (any inline ``<think>`` span kept),
+    ``reasoning`` the separately returned reasoning, if any, and
+    ``completion_token_ids`` the ID of every generated token, reasoning
+    included. The IDs are ``None`` when the server didn't return them, as
+    for a request sent without ``return_token_ids``.
     """
-    return {"response": message.content, "reasoning": reasoning_text(message)}
+    message = choice.message
+    return {
+        "response": message.content,
+        "reasoning": reasoning_text(message),
+        "completion_token_ids": getattr(choice, "token_ids", None),
+    }
 
 
 def dump_config(
@@ -196,10 +243,17 @@ def dump_config(
         root_preamble: Root turn sent with every request, if any.
     """
     os.makedirs(out_dir, exist_ok=True)
+    # return_token_ids is left out: chat_completion can turn it off after this
+    # is written, so each row's completion_token_ids records what came back.
+    sent = {
+        k: v
+        for k, v in dataclasses.asdict(params).items()
+        if k != "return_token_ids"
+    }
     config = {
         "argv": sys.argv[1:],
         "base_url": base_url,
-        **dataclasses.asdict(params),
+        **sent,
         "system_prompt": system_prompt or None,
         "root_preamble": root_preamble or None,
         "sample_size": (
@@ -291,9 +345,17 @@ def expand_repeats(
 RUN_CONFIG_FILE = "run_config.json"
 
 #: CLI options that change how a run executes but not what it asks the model,
-#: so a resumed run may change them (e.g. a redeployed endpoint's new URL).
+#: so a resumed run may change them (e.g. a redeployed endpoint's new URL, or
+#: a dataset copy downloaded to a different path).
 RESUME_NEUTRAL_OPTIONS = frozenset(
-    {"base_url", "workers", "out_dir", "resume", "metric_prefix"}
+    {
+        "base_url",
+        "workers",
+        "out_dir",
+        "resume",
+        "metric_prefix",
+        "dataset_file",
+    }
 )
 
 
@@ -385,6 +447,9 @@ def run_parallel(
     On error, ``on_error(item, exc)`` builds a row that is RECORDED (never
     dropped) so dropping the hardest items can't inflate accuracy.
 
+    Every row gets a ``timestamp``: when a worker picked up its item, which
+    is when its request was sent, as a UTC ISO 8601 string.
+
     When ``out_dir`` is set, each row is written to ``results.jsonl`` and
     flushed as soon as its future resolves, so a killed/crashed run still
     leaves every completed sample on disk rather than losing everything
@@ -438,17 +503,24 @@ def run_parallel(
         for r in results:
             out_f.write(json.dumps(r) + "\n")
         out_f.flush()
+    sent_at: dict[int, str] = {}
+
+    def send(i: int) -> dict[str, Any]:
+        sent_at[i] = datetime.now(timezone.utc).isoformat()
+        return fn(items[i])
+
     try:
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            futures = {ex.submit(fn, it): it for it in items}
+            futures = {ex.submit(send, i): i for i in range(len(items))}
             for fut in tqdm(as_completed(futures), total=len(items), desc=desc):
-                it = futures[fut]
+                i = futures[fut]
                 try:
                     r = fut.result()
                 except Exception as e:
                     errors += 1
                     print(f"Error: {e}")
-                    r = on_error(it, e)
+                    r = on_error(items[i], e)
+                r["timestamp"] = sent_at[i]
                 results.append(r)
                 if out_f is not None:
                     out_f.write(json.dumps(r) + "\n")
@@ -837,7 +909,11 @@ def judge(
     reasoning judge to finish thinking and still emit its verdict.
     """
     params = GenParams(
-        max_tokens=max_tokens, temperature=0.0, top_p=None, seed=seed
+        max_tokens=max_tokens,
+        temperature=0.0,
+        top_p=None,
+        seed=seed,
+        return_token_ids=False,
     )
     resp = client.chat.completions.create(
         **build_chat_kwargs(

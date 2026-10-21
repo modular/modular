@@ -1644,7 +1644,7 @@ void FnSigDecorators::finalize() {
 /// Given the lexical context of a function, return true if the default bit
 /// for the function is capturing.
 static bool
-isCapturingByDefault(SharedState &shared, FnOp funcOp, TraitType canonicalTrait,
+isCapturingByDefault(FnOp funcOp, TraitType canonicalTrait,
                      std::optional<ArrayRef<ParamDeclAttr>> parentDecls,
                      ArrayRef<ParamDeclAttr> paramDecls) {
   // Any function that contains a capturing closure as a parameter is itself
@@ -1652,17 +1652,6 @@ isCapturingByDefault(SharedState &shared, FnOp funcOp, TraitType canonicalTrait,
   mlir::AttrTypeWalker walker;
   walker.addWalk([](FuncType sig) {
     if (sig.isCapturing())
-      return WalkResult::interrupt();
-    return WalkResult::advance();
-  });
-  // Temporary solution to supporting capturing parametric closures inside
-  // nested closures: propagate the capturing effect through the closure type.
-  walker.addWalk([&](SymbolRefAttr symbol) {
-    auto traitDecl = shared.declResolver->getDeclForTypeSymbolIfExists(symbol);
-    if (!traitDecl)
-      return WalkResult::advance();
-    if (isa<TraitASTDecl>(traitDecl) &&
-        shared.isUniversalParametricClosureTrait(traitDecl))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
@@ -1880,7 +1869,7 @@ static FnTypeGeneratorType
 finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, DefASTDecl &decl,
                      TypeCheckedFnSignature &tcSignature,
                      TypeCheckedParamList &paramList, StringAttr baseName) {
-  OpBuilder builder = decl.getDeclEndBuilder();
+  OpBuilder builder = OpBuilder::atBlockEnd(funcOp.getBody());
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
   FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
@@ -1966,15 +1955,19 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
           node, "cannot use a capturing lambda");
       return {};
     }
-    // Anchor the synthetic def at the nearest enclosing decl op (a `def`,
-    // struct, alias, ...) -- the param-list scope isn't an op, so walk up.
-    OpASTDecl *anchor = parentScope.getNearestDeclOfType<OpASTDecl>();
+    // Anchor the synthetic def at the nearest enclosing declaration with an
+    // operation. The param-list scope isn't an op, so walk up through it.
+    Operation *anchor = nullptr;
+    for (ASTDecl *cur = &parentScope; cur; cur = cur->getParentDecl()) {
+      if ((anchor = cur->getIfOperation()))
+        break;
+    }
     if (!anchor) {
       emitter.emitErrorForDynamicValueInParameter(
           node, "cannot use a lambda expression");
       return {};
     }
-    paramBuilder.setInsertionPoint(anchor->getIfOperation());
+    paramBuilder.setInsertionPoint(anchor);
   }
   OpBuilder &builder = insideParamContext ? paramBuilder : *emitter.builder;
   MLIRContext *ctx = builder.getContext();
@@ -2059,6 +2052,8 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   // Move the param/arg decls from the signature scope into the closure decl so
   // the body resolves them as locals.
   decl.takeDecls(sigDecl);
+  decl.setParamDecls(paramList.paramASTDecls);
+  decl.setArgDecls(tcSignature.argASTDecls);
 
   // 5. Build the generator signature and write the signature attributes onto
   //    the FnOp (shared with resolveSignature via finalizeResolvedFnOp), then
@@ -2228,7 +2223,8 @@ LogicalResult DefASTDecl::resolveSignature(Lexer &lexer) {
       auto &copiedDecl = resolver.addFullyResolvedDecl(
           paramDecl.getIfIRValue(), StringAttr::get(getContext(), paramName),
           paramDecl.getLoc(), &sigDecl);
-      copiedDecl.setArgOrParamNumber(paramDecl.getParamNumber());
+      copiedDecl.setArgOrParamNumber(paramDecl.getParamNumber(),
+                                     /*isParameter=*/true);
     }
   }
 
@@ -2406,7 +2402,7 @@ LogicalResult DefASTDecl::resolveSignature(Lexer &lexer) {
   } else if (auto *traitDecl = dyn_cast<TraitASTDecl>(getParentDecl())) {
     traitType = traitDecl->getOp().getCanonicalTrait();
   }
-  if (isCapturingByDefault(shared, funcOp, traitType, parentParams,
+  if (isCapturingByDefault(funcOp, traitType, parentParams,
                            paramList.paramDeclAttrs))
     fnSignature.effects.setCapturing();
 
@@ -2420,6 +2416,8 @@ LogicalResult DefASTDecl::resolveSignature(Lexer &lexer) {
 
   // Propagate errors and the parsed decls in the signature.
   takeDecls(sigDecl);
+  setParamDecls(paramList.paramASTDecls);
+  setArgDecls(tcSignature.argASTDecls);
 
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
@@ -2705,6 +2703,7 @@ LogicalResult DefASTDecl::resolveBody(Lexer &lexer) {
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
   FnTypeGeneratorType funcSignature = funcOp.getFuncTypeGenerator();
+  SmallVector<ASTDecl *, 2> argumentDecls;
   for (auto [argIdxX, bbArg, convention] :
        llvm::enumerate(funcOp.getBody()->getArguments(),
                        funcSignature.getArgConventions())) {
@@ -2722,6 +2721,7 @@ LogicalResult DefASTDecl::resolveBody(Lexer &lexer) {
     assert(argDeclList.size() == 1 &&
            "Argument should be added by signature resolution");
     auto &argDecl = cast<IRASTDecl>(*argDeclList[0]);
+    argumentDecls.push_back(&argDecl);
 
     // The argDecl is already set up with a basic representation when the
     // function signature was type checked.  Now that we have the body, this
@@ -2774,12 +2774,11 @@ LogicalResult DefASTDecl::resolveBody(Lexer &lexer) {
                     : VarDeclKind::Arg;
     VarDeclOp varDecl = emitter.emitVarDecl(
         resultName, funcOp.getUserResultType(), funcOp.getLoc(), kind);
-    ssize_t argNumber = static_cast<ssize_t>(funcSignature.getNumArguments());
     auto &argDecl = cast<VarASTDecl>(resolver.addFullyResolvedDecl(
         varDecl.getOperation(), resultName, getLoc(), this));
-    argDecl.setArgNumber(argNumber);
     shared.notifyListenerOnArgumentDecl(argDecl, resultName, argDecl.getLoc());
   }
+  setArgDecls(argumentDecls);
 
   // With all the argument declarations set up, we can resolve the body of the
   // function.
@@ -4062,6 +4061,7 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
 
   // Propagate signature errors and decls.
   takeDecls(sigDecl);
+  setParamDecls(paramSignature.paramASTDecls);
 
   // Capture the location of the `@explicit_destroy` decorator for more
   // accurate diagnostics later.
@@ -5240,6 +5240,8 @@ LogicalResult DefASTDecl::resolveSyntheticSignature() {
   assert(inheritedFnOp.isDefaultedTraitFn() &&
          "Expected trait -> struct default method inheritance");
 
+  createIRSignatureDecls(resolver);
+
   // TODO(MOCO-4712): this can be further simplified too.
   return resolveDefaultedOpFromTrait(resolver, inheritedFnOp, structDecl);
 }
@@ -5429,7 +5431,8 @@ LogicalResult ExtensionASTDecl::resolveBody(Lexer &lexer) {
         StringAttr::get(getContext(), demangleParameterName(param.getName()));
     auto &paramDecl = resolver.addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(param)), demangledName, getLoc(), this);
-    paramDecl.setArgOrParamNumber(static_cast<ssize_t>(paramIndex));
+    paramDecl.setArgOrParamNumber(static_cast<ssize_t>(paramIndex),
+                                  /*isParameter=*/true);
   }
   // Set extension's parameters to match target struct. This is to make it so
   // the verifier can see the param-decls and be aware of them when it's

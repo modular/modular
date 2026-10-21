@@ -623,7 +623,7 @@ struct HashableOnly(Deinitable, Hashable, Movable):
 
 
 def test_span_hashable_non_copyable() raises:
-    var allocation = alloc[HashableOnly]({count = 2}).into_managed()
+    var allocation = alloc[HashableOnly]({length = 2}).into_managed()
     var ptr = allocation.unsafe_ptr()
     ptr.unsafe_write(HashableOnly(1))
     ptr.unsafe_offset(1).unsafe_write(HashableOnly(2))
@@ -634,7 +634,7 @@ def test_span_hashable_non_copyable() raises:
 
 
 def test_span_with_move_only_type() raises:
-    var allocation = alloc[MoveOnly[Int]]({count = 1}).into_managed()
+    var allocation = alloc[MoveOnly[Int]]({length = 1}).into_managed()
     var ptr = allocation.unsafe_ptr()
     ptr.unsafe_write(MoveOnly(42))
     var span = Span(unsafe_ptr=ptr, length=1)
@@ -647,7 +647,7 @@ struct NonMovable:
 
 
 def test_span_with_non_movable_type() raises:
-    var allocation = alloc[NonMovable]({count = 1}).into_managed()
+    var allocation = alloc[NonMovable]({length = 1}).into_managed()
     var ptr = allocation.unsafe_ptr()
     var _span = Span(unsafe_ptr=ptr, length=0)
 

@@ -17,7 +17,7 @@ from max.pipelines.architectures.deepseekV4.reasoning import (  # noqa: F401
 )
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .memory_planner import DeepseekV41MemoryPlanner
@@ -37,6 +37,7 @@ deepseekV41_arch = SupportedArchitecture(
     pipeline_model=DeepseekV41Model,
     tokenizer=DeepseekV41Tokenizer,
     context_type=TextAndVisionContext,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
@@ -47,6 +48,4 @@ deepseekV41_arch = SupportedArchitecture(
     # reserves room for them.
     checkpoint_draft_width=dspark_draft_width,
     reasoning_parser="deepseekv4",
-    # TODO(ENABLE-3069): remove once activation memory is properly bounded
-    required_arguments={"max_length": 40000},
 )

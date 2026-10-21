@@ -46,7 +46,7 @@ from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import NemotronHAttention
 from .layers.mamba2 import (
-    MambaReplayRows,
+    MambaReplayCapture,
     MambaStateAccess,
     NemotronHMamba2Mixer,
 )
@@ -164,7 +164,7 @@ class NemotronHBackbone(
         input_row_offsets: Tensor,
         capture_rows: Tensor | None = None,
         update_state: Tensor | None = None,
-    ) -> tuple[Tensor, tuple[Tensor, ...], tuple[MambaReplayRows[Tensor], ...]]:
+    ) -> tuple[Tensor, tuple[Tensor, ...], tuple[MambaReplayCapture, ...]]:
         """Runs the layer stack.
 
         Args:
@@ -186,7 +186,7 @@ class NemotronHBackbone(
             ``target_layer_ids`` and each Mamba layer's captured replay inputs.
         """
         h = self.embeddings(tokens)
-        replays: list[MambaReplayRows[Tensor]] = []
+        replays: list[MambaReplayCapture] = []
         captures: dict[int, Tensor] = {}
         query_start_loc = F.cast(input_row_offsets, DType.int32)
         # In the order NemotronHConfig.construct_kv_params declares them.
@@ -357,7 +357,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor,
         update_state: Tensor,
-    ) -> tuple[ModuleV3Outputs, Tensor, tuple[MambaReplayRows[Tensor], ...]]:
+    ) -> tuple[ModuleV3Outputs, Tensor, tuple[MambaReplayCapture, ...]]:
         """Runs a speculative verify pass on the given Mamba state.
 
         Args:
@@ -405,7 +405,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
     ) -> tuple[
         ModuleV3Outputs,
         Tensor | None,
-        tuple[MambaReplayRows[Tensor], ...],
+        tuple[MambaReplayCapture, ...],
     ]:
         mesh = self.backbone.norm_f.weight.mesh
         h, captures, replays = self.backbone(

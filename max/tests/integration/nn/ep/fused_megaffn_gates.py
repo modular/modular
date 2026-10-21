@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Runtime tests of the one-launch fused EP MoE (``mega_ffn.ep_fused``) at any
-EP size, shared by the EP8 and EP4 tests.
+EP size, shared by the EP8, EP4 and EP2 64- and 128-local tests.
 
 Arm A is the shipping expert-parallel MoE (``ep.dispatch_async`` -> side-stream
 shared expert -> ``ep.dispatch_wait`` -> FFN -> combine; at NVFP4 the default
@@ -58,7 +58,10 @@ from max.nn.comm.ep import (
     EPConfig,
     ep_manager,
 )
-from max.nn.comm.ep.ep_manager import _plan_fused_moe_workspace
+from max.nn.comm.ep.ep_manager import (
+    _bound_fused_moe_workspace,
+    _plan_fused_moe_workspace,
+)
 from max.nn.comm.ep.ep_manager import logger as ep_init_logger
 from max.nn.layer import LayerList, Module
 from max.nn.moe import MoEQuantized
@@ -1056,6 +1059,26 @@ def refused_at_ep_init(
     assert (size, token_block) == (0, 0)
     assert reason_fragment in reason, reason
     assert any(reason in m for m in warnings), warnings
+    return reason
+
+
+def planned_as_refused(
+    geo: Geometry,
+    fmt: str,
+    reason_fragment: str,
+    num_experts: int | None = None,
+) -> str:
+    """The host plan query, exact and as the memory planner's bound, budgets
+    no fused workspace for a configuration the backend refuses, and both name
+    the same rule. Returns the reason."""
+    config = ep_config(geo, fmt, True, shared=False, num_experts=num_experts)
+    size, token_block, reason = _plan_fused_moe_workspace(config)
+    assert (size, token_block) == (0, 0)
+    assert reason_fragment in reason, reason
+    assert _bound_fused_moe_workspace(config, config.dispatch_dtype) == (
+        0,
+        reason,
+    )
     return reason
 
 

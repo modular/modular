@@ -229,8 +229,8 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 required (compute_capability == 5)")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 required (compute_capability >= 5)")
         return
 
     print("== bench_apple_fp8_gemv (decode M in {1, 32}; warmup=25, hot=50)")

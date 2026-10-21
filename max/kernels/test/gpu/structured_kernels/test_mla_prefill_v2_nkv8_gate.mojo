@@ -43,6 +43,7 @@ in-place-FP32 helpers are not wired, so the kernel will not compile.
 
 from std.math import ceildiv, exp, rsqrt
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed
 from max.gpu.host import DeviceContext
 from std.sys import get_defined_int, get_defined_string
@@ -121,7 +122,7 @@ def _mla_naive_fp32_ref_chunked(
     K_nope segment (DeepSeek-V3 convention).
     """
     var heads_per_kv = num_heads // num_kv_heads
-    var score_buf = alloc[Float32](chunk_size * num_keys)
+    var score_buf = unsafe_alloc[Float32](chunk_size * num_keys)
 
     for b in range(batch):
         for h in range(num_heads):
@@ -197,7 +198,7 @@ def _mla_naive_fp32_ref_chunked(
 
                 q_start = q_end
 
-    score_buf.free()
+    score_buf.unsafe_free()
 
 
 @inline(.always)
@@ -468,7 +469,7 @@ def test_mla_vs_fp32_ref[
 
     # ---- FP32 host reference (full sweep) -----------------------------
     var size_ref = BATCH * SEQ_LEN * NUM_HEADS * D_NOPE
-    var host_out_ref_fp32 = alloc[Float32](size_ref)
+    var host_out_ref_fp32 = unsafe_alloc[Float32](size_ref)
     comptime CHUNK_SIZE = 64
     _mla_naive_fp32_ref_chunked(
         host_q_src.unsafe_ptr(),
@@ -556,7 +557,7 @@ def test_mla_vs_fp32_ref[
             num_nonfinite,
         )
 
-    host_out_ref_fp32.free()
+    host_out_ref_fp32.unsafe_free()
     _ = host_q_src
     _ = host_knope_src
     _ = host_krope_src

@@ -34,10 +34,6 @@ from state_space.gated_group_rmsnorm import (
 )
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
-
-
 def run_gated_group_rmsnorm[
     y_dtype: DType,
     gate_dtype: DType,
@@ -268,3 +264,7 @@ def test_gated_group_rmsnorm_unaligned_gate_stride() raises:
     run_gated_group_rmsnorm[.bfloat16, .bfloat16, 512](
         ctx, n_rows=5, num_groups=8, gate_stride=4100
     )
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

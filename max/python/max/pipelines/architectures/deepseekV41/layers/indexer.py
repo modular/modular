@@ -24,7 +24,7 @@ value bytes, then every key's scale word. Each page holds
 
 Selection is causal: a query at position ``p`` sees the ``(p + 1) // ratio``
 keys whose groups have closed. Candidate blocks group ``block_size``
-consecutive keys; see :func:`candidate_keep_from_block_max`.
+consecutive keys; see :func:`select_index_keys_block_topk`.
 """
 
 from __future__ import annotations
@@ -40,7 +40,6 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kernels import top_k_per_row
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import Linear
@@ -338,60 +337,91 @@ def select_index_keys(
             layer_idx,
         ],
         out_types=[TensorType(DType.int32, [t, top_k], packed.device)],
-        parameters={"num_heads": n_heads, "top_k": top_k, "kpool": ratio},
+        parameters={
+            "num_heads": n_heads,
+            "top_k": top_k,
+            "kpool": ratio,
+            "scores_budget_bytes": INDEXER_SCORES_BUDGET_BYTES,
+        },
     )[0].tensor
 
 
-def select_index_keys_block_max(
+# The indexer ops score query rows in windows that fit this transient budget
+# of bfloat16 scores, whatever the batch or context length; every indexer op
+# takes it as a parameter. The candidate ops' ``[rows, blocks]`` scratch holds
+# as many rows as one score window, so it takes at most a quarter of it.
+INDEXER_SCORES_BUDGET_BYTES = 512 << 20
+
+
+def candidate_window_rows(rows: int, num_blocks: int, block_size: int) -> int:
+    """Rows of the candidate ops' window scratch."""
+    budget = INDEXER_SCORES_BUDGET_BYTES // max(1, num_blocks * block_size * 2)
+    return max(1, min(rows, budget))
+
+
+def select_index_keys_block_topk(
     leaf: PagedCacheValues,
     q: tuple[TensorValue, TensorValue, TensorValue],
     offsets: TensorValue,
+    positions: TensorValue,
     layer_idx: TensorValue,
     *,
     top_k: int,
     ratio: int,
     block_size: int,
-    num_blocks: int,
+    topk_blocks: int,
 ) -> tuple[TensorValue, TensorValue]:
-    """:func:`select_index_keys` plus each row's per-block maximum score.
+    """:func:`select_index_keys` plus each row's ``topk_blocks`` best blocks.
+
+    A block of ``block_size`` keys scores the maximum of its visible keys.
+    The block of the newest visible key, ``((p + 1) // ratio - 1) //
+    block_size``, is always kept, blocks past it or with no visible key
+    never are, and which blocks tied with the last kept value are kept is
+    unspecified.
+
+    Args:
+        positions: ``[T]`` query positions.
+        topk_blocks: Blocks kept per row.
 
     Returns:
-        ``(ids [T, top_k], block_max [T, num_blocks] float32)``; a block
-        with no visible key is ``-inf``.
+        ``(ids [T, top_k], kept [T, topk_blocks] int32)``; kept block ids
+        come in no particular order, with ``-1`` in unused slots.
     """
     packed, scales, weights = q
     t, n_heads = packed.shape[0], int(packed.shape[1])
     device = packed.device
-    ids, block_max = ops.inplace_custom(
+    ids, kept = ops.inplace_custom(
         "mo.csa.indexer.mxfp4.block_max",
         device=device,
         values=[
             packed,
             scales,
             weights,
+            ops.cast(positions, DType.int32),
             offsets,
             *_cache_values(leaf),
             layer_idx,
         ],
         out_types=[
             TensorType(DType.int32, [t, top_k], device),
-            TensorType(DType.float32, [t, num_blocks], device),
+            TensorType(DType.int32, [t, topk_blocks], device),
         ],
         parameters={
             "num_heads": n_heads,
             "top_k": top_k,
             "kpool": ratio,
             "block_size": block_size,
+            "scores_budget_bytes": INDEXER_SCORES_BUDGET_BYTES,
         },
     )
-    return ids.tensor, block_max.tensor
+    return ids.tensor, kept.tensor
 
 
 def select_index_keys_masked(
     leaf: PagedCacheValues,
     q: tuple[TensorValue, TensorValue, TensorValue],
     offsets: TensorValue,
-    keep: TensorValue,
+    kept: TensorValue,
     layer_idx: TensorValue,
     *,
     top_k: int,
@@ -401,8 +431,8 @@ def select_index_keys_masked(
     """:func:`select_index_keys` among the keys of each row's kept blocks.
 
     Args:
-        keep: ``[T, num_blocks]`` bool, block ``b`` holding keys
-            ``[b * block_size, (b + 1) * block_size)``.
+        kept: ``[T, kept]`` int32 kept block ids, ``-1`` for none; block
+            ``b`` holds keys ``[b * block_size, (b + 1) * block_size)``.
     """
     packed, scales, weights = q
     t, n_heads = packed.shape[0], int(packed.shape[1])
@@ -413,7 +443,7 @@ def select_index_keys_masked(
             packed,
             scales,
             weights,
-            ops.cast(keep, DType.uint8),
+            kept,
             offsets,
             *_cache_values(leaf),
             layer_idx,
@@ -424,75 +454,41 @@ def select_index_keys_masked(
             "top_k": top_k,
             "kpool": ratio,
             "block_size": block_size,
+            "scores_budget_bytes": INDEXER_SCORES_BUDGET_BYTES,
         },
     )[0].tensor
 
 
-# Block maxima rows are padded to a 16-byte multiple so every row of the
-# top-k input stays vector aligned.
-_BLOCK_MAX_ALIGN = 4
-
-
 def candidate_num_blocks(max_seq_len: int, ratio: int, block_size: int) -> int:
-    """Candidate blocks covering the most keys a request can hold.
-
-    Rounded up to a multiple of four; the extra blocks hold no key.
-    """
-    blocks = -(-(max_seq_len // ratio) // block_size)
-    return -(-blocks // _BLOCK_MAX_ALIGN) * _BLOCK_MAX_ALIGN
+    """Candidate blocks covering the most keys a request can hold."""
+    return -(-(max_seq_len // ratio) // block_size)
 
 
-def candidate_keep_from_block_max(
-    block_max: TensorValue,
-    positions: TensorValue,
+def candidate_keep_blocks(
+    max_seq_len: int,
+    position_capacity: int,
+    compress_ratio: int,
     *,
-    ratio: int,
     block_size: int,
     topk_blocks: int,
-) -> TensorValue:
-    """Keeps each row's ``topk_blocks`` best blocks of keys.
+) -> int:
+    """Returns the candidate keep step's blocks per row, or 0 to skip it.
 
-    The block of the newest visible key, ``((p + 1) // ratio - 1) //
-    block_size``, is forced in; ``-inf`` blocks are never kept. Among blocks
-    tied with the ``k``-th best, the lowest ids fill the remaining picks.
-
-    Args:
-        block_max: ``[T, num_blocks]`` float32 per-block maximum scores.
-        positions: ``[T]`` query positions.
-        ratio: Tokens per key.
-        block_size: Keys per block.
-        topk_blocks: Blocks kept per row.
-
-    Returns:
-        ``[T, num_blocks]`` bool keep mask.
+    The graph gates the keep step and the memory planner sizes it here. The
+    gate reads ``max_seq_len``: a row past it, in the speculative slack,
+    never commits a token, so blocks only such a row reaches are no reason
+    to run the pass. The blocks cover ``position_capacity``, since the
+    kernel sizes its scratch from the cached lengths, which reach into the
+    slack when the pass does run.
     """
-    nblocks = int(block_max.shape[-1])
-    device = block_max.device
-    pos = ops.cast(positions, DType.int32)
-    last = ops.floor_div(ops.floor_div(pos + 1, ratio) - 1, block_size)
-    block_iota = ops.unsqueeze(
-        ops.range(0, nblocks, dtype=DType.int32, device=device), 0
-    )
-    forced = ops.where(
-        ops.unsqueeze(last, -1) == block_iota, float("inf"), block_max
-    )
-    k = min(topk_blocks, nblocks)
-    # Picks come in descending order with ties by ascending block, so the
-    # last pick is the k-th best value and the tied picks are the lowest ids.
-    top_vals, top_ids = top_k_per_row(
-        forced,
-        ops.broadcast_to(
-            ops.constant(k, DType.int64, device), [forced.shape[0]]
-        ),
-        k,
-    )
-    kth = top_vals[:, k - 1 : k]
-    last_tied = ops.max(
-        ops.where(top_vals == kth, ops.cast(top_ids, DType.int32), -1),
-        axis=-1,
-    )
-    keep = (forced > kth) | ((forced == kth) & (block_iota <= last_tied))
-    return keep & (forced > float("-inf"))
+    if not candidate_blocks_active(
+        max_seq_len,
+        compress_ratio,
+        block_size=block_size,
+        topk_blocks=topk_blocks,
+    ):
+        return 0
+    return candidate_num_blocks(position_capacity, compress_ratio, block_size)
 
 
 def key_positions(ids: TensorValue, ratio: int) -> TensorValue:

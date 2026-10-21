@@ -23,6 +23,7 @@ from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.collections import List
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 from graph_utils import (
     UNVISITED,
@@ -80,7 +81,7 @@ def main() raises:
     var num_edges = len(src)
     print("Graph has", num_edges, "edges")
 
-    var h_level = alloc[UInt32](NUM_VERTICES)
+    var h_level = unsafe_alloc[UInt32](NUM_VERTICES)
     for i in range(NUM_VERTICES):
         h_level[i] = UNVISITED
 
@@ -92,8 +93,8 @@ def main() raises:
     var d_level = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES)
     var d_new_vertex_visited = ctx.enqueue_create_buffer[.uint32](1)
 
-    var h_dst_ptrs = alloc[UInt32](NUM_VERTICES + 1)
-    var h_src = alloc[UInt32](num_edges)
+    var h_dst_ptrs = unsafe_alloc[UInt32](NUM_VERTICES + 1)
+    var h_src = unsafe_alloc[UInt32](num_edges)
     for i in range(NUM_VERTICES + 1):
         h_dst_ptrs[i] = dst_ptrs[i]
     for i in range(num_edges):
@@ -108,7 +109,7 @@ def main() raises:
 
     print("Running BFS...")
     while True:
-        var h_flag = alloc[UInt32](1)
+        var h_flag = unsafe_alloc[UInt32](1)
         h_flag[0] = 0
         ctx.enqueue_copy(d_new_vertex_visited, h_flag)
 
@@ -128,10 +129,10 @@ def main() raises:
         ctx.synchronize()
 
         if h_flag[0] == 0:
-            h_flag.free()
+            h_flag.unsafe_free()
             break
 
-        h_flag.free()
+        h_flag.unsafe_free()
         curr_level += 1
 
     print("BFS completed at level", curr_level - 1)
@@ -148,6 +149,6 @@ def main() raises:
     else:
         print("Figure 18.8 BFS Failed!")
 
-    h_level.free()
-    h_dst_ptrs.free()
-    h_src.free()
+    h_level.unsafe_free()
+    h_dst_ptrs.unsafe_free()
+    h_src.unsafe_free()

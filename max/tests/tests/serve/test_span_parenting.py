@@ -31,6 +31,7 @@ from max.serve.pipelines.llm import TokenGeneratorOutput
 from max.serve.router.openai_routes import (
     OpenAIChatResponseGenerator,
     OpenAICompletionResponseGenerator,
+    _tracer,
 )
 from max.serve.scheduler.text_generation_scheduler import (
     _parent_trace_context,
@@ -315,6 +316,14 @@ async def test_tracing_off_leaves_the_phase_parent_unset(
         await generator_type(pipeline).complete([_mock_request()])
 
     assert seen == [(None, int("2" * 16, 16))]
+
+
+def test_tracing_off_skips_the_span_context_read() -> None:
+    span = _tracer.start_span("max.request")
+    assert span is otel_trace.INVALID_SPAN
+    with patch.object(span, "get_span_context") as get_span_context:
+        set_phase_parent(span)
+    get_span_context.assert_not_called()
 
 
 def test_a_no_op_parent_span_leaves_the_phase_parent_unset() -> None:

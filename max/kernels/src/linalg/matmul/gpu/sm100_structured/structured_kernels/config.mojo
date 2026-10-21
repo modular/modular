@@ -1279,6 +1279,9 @@ struct BlockScaledMatmulConfig[
         # co-resident non-matmul warp-class (persistent megakernel). 0
         # (default) = standalone matmul, auto-max stages unchanged.
         reserved_smem: Int = 0,
+        # C-tile SMEM buffers. The fused SwiGLU epilogue under one accumulator
+        # stage stages every epilogue sub-stage at once and needs one each.
+        num_output_stages: Int = 2,
     ):
         comptime assert block_scaled_operands_compatible[
             Self.a_type, Self.b_type
@@ -1330,7 +1333,7 @@ struct BlockScaledMatmulConfig[
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
-        self.num_output_stages = 2
+        self.num_output_stages = num_output_stages
         self.num_split_k = num_split_k
 
         var swizzles = _compute_swizzle_modes(

@@ -301,41 +301,7 @@ public:
   //===--------------------------------------------------------------------===//
   // Module Resolution
 
-  /// A parsed import path: module-path components plus the number of leading
-  /// dots of a relative import (0 for an absolute import).
-  struct ImportPath {
-    ImportPath() = default;
-    ImportPath(std::initializer_list<StringRef> components,
-               unsigned relativeLevel = 0)
-        : components(components), relativeLevel(relativeLevel) {}
-    ImportPath(ArrayRef<StringRef> components, unsigned relativeLevel = 0)
-        : components(components.begin(), components.end()),
-          relativeLevel(relativeLevel) {}
-
-    /// Render the path as a Mojo ASTDecl name: the joined dotted-string form
-    /// used for decl and import-op names. It is ambiguous for components that
-    /// themselves contain periods (e.g. escaped identifiers) and is not a
-    /// source-faithful rendering for diagnostics.
-    std::string toDottedString() const {
-      return std::string(relativeLevel, '.') + llvm::join(components, ".");
-    }
-
-    /// Convert to/from the unambiguous `#lit.import_path` attribute form,
-    /// which import ops should prefer over the dotted-string forms above.
-    ImportPathAttr toAttr(MLIRContext *ctx) const {
-      return ImportPathAttr::get(ctx, relativeLevel, components);
-    }
-    static ImportPath fromAttr(ImportPathAttr attr) {
-      ImportPath path;
-      path.relativeLevel = attr.getRelativeLevel();
-      for (StringAttr component : attr.getComponents())
-        path.components.push_back(component.getValue());
-      return path;
-    }
-
-    SmallVector<StringRef, 4> components;
-    unsigned relativeLevel = 0;
-  };
+  using ImportPath = LIT::ImportPath;
 
   /// Import the specified module or package, returning the decl. Always returns
   /// a valid decl, even if a corresponding module or package could not be

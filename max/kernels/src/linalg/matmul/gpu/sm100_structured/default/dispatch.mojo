@@ -187,7 +187,7 @@ def _small_MN_gemms_impl[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=(
                     ceildiv(m, config.tile_m),
                     ceildiv(n, config.tile_n),
@@ -222,7 +222,7 @@ def _small_MN_gemms_impl[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=(
                     ceildiv(m, config.tile_m),
                     ceildiv(n, config.tile_n),
@@ -1556,7 +1556,7 @@ def _vendor_blas_matmul_sm100[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=epilogue_fn,
+                    host_args=(epilogue_fn,),
                     grid_dim=grid_dim,
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
@@ -1582,7 +1582,7 @@ def _vendor_blas_matmul_sm100[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=compute_fn,
+                    host_args=(compute_fn,),
                     grid_dim=grid_dim,
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )

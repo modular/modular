@@ -96,7 +96,7 @@ def test_conv_nhwc_direct_fused() raises:
             + Int(coords[2]) * col_stride
             + Int(coords[3])
         )
-        (out_ptr.unsafe_offset(flat)).store(val.cast[dtype]() * SCALE)
+        (out_ptr.unsafe_offset(flat)).unsafe_store(val.cast[dtype]() * SCALE)
 
     @inline(.always)
     def null_epilogue[
@@ -214,7 +214,7 @@ def test_conv_transposed_cpu_fused() raises:
             + Int(coords[2]) * col_stride
             + Int(coords[3])
         )
-        (out_ptr.unsafe_offset(flat)).store(val.cast[dtype]() * SCALE)
+        (out_ptr.unsafe_offset(flat)).unsafe_store(val.cast[dtype]() * SCALE)
 
     @inline(.always)
     def null_epilogue[

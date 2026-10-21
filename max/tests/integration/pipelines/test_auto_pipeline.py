@@ -14,17 +14,29 @@
 
 from __future__ import annotations
 
+import io
 from collections.abc import Callable, Iterator
 from unittest.mock import MagicMock
 
 import pytest
-from max.pipelines import PIPELINE_REGISTRY, AutoPipeline, PipelineConfig
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    AutoPipeline,
+    AutoProcessor,
+    PipelineConfig,
+)
 from max.pipelines.lib import (
     TextGenerationPipeline,
     auto_pipeline,
     generate_local_model_path,
 )
 from max.pipelines.lib.generate import GenerateResult
+from max.pipelines.modeling.types import (
+    ImageContentPart,
+    TextContentPart,
+    TextGenerationRequestMessage,
+)
+from PIL import Image
 
 REPO_ID = "modularai/SmolLM-135M-Instruct-FP32"
 NUM_NEW_TOKENS = 8
@@ -33,6 +45,11 @@ TEXT = "The capital of France is"
 # come back from its decoded ids.
 SPECIAL_PROMPT = "<|im_start|>2 + 2 ="
 PROMPTS = [TEXT, SPECIAL_PROMPT]
+CONVERSATION: list[dict[str, object]] = [{"role": "user", "content": TEXT}]
+OTHER_CONVERSATION: list[dict[str, object]] = [
+    {"role": "system", "content": "Answer with a number."},
+    {"role": "user", "content": "2 + 2 ="},
+]
 
 
 @pytest.fixture(scope="module")
@@ -91,6 +108,11 @@ def test_outputs_start_with_their_prompts(pipe: AutoPipeline) -> None:
         assert len(text) > len(prompt)
 
 
+def test_a_tuple_of_prompts_returns_a_list(pipe: AutoPipeline) -> None:
+    texts = pipe(tuple(PROMPTS), max_new_tokens=NUM_NEW_TOKENS, top_k=1)
+    assert texts == pipe(PROMPTS, max_new_tokens=NUM_NEW_TOKENS, top_k=1)
+
+
 def test_a_string_returns_a_string(pipe: AutoPipeline) -> None:
     text = pipe(TEXT, max_new_tokens=NUM_NEW_TOKENS, top_k=1)
     assert isinstance(text, str)
@@ -98,24 +120,167 @@ def test_a_string_returns_a_string(pipe: AutoPipeline) -> None:
 
 
 @pytest.mark.parametrize(
-    ("text", "error"),
+    ("text", "error", "match"),
     [
-        ([], ValueError),
-        ((), ValueError),
-        ([TEXT, 1], TypeError),
-        ([[1, 2, 3]], TypeError),
-        (b"bytes", TypeError),
-        (5, TypeError),
-        ((prompt for prompt in PROMPTS), TypeError),
+        ([], ValueError, "text must"),
+        ((), ValueError, "text must"),
+        ([TEXT, 1], TypeError, "text must"),
+        ([TEXT, CONVERSATION], TypeError, "text must"),
+        ([[1, 2, 3]], TypeError, "Row 0 has a message of type int"),
+        (b"bytes", TypeError, "text must"),
+        (5, TypeError, "text must"),
+        ({"role": "user", "content": TEXT}, TypeError, "text must be a str"),
+        ((prompt for prompt in PROMPTS), TypeError, "text must"),
     ],
 )
-def test_rejects_text_that_is_not_strings(
-    pipe: AutoPipeline, text: object, error: type[Exception]
+def test_rejects_text_that_is_not_prompts_or_conversations(
+    pipe: AutoPipeline, text: object, error: type[Exception], match: str
 ) -> None:
     # Typed loosely so the call can pass what the overloads reject.
     call: Callable[..., object] = pipe
-    with pytest.raises(error, match="text must"):
+    with pytest.raises(error, match=match):
         call(text, max_new_tokens=1)
+
+
+def test_conversations_return_only_the_new_text(
+    pipe: AutoPipeline, model_path: str
+) -> None:
+    conversations = [CONVERSATION, OTHER_CONVERSATION]
+    texts = pipe(conversations, max_new_tokens=NUM_NEW_TOKENS, top_k=1)
+
+    processor = AutoProcessor(model_path)
+    outputs = pipe.model.generate(
+        **processor(conversations), max_new_tokens=NUM_NEW_TOKENS, top_k=1
+    )
+    assert texts == processor.batch_decode(
+        [
+            sequence[length:]
+            for sequence, length in zip(
+                outputs.sequences, outputs.prompt_lengths, strict=True
+            )
+        ],
+        skip_special_tokens=True,
+    )
+    assert all(texts)
+
+
+def test_a_conversation_returns_a_string(pipe: AutoPipeline) -> None:
+    text = pipe(CONVERSATION, max_new_tokens=NUM_NEW_TOKENS, top_k=1)
+    assert isinstance(text, str)
+    assert (
+        text == pipe([CONVERSATION], max_new_tokens=NUM_NEW_TOKENS, top_k=1)[0]
+    )
+
+
+def test_a_conversation_passes_messages_images_and_sampling(
+    pipe: AutoPipeline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(buffer, format="PNG")
+    png = buffer.getvalue()
+    [prompt_ids] = pipe.tokenizer([TEXT])["input_ids"]
+    [new_ids] = pipe.tokenizer([" Paris"])["input_ids"]
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def record(*args: object, **kwargs: object) -> GenerateResult:
+        calls.append((args, kwargs))
+        return GenerateResult(
+            sequences=[[*prompt_ids, *new_ids]],
+            prompt_lengths=[len(prompt_ids)],
+        )
+
+    monkeypatch.setattr(auto_pipeline, "generate", record)
+    text = pipe(
+        [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": png},
+                    {"type": "text", "text": TEXT},
+                ],
+            }
+        ],
+        max_new_tokens=3,
+        top_k=4,
+        seed=7,
+    )
+    assert text == pipe.tokenizer.decode(new_ids, skip_special_tokens=True)
+    assert calls == [
+        (
+            (pipe.model.pipeline,),
+            {
+                "messages": [
+                    [
+                        TextGenerationRequestMessage(
+                            role="user",
+                            content=[
+                                ImageContentPart(),
+                                TextContentPart(text=TEXT),
+                            ],
+                        )
+                    ]
+                ],
+                "images": [[png]],
+                "max_new_tokens": 3,
+                "min_new_tokens": None,
+                "temperature": None,
+                "top_k": 4,
+                "top_p": None,
+                "min_p": None,
+                "frequency_penalty": None,
+                "presence_penalty": None,
+                "repetition_penalty": None,
+                "ignore_eos": False,
+                "stop_token_ids": None,
+                "seed": 7,
+                "caller": "AutoPipeline",
+            },
+        )
+    ]
+
+
+def test_a_conversation_drops_special_tokens(
+    pipe: AutoPipeline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    [prompt_ids] = pipe.tokenizer([TEXT])["input_ids"]
+    [new_ids] = pipe.tokenizer([" Paris<|im_end|>"])["input_ids"]
+
+    def record(*args: object, **kwargs: object) -> GenerateResult:
+        return GenerateResult(
+            sequences=[[*prompt_ids, *new_ids]],
+            prompt_lengths=[len(prompt_ids)],
+        )
+
+    monkeypatch.setattr(auto_pipeline, "generate", record)
+    text = pipe(CONVERSATION, max_new_tokens=3)
+    assert "<|im_end|>" in pipe.tokenizer.decode(new_ids)
+    assert "<|im_end|>" not in text
+    assert text == pipe.tokenizer.decode(new_ids, skip_special_tokens=True)
+
+
+def test_images_on_a_text_only_model_raise(pipe: AutoPipeline) -> None:
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(buffer, format="PNG")
+    with pytest.raises(ValueError, match=r"Row 0 has 1 image, .* text only"):
+        pipe(
+            [
+                {
+                    "role": "user",
+                    "content": [{"type": "image", "image": buffer.getvalue()}],
+                }
+            ],
+            max_new_tokens=1,
+        )
+
+
+def test_video_parts_on_a_text_only_model_raise(pipe: AutoPipeline) -> None:
+    video: list[dict[str, object]] = [
+        {"role": "user", "content": [{"type": "video"}]}
+    ]
+    with pytest.raises(
+        ValueError, match=r"^Row 1 has a video part, but .* takes text only\.$"
+    ):
+        pipe([CONVERSATION, video], max_new_tokens=1)
 
 
 def test_passes_every_sampling_argument(
@@ -126,7 +291,10 @@ def test_passes_every_sampling_argument(
 
     def record(*args: object, **kwargs: object) -> GenerateResult:
         calls.append((args, kwargs))
-        return GenerateResult(sequences=[[*prompt_ids, prompt_ids[-1]]])
+        return GenerateResult(
+            sequences=[[*prompt_ids, prompt_ids[-1]]],
+            prompt_lengths=[len(prompt_ids)],
+        )
 
     monkeypatch.setattr(auto_pipeline, "generate", record)
     pipe(
@@ -223,6 +391,19 @@ def test_closed_pipeline_raises(
     pipe.close()
     with pytest.raises(RuntimeError, match="AutoModel is closed"):
         pipe(TEXT, max_new_tokens=1)
+
+
+def test_closed_pipeline_checks_the_input_first(
+    model_path: str,
+    stub_pipeline: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auto_pipeline, "AutoTokenizer", MagicMock())
+    pipe = _load_cpu(model_path)
+    pipe.close()
+    call: Callable[..., object] = pipe
+    with pytest.raises(TypeError, match="text must be"):
+        call([TEXT, CONVERSATION], max_new_tokens=1)
 
 
 def test_tokenizer_failure_closes_the_model(

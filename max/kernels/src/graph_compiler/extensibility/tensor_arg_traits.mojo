@@ -28,18 +28,24 @@ The traits fall into three groups:
   (`Tensor`, `DenseTensor`) and how it touches individual elements.
 
 Element access is split into marker / capability pairs. A graph-visible marker
-(`LoadAccess`, `StoreAccess`, `TransformAccess`) records the access form in the
-distilled contract but adds no method; the matching capability (`Loadable`,
-`Storable`, `Transformable`) additionally supplies the method the kernel body
-calls. A kernel typically binds the marker in its signature and refines to the
-capability inside its body, so the same argument type works whether it stays on
-the host or is projected to a device.
+(`LoadAccess`, `StoreAccess`) records the access form in the distilled contract
+but adds no method; the matching capability (`Loadable`, `Storable`)
+additionally supplies the method the kernel body calls. A kernel typically binds
+the marker in its signature and refines to the capability inside its body, so
+the same argument type works whether it stays on the host or is projected to a
+device.
+
+`_LegacyComputeOutput` is the exception: it doesn't guarantee its capability
+`_LegacyComputable`, and the graph compiler may deliver `Storable` instead. It
+is legacy machinery; read its docstring before using it.
 """
+
+from std.memory import AddressSpace
 
 from layout import (
     Coord,
     CoordLike,
-    DefaultEngine,
+    CurrentTensorEngine,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -186,7 +192,7 @@ trait DenseTensor(Tensor):
 
     comptime LayoutType: TensorLayout
     comptime alignment: Int
-    comptime Engine: TensorEngine = DefaultEngine[element_width=1]
+    comptime Engine: TensorEngine = CurrentTensorEngine[AddressSpace.GENERIC]
     """How the argument's backing memory is referenced.
 
     Per-target instantiation metadata like `alignment`, not part of the
@@ -275,28 +281,70 @@ trait Storable(StoreAccess):
         ...
 
 
-trait TransformAccess(Tensor):
-    """Marker trait: this tensor transforms a kernel-computed SIMD value.
+trait _LegacyComputeOutput(Tensor):
+    """Opt-in: this output can take its fused epilogue as a compute lambda.
 
-    The kernel passes each computed value through a fused epilogue instead of
-    storing directly; the parent kernel does the final store. Like the other
-    markers it carries no method; the kernel refines to `Transformable` in its
-    body for the `transform` call.
+    Unlike `LoadAccess` and `StoreAccess`, this opt-in doesn't guarantee a
+    single callable refinement. The argument arrives as either
+    `_LegacyComputable` or `Storable`, depending on the fused epilogue, and the
+    kernel must handle both.
+
+    It is the trait-lane counterpart of the legacy `_FusedComputeOutputTensor`
+    and follows the same rules.
+
+    This trait and `_LegacyComputable` are slated for deprecation and will be
+    removed once more principled epilogue forms are available. They couple the
+    epilogue's value transform to the kernel's store, and their fallback rules
+    leak into every kernel that uses them. Use them only when a kernel can't
+    write its output element by element, such as a matmul that stages output
+    tiles in shared memory and writes them with an asynchronous bulk copy (TMA
+    on SM100, DMA on an NPU). For now, every other kernel should declare
+    `StoreAccess`.
+
+    Declare it as `Some[Output & Fused & _LegacyComputeOutput]`, then branch on
+    what the graph compiler delivered:
+
+    - `_LegacyComputable & TileTensorable`: `compute` applies the epilogue's
+      value transform and returns the result without storing it. The kernel
+      writes the result through `to_tile_tensor`. An output with no fused
+      epilogue arrives this way too, with an identity `compute`.
+    - `Storable`: `store` runs the whole epilogue, including the write, as for
+      a fused `StoreAccess` output. The kernel stores in the dtype it computed
+      and has no buffer to write a tile into.
+
+    ```mojo
+    comptime if conforms_to(type_of(z), _LegacyComputable):
+        # Transform each value, then stage and write the tile.
+        ...
+    else:
+        # `store` each value; it applies the whole epilogue.
+        ...
+    ```
+
+    The graph compiler delivers `Storable` when a compute lambda can't express
+    the epilogue, because it changes the store index (a fused reshape) or the
+    dtype (a fused cast), or when compute lambdas are disabled.
     """
 
     pass
 
 
-trait Transformable(TransformAccess):
-    """`TransformAccess` refined with the callable `transform` method."""
+trait _LegacyComputable(_LegacyComputeOutput):
+    """`_LegacyComputeOutput` refined with the callable `compute` method.
 
-    def transform[
+    Only refine to it in the kernel body, after checking `conforms_to`; the
+    argument may arrive as `Storable` instead. A kernel signature must not
+    declare it, and the graph compiler rejects one that does. See
+    `_LegacyComputeOutput` for when each arrives and when to use it.
+    """
+
+    def compute[
         width: Int,
         element_alignment: Int = 1,
     ](self, idx: Coord, value: SIMD[Self.dtype, width]) -> SIMD[
         Self.dtype, width
     ]:
-        """Applies the fused transform to a computed value at `idx`.
+        """Applies the fused compute epilogue to a computed value at `idx`.
 
         Parameters:
             width: Number of elements in the value.

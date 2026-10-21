@@ -17,7 +17,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
-from linalg.fp4_utils import block_scaled_umma_kind, is_w4a8_operand_pair
+from linalg.fp4_utils import block_scaled_umma_kind
 from linalg.swiglu_activation import swiglu, swiglu_activation_type
 from .grouped_matmul_swiglu_nvfp4 import grouped_matmul_swiglu_nvfp4_dispatch
 from .grouped_matmul_swiglu_mxfp8 import grouped_matmul_swiglu_mxfp8_dispatch
@@ -49,10 +49,10 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
 ) raises:
     """Dispatches grouped block-scaled matmul with fused SwiGLU by dtype.
 
-    Routes NVFP4 inputs to `grouped_matmul_swiglu_nvfp4_dispatch` and
-    MXFP8 inputs to `grouped_matmul_swiglu_mxfp8_dispatch` based on the
-    `a`/`a_scales` dtypes. See those entry points for the per-format
-    contract.
+    Routes NVFP4 inputs to `grouped_matmul_swiglu_nvfp4_dispatch`, and
+    MXFP8 and W4A8 (MXFP8 tokens, MXFP4 weights) inputs to
+    `grouped_matmul_swiglu_mxfp8_dispatch`, based on the operand and
+    `a_scales` dtypes. See those entry points for the per-format contract.
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
@@ -77,6 +77,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
         b: Pre-permuted weight with the σ permutation already applied
             on its N axis. NVFP4: `uint8`, shape `(num_experts, 2D,
             K/2)`. MXFP8: `float8_e4m3fn`, shape `(num_experts, 2D, K)`.
+            W4A8: packed `uint8` E2M1, shape `(num_experts, 2D, K/2)`.
         a_scales: A's 5D scale tile. NVFP4: `FP8-E4M3`. MXFP8: `E8M0`.
         b_scales: B's 6D scale tile, with the matching σ permutation
             already applied on its N axis.
@@ -99,13 +100,8 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
         a_row_scales: Per-row input scales, one per `a` row (NVFP4 only).
     """
 
-    # Neither fused epilogue builds the padded FP4 TMA copy that a packed B
-    # needs, so the mixed pair has to be rejected here rather than inferred
-    # into `kind::mxf8f6f4` and silently fed unpadded weights.
-    comptime assert not is_w4a8_operand_pair[a.dtype, b.dtype](), (
-        "the fused SwiGLU epilogue does not support W4A8; run the plain"
-        " grouped block-scaled matmul and fuse separately"
-    )
+    # The W4A8 pair infers `kind::mxf8f6f4` and takes the MXFP8 path, whose
+    # launcher builds the padded FP4 TMA copy for the packed weights.
     comptime scaling_kind = block_scaled_umma_kind[
         a.dtype, b.dtype, a_scales.dtype
     ]()

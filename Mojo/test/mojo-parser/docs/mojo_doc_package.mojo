@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %S/inputs/test_package | FileCheck %s
+# RUN: %mojo-docs-isolated %S/inputs/test_package | FileCheck %s
 
 # CHECK:  "description": "This is a description.",
 # CHECK:  "kind": "package"

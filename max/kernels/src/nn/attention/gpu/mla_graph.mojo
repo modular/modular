@@ -20,7 +20,8 @@ performs MLA attention with dynamic FP8 scaling.
 
 
 from std.collections import Optional, OptionalReg
-from std.math import align_up, ceildiv
+from std.math import abs, align_up, ceildiv
+from std.memory import bitcast
 
 from std.sys import simd_width_of, size_of
 from std.sys.info import align_of
@@ -33,6 +34,7 @@ from max.gpu import (
     block_idx,
     global_idx,
     grid_dim,
+    lane_id,
     thread_idx,
 )
 import max.gpu.primitives.block as block
@@ -41,12 +43,14 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.primitives.warp import shuffle_xor
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from layout import (
     Coord,
     Idx,
+    TensorEngine,
     TensorLayout,
     TileTensor,
     row_major,
@@ -63,8 +67,15 @@ from linalg.fp8_quantization import (
     batched_quantize_dynamic_scaled_fp8,
 )
 from internal_utils.fp8_utils import cast_saturating
+from linalg.fp4_utils import (
+    NVFP4_SF_DTYPE,
+    NVFP4_SF_VECTOR_SIZE,
+    nvfp4_kv_group_scale,
+    nvfp4_kv_quantize_x8,
+)
 from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
+from kv_cache.types import KVCacheStaticParams
 from nn.kv_cache import KVCollectionT, KVCacheT
 from nn.kv_cache_ragged import (
     generic_flare_mla_decode_kv_cache_ragged,
@@ -76,8 +87,14 @@ from nn.attention.gpu.mla import (
     flare_mla_decoding_rows,
     mla_decode_max_seq_len,
 )
+from nn.attention.gpu.mha_decode_partition_heuristic import (
+    amd_sparse_mla_decode_num_partitions,
+)
 from nn.attention.mha_operand import KVCacheMHAOperand, SparseRowsMHAOperand
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import SparseRowLayout
+from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+    SparseRowLayout,
+    assert_sparse_row_packed,
+)
 from nn.attention.mha_mask import PaddingMask
 from nn.attention.mha_utils import (
     MHAConfig,
@@ -91,6 +108,11 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill import (
     mla_sm100_prefill_sparse,
     mla_sm100_prefill_sparse_fp8,
 )
+from nn.attention.gpu.nvidia.sm100.mla_nvfp4_kv_to_fp8 import (
+    mla_prefill_sparse_nvfp4_via_fp8,
+    nvfp4_prefill_converts_once,
+    nvfp4_prefill_scratch_rows,
+)
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_qkv_fp8 import (
     mla_prefill_sparse_qkv_fp8,
 )
@@ -98,6 +120,132 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
 )
 from nn.normalization import _rms_norm_warp_tiling_subkernel
+
+
+def _mla_nvfp4_cache[cache_t: KVCacheT]() -> Bool:
+    """Whether this latent cache is packed NVFP4 with E4M3 scales."""
+    return (
+        cache_t.dtype == .uint8
+        and cache_t.quantization_enabled
+        and cache_t.scale_dtype == .float8_e4m3fn
+    )
+
+
+def _mla_cache_row_elems[kv_params: KVCacheStaticParams, dtype: DType]() -> Int:
+    """The logical elements of one latent-cache row.
+
+    A packed NVFP4 (`uint8`) row stores two e2m1 values per byte, except for
+    the FP8 rope bytes at its end.
+    """
+    comptime if dtype == DType.uint8:
+        return kv_params.nvfp4_row_elems()
+    return kv_params.head_size
+
+
+def _mla_native_fp8_cache[cache_t: KVCacheT]() -> Bool:
+    """Whether the SM100 FP8-Q sparse kernels read this latent cache directly:
+    a unit-scale FP8 cache, or packed NVFP4 that they dequantize to FP8."""
+    comptime unit_fp8 = (
+        cache_t.dtype == .float8_e4m3fn and not cache_t.quantization_enabled
+    )
+    return unit_fp8 or _mla_nvfp4_cache[cache_t]()
+
+
+def _mla_sparse_row_topk[cache_t: KVCacheT](indices_stride: Int) -> Int:
+    """The top-k slots of a sparse index row `indices_stride` entries wide.
+
+    An NVFP4 cache pages its scales apart from its values, so the indexer
+    follows each row's value rows with the matching scale-pool rows.
+    """
+    comptime if _mla_nvfp4_cache[cache_t]():
+        return indices_stride // 2
+    return indices_stride
+
+
+# NVFP4 latent-cache write helper
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _store_nvfp4_latent_slice[
+    dtype: DType, cache_t: KVCacheT, width: Int
+](
+    k_cache: cache_t,
+    batch_idx: Int,
+    post_seq_idx: Int,
+    col: Int,
+    row: SIMD[dtype, width],
+    active: Bool,
+):
+    """Quantizes one thread's slice of an MLA latent row to NVFP4 and stores it.
+
+    Targets NVIDIA SM100. Mirrors the packing and scale conventions of
+    `nvfp4_kv_write_row` in `nn/kv_cache.mojo`: packed E2M1 with element 0 in
+    the low nibble, one E4M3 scale per 16 elements, per-tensor scale fixed at
+    1. A 16-element group spans `16 / width` adjacent lanes, which exchange
+    their amax with a pair-scoped shuffle so the helper is safe to call from
+    a divergent branch as long as the lanes of one group branch together.
+
+    Parameters:
+        dtype: Compute dtype the row was rounded to before quantization.
+        cache_t: Type of the paged key cache (a `uint8` NVFP4 cache).
+        width: Elements held per thread.
+
+    Args:
+        k_cache: The NVFP4 key cache.
+        batch_idx: Batch entry of the token.
+        post_seq_idx: Cache position the row is written to.
+        col: First element column of this thread's slice within the row.
+        row: The normed and roped slice, already rounded to `dtype`.
+        active: Whether the slice is a real part of the row. Inactive lanes
+            must hold zeros and only ever share a group with each other.
+    """
+    comptime group = NVFP4_SF_VECTOR_SIZE
+    comptime assert (
+        cache_t.quantization_enabled and cache_t.scale_dtype == NVFP4_SF_DTYPE
+    ), "an NVFP4 KV cache needs E4M3 scales"
+    comptime assert (
+        cache_t.quantization_granularity * 2 == group
+    ), "NVFP4 KV scales cover 16 elements (8 packed bytes)"
+    comptime assert (
+        width % 8 == 0 and group % width == 0
+    ), "the per-thread width must tile a 16-element scale group in 8s"
+
+    # A group spans `lanes` adjacent threads.
+    comptime lanes = group // width
+    var x = row.cast[DType.float32]()
+    var amax = abs(x).reduce_max()
+    comptime if lanes > 1:
+        var group_mask = UInt((1 << lanes) - 1) << UInt(
+            lane_id() & ~(lanes - 1)
+        )
+        comptime for k in range(4):
+            comptime if (1 << k) < lanes:
+                amax = max(amax, shuffle_xor(group_mask, amax, UInt32(1 << k)))
+    var scale = nvfp4_kv_group_scale(amax)
+
+    var packed = SIMD[DType.uint32, width // 8]()
+    comptime for w in range(width // 8):
+        packed[w] = nvfp4_kv_quantize_x8(x.slice[8, offset=w * 8](), scale)
+
+    if active:
+        k_cache.store(
+            bs=batch_idx,
+            head_idx=0,  # num_k_heads is 1 for MLA
+            tok_idx=post_seq_idx,
+            head_dim_idx=col // 2,
+            val=rebind[SIMD[cache_t.dtype, width // 2]](
+                bitcast[DType.uint8, width // 2](packed)
+            ),
+        )
+        if (col // width) % lanes == 0:
+            k_cache.store_scale(
+                bs=batch_idx,
+                head_idx=0,
+                tok_idx=post_seq_idx,
+                head_dim_idx=col // 2,
+                scales=SIMD[NVFP4_SF_DTYPE, 1](scale.cast[NVFP4_SF_DTYPE]()),
+            )
 
 
 # Manually fused MLA RoPE and RMSNorm kernel
@@ -307,16 +455,38 @@ def fused_rope_rmsnorm_quantization_kernel[
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    *,
+    QRopeOutputEngine: TensorEngine,
+    QRopeEngine: TensorEngine,
+    InputRowOffsetsEngine: TensorEngine,
+    FreqsCisEngine: TensorEngine,
+    GammaEngine: TensorEngine,
 ](
     q_rope_output: TileTensor[
-        mut=True, out_rope_dtype, QRopeOutputLayoutType, MutUntrackedOrigin
+        mut=True,
+        out_rope_dtype,
+        QRopeOutputLayoutType,
+        MutUntrackedOrigin,
+        Engine=QRopeOutputEngine,
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmUntrackedOrigin],
+    q_rope: TileTensor[
+        dtype, QRopeLayoutType, ImmUntrackedOrigin, Engine=QRopeEngine
+    ],
     input_row_offsets: TileTensor[
-        .uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
+        .uint32,
+        InputRowOffsetsLayoutType,
+        ImmUntrackedOrigin,
+        Engine=InputRowOffsetsEngine,
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin],
+    freqs_cis: TileTensor[
+        freq_dtype,
+        FreqsCisLayoutType,
+        ImmUntrackedOrigin,
+        Engine=FreqsCisEngine,
+    ],
+    gamma: TileTensor[
+        gamma_dtype, GammaLayoutType, ImmUntrackedOrigin, Engine=GammaEngine
+    ],
     k_cache: cache_t,
     epsilon: Float32,
     kv_input_fn: KVInputFnType,
@@ -346,6 +516,11 @@ def fused_rope_rmsnorm_quantization_kernel[
         n_rms_blocks: Number of blocks allocated for RMSNorm computation.
         out_rope_dtype: Data type of the RoPE output.
         KVInputFnType: Type of the closure that loads the KV latent values.
+        QRopeOutputEngine: Storage engine backing the `q_rope_output` tile.
+        QRopeEngine: Storage engine backing the `q_rope` tile.
+        InputRowOffsetsEngine: Storage engine backing the `input_row_offsets` tile.
+        FreqsCisEngine: Storage engine backing the `freqs_cis` tile.
+        GammaEngine: Storage engine backing the `gamma` tile.
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -429,13 +604,35 @@ def fused_rope_rmsnorm_quantization_kernel[
                         {global_token_idx, kv_norm_dim + head_dim_idx}
                     )
                     var roped_val = rope_value(val, f_c).cast[dtype]()
-                    k_cache.store(
-                        batch_idx,
-                        0,  # num_k_heads is 1 for MLA
-                        post_seq_idx,
-                        head_dim_idx + kv_norm_dim,
-                        cast_saturating[cache_dtype](roped_val),
-                    )
+                    comptime if cache_dtype == DType.uint8:
+                        # NVFP4: the rope dims stay FP8, exactly as an FP8
+                        # cache stores them, in the bytes after the packed
+                        # latent. Rope dominates the attention scores, so e2m1
+                        # there costs accuracy.
+                        comptime assert (
+                            cache_t.kv_params.fp8_tail_size == rope_dim
+                        ), "an NVFP4 MLA row ends in its FP8 rope dims"
+                        k_cache.store(
+                            batch_idx,
+                            0,  # num_k_heads is 1 for MLA
+                            post_seq_idx,
+                            kv_norm_dim // 2 + head_dim_idx,
+                            rebind[SIMD[cache_dtype, k_width]](
+                                bitcast[DType.uint8, k_width](
+                                    cast_saturating[DType.float8_e4m3fn](
+                                        roped_val
+                                    )
+                                )
+                            ),
+                        )
+                    else:
+                        k_cache.store(
+                            batch_idx,
+                            0,  # num_k_heads is 1 for MLA
+                            post_seq_idx,
+                            head_dim_idx + kv_norm_dim,
+                            cast_saturating[cache_dtype](roped_val),
+                        )
 
             # The last block of this worker processes RMSNorm.
             else:
@@ -473,14 +670,26 @@ def fused_rope_rmsnorm_quantization_kernel[
                     kv_norm_dim,
                 )
 
-                if idx < kv_norm_dim:
-                    k_cache.store(
+                comptime if cache_dtype == DType.uint8:
+                    # NVFP4 quantizes the row rounded to the compute dtype,
+                    # and every thread takes part in the group-amax shuffle.
+                    _store_nvfp4_latent_slice(
+                        k_cache,
                         batch_idx,
-                        0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        cast_saturating[cache_dtype](norm_val),
+                        norm_val.cast[dtype](),
+                        idx < kv_norm_dim,
                     )
+                else:
+                    if idx < kv_norm_dim:
+                        k_cache.store(
+                            batch_idx,
+                            0,  # num_k_heads is 1 for MLA
+                            post_seq_idx,
+                            idx,
+                            cast_saturating[cache_dtype](norm_val),
+                        )
 
 
 @inline(.always)
@@ -552,8 +761,11 @@ def mla_fused_rope_rmsnorm_quantization[
     comptime assert (
         q_rope_output.rank == 3 and q_rope.rank == 3
     ), "q_rope_output and q_rope must be rank 3"
+    comptime cache_row_elems = _mla_cache_row_elems[
+        collection_t.kv_params, collection_t.dtype
+    ]()
     comptime assert (
-        rope_dim + kv_norm_dim == collection_t.kv_params.head_size
+        rope_dim + kv_norm_dim == cache_row_elems
     ), "rope_dim + kv_norm_dim must be equal to kvcache head_size"
 
     # Default block size used by the `elementwise` function on Blackwell.
@@ -595,6 +807,11 @@ def mla_fused_rope_rmsnorm_quantization[
         n_rms_blocks,
         out_rope_dtype,
         KVInputFnType=KVInputFnType,
+        QRopeOutputEngine=q_rope_output.Engine,
+        QRopeEngine=q_rope.Engine,
+        InputRowOffsetsEngine=input_row_offsets.Engine,
+        FreqsCisEngine=freqs_cis.Engine,
+        GammaEngine=gamma.Engine,
     ]
 
     ctx.enqueue_function[kernel](
@@ -605,7 +822,7 @@ def mla_fused_rope_rmsnorm_quantization[
         gamma.as_imm(),
         k_cache,
         epsilon,
-        host_arg=kv_input_fn,
+        host_args=(kv_input_fn,),
         grid_dim=(n_rope_blocks + n_rms_blocks, num_workers, 1),
         block_dim=block_size,
         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1135,6 +1352,7 @@ def _amd_sparse_mla_gather_kv_rows[
     CacheT: KVCacheT,
     k_cache_dim: Int,
     rows_per_block: Int,
+    has_topk_lengths: Bool = True,
 ](
     k_cache: CacheT,
     blocks_base: MutPointer[Scalar[CacheT.dtype], MutAnyOrigin],
@@ -1153,7 +1371,8 @@ def _amd_sparse_mla_gather_kv_rows[
     instead of 64 scalar bytes. Slots at or past `topk_lengths[batch]`,
     and any `-1` (invalid) index, are zero-filled -- correctness relies on
     the caller masking these columns out (a zero row participates in, and
-    would corrupt, an unmasked softmax).
+    would corrupt, an unmasked softmax). Without `has_topk_lengths`, every
+    token keeps the full `indices_stride` and `topk_lengths` is not read.
     """
     comptime assert CacheT.kv_params.num_heads == 1, (
         "AMD sparse MLA gather only supports a single-head (absorbed"
@@ -1174,14 +1393,75 @@ def _amd_sparse_mla_gather_kv_rows[
         )
 
         var encoded = d_indices[slot]
-        if col < Int(topk_lengths[batch_idx]) and encoded >= 0:
+        var topk_len = indices_stride_i
+        comptime if has_topk_lengths:
+            topk_len = Int(topk_lengths[batch_idx])
+        if col < topk_len and encoded >= 0:
             var virtual_row = Int(k_cache.get_tma_row(encoded))
             var src = blocks_base.unsafe_offset(
                 virtual_row * k_cache_dim
             ).unsafe_offset(vec_off)
-            dst.store(src.load[width=_AMD_SPARSE_MLA_GATHER_VEC]())
+            dst.unsafe_store(
+                src.unsafe_load[width=_AMD_SPARSE_MLA_GATHER_VEC]()
+            )
         else:
-            dst.store(SIMD[CacheT.dtype, _AMD_SPARSE_MLA_GATHER_VEC](0))
+            dst.unsafe_store(SIMD[CacheT.dtype, _AMD_SPARSE_MLA_GATHER_VEC](0))
+
+
+@__name(t"amd_sparse_mla_gather_kv_rows_lengths_{k_cache_dim}_{rows_per_block}")
+def _amd_sparse_mla_gather_kv_rows_and_lengths[
+    CacheT: KVCacheT,
+    k_cache_dim: Int,
+    rows_per_block: Int,
+    has_topk_lengths: Bool = True,
+](
+    k_cache: CacheT,
+    blocks_base: MutPointer[Scalar[CacheT.dtype], MutAnyOrigin],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
+    topk_lengths: MutPointer[Int32, MutAnyOrigin],
+    scratch: MutPointer[Scalar[CacheT.dtype], MutAnyOrigin],
+    valid_lengths: MutPointer[UInt32, MutAnyOrigin],
+    indices_stride: Int32,
+    selection_lag: Int32,
+):
+    """Gathers like `_amd_sparse_mla_gather_kv_rows` and writes each token's
+    valid length for `PaddingMask`, replacing a separate scan launch.
+
+    The length is closed-form, as in SM100 sparse decode: a plain top-k row
+    holds `min(top_k, visible)` valid slots followed by `-1` padding, so a
+    row selected `selection_lag` tokens earlier holds
+    `min(top_k, visible - selection_lag)`. As on SM100,
+    `assert_sparse_row_packed` checks that contract in assert-enabled builds
+    only for a lagged row; at lag 0 it relies on the indexer's packed-row
+    contract. One thread per token writes the length.
+    """
+    _amd_sparse_mla_gather_kv_rows[
+        CacheT,
+        k_cache_dim,
+        rows_per_block,
+        has_topk_lengths=has_topk_lengths,
+    ](k_cache, blocks_base, d_indices, topk_lengths, scratch, indices_stride)
+
+    if block_idx.x == 0 and thread_idx.x == 0 and thread_idx.y == 0:
+        var batch_idx = block_idx.y
+        var stride = Int(indices_stride)
+        var topk_len = stride
+        comptime if has_topk_lengths:
+            topk_len = min(max(Int(topk_lengths[batch_idx]), 0), stride)
+        # Decode reads one new token per sequence, so it sees the cached
+        # keys plus itself.
+        var visible = k_cache.cache_length(batch_idx) + 1
+        assert_sparse_row_packed[SparseRowLayout()](
+            d_indices,
+            stride,
+            batch_idx,
+            visible,
+            Int(selection_lag),
+            topk_len,
+        )
+        valid_lengths[batch_idx] = UInt32(
+            min(topk_len, max(visible - Int(selection_lag), 0))
+        )
 
 
 comptime _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS = 256
@@ -1204,7 +1484,7 @@ def _amd_sparse_mla_row_valid_lengths[
     graph broadcasts it, which is exact for SM100 -- see
     `mla_decode_sparse_kv_fp8`'s causal slot bound -- but names no real
     count), so masking with it leaves every zero-filled invalid slot visible
-    to the softmax. `fill_invalid_topk_kernel` writes the invalid slots as a
+    to the softmax. The indexer's bounded top-k writes the invalid slots as a
     `-1` suffix, so the first negative index is the row's true length.
 
     Taking the FIRST negative rather than counting the non-negatives matters:
@@ -1550,8 +1830,7 @@ def mla_decode_branch_fp8[
         fp8_q
         and sparse_mla
         and dtype == .bfloat16
-        and collection_t.CacheType.dtype == .float8_e4m3fn
-        and not collection_t.CacheType.quantization_enabled
+        and _mla_native_fp8_cache[collection_t.CacheType]()
         and _is_sm10x_gpu(ctx.default_device_info)
     )
     # The AMD arm needs FP8 Q whether it runs over the KV cache or a gathered
@@ -1562,8 +1841,9 @@ def mla_decode_branch_fp8[
         and not collection_t.CacheType.quantization_enabled
     )
     comptime mla_decode_input_dtype = (
-        collection_t.CacheType.dtype if native_fp8_sparse
-        or stage_fp8_amd else dtype
+        DType.float8_e4m3fn if native_fp8_sparse else (
+            collection_t.CacheType.dtype if stage_fp8_amd else dtype
+        )
     )
 
     # First, create a input buffer for the mla decode kernel
@@ -1665,18 +1945,13 @@ def mla_decode_branch_fp8[
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
         # The graph omits `topk_lengths` when every token keeps the full top-k
-        # stride; the gather reads a per-token length, so hand it that form.
-        var full_topk: Optional[DeviceBuffer[DType.int32]] = None
-        var decode_topk_lengths: MutPointer[Int32, MutAnyOrigin]
-        comptime if TopkLengthsPtrType.is_null:
-            full_topk = ctx.enqueue_create_buffer[DType.int32](batch_size)
-            full_topk.value().enqueue_fill(Int32(indices_stride))
-            decode_topk_lengths = (
-                full_topk.value()
-                .unsafe_ptr()
-                .unsafe_origin_cast[MutAnyOrigin]()
-            )
-        else:
+        # stride. The kernels then cap at the stride and never read the
+        # pointer, which saves a fill launch per layer.
+        comptime has_topk_lengths = not TopkLengthsPtrType.is_null
+        var decode_topk_lengths = MutPointer[
+            Int32, MutAnyOrigin
+        ].unsafe_dangling()
+        comptime if has_topk_lengths:
             decode_topk_lengths = rebind[MutPointer[Int32, MutAnyOrigin]](
                 as_optional_reg(topk_lengths).value()
             )
@@ -1691,9 +1966,17 @@ def mla_decode_branch_fp8[
         # (4 wavefronts); grid.x shrinks 7x vs one block per row.
         comptime GATHER_ROWS_PER_BLOCK = 7
         var k_cache_blocks_base = k_cache.blocks_raw_ptr()
+        # `topk_lengths` is the constant `index_topk`, so masking with it marks
+        # every tile NO_MASK; the gather writes each row's real length.
+        var valid_lengths_buf = ctx.enqueue_create_buffer[DType.uint32](
+            batch_size
+        )
         ctx.enqueue_function[
-            _amd_sparse_mla_gather_kv_rows[
-                type_of(k_cache), k_cache_dim, GATHER_ROWS_PER_BLOCK
+            _amd_sparse_mla_gather_kv_rows_and_lengths[
+                type_of(k_cache),
+                k_cache_dim,
+                GATHER_ROWS_PER_BLOCK,
+                has_topk_lengths=has_topk_lengths,
             ]
         ](
             k_cache,
@@ -1701,7 +1984,9 @@ def mla_decode_branch_fp8[
             d_indices.value(),
             decode_topk_lengths,
             scratch_buf.unsafe_ptr(),
+            valid_lengths_buf.unsafe_ptr(),
             Int32(indices_stride),
+            Int32(selection_lag),
             grid_dim=(
                 ceildiv(indices_stride, GATHER_ROWS_PER_BLOCK),
                 batch_size,
@@ -1743,25 +2028,6 @@ def mla_decode_branch_fp8[
             )
         )
 
-        # `topk_lengths` is the constant `index_topk`, so masking with it marks
-        # every tile NO_MASK; derive the row's real length from the `-1` suffix.
-        var valid_lengths_buf = ctx.enqueue_create_buffer[DType.uint32](
-            batch_size
-        )
-        ctx.enqueue_function[
-            _amd_sparse_mla_row_valid_lengths[
-                _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS
-            ]
-        ](
-            d_indices.value(),
-            decode_topk_lengths,
-            valid_lengths_buf.unsafe_ptr(),
-            Int32(indices_stride),
-            MutPointer[UInt8, MutAnyOrigin].unsafe_dangling(),
-            Int32(0),
-            grid_dim=(batch_size, 1, 1),
-            block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
-        )
         var amd_lengths_tt = TileTensor(
             valid_lengths_buf.unsafe_ptr(), row_major(batch_size)
         )
@@ -1778,7 +2044,14 @@ def mla_decode_branch_fp8[
             scale,
             ctx,
             scalar_args_buf,
-            num_partitions=num_partitions_in,
+            num_partitions=num_partitions_in.or_else(
+                amd_sparse_mla_decode_num_partitions(
+                    batch_size,
+                    indices_stride,
+                    num_heads,
+                    ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                )
+            ),
         )
     else:
         generic_flare_mla_decode_kv_cache_ragged[
@@ -2096,12 +2369,17 @@ def mla_prefill_branch_sparse_fp8[
         # tiles (128, or a multiple of 8 in (0,64]); Q is cast to FP8.
         comptime native_fp8_sparse = (
             dtype == .bfloat16
-            and collection_t.CacheType.dtype == .float8_e4m3fn
-            and not collection_t.CacheType.quantization_enabled
+            and _mla_native_fp8_cache[collection_t.CacheType]()
             and _is_sm10x_gpu(ctx.default_device_info)
             and (num_heads == 128 or (num_heads <= 64 and num_heads % 8 == 0))
         )
-        comptime if collection_t.CacheType.dtype.is_float8():
+        comptime if (
+            collection_t.CacheType.dtype.is_float8()
+            or collection_t.CacheType.dtype == .uint8
+        ):
+            comptime assert native_fp8_sparse or (
+                collection_t.CacheType.dtype != .uint8
+            ), "an NVFP4 latent cache needs the SM100 FP8-Q sparse prefill"
             comptime if native_fp8_sparse:
                 var q_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
                     seq_len * num_heads * k_cache_dim
@@ -2512,7 +2790,13 @@ def mla_prefill_decode_graph_fp8[
             var prefill_topk_lengths: MutPointer[Int32, MutAnyOrigin]
             comptime if TopkLengthsPtrType.is_null:
                 full_topk = ctx.enqueue_create_buffer[DType.int32](Int(seq_len))
-                full_topk.value().enqueue_fill(Int32(sparse_indices_stride))
+                full_topk.value().enqueue_fill(
+                    Int32(
+                        _mla_sparse_row_topk[collection_t.CacheType](
+                            sparse_indices_stride
+                        )
+                    )
+                )
                 prefill_topk_lengths = (
                     full_topk.value()
                     .unsafe_ptr()
@@ -3073,7 +3357,9 @@ def mla_decode_branch_bf16[
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
     comptime v_head_dim = output.static_shape[2]
-    comptime k_cache_dim = kv_params.head_size
+    comptime k_cache_dim = _mla_cache_row_elems[
+        kv_params, collection_t.CacheType.dtype
+    ]()
 
     comptime assert (
         w_uk.shape_known and w_uv.shape_known
@@ -3107,14 +3393,13 @@ def mla_decode_branch_bf16[
     # cache is FP8.
     comptime native_fp8_sparse = (
         sparse_mla
-        and collection_t.CacheType.dtype == .float8_e4m3fn
-        and not collection_t.CacheType.quantization_enabled
+        and _mla_native_fp8_cache[collection_t.CacheType]()
         and _is_sm10x_gpu(ctx.default_device_info)
     )
     comptime mla_decode_input_dtype = (
-        DType.bfloat16 if (
-            sparse_mla and not native_fp8_sparse
-        ) else collection_t.CacheType.dtype
+        DType.float8_e4m3fn if native_fp8_sparse else (
+            DType.bfloat16 if sparse_mla else collection_t.CacheType.dtype
+        )
     )
     var mla_decode_input_buf = ctx.enqueue_create_buffer[
         mla_decode_input_dtype
@@ -3313,8 +3598,8 @@ def mla_decode_branch_bf16[
                 valid_lengths_buf.unsafe_ptr().unsafe_offset(token0),
                 row_major(tokens),
             )
-            # The partition count from the graph is sized for the request
-            # batch, not this token chunk, so let the AMD heuristic pick.
+            # Sized for this token chunk rather than taken from the graph; at
+            # decode the chunk is the whole batch, matching the capture key.
             flare_mla_decoding[
                 config=MHAConfig[mla_decode_input_dtype](
                     num_heads, k_cache_dim
@@ -3328,7 +3613,12 @@ def mla_decode_branch_bf16[
                 scale,
                 ctx,
                 scalar_args_buf,
-                num_partitions=None,
+                num_partitions=amd_sparse_mla_decode_num_partitions(
+                    tokens,
+                    indices_stride,
+                    num_heads,
+                    ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                ),
             )
         _ = compact_buf^
         _ = valid_lengths_buf^
@@ -3395,6 +3685,9 @@ def mla_prefill_branch_sparse_bf16[
     //,
     indices_stride: Int,
     target: StaticString = "cpu",
+    # See `nvfp4_prefill_converts_once`; 0 always runs the NVFP4 kernel.
+    nvfp4_convert_ratio: Int = 0,
+    nvfp4_convert_max_rows: Int = 0,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -3430,7 +3723,9 @@ def mla_prefill_branch_sparse_bf16[
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
     comptime v_head_dim = output.static_shape[2]
-    comptime k_cache_dim = kv_params.head_size
+    comptime k_cache_dim = _mla_cache_row_elems[
+        kv_params, collection_t.CacheType.dtype
+    ]()
 
     comptime assert (
         w_uk.shape_known and w_uv.shape_known
@@ -3455,8 +3750,7 @@ def mla_prefill_branch_sparse_bf16[
     # SM100 stages Q in FP8 and runs the native-FP8 sparse prefill kernel when
     # heads fit its tiles (128, or a multiple of 8 in (0,64]); else keep bf16 Q.
     comptime native_fp8_sparse = (
-        collection_t.CacheType.dtype == .float8_e4m3fn
-        and not collection_t.CacheType.quantization_enabled
+        _mla_native_fp8_cache[collection_t.CacheType]()
         and _is_sm10x_gpu(ctx.default_device_info)
         and (num_heads == 128 or (num_heads <= 64 and num_heads % 8 == 0))
     )
@@ -3538,7 +3832,13 @@ def mla_prefill_branch_sparse_bf16[
         attn_sink_opt = ImmPointer[Float32, ImmutAnyOrigin](attn_sink_ptr)
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    comptime if collection_t.CacheType.dtype.is_float8():
+    comptime if (
+        collection_t.CacheType.dtype.is_float8()
+        or collection_t.CacheType.dtype == .uint8
+    ):
+        comptime assert native_fp8_sparse or (
+            collection_t.CacheType.dtype != .uint8
+        ), "an NVFP4 latent cache needs the SM100 FP8-Q sparse prefill"
         comptime if native_fp8_sparse:
             # Native-FP8 sparse prefill: Q was staged in FP8 above, and the
             # kernel reads the unit-scale FP8 latent cache with no dequant.
@@ -3564,22 +3864,55 @@ def mla_prefill_branch_sparse_bf16[
                 indices_stride=indices_stride,
                 group=num_heads,
             )
-            mla_prefill_sparse_qkv_fp8[
-                config=config,
-                group=num_heads,
-                q_depth=k_cache_dim,
-                scale_block_size=0,
-            ](
-                raw_output,
-                mla_decode_input,
-                k_cache,
-                indices_tt,
-                topk_lengths_tt,
-                attn_sink_opt,
-                scale,
-                Int32(indices_stride),
-                ctx,
-            )
+            var converted = False
+            comptime if (
+                _mla_nvfp4_cache[collection_t.CacheType]()
+                and nvfp4_convert_ratio > 0
+                and (indices_stride // 2) % 4 == 0
+            ):
+                if nvfp4_prefill_converts_once(
+                    nvfp4_prefill_scratch_rows[
+                        collection_t.CacheType.page_size_
+                    ](
+                        Int(input_row_offsets.dim(0)) - 1,
+                        Int(k_cache.max_context_length()),
+                    ),
+                    seq_len,
+                    nvfp4_convert_ratio,
+                    nvfp4_convert_max_rows,
+                ):
+                    mla_prefill_sparse_nvfp4_via_fp8[
+                        config=config, group=num_heads, q_depth=k_cache_dim
+                    ](
+                        raw_output,
+                        mla_decode_input,
+                        k_cache,
+                        d_indices,
+                        indices_stride,
+                        topk_lengths_tt,
+                        input_row_offsets,
+                        attn_sink_opt,
+                        scale,
+                        ctx,
+                    )
+                    converted = True
+            if not converted:
+                mla_prefill_sparse_qkv_fp8[
+                    config=config,
+                    group=num_heads,
+                    q_depth=k_cache_dim,
+                    scale_block_size=0,
+                ](
+                    raw_output,
+                    mla_decode_input,
+                    k_cache,
+                    indices_tt,
+                    topk_lengths_tt,
+                    attn_sink_opt,
+                    scale,
+                    Int32(indices_stride),
+                    ctx,
+                )
         else:
             # FP8 cache + bf16 Q: run the FP8 sparse-prefill kernel over the
             # quantized cache at unit scale (no dequant scales stored yet, so
@@ -3664,6 +3997,8 @@ def mla_prefill_decode_graph_bf16[
     # (inferred from those arguments).
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    nvfp4_convert_ratio: Int = 0,
+    nvfp4_convert_max_rows: Int = 0,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -3718,6 +4053,11 @@ def mla_prefill_decode_graph_bf16[
             (inferred, defaults to `NullPointer`).
         TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
             `extra_topk_lengths` (inferred, defaults to `NullPointer`).
+        nvfp4_convert_ratio: Most context rows per query token at which
+            sparse prefill over an NVFP4 cache converts the context to FP8
+            once (defaults to 0, never); see `nvfp4_prefill_converts_once`.
+        nvfp4_convert_max_rows: Most rows that conversion may allocate
+            (defaults to 0).
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -3835,7 +4175,13 @@ def mla_prefill_decode_graph_bf16[
             var prefill_topk_lengths: MutPointer[Int32, MutAnyOrigin]
             comptime if TopkLengthsPtrType.is_null:
                 full_topk = ctx.enqueue_create_buffer[DType.int32](Int(seq_len))
-                full_topk.value().enqueue_fill(Int32(sparse_indices_stride))
+                full_topk.value().enqueue_fill(
+                    Int32(
+                        _mla_sparse_row_topk[collection_t.CacheType](
+                            sparse_indices_stride
+                        )
+                    )
+                )
                 prefill_topk_lengths = (
                     full_topk.value()
                     .unsafe_ptr()
@@ -3857,6 +4203,8 @@ def mla_prefill_decode_graph_bf16[
             mla_prefill_branch_sparse_bf16[
                 indices_stride=sparse_indices_stride,
                 target=target,
+                nvfp4_convert_ratio=nvfp4_convert_ratio,
+                nvfp4_convert_max_rows=nvfp4_convert_max_rows,
             ](
                 output,
                 q,

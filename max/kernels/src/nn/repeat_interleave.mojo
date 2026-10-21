@@ -448,37 +448,42 @@ def repeat_interleave[
 
 @inline(.always)
 def repeat_interleave_shape[
+    rank: Int,
     type_repeats: DType,
 ](
-    input: TileTensor,
+    input_shape: IndexList[rank],
     repeats: TileTensor[type_repeats, ...],
     axis: Int,
-) raises -> IndexList[input.rank]:
+) raises -> IndexList[rank]:
     """
-    Computes the output shape of `repeat_interleave` for the given `input`,
-    `repeats`, and `axis`.
+    Computes the output shape of `repeat_interleave` for an input of shape
+    `input_shape`, `repeats`, and `axis`.
 
-    The returned `IndexList` matches `input`'s rank with the size along
-    `axis` replaced by the summed `repeats` values, or by `input[axis]`
+    The returned `IndexList` is `input_shape` with the size along `axis`
+    replaced by the summed `repeats` values, or by `input_shape[axis]`
     multiplied by the single repeat value when `repeats` is a size-1
     broadcast.
 
+    Parameters:
+        rank: The rank of the input tensor.
+        type_repeats: The integral element type of `repeats`.
+
     Args:
-        input: The input tensor whose shape is being transformed.
+        input_shape: The shape of the input tensor.
         repeats: A one-dimensional integral tensor of per-element repeat
-            counts, either size 1 or equal to `input.dim(axis)`.
+            counts, either size 1 or equal to `input_shape[axis]`.
         axis: The axis along which elements are repeated.
 
     Returns:
-        An `IndexList` matching `input.rank` with the `axis` dimension
-        updated to the total repeated size.
+        `input_shape` with the `axis` dimension updated to the total repeated
+        size.
     """
     comptime assert type_repeats.is_integral()
     comptime assert repeats.flat_rank == 1
 
     var repeats_size = repeats.dim[0]()
     if repeats_size != 1 and repeats_size != Scalar[repeats.linear_idx_type](
-        Int(input.dim(axis))
+        input_shape[axis]
     ):
         raise Error(
             "repeat_interleave: repeats must be size 1 or equal to "
@@ -490,7 +495,7 @@ def repeat_interleave_shape[
     for i in range(repeats_size):
         total_repeats += Int(repeats[i])
 
-    var result = coord_to_index_list(input.layout.shape_coord())
+    var result = input_shape
 
     # If the repeats is size 1, the repeat is treated as a broadcast
     if repeats_size == 1:
@@ -498,4 +503,4 @@ def repeat_interleave_shape[
     else:
         result[axis] = total_repeats
 
-    return rebind[IndexList[input.rank]](result)
+    return result

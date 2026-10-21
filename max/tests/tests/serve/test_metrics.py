@@ -592,6 +592,40 @@ def test_structured_output_grammar_rejection_counter() -> None:
         )  # Should not raise
 
 
+def test_client_disconnect_cancellation_counter() -> None:
+    """The disconnect counter records with a bounded 'phase' tag."""
+    common.configure_metrics(Settings())
+    assert (
+        "maxserve.request.client_disconnect_cancellations"
+        in metrics.SERVE_METRICS
+    )
+    for phase in ("before_response", "during_response"):
+        metrics.METRICS.client_disconnect_cancellation(
+            phase
+        )  # Should not raise
+    metrics.METRICS.export_zero_client_disconnect_cancellations()
+
+
+def test_disconnect_phases_are_exported_at_zero() -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+    recorder.export_zero_client_disconnect_cancellations()
+    sent = [call.args[0] for call in client.send_measurement.call_args_list]
+    assert [(m.instrument_name, m.value, m.attributes) for m in sent] == [
+        (
+            "maxserve.request.client_disconnect_cancellations",
+            0,
+            {"model": "m", "phase": "before_response"},
+        ),
+        (
+            "maxserve.request.client_disconnect_cancellations",
+            0,
+            {"model": "m", "phase": "during_response"},
+        ),
+    ]
+
+
 def test_tool_call_requests_counter() -> None:
     """The tool-call usage counter records with a bounded 'choice' tag."""
     common.configure_metrics(Settings())

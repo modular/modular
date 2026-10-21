@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only NVFP4 (W4A16) matmul on the 16x32x16 `matmul2d` tile.
 
-Target: Apple M5 (`compute_capability == 5`) only.
+Target: Apple M5 and newer (`compute_capability >= 5`).
 
 `out = activation @ weight^T` where the FP4 weight stays PACKED in DRAM
 (`uint8 [N, K//2]` lo-nibble first + `float8_e4m3fn [N, K//16]` block scales).
@@ -92,8 +92,8 @@ comptime M2D_N = 32
 comptime M2D_K = 16
 
 
-def _require_apple_m5(ctx: DeviceContext) raises:
-    """Runtime guard: reject a non-Apple-M5 GPU at the host enqueue entry.
+def _require_apple_m5_or_newer(ctx: DeviceContext) raises:
+    """Runtime guard: reject a pre-M5 Apple GPU at the host enqueue entry.
 
     The kernel body uses the Apple simdgroup MMA (`_mma_apple`), which compiles
     for any Apple GPU target, so the Metal-4 / M5 requirement is enforced at
@@ -103,11 +103,11 @@ def _require_apple_m5(ctx: DeviceContext) raises:
     comptime assert).
     """
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "matmul2d W4A16 (Apple M5 NVFP4) requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "matmul2d W4A16 (Apple M5 NVFP4) requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -990,9 +990,9 @@ def enqueue_matmul2d_fp4[
         ctx: Device context used to enqueue the kernel.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime MM = Matmul2dFp4[
         c_type,
@@ -1003,11 +1003,11 @@ def enqueue_matmul2d_fp4[
     ]
 
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_matmul2d_fp4 requires Apple M5 (compute_capability =="
-                " 5); got compute_capability="
+                "enqueue_matmul2d_fp4 requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -1110,9 +1110,9 @@ def enqueue_matmul2d_fp4_smem[
         ctx: Device context used to enqueue the kernel.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime MM = Matmul2dFp4[
         c_type,
@@ -1124,11 +1124,11 @@ def enqueue_matmul2d_fp4_smem[
     ]
 
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_matmul2d_fp4_smem requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "enqueue_matmul2d_fp4_smem requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )

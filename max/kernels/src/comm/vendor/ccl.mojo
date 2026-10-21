@@ -33,7 +33,7 @@ from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
 from max.gpu.host._amdgpu_hip import HIP
 from max.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
-from comm.allreduce import elementwise_epilogue_type
+from comm.reducescatter import CollectiveEpilogueFn
 from max.gpu.primitives.grid_controls import PDLLevel
 from std.utils.coord import Coord
 
@@ -431,9 +431,9 @@ def allreduce[
     in_origin: ImmOrigin,
     rank_sigs_origin: Origin[mut=True],
     out_layout: TensorLayout,
+    OutputLambdaType: CollectiveEpilogueFn,
     //,
     ngpus: Int,
-    output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
@@ -442,6 +442,7 @@ def allreduce[
         TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
     ],
     output_layout: out_layout,
+    output_lambda: OutputLambdaType,
     rank_sigs: Array[MutPointer[Signal, rank_sigs_origin], ngpus],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,

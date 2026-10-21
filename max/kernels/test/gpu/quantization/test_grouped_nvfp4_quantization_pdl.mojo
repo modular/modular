@@ -29,6 +29,7 @@ scale. The PDL output must match a run whose operands were published first.
 """
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from std.time import sleep
 
 from layout import Coord, Idx, TileTensor, row_major
@@ -85,13 +86,13 @@ def test_operands_from_predecessor_kernel(ctx: DeviceContext) raises:
 
     # An empty expert and a two-tile expert, as a decode/prefill mix routes.
     var counts: List[Int] = [3, 0, 5, 130]
-    var row_offsets_host = alloc[UInt32](num_experts + 1)
-    var scales_offsets_host = alloc[UInt32](num_experts)
-    var expert_ids_host = alloc[Int32](num_experts)
-    var sf_tensor_host = alloc[Float32](num_experts)
-    var zeros_u32 = alloc[UInt32](num_experts + 1)
-    var zeros_i32 = alloc[Int32](num_experts)
-    var zeros_f32 = alloc[Float32](num_experts)
+    var row_offsets_host = unsafe_alloc[UInt32](num_experts + 1)
+    var scales_offsets_host = unsafe_alloc[UInt32](num_experts)
+    var expert_ids_host = unsafe_alloc[Int32](num_experts)
+    var sf_tensor_host = unsafe_alloc[Float32](num_experts)
+    var zeros_u32 = unsafe_alloc[UInt32](num_experts + 1)
+    var zeros_i32 = unsafe_alloc[Int32](num_experts)
+    var zeros_f32 = unsafe_alloc[Float32](num_experts)
     var tile_start = 0
     row_offsets_host[0] = 0
     zeros_u32[num_experts] = 0
@@ -110,7 +111,7 @@ def test_operands_from_predecessor_kernel(ctx: DeviceContext) raises:
     var total_m_tiles = tile_start
     var total_scales = total_m_tiles * scales_per_m_tile
 
-    var host_input = alloc[Scalar[dtype]](total_tokens * N)
+    var host_input = unsafe_alloc[Scalar[dtype]](total_tokens * N)
     random(
         TileTensor(host_input, row_major(total_tokens, Idx[N])),
         min=-1.0,
@@ -130,7 +131,7 @@ def test_operands_from_predecessor_kernel(ctx: DeviceContext) raises:
     ctx.enqueue_copy(src_expert_ids, expert_ids_host)
     ctx.enqueue_copy(src_sf_tensor, sf_tensor_host)
 
-    var sentinel_host = alloc[Scalar[out_dtype]](total_tokens * output_N)
+    var sentinel_host = unsafe_alloc[Scalar[out_dtype]](total_tokens * output_N)
     for i in range(total_tokens * output_N):
         sentinel_host[i] = SENTINEL
 
@@ -197,10 +198,12 @@ def test_operands_from_predecessor_kernel(ctx: DeviceContext) raises:
         ctx,
     )
 
-    var host_ref_output = alloc[Scalar[out_dtype]](total_tokens * output_N)
-    var host_output = alloc[Scalar[out_dtype]](total_tokens * output_N)
-    var host_ref_scales = alloc[Scalar[scales_dtype]](total_scales)
-    var host_scales = alloc[Scalar[scales_dtype]](total_scales)
+    var host_ref_output = unsafe_alloc[Scalar[out_dtype]](
+        total_tokens * output_N
+    )
+    var host_output = unsafe_alloc[Scalar[out_dtype]](total_tokens * output_N)
+    var host_ref_scales = unsafe_alloc[Scalar[scales_dtype]](total_scales)
+    var host_scales = unsafe_alloc[Scalar[scales_dtype]](total_scales)
     ctx.enqueue_copy(host_ref_output, ref_output)
     ctx.enqueue_copy(host_output, output)
     ctx.enqueue_copy(host_ref_scales, ref_scales)
@@ -229,19 +232,19 @@ def test_operands_from_predecessor_kernel(ctx: DeviceContext) raises:
             host_ref_scales[i].cast[DType.float32](),
         )
 
-    row_offsets_host.free()
-    zeros_u32.free()
-    scales_offsets_host.free()
-    expert_ids_host.free()
-    sf_tensor_host.free()
-    zeros_i32.free()
-    zeros_f32.free()
-    host_input.free()
-    sentinel_host.free()
-    host_ref_output.free()
-    host_output.free()
-    host_ref_scales.free()
-    host_scales.free()
+    row_offsets_host.unsafe_free()
+    zeros_u32.unsafe_free()
+    scales_offsets_host.unsafe_free()
+    expert_ids_host.unsafe_free()
+    sf_tensor_host.unsafe_free()
+    zeros_i32.unsafe_free()
+    zeros_f32.unsafe_free()
+    host_input.unsafe_free()
+    sentinel_host.unsafe_free()
+    host_ref_output.unsafe_free()
+    host_output.unsafe_free()
+    host_ref_scales.unsafe_free()
+    host_scales.unsafe_free()
 
 
 def main() raises:

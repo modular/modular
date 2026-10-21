@@ -254,27 +254,25 @@ def test_rmsnorm_then_matmul[
     var norm_shape = Index(M, K)
 
     @inline(.always)
-    @__copy_capture(a_raw_tensor)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[a_type, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var a_raw_tensor} -> SIMD[a_type, width]:
         return a_raw_tensor.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(a_normed_vendor_tensor)
-    @__parameter
     def output_fn_vendor[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[a_type, width]) -> None:
+    ](coords: Coord, val: SIMD[a_type, width]) {
+        var a_normed_vendor_tensor
+    } -> None:
         a_normed_vendor_tensor.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
-        input_fn,
-        output_fn_vendor,
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=True,
-    ](Coord(norm_shape), gamma_tensor, ctx)
+    ](input_fn, output_fn_vendor, Coord(norm_shape), gamma_tensor, ctx)
 
     vendor_blas.matmul(
         ctx,
@@ -286,21 +284,19 @@ def test_rmsnorm_then_matmul[
     )
 
     @inline(.always)
-    @__copy_capture(a_normed_ours_tensor)
-    @__parameter
     def output_fn_ours[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[a_type, width]) -> None:
+    ](coords: Coord, val: SIMD[a_type, width]) {
+        var a_normed_ours_tensor
+    } -> None:
         a_normed_ours_tensor.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,
-        input_fn,
-        output_fn_ours,
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=True,
-    ](Coord(norm_shape), gamma_tensor, ctx)
+    ](input_fn, output_fn_ours, Coord(norm_shape), gamma_tensor, ctx)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(

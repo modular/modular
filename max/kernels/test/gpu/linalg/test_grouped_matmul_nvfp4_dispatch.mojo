@@ -15,8 +15,9 @@
 Tests the dispatch function that selects optimal kernel configuration based
 on (N, K) shape. Verifies correctness against vendor_blas reference for:
 - Dispatch-tuned shapes: N=4096,K=7168 and N=7168,K=2048, plus
-  N=2048,K=4096, which decodes at the default decode stages
-- Fallback path for unknown shapes: default decode stages, auto stages
+  N=2048,K=4096, which decodes at the grouped decode stages
+- Fallback path for unknown shapes: grouped decode stages for an even
+  k-tile count, default decode stages for an odd one, auto stages
   otherwise
 - Various active expert counts, token patterns, and -1 expert IDs
 - Per-row input scales (`a_row_scales`) in every dispatch regime
@@ -25,13 +26,17 @@ from std.math import align_up, ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.memory import Pointer
 from internal_utils import assert_almost_equal
 from std.testing import assert_equal, assert_false
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.dispatch import (
     DECODE_AVG_M,
     DECODE_DEFAULT_STAGES,
+    DECODE_K_GROUP,
+    DECODE_K_GROUP_STAGES,
     SMALL_PREFILL_AVG_M,
+    _k_group,
     _tuned_stages,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -58,6 +63,7 @@ def _test_dispatch[
     N: Int,
     K: Int,
     check_row_scales: Bool = False,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -69,6 +75,9 @@ def _test_dispatch[
     Follows the same reference-computation pattern as
     test_grouped_matmul_sm100_block_fp4.mojo but calls the dispatch function
     which selects all config parameters based on (N, K).
+
+    `pdl_level` selects the kernel's PDL mode; `OVERLAP_AT_BEGINNING` runs
+    the path that loads weights before the PDL wait.
 
     With `check_row_scales`, also runs the dispatch with bf16 per-row input
     scales twice. Power-of-two scales commute with every rounding step, so
@@ -336,7 +345,7 @@ def _test_dispatch[
     ).as_unsafe_any_origin()
 
     # --- Call dispatch function (MOGG argument order) ---
-    grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b](
+    grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b, pdl_level=pdl_level](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -461,7 +470,9 @@ def _test_dispatch[
                     ]()
             ctx.enqueue_copy(row_scales_device, row_scales_host)
             grouped_matmul_nvfp4_dispatch[
-                transpose_b=transpose_b, RowScalesT=type_of(row_scales)
+                transpose_b=transpose_b,
+                pdl_level=pdl_level,
+                RowScalesT=type_of(row_scales),
             ](
                 c_tensor,
                 a_tensor,
@@ -549,14 +560,29 @@ def _test_dispatch[
 
 def test_tuned_stages() raises:
     """Pins the stage lookup: tuned rows, the decode default, and auto."""
-    # An untuned decode shape, and the decode rows the default replaced.
+    # Decode groups k-tiles only when the group divides the k-tile count.
+    assert_equal(_k_group[2688, DECODE_AVG_M](), 1)
+    assert_equal(_k_group[7168, DECODE_AVG_M](), DECODE_K_GROUP)
+    assert_equal(_k_group[7168, SMALL_PREFILL_AVG_M](), 1)
+    assert_equal(_k_group[7168, -1](), 1)
+    # An untuned decode shape with an odd k-tile count, and the decode rows
+    # the grouped default replaced.
     assert_equal(
         _tuned_stages[1856, 2688, DECODE_AVG_M](),
         Optional(DECODE_DEFAULT_STAGES),
     )
-    assert_equal(_tuned_stages[4096, 7168, DECODE_AVG_M](), Optional(6))
-    assert_equal(_tuned_stages[7168, 2048, DECODE_AVG_M](), Optional(6))
-    assert_equal(_tuned_stages[2048, 4096, DECODE_AVG_M](), Optional(6))
+    assert_equal(
+        _tuned_stages[4096, 7168, DECODE_AVG_M]().value(),
+        DECODE_K_GROUP_STAGES,
+    )
+    assert_equal(
+        _tuned_stages[7168, 2048, DECODE_AVG_M]().value(),
+        DECODE_K_GROUP_STAGES,
+    )
+    assert_equal(
+        _tuned_stages[2048, 4096, DECODE_AVG_M]().value(),
+        DECODE_K_GROUP_STAGES,
+    )
     # Tuned prefill rows, and auto stages for untuned prefill.
     assert_equal(_tuned_stages[4096, 7168, -1](), Optional(7))
     assert_false(Bool(_tuned_stages[1856, 2688, SMALL_PREFILL_AVG_M]()))
@@ -1106,6 +1132,52 @@ def main() raises:
             3,
             [131, 257, 61],
             [5, 2, 4],
+            ctx,
+        )
+
+        # ============================================================
+        # 11. Weights before the PDL wait (OVERLAP_AT_BEGINNING)
+        # ============================================================
+        print("\n=== PDL overlap at beginning ===")
+
+        comptime early = PDLLevel.OVERLAP_AT_BEGINNING
+        print("  11a: decode, more k iterations than stages")
+        _test_dispatch[8, 4096, 7168, True, early](
+            4,
+            [3, 1, 5, 2],
+            [0, 3, 5, 7],
+            ctx,
+        )
+
+        print("  11b: decode, the prefill covers every k iteration")
+        _test_dispatch[4, 2048, 1024, False, early](
+            3,
+            [2, 7, 1],
+            [3, 0, 1],
+            ctx,
+        )
+
+        print("  11c: decode, odd k-tile count (one tile per stage)")
+        _test_dispatch[8, 1856, 2688, False, early](
+            4,
+            [3, 1, 5, 2],
+            [0, 3, 5, 7],
+            ctx,
+        )
+
+        print("  11d: prefill, 2-CTA tiles with -1 IDs")
+        _test_dispatch[6, 4096, 7168, True, early](
+            5,
+            [97, 13, 211, 5, 131],
+            [3, 0, -1, 1, 4],
+            ctx,
+        )
+
+        print("  11e: all -1 expert IDs")
+        _test_dispatch[4, 2048, 1024, False, early](
+            3,
+            [128, 256, 512],
+            [-1, -1, -1],
             ctx,
         )
 

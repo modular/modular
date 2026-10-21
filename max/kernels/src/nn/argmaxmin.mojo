@@ -10,12 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides CPU and GPU implementations of the argmax and argmin reduction operations."""
-
-
-# ===-----------------------------------------------------------------------===#
-# _argn
-# ===-----------------------------------------------------------------------===#
+"""Provides a CPU implementation of the argmax reduction."""
 
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of
@@ -29,20 +24,14 @@ from layout import Coord, Idx, TileTensor
 from layout.tile_layout import Layout
 
 
-def _argn[
-    is_max: Bool
-](
+def argmax(
     input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """
-    Finds the indices of the maximum/minimum element along the specified axis.
-
-    Parameters:
-        is_max: If True compute then compute argmax, otherwise compute the
-                argmin.
+    Finds the indices of the maximum element along the specified axis.
 
     Args:
         input: The input tensor.
@@ -112,10 +101,7 @@ def _argn[
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            comptime if is_max:
-                return a.le(b)
-            else:
-                return a.ge(b)
+            return a.le(b)
 
         @inline(.always)
         def cmp[
@@ -123,10 +109,7 @@ def _argn[
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            comptime if is_max:
-                return a.lt(b)
-            else:
-                return a.gt(b)
+            return a.lt(b)
 
         # iterate over flattened axes
         var start = task_id * chunk_size
@@ -138,15 +121,9 @@ def _argn[
             Layout(Coord(parallel_size), Coord(output_stride))
         )
         for i in range(start, end):
-            var global_val: Scalar[input.dtype]
+            var global_val = Scalar[input.dtype].MIN
 
-            # initialize limits
-            comptime if is_max:
-                global_val = Scalar[input.dtype].MIN
-            else:
-                global_val = Scalar[input.dtype].MAX
-
-            # initialize vector of maximal/minimal values
+            # initialize vector of maximal values
             var global_values: SIMD[input.dtype, simd_width]
             if axis_size < simd_width:
                 global_values = global_val
@@ -169,10 +146,7 @@ def _argn[
                 global_indices = mask.select(global_indices, indices)
                 global_values = mask.select(global_values, curr_values)
 
-            comptime if is_max:
-                global_val = global_values.reduce_max()
-            else:
-                global_val = global_values.reduce_min()
+            global_val = global_values.reduce_max()
 
             # Check trailing indices.
             var idx = Scalar[output.dtype](0)
@@ -194,89 +168,3 @@ def _argn[
             output_rows.store((i,), idx)
 
     sync_parallelize(task_func, parallel_size, ctx)
-
-
-# ===-----------------------------------------------------------------------===#
-# argmax
-# ===-----------------------------------------------------------------------===#
-
-
-def argmax(
-    input: TileTensor[mut=False, ...],
-    axis: Int,
-    output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext.CPU] = None,
-) raises:
-    """
-    Finds the indices of the maximum element along the specified axis.
-
-    Args:
-        input: The input tensor.
-        axis: The axis.
-        output: The output tensor.
-        ctx: The context to execute the work on.
-    """
-
-    _argn[is_max=True](input, axis, output, ctx)
-
-
-def argmax(
-    input: TileTensor[mut=False, ...],
-    axis_buf: TileTensor[mut=False, ...],
-    output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext.CPU] = None,
-) raises where axis_buf.flat_rank == 1:
-    """
-    Finds the indices of the maximum element along the specified axis.
-
-    Args:
-        input: The input tensor.
-        axis_buf: The axis tensor.
-        output: The axis tensor.
-        ctx: The context to execute the work on.
-    """
-
-    argmax(input, Int(axis_buf[0]), output, ctx)
-
-
-# ===-----------------------------------------------------------------------===#
-# argmin
-# ===-----------------------------------------------------------------------===#
-
-
-def argmin(
-    input: TileTensor[mut=False, ...],
-    axis: Int,
-    output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext.CPU] = None,
-) raises:
-    """
-    Finds the indices of the minimum element along the specified axis.
-
-    Args:
-        input: The input tensor.
-        axis: The axis.
-        output: The output tensor.
-        ctx: The context to execute the work on.
-    """
-
-    _argn[is_max=False](input, axis, output, ctx)
-
-
-def argmin(
-    input: TileTensor[mut=False, ...],
-    axis_buf: TileTensor[mut=False, ...],
-    output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext.CPU] = None,
-) raises where axis_buf.flat_rank == 1:
-    """
-    Finds the indices of the minimum element along the specified axis.
-
-    Args:
-        input: The input tensor.
-        axis_buf: The axis tensor.
-        output: The axis tensor.
-        ctx: The context to execute the work on.
-    """
-
-    argmin(input, Int(axis_buf[0]), output, ctx)

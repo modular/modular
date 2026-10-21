@@ -60,7 +60,7 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "huggingface-hub",  # vllm 0.30.0 needs >=1.31, which forces click>=8.4.2
         "idna",  # Follows mcp's split
         "llguidance",  # Not used by MAX directly; vllm pulls 1.7.5, sglang pins 0.7.30
-        "mcp",  # vllm 0.30.0 needs mcp 2.x; MAX and sglang use 1.28.1
+        "mcp",  # vllm 0.30.0 needs mcp 2.x; MAX and sglang use 1.30.0
         "nvidia-cublas",  # Differs between vllm's and sglang's torch versions
         "nvidia-cudnn-cu13",  # Differs between vllm's and sglang's torch versions
         "nvidia-cusparselt-cu13",  # Differs between vllm's and sglang's torch versions

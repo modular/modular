@@ -91,3 +91,32 @@ async def test_idefics3_tokenizer_decode_accepts_token_list() -> None:
     from_list = await tokenizer.decode(tokens)
     assert from_list == await tokenizer.decode(np.array(tokens))
     assert "Hello world" in from_list
+
+
+@pytest.mark.asyncio
+async def test_idefics3_tokenizer_token_id_prompt() -> None:
+    tokenizer = _make_tokenizer()
+    text_context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID(),
+            model_name=IDEFICS3_REPO_ID,
+            prompt="What is this?",
+        )
+    )
+    token_ids = text_context.tokens.prompt.tolist()
+
+    context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID(),
+            model_name=IDEFICS3_REPO_ID,
+            prompt=token_ids,
+        )
+    )
+
+    assert context.tokens.prompt.tolist() == token_ids
+    assert context.images == []
+    assert context.max_length == text_context.max_length
+    assert context.eos_tracker == text_context.eos_tracker
+    assert (
+        context.extra_model_args.keys() == text_context.extra_model_args.keys()
+    )

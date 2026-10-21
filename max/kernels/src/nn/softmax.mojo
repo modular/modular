@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Provides numerically stable softmax kernels for CPU and GPU, including fused and online variants."""
 
-from std.math import align_down, ceildiv, exp, exp2, log
+from std.math import ceildiv, exp, exp2, log
 from std.math.uutils import umod, ufloordiv, udivmod
 from std.collections import Optional, OptionalReg
 
-from std.sys import is_nvidia_gpu, simd_width_of, align_of
+from std.sys import is_nvidia_gpu, align_of
 from std.sys._assembly import inlined_assembly
 
 import max.gpu.primitives.warp as warp
@@ -66,7 +66,7 @@ from layout.tile_layout import Layout as InternalLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils import IndexList, StaticTuple
+from std.utils import IndexList
 from std.utils.coord import ComptimeInt, Coord, DynamicCoord
 from std.utils.index import product
 from std.utils.numerics import get_accum_type, min_or_neg_inf
@@ -222,150 +222,6 @@ def _add_f32x2(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
         constraints="=l,l,l",
         has_side_effect=False,
     ](a, b)
-
-
-# ===-----------------------------------------------------------------------===#
-# Softmax 2 Pass
-# ===-----------------------------------------------------------------------===#
-
-
-def _softmax_2_pass_step1[
-    simd_width: Int,
-    dtype: DType,
-](input: TileTensor[mut=False, dtype, ...]) -> StaticTuple[Scalar[dtype], 2]:
-    comptime assert dtype.is_floating_point(), "dtype must be floating point"
-    comptime assert input.rank == 1
-    # STEP 1: find the runningMax and runningSum in each batch.
-    #   runningMax = -∞
-    #   runningSum = 0
-    #   STAGE 1:
-    #   for i = 0 to N do
-    #     newMax = max(runningMax, Input[i])
-    #     runningSum = runningSum*exp(runningMax-newMax) + exp(Input[i]-newMax)
-    #     runningMax = newMax
-    #   end for
-    #   return runningMax, runningSum
-
-    var running_max_vec = SIMD[dtype, simd_width](min_or_neg_inf[dtype]())
-    var running_sum_vec = SIMD[dtype, simd_width](0)
-
-    var length = input.num_elements()
-    var vector_end = align_down(length, simd_width)
-
-    for i in range(0, vector_end, simd_width):
-        var simd_elem = input.load_linear[width=simd_width, alignment=1](
-            IndexList[1](i)
-        )
-        var new_max_vec = SIMD[dtype, simd_width](
-            max(running_max_vec, simd_elem).reduce_max()
-        )
-        running_sum_vec = running_sum_vec * exp(
-            running_max_vec - new_max_vec
-        ) + exp(simd_elem - new_max_vec)
-        running_max_vec = new_max_vec
-
-    var running_max = running_max_vec.reduce_max()
-    var running_sum = running_sum_vec.reduce_add()
-
-    for i in range(vector_end, length):
-        var elem = input.load_linear[width=1, alignment=1](IndexList[1](i))
-        var new_max = max(running_max, elem)
-        running_sum = running_sum * exp(running_max - new_max) + exp(
-            elem - new_max
-        )
-        running_max = new_max
-
-    return StaticTuple[Scalar[dtype], 2](running_max[0], running_sum[0])
-
-
-def _softmax_2_pass_step2[
-    simd_width: Int,
-    unroll_factor: Int,
-    dtype: DType,
-](
-    output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[mut=False, dtype, ...],
-    running_max: Scalar[dtype],
-    running_sum: Scalar[dtype],
-):
-    comptime assert dtype.is_floating_point(), "dtype must be floating point"
-    comptime assert input.rank == 1
-    comptime assert output.rank == 1
-
-    # Step 2:
-    #   for i = 0 to N do
-    #     Output[i] = exp(Input[i] - runningMax) / runningSum
-    #   end for
-
-    @inline(.always)
-    def _step_2[
-        simd_width: Int
-    ](idx: Int) {running_max, running_sum, input, output, mut}:
-        var running_max_simd = SIMD[dtype, simd_width](running_max)
-        var running_sum_simd = SIMD[dtype, simd_width](running_sum)
-        var input_val = input.load_linear[width=simd_width, alignment=1](
-            IndexList[1](idx)
-        )
-        output.store_linear[width=simd_width, alignment=1](
-            IndexList[1](idx),
-            exp(input_val - running_max_simd) / running_sum_simd,
-        )
-
-    vectorize[simd_width, unroll_factor=unroll_factor](
-        output.num_elements(), _step_2
-    )
-
-
-def softmax_2_pass[
-    simd_width: Int,
-    dtype: DType,
-](
-    output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[mut=False, dtype, ...],
-):
-    """Performs an unbatched softmax on an input tensor using the two-pass
-    online algorithm.
-
-    The unbatched two-pass online softmax is described in "Online
-    normalizer calculation for softmax" (https://arxiv.org/abs/1805.02867) and
-    "A full-stack search technique for domain optimized deep learning
-    accelerators" (https://dl.acm.org/doi/abs/10.1145/3503222.3507767) and is
-    defined as:
-
-        procedure SoftmaxUnbatched(InputInput)
-          runningMax = -∞
-          runningSum = 0
-          STAGE 1:
-          for i = 0 to N do
-            newMax = max(runningMax, Input[i])
-            runningSum = runningSum*exp(runningMax-newMax) + exp(Input[i]-newMax)
-            runningMax = newMax
-          end for
-          for i = 0 to N do
-            Output[i] = exp(Input[i] - runningMax) / runningSum
-          end for
-
-    Parameters:
-        simd_width: The simd_width to use in vectorization.
-        dtype: The dtype of the input and output buffers.
-
-    Args:
-        output: The output buffer in which to store the softmax values.
-        input: The input buffer used to compute the softmax.
-    """
-    comptime assert dtype.is_floating_point(), "dtype must be floating point"
-    comptime assert input.rank == output.rank
-    comptime assert input.rank == 1
-
-    var running_info = _softmax_2_pass_step1[simd_width, dtype](input)
-
-    var running_max = running_info[0]
-    var running_sum = running_info[1]
-
-    comptime unroll_factor = 8  # TODO: search
-    _softmax_2_pass_step2[simd_width, unroll_factor, dtype](
-        output, input, running_max, running_sum
-    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -621,102 +477,6 @@ def softmax_3_pass[
 
 
 # ===-----------------------------------------------------------------------===#
-# LogSoftmax
-# ===-----------------------------------------------------------------------===#
-
-
-def logsoftmax_inline[
-    dtype: DType,
-    simd_width: Int,
-    rank: Int,
-    InputFnType: ImplicitlyCopyable
-    & RegisterPassable
-    & def[_simd_width: Int](Coord) -> SIMD[dtype, _simd_width],
-    target: StaticString = "cpu",
-    has_prologue_fusion: Bool = True,
-](
-    input_fn: InputFnType,
-    shape: Coord,
-    output: TileTensor[mut=True, dtype, ...],
-    axis: Int,
-    context: Optional[DeviceContext] = None,
-) raises:
-    """Computes log-softmax over the given axis using a caller-supplied input lambda.
-
-    Delegates to `softmax_inline` with `logsoftmax=True`, which applies an
-    elementwise `log` to the normalized outputs.
-
-    Parameters:
-        dtype: The dtype of the input and output buffers.
-        simd_width: The simd_width to use in vectorization.
-        rank: The rank of the input and output tensors.
-        InputFnType: The type of `input_fn` (inferred).
-        target: The target device ("cpu" or "gpu").
-        has_prologue_fusion: Whether the input lambda supports prologue fusion.
-
-    Args:
-        input_fn: The elementwise input lambda. On GPU it runs on the device,
-            so it must copy what it captures.
-        shape: The shape of the output tensor.
-        output: The output buffer in which to store the log-softmax values.
-        axis: The axis along which to compute the log-softmax.
-        context: Optional device context for GPU execution.
-    """
-    softmax_inline[
-        dtype,
-        simd_width,
-        rank,
-        target=target,
-        logsoftmax=True,
-        has_prologue_fusion=has_prologue_fusion,
-    ](input_fn, shape, output, axis, context)
-
-
-def logsoftmax_inline[
-    dtype: DType,
-    simd_width: Int,
-    rank: Int,
-    target: StaticString = "cpu",
-](
-    input: TileTensor[mut=False, dtype, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    axis: Int,
-    context: Optional[DeviceContext] = None,
-) raises:
-    """Computes log-softmax over the given axis of `input` and stores the result in `output`.
-
-    Wraps `input` with a load lambda and delegates to `softmax_inline` with
-    `logsoftmax=True`.
-
-    Parameters:
-        dtype: The dtype of the input and output buffers.
-        simd_width: The simd_width to use in vectorization.
-        rank: The rank of the input and output tensors.
-        target: The target device ("cpu" or "gpu").
-
-    Args:
-        input: The input buffer used to compute the log-softmax.
-        output: The output buffer in which to store the log-softmax values.
-        axis: The axis along which to compute the log-softmax.
-        context: Optional device context for GPU execution.
-    """
-
-    @inline(.always)
-    def input_fn[
-        _simd_width: Int
-    ](coords: Coord) {var input} -> SIMD[dtype, _simd_width]:
-        return input.load[width=_simd_width, alignment=1](coords)
-
-    softmax_inline[dtype, simd_width, rank, target=target, logsoftmax=True](
-        input_fn,
-        input.layout.shape_coord(),
-        output,
-        axis,
-        context,
-    )
-
-
-# ===-----------------------------------------------------------------------===#
 # Softmax
 # ===-----------------------------------------------------------------------===#
 
@@ -781,46 +541,6 @@ def _softmax_cpu[
             _ = indices
 
     sync_parallelize(task_func, num_workers, ctx)
-
-
-# Softmax (no input lambda)
-def softmax_inline[
-    dtype: DType,
-    simd_width: Int,
-    rank: Int,
-](
-    input: TileTensor[mut=False, dtype, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    axis: Int,
-) raises:
-    """Computes softmax over the given axis of `input` and stores the result in `output`.
-
-    Wraps `input` with a load lambda and delegates to the main `softmax_inline`
-    entry point.
-
-    Parameters:
-        dtype: The dtype of the input and output buffers.
-        simd_width: The simd_width to use in vectorization.
-        rank: The rank of the input and output tensors.
-
-    Args:
-        input: The input buffer used to compute the softmax.
-        output: The output buffer in which to store the softmax values.
-        axis: The axis along which to compute the softmax.
-    """
-
-    @inline(.always)
-    def input_fn[
-        _simd_width: Int
-    ](coords: Coord) {var input} -> SIMD[dtype, _simd_width]:
-        return input.load[width=_simd_width, alignment=1](coords)
-
-    softmax_inline[dtype, simd_width, rank](
-        input_fn,
-        input.layout.shape_coord(),
-        output,
-        axis,
-    )
 
 
 @__name(t"softmax_kernel_{dtype}_{sink}_{logsoftmax}")
@@ -1148,7 +868,7 @@ def _softmax_gpu[
                 ]
                 ctx.enqueue_function[warp_kernel](
                     output,
-                    host_arg=input_fn_wrapper,
+                    host_args=(input_fn_wrapper,),
                     grid_dim=warp_num_blocks,
                     block_dim=WARP_BLOCK_SIZE,
                     attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1228,7 +948,7 @@ def _softmax_gpu[
                             Int32(num_splits),
                             partial_max,
                             partial_sum,
-                            host_arg=input_fn_wrapper,
+                            host_args=(input_fn_wrapper,),
                             grid_dim=num_pairs,
                             block_dim=BLOCK_SIZE,
                         )
@@ -1252,7 +972,7 @@ def _softmax_gpu[
                             Int32(num_splits),
                             partial_max,
                             partial_sum,
-                            host_arg=input_fn_wrapper,
+                            host_args=(input_fn_wrapper,),
                             grid_dim=num_pairs,
                             block_dim=BLOCK_SIZE,
                         )
@@ -1276,7 +996,7 @@ def _softmax_gpu[
                         output,
                         Float32(1),
                         null_temp_arr,
-                        host_arg=input_fn_wrapper,
+                        host_args=(input_fn_wrapper,),
                         grid_dim=num_blocks,
                         block_dim=BLOCK_SIZE,
                         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1312,7 +1032,7 @@ def _softmax_gpu[
             shape_il,
             output,
             sink_weights.unsafe_value(),
-            host_arg=input_fn_wrapper,
+            host_args=(input_fn_wrapper,),
             grid_dim=num_blocks,
             block_dim=BLOCK_SIZE,
             attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1764,92 +1484,6 @@ def _softmax_split_combine_kernel[
                     output.store(coords, val.cast[dtype]())
 
                 vectorize[simd_width](lane_count, normalize)
-
-
-def softmax_with_temperature[
-    dtype: DType,
-    temp_dtype: DType = .float32,
-    TempLayoutType: TensorLayout = RowMajorLayout[Int64],
-    TempEngine: TensorEngine = DefaultEngine[element_width=1],
-](
-    ctx: DeviceContext,
-    input: TileTensor[mut=False, dtype, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    temperature: Scalar[temp_dtype] = Float32(1.0),
-    temperature_arr: Optional[
-        TileTensor[
-            temp_dtype, TempLayoutType, ImmutAnyOrigin, Engine=TempEngine
-        ]
-    ] = None,
-) raises:
-    """GPU softmax with per-row temperature scaling.
-
-    Computes `softmax(logits / T)` where T can be a scalar or a per-row array.
-    When `temperature_arr` is provided, each row uses its own temperature value.
-    Falls back to the scalar `temperature` for rows without an array entry.
-
-    Parameters:
-        dtype: The data type of the input and output tensors.
-        temp_dtype: The data type for temperature values (default float32).
-        TempLayoutType: The layout type for the optional temperature array.
-        TempEngine: Engine for the optional temperature array.
-
-    Args:
-        ctx: Device context for kernel execution.
-        input: Input logits tensor [batch_size, vocab_size].
-        output: Output probability tensor (same shape as input).
-        temperature: Scalar temperature fallback (default 1.0).
-        temperature_arr: Optional per-row temperature values [batch_size].
-    """
-    comptime assert input.rank == 2, "input must be rank 2"
-    comptime assert output.rank == 2, "output must be rank 2"
-
-    var shape = coord_to_index_list(input.layout.shape_coord())
-    var batch_size = shape[0]
-    var d = shape[1]
-
-    # CUDA rejects grid_dim=0; skip empty launches.
-    if batch_size == 0 or d == 0:
-        return
-
-    comptime BLOCK_SIZE = 256
-    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
-    comptime sm_overprovision_factor = 32
-    var num_blocks = min(batch_size, sm_overprovision_factor * sm_count)
-
-    var input_immut = input.as_imm()
-
-    @inline(.always)
-    def input_load_fn[
-        _dtype: DType, width: Int
-    ](idx: Coord) {var input_immut} -> SIMD[_dtype, width]:
-        comptime assert idx.rank == 2
-        return rebind[SIMD[_dtype, width]](input_immut.load[width=width](idx))
-
-    comptime kernel = _softmax_temperature_kernel[
-        BLOCK_SIZE,
-        simd_width,
-        type_of(input_load_fn),
-        dtype,
-        temp_dtype,
-        2,
-        output.LayoutType,
-        output.origin,
-        output.Engine,
-        TempLayoutType,
-        TempEngine,
-    ]
-    ctx.enqueue_function[kernel](
-        IndexList[2](batch_size, d),
-        output,
-        temperature.cast[.float32](),
-        temperature_arr,
-        host_arg=input_load_fn,
-        grid_dim=num_blocks,
-        block_dim=BLOCK_SIZE,
-        attributes=pdl_launch_attributes(PDLLevel.ON),
-    )
 
 
 # ===----------------------------------------------------------------------=== #

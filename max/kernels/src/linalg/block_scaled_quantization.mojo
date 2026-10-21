@@ -856,8 +856,10 @@ def naive_block_scaled_matmul_kernel[
 @__llvm_arg_metadata(input_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(output_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
-@__name("quantize_dynamic_scaled_async_fp4_kernel")
-def quantize_dynamic_scaled_async_fp4_kernel[
+@__name(
+    t"quantize_dynamic_scaled_async_kernel_{output_dtype}_sf{SF_VECTOR_SIZE}"
+)
+def quantize_dynamic_scaled_async_kernel[
     input_dtype: DType,
     input_tile_shape: Coord,
     input_desc_shape: Coord,
@@ -884,18 +886,20 @@ def quantize_dynamic_scaled_async_fp4_kernel[
     ],
     tensor_sf: Float32,  # tensor-wise scale factor
 ):
-    """GPU kernel that quantizes BF16 tiles to NVFP4 using TMA async copies and warp-specialized PDL.
+    """GPU kernel that quantizes BF16 tiles to NVFP4 or MXFP8 using TMA async copies and warp-specialized PDL.
 
-    One warpgroup issues TMA loads while another computes per-group scale
-    factors and packs FP4 elements, then stores results back via TMA
-    async stores.
+    One warp issues TMA loads while a warpgroup computes per-group scale
+    factors and quantizes, one row per thread, then stores results back via
+    TMA async stores. A CTA covers 128 rows and one scale atom's
+    `SF_ATOM_K` groups, loaded as `NUM_PIPELINES_STAGES` 64-column stages.
 
     Parameters:
         input_dtype: Element type of the input activation tensor.
-        input_tile_shape: Per-dimension shape of the input TMA tile.
+        input_tile_shape: Per-dimension shape of one stage's input TMA tile.
         input_desc_shape: Per-dimension descriptor shape of the input TMA
             tile.
-        output_dtype: Element type of the quantized output tensor.
+        output_dtype: Element type of the quantized output tensor: `uint8`
+            for NVFP4 or `float8_e4m3fn` for MXFP8.
         output_tile_shape: Per-dimension shape of the output TMA tile.
         output_desc_shape: Per-dimension descriptor shape of the output
             TMA tile.
@@ -907,15 +911,18 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         output_swizzle_mode: `TensorMapSwizzle` mode for output TMA stores.
         scales_swizzle_mode: `TensorMapSwizzle` mode for scales TMA stores.
         SF_VECTOR_SIZE: Number of elements covered by each block scale
-            factor.
-        NUM_PIPELINES_STAGES: Number of pipeline stages for TMA
-            double-buffered async copies.
+            factor: 16 for NVFP4 or 32 for MXFP8.
+        NUM_PIPELINES_STAGES: Number of 64-column input stages a CTA
+            loads: 1 for NVFP4 or 2 for MXFP8.
     Args:
         input_tma_op: TMA tile descriptor for async input loads.
         output_tma_op: TMA tile descriptor for async output stores.
         scales_tma_op: TMA tile descriptor for async scale-factor stores.
-        tensor_sf: Tensor-wise scale factor applied to the quantization.
+        tensor_sf: Tensor-wise scale factor applied to the NVFP4
+            quantization; unused for MXFP8.
     """
+    comptime is_mxfp8 = output_dtype == .float8_e4m3fn
+
     var smem_storage = rebind[
         MutPointer[Scalar[input_dtype], MutAnyOrigin, address_space=.SHARED]
     ](
@@ -935,18 +942,28 @@ def quantize_dynamic_scaled_async_fp4_kernel[
 
     comptime SF_K_GROUP_SIZE: Int = SF_VECTOR_SIZE * Int(SF_ATOM_K)
     comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
+    comptime GROUPS_PER_STAGE = STAGE_GROUP_SIZE // SF_VECTOR_SIZE
+    # Output elements one 16-byte smem store holds.
+    comptime OUT_VEC = 16 // size_of[output_dtype]()
+    # Output elements one stage yields per row: packed FP4 halves them.
+    comptime STAGE_OUT_ELEMS = STAGE_GROUP_SIZE // (1 if is_mxfp8 else 2)
+    comptime OUT_ROW_ELEMS = STAGE_OUT_ELEMS * NUM_PIPELINES_STAGES
 
     comptime assert (
         STAGE_GROUP_SIZE == 64
-        and NUM_PIPELINES_STAGES == 1
-        and SF_VECTOR_SIZE == Int(NVFP4_SF_VECTOR_SIZE)
-    ), (
-        "STAGE_GROUP_SIZE must be 64 and NUM_PIPELINES_STAGES must be 1 and"
-        " SF_VECTOR_SIZE must be 16"
-    )
+    ), "a stage must be 64 input columns, the 128-byte swizzle span of bfloat16"
     comptime assert (
-        scales_dtype == NVFP4_SF_DTYPE
-    ), "scales_dtype must be float8_e4m3fn"
+        is_mxfp8
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        and scales_dtype == MXFP8_SF_DTYPE
+    ) or (
+        output_dtype == .uint8
+        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        and scales_dtype == NVFP4_SF_DTYPE
+    ), (
+        "expected NVFP4 (uint8 output, 16-wide float8_e4m3fn scales) or MXFP8"
+        " (float8_e4m3fn output, 32-wide float8_e8m0fnu scales)"
+    )
 
     var input_smem_ptr = smem_storage
     var output_smem_ptr = smem_storage.unsafe_offset(
@@ -1022,11 +1039,9 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                 )
 
                 tma_mbar[iter_idx].wait(tma_phase[iter_idx])
-                var quantized_elements = SIMD[.uint32, 8]()
+                var quantized_elements = SIMD[output_dtype, STAGE_OUT_ELEMS]()
 
-                comptime for group_idx in range(
-                    STAGE_GROUP_SIZE // SF_VECTOR_SIZE
-                ):
+                comptime for group_idx in range(GROUPS_PER_STAGE):
                     var group_elements = SIMD[input_dtype, SF_VECTOR_SIZE]()
 
                     comptime for col_idx in range(SF_VECTOR_SIZE // 8):
@@ -1053,59 +1068,79 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                         abs(group_elements).reduce_max().cast[.float32]()
                     )
 
-                    var scale_factor = (
-                        tensor_sf * group_max * recip(Float32(6.0))
-                    )
-                    var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+                    var fp8_scale_factor: Scalar[scales_dtype]
+                    var output_scale = Float32(0.0)
+                    comptime if is_mxfp8:
+                        var block_is_dead: Bool
+                        fp8_scale_factor, output_scale, block_is_dead = (
+                            compute_mxfp8_block_scale[scales_dtype](group_max)
+                        )
+                        # A dead block's multiplier is 0; zeroing avoids
+                        # storing `inf * 0.0 = NaN`.
+                        if block_is_dead:
+                            group_elements = type_of(group_elements)(0)
+                    else:
+                        fp8_scale_factor = (
+                            tensor_sf * group_max * recip(Float32(6.0))
+                        ).cast[scales_dtype]()
+                        if fp8_scale_factor.cast[.float32]() != 0:
+                            output_scale = recip(
+                                fp8_scale_factor.cast[.float32]()
+                                * recip(tensor_sf)
+                            )
 
                     scale_factors[
-                        iter_idx * NUM_PIPELINES_STAGES + group_idx
+                        iter_idx * GROUPS_PER_STAGE + group_idx
                     ] = fp8_scale_factor
 
-                    var output_scale = Float32(0.0)
-                    if fp8_scale_factor.cast[.float32]() != 0:
-                        output_scale = recip(
-                            fp8_scale_factor.cast[.float32]() * recip(tensor_sf)
-                        )
+                    var scaled = group_elements.cast[.float32]() * output_scale
+                    comptime if is_mxfp8:
+                        quantized_elements = quantized_elements.insert[
+                            offset=group_idx * SF_VECTOR_SIZE
+                        ](scaled.cast[output_dtype]())
+                    else:
+                        comptime for slice_idx in range(SF_VECTOR_SIZE // 8):
+                            quantized_elements = quantized_elements.insert[
+                                offset=(
+                                    group_idx * SF_VECTOR_SIZE + slice_idx * 8
+                                )
+                                // 2
+                            ](
+                                bitcast[output_dtype, 4](
+                                    cast_fp32_to_fp4e2m1(
+                                        scaled.slice[8, offset=slice_idx * 8]()
+                                    )
+                                )
+                            )
 
-                    comptime for slice_idx in range(2):
-                        var slice_elements = group_elements.slice[
-                            8, offset=slice_idx * 8
-                        ]()
-                        quantized_elements[
-                            group_idx * 2 + slice_idx
-                        ] = cast_fp32_to_fp4e2m1(
-                            slice_elements.cast[.float32]() * output_scale
-                        )
-
-                comptime for idx in range(2):
-                    var slice_elements = quantized_elements.slice[
-                        4, offset=idx * 4
-                    ]()
+                comptime for idx in range(STAGE_OUT_ELEMS // OUT_VEC):
                     comptime output_swizzle = make_swizzle[
                         output_dtype, output_swizzle_mode
                     ]()
                     var swizzle_offset = (
-                        local_row_idx * ufloordiv(STAGE_GROUP_SIZE, 2)
-                        + idx * SF_VECTOR_SIZE
+                        local_row_idx * OUT_ROW_ELEMS
+                        + iter_idx * STAGE_OUT_ELEMS
+                        + idx * OUT_VEC
                     )
                     var output_swizzle_idx = output_swizzle(swizzle_offset)
                     output_smem_flat.store[
-                        alignment=align_of[SIMD[output_dtype, SF_VECTOR_SIZE]]()
+                        alignment=align_of[SIMD[output_dtype, OUT_VEC]]()
                     ](
                         (output_swizzle_idx,),
-                        bitcast[output_dtype, SF_VECTOR_SIZE](slice_elements),
+                        quantized_elements.slice[
+                            OUT_VEC, offset=idx * OUT_VEC
+                        ](),
                     )
 
-                scales_smem_flat.store[
-                    alignment=align_of[SIMD[scales_dtype, SF_ATOM_K]]()
-                ](
-                    (
-                        (local_row_idx % 32) * 16
-                        + (local_row_idx // 32) * SF_ATOM_K,
-                    ),
-                    scale_factors,
-                )
+            scales_smem_flat.store[
+                alignment=align_of[SIMD[scales_dtype, SF_ATOM_K]]()
+            ](
+                (
+                    (local_row_idx % 32) * 16
+                    + (local_row_idx // 32) * SF_ATOM_K,
+                ),
+                scale_factors,
+            )
 
             named_barrier[128](1)
 
@@ -1125,7 +1160,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                 output_tma_op.async_store(
                     output_smem,
                     StaticTuple[UInt32, 2](
-                        UInt32(ufloordiv(block_idx.y * SF_K_GROUP_SIZE, 2)),
+                        UInt32(block_idx.y * OUT_ROW_ELEMS),
                         UInt32(block_idx.x) * UInt32(SF_MN_GROUP_SIZE),
                     ),
                 )
@@ -1153,69 +1188,85 @@ def quantize_dynamic_scaled_fp4_async[
     ],
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
-    """Launches the TMA-based NVFP4 quantization kernel on SM100 hardware.
+    """Launches the TMA-based NVFP4 or MXFP8 quantization kernel on SM100 hardware.
 
     Sets up TMA tile descriptors for input, output, and scales, then
-    enqueues the `quantize_dynamic_scaled_async_fp4_kernel` with
+    enqueues the `quantize_dynamic_scaled_async_kernel` with
     warp-specialized PDL.
 
     Parameters:
         input_dtype: Element type of the input activation tensor. Must
             be `bfloat16` (inferred).
-        output_dtype: Element type of the quantized output tensor. Must
-            be `uint8` for NVFP4 (inferred).
-        scales_dtype: Element type of the block scale-factor tensor.
-            Must be `float8_e4m3fn` for NVFP4 (inferred).
+        output_dtype: Element type of the quantized output tensor:
+            `uint8` for NVFP4 or `float8_e4m3fn` for MXFP8 (inferred).
+        scales_dtype: Element type of the block scale-factor tensor:
+            `float8_e4m3fn` for NVFP4 or `float8_e8m0fnu` for MXFP8
+            (inferred).
         SF_VECTOR_SIZE: Number of input elements covered by each block
-            scale factor. Must be 16 for NVFP4.
+            scale factor: 16 for NVFP4 or 32 for MXFP8.
     Args:
         ctx: Device context used to enqueue the kernel.
-        output_tensor_tile: Output tile for the quantized NVFP4 packed
-            `uint8` elements; the column count must be a multiple of
-            32 and half the input column count.
+        output_tensor_tile: Output tile for the quantized elements: packed
+            NVFP4 `uint8` with half the input columns, or MXFP8 with as
+            many columns as the input. Its column count must be a
+            multiple of 16 bytes.
         scales_tensor_tile: Output 5D scale-factor tile in the TCGEN
             interleaved layout.
         input_tensor_tile: Input `bfloat16` activation tile.
-        tensor_sf: Tensor-wise scale factor applied to the
-            quantization (defaults to 1.0).
+        tensor_sf: Tensor-wise scale factor applied to the NVFP4
+            quantization (defaults to 1.0); unused for MXFP8.
     """
     comptime assert input_dtype == .bfloat16, "input_dtype must be bfloat16"
 
+    comptime is_mxfp8 = output_dtype == .float8_e4m3fn
     comptime assert (
         output_dtype == .uint8
         and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
         and scales_dtype == NVFP4_SF_DTYPE
+    ) or (
+        is_mxfp8
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        and scales_dtype == MXFP8_SF_DTYPE
     ), (
-        "output dtype should be uint8 (fp4-e2m1fnX2) for NVFP4 and scales_dtype"
-        " must be float8_e4m3fn"
+        "expected NVFP4 (uint8 output, float8_e4m3fn scales) or MXFP8"
+        " (float8_e4m3fn output, float8_e8m0fnu scales)"
     )
 
     comptime input_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
-    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_32B  # 64 elements / 2 elements per uint8 = 32 elements per 32B
+    # One row of the output tile: 128 MXFP8 bytes, or 64 packed FP4 values
+    # in 32 bytes.
+    comptime output_swizzle_mode = (
+        TensorMapSwizzle.SWIZZLE_128B if is_mxfp8 else TensorMapSwizzle.SWIZZLE_32B
+    )
     comptime scales_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE  # 16 elements / 1 elements per float8_e4m3fn = 16 elements per 16B
 
     var M = Int(input_tensor_tile.dim[0]())
     var N = Int(input_tensor_tile.dim[1]())
 
     comptime output_N = output_tensor_tile.LayoutType.static_shape[1]
-    comptime assert (
-        output_N % 32 == 0
-    ), "output_tensor N must be a multiple of 32"
     comptime input_N = input_tensor_tile.LayoutType.static_shape[1]
+    comptime out_per_in = 1 if is_mxfp8 else 2
     comptime assert (
-        input_N // output_N == 2
-    ), "input_tensor N must be a multiple of 2 * output_tensor N"
+        output_N * size_of[output_dtype]() % 16 == 0
+    ), "output_tensor rows must be a multiple of 16 bytes"
+    comptime assert (
+        input_N == output_N * out_per_in
+    ), "input_tensor N must be output_tensor N times the elements a byte packs"
 
     comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
-    comptime NUM_PIPELINES_STAGES = 1
+    # A stage is 64 bfloat16 columns, the 128-byte swizzle span.
+    comptime STAGE_GROUP_SIZE = 64
+    comptime NUM_PIPELINES_STAGES = SF_K_GROUP_SIZE // STAGE_GROUP_SIZE
 
-    comptime input_tma_tile_shape = coord[128, SF_K_GROUP_SIZE]
+    comptime input_tma_tile_shape = coord[SF_MN_GROUP_SIZE, STAGE_GROUP_SIZE]
     var input_tma_op = create_tensor_tile[
         input_tma_tile_shape,
         swizzle_mode=input_swizzle_mode,
     ](ctx, input_tensor_tile)
 
-    comptime output_tma_tile_shape = coord[128, 32]
+    comptime output_tma_tile_shape = coord[
+        SF_MN_GROUP_SIZE, SF_K_GROUP_SIZE // out_per_in
+    ]
     var output_tma_op = create_tensor_tile[
         output_tma_tile_shape,
         swizzle_mode=output_swizzle_mode,
@@ -1262,7 +1313,7 @@ def quantize_dynamic_scaled_fp4_async[
         SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K * size_of[scales_dtype]()
     )
 
-    comptime kernel = quantize_dynamic_scaled_async_fp4_kernel[
+    comptime kernel = quantize_dynamic_scaled_async_kernel[
         type_of(input_tma_op).dtype,
         type_of(input_tma_op).tile_shape,
         type_of(input_tma_op).desc_shape,
@@ -1386,9 +1437,9 @@ def _scale_tile_expert[
             span = Int(lane_group_max[WARP_SIZE](Int32(refined)))
 
         if thread_idx.x == 0:
-            search_smem.store(0, Int32(span))
+            search_smem.unsafe_store(0, Int32(span))
     barrier()
-    return Int(search_smem.load(0))
+    return Int(search_smem.unsafe_load(0))
 
 
 @__llvm_metadata(
@@ -1658,7 +1709,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     comptime assert (
         zeros_per_thread & (zeros_per_thread - 1) == 0
     ), "zero-fill store width must be a power of two"
-    smem_ptr.store(
+    smem_ptr.unsafe_store(
         thread_idx.x * zeros_per_thread,
         SIMD[scales_dtype, zeros_per_thread](0),
     )
@@ -1989,7 +2040,7 @@ comptime _NVFP4_ROW_RANGE = Float32(6.0 * 448.0)
 
 comptime nvfp4_row_input_fn_type = def[dtype: DType, width: SIMDLength](
     SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
 """Elementwise transform applied to each input vector before quantizing.
 
 `grouped_quantize_nvfp4_row_amax` quantizes `input_fn(x)` in place of `x`,
@@ -3135,7 +3186,7 @@ def quantize_dynamic_block_scaled[
 ) raises:
     """Dispatches dynamic block-scaled quantization to the appropriate hardware-specific kernel.
 
-    Routes to the SM100 NVFP4 TMA-async path, the SM100
+    Routes to the SM100 NVFP4 and MXFP8 TMA-async path, the SM100
     `quantize_dynamic_scaled_fp4fp8` path, or the AMD CDNA4 MXFP4 path
     based on the target device and scale-factor format.
 
@@ -3222,7 +3273,24 @@ def quantize_dynamic_block_scaled[
             scales_device.rank == 5 and scales_device.flat_rank == 5
         ), "SM100 requires rank-5 interleaved scales"
 
-        comptime if is_nvfp4 and static_input_N % 32 == 0:
+        comptime if (is_nvfp4 or is_fp8) and static_input_N % 32 == 0:
+            # A small MXFP8 input finishes sooner as one block per row than
+            # as 128-row TMA tiles, which leave most SMs idle.
+            comptime if is_fp8 and static_input_N <= 4096:
+                if num_rows * num_cols <= 655360:
+                    quantize_dynamic_scaled_fp4fp8[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                        num_max_threads=512,
+                    ](
+                        ctx,
+                        output_tensor,
+                        scales_tensor,
+                        input_tensor,
+                        num_cols=Int(num_cols),
+                        num_cols_padded=Int(num_cols),
+                        tensor_sf=tensor_sf,
+                    )
+                    return
             quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                 ctx,
                 output_tensor,

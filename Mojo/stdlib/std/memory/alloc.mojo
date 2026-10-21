@@ -50,11 +50,11 @@ Allocate, use, and free storage through the `Allocation` returned by `alloc`:
 from std.memory.alloc import alloc, dealloc, Layout
 from std.memory import unsafe_destroy_n
 
-var allocation = alloc(Layout[String](count=4))
+var allocation = alloc(Layout[String](length=4))
 var ptr = allocation.unsafe_ptr()
 
 # initialize the memory
-for i in range(allocation.layout().count()):
+for i in range(len(allocation)):
     ptr.unsafe_offset(i).unsafe_write("🔥")
 
 # print the values
@@ -62,7 +62,7 @@ for string in allocation.unsafe_span():
     print(string) # prints "🔥"
 
 # deinitialize the values
-unsafe_destroy_n(allocation.unsafe_ptr(), allocation.layout().count())
+unsafe_destroy_n(allocation.unsafe_ptr(), len(allocation))
 
 # deallocate the memory
 dealloc(allocation^)
@@ -226,7 +226,7 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=4))
+    var allocation = alloc(Layout[Int32](length=4))
     # use the allocation...
     dealloc(allocation^)
     ```
@@ -329,7 +329,7 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """Returns a span over the allocated storage without consuming `self`.
 
         The returned span borrows from `self`, so the `Allocation` retains
-        ownership of the storage. The span covers `layout.count()` elements.
+        ownership of the storage. The span covers `len(self)` elements.
 
         Returns:
             A span over the allocated storage.
@@ -339,7 +339,7 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         `alloc` returns uninitialized storage, so the returned span may cover
         uninitialized memory. Initialize the elements before reading them.
         """
-        return {unsafe_ptr = self.unsafe_ptr(), length = self._layout.count()}
+        return {unsafe_ptr = self.unsafe_ptr(), length = len(self._layout)}
 
     def layout(self) -> Layout[Self.T, alignment=Self.alignment]:
         """Returns the `Layout` the storage was allocated with.
@@ -356,10 +356,10 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """Returns the number of elements the storage was allocated for.
 
         Returns:
-            `layout().count()`, the element count this allocation was created
+            `len(self.layout())`, the element count this allocation was created
             with.
         """
-        return self._layout.count()
+        return len(self._layout)
 
     def storage(
         ref self,
@@ -429,7 +429,7 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         ```mojo
         from std.memory.alloc import alloc, Layout
 
-        var managed = alloc(Layout[String](count=4)).into_managed()
+        var managed = alloc(Layout[String](length=4)).into_managed()
         managed.unsafe_ptr().unsafe_write("hello")
 
         # Even though the allocation is automatically cleaned up, destructors
@@ -464,7 +464,7 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
 
 
 struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
-    RegisterPassable, Writable
+    RegisterPassable, Sized, Writable
 ):
     """An owning handle to a heap allocation of `T` that frees itself.
 
@@ -501,7 +501,7 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     ```mojo
     from std.memory.alloc import alloc, Layout
 
-    var managed = alloc(Layout[Int32](count=4)).into_managed()
+    var managed = alloc(Layout[Int32](length=4)).into_managed()
     var ptr = managed.unsafe_ptr()
     for i in range(4):
         ptr.unsafe_offset(i).write(i)
@@ -580,8 +580,7 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """Returns a span over the allocated storage without consuming `self`.
 
         The returned span borrows from `self`, so the `ManagedAllocation`
-        retains ownership of the storage. The span covers `layout.count()`
-        elements.
+        retains ownership of the storage. The span covers `len(self)` elements.
 
         Returns:
             A span over the allocated storage.
@@ -603,6 +602,15 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
             The `Layout` this allocation was created with.
         """
         return self._alloc.layout()
+
+    def __len__(self) -> Int:
+        """Returns the number of elements the storage was allocated for.
+
+        Returns:
+            `len(self.layout())`, the element count this allocation was created
+            with.
+        """
+        return len(self._alloc)
 
 
 @explicit_destroy(
@@ -754,9 +762,7 @@ struct ThinAllocation[T: AnyType](not Deinitable, RegisterPassable, Writable):
 def _alloc_bytes(
     layout: Layout[Byte, alignment=_]
 ) -> Pointer[Byte, MutUntrackedOrigin]:
-    var pointer = _malloc[Byte](
-        layout.count(), alignment=layout.alignment.bytes()
-    )
+    var pointer = _malloc[Byte](len(layout), alignment=layout.alignment.bytes())
     if unlikely(not pointer):
         abort("alloc failed: returned a null pointer")
     return pointer.unsafe_value()
@@ -848,7 +854,7 @@ def alloc[
 ](layout: Layout[T, alignment=alignment], /) -> Allocation[
     T, alignment=alignment
 ]:
-    """Allocates owned storage for `layout.count()` elements of `T`.
+    """Allocates owned storage for `len(layout)` elements of `T`.
 
     Returns an `Allocation`, an explicitly destroyed handle that bundles the
     newly allocated storage with its `Layout`. The compiler then enforces that
@@ -868,14 +874,14 @@ def alloc[
         An `Allocation` owning the newly allocated, uninitialized storage.
 
     Constraints:
-        `layout.count()` must be `>= 0`.
+        `len(layout)` must be `>= 0`.
 
     Example:
 
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=4))
+    var allocation = alloc(Layout[Int32](length=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
         ptr.unsafe_offset(i).write(i)
@@ -884,8 +890,8 @@ def alloc[
     """
     comptime size_of_t = size_of[T]()
 
-    if unlikely(layout.count() < 0):
-        abort("alloc: `Layout.count()` must be >= 0")
+    if unlikely(len(layout) < 0):
+        abort("alloc: `len(layout)` must be >= 0")
 
     comptime if size_of_t == 0:
         return ThinAllocation[T](
@@ -930,11 +936,11 @@ def dealloc[T: AnyType, /](var allocation: Allocation[T, alignment=_], /):
 
 
 struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
-    TrivialRegisterPassable, Writable
+    Sized, TrivialRegisterPassable, Writable
 ):
     """Describes the shape of a memory allocation for elements of type `T`.
 
-    A `Layout` pairs the *count* of elements, held at runtime, with the
+    A `Layout` pairs the *length* (element count), held at runtime, with the
     *alignment* of the allocation, carried as a compile-time parameter. Passing
     a `Layout` to `alloc` and `dealloc` keeps the size and alignment
     requirements explicit and co-located at every call site, preventing
@@ -950,27 +956,27 @@ struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
     from std.memory.alloc import alloc, dealloc, Layout
 
     # Allocate room for 8 Int32 values with `Int32`'s natural alignment.
-    var layout = Layout[Int32](count=8)
+    var layout = Layout[Int32](length=8)
     var allocation = alloc(layout)
     # ... use allocation ...
     dealloc(allocation^)
 
     # Over-align the same storage to a 64-byte boundary.
     var over_aligned = alloc(
-        Layout[Int32, alignment = .of_bytes[64]()](count=8)
+        Layout[Int32, alignment = .of_bytes[64]()](length=8)
     )
     dealloc(over_aligned^)
     ```
     """
 
-    var _count: Int
+    var _length: Int
 
     @inline(.always)
-    def __init__(out self, *, count: Int):
-        """Initializes a `Layout` describing `count` elements of type `T`.
+    def __init__(out self, *, length: Int):
+        """Initializes a `Layout` describing `length` elements of type `T`.
 
         Args:
-            count: Number of elements of type `T` to describe.
+            length: Number of elements of type `T` to describe.
 
         Constraints:
             `alignment` must be no smaller than `align_of[T]()`. `Alignment`
@@ -979,7 +985,17 @@ struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
         comptime assert (
             Self.alignment.bytes() >= align_of[Self.T]()
         ), "`Layout` alignment must be at least `align_of[T]()`"
-        self._count = count
+        self._length = length
+
+    @deprecated("use `Layout(length=...)` instead")
+    @inline(.always)
+    def __init__(out self, *, count: Int):
+        """Initializes a `Layout` describing `count` elements of type `T`.
+
+        Args:
+            count: Number of elements of type `T` to describe.
+        """
+        self = Self(length=count)
 
     @inline(.always)
     @staticmethod
@@ -987,7 +1003,7 @@ struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
         """Creates a `Layout` for exactly one element of type `T`.
 
         Returns:
-            A `Layout` with `count` equal to 1.
+            A `Layout` with `length` equal to 1.
 
         Example:
 
@@ -1000,7 +1016,7 @@ struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
         dealloc(allocation^)
         ```
         """
-        return Self(count=1)
+        return Self(length=1)
 
     @inline(.always)
     def as_byte_layout(self) -> Layout[Byte, alignment=Self.alignment]:
@@ -1010,11 +1026,21 @@ struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
         allocation in terms of raw bytes, preserving the alignment.
 
         Returns:
-            A `Layout[Byte, alignment=_]` whose `count` is
-            `self.count() * size_of[T]()`.
+            A `Layout[Byte, alignment=_]` whose `length` is
+            `len(self) * size_of[T]()`.
         """
-        return {count = self._count * size_of[Self.T]()}
+        return {length = self._length * size_of[Self.T]()}
 
+    @inline(.always)
+    def __len__(self) -> Int:
+        """Returns the number of elements described by this layout.
+
+        Returns:
+            The element count passed at construction time.
+        """
+        return self._length
+
+    @deprecated("use `len(layout)` instead")
     @inline(.always)
     def count(self) -> Int:
         """Returns the number of elements described by this layout.
@@ -1022,7 +1048,7 @@ struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
         Returns:
             The element count passed at construction time.
         """
-        return self._count
+        return self._length
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes a human-readable representation of this layout to `writer`.
@@ -1032,7 +1058,7 @@ struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
         """
         FormatStruct(writer, "Layout").params(
             reflect[Self.T].name(), Named("alignment", Self.alignment)
-        ).fields(Named("count", self._count))
+        ).fields(Named("length", self._length))
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes a debug representation of this layout to `writer`.

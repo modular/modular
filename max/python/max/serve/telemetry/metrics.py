@@ -61,6 +61,9 @@ NumberType = float | int
 OtelAttributes = Mapping[str, str] | None
 # The ``turn`` label on the per-request input and output token histograms.
 ConversationTurn = Literal["first", "later"]
+# The ``phase`` label on ``maxserve.request.client_disconnect_cancellations``:
+# whether the status code was still unsent when the client hung up.
+_DisconnectPhase = Literal["before_response", "during_response"]
 
 # API_PROXIES the "types" of measurements we make from a meter
 # SDK instruments are the "types" that actually do recording
@@ -91,6 +94,20 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "Total API requests since server start. Liveness and "
             "observability endpoints (/health, /version, /ping and /metrics) "
             "are excluded."
+        ),
+    ),  # type: ignore
+    "maxserve.request.client_disconnect_cancellations": _meter.create_counter(
+        "maxserve.request.client_disconnect_cancellations",
+        description=(
+            "Requests whose client disconnected before the server finished "
+            "responding, split by `phase`. `before_response` covers the chat "
+            "and text completion routes, which watch for a disconnect while "
+            "a request waits for its result; `maxserve_request_count_total` "
+            "also records these as code 499. `during_response` is a "
+            "disconnect after a streamed response started and before its "
+            "last chunk, which `maxserve_request_count_total` records under "
+            "the response's status code, so it is visible only here. Both "
+            "phases are exported at zero from startup."
         ),
     ),  # type: ignore
     "maxserve.request_time": _meter.create_histogram(
@@ -1116,6 +1133,26 @@ class _AsyncMetrics:
         no-op and emit each measurement immediately.
         """
         return self.client.transaction()
+
+    def export_zero_client_disconnect_cancellations(self) -> None:
+        """Exports every phase at zero, so a quiet window reads as zero."""
+        for phase in get_args(_DisconnectPhase):
+            self.client.send_measurement(
+                MaxMeasurement(
+                    "maxserve.request.client_disconnect_cancellations",
+                    0,
+                    {**self.extra_attributes, "phase": phase},
+                ),
+            )
+
+    def client_disconnect_cancellation(self, phase: _DisconnectPhase) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.request.client_disconnect_cancellations",
+                1,
+                {**self.extra_attributes, "phase": phase},
+            ),
+        )
 
     def request_count(self, responseCode: int, urlPath: str) -> None:
         self.client.send_measurement(

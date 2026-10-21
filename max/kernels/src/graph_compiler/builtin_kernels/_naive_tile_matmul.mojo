@@ -263,7 +263,7 @@ struct MatmulTileSM100:
         a: InputTensor[rank=2, ...],
         b: InputTensor[rank=2, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         # The tile programming model (`tile_based_fusion=True`) binds `c` to
         # `_FusedComputeOutputTile`, and the selection filter routes the op to
         # this sm_100a registration. Naive, correctness-only GPU matmul on MAX's

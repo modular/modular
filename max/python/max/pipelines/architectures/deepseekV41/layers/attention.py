@@ -16,6 +16,10 @@ Each layer attends over a sliding window of recent tokens plus a top-k
 selection of compressed KV entries chosen by an indexer. Layers can share
 work: a layer may read another layer's compressed KV and index keys, or
 reuse the top-k selection an earlier layer computed in the same forward.
+
+The window and compressed caches hold quantized records (MXFP8 per token,
+NVFP4 per compression group) that the store ops rotate and quantize; the
+attention names each record by its absolute slot in its cache leaf.
 """
 
 from __future__ import annotations
@@ -23,21 +27,21 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
+from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
     Dim,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     Weight,
     ops,
 )
 from max.nn.kernels import (
-    KEY_CACHE_INDEX,
-    VALUE_CACHE_INDEX,
-    kv_cache_gather_rows_ragged,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
+    ceildiv,
+    grouped_matmul_block_scaled,
+    grouped_quantize_dynamic_block_scaled,
 )
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
@@ -53,38 +57,80 @@ from max.nn.quant_config import (
 )
 from max.nn.quant_ops import _matmul_float8_mxfp8
 
-from ...deepseekV4.layers.quantization import fp8_qat_quantize
-from ...deepseekV4.layers.ragged import arange_to
+from ...deepseekV4.layers.ragged import arange_to, host_scalar
 from ...deepseekV4.layers.rope import apply_rope_tail
 from ..layer_resolver import LayerInfo
 from ..model_config import DeepseekV41Config, woa_mxfp8_enabled
-from .compressor import (
-    DeepseekV41Compressor,
-    compressed_rope_positions,
+from .compressor import DeepseekV41Compressor
+from .csa2 import (
+    HEAD_DIM,
+    MAX_COMPRESSED,
+    PREFILL_ROWS,
+    WINDOW_ENTRIES,
+    csa2_attention,
+    leaf_slots,
+    store_compressed_kv,
+    store_window_kv,
 )
 from .indexer import (
     DeepseekV41Indexer,
-    candidate_blocks_active,
-    candidate_keep_from_block_max,
-    candidate_num_blocks,
+    candidate_keep_blocks,
     index_key_slots,
     key_positions,
     quantize_queries,
     rope_cos_sin_table,
     select_index_keys,
-    select_index_keys_block_max,
+    select_index_keys_block_topk,
     select_index_keys_masked,
     store_index_keys,
 )
-from .quantization import nvfp4_qat_quantize
 from .query import DeepseekV41Query
 from .ragged import V41RaggedRows as RaggedRows
 from .reuse import ForwardSelection, bind_cache_sources, selection_for_layer
 from .rope import rope_for_layer
-from .sparse_attention import sparse_attention
 
 # MXFP8 block size: one E8M0 scale per 32 elements.
 _MXFP8_BLOCK_SIZE = 32
+# A forward whose requests each bring at most this many query tokens runs
+# the decode attention, which reads the records in place; a longer one
+# dequantizes the records it names once, first.
+_DECODE_MAX_QUERY_TOKENS = 8
+
+
+def prefill_rows_bound(
+    tokens: TensorValue,
+    batch: TensorValue,
+    longest: TensorValue,
+    cached: TensorValue,
+    ratio: int | None,
+) -> TensorValue:
+    """Returns the most distinct slots a forward's CSA2 lists can name.
+
+    ``T + 128 * B`` window slots (each request's tokens and the 127 before
+    them), plus each request's compressed slots: at most 512 a token and
+    every group of its context. The longest request's ``L`` tokens name at
+    most ``min(512 * L, G)`` of them and the other ``T - L`` tokens at most
+    ``min(512 * (T - L), (B - 1) * G)``, with ``G`` the groups of the
+    longest context.
+
+    Args:
+        tokens: Host int64 scalar ``T``, the forward's query tokens.
+        batch: Host int64 scalar ``B``, its requests.
+        longest: Host int64 scalar ``L``, the most query tokens a request
+            brings.
+        cached: Host int64 scalar, the most tokens a request has cached.
+        ratio: The layer's compression ratio, ``None`` without a
+            compressed cache.
+    """
+    named = tokens + batch * WINDOW_ENTRIES
+    if ratio is None:
+        return named
+    groups = ops.floor_div(longest + cached + (ratio - 1), ratio)
+    return (
+        named
+        + ops.min(longest * MAX_COMPRESSED, groups)
+        + ops.min((tokens - longest) * MAX_COMPRESSED, (batch - 1) * groups)
+    )
 
 
 def _output_projection_quant_config() -> QuantConfig:
@@ -121,9 +167,11 @@ class CSA2Cache:
     """
 
     swa_collection: PagedCacheValues
-    """Sliding-window cache shared by every layer, indexed by ``layer_id``."""
+    """Sliding-window record leaf shared by every layer, indexed by
+    ``layer_id``: an MXFP8 record per token."""
     main_kv_by_layer: Mapping[int, PagedCacheValues]
-    """Owning layer id -> compressed KV cache."""
+    """Owning layer id -> compressed record leaf: an NVFP4 record per
+    compression group."""
     index_k_by_layer: Mapping[int, PagedCacheValues]
     """Owning layer id -> indexer key cache.
 
@@ -135,10 +183,9 @@ class CSA2Cache:
     state_by_layer: Mapping[int, PagedCacheValues] = field(default_factory=dict)
     """Owning layer id -> pair-carry cache (``c2a_state``) for ratio two.
 
-    Holds each token's raw float32 ``wkv`` row (key plane) and ``wgate`` row
-    (value plane) by position, so a forward starting at an odd position can
-    pool against row ``start - 1``. Required by every ratio-2 KV-source
-    layer.
+    Holds each token's raw float32 ``wkv`` row then ``wgate`` row by
+    position, so a forward starting at an odd position can pool against row
+    ``start - 1``. Required by every ratio-2 KV-source layer.
     """
 
 
@@ -160,7 +207,8 @@ def wo_a_linear(
     """Declares ``attn.wo_a`` with a ``[out_dim, group_width]`` weight.
 
     With ``mxfp8`` the weight is ``float8_e4m3fn`` plus a
-    ``[out_dim, group_width / 32]`` ``float8_e8m0fnu`` ``weight_scale``;
+    ``[out_dim, group_width / 32]`` ``float8_e8m0fnu`` ``weight_scale``,
+    tile-interleaved at load (see :func:`mxfp8_grouped_projection`);
     otherwise it is bf16 and must be dequantized on the host at load.
     """
     if mxfp8:
@@ -202,28 +250,57 @@ def bf16_grouped_projection(
     return ops.reshape(ops.transpose(projected, 0, 1), [t, groups * r])
 
 
-def mxfp8_grouped_projection(
+# Rows per scale tile of the block-scaled grouped matmul; each group's
+# activation scales start on a fresh tile.
+_SCALE_TILE_ROWS = 128
+
+
+def _grouped_mxfp8_supported() -> bool:
+    """Whether the build target runs the grouped MXFP8 matmul (SM100)."""
+    try:
+        return accelerator_architecture_name().startswith("sm_10")
+    except Exception:
+        return False
+
+
+def _multiples(step: Dim, count: int, device: DeviceRef) -> TensorValue:
+    """``[0, step, ..., (count - 1) * step]`` int32, valid for ``step == 0``.
+
+    ``ops.range`` rejects a zero step, which an empty batch would give, so
+    this offsets a ``step + 1`` range by ``[0, count)``.
+    """
+    shifted = ops.range(
+        0,
+        host_scalar((step + 1) * count),
+        host_scalar(step + 1),
+        out_dim=count,
+        device=device,
+        dtype=DType.int32,
+    )
+    return shifted - ops.range(
+        0, count, 1, out_dim=count, device=device, dtype=DType.int32
+    )
+
+
+def _deinterleave_scales(scale: TensorValue) -> TensorValue:
+    """Undoes the 128 x 4 tile interleave of ``[rows, cols]`` block scales."""
+    rows, cols = int(scale.shape[0]), int(scale.shape[1])
+    tiled = ops.reshape(
+        scale,
+        [rows // _SCALE_TILE_ROWS, cols // 4, 32, _SCALE_TILE_ROWS // 32, 4],
+    )
+    return ops.reshape(ops.permute(tiled, [0, 3, 2, 1, 4]), [rows, cols])
+
+
+def _mxfp8_projection_per_group(
     x: TensorValue,
     weight: TensorValue,
     weight_scale: TensorValue,
     groups: int,
 ) -> TensorValue:
-    """Block-diagonal MXFP8 projection (the grouped einsum ``bgk,grk->bgr``).
+    """:func:`mxfp8_grouped_projection` as one dense MXFP8 matmul per group.
 
-    Group ``g``'s ``k`` input columns multiply ``weight`` rows
-    ``[g * r, (g + 1) * r)``, with ``r = weight.shape[0] // groups``. Each
-    group's input is dynamically quantized to MXFP8 and multiplied with
-    float32 accumulation.
-
-    Args:
-        x: ``[t, groups * k]`` activations; cast to bf16 for the quantizer.
-        weight: ``[groups * r, k]`` ``float8_e4m3fn``.
-        weight_scale: ``[groups * r, k / 32]`` ``float8_e8m0fnu`` (the
-            checkpoint's 32x32 block scale, row-expanded).
-        groups: The number of (local) groups.
-
-    Returns:
-        ``[t, groups * r]`` bf16.
+    Takes row-major ``[groups * r, k / 32]`` scales.
     """
     k = int(weight.shape[1])
     r = int(weight.shape[0]) // groups
@@ -239,6 +316,140 @@ def mxfp8_grouped_projection(
     return outs[0] if groups == 1 else ops.concat(outs, axis=1)
 
 
+def mxfp8_grouped_projection(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    groups: int,
+) -> TensorValue:
+    """Block-diagonal MXFP8 projection (the grouped einsum ``bgk,grk->bgr``).
+
+    Group ``g``'s ``k`` input columns multiply ``weight`` rows
+    ``[g * r, (g + 1) * r)``, with ``r = weight.shape[0] // groups``. Runs as
+    one grouped block-scaled matmul in which each group is an expert over
+    all ``t`` tokens.
+
+    The activations are quantized group-major: row ``g * t + i`` of the
+    ``[groups * t, k]`` ``float8_e4m3fn`` operand is token ``i``'s group
+    ``g`` slice, with one ``float8_e8m0fnu`` scale per 32 columns. The
+    scales are tile-interleaved like ``weight_scale``, as
+    ``[tiles, k / 128, 32, 4, 4]``, and group ``g``'s start at tile
+    ``g * ceil(t / 128)``. The product comes back group-major and is
+    transposed to token-major. Off SM100, where the grouped matmul does not
+    run, each group takes a dense MXFP8 matmul instead. An empty batch
+    returns ``[0, groups * r]`` without launching the grouped kernels.
+
+    Args:
+        x: ``[t, groups * k]`` activations; cast to bf16 for the quantizer.
+        weight: ``[groups * r, k]`` ``float8_e4m3fn``.
+        weight_scale: ``[groups * r, k / 32]`` ``float8_e8m0fnu``, the
+            checkpoint's 32x32 block scale row-expanded, then
+            tile-interleaved: row ``n``, column ``c`` is stored at
+            ``[n // 128, c // 4, n % 32, (n % 128) // 32, c % 4]`` of
+            ``[groups * r / 128, k / 128, 32, 4, 4]``. ``r`` and ``k`` must
+            be multiples of 128.
+        groups: The number of (local) groups.
+
+    Returns:
+        ``[t, groups * r]`` bf16.
+    """
+    t = x.shape[0]
+    r = int(weight.shape[0]) // groups
+    # ``Linear`` declares its weight scale on the host; move it beside ``x``.
+    weight_scale = weight_scale.to(x.device)
+    if not _grouped_mxfp8_supported():
+        return _mxfp8_projection_per_group(
+            x, weight, _deinterleave_scales(weight_scale), groups
+        )
+    # The grouped quantizer cannot launch on zero rows, which an idle data
+    # parallel replica passes every step.
+    out_type = TensorType(DType.bfloat16, [t, groups * r], x.device)
+    return ops.cond(
+        ops.equal(ops.shape_to_tensor([t])[0], 0),
+        [out_type],
+        lambda: ops.broadcast_to(
+            ops.constant(0.0, DType.bfloat16, device=x.device),
+            [t, groups * r],
+        ),
+        lambda: _mxfp8_grouped_gemm(x, weight, weight_scale, groups),
+    )[0]
+
+
+def _mxfp8_grouped_gemm(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    groups: int,
+) -> TensorValue:
+    """The grouped matmul body of :func:`mxfp8_grouped_projection`."""
+    t = x.shape[0]
+    k = int(weight.shape[1])
+    r = int(weight.shape[0]) // groups
+    device = x.device
+    rows = t * groups
+    # Group-major row g * t + i reads row i * groups + g of the token-major
+    # ``[t * groups, k]`` view, so the quantizer gathers the transpose.
+    gather = ops.reshape(
+        ops.transpose(
+            ops.reshape(arange_to(rows, rows, device), [t, groups]), 0, 1
+        ),
+        [rows],
+    )
+    starts = _multiples(t, groups + 1, device)
+    # A group's scale tile is ``starts[g] // 128 + offsets[g]``; its padded
+    # start is tile ``g * ceil(t / 128)``. Float floor is exact below 2**24.
+    padded = _multiples(ceildiv(t, Dim(_SCALE_TILE_ROWS)), groups, device)
+    unpadded = ops.cast(
+        ops.floor(
+            ops.cast(starts[:groups], DType.float32) / float(_SCALE_TILE_ROWS)
+        ),
+        DType.int32,
+    )
+    offsets = ops.cast(padded - unpadded, DType.uint32)
+    starts = ops.cast(starts, DType.uint32)
+    expert_ids = ops.range(
+        0, groups, 1, out_dim=groups, device=device, dtype=DType.int32
+    )
+    ones = ops.broadcast_to(
+        ops.constant(1.0, DType.float32, device=device), [groups]
+    )
+    x_q, x_scales = grouped_quantize_dynamic_block_scaled(
+        ops.reshape(ops.cast(x, DType.bfloat16), [rows, k]),
+        row_offsets=starts,
+        scales_offsets=offsets,
+        expert_ids=expert_ids,
+        sf_tensor=ones,
+        sf_vector_size=32,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.float8_e4m3fn,
+        indices=gather,
+    )
+    usage_stats = ops.concat(
+        [
+            ops.reshape(ops.cast(host_scalar(t), DType.uint32), [1]),
+            ops.constant([groups], DType.uint32, DeviceRef.CPU()),
+        ]
+    )
+    out = grouped_matmul_block_scaled(
+        x_q,
+        ops.reshape(weight, [groups, r, k]),
+        x_scales,
+        ops.reshape(
+            weight_scale,
+            [groups, r // _SCALE_TILE_ROWS, k // 128, 32, 4, 4],
+        ),
+        starts,
+        offsets,
+        expert_ids,
+        ones,
+        usage_stats,
+    )
+    return ops.reshape(
+        ops.transpose(ops.reshape(out, [groups, t, r]), 0, 1),
+        [t, groups * r],
+    )
+
+
 @dataclass(frozen=True)
 class CompressedKV:
     """:meth:`CSA2Attention.compress` output, one row per raw token."""
@@ -246,19 +457,8 @@ class CompressedKV:
     latent: TensorValue
     """``[T, head_dim]`` bf16 pooled, normalized latent, before RoPE.
 
-    Zero on rows that do not close a group. Input to the index keys.
-    """
-    latent_rope: TensorValue
-    """bf16 ``latent`` with RoPE applied at the group's first position."""
-    latent_rope_f32: TensorValue
-    """``latent_rope`` before bf16 rounding.
-
-    Rounded onto the NVFP4 grid before it is stored in the compressed cache.
-    """
-    freqs_cis: TensorValue
-    """``[T, rope_head_dim // 2, 2]`` cos/sin at each compressed position.
-
-    Shared with the index keys.
+    Zero on rows that do not close a group. Input to the compressed record
+    and the index keys, whose stores apply RoPE.
     """
     valid: TensorValue
     """``[T]`` bool, whether the row closes a group (publishes an entry)."""
@@ -276,9 +476,11 @@ class PendingCSA2Attention:
     out_shape: list[Dim]
     freqs_cis: TensorValue
     swa_collection: PagedCacheValues
-    layer_swa: TensorValue
     comp_collection: PagedCacheValues | None
+    comp_index: int | None
+    """This layer's index among the compressed leaf's layers."""
     layer_comp: TensorValue | None
+    """``comp_index`` as a host uint32 scalar, for the indexer ops."""
     index_q: tuple[TensorValue, TensorValue, TensorValue] | None = None
     """MXFP4 index queries, scale words and weights ("Full"/"Reindex")."""
     index_leaf: PagedCacheValues | None = None
@@ -293,11 +495,11 @@ class CandidateBlocks:
     before their own per-token top-k.
     """
 
-    keep: TensorValue | None
-    """``[T, nblocks]`` bool keep mask; ``None`` if no block can be dropped.
+    kept: TensorValue | None
+    """``[T, candidate_topk_blocks]`` int32 kept block ids, ``-1``-padded.
 
     ``None`` when block selection is off or the score width holds at most
-    ``candidate_topk_blocks`` blocks.
+    ``candidate_topk_blocks`` blocks, so no block can be dropped.
     """
     compress_ratio: int
     """The source layer's compression ratio, which consumers must share.
@@ -324,9 +526,11 @@ class CSA2Attention(Module):
     Compressed caches hold one row per raw token; a group's entry sits on
     the row closing it and other rows are masked out. Each request's
     index-key history is gathered into a ``[max_seq_len]`` position-indexed
-    table, so scoring is ``O(max_seq_len)`` per query row. A candidate-source
-    layer also keeps its best-scoring blocks of positions, and later
-    candidate-consumer layers restrict their scores to those blocks.
+    table, so scoring is ``O(max_seq_len)`` per query row; ``max_seq_len``
+    here is the model's position capacity, which includes the speculative
+    slack. A candidate-source layer also keeps its best-scoring blocks of
+    positions, and later candidate-consumer layers restrict their scores to
+    those blocks.
     Selections pass between layers as graph values, so a "Reuse" layer
     depends on its source in the graph.
 
@@ -362,13 +566,30 @@ class CSA2Attention(Module):
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.window = window
+        if window != WINDOW_ENTRIES or head_dim != HEAD_DIM:
+            raise ValueError(
+                f"CSA2 attends {WINDOW_ENTRIES}-token windows of "
+                f"{HEAD_DIM}-wide records, got window={window}, "
+                f"head_dim={head_dim}"
+            )
+        if num_comp > MAX_COMPRESSED:
+            raise ValueError(
+                f"CSA2 attends at most {MAX_COMPRESSED} compressed entries, "
+                f"got num_comp={num_comp}"
+            )
         self.num_comp = num_comp
         self.scale = head_dim**-0.5
         self.device = device
         self._selection_trace = trace
-        self.max_seq_len = max_seq_len
         self.candidate_topk_blocks = config.candidate_topk_blocks
         self.candidate_block_size = config.candidate_block_size
+        self.candidate_blocks = candidate_keep_blocks(
+            config.max_seq_len,
+            max_seq_len,
+            layer_info.compress_ratio,
+            block_size=config.candidate_block_size,
+            topk_blocks=config.candidate_topk_blocks,
+        )
         # A consumer row keeps its newest block, which may hold one key, and
         # ``candidate_topk_blocks - 1`` full blocks; the masked selection
         # needs at least ``index_topk`` of them.
@@ -568,28 +789,25 @@ class CSA2Attention(Module):
             out_shape=[b, s, hidden],
             freqs_cis=freqs_cis,
             swa_collection=cache.swa_collection,
-            layer_swa=ops.constant(
-                layer.layer_id, DType.uint32, DeviceRef.CPU()
-            ),
             comp_collection=None,
+            comp_index=None,
             layer_comp=None,
         )
-        # The SWA record: full-width RMSNorm of the KV latent, then RoPE on
-        # its trailing `qk_rope_head_dim` dims.
-        kv_latent = apply_rope_tail(
-            self.kv_norm(kv_raw), freqs_cis, int(freqs_cis.shape[-2]) * 2
-        )
-        # Round the bf16 row onto the MXFP8 grid over all dims.
-        kv_latent = fp8_qat_quantize(
-            ops.cast(kv_latent, DType.bfloat16),
-            block_size=_MXFP8_BLOCK_SIZE,
-        )
+        rope_table = rope_cos_sin_table(self.rope.freqs_cis_base())
+        # The window record: full-width RMSNorm of the KV latent; the store
+        # applies RoPE to its trailing dims and quantizes it to MXFP8.
         # Every layer, including "SWA-only", owns its sliding-window slot.
-        store_k_cache_ragged(
-            cache.swa_collection,
-            ops.reshape(kv_latent, [-1, 1, self.head_dim]),
-            rows.offsets,
-            state.layer_swa,
+        swa = cache.swa_collection
+        store_window_kv(
+            swa.kv_blocks,
+            ops.reshape(
+                ops.cast(self.kv_norm(kv_raw), DType.bfloat16),
+                [-1, self.head_dim],
+            ),
+            rows.positions,
+            rope_table,
+            leaf_slots(swa, rows.bid, rows.positions, layer.layer_id),
+            block_stride=swa.page_stride,
         )
         if layer.attention_mode == "SWA-only":
             return state
@@ -603,12 +821,12 @@ class CSA2Attention(Module):
             binding.kv_source_layer_id
         ]
         layer_comp = ops.constant(comp_index, DType.uint32, DeviceRef.CPU())
+        state.comp_index = comp_index
         state.layer_comp = layer_comp
 
         if layer.attention_mode in ("Full", "Reindex"):
             indexer = self.indexer
             assert indexer is not None
-            rope_table = rope_cos_sin_table(self.rope.freqs_cis_base())
             index_queries, index_weights = indexer(qr, h_flat)
             state.index_q = quantize_queries(
                 index_queries,
@@ -621,34 +839,38 @@ class CSA2Attention(Module):
             state.index_leaf = binding.index_k_leaf
             if indexer.owns_k:
                 # A "Full" layer is its own KV source: the pre-RoPE pooled
-                # latent feeds the index key; the RoPE'd copy is stored in
-                # the compressed cache.
+                # latent feeds both the compressed record and the index key,
+                # whose stores rotate it.
                 assert self.compressor is not None
                 raw = ops.reshape(
                     self.compressor.project(h_flat),
                     [-1, self.head_dim * layer.compress_ratio],
                 )
-                prior_row = prior_valid = None
+                state_leaf = None
+                state_layer = None
                 if layer.compress_ratio == 2:
-                    prior_row, prior_valid = self._pair_carry(
-                        cache, binding.kv_source_layer_id, rows, raw, layer_comp
+                    state_leaf = self._state_leaf(
+                        cache, binding.kv_source_layer_id
                     )
-                compressed = self.compress(
-                    raw, rows.positions, rows.offsets, prior_row, prior_valid
+                    state_layer = layer_comp
+                compressed = self.compress(raw, rows, state_leaf, state_layer)
+                # Group `p // ratio` closes on row `p`; other rows skip.
+                comp = binding.main_kv_leaf
+                group = ops.floor_div(
+                    ops.cast(rows.positions, DType.int32), layer.compress_ratio
                 )
-                # One row per raw token, so the stores reuse `rows.offsets`;
-                # non-closing rows hold zeros masked by visibility.
-                # Round the float32 rotated row onto the NVFP4 grid. Exact
-                # in bf16: E2M1 x E4M3 has at most 6 significant bits.
-                stored = ops.cast(
-                    nvfp4_qat_quantize(compressed.latent_rope_f32),
-                    DType.bfloat16,
-                )
-                store_k_cache_ragged(
-                    binding.main_kv_leaf,
-                    ops.unsqueeze(stored, 1),
-                    rows.offsets,
-                    layer_comp,
+                store_compressed_kv(
+                    comp.kv_blocks,
+                    compressed.latent,
+                    rows.positions,
+                    rope_table,
+                    ops.where(
+                        compressed.valid,
+                        leaf_slots(comp, rows.bid, group, comp_index),
+                        ops.constant(-1, DType.int32, group.device),
+                    ),
+                    ratio=layer.compress_ratio,
+                    block_stride=comp.page_stride,
                 )
                 # Stored before selection so this forward's keys are in the
                 # history read below and by dependent Reindex layers.
@@ -674,83 +896,49 @@ class CSA2Attention(Module):
     def compress(
         self,
         raw: TensorValue,
-        positions: TensorValue,
-        offsets: TensorValue,
-        prior_row: TensorValue | None = None,
-        prior_valid: TensorValue | None = None,
+        rows: RaggedRows,
+        state: PagedCacheValues | None = None,
+        layer_idx: TensorValue | None = None,
     ) -> CompressedKV:
-        """Pools ``raw`` and RoPEs the result at its compressed positions.
-
-        Uses no cache kernels, so it runs on any device.
+        """Pools ``raw`` into one latent per closed compression group.
 
         Args:
             raw: ``[T, head_dim * ratio]`` float32, this layer's
                 ``compressor.project`` output.
-            positions: ``[T]`` int32 absolute token positions.
-            offsets: ``[B + 1]`` uint32 request row offsets.
-            prior_row: Ratio two only: ``[B, 2 * head_dim]`` float32, each
-                request's raw row at position ``start - 1``.
-            prior_valid: Ratio two only: ``[B]`` bool, whether that row
-                exists.
+            rows: The forward's ragged rows.
+            state: Ratio two only: the layer's ``c2a_state`` leaf. Every
+                row of ``raw`` is saved there, and a request starting at an
+                odd position pools against the row saved before it.
+            layer_idx: Ratio two only: host uint32 index of the layer in
+                ``state``.
 
         Returns:
-            The pooled latent, its RoPE'd copies, cos/sin and validity.
+            The pooled latent and whether its row closes a group.
         """
         assert self.compressor is not None
-        active = ops.broadcast_to(
-            ops.constant(True, DType.bool, raw.device), [raw.shape[0]]
-        )
-        latent, valid = self.compressor(
+        positions = rows.positions
+        latent = self.compressor(
             raw,
-            ops.cast(positions, DType.int64),
-            offsets,
-            active,
-            prior_row,
-            prior_valid,
+            positions,
+            rows.offsets,
+            state,
+            None if state is None else index_key_slots(state, rows, ratio=1),
+            layer_idx,
         )
-        freqs_cis = ops.gather(
-            self.rope.freqs_cis_base(),
-            compressed_rope_positions(
-                positions, self.layer_info.compress_ratio
-            ),
-            axis=0,
-        )
-        # RoPE in float32, then round to bf16. `apply_rope_tail` needs a
-        # sequence axis at 1.
-        latent_rope = ops.reshape(
-            apply_rope_tail(
-                ops.unsqueeze(ops.cast(latent, DType.float32), 0),
-                freqs_cis,
-                int(freqs_cis.shape[-2]) * 2,
-            ),
-            [-1, self.head_dim],
+        # Group ``p // ratio`` closes on the row where ``(p + 1) % ratio`` is
+        # zero; only that row publishes an entry.
+        ratio = self.layer_info.compress_ratio
+        valid = ops.equal(
+            ops.cast(positions + 1, DType.int64) % ratio,
+            ops.constant(0, DType.int64, positions.device),
         )
         return CompressedKV(
-            latent=latent,
-            latent_rope=ops.cast(latent_rope, DType.bfloat16),
-            latent_rope_f32=latent_rope,
-            freqs_cis=freqs_cis,
-            valid=valid,
+            latent=ops.cast(latent, DType.bfloat16), valid=valid
         )
 
-    def _pair_carry(
-        self,
-        cache: CSA2Cache,
-        source_layer_id: int,
-        rows: RaggedRows,
-        raw: TensorValue,
-        layer_comp: TensorValue,
-    ) -> tuple[TensorValue, TensorValue]:
-        """Reads each request's predecessor raw row, then stores this step's.
-
-        Row ``start - 1`` of the ``c2a_state`` cache holds the raw
-        ``wkv``/``wgate`` row written by the previous forward; ``start > 0``
-        is assumed to imply it is present, which holds for append-only
-        forwards. A prefix-cache hit ending at an odd length is not handled.
-
-        Returns:
-            ``[B, 2 * head_dim]`` float32 predecessor rows and ``[B]`` bool
-            validity.
+    @staticmethod
+    def _state_leaf(cache: CSA2Cache, source_layer_id: int) -> PagedCacheValues:
+        """Returns a ratio-2 KV-source layer's ``c2a_state`` leaf.
 
         Raises:
             ValueError: If the source layer has no ``c2a_state`` cache.
@@ -763,42 +951,115 @@ class CSA2Attention(Module):
                 "it a forward starting at an odd position cannot pool its "
                 "first pair"
             )
-        width = self.head_dim
-        device = raw.device
-        prior_valid = rows.starts > 0
-        predecessor = ops.max(
-            rows.starts - 1, ops.constant(0, DType.int32, device)
+        return state_leaf
+
+    def _index_list(
+        self,
+        state: PendingCSA2Attention,
+        rows: RaggedRows,
+        selected: TensorValue | None,
+    ) -> TensorValue:
+        """Builds each row's ``[T, 640]`` absolute-slot index list.
+
+        The window slots of positions ``p, p - 1, ..., p - 127`` come first
+        (``-1`` below position 0), then the compressed slots of the
+        ``selected`` groups' records, ``-1``-padded to 512.
+
+        Args:
+            state: :meth:`begin`'s state.
+            rows: The forward's bookkeeping.
+            selected: ``[T, num_comp]`` int32 raw positions of the selected
+                groups' closing tokens, ``-1`` for none; ``None`` on a
+                window-only layer.
+        """
+        device = state.q.device
+        t = state.q.shape[0]
+        request = ops.unsqueeze(ops.cast(rows.bid, DType.int32), -1)
+        back = ops.range(
+            0,
+            -WINDOW_ENTRIES,
+            -1,
+            out_dim=WINDOW_ENTRIES,
+            dtype=DType.int32,
+            device=device,
         )
-        # One gathered row per request.
-        per_request = ops.cast(
-            arange_to(rows.batch + 1, rows.batch + 1, device), DType.uint32
+        window = leaf_slots(
+            state.swa_collection,
+            request,
+            ops.unsqueeze(ops.cast(rows.positions, DType.int32), -1)
+            + ops.unsqueeze(back, 0),
+            self.layer_info.layer_id,
         )
-        prior_kv, prior_score = (
-            ops.squeeze(
-                kv_cache_gather_rows_ragged(
-                    state_leaf,
-                    ops.unsqueeze(predecessor, -1),
-                    per_request,
-                    layer_comp,
-                    key_or_value=plane,
-                ),
-                1,
+        none = ops.constant(-1, DType.int32, device)
+        if selected is None:
+            return ops.concat(
+                [window, ops.broadcast_to(none, [t, MAX_COMPRESSED])], axis=1
             )
-            for plane in (KEY_CACHE_INDEX, VALUE_CACHE_INDEX)
+        assert state.comp_collection is not None
+        assert state.comp_index is not None
+        ratio = self.layer_info.compress_ratio
+        group = ops.where(selected >= 0, ops.floor_div(selected, ratio), none)
+        lists = [
+            window,
+            leaf_slots(state.comp_collection, request, group, state.comp_index),
+        ]
+        pad = MAX_COMPRESSED - int(selected.shape[-1])
+        if pad:
+            lists.append(ops.broadcast_to(none, [t, pad]))
+        return ops.concat(lists, axis=1)
+
+    def _attend(
+        self,
+        state: PendingCSA2Attention,
+        rows: RaggedRows,
+        idx: TensorValue,
+    ) -> TensorValue:
+        """Runs the CSA2 attention over ``idx``'s slots.
+
+        A forward where some request brings more than
+        ``_DECODE_MAX_QUERY_TOKENS`` query tokens runs the prefill attention
+        if its lists cannot name more than ``PREFILL_ROWS`` distinct slots
+        (:func:`prefill_rows_bound`). Every other forward runs the decode
+        attention: a prefill naming more slots than its workspace holds
+        would abort. The op makes the choice from a host flag rather than a
+        graph branch: a decode attention inside an ``ops.cond`` branch read
+        the window cache before this forward's window stores landed.
+        """
+        swa = state.swa_collection
+        comp = state.comp_collection
+        q = state.q
+        t = q.shape[0]
+        sink = ops.cast(self.attn_sink, DType.float32)
+        host = DeviceRef.CPU()
+        tokens, batch = (
+            ops.reshape(ops.shape_to_tensor([dim]), [])
+            for dim in (t, rows.batch)
         )
-        store_k_cache_ragged(
-            state_leaf,
-            ops.unsqueeze(raw[:, :width], 1),
-            rows.offsets,
-            layer_comp,
+        longest = ops.cast(ops.reshape(swa.max_prompt_length, []), DType.int64)
+        named = prefill_rows_bound(
+            tokens,
+            batch,
+            longest,
+            ops.cast(ops.reshape(swa.max_cache_length, []), DType.int64),
+            None if comp is None else self.layer_info.compress_ratio,
         )
-        store_v_cache_ragged(
-            state_leaf,
-            ops.unsqueeze(raw[:, width:], 1),
-            rows.offsets,
-            layer_comp,
+        use_prefill = (
+            longest > ops.constant(_DECODE_MAX_QUERY_TOKENS, DType.int64, host)
+        ) & (named <= ops.constant(PREFILL_ROWS, DType.int64, host))
+
+        return csa2_attention(
+            q,
+            idx,
+            sink,
+            swa.kv_blocks,
+            None if comp is None else comp.kv_blocks,
+            scale=self.scale,
+            window_stride=swa.page_stride,
+            comp_stride=None if comp is None else comp.page_stride,
+            compressed_rows=self.num_comp,
+            prefill=use_prefill,
+            max_distinct_rows=PREFILL_ROWS,
         )
-        return ops.concat([prior_kv, prior_score], axis=-1), prior_valid
 
     def _select(
         self, state: PendingCSA2Attention, rows: RaggedRows
@@ -816,46 +1077,30 @@ class CSA2Attention(Module):
         ratio = layer.compress_ratio
         block_size = self.candidate_block_size
         top_k = self.num_comp
-        active = candidate_blocks_active(
-            self.max_seq_len,
-            ratio,
-            block_size=block_size,
-            topk_blocks=self.candidate_topk_blocks,
-        )
         leaf, q, offsets = state.index_leaf, state.index_q, rows.offsets
         pool: CandidateBlocks | None = None
-        if layer.candidate_role == "source" and active:
-            ids, block_max = select_index_keys_block_max(
+        if layer.candidate_role == "source" and self.candidate_blocks:
+            ids, kept = select_index_keys_block_topk(
                 leaf,
                 q,
                 offsets,
+                rows.positions,
                 state.layer_comp,
                 top_k=top_k,
                 ratio=ratio,
                 block_size=block_size,
-                num_blocks=candidate_num_blocks(
-                    self.max_seq_len, ratio, block_size
-                ),
+                topk_blocks=self.candidate_topk_blocks,
             )
-            pool = CandidateBlocks(
-                keep=candidate_keep_from_block_max(
-                    block_max,
-                    rows.positions,
-                    ratio=ratio,
-                    block_size=block_size,
-                    topk_blocks=self.candidate_topk_blocks,
-                ),
-                compress_ratio=ratio,
-            )
+            pool = CandidateBlocks(kept=kept, compress_ratio=ratio)
             return key_positions(ids, ratio), pool
         if layer.candidate_role == "source":
-            pool = CandidateBlocks(keep=None, compress_ratio=ratio)
-        keep = (
-            self._candidate_keep()
+            pool = CandidateBlocks(kept=None, compress_ratio=ratio)
+        kept_blocks = (
+            self._candidate_kept()
             if layer.candidate_role == "consumer"
             else None
         )
-        if keep is None:
+        if kept_blocks is None:
             ids = select_index_keys(
                 leaf, q, offsets, state.layer_comp, top_k=top_k, ratio=ratio
             )
@@ -864,7 +1109,7 @@ class CSA2Attention(Module):
                 leaf,
                 q,
                 offsets,
-                keep,
+                kept_blocks,
                 state.layer_comp,
                 top_k=top_k,
                 ratio=ratio,
@@ -872,8 +1117,8 @@ class CSA2Attention(Module):
             )
         return key_positions(ids, ratio), pool
 
-    def _candidate_keep(self) -> TensorValue | None:
-        """Returns the candidate source's keep mask, if it can drop a block."""
+    def _candidate_kept(self) -> TensorValue | None:
+        """Returns the candidate source's kept block ids, if it can drop one."""
         current = self.selection_box.current
         pool = None if current is None else current.candidate_pool
         # No pool only when the traced layers start past the source layer;
@@ -881,7 +1126,7 @@ class CSA2Attention(Module):
         if pool is None:
             return None
         assert isinstance(pool, CandidateBlocks)
-        if pool.keep is None:
+        if pool.kept is None:
             return None
         if pool.compress_ratio != self.layer_info.compress_ratio:
             raise ValueError(
@@ -889,7 +1134,7 @@ class CSA2Attention(Module):
                 f"(ratio {self.layer_info.compress_ratio}) cannot read blocks "
                 f"of a ratio-{pool.compress_ratio} source"
             )
-        return pool.keep
+        return pool.kept
 
     def end(self, state: PendingCSA2Attention, rows: RaggedRows) -> TensorValue:
         """Runs :meth:`__call__` from the indexer's top-k on.
@@ -901,18 +1146,7 @@ class CSA2Attention(Module):
         if layer.attention_mode == "SWA-only":
             selection_for_layer(layer, self.selection_box.current)
             self.selection_box.current = None
-            out = sparse_attention(
-                state.q,
-                rows.offsets,
-                None,
-                self.attn_sink,
-                state.swa_collection,
-                None,
-                state.layer_swa,
-                None,
-                scale=self.scale,
-                window=self.window,
-            )
+            out = self._attend(state, rows, self._index_list(state, rows, None))
             if self._selection_trace is not None:
                 self._selection_trace.append((layer.layer_id, None))
             return ops.reshape(
@@ -938,18 +1172,7 @@ class CSA2Attention(Module):
             )
 
         self.selection_box.current = selection
-        out = sparse_attention(
-            state.q,
-            rows.offsets,
-            produced,
-            self.attn_sink,
-            state.swa_collection,
-            state.comp_collection,
-            state.layer_swa,
-            state.layer_comp,
-            scale=self.scale,
-            window=self.window,
-        )
+        out = self._attend(state, rows, self._index_list(state, rows, produced))
         if self._selection_trace is not None:
             self._selection_trace.append((layer.layer_id, selection))
         return ops.reshape(

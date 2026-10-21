@@ -35,7 +35,11 @@ from max.pipelines.lib import (
     generate_local_model_path,
 )
 from max.pipelines.lib.generate import GenerateIterator, generate
-from max.pipelines.modeling.types import RequestID, TextGenerationRequest
+from max.pipelines.modeling.types import (
+    RequestID,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
 
 REPO_ID = "modularai/SmolLM-135M-Instruct-FP32"
 MAX_NEW_TOKENS = 12
@@ -128,6 +132,41 @@ def test_greedy_tokens_match_golden(
             for sequence, prompt in zip(sequences, input_ids, strict=True)
         ]
         assert new_tokens == GOLDEN_SEQUENCES
+
+
+def test_messages_row_matches_the_tokenizer_built_row(
+    pipeline: TextGenerationPipeline[TextContext],
+) -> None:
+    messages = [
+        TextGenerationRequestMessage(
+            role="user", content="What is the capital of France?"
+        )
+    ]
+    sampling = SamplingParamsInput(max_new_tokens=MAX_NEW_TOKENS, top_k=1)
+    context = asyncio.run(
+        pipeline.tokenizer.new_context(
+            TextGenerationRequest(
+                request_id=RequestID(),
+                model_name=REPO_ID,
+                messages=messages,
+                sampling_params=SamplingParams.from_input_and_generation_config(
+                    sampling,
+                    sampling_params_defaults=pipeline.pipeline_config.model.sampling_params_defaults,
+                ),
+            )
+        )
+    )
+    with GenerateIterator.from_contexts(pipeline, [context]) as batch:
+        while not batch.done:
+            batch.step()
+
+    output = generate(
+        pipeline, messages=[messages], max_new_tokens=MAX_NEW_TOKENS, top_k=1
+    )
+
+    assert output.sequences == batch.sequences
+    assert output.prompt_lengths == batch.prompt_lengths
+    assert len(output.sequences[0]) > output.prompt_lengths[0]
 
 
 def test_serve_command_rebuilds_the_cpu_pipeline(

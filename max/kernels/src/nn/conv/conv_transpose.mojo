@@ -618,7 +618,9 @@ struct ConvTransposedPacked[
 
             @inline(.always)
             def zero[width: Int](offset: Int) {output_ptr, mut}:
-                output_ptr.store(offset, SIMD[Self.output_type, width](0))
+                output_ptr.unsafe_store(
+                    offset, SIMD[Self.output_type, width](0)
+                )
 
             vectorize[simd_size](self.partition.f_size, zero)
 
@@ -1504,7 +1506,7 @@ def pack_filter(
 
                 for c in range(C):
                     for f in range(f_tile_size):
-                        packed_filter_ptr.store(
+                        packed_filter_ptr.unsafe_store(
                             f,
                             filter.load(
                                 filter.layout.idx2crd(filter_offset + c + f * C)
@@ -1540,7 +1542,7 @@ def pack_filter(
 
                 for c in range(C):
                     for f in range(residual):
-                        packed_filter_ptr.store(
+                        packed_filter_ptr.unsafe_store(
                             f,
                             filter.load(
                                 filter.layout.idx2crd(filter_offset + c + f * C)
@@ -1645,7 +1647,7 @@ def conv_transposed_cpu[
                 packed_filter_shape[i] = Int(filter.dim[i]())
 
         var packed_filter_alloc_layout = AllocLayout[Scalar[filter.dtype]](
-            count=packed_filter_shape.flattened_length()
+            length=packed_filter_shape.flattened_length()
         )
         comptime if not filter_packed:
             packed_filter_ptr = alloc(packed_filter_alloc_layout).unsafe_leak()

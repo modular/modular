@@ -273,7 +273,9 @@ def _cluster_cutoff_search[
         var max_le_high = low
 
         for g in range(g_begin, vec_end, block_size):
-            var v = staged.load[width=vec_size]((g - vec_begin) * vec_size)
+            var v = staged.unsafe_load[width=vec_size](
+                (g - vec_begin) * vec_size
+            )
             comptime for j in range(vec_size):
                 var e = v[j]
                 if e > pivot_0:
@@ -420,7 +422,7 @@ def TopKTopPMaskedProbsClusterKernel[
 
     var k = Int(top_k_val)
     if case .Some(top_k_arr) = top_k_arr:
-        k = Int(top_k_arr.load(bx))
+        k = Int(top_k_arr.unsafe_load(bx))
     if k <= 0 or k > _d:
         k = _d
 
@@ -475,7 +477,7 @@ def TopKTopPMaskedProbsClusterKernel[
     var thread_pos: Int32 = 0
     for i in range(vec_begin + tx, vec_end, block_size):
         var e = load_e(i * vec_size)
-        smem.store((i - vec_begin) * vec_size, e)
+        smem.unsafe_store((i - vec_begin) * vec_size, e)
         thread_sum += e.reduce_add()
         comptime for j in range(vec_size):
             if e[j] > 0:
@@ -519,7 +521,7 @@ def TopKTopPMaskedProbsClusterKernel[
     # same partition as the staging pass), so this needs no barrier against
     # the search.
     for i in range(vec_begin + tx, vec_end, block_size):
-        var e = smem.load[width=vec_size]((i - vec_begin) * vec_size)
+        var e = smem.unsafe_load[width=vec_size]((i - vec_begin) * vec_size)
         var masked = (e.gt(cut)).select(e / mass_s, SIMD[.float32, vec_size](0))
         probs_row.store((Idx[0], i * vec_size), masked)
 
@@ -854,7 +856,7 @@ def _sampling_rejection_loop_cluster[
         var thread_sum = Float32(0)
         var thread_last = Float32(-1)
         for g in range(vec_begin + tx, vec_end, block_size):
-            var v = smem.load[width=vec_size]((g - vec_begin) * vec_size)
+            var v = smem.unsafe_load[width=vec_size]((g - vec_begin) * vec_size)
             comptime for j in range(vec_size):
                 if v[j] > low:
                     thread_sum += v[j]
@@ -910,7 +912,7 @@ def _sampling_rejection_loop_cluster[
                 var probs_vec = SIMD[.float32, vec_size](0)
                 var g = i * block_size + tx
                 if g < slice_vecs:
-                    probs_vec = smem.load[width=vec_size](g * vec_size)
+                    probs_vec = smem.unsafe_load[width=vec_size](g * vec_size)
                 # The scan runs in slice-local indices: lanes past the slice
                 # carry zeros and fail the `> low` predicate, so the row-wide
                 # `d` bound is harmless, and the found index converts to
@@ -960,7 +962,7 @@ def _sampling_rejection_loop_cluster[
         var thread_mass_1 = Float32(0)
         var thread_count_1 = Float32(0)
         for g in range(vec_begin + tx, vec_end, block_size):
-            var v = smem.load[width=vec_size]((g - vec_begin) * vec_size)
+            var v = smem.unsafe_load[width=vec_size]((g - vec_begin) * vec_size)
             comptime for j in range(vec_size):
                 var e = v[j]
                 if e > pivot_0:
@@ -1130,7 +1132,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
 
     var row_idx = bx
     if case .Some(indices) = indices:
-        row_idx = Int(indices.load(bx))
+        row_idx = Int(indices.unsafe_load(bx))
 
     var seed_val = UInt64(0)
     if case .Some(rng_seed) = rng_seed:
@@ -1143,7 +1145,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
 
     var k = Int(top_k_val)
     if case .Some(top_k_arr) = top_k_arr:
-        k = Int(top_k_arr.load(row_idx))
+        k = Int(top_k_arr.unsafe_load(row_idx))
     if k == -1:
         k = Int(top_k_val)
     if k <= 0 or k > _d:
@@ -1199,7 +1201,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
                 if e[j] < min_p_thresh:
                     e[j] = 0
             thread_masked_sum += e.reduce_add()
-        smem.store((i - vec_begin) * vec_size, e)
+        smem.unsafe_store((i - vec_begin) * vec_size, e)
 
     var z = cluster_allreduce[_sum, cluster_size, need_tail_sync=False](
         cluster_slot.unsafe_offset(_CLUSTER_SLOT_FLOATS),
@@ -1273,7 +1275,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
         out_dist.unsafe_offset(bx * _d), row_major(Idx[1], _d)
     )
     for i in range(vec_begin + tx, vec_end, block_size):
-        var e = smem.load[width=vec_size]((i - vec_begin) * vec_size)
+        var e = smem.unsafe_load[width=vec_size]((i - vec_begin) * vec_size)
         var masked = (e.gt(cutoff)).select(
             e / kept_mass, SIMD[.float32, vec_size](0)
         )

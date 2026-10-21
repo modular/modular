@@ -861,7 +861,7 @@ struct TileScheduler[
             comptime for q in range(CH // 4):
                 workspace.unsafe_offset(row0).unsafe_offset(
                     4 * (c0 // 4 + q) * Self.BM
-                ).store[alignment=16](
+                ).unsafe_store[alignment=16](
                     SIMD[accum_type, 4](
                         v[4 * q], v[4 * q + 1], v[4 * q + 2], v[4 * q + 3]
                     )
@@ -960,7 +960,7 @@ struct TileScheduler[
                             workspace.unsafe_offset(base)
                             .unsafe_offset(k * Self.BM * Self.MMA_N)
                             .unsafe_offset(4 * p)
-                        ).load[width=4, alignment=16]()
+                        ).unsafe_load[width=4, alignment=16]()
             comptime for uu in range(RB):
                 comptime u = jb * RB + uu
                 comptime if u < PT:

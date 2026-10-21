@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests that a kernel-level model worker runs its atexit hooks on SIGTERM."""
+"""Tests how a model worker handles SIGTERM."""
 
 from __future__ import annotations
 
@@ -25,16 +25,29 @@ import pytest
 
 # Mirrors the model worker: configure_kernel_tracing runs inside uvloop.run on
 # the main thread, and the API process then stops the worker with SIGTERM.
+# With tracing on, it queues a span whose export hangs.
 _WORKER = """
-import asyncio, atexit, sys
+import asyncio, atexit, signal, sys, time
 import uvloop
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from max.serve.config import Settings
 from max.serve.telemetry.common import configure_kernel_tracing
 
+class Exporter(SpanExporter):
+    def export(self, spans):
+        print(spans[0].name, flush=True)
+        time.sleep(10)
+
 async def main():
+    if sys.argv[2]:
+        trace.set_tracer_provider(provider := TracerProvider())
+        provider.add_span_processor(BatchSpanProcessor(Exporter(), schedule_delay_millis=60000))
     configure_kernel_tracing(Settings())
+    trace.get_tracer("test").start_span("span").end()
     atexit.register(lambda: open(sys.argv[1], "w").close())
-    print("ready", flush=True)
+    print("ready", signal.getsignal(signal.SIGTERM) is not signal.SIG_DFL, flush=True)
     await asyncio.sleep(60)
 
 uvloop.run(main())
@@ -59,17 +72,19 @@ configure_kernel_tracing(Settings())
 
 
 @pytest.mark.parametrize(
-    "level, exits_through_atexit",
-    [("off", False), ("op", False), ("kernel", True)],
+    "level, tracing",
+    [("off", False), ("op", False), ("kernel", False), ("off", True)],
 )
 def test_sigterm_runs_atexit_only_at_kernel_level(
-    tmp_path: Path, level: str, exits_through_atexit: bool
+    tmp_path: Path, level: str, tracing: bool
 ) -> None:
+    exits_through_atexit = level == "kernel"
+    handles_sigterm = tracing or exits_through_atexit
     # The profiler plugin writes the libkineto trace from an atexit hook.
     marker = tmp_path / "atexit-ran"
     env = {**os.environ, "MAX_SERVE_KERNEL_TRACE_LEVEL": level}
     with subprocess.Popen(
-        [sys.executable, "-c", _WORKER, str(marker)],
+        [sys.executable, "-c", _WORKER, str(marker), "on" if tracing else ""],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -77,14 +92,16 @@ def test_sigterm_runs_atexit_only_at_kernel_level(
     ) as worker:
         assert worker.stdout is not None and worker.stderr is not None
         ready = worker.stdout.readline()
-        assert ready == "ready\n", worker.stderr.read()
         worker.send_signal(signal.SIGTERM)
-        _, stderr = worker.communicate(timeout=60)
+        # The API process SIGKILLs the worker 5 s after SIGTERM.
+        stdout, stderr = worker.communicate(timeout=5)
+    assert ready == f"ready {handles_sigterm}\n", stderr
     if exits_through_atexit:
         assert worker.returncode == 128 + signal.SIGTERM, stderr
     else:
         assert worker.returncode == -signal.SIGTERM, stderr
     assert marker.exists() == exits_through_atexit
+    assert stdout == ("span\n" if tracing else ""), stderr
 
 
 @pytest.mark.parametrize(

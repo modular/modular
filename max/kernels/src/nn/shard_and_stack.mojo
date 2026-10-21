@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Implements shard-and-stack: shards a tensor across devices and stacks the shards into a higher-rank output."""
 
-from max.algorithm import parallelize, sync_parallelize
 from max.gpu.host import DeviceBuffer, DeviceContextArray
 from std.memory import unsafe_memcpy
 from extensibility import InputVariadicTensors, OutputVariadicTensors
@@ -135,17 +134,16 @@ def _shard_and_stack_multi_device[
     # Total elements per input in output
     var output_elements_per_input = outer_dims * segment_elements
 
-    @inline(.never)
-    def transfer(tp_index: Int) raises {imm}:
+    # The copies are enqueued from this task, not from parallel CPU sub-tasks:
+    # a task that waits on sub-tasks runs other ready tasks inline while it
+    # waits, and a graph with one of these per MoE layer, each frame holding
+    # every expert's tensor, nests deep enough to overflow the worker stack.
+    # The graph already runs different layers' copies concurrently.
+    for tp_index in range(outputs.size):
         # Device context for this output (index 0 is CPU, so +1)
         var gpu_ctx = dev_ctxs_input[tp_index + 1]
         var output_tensor = dyn_outputs[tp_index]
 
-        # Multi-device mode: use H2D transfers for each output.
-        # Each output goes to a different GPU, using the corresponding
-        # device context.
-        # Note: We process outputs sequentially since each output may be
-        # on a different device and H2D copies are async per device.
         for input_idx in range(inputs.size):
             var input_tensor = dyn_inputs[input_idx]
 
@@ -179,9 +177,6 @@ def _shard_and_stack_multi_device[
                     ),
                     src_ptr,
                 )
-
-    # Enqueue transfers in parallel, one thread per device.
-    sync_parallelize(transfer, outputs.size)
 
 
 def _shard_and_stack_single_device[
@@ -219,8 +214,8 @@ def _shard_and_stack_single_device[
     # Total elements per input in output
     var output_elements_per_input = outer_dims * segment_elements
 
-    @inline(.never)
-    def process_task(input_idx: Int) {imm}:
+    # Serial for the same reason as the multi-device copies.
+    for input_idx in range(inputs.size):
         var input_tensor = dyn_inputs[input_idx]
 
         for tp_index in range(outputs.size):
@@ -253,8 +248,6 @@ def _shard_and_stack_single_device[
                 )
 
                 unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=segment_elements)
-
-    parallelize(process_task, inputs.size)
 
 
 def shard_and_stack[

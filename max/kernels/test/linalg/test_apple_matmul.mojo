@@ -22,6 +22,7 @@ import std.benchmark
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tensor_engine import DefaultEngine
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.matmul.cpu import matmul as _matmul_cpu
@@ -139,7 +140,7 @@ def test_matmul[
     k: Int,
     kernel_type_m: Int,
 ) raises -> Int:
-    var c1_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
+    var c1_ptr = unsafe_alloc[Scalar[c_type]](m * n, alignment=alignment)
     var golden_shape = row_major(m, n)
     var golden = TileTensor[Engine=DefaultEngine[element_width=1]](
         c1_ptr, golden_shape
@@ -236,7 +237,7 @@ def test_matmul[
                     ),
                 )
 
-    c1_ptr.free()
+    c1_ptr.unsafe_free()
     return errors
 
 
@@ -254,8 +255,8 @@ def test_matmul[
     var errors: Int
     var kernel_type_m = m if mixed_kernels else 0
 
-    var a_ptr = alloc[Scalar[a_type]](m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
+    var a_ptr = unsafe_alloc[Scalar[a_type]](m * k, alignment=alignment)
+    var b_ptr = unsafe_alloc[Scalar[b_type]](k * n, alignment=alignment)
     var b = TileTensor(
         b_ptr,
         row_major(n, k) if transpose_b else row_major(k, n),
@@ -280,9 +281,11 @@ def test_matmul[
         padded_n_k[0] if b_packed or (not b_packed and transpose_b) else k
     )
 
-    var c0_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
+    var c0_ptr = unsafe_alloc[Scalar[c_type]](m * n, alignment=alignment)
 
-    var bp_ptr = alloc[Scalar[b_type]](padded_k * padded_n, alignment=alignment)
+    var bp_ptr = unsafe_alloc[Scalar[b_type]](
+        padded_k * padded_n, alignment=alignment
+    )
 
     var bp = TileTensor(bp_ptr, row_major(padded_k, padded_n))
     var a = TileTensor(a_ptr, row_major(m, k))
@@ -325,10 +328,10 @@ def test_matmul[
         return
     print("Success")
 
-    a_ptr.free()
-    b_ptr.free()
-    bp_ptr.free()
-    c0_ptr.free()
+    a_ptr.unsafe_free()
+    b_ptr.unsafe_free()
+    bp_ptr.unsafe_free()
+    c0_ptr.unsafe_free()
 
 
 def test_shapes[
@@ -470,7 +473,7 @@ def test_batched_matmul[
     comptime assert a.flat_rank == 3
     comptime assert b.flat_rank == 3
     comptime assert c.flat_rank == 3
-    var golden_ptr = alloc[Scalar[c.dtype]](
+    var golden_ptr = unsafe_alloc[Scalar[c.dtype]](
         batches * m * n, alignment=alignment
     )
     var golden_shape = row_major(batches, m, n)
@@ -569,7 +572,7 @@ def test_batched_matmul[
         ),
     )
 
-    golden_ptr.free()
+    golden_ptr.unsafe_free()
 
 
 def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
@@ -577,9 +580,9 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     comptime a_type = DType.float32
     comptime b_type = DType.float32
 
-    var c_ptr = alloc[Scalar[c_type]](batch * m * n, alignment=alignment)
-    var a_ptr = alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
+    var c_ptr = unsafe_alloc[Scalar[c_type]](batch * m * n, alignment=alignment)
+    var a_ptr = unsafe_alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
+    var b_ptr = unsafe_alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
 
     var c_shape = row_major(batch, m, n)
     var a_shape = row_major(batch, m, k)
@@ -591,9 +594,9 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     test_batched_matmul[False](c, a, b, batch, m, n, k)
     test_batched_matmul[True](c, a, b, batch, m, n, k)
 
-    c_ptr.free()
-    b_ptr.free()
-    a_ptr.free()
+    c_ptr.unsafe_free()
+    b_ptr.unsafe_free()
+    a_ptr.unsafe_free()
 
 
 def test_batched_matmul() raises:

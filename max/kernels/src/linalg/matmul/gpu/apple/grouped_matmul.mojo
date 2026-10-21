@@ -13,7 +13,7 @@
 """Apple M5 grouped (MoE) matmul for bf16 or fp16 operands: a grouped GEMV for
 decode and a grouped simdgroup-MMA GEMM for prefill.
 
-Target: Apple M5 (`compute_capability == 5`, Metal 4).
+Target: Apple M5 (`compute_capability >= 5`, Metal 4).
 
 For each expert group `z`, `C[a_offsets[z]:a_offsets[z+1]] =
 A[a_offsets[z]:a_offsets[z+1]] @ b[expert_ids[z]]^T`, with `b` the weight
@@ -52,7 +52,7 @@ from layout.tile_layout import Layout, TensorLayout, row_major
 from std.utils import IndexList
 
 from linalg.arch.apple.mma import ConvIm2colParams
-from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5
+from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5_or_newer
 from linalg.matmul.gpu.apple.matmul_kernel import (
     AppleM5MatMul,
     DenseALoader,
@@ -329,7 +329,7 @@ def grouped_matmul_mma_kernel[
         var col = Int(idx[1])
         var row_idx = Coord(row, col)
         comptime if has_compute_fn:
-            c_ptr.unsafe_offset(row * N).unsafe_offset(col).store[
+            c_ptr.unsafe_offset(row * N).unsafe_offset(col).unsafe_store[
                 alignment=alignment
             ](
                 rebind[SIMD[c_type, width]](
@@ -465,8 +465,7 @@ def enqueue_apple_grouped_gemv[
         b.as_imm(),
         a_offsets,
         expert_ids,
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(ceildiv(N, rows_per_sg * num_sg), 1, num_active_experts),
         block_dim=(num_sg * WARP_SIZE),
     )
@@ -573,8 +572,7 @@ def enqueue_apple_grouped_mma[
                     UInt32(g0),
                     log2_m,
                     log2_n,
-                    host_arg=epilogue_fn,
-                    host_arg2=compute_fn,
+                    host_args=(epilogue_fn, compute_fn),
                     grid_dim=((1 << Int(log2_m)) * (1 << Int(log2_n)), 1, ng),
                     block_dim=(MM.THREADS_PER_BLOCK),
                 )
@@ -609,9 +607,9 @@ def enqueue_apple_grouped_matmul[
     operand types and epilogues are those of `enqueue_apple_grouped_gemv`.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     # GEMV tilings measured best at 3072-6144-wide expert dims (M5 Max):
     # the tokens of a group share one read of the weight; more rows per

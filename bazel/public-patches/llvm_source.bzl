@@ -1,7 +1,5 @@
 """Module extension that fetches the LLVM source."""
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
 LLVM_COMMIT = "6941494e2ae550d753728ba13454311b344d82cf"
@@ -33,14 +31,6 @@ PATCHES = [
     # ConstString is still enough to avoid the crash.
     # TODO(MOTO-1590): drop once the ownership is sound across DSO boundaries.
     "//bazel/public-patches:llvm-revert-lldb-elf-section-name-string.patch",
-    # Drop the overlay's @rules_cc//cc/libc:{musl,glibc} select()s: the
-    # config.bzl HAVE_BACKTRACE/BACKTRACE_HEADER/HAVE_MALLINFO defines
-    # (llvm/llvm-project#207295, #223549) and the Support musl stack-size
-    # linkopt (llvm/llvm-project#223989). Those labels need rules_cc >= 0.2.25;
-    # we pin 0.2.18, so they do not resolve. The unconditional glibc/macOS
-    # defines are correct for our builds (we do not target musl). Drop this
-    # once rules_cc is bumped to 0.2.25 or newer.
-    "//bazel/public-patches:llvm-config-musl-select.patch",
     # llvm/llvm-project#225158 gives the llvm_libxml2_enabled config_setting
     # group visibility to clang, lld/test and lldb, but leaves its match_any
     # members private. Bazel checks the members' visibility from the consuming
@@ -53,16 +43,63 @@ PATCHES = [
     "//bazel/public-patches:llvm-flag-defaults.patch",
 ]
 
+# Upstream lit test inputs that no target reads: about three quarters of the
+# archive's files. Extracting them dominated fetching LLVM. The Bazel overlay
+# builds libraries from libc/test, lld/test and mlir/test, so those stay.
+_EXCLUDED_DIRS = [
+    "clang-tools-extra/test",
+    "clang/test",
+    "compiler-rt/test",
+    "libcxx/test",
+    "lldb/test",
+    "llvm/test",
+]
+
+def _llvm_archive_impl(rctx):
+    archive = "llvm.tar.gz"
+    rctx.download(
+        url = rctx.attr.url,
+        output = archive,
+        sha256 = rctx.attr.sha256,
+    )
+    rctx.report_progress("Extracting LLVM")
+    args = ["tar", "-xzf", archive, "--strip-components=1"]
+    for d in rctx.attr.excluded_dirs:
+        args.append("--exclude={}/{}".format(rctx.attr.strip_prefix, d))
+    result = rctx.execute(args)
+    if result.return_code:
+        fail("Failed to extract LLVM:\n{}{}".format(result.stdout, result.stderr))
+    rctx.delete(archive)
+
+    for patch in rctx.attr.patches:
+        rctx.patch(patch, strip = 1)
+
+    rctx.file("BUILD.bazel", "exports_files(glob([\"**\"]))")
+    return rctx.repo_metadata(reproducible = True)
+
+_llvm_archive = repository_rule(
+    implementation = _llvm_archive_impl,
+    doc = """Like http_archive, but skips directories while extracting.
+
+Uses the host's tar, since http_archive has no way to exclude paths.""",
+    attrs = {
+        "excluded_dirs": attr.string_list(),
+        "patches": attr.label_list(),
+        "sha256": attr.string(mandatory = True),
+        "strip_prefix": attr.string(mandatory = True),
+        "url": attr.string(mandatory = True),
+    },
+)
+
 def _llvm_source_impl(module_ctx):
     patches = list(PATCHES)
     for mod in module_ctx.modules:
         for tag in mod.tags.configure:
             patches.extend([str(p) for p in tag.extra_patches])
 
-    http_archive(
+    _llvm_archive(
         name = "llvm-raw",
-        build_file_content = "exports_files(glob([\"**\"]))",
-        patch_strip = 1,
+        excluded_dirs = _EXCLUDED_DIRS,
         patches = patches,
         sha256 = LLVM_SHA,
         strip_prefix = "llvm-project-{}".format(LLVM_COMMIT),

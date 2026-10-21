@@ -1,6 +1,6 @@
 # Test for pipeline unit tests.
 
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = [
@@ -184,6 +184,8 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/eagle_llama3",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/mpnet",
+        # Renders the chat template.
+        requirement("jinja2"),
     ],
     tags = [
         "no-sandbox",
@@ -198,6 +200,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/mpnet",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
         requirement("numpy"),
     ],
 )
@@ -210,6 +213,8 @@ modular_py_test(
         # Resolves SmolLM and its ModuleV3 version by name at runtime.
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
+        # Renders the chat template.
+        requirement("jinja2"),
     ],
     tags = [
         "no-sandbox",
@@ -220,6 +225,61 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_processor",
+    size = "medium",
+    srcs = ["test_auto_processor.py"],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("pillow"),
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_pipeline_vision_gpu",
+    size = "large",
+    srcs = ["test_auto_pipeline_vision_gpu.py"],
+    exec_properties = {
+        # Gemma 3 4B plans 8 GiB of weights and 15 GiB of activations. A test
+        # can use less than it asks for (23 gives about 20 GiB), so this asks
+        # for 40.
+        "test.resources:gpu-memory": "40",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Resolves Gemma 3 by name at runtime.
+        "//max/python/max/pipelines/architectures/gemma3multimodal",
+        # Renders the chat template.
+        requirement("jinja2"),
+    ],
+    tags = [
+        "gpu",
+        # Loads a full checkpoint, so it stays out of presubmit. Run it by name.
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/gemma3multimodal",
+        requirement("huggingface-hub"),
+        requirement("jinja2"),
+        requirement("pillow"),
     ],
 )
 
@@ -252,6 +312,129 @@ modular_py_test(
     ],
 )
 
+modular_py_library(
+    name = "auto_model_vision_checks",
+    testonly = True,
+    srcs = ["_auto_model_vision_gpu.py"],
+    ignore_extra_deps = [
+        # Renders the chat templates.
+        requirement("jinja2"),
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("huggingface-hub"),
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pytest"),
+    ],
+)
+
+# One model per test, so each test process compiles one. CI caps every test
+# at 800s.
+modular_py_test(
+    name = "test_auto_model_vision_internvl_gpu",
+    size = "large",
+    srcs = ["test_auto_model_vision_internvl_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Resolves InternVL by name at runtime.
+        "//max/python/max/pipelines/architectures/internvl",
+    ],
+    tags = [
+        "gpu",
+        # Loads a full checkpoint, so it stays out of presubmit. Run it by name.
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":auto_model_vision_checks",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/internvl",
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_model_vision_gemma3_gpu",
+    size = "large",
+    srcs = ["test_auto_model_vision_gemma3_gpu.py"],
+    exec_properties = {
+        # Gemma 3 4B plans 8 GiB of weights and 15 GiB of activations. A test
+        # can use less than it asks for (23 gives about 20 GiB), so this asks
+        # for 40.
+        "test.resources:gpu-memory": "40",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Resolves Gemma 3 by name at runtime.
+        "//max/python/max/pipelines/architectures/gemma3multimodal",
+        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
+    ],
+    tags = [
+        "gpu",
+        # Loads a full checkpoint, so it stays out of presubmit. Run it by name.
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":auto_model_vision_checks",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/gemma3multimodal",
+        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
+        requirement("pillow"),
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_model_vision_gemma3_modulev3_gpu",
+    size = "large",
+    srcs = ["test_auto_model_vision_gemma3_modulev3_gpu.py"],
+    exec_properties = {
+        # Gemma 3 4B plans 8 GiB of weights and 15 GiB of activations. A test
+        # can use less than it asks for (23 gives about 20 GiB), so this asks
+        # for 40.
+        "test.resources:gpu-memory": "40",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Resolves Gemma 3 by name at runtime.
+        "//max/python/max/pipelines/architectures/gemma3multimodal",
+        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
+    ],
+    tags = [
+        "gpu",
+        # Loads a full checkpoint, so it stays out of presubmit. Run it by name.
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":auto_model_vision_checks",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/gemma3multimodal",
+        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
+    ],
+)
+
 modular_py_test(
     name = "tests",
     size = "large",
@@ -270,6 +453,7 @@ modular_py_test(
             "test_model_manifest.py",
             "test_auto_model.py",
             "test_auto_pipeline.py",
+            "test_auto_processor.py",
             "test_video.py",
             "test_weight_loader.py",
         ],
@@ -315,6 +499,8 @@ modular_py_test(
     ],
 )
 
+# Guards the shared graph-capture warmup in max/pipelines/lib/graph_capture.py:
+# each capture's outputs are freed before the next capture runs.
 modular_py_test(
     name = "test_device_graph_capture_release",
     size = "medium",

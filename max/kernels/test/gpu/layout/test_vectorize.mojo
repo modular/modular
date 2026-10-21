@@ -15,6 +15,7 @@ from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_layout import Layout as TileLayout
 from layout.tile_tensor import stack_allocation
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 
@@ -82,7 +83,7 @@ def test_native_vectorize_static() raises:
 
 
 def test_native_vectorize_dynamic[width: Int]() raises:
-    var heap = alloc[Int32](64, alignment=16)
+    var heap = unsafe_alloc[Int32](64, alignment=16)
     var runtime_layout = TileLayout(
         Coord(Int32(8), Int32(8)), Coord(Int32(8), Idx[1])
     )
@@ -105,7 +106,7 @@ def test_native_vectorize_dynamic[width: Int]() raises:
             var value = fragments[coordinate]
             for lane in range(width):
                 assert_equal(value[lane], Int32(offset + lane))
-    heap.free()
+    heap.unsafe_free()
 
 
 def main() raises:

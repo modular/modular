@@ -70,3 +70,11 @@ from .tmem_engine import (
     tmem_copy_async,
     tmem_16x256b,
 )
+from ._plugin import (
+    CurrentLayoutPlugin,
+    CurrentTensorEngine,
+    DefaultLayoutPlugin,
+    LayoutPluginForTarget,
+    LayoutPluginHooks,
+    TensorEngineForTarget,
+)

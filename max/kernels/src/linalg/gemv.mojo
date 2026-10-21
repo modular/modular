@@ -15,7 +15,7 @@
 
 from std.math import align_down, align_up, ceildiv
 from std.math.uutils import ufloordiv
-from std.sys import is_amd_gpu, llvm_intrinsic, simd_width_of
+from std.sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic, simd_width_of
 from std.sys.info import _is_amd_mi250x, _is_sm_100x, size_of
 from max.gpu.compute.mma import ld_matrix, mma
 from max.gpu.sync import async_copy_arrive, named_barrier
@@ -292,8 +292,8 @@ def _gemv_kernel_impl[
         var idx = i * WARP_SIZE + lane_id
         if idx < _k:
             accum += (
-                a.load(global_warp_id * _k + idx).cast[accum_type]()
-                * b.load(idx).cast[accum_type]()
+                a.unsafe_load(global_warp_id * _k + idx).cast[accum_type]()
+                * b.unsafe_load(idx).cast[accum_type]()
             )
 
     accum = warp.sum(accum)
@@ -1099,6 +1099,29 @@ def gemv_split_k_compute_fn[
     ](output, act, weight, m, n, k, no_epilogue_fn, compute_fn)
 
 
+@doc_hidden
+@inline(.always)
+def gemv_split_k_pdl_prefetch_enabled[
+    pdl_level: PDLLevel,
+    static_n: Int,
+    *,
+    target_is_nvidia: Bool = True,
+]() -> Bool:
+    """Whether `_gemv_split_k_impl` peels iteration 0's weight loads above
+    the PDL wait for this launch. Exposed so tests can assert the peeled
+    path actually compiled instead of silently falling back to wait-first.
+    The caller supplies `target_is_nvidia` because `is_nvidia_gpu()` reads
+    the compiler's target triple, which is the host triple while compiling
+    host code such as a test's `main`.
+    """
+    return (
+        pdl_level > PDLLevel.OFF
+        and target_is_nvidia
+        and static_n > -1
+        and static_n <= 4096
+    )
+
+
 @inline(.always)
 def _gemv_split_k_impl[
     c_type: DType,
@@ -1224,20 +1247,18 @@ def _gemv_split_k_impl[
     var iteration = 0
     comptime WeightVecType = SIMD[b_type, simd_width]
 
-    comptime if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
-
-    # Each thread sums local data in K.
+    # Phase closures shared by the PDL peel and the K loop, mirroring the
+    # `_prefetch_weight_tiles` / `_complete_activation_tiles` split the
+    # SM100 block-scaled matmul uses around its PDL wait. Both capture the
+    # K-tile index immutably; `tile_w` and `acc` are mutated in place.
     @inline(.always)
-    def _k_iter_body() {mut iteration, mut tile_w, mut acc, imm}:
-        """Single K-iteration: load weights, load activations, accumulate."""
-        var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
-        var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
+    def _load_weight_frags(k_tile: Int) {mut tile_w, imm}:
+        """Phase 1: load this K-tile's weight fragments into `tile_w`.
 
-        # Load weights into tile_w.
-        # Streaming is best when each weight is read once. Tiny-M router GEMV
-        # launches one row block per M value, so those blocks should retain and
-        # reuse the same weight rows instead.
+        Safe to call before the PDL wait: the weight operand is static
+        across grids. Activations must not be loaded here.
+        """
+        var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, k_tile)
         comptime for i in range(tile_n):
             comptime if check_bounds_n:
                 if i + tile_id_n >= _n:
@@ -1252,7 +1273,16 @@ def _gemv_split_k_impl[
                 var b_vec = vec_weight_tile[i, thread_idx.x]
                 tile_w.store((i, Idx[0]), b_vec)
 
-        # Load activations and accumulate dot products.
+    @inline(.always)
+    def _consume_weight_frags(k_tile: Int) {mut acc, imm}:
+        """Phase 2: load this K-tile's activation rows and dot them against
+        the weight fragments `_load_weight_frags` staged in `tile_w`.
+
+        Must run after the PDL wait when the activation is the
+        predecessor's output. Same arithmetic and reduction order in both
+        call sites, so results are bit-identical either way.
+        """
+        var act_tile = act.tile[tile_m, tile_k](block_idx.x, k_tile)
         comptime for i in range(tile_m):
             comptime if check_bounds_m:
                 if i + tile_id_m >= _m:
@@ -1260,9 +1290,10 @@ def _gemv_split_k_impl[
             var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
 
             # `act` is a_type, `tile_w` is b_type; keep each fragment in its
-            # native element type so mixed A/B dtypes (e.g. bf16 activation ×
-            # fp32 router weight) need no unsafe reinterpretation. `_dot_accum`
-            # widens both to accum_type unless both are bf16 (fused fdot2).
+            # native element type so mixed A/B dtypes (e.g. bf16 activation
+            # x fp32 router weight) need no unsafe reinterpretation.
+            # `_dot_accum` widens both to accum_type unless both are bf16
+            # (fused fdot2).
             var act_native = rebind[SIMD[a_type, simd_width]](act_vec)
             comptime for j in range(tile_n):
                 var weight_native = rebind[SIMD[b_type, simd_width]](
@@ -1272,17 +1303,75 @@ def _gemv_split_k_impl[
                 local_accum = _dot_accum(act_native, weight_native, local_accum)
                 acc[i, j] = local_accum
 
+    # PDL weight prefetch: iteration 0's weight fragments issue before the
+    # PDL wait; the activation -- the predecessor's output -- is consumed
+    # only after it. CONTRACT: like the SM100 matmul's `prefetch_tiles_n`,
+    # this assumes the B operand is a graph constant (model weights frozen
+    # at load time), never written by a PDL predecessor. Callers whose B is
+    # produced in-graph (runtime dequant, materialized transpose, LoRA
+    # merge, decode-time `q @ K^T`) must not enable PDL here -- the
+    # dispatcher's M<=64 transpose_b path sends any such matmul to this
+    # kernel, so the contract lives in the launch, not the kernel.
+    #
+    # Gated to narrow-N shapes. The peel's HBM traffic scales with the grid:
+    # at wide N thousands of blocks prefetch concurrently and contend with
+    # the predecessor's tail, and the pair regresses +7% to +10% versus
+    # serialized at N>=16384 (measured), so those shapes keep the
+    # wait-first order. The N<=4096 bound is empirical for M=1 decode
+    # (block count still varies with tile_n and M); `has_N` comes from the
+    # caller's static shape.
+    comptime has_static_n = output.static_shape[1] > -1
+    # NVIDIA-only: `wait_on_dependent_grids` lowers to nothing on other
+    # targets, so the peel there would only reshuffle the K-loop schedule
+    # (and shift `num_k_iters` parity) with no overlap to gain.
+    comptime gemv_pdl_prefetch = gemv_split_k_pdl_prefetch_enabled[
+        pdl_level,
+        output.static_shape[1],
+        target_is_nvidia=is_nvidia_gpu(),
+    ]()
+
+    comptime if pdl_level > PDLLevel.OFF:
+        comptime if gemv_pdl_prefetch:
+            if tid * simd_width < _k:
+                _load_weight_frags(0)
+
+        wait_on_dependent_grids()
+
+        comptime if gemv_pdl_prefetch:
+            if tid * simd_width < _k:
+                _consume_weight_frags(0)
+                iteration = 1
+
+    # Each thread sums local data in K.
+    @inline(.always)
+    def _k_iter_body() {mut iteration, mut tile_w, mut acc, imm}:
+        """Single K-iteration: load weights, load activations, accumulate."""
+        # Streaming is best when each weight is read once. Tiny-M router GEMV
+        # launches one row block per M value, so those blocks should retain
+        # and reuse the same weight rows instead.
+        _load_weight_frags(iteration)
+        _consume_weight_frags(iteration)
+
         iteration += 1
 
     comptime if unroll_factor == 1:
         # Simple loop — no ceildiv, no main_iters/remainder split.
-        # Produces minimal PTX with fewest registers on NVIDIA.
-        for _ in range(tid * simd_width, _k, tile_k):
+        # Produces minimal PTX with fewest registers on NVIDIA. Under PDL the
+        # peeled iteration 0 above already ran, so start at the next tile.
+        comptime k_first = (
+            tile_k if pdl_level > PDLLevel.OFF and gemv_pdl_prefetch else 0
+        )
+        for _ in range(tid * simd_width + k_first, _k, tile_k):
             _k_iter_body()
     else:
         # Unrolled loop for ILP — comptime for duplicates the body.
         var k_start = tid * simd_width
         var num_k_iters = ceildiv(_k - k_start, tile_k) if _k > k_start else 0
+        comptime if pdl_level > PDLLevel.OFF and gemv_pdl_prefetch:
+            # Iteration 0 was peeled around the PDL wait. Clamp at 0: a
+            # thread with no K columns participates in neither the peel nor
+            # this loop.
+            num_k_iters = max(num_k_iters - 1, 0)
         var main_iters = align_down(num_k_iters, unroll_factor)
 
         # Main unrolled loop.
@@ -1925,7 +2014,7 @@ def _enqueue_gemv_kernel_vector[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(pdl_level),
@@ -1954,7 +2043,7 @@ def _enqueue_gemv_kernel_vector[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(pdl_level),
@@ -1985,7 +2074,7 @@ def _enqueue_gemv_kernel_vector[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(pdl_level),
@@ -2014,7 +2103,7 @@ def _enqueue_gemv_kernel_vector[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(pdl_level),
@@ -2274,7 +2363,7 @@ def _gemv_gpu_dispatch_impl[
                         Int32(m),
                         Int32(n),
                         Int32(k),
-                        host_arg=epilogue_fn,
+                        host_args=(epilogue_fn,),
                         grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
                         block_dim=num_threads,
                         attributes=pdl_launch_attributes(pdl_level),
@@ -2308,7 +2397,7 @@ def _gemv_gpu_dispatch_impl[
                         Int32(m),
                         Int32(n),
                         Int32(k),
-                        host_arg=compute_fn,
+                        host_args=(compute_fn,),
                         grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
                         block_dim=num_threads,
                         attributes=pdl_launch_attributes(pdl_level),
@@ -2544,7 +2633,7 @@ def _gemv_gpu_dispatch_impl[
                         Int32(n),
                         Int32(m),
                         Int32(k),
-                        host_arg=epilogue_fn,
+                        host_args=(epilogue_fn,),
                         grid_dim=ceildiv(n, WARPS_PER_BLOCK),
                         block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                         attributes=pdl_launch_attributes(pdl_level),
@@ -2565,7 +2654,7 @@ def _gemv_gpu_dispatch_impl[
                         Int32(n),
                         Int32(m),
                         Int32(k),
-                        host_arg=compute_fn,
+                        host_args=(compute_fn,),
                         grid_dim=ceildiv(n, WARPS_PER_BLOCK),
                         block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                         attributes=pdl_launch_attributes(pdl_level),
@@ -2607,7 +2696,7 @@ def _gemv_gpu_dispatch_impl[
                         Int32(m),
                         Int32(n),
                         Int32(k),
-                        host_arg=epilogue_fn,
+                        host_args=(epilogue_fn,),
                         grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                         block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                         attributes=pdl_launch_attributes(pdl_level),
@@ -2627,7 +2716,7 @@ def _gemv_gpu_dispatch_impl[
                         Int32(m),
                         Int32(n),
                         Int32(k),
-                        host_arg=compute_fn,
+                        host_args=(compute_fn,),
                         grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                         block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                         attributes=pdl_launch_attributes(pdl_level),
@@ -2670,7 +2759,7 @@ def _gemv_gpu_dispatch_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=epilogue_fn,
+                    host_args=(epilogue_fn,),
                     grid_dim=ceildiv(n, WARP_SIZE),
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                     attributes=pdl_launch_attributes(pdl_level),
@@ -2691,7 +2780,7 @@ def _gemv_gpu_dispatch_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=compute_fn,
+                    host_args=(compute_fn,),
                     grid_dim=ceildiv(n, WARP_SIZE),
                     block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                     attributes=pdl_launch_attributes(pdl_level),
@@ -3011,18 +3100,20 @@ def _gemv_cpu[
     var K = Int(a_buf.dim[1]())
 
     @inline(.always)
-    @__parameter
-    def input_fn[dtype: DType, width: Int](idx: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        dtype: DType, width: Int
+    ](idx: Coord) {var a_buf, var b_buf} -> SIMD[dtype, width]:
         return (
             a_buf.load[width=width](idx).cast[dtype]()
             * b_buf.load[width=width]((idx[1],)).cast[dtype]()
         )
 
     @inline(.always)
-    @__parameter
     def output_fn[
         out_type: DType, width: SIMDLength
-    ](idx: Coord, value: SIMD[out_type, width]):
+    ](idx: Coord, value: SIMD[out_type, width]) {
+        var c_buf, var epilogue_fn, var compute_fn
+    }:
         comptime if has_epilogue_fn:
             var m = Int(idx[0])
 
@@ -3045,14 +3136,12 @@ def _gemv_cpu[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    _reduce_generator[
+    _reduce_generator[reduce_dim=1](
+        Coord((M, K)),
+        Scalar[c_type](0),
         input_fn,
         output_fn,
         reduce_impl,
-        reduce_dim=1,
-    ](
-        Coord((M, K)),
-        init=Scalar[c_type](0),
     )
 
 
@@ -4436,7 +4525,7 @@ def _enqueue_gemm_mma_cpasync[
             Int32(gemm_k),
             Int32(k_gemm_n),
             Int32(batch_size),
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(grid_x, grid_y, batch_size),
             block_dim=TOTAL_THREADS,
             shared_mem_bytes=smem_size,
@@ -4472,7 +4561,7 @@ def _enqueue_gemm_mma_cpasync[
             Int32(gemm_k),
             Int32(k_gemm_n),
             Int32(batch_size),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(grid_x, grid_y, batch_size),
             block_dim=TOTAL_THREADS,
             shared_mem_bytes=smem_size,

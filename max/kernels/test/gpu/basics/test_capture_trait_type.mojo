@@ -38,14 +38,11 @@ struct ImplT(BaseT):
 
 
 def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
-    @__parameter
-    @__copy_capture(thing)
-    def kernel_fn():
+    def kernel_fn() {var thing}:
         var idx = thread_idx.x
         print(thing.get_val(idx) * 2)
 
-    comptime kernel = kernel_fn
-    ctx.enqueue_function[kernel](grid_dim=(1,), block_dim=(size))
+    ctx.enqueue_function(kernel_fn, grid_dim=(1,), block_dim=(size))
 
 
 def trait_repro(ctx: DeviceContext) raises:

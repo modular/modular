@@ -1254,9 +1254,9 @@ def _matmul_qint4[
     comptime aq_type = kernel.aq_type()
 
     var a_quant_base = alloc(
-        AllocLayout[Scalar[aq_type], alignment=alignment](count=M * K)
+        AllocLayout[Scalar[aq_type], alignment=alignment](length=M * K)
     )
-    var a_scale_base = alloc(AllocLayout[Float32](count=M * k_groups))
+    var a_scale_base = alloc(AllocLayout[Float32](length=M * k_groups))
 
     var a_quant_ptr: MutPointer[
         Scalar[aq_type], origin_of(a_quant_base._alloc)

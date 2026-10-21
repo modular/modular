@@ -24,8 +24,10 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParams,
+    KVCacheQuantizationConfig,
     KVConnectorType,
     MHAKVCacheParams,
+    MLAKVCacheParams,
     MultiKVCacheParams,
     NullKVConnectorConfig,
     RecurrentStateParams,
@@ -216,6 +218,37 @@ class TestUseJengaKvCache:
             _use_jenga_kv_cache(
                 with_state, is_di_enabled=True, model_name="FAKE"
             )
+
+    def test_nvfp4_mla_cache_selects_jenga(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An NVFP4 MLA cache pages its scales as their own Jenga leaf. The
+        sparse MLA kernels read them through the scales lookup table, so it
+        needs no legacy cache, which has no KV connectors or disaggregated
+        inference."""
+        monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
+        nvfp4 = MLAKVCacheParams(
+            dtype=DType.uint8,
+            head_dim=576,
+            num_layers=2,
+            devices=[DeviceRef.GPU()],
+            page_size=128,
+            num_q_heads=8,
+            kvcache_quant_config=KVCacheQuantizationConfig(
+                scale_dtype=DType.float8_e4m3fn,
+                quantization_granularity=16,
+                fp8_tail_dim=64,
+            ),
+        )
+        assert nvfp4.is_nvfp4_kv_cache
+        multi = MultiKVCacheParams.from_params(
+            {"mla": nvfp4, "indexer": create_kv_params(num_layers=2)}
+        )
+        for params in (nvfp4, multi):
+            for is_di_enabled in (False, True):
+                assert _use_jenga_kv_cache(
+                    params, is_di_enabled=is_di_enabled, model_name="FAKE"
+                )
 
 
 @pytest.mark.parametrize(

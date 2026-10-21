@@ -2420,6 +2420,7 @@ async def openai_create_chat_completion(
                         backend=pipeline_config.sampling.structured_output_backend,
                         tool_choice=completion_request.tool_choice,
                         reject_unsupported=pipeline_config.sampling.tool_call_policy.reject_unsupported,
+                        messages=completion_request.messages,
                     )
                 # Create the response format.
                 # Note:

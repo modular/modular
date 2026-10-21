@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unit tests for the Apple M5 weight-only NVFP4 (W4A16) matmul.
 
-All stages require `compute_capability() == 5` (Apple M5, Metal 4). This file
+All stages require `compute_capability() >= 5` (Apple M5, Metal 4). This file
 covers all three W4A16 dispatch paths: the fused in-register B-loader (Stages
 1-4) and the `matmul2d` deep-K path (Stage 5).
 
@@ -835,8 +835,8 @@ def test_stage4_dispatch_paths(ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     test_stage1_oracle(ctx)
     test_stage2_fused(ctx)

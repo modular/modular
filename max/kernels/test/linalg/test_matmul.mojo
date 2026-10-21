@@ -15,6 +15,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from std.memory.alloc import unsafe_alloc
 from std.sys.info import CompilationTarget
 
 from layout import Coord, TileTensor
@@ -62,8 +63,8 @@ def test_matmul[
     saturated: Bool,
     with_compute_fn: Bool = False,
 ](m: Int, n: Int, k: Int, kernel_type_m: Int) raises:
-    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type],](k * n, alignment=alignment)
+    var a_ptr = unsafe_alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_ptr = unsafe_alloc[Scalar[b_type],](k * n, alignment=alignment)
     var b = TileTensor(b_ptr.as_unsafe_any_origin(), row_major(k, n))
 
     var padded_n_k = pack_matmul_b_shape_func[
@@ -75,11 +76,11 @@ def test_matmul[
     var padded_n = padded_n_k[1] if b_packed else n
     var padded_k = padded_n_k[0] if b_packed else k
 
-    var bp_ptr = alloc[Scalar[b_type],](
+    var bp_ptr = unsafe_alloc[Scalar[b_type],](
         padded_k * padded_n, alignment=alignment
     )
-    var c0_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
-    var c1_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var c0_ptr = unsafe_alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var c1_ptr = unsafe_alloc[Scalar[c_type],](m * n, alignment=alignment)
 
     var a = TileTensor(a_ptr.as_unsafe_any_origin(), row_major(m, k))
     var bp = TileTensor(
@@ -168,11 +169,11 @@ def test_matmul[
             else:
                 assert_equal(c[i, j], golden[i, j], msg)
 
-    a_ptr.free()
-    b_ptr.free()
-    bp_ptr.free()
-    c0_ptr.free()
-    c1_ptr.free()
+    a_ptr.unsafe_free()
+    b_ptr.unsafe_free()
+    bp_ptr.unsafe_free()
+    c0_ptr.unsafe_free()
+    c1_ptr.unsafe_free()
 
 
 def test_matmul[

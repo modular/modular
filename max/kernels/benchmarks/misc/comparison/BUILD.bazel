@@ -438,3 +438,40 @@ modular_py_binary(
         requirement("torch"),
     ],
 )
+
+# MAX's MXFP8 activation quantize against vLLM's; run with
+# `--//:use_vllm=true` for the vLLM arms.
+modular_py_test(
+    name = "bench_mxfp8_quant_vllm",
+    size = "enormous",
+    srcs = ["bench_mxfp8_quant_vllm.py"],
+    env = {
+        # MAX's memory manager would otherwise take what torch needs.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "17179869184",
+    },
+    exec_properties = {"test.resources:gpu-memory": "40"},
+    gpu_constraints = ["//:b200_gpu"],
+    main = "bench_mxfp8_quant_vllm.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-mypy",
+        "no-pydeps",
+    ],
+    deps = [
+        ":gpu_telemetry",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
+    ] + select({
+        "//:use_vllm_setting": [
+            requirement("flashinfer-python"),
+            requirement("nvidia-cutlass-dsl"),
+            requirement("vllm"),
+        ],
+        "//conditions:default": [],
+    }),
+)

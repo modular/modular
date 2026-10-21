@@ -267,6 +267,183 @@ struct PagedKVRemap[page_size: Int](SparseIndexRemap):
 
 
 @inline(.always)
+def _remap_scale_one(
+    log_t: Int32,
+    batch_u32: UInt32,
+    lut: ImmPointer[UInt32, _],
+    lut_cols: Int,
+    lut_rows: Int,
+    page_size: Int,
+    invalid_block_id: UInt32,
+    rows_per_block: Int,
+) -> Int32:
+    """Like `_remap_one`, for a pool whose blocks sit `rows_per_block` rows
+    apart: returns `block * rows_per_block + offset`, a pool row index rather
+    than the `block * page_size + offset` encoding."""
+    if log_t < 0:
+        return log_t
+    var t = Int(log_t)
+    var bi = Int(batch_u32)
+    if bi >= lut_rows:
+        return Int32(-1)
+    var page_idx = t // page_size
+    if page_idx >= lut_cols:
+        return Int32(-1)
+    var block_id = lut[bi * lut_cols + page_idx]
+    if block_id >= invalid_block_id:
+        return Int32(-1)
+    return Int32(Int(block_id) * rows_per_block + t % page_size)
+
+
+struct PagedKVScaleRemap[page_size: Int, top_k: Int](SparseIndexRemap):
+    """Writes each slot's physical row and its row in the scale pool.
+
+    For an NVFP4 cache the scales are paged apart from the values: they have
+    their own block ids and page stride, so a consumer cannot derive a
+    selected token's scale row from its value row. Each output row holds
+    `2 * top_k` slots: the `PagedKVRemap` encoding of the slot (the
+    `top_k` value rows), then the slot's scale row (the next `top_k`), which is
+    `scale_block * scale_rows_per_block + offset`, the same row
+    `PagedKVCache.scale_row_idx` returns for the position. Either is `-1` where
+    the position is `-1` or its page is unmapped.
+
+    Parameters:
+        page_size: Tokens per page of both pools.
+        top_k: Slots per output row.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias; the struct is trivially device-passable."""
+
+    comptime enabled = True
+    """Physical and scale rows are written."""
+
+    var physical_out: MutPointer[Int32, MutUntrackedOrigin]
+    """Flat output buffer, `[rows, 2 * top_k]`."""
+    var lut: ImmPointer[UInt32, ImmUntrackedOrigin]
+    """Row-major `[lut_rows, lut_cols]` value page lookup table."""
+    var scales_lut: ImmPointer[UInt32, ImmUntrackedOrigin]
+    """Row-major `[lut_rows, lut_cols]` scale page lookup table."""
+    var lut_cols: Int32
+    """Logical pages per batch entry in `lut`."""
+    var scales_lut_cols: Int32
+    """Logical pages per batch entry in `scales_lut`."""
+    var lut_rows: Int32
+    """Batch entries in the tables."""
+    var invalid_block_id: UInt32
+    """Value block ids at or above this (the page count) are invalid."""
+    var scales_invalid_block_id: UInt32
+    """Scale block ids at or above this (the scale page count) are invalid."""
+    var scale_rows_per_block: Int32
+    """Rows between consecutive blocks of the scale pool."""
+
+    @inline(.always)
+    def __init__(
+        out self,
+        physical_out: MutPointer[Int32, _],
+        lut: ImmPointer[UInt32, _],
+        scales_lut: ImmPointer[UInt32, _],
+        lut_cols: Int,
+        scales_lut_cols: Int,
+        lut_rows: Int,
+        invalid_block_id: UInt32,
+        scales_invalid_block_id: UInt32,
+        scale_rows_per_block: Int,
+    ):
+        """Describes the two pools to remap into and where to write.
+
+        Args:
+            physical_out: Flat output buffer, `[rows, 2 * top_k]`.
+            lut: Row-major `[lut_rows, lut_cols]` value page lookup table.
+            scales_lut: Row-major `[lut_rows, lut_cols]` scale page lookup
+                table.
+            lut_cols: Logical pages per batch entry in `lut`.
+            scales_lut_cols: Logical pages per batch entry in `scales_lut`.
+            lut_rows: Batch entries in the tables.
+            invalid_block_id: Value block ids at or above this are invalid;
+                the value pool's page count.
+            scales_invalid_block_id: Scale block ids at or above this are
+                invalid; the scale pool's page count.
+            scale_rows_per_block: Rows between consecutive scale blocks.
+        """
+        self.physical_out = physical_out.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
+        self.lut = lut.as_imm().unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.scales_lut = scales_lut.as_imm().unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
+        self.lut_cols = Int32(lut_cols)
+        self.scales_lut_cols = Int32(scales_lut_cols)
+        self.lut_rows = Int32(lut_rows)
+        self.invalid_block_id = invalid_block_id
+        self.scales_invalid_block_id = scales_invalid_block_id
+        self.scale_rows_per_block = Int32(scale_rows_per_block)
+
+    @inline(.always)
+    def offset(self, slots: Int) -> Self:
+        """Returns this remap with `physical_out` advanced past `slots` slots.
+
+        Args:
+            slots: Slots of the logical output to advance by, a whole number
+                of rows.
+
+        Returns:
+            The advanced remap.
+        """
+        var r = self
+        r.physical_out = self.physical_out.unsafe_offset(2 * slots)
+        return r
+
+    @inline(.always)
+    def store(self, idx: Int, batch: Int, logical: Int32):
+        """Writes both rows of slot `idx` for logical position `logical`.
+
+        Args:
+            idx: Flat slot of the logical output, `row * top_k + column`.
+            batch: Batch entry the slot's row belongs to.
+            logical: The slot's logical token position, or `-1`.
+        """
+        var row = idx // Self.top_k
+        var out = self.physical_out.unsafe_offset(
+            row * 2 * Self.top_k + (idx - row * Self.top_k)
+        )
+        out[0] = _remap_one(
+            logical,
+            UInt32(batch),
+            self.lut,
+            Int(self.lut_cols),
+            Int(self.lut_rows),
+            Self.page_size,
+            self.invalid_block_id,
+        )
+        out[Self.top_k] = _remap_scale_one(
+            logical,
+            UInt32(batch),
+            self.scales_lut,
+            Int(self.scales_lut_cols),
+            Int(self.lut_rows),
+            Self.page_size,
+            self.scales_invalid_block_id,
+            Int(self.scale_rows_per_block),
+        )
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"PagedKVScaleRemap"`.
+        """
+        return "PagedKVScaleRemap"
+
+
+@inline(.always)
 def _find_batch_for_row(
     r: Int,
     row_offsets: ImmPointer[UInt32, _],

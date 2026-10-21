@@ -751,6 +751,17 @@
                 },
                 {
                   "type": "category",
+                  "label": "auto_processor",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.auto_processor"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.auto_processor__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "generate",
                   "link": {
                     "type": "doc",
@@ -992,6 +1003,7 @@
       "collapsed": false,
       "items": [
         "gpu/intro-tutorial",
+        "gpu/hardware-compatibility",
         "gpu/architecture",
         "gpu/fundamentals",
         "gpu/block-and-warp",

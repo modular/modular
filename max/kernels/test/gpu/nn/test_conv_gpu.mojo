@@ -13,7 +13,6 @@
 
 from std.math import ceildiv
 from std.random import rand
-from std.sys import align_of
 
 from layout import Coord, LTToTTLayout, Layout, TileTensor
 from max.gpu.host import DeviceContext
@@ -22,7 +21,6 @@ from nn.conv.conv import (
     conv3d_gpu_naive_ndhwc_qrscf,
     conv_gpu,
 )
-from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.conv.gpu.im2col_matmul_2d import dispatch_im2col_matmul_conv2d
 from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
@@ -145,7 +143,6 @@ def test_conv3d_gpu[
         dtype,
         dtype,
         block_size,
-        None,
         input_buf.Engine,
         filter_buf.Engine,
         output_buf.Engine,
@@ -280,27 +277,18 @@ def test_conv3d_gpu_dispatch[
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
-    var output_epilogue = output_tt.as_unsafe_any_origin()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(output_epilogue)
-    def scale_epilogue[
+    def scale_compute[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]):
-        var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-        output_epilogue.store[
-            width=_width, alignment=align_of[dtype]() * _alignment
-        ](
-            coords,
-            rebind[SIMD[dtype, _width]](scaled),
-        )
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> SIMD[_dtype, _width]:
+        return (val.cast[.float32]() * 2.0).cast[_dtype]()
 
     conv_gpu[
         dtype,
         dtype,
         dtype,
-        Optional[elementwise_simd_epilogue_type](scale_epilogue),
+        has_compute_fn=True,
     ](
         input_tt,
         filter_tt,
@@ -310,6 +298,7 @@ def test_conv3d_gpu_dispatch[
         IndexList[6](pad[0], pad[0], pad[1], pad[1], pad[2], pad[2]),
         1,
         ctx,
+        compute_fn=scale_compute,
     )
 
     ctx.synchronize()
@@ -435,28 +424,17 @@ def test_conv3d_im2col_multi_tile[
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
-    var output_epilogue = output_tt.as_unsafe_any_origin()
 
     comptime if with_epilogue:
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(output_epilogue)
-        def scale_epilogue[
+        def scale_compute[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-        ](coords: Coord, val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_epilogue.store[
-                width=_width, alignment=align_of[dtype]() * _alignment
-            ](
-                coords,
-                rebind[SIMD[dtype, _width]](scaled),
-            )
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> SIMD[_dtype, _width]:
+            return (val.cast[.float32]() * 2.0).cast[_dtype]()
 
         var handled = dispatch_im2col_matmul_conv3d[
-            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
-                scale_epilogue
-            ),
+            has_compute_fn=True,
             m_tile_byte_budget=m_tile_byte_budget,
         ](
             input_tt,
@@ -467,6 +445,7 @@ def test_conv3d_im2col_multi_tile[
             pad,
             1,
             ctx,
+            compute_fn=scale_compute,
         )
         if not handled:
             print("SKIP: dispatcher declined this shape (likely 1x1x1 or K<16)")
@@ -611,29 +590,18 @@ def test_conv2d_im2col_multi_tile[
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
-    var output_epilogue = output_tt.as_unsafe_any_origin()
 
     var handled: Bool
     comptime if with_epilogue:
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(output_epilogue)
-        def scale_epilogue[
+        def scale_compute[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-        ](coords: Coord, val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_epilogue.store[
-                width=_width, alignment=align_of[dtype]() * _alignment
-            ](
-                coords,
-                rebind[SIMD[dtype, _width]](scaled),
-            )
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> SIMD[_dtype, _width]:
+            return (val.cast[.float32]() * 2.0).cast[_dtype]()
 
         handled = dispatch_im2col_matmul_conv2d[
-            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
-                scale_epilogue
-            ),
+            has_compute_fn=True,
             m_tile_byte_budget=m_tile_byte_budget,
         ](
             input_tt,
@@ -644,6 +612,7 @@ def test_conv2d_im2col_multi_tile[
             pad,
             1,
             ctx,
+            compute_fn=scale_compute,
         )
     else:
         handled = dispatch_im2col_matmul_conv2d[
@@ -771,29 +740,16 @@ def test_conv3d_1x1x1_matmul_direct[
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
-    var output_epilogue = output_tt.as_unsafe_any_origin()
 
     comptime if with_epilogue:
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(output_epilogue)
-        def scale_epilogue[
+        def scale_compute[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-        ](coords: Coord, val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_epilogue.store[
-                width=_width, alignment=align_of[dtype]() * _alignment
-            ](
-                coords,
-                rebind[SIMD[dtype, _width]](scaled),
-            )
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> SIMD[_dtype, _width]:
+            return (val.cast[.float32]() * 2.0).cast[_dtype]()
 
-        var handled = dispatch_1x1x1_matmul_conv3d[
-            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
-                scale_epilogue
-            ),
-        ](
+        var handled = dispatch_1x1x1_matmul_conv3d[has_compute_fn=True,](
             input_tt,
             filter_tt,
             output_tt,
@@ -802,6 +758,7 @@ def test_conv3d_1x1x1_matmul_direct[
             pad,
             1,
             ctx,
+            compute_fn=scale_compute,
         )
         if not handled:
             print("SKIP: 1x1x1 dispatcher declined this shape")

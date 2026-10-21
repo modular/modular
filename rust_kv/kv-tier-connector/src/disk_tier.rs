@@ -10,31 +10,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //===----------------------------------------------------------------------===//
-//! Flat-file disk tier: the last level of the KV prefix cache.
+//! Slot-file disk tier: the last level of the KV prefix cache.
 //!
-//! Blocks are stored one-file-per-block at
-//! `<cache_dir>/<first-byte-hex>/<hash-hex>.bin` (256 shard buckets). A priority
-//! thread pool (reads preempt deletes preempt writes) runs the blocking file
-//! I/O off the connector's lanes; each op reads/writes the *pinned host buffer*
-//! bytes directly (the caller passes the host address of the block's row), so a
-//! disk read lands straight into the page an H2D will copy. An in-memory LRU
-//! index bounds disk usage; it starts cold (see [`DiskTier::shutdown`] for why
-//! there is no warm-start).
+//! Each leaf owns one file, `<cache_dir>/leaf-<leaf_idx>.bin`, cut into slots
+//! of that leaf's block size, so the tier holds a handful of files however
+//! many blocks it caches. A file per block would cost an inode per block per
+//! leaf, millions per engine, and the kernel does per-inode work for each when
+//! the process's cgroup exits. On Linux 6.17 that cgroup writeback inode switch
+//! serializes on one lock and has stalled nodes for hours.
+//!
+//! A priority thread pool (reads preempt hole punches preempt writes) runs the
+//! blocking file I/O off the connector's lanes; each op reads/writes the
+//! *pinned host buffer* bytes directly (the caller passes the host address of
+//! the block's row), so a disk read lands straight into the page an H2D will
+//! copy. An in-memory LRU index bounds disk usage; it starts cold (see
+//! [`DiskTier::shutdown`] for why there is no warm-start). Evicting a block
+//! punches its slot out of the file, so the bytes on disk track the index
+//! rather than each leaf's high-water mark.
 //!
 //! The pool holds a raw host pointer per op; the caller guarantees the block
 //! stays pinned (host `JengaBlockPool` ref count) for the op's duration.
+//!
+//! Slots are reused, so a slot must not take a new block while an op on its
+//! old one is outstanding, or a read would return the new block's bytes (or
+//! the zeros of a hole) as the old one's. A slot's pending write and each
+//! pinned read hold it, and eviction skips a held slot.
+//!
+//! [`DiskTier::new`] refuses a filesystem that cannot punch holes, and a
+//! directory another disk tier already holds, since both tiers would write
+//! the same slots.
 #![allow(
     unsafe_code,
-    reason = "raw host-pointer slices over caller-pinned blocks; each block is documented with SAFETY"
+    reason = "raw host-pointer slices over caller-pinned blocks, and the fallocate call; each block is documented with SAFETY"
 )]
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs::OpenOptions,
+    fs::{File, OpenOptions, TryLockError},
     io::{self, Read, Write},
+    os::unix::fs::FileExt,
     path::{Path, PathBuf},
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, Condvar, Mutex, RwLock,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     thread::JoinHandle,
@@ -46,10 +63,10 @@ use crate::{
     utils::LeafHash,
 };
 
-/// Priorities: lower runs first. Reads preempt deletes preempt writes, matching
-/// the Python `PriorityExecutor`.
+/// Priorities: lower runs first. Reads preempt hole punches preempt writes,
+/// matching the Python `PriorityExecutor`'s reads, deletes and writes.
 const PRIO_READ: u8 = 0;
-const PRIO_DELETE: u8 = 1;
+const PRIO_PUNCH: u8 = 1;
 const PRIO_WRITE: u8 = 2;
 
 // Disk-tier I/O that bypasses the page cache. Blocks are only read back into
@@ -272,68 +289,334 @@ impl Drop for PriorityPool {
     }
 }
 
+/// Releases the extent behind `[offset, offset + len)` of `file`, keeping its
+/// length. Declared here rather than taken from `libc`, like `O_DIRECT`.
+#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    // From `linux/falloc.h`. A hole punch must keep the file size.
+    const FALLOC_FL_KEEP_SIZE: i32 = 0x01;
+    const FALLOC_FL_PUNCH_HOLE: i32 = 0x02;
+    unsafe extern "C" {
+        fn fallocate(fd: i32, mode: i32, offset: i64, len: i64) -> i32;
+    }
+    let (Ok(offset), Ok(len)) = (i64::try_from(offset), i64::try_from(len)) else {
+        return Err(io::Error::from(io::ErrorKind::InvalidInput));
+    };
+    // SAFETY: `fallocate` only reads its integer arguments, and the descriptor
+    // is borrowed from `file`, which outlives the call.
+    let rc = unsafe {
+        fallocate(
+            file.as_raw_fd(),
+            FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
+            offset,
+            len,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_pointer_width = "64")))]
+fn punch_hole(_file: &File, _offset: u64, _len: u64) -> io::Result<()> {
+    Err(io::Error::from(io::ErrorKind::Unsupported))
+}
+
+/// A block's place on disk, a slot in its leaf's file.
+///
+/// [`DiskTier::pin_reads`] hands these out as read pins, and the slot stays
+/// reserved for the block until [`DiskTier::read_block_async`] consumes the
+/// pin, so every pin must be read exactly once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiskSlot {
+    leaf_idx: usize,
+    slot: usize,
+}
+
+/// One leaf's slot allocator.
+#[derive(Default)]
+struct LeafSlots {
+    // Punched-out slots, ready for a write.
+    free: Vec<usize>,
+    // One past the highest slot ever handed out.
+    high_water: usize,
+    // Outstanding holds per slot, from its pending write and each pinned read.
+    // Eviction skips a held slot.
+    holds: HashMap<usize, usize>,
+}
+
+impl LeafSlots {
+    fn alloc(&mut self) -> usize {
+        self.free.pop().unwrap_or_else(|| {
+            self.high_water += 1;
+            self.high_water - 1
+        })
+    }
+
+    fn hold(&mut self, slot: usize) {
+        *self.holds.entry(slot).or_insert(0) += 1;
+    }
+
+    fn release(&mut self, slot: usize) {
+        let Some(holds) = self.holds.get_mut(&slot) else {
+            fatal(format!("disk slot {slot} released more often than held"));
+        };
+        *holds -= 1;
+        if *holds == 0 {
+            self.holds.remove(&slot);
+        }
+    }
+
+    fn is_held(&self, slot: usize) -> bool {
+        self.holds.contains_key(&slot)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Entry {
+    seq: u64,
+    slot: usize,
+}
+
 #[derive(Default)]
 struct DiskIndex {
-    // LRU: seq -> hash and hash -> seq. Lowest seq is the eviction victim.
+    // LRU: seq -> hash and hash -> (seq, slot). Lowest seq is the eviction
+    // victim.
     lru_by_seq: BTreeMap<u64, LeafHash>,
-    seq_by_hash: HashMap<LeafHash, u64>,
+    entries: HashMap<LeafHash, Entry>,
     pending_writes: HashSet<LeafHash>,
     next_seq: u64,
 
     used_bytes: usize,
+    leaves: Vec<LeafSlots>,
 }
 
 impl DiskIndex {
-    fn touch(&mut self, hash: LeafHash) {
-        if let Some(old) = self.seq_by_hash.get(&hash) {
-            self.lru_by_seq.remove(old);
-            let s = self.next_seq;
-            self.next_seq += 1;
-            self.lru_by_seq.insert(s, hash);
-            self.seq_by_hash.insert(hash, s);
+    fn new(num_leaves: usize) -> Self {
+        DiskIndex {
+            leaves: (0..num_leaves).map(|_| LeafSlots::default()).collect(),
+            ..DiskIndex::default()
         }
     }
-    fn insert(&mut self, hash: LeafHash) {
-        let s = self.next_seq;
+    fn touch(&mut self, hash: LeafHash) {
+        if let Some(entry) = self.entries.get_mut(&hash) {
+            self.lru_by_seq.remove(&entry.seq);
+            entry.seq = self.next_seq;
+            self.lru_by_seq.insert(self.next_seq, hash);
+            self.next_seq += 1;
+        }
+    }
+    fn insert(&mut self, hash: LeafHash, slot: usize) {
+        let seq = self.next_seq;
         self.next_seq += 1;
-        self.lru_by_seq.insert(s, hash);
-        self.seq_by_hash.insert(hash, s);
+        self.lru_by_seq.insert(seq, hash);
+        self.entries.insert(hash, Entry { seq, slot });
     }
     fn contains(&self, hash: &LeafHash) -> bool {
-        self.seq_by_hash.contains_key(hash)
+        self.entries.contains_key(hash)
     }
-    fn pop_lru(&mut self) -> Option<LeafHash> {
-        let (&s, _) = self.lru_by_seq.iter().next()?;
-        let hash = self.lru_by_seq.remove(&s).unwrap();
-        self.seq_by_hash.remove(&hash);
-        Some(hash)
+    /// Removes the least recently used block whose slot nothing holds.
+    fn pop_lru_unheld(&mut self) -> Option<(LeafHash, usize)> {
+        let (&seq, &hash) = self
+            .lru_by_seq
+            .iter()
+            .find(|(_, hash)| !self.leaves[hash.leaf_idx].is_held(self.entries[*hash].slot))?;
+        self.lru_by_seq.remove(&seq);
+        let entry = self.entries.remove(&hash).unwrap();
+        Some((hash, entry.slot))
+    }
+}
+
+struct LeafFile {
+    file: File,
+    path: PathBuf,
+}
+
+/// What the disk tier shares with its workers.
+struct Store {
+    /// Emptied by [`DiskTier::shutdown`]. Closing the files is what lets the
+    /// caller's removal of the directory give their space back.
+    files: RwLock<Vec<LeafFile>>,
+    bytes_per_leaf: Vec<usize>,
+    /// Whether reads and writes go through `O_DIRECT` (no page cache). See
+    /// [`DiskTier::new`]; when false every op takes the buffered path.
+    direct_io: bool,
+    index: Mutex<DiskIndex>,
+}
+
+/// Set once a hole punch fails, so the warning is logged once per process.
+static PUNCH_FAILED: AtomicBool = AtomicBool::new(false);
+
+impl Store {
+    fn offset(&self, slot: DiskSlot) -> u64 {
+        (slot.slot * self.bytes_per_leaf[slot.leaf_idx]) as u64
+    }
+
+    fn describe(leaf: &LeafFile, slot: DiskSlot) -> String {
+        format!("{} slot {}", leaf.path.display(), slot.slot)
+    }
+
+    fn unhold(&self, slot: DiskSlot) {
+        self.index.lock().unwrap().leaves[slot.leaf_idx].release(slot.slot);
+    }
+
+    /// Punches out an evicted slot, then frees it. Punching before freeing
+    /// means no write can land in the slot ahead of the punch and be zeroed
+    /// by it.
+    fn release_slot(&self, slot: DiskSlot) {
+        let len = self.bytes_per_leaf[slot.leaf_idx];
+        {
+            let files = self.files.read().unwrap();
+            let leaf = &files[slot.leaf_idx];
+            if let Err(e) = punch_hole(&leaf.file, self.offset(slot), len as u64)
+                && !PUNCH_FAILED.swap(true, Ordering::Relaxed)
+            {
+                // `DiskTier::new` proved punching works here, so this is
+                // unexpected. Not fatal. The slot is still reused, so blocks
+                // stay correct, but its leaf's file keeps the space.
+                tracing::warn!(
+                    "kv disk tier failed to punch a hole in {}: {e}",
+                    leaf.path.display()
+                );
+            }
+        }
+        self.index.lock().unwrap().leaves[slot.leaf_idx]
+            .free
+            .push(slot.slot);
+    }
+
+    fn read_slot(&self, slot: DiskSlot, dst: HostBlock) {
+        // Fail-fast: this only runs for blocks the index reports present, whose
+        // slot was fully written (writes fail-fast too), so any error here is
+        // genuine corruption. Silently returning would promote uninitialized
+        // host bytes.
+        // SAFETY: dst.ptr is a pinned host block of dst.len bytes, kept alive
+        // by the caller's ref count for this op; we are the only writer.
+        let buf = unsafe { std::slice::from_raw_parts_mut(dst.ptr as *mut u8, dst.len) };
+        let files = self.files.read().unwrap();
+        let leaf = &files[slot.leaf_idx];
+        let offset = self.offset(slot);
+        if self.direct_io {
+            debug_assert!(
+                is_direct_io_aligned(dst.ptr, dst.len),
+                "the probe verified every block address and length is direct-I/O aligned"
+            );
+            transfer_direct(
+                &format!("read {}", Self::describe(leaf, slot)),
+                buf.len(),
+                |off| leaf.file.read_at(&mut buf[off..], offset + off as u64),
+            );
+            return;
+        }
+        leaf.file
+            .read_exact_at(buf, offset)
+            .unwrap_or_else(|e| fatal(format!("disk read {}: {e}", Self::describe(leaf, slot))));
+    }
+
+    fn write_slot(&self, slot: DiskSlot, src: HostBlock) {
+        // SAFETY: src.ptr is a pinned host block of src.len bytes, kept alive
+        // by the caller's ref count for this op; read-only here.
+        let buf = unsafe { std::slice::from_raw_parts(src.ptr as *const u8, src.len) };
+        let files = self.files.read().unwrap();
+        let leaf = &files[slot.leaf_idx];
+        let offset = self.offset(slot);
+        // Fail-fast on every step: a swallowed write leaves the index
+        // advertising a block whose slot holds stale bytes or a hole, which a
+        // later disk read would then promote as garbage. No reader sees a
+        // partial slot, since the block is readable only once this returns.
+        if self.direct_io {
+            debug_assert!(
+                is_direct_io_aligned(src.ptr, src.len),
+                "the probe verified every block address and length is direct-I/O aligned"
+            );
+            transfer_direct(
+                &format!("write {}", Self::describe(leaf, slot)),
+                buf.len(),
+                |off| leaf.file.write_at(&buf[off..], offset + off as u64),
+            );
+        } else {
+            leaf.file.write_all_at(buf, offset).unwrap_or_else(|e| {
+                fatal(format!("disk write {}: {e}", Self::describe(leaf, slot)))
+            });
+        }
+        leaf.file.sync_data().unwrap_or_else(|e| {
+            fatal(format!(
+                "disk write sync {}: {e}",
+                Self::describe(leaf, slot)
+            ))
+        });
+    }
+}
+
+fn open_leaf_file(path: PathBuf, direct_io: bool) -> Result<LeafFile> {
+    let mut opts = OpenOptions::new();
+    // The index starts cold, so nothing a previous run left in the file is
+    // reachable.
+    opts.read(true).write(true).create(true).truncate(true);
+    let file = if direct_io {
+        page_cache::open_direct(&mut opts, &path)
+    } else {
+        opts.open(&path)
+    }
+    .map_err(|e| ConnectorError::Config(format!("open disk tier file {}: {e}", path.display())))?;
+    Ok(LeafFile { file, path })
+}
+
+/// Takes the exclusive lock on `cache_dir` that keeps a second disk tier out.
+///
+/// Two tiers in one directory would truncate and overwrite each other's leaf
+/// files, then serve each other's bytes as their own, so the second one is
+/// refused before it opens anything.
+fn lock_cache_dir(cache_dir: &Path) -> Result<File> {
+    let path = cache_dir.join(".disk-tier.lock");
+    let lock = File::create(&path)
+        .map_err(|e| ConnectorError::Config(format!("create {}: {e}", path.display())))?;
+    match lock.try_lock() {
+        Ok(()) => Ok(lock),
+        Err(TryLockError::WouldBlock) => Err(ConnectorError::Config(format!(
+            "another disk tier is already using {}; give each engine its own \
+             disk_offload_dir",
+            cache_dir.display()
+        ))),
+        Err(TryLockError::Error(e)) => Err(ConnectorError::Config(format!(
+            "lock {}: {e}",
+            path.display()
+        ))),
     }
 }
 
 /// The disk tier. Optional: see [`DiskTier::disabled`].
 pub struct DiskTier {
-    cache_dir: PathBuf,
     /// False for [`DiskTier::disabled`], which declines every op.
     pub enabled: bool,
-    bytes_per_leaf: Vec<usize>,
     max_bytes: usize,
-    /// Whether reads and writes open with `O_DIRECT` (no page cache). See
-    /// [`DiskTier::new`]; when false every op takes the buffered path, which
-    /// is exactly the behavior before `use_disk_direct_io` existed.
-    direct_io: bool,
     pool: Arc<PriorityPool>,
-    index: Arc<Mutex<DiskIndex>>,
+    store: Arc<Store>,
+    /// Held from [`DiskTier::new`] until [`DiskTier::shutdown`]. See
+    /// [`lock_cache_dir`].
+    dir_lock: Mutex<Option<File>>,
 }
 
 impl DiskTier {
-    /// Opens the disk tier at `cache_dir` with a cold (empty) index -- see
-    /// [`DiskTier::shutdown`] for why a prior run's blocks are never reloaded.
+    /// Opens the disk tier at `cache_dir`, one file per leaf, with a cold
+    /// (empty) index -- see [`DiskTier::shutdown`] for why a prior run's
+    /// blocks are never reloaded.
     ///
     /// `direct_io` opts block reads and writes into `O_DIRECT`, keeping the
     /// tier's files out of the page cache; there is no buffered fallback, so
     /// the caller must first prove the combination works with
     /// [`probe_direct_io`] (the connector constructor does), or every op
     /// errors mid-serving.
+    ///
+    /// # Errors
+    ///
+    /// Returns a config error if another disk tier holds `cache_dir`, if its
+    /// filesystem cannot punch holes, or if a leaf's size cannot take direct
+    /// I/O.
     pub fn new(
         cache_dir: &str,
         bytes_per_leaf: &[usize],
@@ -341,29 +624,46 @@ impl DiskTier {
         num_workers: usize,
         direct_io: bool,
     ) -> Result<Self> {
-        let cache_dir = PathBuf::from(cache_dir);
-        std::fs::create_dir_all(&cache_dir)
+        let cache_dir = Path::new(cache_dir);
+        std::fs::create_dir_all(cache_dir)
             .map_err(|e| ConnectorError::Config(format!("create cache dir: {e}")))?;
-        for b in 0u16..256 {
-            std::fs::create_dir_all(cache_dir.join(format!("{b:02x}")))
-                .map_err(|e| ConnectorError::Config(format!("create bucket: {e}")))?;
-        }
         if direct_io {
-            // O_DIRECT requires the buffer address and length to be aligned to
-            // the device's logical block size, and a block's length is its
-            // leaf's row. The staging region's base alignment is checked by
-            // the caller's probe, which sees the actual addresses.
+            // O_DIRECT requires the buffer address, length and file offset to
+            // be aligned to the device's logical block size. A block's length
+            // is its leaf's row, and its offset a whole number of rows. The
+            // staging region's base alignment is checked by the caller's
+            // probe, which sees the actual addresses.
             check_direct_io_leaf_sizes(bytes_per_leaf)?;
+        }
+        let dir_lock = lock_cache_dir(cache_dir)?;
+        let files = (0..bytes_per_leaf.len())
+            .map(|leaf_idx| {
+                open_leaf_file(cache_dir.join(format!("leaf-{leaf_idx}.bin")), direct_io)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // Eviction gives a slot's space back with a hole punch. Without one,
+        // every leaf's file keeps its peak size and the tier outgrows the cap.
+        if let Some(leaf) = files.first() {
+            punch_hole(&leaf.file, 0, DIRECT_IO_ALIGN as u64).map_err(|e| {
+                ConnectorError::Config(format!(
+                    "the disk tier needs hole punching (fallocate PUNCH_HOLE), \
+                     which the filesystem under {} does not support: {e}",
+                    cache_dir.display()
+                ))
+            })?;
         }
 
         Ok(DiskTier {
-            cache_dir,
             enabled: true,
-            bytes_per_leaf: bytes_per_leaf.to_vec(),
             max_bytes,
-            direct_io,
             pool: PriorityPool::new(num_workers.max(1)),
-            index: Arc::new(Mutex::new(DiskIndex::default())),
+            store: Arc::new(Store {
+                files: RwLock::new(files),
+                bytes_per_leaf: bytes_per_leaf.to_vec(),
+                direct_io,
+                index: Mutex::new(DiskIndex::new(bytes_per_leaf.len())),
+            }),
+            dir_lock: Mutex::new(Some(dir_lock)),
         })
     }
 
@@ -376,26 +676,19 @@ impl DiskTier {
     #[must_use]
     pub fn disabled() -> Self {
         DiskTier {
-            cache_dir: PathBuf::new(),
             enabled: false,
-            bytes_per_leaf: Vec::new(),
             max_bytes: 0,
-            direct_io: false,
             pool: PriorityPool::new(0),
-            index: Arc::new(Mutex::new(DiskIndex::default())),
+            store: Arc::new(Store {
+                files: RwLock::new(Vec::new()),
+                bytes_per_leaf: Vec::new(),
+                direct_io: false,
+                index: Mutex::new(DiskIndex::default()),
+            }),
+            dir_lock: Mutex::new(None),
         }
     }
 
-    fn block_path(&self, hash: LeafHash) -> PathBuf {
-        // The shard is the first byte of the hash. Hashes with different shards
-        // are partitioned into different subdirectories. This is to avoid having
-        // millions of files in a single massive directory as the fileio perf
-        // degrades with the number of files in a directory.
-        let shard = (hash.block_hash.0 & 0xff) as u8;
-        self.cache_dir
-            .join(format!("{shard:02x}"))
-            .join(format!("{}.bin", hash.to_hex()))
-    }
     /// Total number of bytes the disk tier can hold.
     #[must_use]
     pub fn max_bytes(&self) -> usize {
@@ -405,7 +698,7 @@ impl DiskTier {
     /// Number of bytes currently indexed (saved or pending write).
     #[must_use]
     pub fn used_bytes(&self) -> usize {
-        self.index.lock().unwrap().used_bytes
+        self.store.index.lock().unwrap().used_bytes
     }
 
     /// Number of disk ops queued or running.
@@ -420,118 +713,164 @@ impl DiskTier {
         if !self.enabled {
             return false;
         }
-        let idx = self.index.lock().unwrap();
+        let idx = self.store.index.lock().unwrap();
         idx.contains(hash) && !idx.pending_writes.contains(hash)
     }
 
-    /// Clears every block from disk: empties the in-memory index and unlinks all
-    /// `.bin` files (keeping the shard subdirs so later writes still land).
+    /// Clears every block from disk: empties the in-memory index and truncates
+    /// every leaf's file, which releases all of its extents at once.
     ///
-    /// The caller must have drained in-flight disk writes first (see
-    /// `TieredConnector::reset_prefix_cache`) so no worker races the unlink.
+    /// The caller must have drained in-flight disk ops first (see
+    /// `TieredConnector::reset_prefix_cache`) so no worker races the truncate
+    /// and no read pin is outstanding.
     pub fn reset(&self) {
-        if !self.enabled {
-            // `cache_dir` is empty, so the bucket joins below would resolve
-            // relative to the process CWD.
-            return;
-        }
-        {
-            let mut idx = self.index.lock().unwrap();
-            idx.lru_by_seq.clear();
-            idx.seq_by_hash.clear();
-            idx.pending_writes.clear();
-            idx.next_seq = 0;
-            idx.used_bytes = 0;
-        }
-        for bucket in 0u16..256 {
-            let dir = self.cache_dir.join(format!("{bucket:02x}"));
-            let Ok(entries) = std::fs::read_dir(&dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) == Some("bin") {
-                    drop(std::fs::remove_file(&path));
-                }
+        let files = self.store.files.read().unwrap();
+        let mut idx = self.store.index.lock().unwrap();
+        *idx = DiskIndex::new(self.store.bytes_per_leaf.len());
+        for leaf in files.iter() {
+            if let Err(e) = leaf.file.set_len(0) {
+                tracing::warn!("kv disk tier reset truncate {}: {e}", leaf.path.display());
             }
         }
     }
 
-    /// Reads `hash` into the pinned host block at `dest_ptr`. LRU-touches the
-    /// hash and submits at READ priority. Returns a pollable op.
-    pub fn read_block_async(&self, hash: LeafHash, dest_ptr: usize) -> DiskOp {
+    /// Pins every one of `hashes` for reading and LRU-touches it, or pins
+    /// none if any is no longer saved. Between a lookup and the load it plans, an
+    /// offload's write-through can evict on the disk-write lane, and a pin is
+    /// what keeps it from doing so again before the read lands.
+    ///
+    /// Each returned pin must be passed to [`Self::read_block_async`] or
+    /// [`Self::release_pins`] exactly once, or its slot is never reused.
+    #[must_use]
+    pub fn pin_reads(&self, hashes: &[LeafHash]) -> Option<Vec<DiskSlot>> {
+        if hashes.is_empty() {
+            return Some(Vec::new());
+        }
         if !self.enabled {
-            // Unreachable: `contains` is false, so nothing is ever a disk hit.
+            return None;
+        }
+        let mut idx = self.store.index.lock().unwrap();
+        if hashes
+            .iter()
+            .any(|hash| !idx.contains(hash) || idx.pending_writes.contains(hash))
+        {
+            return None;
+        }
+        Some(
+            hashes
+                .iter()
+                .map(|&hash| {
+                    idx.touch(hash);
+                    let slot = idx.entries[&hash].slot;
+                    idx.leaves[hash.leaf_idx].hold(slot);
+                    DiskSlot {
+                        leaf_idx: hash.leaf_idx,
+                        slot,
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    /// Drops pins a load took but will not read, for a load given up after
+    /// pinning.
+    pub fn release_pins(&self, pins: &[DiskSlot]) {
+        for &pin in pins {
+            self.store.unhold(pin);
+        }
+    }
+
+    /// Reads the block `pin` names into the pinned host block at `dest_ptr`
+    /// at READ priority, consuming the pin. Returns a pollable op.
+    pub fn read_block_async(&self, pin: DiskSlot, dest_ptr: usize) -> DiskOp {
+        if !self.enabled {
+            // Unreachable: `pin_reads` pins nothing, so nothing is ever read.
             fatal("disk read on a disabled disk tier");
         }
-        self.index.lock().unwrap().touch(hash);
         let op = DiskOp::new();
-        let path = self.block_path(hash);
+        let store = Arc::clone(&self.store);
         let dst = HostBlock {
             ptr: dest_ptr,
-            len: self.bytes_per_leaf[hash.leaf_idx],
+            len: store.bytes_per_leaf[pin.leaf_idx],
         };
-        let direct_io = self.direct_io;
         let op2 = op.clone();
         self.pool.submit(
             PRIO_READ,
             Box::new(move || {
                 let _r =
                     crate::trace::Range::new("kv-disk read_block", crate::trace::color::DISK_READ);
-                read_file_into(&path, dst, direct_io);
+                store.read_slot(pin, dst);
                 op2.complete();
+                store.unhold(pin);
             }),
         );
         op
     }
 
-    /// Writes the pinned host block at `src_ptr` to `hash`'s file, evicting LRU
-    /// blocks first if at capacity. Returns `None` if already saved or a write
-    /// is already pending; otherwise a pollable op at WRITE priority.
+    /// Writes the pinned host block at `src_ptr` into a slot for `hash`,
+    /// evicting the least recently used unheld blocks first if at capacity.
+    /// Returns `None` if already saved, if a write is already pending, or if
+    /// every block it could evict is held by a read or write in flight;
+    /// otherwise a pollable op at WRITE priority.
     pub fn write_block_async(&self, hash: LeafHash, src_ptr: usize) -> Option<DiskOp> {
         if !self.enabled {
             return None;
         }
-        let bytes_needed = self.bytes_per_leaf[hash.leaf_idx];
+        let bytes_needed = self.store.bytes_per_leaf[hash.leaf_idx];
 
-        let mut evictions: Vec<LeafHash> = Vec::new();
-        {
-            let mut index = self.index.lock().unwrap();
+        let mut releases: Vec<DiskSlot> = Vec::new();
+        let slot = {
+            let mut index = self.store.index.lock().unwrap();
             if index.contains(&hash) || index.pending_writes.contains(&hash) {
                 return None;
             }
+            let mut room = true;
             while self.max_bytes - index.used_bytes < bytes_needed {
-                match index.pop_lru() {
-                    Some(victim) => {
-                        index.used_bytes -= self.bytes_per_leaf[victim.leaf_idx];
-                        evictions.push(victim);
+                let Some((victim, victim_slot)) = index.pop_lru_unheld() else {
+                    if index.used_bytes == 0 {
+                        fatal(format!(
+                            "the disk tier's {} bytes cannot hold a {bytes_needed}-byte block",
+                            self.max_bytes
+                        ));
                     }
-                    _ => fatal(format!(
-                        "not enough space in disk tier to offload {bytes_needed} bytes, \
-                         even after evicting all evictable blocks"
-                    )),
-                }
+                    // Every saved block is in use by a read or write in
+                    // flight. Dropping this write-through costs a future disk
+                    // hit, not correctness.
+                    room = false;
+                    break;
+                };
+                index.used_bytes -= self.store.bytes_per_leaf[victim.leaf_idx];
+                releases.push(DiskSlot {
+                    leaf_idx: victim.leaf_idx,
+                    slot: victim_slot,
+                });
             }
-            index.pending_writes.insert(hash);
-            index.insert(hash);
-            index.used_bytes += bytes_needed;
+            room.then(|| {
+                let leaf = &mut index.leaves[hash.leaf_idx];
+                let slot = leaf.alloc();
+                leaf.hold(slot);
+                index.pending_writes.insert(hash);
+                index.insert(hash, slot);
+                index.used_bytes += bytes_needed;
+                DiskSlot {
+                    leaf_idx: hash.leaf_idx,
+                    slot,
+                }
+            })
+        };
+        for victim in releases {
+            let store = Arc::clone(&self.store);
+            self.pool
+                .submit(PRIO_PUNCH, Box::new(move || store.release_slot(victim)));
         }
-        for victim in evictions {
-            let path = self.block_path(victim);
-            self.pool.submit(
-                PRIO_DELETE,
-                Box::new(move || drop(std::fs::remove_file(&path))),
-            );
-        }
+        let slot = slot?;
 
         let op = DiskOp::new();
-        let path = self.block_path(hash);
         let src = HostBlock {
             ptr: src_ptr,
             len: bytes_needed,
         };
-        let index = Arc::clone(&self.index);
-        let direct_io = self.direct_io;
+        let store = Arc::clone(&self.store);
         let op2 = op.clone();
         self.pool.submit(
             PRIO_WRITE,
@@ -540,9 +879,10 @@ impl DiskTier {
                     "kv-disk write_block",
                     crate::trace::color::DISK_WRITE,
                 );
-                write_file_from(&path, src, direct_io);
-                index.lock().unwrap().pending_writes.remove(&hash);
+                store.write_slot(slot, src);
+                store.index.lock().unwrap().pending_writes.remove(&hash);
                 op2.complete();
+                store.unhold(slot);
             }),
         );
         Some(op)
@@ -562,63 +902,15 @@ impl DiskTier {
     /// worker can still be writing into it. See the Python
     /// `connectors/_offload_dir.py`, which owns that directory end to end so a
     /// directory abandoned by a SIGKILL is still reclaimed on the next start.
+    ///
+    /// Closes the leaf files and releases the directory lock, so removing the
+    /// directory frees its space even while this object lives on.
     pub fn shutdown(&self) {
         self.pool.wait_until_idle();
         self.pool.shutdown();
+        self.store.files.write().unwrap().clear();
+        self.dir_lock.lock().unwrap().take();
     }
-}
-
-fn read_file_into(path: &Path, dst: HostBlock, direct_io: bool) {
-    // Fail-fast: this only runs for blocks the index reports present, whose file
-    // was durably written (writes fail-fast too), so any error here is genuine
-    // corruption. Silently returning would promote uninitialized host bytes.
-    // SAFETY: dst.ptr is a pinned host block of dst.len bytes, kept alive by the
-    // caller's ref count for this op; we are the only writer.
-    let buf = unsafe { std::slice::from_raw_parts_mut(dst.ptr as *mut u8, dst.len) };
-    if direct_io {
-        debug_assert!(
-            is_direct_io_aligned(dst.ptr, dst.len),
-            "the probe verified every block address and length is direct-I/O aligned"
-        );
-        read_direct(path, buf);
-        return;
-    }
-    let mut f = std::fs::File::open(path)
-        .unwrap_or_else(|e| fatal(format!("disk read open {}: {e}", path.display())));
-    f.read_exact(buf)
-        .unwrap_or_else(|e| fatal(format!("disk read {}: {e}", path.display())));
-}
-
-fn write_file_from(path: &Path, src: HostBlock, direct_io: bool) {
-    // SAFETY: src.ptr is a pinned host block of src.len bytes, kept alive by the
-    // caller's ref count for this op; read-only here.
-    let buf = unsafe { std::slice::from_raw_parts(src.ptr as *const u8, src.len) };
-    let tmp = path.with_extension("bin.tmp");
-    // Fail-fast on every step: a swallowed write leaves the index advertising a
-    // block whose file is missing/truncated, which a later disk read would then
-    // promote as garbage. Write to a temp file and atomically rename so a
-    // reader never observes a partial file.
-    if direct_io {
-        debug_assert!(
-            is_direct_io_aligned(src.ptr, src.len),
-            "the probe verified every block address and length is direct-I/O aligned"
-        );
-        write_direct(&tmp, buf, path);
-        return;
-    }
-    let mut f = std::fs::File::create(&tmp)
-        .unwrap_or_else(|e| fatal(format!("disk write create {}: {e}", tmp.display())));
-    f.write_all(buf)
-        .unwrap_or_else(|e| fatal(format!("disk write {}: {e}", tmp.display())));
-    f.sync_all()
-        .unwrap_or_else(|e| fatal(format!("disk write sync {}: {e}", tmp.display())));
-    std::fs::rename(&tmp, path).unwrap_or_else(|e| {
-        fatal(format!(
-            "disk write rename {} -> {}: {e}",
-            tmp.display(),
-            path.display()
-        ))
-    });
 }
 
 /// Drives `op(offset)` until `len` bytes have moved, like `read_exact` /
@@ -642,35 +934,6 @@ fn transfer_direct(ctx: &str, len: usize, mut op: impl FnMut(usize) -> io::Resul
              broke alignment would make the next op EINVAL"
         );
     }
-}
-
-fn read_direct(path: &Path, buf: &mut [u8]) {
-    let mut opts = OpenOptions::new();
-    opts.read(true);
-    let mut f = page_cache::open_direct(&mut opts, path)
-        .unwrap_or_else(|e| fatal(format!("disk read open {}: {e}", path.display())));
-    transfer_direct(&format!("read {}", path.display()), buf.len(), |off| {
-        f.read(&mut buf[off..])
-    });
-}
-
-fn write_direct(tmp: &Path, buf: &[u8], final_path: &Path) {
-    let mut opts = OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
-    let mut f = page_cache::open_direct(&mut opts, tmp)
-        .unwrap_or_else(|e| fatal(format!("disk write create {}: {e}", tmp.display())));
-    transfer_direct(&format!("write {}", tmp.display()), buf.len(), |off| {
-        f.write(&buf[off..])
-    });
-    f.sync_all()
-        .unwrap_or_else(|e| fatal(format!("disk write sync {}: {e}", tmp.display())));
-    std::fs::rename(tmp, final_path).unwrap_or_else(|e| {
-        fatal(format!(
-            "disk write rename {} -> {}: {e}",
-            tmp.display(),
-            final_path.display()
-        ))
-    });
 }
 
 /// Proves the disk tier's direct I/O works end to end before the connector
@@ -814,10 +1077,250 @@ mod tests {
         assert!(tier.contains(&hash));
 
         let mut dst = vec![0u8; 16];
-        let rop = tier.read_block_async(hash, dst.as_mut_ptr() as usize);
+        let rop = tier.read_block_async(pin(&tier, hash), dst.as_mut_ptr() as usize);
         tier.wait_for_writes();
         assert!(rop.is_ready());
         assert_eq!(dst, src);
+        tier.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    fn pin(tier: &DiskTier, hash: LeafHash) -> DiskSlot {
+        tier.pin_reads(&[hash]).expect("the block is saved")[0]
+    }
+
+    fn read_back(tier: &DiskTier, hash: LeafHash, len: usize) -> Vec<u8> {
+        let mut dst = vec![0u8; len];
+        tier.read_block_async(pin(tier, hash), dst.as_mut_ptr() as usize);
+        tier.wait_for_writes();
+        dst
+    }
+
+    fn file_names(dir: &str) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn every_block_of_a_leaf_shares_one_file() {
+        let dir = tmpdir("one-file");
+        let tier = DiskTier::new(&dir, &[8, 16], 1 << 30, 4, false).unwrap();
+        let srcs: Vec<Vec<u8>> = (0..64u8).map(|i| vec![i; 16]).collect();
+        for (i, src) in srcs.iter().enumerate() {
+            let hash = LeafHash {
+                leaf_idx: i % 2,
+                block_hash: BlockHash(i as u128, 0),
+            };
+            tier.write_block_async(hash, src.as_ptr() as usize).unwrap();
+        }
+        tier.wait_for_writes();
+        assert_eq!(
+            file_names(&dir),
+            [".disk-tier.lock", "leaf-0.bin", "leaf-1.bin"]
+        );
+        for (i, src) in srcs.iter().enumerate() {
+            let leaf_idx = i % 2;
+            let hash = LeafHash {
+                leaf_idx,
+                block_hash: BlockHash(i as u128, 0),
+            };
+            let len = [8, 16][leaf_idx];
+            assert_eq!(read_back(&tier, hash, len), src[..len]);
+        }
+        tier.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn evicted_slots_are_reused() {
+        let dir = tmpdir("reuse");
+        // Capacity for 2 blocks of 8 bytes, one worker so punches and writes
+        // run in submission-priority order.
+        let tier = DiskTier::new(&dir, &[8], 16, 1, false).unwrap();
+        let srcs: Vec<[u8; 8]> = (0..32u8).map(|i| [i; 8]).collect();
+        for (i, src) in srcs.iter().enumerate() {
+            tier.write_block_async(simple_hash(i as u128), src.as_ptr() as usize)
+                .unwrap();
+            tier.wait_for_writes();
+        }
+        // Two live blocks, plus the slot a victim's punch held back from the
+        // write that evicted it.
+        let len = std::fs::metadata(Path::new(&dir).join("leaf-0.bin"))
+            .unwrap()
+            .len();
+        assert!(len <= 3 * 8, "the file grew to {len} bytes");
+        assert!(!tier.contains(&simple_hash(29)));
+        for i in [30, 31] {
+            assert_eq!(read_back(&tier, simple_hash(i), 8), srcs[i as usize]);
+        }
+        tier.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn a_pinned_block_is_never_evicted() {
+        let dir = tmpdir("pinned");
+        // Room for two blocks, so every write past the second evicts one.
+        let tier = DiskTier::new(&dir, &[8], 16, 1, false).unwrap();
+        let srcs: Vec<[u8; 8]> = (0..8u8).map(|i| [i + 1; 8]).collect();
+        tier.write_block_async(simple_hash(0), srcs[0].as_ptr() as usize)
+            .unwrap();
+        tier.wait_for_writes();
+        let held = pin(&tier, simple_hash(0));
+        // Each later write evicts the unpinned block before it, never the
+        // pinned one, so its slot is never reused under the read.
+        for (i, src) in srcs.iter().enumerate().skip(1) {
+            tier.write_block_async(simple_hash(i as u128), src.as_ptr() as usize)
+                .unwrap();
+            tier.wait_for_writes();
+            assert!(tier.contains(&simple_hash(0)));
+        }
+        let mut dst = [0u8; 8];
+        tier.read_block_async(held, dst.as_mut_ptr() as usize);
+        tier.wait_for_writes();
+        assert_eq!(dst, srcs[0]);
+        assert_eq!(read_back(&tier, simple_hash(7), 8), srcs[7]);
+        tier.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn a_write_is_declined_while_every_block_is_held() {
+        let dir = tmpdir("declined");
+        let tier = DiskTier::new(&dir, &[8], 8, 1, false).unwrap();
+        let src = [4u8; 8];
+        tier.write_block_async(simple_hash(0), src.as_ptr() as usize)
+            .unwrap();
+        tier.wait_for_writes();
+        let held = pin(&tier, simple_hash(0));
+        assert!(
+            tier.write_block_async(simple_hash(1), src.as_ptr() as usize)
+                .is_none()
+        );
+        assert!(tier.contains(&simple_hash(0)));
+        let mut dst = [0u8; 8];
+        tier.read_block_async(held, dst.as_mut_ptr() as usize);
+        tier.wait_for_writes();
+        // The read released the only block, so the next write evicts it.
+        tier.write_block_async(simple_hash(1), src.as_ptr() as usize)
+            .unwrap();
+        tier.wait_for_writes();
+        assert!(!tier.contains(&simple_hash(0)));
+        assert!(tier.contains(&simple_hash(1)));
+        tier.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn release_pins_lets_a_pinned_block_be_evicted() {
+        let dir = tmpdir("release-pins");
+        let tier = DiskTier::new(&dir, &[8], 8, 1, false).unwrap();
+        let src = [5u8; 8];
+        tier.write_block_async(simple_hash(0), src.as_ptr() as usize)
+            .unwrap();
+        tier.wait_for_writes();
+        let pins = tier.pin_reads(&[simple_hash(0)]).unwrap();
+        tier.release_pins(&pins);
+        tier.write_block_async(simple_hash(1), src.as_ptr() as usize)
+            .unwrap();
+        tier.wait_for_writes();
+        assert!(!tier.contains(&simple_hash(0)));
+        tier.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn a_second_tier_in_the_same_directory_is_refused() {
+        let dir = tmpdir("shared");
+        let first = DiskTier::new(&dir, &[8], 1 << 20, 1, false).unwrap();
+        let err = DiskTier::new(&dir, &[8], 1 << 20, 1, false)
+            .err()
+            .expect("a second tier in a held directory must be refused");
+        assert!(err.to_string().contains("another disk tier"), "{err}");
+        // Shutting the first down releases the directory.
+        first.shutdown();
+        let second = DiskTier::new(&dir, &[8], 1 << 20, 1, false).unwrap();
+        second.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shutdown_closes_the_leaf_files() {
+        let dir = tmpdir("closes");
+        let open_under_dir = || {
+            std::fs::read_dir("/proc/self/fd")
+                .unwrap()
+                .flatten()
+                .filter_map(|fd| std::fs::read_link(fd.path()).ok())
+                .filter(|target| target.starts_with(&dir))
+                .count()
+        };
+        let tier = DiskTier::new(&dir, &[8, 16], 1 << 20, 1, false).unwrap();
+        // Two leaf files and the directory lock.
+        assert_eq!(open_under_dir(), 3);
+        tier.shutdown();
+        assert_eq!(open_under_dir(), 0);
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn pin_reads_is_all_or_nothing() {
+        let dir = tmpdir("pin-all");
+        let tier = DiskTier::new(&dir, &[8], 1 << 30, 1, false).unwrap();
+        // Hold the single worker so the write stays pending.
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        tier.pool.submit(
+            PRIO_READ,
+            Box::new(move || while release_rx.recv().is_ok() {}),
+        );
+        let src = [9u8; 8];
+        tier.write_block_async(simple_hash(1), src.as_ptr() as usize)
+            .unwrap();
+        assert!(
+            tier.pin_reads(&[simple_hash(1)]).is_none(),
+            "a pending write is not readable yet"
+        );
+        drop(release_tx);
+        tier.wait_for_writes();
+        assert!(tier.pin_reads(&[simple_hash(1), simple_hash(2)]).is_none());
+        assert_eq!(tier.pin_reads(&[]), Some(Vec::new()));
+        assert_eq!(read_back(&tier, simple_hash(1), 8), src);
+        tier.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn eviction_releases_disk_space() {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tmpdir("punch");
+        let block = 16 * DIRECT_IO_ALIGN;
+        let tier = DiskTier::new(&dir, &[block], block, 1, false).unwrap();
+        let srcs: Vec<Vec<u8>> = (0..4u8).map(|i| vec![i + 1; block]).collect();
+        for (i, src) in srcs.iter().enumerate() {
+            tier.write_block_async(simple_hash(i as u128), src.as_ptr() as usize)
+                .unwrap();
+            tier.wait_for_writes();
+        }
+        let meta = std::fs::metadata(Path::new(&dir).join("leaf-0.bin")).unwrap();
+        // `blocks` counts 512-byte units actually allocated.
+        let allocated = meta.blocks() * 512;
+        assert!(
+            meta.len() > block as u64,
+            "the evictions spread across slots"
+        );
+        assert!(
+            allocated <= block as u64,
+            "{allocated} bytes allocated for one live {block}-byte block"
+        );
+        assert_eq!(read_back(&tier, simple_hash(3), block), srcs[3]);
         tier.shutdown();
         drop(std::fs::remove_dir_all(&dir));
     }
@@ -881,30 +1384,23 @@ mod tests {
         tier.wait_for_writes();
         assert_eq!(tier.used_bytes(), 16);
 
-        // Landed in its shard bucket, not flat under `cache_dir`.
-        let shard = Path::new(&dir).join("01");
-        assert_eq!(
-            std::fs::read_dir(&shard).unwrap().flatten().count(),
-            1,
-            "block 1's file should be sharded into {}",
-            shard.display()
-        );
+        let file = Path::new(&dir).join("leaf-0.bin");
+        assert_eq!(std::fs::metadata(&file).unwrap().len(), 16);
 
         tier.reset();
 
-        // Index cleared and the shard's `.bin` file is unlinked.
+        // Index cleared and the leaf's file truncated, not unlinked.
         assert_eq!(tier.used_bytes(), 0);
         assert!(!tier.contains(&simple_hash(1)));
-        let shard = Path::new(&dir).join("01");
-        let remaining = std::fs::read_dir(&shard)
-            .map(|it| it.flatten().count())
-            .unwrap_or(0);
-        assert_eq!(remaining, 0);
+        assert_eq!(std::fs::metadata(&file).unwrap().len(), 0);
 
-        // Disk is still usable after reset (shard dirs are kept).
-        tier.write_block_async(simple_hash(3), src.as_ptr() as usize);
+        // Disk is still usable after reset, from slot 0 again.
+        let src3 = [6u8; 8];
+        tier.write_block_async(simple_hash(3), src3.as_ptr() as usize);
         tier.wait_for_writes();
         assert!(tier.contains(&simple_hash(3)));
+        assert_eq!(std::fs::metadata(&file).unwrap().len(), 8);
+        assert_eq!(read_back(&tier, simple_hash(3), 8), src3);
         tier.shutdown();
         drop(std::fs::remove_dir_all(&dir));
     }
@@ -983,7 +1479,7 @@ mod tests {
         let dst = aligned_window(&mut dst_backing);
         tier.write_block_async(hash, src.as_ptr() as usize).unwrap();
         tier.wait_for_writes();
-        tier.read_block_async(hash, dst.as_mut_ptr() as usize);
+        tier.read_block_async(pin(&tier, hash), dst.as_mut_ptr() as usize);
         tier.wait_for_writes();
         assert_eq!(dst, src);
         tier.shutdown();

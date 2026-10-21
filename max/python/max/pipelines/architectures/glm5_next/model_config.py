@@ -20,7 +20,7 @@ KDA, mHC, k-pool and vision fields on top.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar, NamedTuple
 
 from max.driver import Device
@@ -30,14 +30,17 @@ from max.graph.weights import WeightData
 from max.nn.kv_cache.cache_params import (
     CacheLeafParamInterface,
     KVCacheParamInterface,
-    KVCacheParams,
     KVCacheQuantizationConfig,
+    MLAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
     recurrent_leaf,
     spec_decode_cache_slack,
 )
 from max.nn.quant_config import QuantConfig
+from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
+    indexer_selection_width,
+)
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
 )
@@ -201,6 +204,62 @@ def token_shard_degree(num_devices: int, data_parallel_degree: int) -> int:
     if num_devices > 1 and data_parallel_degree == 1:
         return num_devices
     return 1
+
+
+# The sizing below depends only on the checkpoint and the cache tree, not on
+# the module API, so the graph-API and ModuleV3 configs both call it and
+# cannot drift apart.
+
+
+def layer_indices(layer_types: Sequence[str], kind: str) -> tuple[int, ...]:
+    """Returns the indices of the layers of type ``kind``."""
+    return tuple(i for i, t in enumerate(layer_types) if t == kind)
+
+
+def recurrent_state_bytes(
+    kv_params: KVCacheParamInterface, num_devices: int
+) -> int:
+    """Returns GPU bytes one request's recurrent state occupies, summed over
+    ``num_devices``, read off the leaf the cache declares."""
+    state = recurrent_leaf(kv_params)
+    if state is None:
+        return 0
+    return state.bytes_per_state * num_devices
+
+
+def residual_bytes_per_token(
+    hc_mult: int, hidden_size: int, dtype: DType
+) -> int:
+    """Returns the bytes one live ``hc_mult``-stream residual takes per token."""
+    return hc_mult * hidden_size * dtype.size_in_bytes
+
+
+def state_bounded_batch_size(
+    per_request_bytes: int,
+    devices: Sequence[Device],
+    *,
+    weights_size: int,
+    device_memory_utilization: float,
+) -> int:
+    """Returns a memory-safe default ``max_batch_size``.
+
+    The state occupies pages of the KV pool, so it is reserved nowhere here.
+    The states get up to half the post-weights budget and the KV absorbs the
+    rest; the halving bounds concurrency, it allocates nothing.
+    """
+    if per_request_bytes == 0:
+        return 32
+    try:
+        free_bytes = int(sum(d.stats.get("free_memory", 0) for d in devices))
+    except Exception:
+        free_bytes = 0
+    if free_bytes <= 0:
+        # Only the minimized bring-up fixture lands here.
+        return 8
+    budget = int(free_bytes * device_memory_utilization) - weights_size
+    if budget <= 0:
+        return 1
+    return min(512, max(1, (budget // 2) // per_request_bytes))
 
 
 @dataclass(kw_only=True)
@@ -375,16 +434,12 @@ class Glm5NextConfig(DeepseekV3_2Config):
     @property
     def kda_layers(self) -> tuple[int, ...]:
         """Indices of the KDA linear-attention layers."""
-        return tuple(
-            i for i, t in enumerate(self.layer_types) if t == LINEAR_ATTENTION
-        )
+        return layer_indices(self.layer_types, LINEAR_ATTENTION)
 
     @property
     def sparse_attention_layers(self) -> tuple[int, ...]:
         """Indices of the sparse-MLA layers, excluding the MTP draft layer."""
-        return tuple(
-            i for i, t in enumerate(self.layer_types) if t == SPARSE_ATTENTION
-        )
+        return layer_indices(self.layer_types, SPARSE_ATTENTION)
 
     @property
     def conv_dim(self) -> int:
@@ -569,10 +624,19 @@ class Glm5NextConfig(DeepseekV3_2Config):
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
-        assert isinstance(mla_kv_params, KVCacheParams)
+        index_kpool = getattr(text_config, "index_kpool", 4)
+        # Each token attends the indexer's selection, k-pool tail included.
+        assert isinstance(mla_kv_params, MLAKVCacheParams)
+        mla_kv_params = replace(
+            mla_kv_params,
+            sparse_indices_stride=indexer_selection_width(
+                text_config.index_topk,
+                index_kpool,
+                getattr(text_config, "index_kpool_always_select_tail", True),
+            ),
+        )
 
         # The indexer's K cache holds one *pooled* key per `index_kpool` tokens.
-        index_kpool = getattr(text_config, "index_kpool", 4)
         pooled_head_dim, remainder = divmod(
             text_config.index_head_dim, index_kpool
         )
@@ -605,7 +669,13 @@ class Glm5NextConfig(DeepseekV3_2Config):
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
-        assert isinstance(indexer_kv_params, KVCacheParams)
+        # No kernel reads the indexer leaf's dispatch metadata, but it is part
+        # of the composite capture key, so it must not move with the context.
+        assert isinstance(indexer_kv_params, MLAKVCacheParams)
+        indexer_kv_params = replace(
+            indexer_kv_params,
+            sparse_indices_stride=mla_kv_params.sparse_indices_stride,
+        )
         children: dict[str, CacheLeafParamInterface] = {
             MLA_CACHE_KEY: mla_kv_params,
             INDEXER_CACHE_KEY: indexer_kv_params,
@@ -653,15 +723,12 @@ class Glm5NextConfig(DeepseekV3_2Config):
         length**. The indexer tail rings add ~0.01% on top, once per device
         rather than split across them.
         """
-        state = recurrent_leaf(self.kv_params)
-        if state is None:
-            return 0
-        return state.bytes_per_state * len(self.devices)
+        return recurrent_state_bytes(self.kv_params, len(self.devices))
 
     def activation_bytes_per_token(self) -> int:
         """The number of bytes a single live residual tensor occupies per token."""
-        return (
-            self.hc_mult * self.hidden_size * self.compute_dtype.size_in_bytes
+        return residual_bytes_per_token(
+            self.hc_mult, self.hidden_size, self.compute_dtype
         )
 
     def infer_optimal_batch_size(
@@ -671,30 +738,14 @@ class Glm5NextConfig(DeepseekV3_2Config):
         weights_size: int,
         device_memory_utilization: float,
     ) -> int:
-        """Returns a memory-safe default ``max_batch_size``.
-
-        The state occupies pages of the KV pool, so it is reserved nowhere
-        here. The states get up to half the post-weights budget and the KV
-        absorbs the rest; the halving bounds concurrency, it allocates
-        nothing.
-        """
-        per_request = self.per_request_state_bytes()
-        if per_request == 0:
-            return 32
-        try:
-            free_bytes = int(
-                sum(d.stats.get("free_memory", 0) for d in devices)
-            )
-        except Exception:
-            free_bytes = 0
-        if free_bytes <= 0:
-            # GLM-5.3-Flash needs 8 GPUs; this fallback only covers the
-            # minimized bringup fixture on one.
-            return 8
-        budget = int(free_bytes * device_memory_utilization) - weights_size
-        if budget <= 0:
-            return 1
-        return min(512, max(1, (budget // 2) // per_request))
+        """Returns a memory-safe default ``max_batch_size``; see
+        :func:`state_bounded_batch_size`."""
+        return state_bounded_batch_size(
+            self.per_request_state_bytes(),
+            devices,
+            weights_size=weights_size,
+            device_memory_utilization=device_memory_utilization,
+        )
 
     # -------------------------------------------------------- initialization
 

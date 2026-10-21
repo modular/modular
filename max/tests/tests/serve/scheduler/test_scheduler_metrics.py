@@ -14,6 +14,7 @@
 import io
 import json
 import logging
+import queue
 import re
 from contextlib import contextmanager
 from typing import Any
@@ -1661,6 +1662,10 @@ def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> 
         # the CE label rather than the enqueued TG batch's.
         assert [bt for _, bt in recorder.terminated_calls] == ["CE"]
         assert recorder.creation_calls[-1][1] == "TG"
+        # The CE result names the pass that produced it, not this one.
+        responses = scheduler.response_queue
+        assert isinstance(responses, queue.Queue)
+        assert [r.batch_id for r in responses.queue[0].values()] == [0]
 
 
 # ---------------------------------------------------------------------------

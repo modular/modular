@@ -51,6 +51,15 @@ config.substitutions.append(
     ("%parse-mojo-isolated", translate_with_prebuilt_packages)
 )
 
+config.substitutions.append(
+    (
+        "%mojo-docs-isolated",
+        "kgen-translate -emit-mojo-doc -mojo-search-paths={0}".format(
+            config.parser_stubs_source
+        ),
+    )
+)
+
 
 config.environment["MODULAR_HOME"] = os.path.join(
     "Mojo", "test", "mojo-parser"

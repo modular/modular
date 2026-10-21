@@ -97,7 +97,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
             comptime for col in range(kernel_cols // simd_size):
                 var b_val = (
                     (b_ptr.unsafe_offset(col * simd_size))
-                    .load[width=simd_size]()
+                    .unsafe_load[width=simd_size]()
                     .cast[c_local.dtype]()
                 )
 

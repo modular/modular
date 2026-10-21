@@ -1127,7 +1127,7 @@ def router_group_limited[
             expert_weights,
             expert_bias,
             routed_scaling_factor,
-            host_arg=scores_input_fn,
+            host_args=(scores_input_fn,),
             grid_dim=num_tokens,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1722,7 +1722,7 @@ def single_group_router[
             expert_weight,
             expert_bias,
             routed_scaling_factor,
-            host_arg=scores_input_fn,
+            host_args=(scores_input_fn,),
             grid_dim=num_tokens,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1797,7 +1797,7 @@ def router_gemv_partials_kernel[
         for i in range(tid * vec, tile_experts * slice_len, num_threads * vec):
             var r, k = divmod(i, slice_len)
             var w = gate_weight.load[width=vec]((first_expert + r, k0 + k))
-            w_smem.store(r * stride + k, w)
+            w_smem.unsafe_store(r * stride + k, w)
         for i in range(tid * vec, tile_tokens * slice_len, num_threads * vec):
             var r, k = divmod(i, slice_len)
             var x = SIMD[weight_type, vec](0)
@@ -1805,15 +1805,17 @@ def router_gemv_partials_kernel[
                 x = hidden.load[width=vec]((first_token + r, k0 + k)).cast[
                     weight_type
                 ]()
-            x_smem.store(r * stride + k, x)
+            x_smem.unsafe_store(r * stride + k, x)
         barrier()
 
         var t, e = divmod(tid, tile_experts)
         var acc = SIMD[weight_type, vec](0)
         for k in range(0, slice_len, vec):
-            acc += x_smem.load[width=vec, alignment=vec_align](
+            acc += x_smem.unsafe_load[width=vec, alignment=vec_align](
                 t * stride + k
-            ) * w_smem.load[width=vec, alignment=vec_align](e * stride + k)
+            ) * w_smem.unsafe_load[width=vec, alignment=vec_align](
+                e * stride + k
+            )
         if first_token + t < num_tokens:
             partials.store(
                 (split, first_token + t, first_expert + e),
@@ -2506,7 +2508,7 @@ def single_group_router_eplb[
             log2phy,
             layer_idx,
             routed_scaling_factor,
-            host_arg=scores_input_fn,
+            host_args=(scores_input_fn,),
             grid_dim=num_tokens,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel(1)),

@@ -13,11 +13,11 @@
 
 # Test that `--ignore-deprecated=<name>` suppresses only the named
 # declaration's deprecation warning during doc generation, while other
-# `@deprecated` declarations still warn. Covers the `kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages`/`kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages`
+# `@deprecated` declarations still warn. Covers the `mojo doc`/`-emit-mojo-doc`
 # path used by the `mojo_doc` Bazel rule (a separate CLI/config surface from
 # the main parser's `--ignore-deprecated`, see StabilityMarkers.cpp).
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages --ignore-deprecated=ignoredFn %s -o /dev/null 2>&1 | FileCheck %s
+# RUN: %mojo-docs-isolated --ignore-deprecated=ignoredFn %s -o /dev/null 2>&1 | FileCheck %s
 
 
 @deprecated("ignoredFn is deprecated")

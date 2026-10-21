@@ -1448,8 +1448,15 @@ class ProviderBaseline(BaseScenario):
 
             # Step-1: single tool call — tool_calls_present + function name matches
             # OR sends the weather prompt here; step-5 continues this call.
+            # Greedy: with thinking off, MiniMax-M3 answers this in prose instead
+            # of calling the tool on roughly one sampled draw in five, on every
+            # platform, so a sampled verdict was a coin flip rather than a check.
             pl_rt1 = self._req(
-                model, WEATHER_PROMPT, tools=[WEATHER_TOOL], **rkw
+                model,
+                WEATHER_PROMPT,
+                tools=[WEATHER_TOOL],
+                temperature=0,
+                **rkw,
             )
             resp = await client.post_json(
                 pl_rt1, timeout=self._fuzz_config.timeout * 2

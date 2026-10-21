@@ -211,8 +211,6 @@ def grouped_matmul_block_scaled[
         2,
     ), "Only support cta_group == 1 or 2"
 
-    comptime assert config.k_group_size == 1, "Only support k_group_size == 1"
-
     comptime assert config.num_split_k == 1, "Only support split_k == 1"
 
     comptime assert (

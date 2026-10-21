@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -emit-mojo-doc -mojo-search-paths=%S/../../test-packages %S/inputs/dotted.pkg | FileCheck %s
+# RUN: %mojo-docs-isolated %S/inputs/dotted.pkg | FileCheck %s
 
 # A package directory (and sub-package/module) whose name contains periods
 # keeps its whole name in the generated docs: the periods are part of the

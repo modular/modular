@@ -334,10 +334,10 @@ def test_probe_falls_back_when_the_template_cannot_render() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_prior_turn_reasoning_is_dropped_by_default() -> None:
-    """GLM-5.3's template would otherwise replay the whole reasoning history
-    into every prompt; z.ai asked for it off."""
-    assert _apply_glm_clear_thinking_default({}) == {"clear_thinking": True}
+def test_prior_turn_reasoning_is_kept_by_default() -> None:
+    """GLM-5.1's and 5.2's templates would otherwise drop earlier turns'
+    reasoning; Z.ai keeps it for coding and agent workloads."""
+    assert _apply_glm_clear_thinking_default({}) == {"clear_thinking": False}
 
 
 @pytest.mark.parametrize("explicit", [True, False])
@@ -354,7 +354,7 @@ def test_history_defaults_preserve_other_options() -> None:
     ) == {
         "reasoning_effort": "high",
         "add_generation_prompt": True,
-        "clear_thinking": True,
+        "clear_thinking": False,
     }
 
 
@@ -372,4 +372,4 @@ def test_history_defaults_are_independent_of_the_effort_ladder() -> None:
         _apply_glm_clear_thinking_default({"reasoning_effort": "none"}),
         _THREE_RUNG_NO_OFF_SWITCH,
     )
-    assert composed == {"clear_thinking": True, "reasoning_effort": "low"}
+    assert composed == {"clear_thinking": False, "reasoning_effort": "low"}

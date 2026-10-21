@@ -285,9 +285,9 @@ class TokenGenerationScheduler(Scheduler):
         t0 = time.monotonic()
         if len(inputs.flat_batch) > 0:
             with Tracer(f"_schedule({inputs})"):
-                num_terminated_reqs = self._schedule(inputs)
+                num_terminated_reqs = self._schedule(inputs, is_overlap_active)
         else:
-            num_terminated_reqs = self._schedule(inputs)
+            num_terminated_reqs = self._schedule(inputs, is_overlap_active)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
@@ -320,6 +320,12 @@ class TokenGenerationScheduler(Scheduler):
             else None,
             overlap_active=is_overlap_active,
             completed_batch_stats=completed_batch_stats,
+            # Under overlap, a completed batch is the previous pass's.
+            batch_id=(
+                self._batch_counter - (2 if completed_batch_stats else 1)
+                if self._tracing
+                else None
+            ),
         )
 
         for cancelled_id in get_cancelled_reqs(self.cancel_queue):
@@ -333,7 +339,9 @@ class TokenGenerationScheduler(Scheduler):
 
         return SchedulerProgress.MADE_PROGRESS
 
-    def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
+    def _schedule(
+        self, inputs: TextGenerationInputs[TextContext], lagged: bool = False
+    ) -> int:
         """Returns the number of terminated requests."""
         tracing_enabled = _tracing_enabled()
         batch_id = self._batch_counter
@@ -473,9 +481,11 @@ class TokenGenerationScheduler(Scheduler):
 
             # send the responses to the API process
             if responses:
+                # Overlap's execute() returned the previous pass's outputs.
+                produced_by = batch_id - lagged
                 self.response_queue.put_nowait(
                     {
-                        req_id: SchedulerResult.create(response, batch_id)
+                        req_id: SchedulerResult.create(response, produced_by)
                         for req_id, response in responses.items()
                     }
                 )

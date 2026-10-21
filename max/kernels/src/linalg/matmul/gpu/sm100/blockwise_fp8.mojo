@@ -319,11 +319,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         tma_mbar[0].wait(tma_phase)
         tma_phase ^= 1  # flips between 0 and 1 representing the pipeline stage
 
-        # Preload a_scales from SMEM into registers while all threads
-        # are synchronized (right after tma_mbar.wait). This eliminates
-        # the SMEM read in the scaling loop below, preventing a race
-        # where the next iteration's TMA loads could overwrite a_scales
-        # in SMEM while slower warps are still reading it.
+        # Preload a_scales into registers so the scaling loop below reads no
+        # SMEM.
         var m_offset = warp_id * 16 + ufloordiv(lane_id(), 4)
         var a_scale_0 = a_scales_smem_tile_2D_view[0, m_offset]
         var a_scale_1 = a_scales_smem_tile_2D_view[0, m_offset + 8]
@@ -340,13 +337,6 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
-
-        # Ensure all warps have finished reading a_scales from SMEM
-        # (preloaded above) before the scaling loop, where warp divergence
-        # could let the fastest warp loop back and start new TMA loads
-        # that overwrite a_scales_smem. This barrier is effectively free
-        # because all warps just converged at mma_mbar.wait().
-        barrier()
 
         comptime for ld_iter in range(total_repeat // repeat):
             c_frag_temp = tcgen05_ld[
@@ -405,6 +395,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 var result = c_pair + t_pair * scale_pair
                 c_frag[idx] = result[0]
                 c_frag[idx + 1] = result[1]
+
+        # Warp 0 issues the next TMA and MMA, and the TMEM dealloc, as soon
+        # as its own loads finish: every warp must be done reading the
+        # accumulator and A scales first.
+        barrier()
 
     if elect_one_warp:
         tcgen05_release_allocation_lock[1]()
@@ -922,8 +917,7 @@ def _matmul_sm100_blockwise_scaled_fp8_impl[
         a_scales_tma_op,
         b_scales_kernel,
         Int32(ceildiv(Int(K), BK)),
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(ceildiv(Int(N), BN), ceildiv(Int(M), BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

@@ -133,6 +133,19 @@ trait TensorLayout(DevicePassable, TrivialRegisterPassable):
     comptime static_cosize: Int
     """The compile-time size of the memory region spanned by the layout."""
 
+    comptime _NestedTileLayout[
+        TileShape: TypeList[Trait=CoordLike, ...]
+    ]: TensorLayout
+    """The layout of `TileTensor.tile` with tile shape `TileShape`.
+
+    A member of the layout rather than a free alias, so generic code that
+    tiles a symbolic layout carries one reference to it instead of its whole
+    definition.
+
+    Parameters:
+        TileShape: The tile's extent along each mode.
+    """
+
     comptime __shape_types: TypeList[Trait=CoordLike, _]._mlir_type
     comptime __stride_types: TypeList[Trait=CoordLike, _]._mlir_type
 
@@ -364,6 +377,30 @@ struct Layout[
         Self._flat_shape_types, Self._flat_stride_types
     ]
     """The compile-time size of the memory region spanned by the layout."""
+
+    comptime _NestedTileLayout[
+        TileShape: TypeList[Trait=CoordLike, ...]
+    ]: TensorLayout = Layout[
+        shape_types=TileShape, stride_types=Self.stride_types
+    ] if Self.rank == Self.flat_rank else Layout[
+        shape_types=TypeList.tabulate[
+            Trait=CoordLike,
+            Self.rank,
+            _NestedTileShapeTabulator[Self, TileShape, _],
+        ](),
+        stride_types=TypeList.tabulate[
+            Trait=CoordLike,
+            Self.rank,
+            _NestedTileStrideTabulator[Self, TileShape, _],
+        ](),
+    ]
+    """The layout of `TileTensor.tile`: a flat mode keeps its stride,
+    and a nested mode keeps the leading leaves the tile spans, the last one
+    possibly cut short, with their strides.
+
+    Parameters:
+        TileShape: The tile's extent along each mode.
+    """
 
     @inline(.nodebug)
     def __init__(out self):
@@ -1495,6 +1532,103 @@ Parameters:
     LayoutType: The input layout type.
     tile: Shape types of the tile used to divide the layout.
 """
+
+
+comptime _ModeLeaves[Mode: CoordLike] = _Flattened[*Mode.ParamListType]
+"""The leaves of one layout mode, in order. A scalar mode is its own leaf."""
+
+
+# ===----------------------------------------------------------------------=== #
+# Nested tiles (TileTensor.tile)
+#
+# A nested mode `(s0, s1, ...):(d0, d1, ...)` is tiled first leaf first, like
+# `crd2idx`: a tile of `t` elements keeps the leading leaves whose extents
+# multiply to `t`, the last one possibly cut short, with their strides.
+# ===----------------------------------------------------------------------=== #
+
+
+comptime _PrefixProductReducer[
+    j: Int, Prev: Int, Element: CoordLike, list_idx: Int
+]: Int = Prev * Element.static_value if list_idx < j else Prev
+
+comptime _LeafPrefixProduct[
+    Leaves: TypeList[Trait=CoordLike, ...], j: Int
+]: Int = Leaves.reduce_idx[1, _PrefixProductReducer[j, ...]]
+"""The product of the extents of the leaves before leaf `j`."""
+
+comptime _KeptLeafReducer[
+    Leaves: TypeList[Trait=CoordLike, ...],
+    size: Int,
+    Prev: Int,
+    Element: CoordLike,
+    list_idx: Int,
+]: Int = Prev + 1 if Prev == list_idx and (
+    list_idx == 0 or _LeafPrefixProduct[Leaves, list_idx] < size
+) else Prev
+
+comptime _TileKeptLeaves[
+    Leaves: TypeList[Trait=CoordLike, ...], size: Int
+]: Int = Leaves.reduce_idx[0, _KeptLeafReducer[Leaves, size, ...]]
+"""How many leading leaves of a nested mode a tile of `size` elements spans.
+Built from reductions rather than a function call, so that `where` clauses
+on the result can evaluate it."""
+
+comptime _TileShapeLeaf[
+    Leaves: TypeList[Trait=CoordLike, ...], size: Int, j: Int
+]: CoordLike = (
+    ComptimeInt[size // _LeafPrefixProduct[Leaves, j]] if j
+    == _TileKeptLeaves[Leaves, size] - 1 else Leaves[j]
+)
+
+comptime _NestedTileModeShape[ShapeMode: CoordLike, size: Int]: CoordLike = (
+    _TileShapeLeaf[_ModeLeaves[ShapeMode], size, 0] if _TileKeptLeaves[
+        _ModeLeaves[ShapeMode], size
+    ]
+    == 1 else Coord[
+        *TypeList.tabulate[
+            Trait=CoordLike,
+            _TileKeptLeaves[_ModeLeaves[ShapeMode], size],
+            _TileShapeLeaf[_ModeLeaves[ShapeMode], size, _],
+        ]()
+    ]
+)
+
+comptime _NestedTileModeStride[
+    ShapeMode: CoordLike, StrideMode: CoordLike, size: Int
+]: CoordLike = (
+    _ModeLeaves[StrideMode][0] if _TileKeptLeaves[_ModeLeaves[ShapeMode], size]
+    == 1 else Coord[
+        *_ModeLeaves[StrideMode].slice[
+            0, _TileKeptLeaves[_ModeLeaves[ShapeMode], size]
+        ]()
+    ]
+)
+
+comptime _NestedTileShapeTabulator[
+    ParentLayoutType: TensorLayout,
+    TileShape: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = (
+    _NestedTileModeShape[
+        ParentLayoutType._shape_types[idx], TileShape[idx].static_value
+    ] if ParentLayoutType._shape_types[idx].is_tuple else TileShape[idx]
+)
+
+comptime _NestedTileStrideTabulator[
+    ParentLayoutType: TensorLayout,
+    TileShape: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = (
+    _NestedTileModeStride[
+        ParentLayoutType._shape_types[idx],
+        ParentLayoutType._stride_types[idx],
+        TileShape[idx].static_value,
+    ] if ParentLayoutType._shape_types[
+        idx
+    ].is_tuple else ParentLayoutType._stride_types[
+        idx
+    ]
+)
 
 
 # ===----------------------------------------------------------------------=== #

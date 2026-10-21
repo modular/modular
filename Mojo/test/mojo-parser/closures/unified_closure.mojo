@@ -193,7 +193,7 @@ def s7_take_closure[f: def(y: Int) -> Int](myFunc: f, x: Int):
 # COM: Ensure the transformed parameters are propagated into the underlying
 # COM: closure trait: the nested closure's own closure parameter `closure2` is
 # COM: mangled into its symbol and declared with the bound trait.
-# S8: lit.fn *"nested[##__mojo_closure__##[{{.*}}] & ::AnyType & ::Deinitable & ::Movable]($0,::SIMD[DType.int, 1])"
+# S8: lit.fn @"nested[##__mojo_closure__##[
 # S8-SAME: <closure2: trait<@"##__mojo_closure__##"<:param_list<type> [], :param_list<type> [#kgen.quote<!Int{{[0-9]*}}>], :type #kgen.quote<!Int{{[0-9]*}}>
 # S8-SAME: @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable> closure2, imm *"impl`{{.*}}"> imm_mem, %y: !Int{{[0-9]*}}) capturing -> {{.*}}sourceName = "nested"
 
@@ -213,7 +213,7 @@ def s8_take_closure[closure1: def(y: Int) -> Int](x: Int):
 # S9-SAME: @{{.*}}::@Movable>, T: !Int{{[0-9]*}}, closure2: trait<@"##__mojo_closure__##"<:param_list<type> [], :param_list<type> [#kgen.quote<!Int{{[0-9]*}}>, #kgen.quote<!Int{{[0-9]*}}>], :type #kgen.quote<!Int{{[0-9]*}}>
 # S9-SAME: @{{.*}}::@Movable>, U: !Int{{[0-9]*}}>[imm *"[[S9_L0:.*]]`", imm *"[[S9_L1:.*]]`1"](%impl1: !lit.ref<:trait<@"##__mojo_closure__##"
 # S9-SAME: > closure1, imm *"[[S9_L0]]`"> imm_mem, %impl2: !lit.ref<:trait<@"##__mojo_closure__##"
-# S9-SAME: > closure2, imm *"[[S9_L1]]`1"> imm_mem, %x: !Int{{[0-9]*}}) capturing -> !kgen.none
+# S9-SAME: > closure2, imm *"[[S9_L1]]`1"> imm_mem, %x: !Int{{[0-9]*}}) -> !kgen.none
 
 
 def take_closures[
@@ -229,7 +229,7 @@ def take_closures[
 # COM: itself a closure nests one closure trait inside the other's parameter
 # COM: list, both in the mangled symbol and in the declared bound.
 # S10: lit.fn @"nested[##__mojo_closure__##[#kgen.quote<trait<_\22##__mojo_closure__##\22<
-# S10-SAME: <"impl", pos_or_kw, not_vararg>, <"u", pos_or_kw, not_vararg>]>>>, @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable> x, imm *"impl`"> imm_mem, %do_not_dce_int: !Int{{[0-9]*}}) capturing -> !kgen.none attributes {{{.*}}sourceName = "nested"
+# S10-SAME: <"impl", pos_or_kw, not_vararg>, <"u", pos_or_kw, not_vararg>]>>>, @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable> x, imm *"impl`"> imm_mem, %do_not_dce_int: !Int{{[0-9]*}}) -> !kgen.none attributes {{{.*}}sourceName = "nested"
 
 
 # TODO: remove the 'do_not_dce_int' argument (MOCO 2461)

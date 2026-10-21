@@ -158,24 +158,25 @@ static bool shouldIncludeViewKindInMarkdown(PublicDeclKind kind) {
 }
 
 std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
-  auto processView = [&](const PublicDecl &view) -> std::string {
+  auto processDecl = [&](StringRef kind, StringRef snippet, StringRef docString,
+                         bool includeKindInSnippet) -> std::string {
     std::string buff;
     llvm::raw_string_ostream os(buff);
-    if (auto snippet = view.getDeclarationSnippet(ctx); !snippet.empty()) {
+    if (!snippet.empty()) {
       // Add the decl prefix to the snippet, unless it's superfluous.
       std::string declPrefix;
-      if (shouldIncludeViewKindInMarkdown(view.getKind()))
-        declPrefix = llvm::formatv("({0}) ", view.getKindAsString()).str();
+      if (includeKindInSnippet)
+        declPrefix = llvm::formatv("({0}) ", kind).str();
 
       os << llvm::formatv(R"(```mojo
 {0}{1}
 ```)",
                           declPrefix, snippet);
     } else {
-      os << formatv("### {0} `{1}`\n", view.getKindAsString(), identifier);
+      os << formatv("### {0} `{1}`\n", kind, identifier);
     }
 
-    if (auto docString = view.getMarkdownDocString(); !docString.empty()) {
+    if (!docString.empty()) {
       os << llvm::formatv(R"(
 ---
 
@@ -187,8 +188,17 @@ std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
     return buff;
   };
 
+  if (auto *function = dyn_cast<DefASTDecl>(decl)) {
+    std::string snippet = getFunctionDeclarationSnippet(*function, ctx);
+    std::string docString = getFunctionMarkdownDocString(*function);
+    return processDecl("function", snippet, docString,
+                       /*includeKindInSnippet=*/true);
+  }
   if (auto view = getPublicDecl(decl))
-    return processView(*view);
+    return processDecl(view->getKindAsString(),
+                       view->getDeclarationSnippet(ctx),
+                       view->getMarkdownDocString(),
+                       shouldIncludeViewKindInMarkdown(view->getKind()));
   // If didn't get a view, we fall back to simply printing the name of the
   // entity.
   if (auto name = decl->getName())
@@ -1440,12 +1450,10 @@ void MojoDocument::getDocumentSymbols(
       addSymbol(structDecl->getName().value_or(StringRef{}),
                 lsp::SymbolKind::Struct, range,
                 getStructSignature(*structDecl));
-    } else if (std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(decl)) {
-      TypeSwitch<PublicDecl *>(publicDecl.get())
-          .Case([&](PublicFunctionDecl *fn) {
-            addSymbol(fn->getName(), lsp::SymbolKind::Function, range,
-                      fn->getSignature(*context->parserContext));
-          });
+    } else if (auto *function = dyn_cast<DefASTDecl>(decl)) {
+      addSymbol(function->getName().value_or(StringRef{}),
+                lsp::SymbolKind::Function, range,
+                getFunctionSignature(*function, *context->parserContext));
     }
   }
 
@@ -1660,6 +1668,9 @@ static bool isSelfArgument(ASTDecl *decl) {
 /// Return a semantic token kind for the given ast decl.
 static SemanticTokenKind
 getSemanticTokenKind(ASTDecl *symDecl, std::optional<PublicDeclKind> declKind) {
+  if (symDecl->isCallableDecl())
+    return SemanticTokenKind::kFunction;
+
   // If we can't decipher the kind, it's nearly always a variable.
   if (!declKind)
     return SemanticTokenKind::kVariable;
@@ -1680,8 +1691,6 @@ getSemanticTokenKind(ASTDecl *symDecl, std::optional<PublicDeclKind> declKind) {
     if (isSelfArgument(symDecl))
       return SemanticTokenKind::kSpecialVariable;
     return SemanticTokenKind::kVariable;
-  case PublicDeclKind::DK_PublicFunctionDecl:
-    return SemanticTokenKind::kFunction;
   case PublicDeclKind::DK_PublicModuleDecl:
   case PublicDeclKind::DK_PublicPackageDecl:
     return SemanticTokenKind::kModule;

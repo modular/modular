@@ -262,8 +262,7 @@ def enqueue_apple_gemv_config[
         Int32(m),
         Int32(n),
         Int32(k),
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=ceildiv(num_warps, warps_per_block),
         block_dim=BLK,
     )

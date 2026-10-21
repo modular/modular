@@ -121,6 +121,7 @@ def _local_expert_matmul(
     estimated_total_m: Tensor | None = None,
     accum_dtype: DType | None = None,
     decode_grid_m_cap: int = 0,
+    swiglu_limit: float = 0.0,
 ) -> Tensor:
     """Runs local expert matmuls on dispatched tokens."""
     down_in = quant_ops.grouped_matmul_silu(
@@ -135,6 +136,7 @@ def _local_expert_matmul(
         estimated_total_m=estimated_total_m,
         accum_dtype=accum_dtype,
         decode_grid_m_cap=decode_grid_m_cap,
+        swiglu_limit=swiglu_limit,
     )
     return quant_ops.grouped_matmul(
         down_in,
@@ -188,6 +190,7 @@ class QuantizedMoE(Module[..., Tensor]):
         shared_experts_dim: int = 0,
         quant_config: QuantConfig | None = None,
         mlp_cls: Callable[..., QuantizedMLP] = QuantizedMLP,
+        swiglu_limit: float = 0.0,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -195,6 +198,9 @@ class QuantizedMoE(Module[..., Tensor]):
         self.num_experts_per_token = num_experts_per_token
         self.moe_dim = moe_dim
         self.quant_config = quant_config
+        # Clamps the routed experts' activation inputs; the shared expert takes
+        # its own through ``mlp_cls``.
+        self.swiglu_limit = swiglu_limit
 
         self.gate = gate_cls(
             hidden_dim=hidden_dim,
@@ -313,6 +319,7 @@ class QuantizedMoE(Module[..., Tensor]):
             quant_config=self.quant_config,
             scales_offset=scales_offset,
             accum_dtype=self.gate_up_accum_dtype,
+            swiglu_limit=self.swiglu_limit,
         )
         return self._combine_expert_outputs(
             down_projs,
@@ -549,6 +556,7 @@ class ExpertParallelMoE(QuantizedMoE):
             self.quant_config is not None
             and self.quant_config.can_use_fused_swiglu
             and self.gate_up_accum_dtype is None
+            and not self.swiglu_limit
         )
 
     @property
@@ -654,6 +662,7 @@ class ExpertParallelMoE(QuantizedMoE):
                     estimated_total_m=estimated_total_m,
                     accum_dtype=self.gate_up_accum_dtype,
                     decode_grid_m_cap=decode_grid_m_cap,
+                    swiglu_limit=self.swiglu_limit,
                 )
                 for i in range(len(tokens))
             ]

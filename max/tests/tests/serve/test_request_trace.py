@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
@@ -50,6 +50,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
+from tests.serve.asgi_disconnect import disconnect_after_first_chunk
 
 _TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 _TRACE_ID_HEX = "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -238,7 +239,6 @@ async def test_client_disconnect_mid_stream_ends_the_server_span(
     # The body never finishes on its own, so only the disconnect can end it.
     app = FastAPI()
     register_request(app)
-    first_chunk_sent = asyncio.Event()
 
     @app.get("/stream")
     async def stream() -> StreamingResponse:
@@ -249,35 +249,7 @@ async def test_client_disconnect_mid_stream_ends_the_server_span(
 
         return StreamingResponse(body())
 
-    requested = False
-
-    async def receive() -> dict[str, object]:
-        nonlocal requested
-        if not requested:
-            requested = True
-            return {"type": "http.request", "body": b"", "more_body": False}
-        await first_chunk_sent.wait()
-        return {"type": "http.disconnect"}
-
-    async def send(message: Mapping[str, object]) -> None:
-        if message["type"] == "http.response.body" and message.get("body"):
-            first_chunk_sent.set()
-
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0", "spec_version": "2.3"},
-        "http_version": "1.1",
-        "method": "GET",
-        "scheme": "http",
-        "path": "/stream",
-        "raw_path": b"/stream",
-        "query_string": b"",
-        "root_path": "",
-        "headers": [],
-        "client": ("testclient", 50000),
-        "server": ("testserver", 80),
-    }
-    await asyncio.wait_for(app(scope, receive, send), timeout=30)
+    await disconnect_after_first_chunk(app, "/stream")
 
     (server,) = [
         s for s in spans.get_finished_spans() if s.kind == trace.SpanKind.SERVER

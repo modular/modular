@@ -414,6 +414,11 @@ def main() -> None:
         max_rows=args.chunk * args.ep_size,
     )
     copies_list = [int(c) for c in args.copies.split(",")]
+    # Seeded so output digests compare across processes and builds. Allocated
+    # before the MAX device, whose memory manager takes a share of the memory
+    # free at creation and backs all of it for graph capture.
+    torch.manual_seed(args.seed)
+    data = Inputs(cfg, max(copies_list))
     device = Accelerator()
     session = InferenceSession(devices=[device])
     models = {}
@@ -423,9 +428,6 @@ def main() -> None:
         # Compile time: run with an empty MODULAR_CACHE_DIR to measure it.
         print(f"# load_s copies={c} {time.perf_counter() - t0:.1f}", flush=True)
 
-    # Seeded so output digests compare across processes and builds.
-    torch.manual_seed(args.seed)
-    data = Inputs(cfg, max(copies_list))
     results = []
     key = 0
     for tokens in (int(t) for t in args.tokens.split(",")):

@@ -200,7 +200,7 @@ struct _LinkedListIterOwned[T: Movable & Deinitable](
                 Self.T
             ]._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -340,7 +340,7 @@ struct LinkedList[ElementType: Movable](
             destroy_func(nn.unsafe_take_pointee()._into_value())
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
             curr = next
@@ -456,7 +456,7 @@ struct LinkedList[ElementType: Movable](
         else:
             self._tail.value()[].next() = Self._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -498,7 +498,7 @@ struct LinkedList[ElementType: Movable](
 
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
             self._size -= 1
@@ -526,7 +526,7 @@ struct LinkedList[ElementType: Movable](
         else:
             self._tail.value()[].next() = Self._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -564,7 +564,7 @@ struct LinkedList[ElementType: Movable](
 
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
             self._size -= 1
@@ -586,7 +586,7 @@ struct LinkedList[ElementType: Movable](
             nn.unsafe_deinit_pointee()
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
 

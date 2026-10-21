@@ -55,6 +55,9 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     batching=UnifiedMTPGlm5_2BatchProcessor,
     tool_parser="glm45",
     reasoning_parser="glm45",
+    # The draft layer copies the target's MLA cache params, so it reads the
+    # same NVFP4 layout through the same sparse MLA kernels.
+    supports_nvfp4_kv_cache=True,
     # Matches the base GlmMoeDsaForCausalLM arch; see the rationale there.
     default_structured_output_any_whitespace=True,
 )

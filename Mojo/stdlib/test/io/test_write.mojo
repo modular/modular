@@ -210,13 +210,13 @@ def test_closure_non_capturing() raises:
 
 
 def _test_closure_capturing(mut writer: Some[Writer & Writable]) raises:
-    def write_closure() capturing:
+    def write_closure() {mut writer}:
         writer.write("Hello Mojo!")
 
-    def write_capturing[func: def() capturing -> None]():
+    def write_capturing[F: def() -> None](func: F):
         func()
 
-    write_capturing[write_closure]()
+    write_capturing(write_closure)
 
     # Write result to concrete `String` type to pass to `assert_equal`
     var result = String()

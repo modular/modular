@@ -93,10 +93,6 @@ def _use_fused_silu_quant(n_local_experts: int) -> bool:
 # tests `==` rather than a range.
 IMAGE_SENTINEL_BASE_ID = 129264
 
-# The side stream the shared expert overlaps the expert dispatch on; stream
-# 0 is the default one.
-_SHARED_EXPERT_STREAM_ID = 1
-
 
 class _PackedExpertWeightNvFp4(_PackedExpertWeight):
     """One stacked NVFP4 expert projection, stacked by expert id.
@@ -105,7 +101,8 @@ class _PackedExpertWeightNvFp4(_PackedExpertWeight):
     - ``weight_scale``: ``[E, N, K/16]`` float8_e4m3fn.
     - ``weight_scale_2``: ``[E]`` float32, a dequant multiplier (not
       inverted).
-    - ``input_scale``: ``[E]`` float32 static activation scale (inverted by
+    - ``input_scale``: ``[E]`` float32 static activation scale, the layer's
+      max over experts in every entry (inverted by
       ``DeepseekV41NvFp4RoutedExperts._activation_scales``).
 
     Skips ``_PackedExpertWeight.__init__``, whose ``K % 128`` check is
@@ -248,11 +245,10 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
     def _activation_scales(
         proj: _PackedExpertWeightNvFp4, device: DeviceRef
     ) -> tuple[TensorValue, TensorValue]:
-        """A projection's per-expert static activation scales.
+        """A projection's static activation scales, one per expert.
 
-        Under expert-parallel dispatch the checkpoint loader gives every
-        expert the gate/up projection's largest ``input_scale``, as the
-        dispatch quantizes all rows against one scale.
+        The weight adapter stores the layer's max over experts for every
+        expert, so all experts' rows are quantized against one scale.
 
         Returns:
             ``(sf_tensor, input_scale)``, both ``[n_experts]`` float32 for this
@@ -420,7 +416,7 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
 
         Computes the base class's clamped SwiGLU (``min(gate, limit)``,
         ``clamp(up, -limit, limit)``) and quantizes each expert's rows against
-        that expert's ``input_scale`` (group ``g`` is local expert ``g``).
+        its entry of ``input_scale`` (group ``g`` is local expert ``g``).
         Runs the unfused chain instead when :func:`_use_fused_silu_quant` is
         false (``MAX_DSV41_FUSED_SILU_QUANT=0`` or more local experts than SMs).
 
@@ -879,16 +875,9 @@ class DeepseekV41MoE(Module):
             w, i = moe.gate(x, tok)
             weights.append(ops.reshape(w, [-1, topk]))
             indices.append(ops.reshape(i, [-1, topk]))
-        # The replicated shared expert reads only each device's own rows, so
-        # it runs on a side stream, overlapping the dispatch and combine.
-        shared = ops.side_stream(
-            list(xs),
-            lambda *ins: [
-                moe.shared_experts(x) for moe, x in zip(moes, ins, strict=True)
-            ],
-            result_types=[x.type for x in xs],
-            stream_id=_SHARED_EXPERT_STREAM_ID,
-        )
+        shared = [
+            moe.shared_experts(x) for moe, x in zip(moes, xs, strict=True)
+        ]
         device_ids = [x.device.id for x in xs]
         # One global gate/up input scale, the same on every device; the
         # dispatch kernel reads the first element.

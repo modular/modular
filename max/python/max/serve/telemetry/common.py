@@ -144,8 +144,8 @@ attribute append ``_<index>`` to this."""
 _batch_id_ctx: ContextVar[int | None] = ContextVar(
     "max.serve.batch_id_ctx", default=None
 )
-"""The ID of the forward pass the text-generation scheduler is executing, or
-None. It is set around ``pipeline.execute`` only when tracing is enabled; the
+"""The ID of the forward pass the text-generation scheduler is executing or
+logging batch_metrics for, or None. It is set only when tracing is enabled; the
 API process and the disaggregated workers never set it."""
 
 
@@ -535,7 +535,7 @@ def configure_logging(
         console_formatter: logging.Formatter
         if settings.structured_logging:
             console_formatter = json_formatter(
-                f"{color_code}%(levelname)s: %(message)s %(request_id)s %(batch_id)s{trace_id_field}{color_terminator}",
+                f"{color_code}%(levelname)s: %(message)s %(request_id)s{trace_id_field}{color_terminator}",
                 timestamp=True,
             )
         else:
@@ -567,7 +567,7 @@ def configure_logging(
         file_formatter: logging.Formatter
         if settings.structured_logging:
             file_formatter = json_formatter(
-                f"%(levelname)s %(message)s %(request_id)s %(batch_id)s{trace_id_field}",
+                f"%(levelname)s %(message)s %(request_id)s{trace_id_field}",
                 timestamp=True,
             )
         else:
@@ -1182,14 +1182,26 @@ def _exit_on_sigterm(signum: int, frame: FrameType | None) -> None:
     raise SystemExit(128 + signum)
 
 
+def _flush_spans_on_sigterm(signum: int, frame: FrameType | None) -> None:
+    """Exports the queued spans for up to 3 s, then dies of the signal."""
+    provider = trace.get_tracer_provider()
+    if isinstance(provider, TracerProvider):
+        # The SDK's force_flush ignores its timeout, so a thread bounds it.
+        flush = threading.Thread(target=provider.force_flush, daemon=True)
+        flush.start()
+        flush.join(3)
+    signal.signal(signum, signal.SIG_DFL)
+    signal.raise_signal(signum)
+
+
 def configure_kernel_tracing(settings: Settings) -> None:
     """Configures GPU kernel-trace capture based on ``kernel_trace_level``.
 
     Must be called in the model worker process before ``InferenceSession``
     is constructed so that the libkineto auto-start picks up the enabled
     flag. Also records the level read by :func:`batch_spans_enabled`, so it
-    must run before the scheduler is built. At ``kernel`` level it installs
-    a SIGTERM handler, so it must run on the main thread.
+    must run before the scheduler is built. It may install a SIGTERM
+    handler, so it must run on the main thread after :func:`configure_tracing`.
 
     Args:
         settings: Server settings carrying ``kernel_trace_level``.
@@ -1197,6 +1209,8 @@ def configure_kernel_tracing(settings: Settings) -> None:
     global _kernel_trace_level
     level = settings.kernel_trace_level
     _kernel_trace_level = level
+    if _tracing_enabled() and level < KernelTraceLevel.KERNEL:
+        signal.signal(signal.SIGTERM, _flush_spans_on_sigterm)
     if level < KernelTraceLevel.OP:
         return
 

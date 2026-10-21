@@ -27,6 +27,7 @@ Submodules
    :hidden:
 
    pipelines.lib.arch_lookup
+   pipelines.lib.auto_processor
    pipelines.lib.generate
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities

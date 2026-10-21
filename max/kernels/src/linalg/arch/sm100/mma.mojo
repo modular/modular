@@ -622,6 +622,40 @@ struct MmaOpSM100_BlockScaled_SS[
                         sf_k_tile,
                     ](sfb_smem, sfb_tmem + UInt32(sfb_k_offset))
 
+        # NVFP4 copies one scale tile per K-slice. When each tile fits one
+        # SF_MN group, the slices land in disjoint TMEM columns, so copy them
+        # all first and let the MMAs issue back to back. Wider tiles overlap
+        # the next slice's columns and keep the copy-then-MMA order.
+        comptime copy_sfb = Self.mma_shape[1] % 64 == 0 or Self.enable_small_sfb
+        comptime hoist_sf = (
+            Self.scaling_kind != UMMAKind.KIND_MXF8F6F4
+            and Self.scaling_kind != UMMAKind.KIND_MXF4
+            and Self.block_tile_shape[0] <= SF_MN_GROUP_SIZE
+            and (
+                not copy_sfb
+                or align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE)
+                <= SF_MN_GROUP_SIZE
+            )
+        )
+        comptime if hoist_sf:
+            comptime for k in range(
+                0, Self.block_tile_shape[2], Self.mma_shape[2]
+            ):
+                comptime sf_idx = k // Self.mma_shape[2]
+                self._copy_sf_to_tmem_tt[
+                    Self.sfa_dtype,
+                    sfa_smem.LayoutType,
+                    Self.block_tile_shape[0],
+                    sf_idx,
+                ](sfa_smem, sfa_tmem)
+                comptime if copy_sfb:
+                    self._copy_sf_to_tmem_tt[
+                        Self.sfb_dtype,
+                        sfb_smem.LayoutType,
+                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                        sf_idx,
+                    ](sfb_smem, sfb_tmem)
+
         # K-iteration: offset = k * sizeof (contiguous within swizzle tile).
         # Both operands span one byte per element here: the FP4 TMA copy pads
         # an E2M1 operand into shared memory (8 packed bytes then an 8-byte
@@ -676,22 +710,20 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_scale=c_scale,
                 )
             else:
-                # when scaling kind is MXFP4NVF4, four scale tiles cover the whole [BM,BK] and [MMA_N,BK] tiles so we need to load one scale tile for each k iteration.
-                self._copy_sf_to_tmem_tt[
-                    Self.sfa_dtype,
-                    sfa_smem.LayoutType,
-                    Self.block_tile_shape[0],
-                    sf_idx,
-                ](sfa_smem, sfa_tmem)
-                comptime if Self.mma_shape[
-                    1
-                ] % 64 == 0 or Self.enable_small_sfb:
+                comptime if not hoist_sf:
                     self._copy_sf_to_tmem_tt[
-                        Self.sfb_dtype,
-                        sfb_smem.LayoutType,
-                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                        Self.sfa_dtype,
+                        sfa_smem.LayoutType,
+                        Self.block_tile_shape[0],
                         sf_idx,
-                    ](sfb_smem, sfb_tmem)
+                    ](sfa_smem, sfa_tmem)
+                    comptime if copy_sfb:
+                        self._copy_sf_to_tmem_tt[
+                            Self.sfb_dtype,
+                            sfb_smem.LayoutType,
+                            align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                            sf_idx,
+                        ](sfb_smem, sfb_tmem)
 
                 mma[Self.cta_group](
                     a_desc + a_offset,

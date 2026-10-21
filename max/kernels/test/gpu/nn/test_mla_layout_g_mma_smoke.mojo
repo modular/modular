@@ -60,6 +60,7 @@ for the design context.
 
 from std.math import ceildiv
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed
 from std.sys import size_of
 
@@ -520,7 +521,7 @@ def fill_random_fp8[dtype: DType](t: TileTensor[mut=True, dtype, ...]):
     """
     var n = t.num_elements()
     var data = t.as_span()
-    var f32_buf = alloc[Float32](n)
+    var f32_buf = unsafe_alloc[Float32](n)
     randn[.float32](f32_buf, n)
     for i in range(n):
         # Scale to ~[-2, 2] to keep values well inside FP8 e4m3 range
@@ -531,7 +532,7 @@ def fill_random_fp8[dtype: DType](t: TileTensor[mut=True, dtype, ...]):
         if v < -2.0:
             v = -2.0
         data[i] = Scalar[dtype](v)
-    f32_buf.free()
+    f32_buf.unsafe_free()
 
 
 def dequant_fp8_to_bf16[
@@ -569,8 +570,8 @@ def test_qk_smoke(ctx: DeviceContext) raises:
     var a_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_M * QK_K)
     var b_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_N * QK_K)
 
-    var a_ref_host = alloc[Scalar[REF_TYPE]](QK_M * QK_K)
-    var b_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
+    var a_ref_host = unsafe_alloc[Scalar[REF_TYPE]](QK_M * QK_K)
+    var b_ref_host = unsafe_alloc[Scalar[REF_TYPE]](QK_N * QK_K)
 
     dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](a_host, a_ref_host)
     dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](b_host, b_ref_host)
@@ -661,7 +662,7 @@ def test_qk_smoke(ctx: DeviceContext) raises:
         block_dim=(NAIVE_BLOCK_DIM, NAIVE_BLOCK_DIM, 1),
     )
 
-    var c_ref_host = alloc[Float32](QK_M * QK_N)
+    var c_ref_host = unsafe_alloc[Float32](QK_M * QK_N)
     ctx.enqueue_copy(c_ref_host, c_ref_dev)
     ctx.synchronize()
 
@@ -726,9 +727,9 @@ def test_qk_smoke(ctx: DeviceContext) raises:
     )
     print("  QK SMOKE PASSED (M=32 N=64 K=576 .ws cta_group::1 kind::f8f6f4)")
 
-    a_ref_host.free()
-    b_ref_host.free()
-    c_ref_host.free()
+    a_ref_host.unsafe_free()
+    b_ref_host.unsafe_free()
+    c_ref_host.unsafe_free()
     _ = a_ref_dev
     _ = b_ref_dev
     _ = c_ref_dev
@@ -759,8 +760,8 @@ def test_pv_smoke(ctx: DeviceContext) raises:
     var a_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](PV_M * PV_K)
     var b_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](PV_N * PV_K)
 
-    var a_ref_host = alloc[Scalar[REF_TYPE]](PV_M * PV_K)
-    var b_ref_host = alloc[Scalar[REF_TYPE]](PV_N * PV_K)
+    var a_ref_host = unsafe_alloc[Scalar[REF_TYPE]](PV_M * PV_K)
+    var b_ref_host = unsafe_alloc[Scalar[REF_TYPE]](PV_N * PV_K)
 
     dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](a_host, a_ref_host)
     dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](b_host, b_ref_host)
@@ -853,7 +854,7 @@ def test_pv_smoke(ctx: DeviceContext) raises:
         block_dim=(NAIVE_BLOCK_DIM, NAIVE_BLOCK_DIM, 1),
     )
 
-    var c_ref_host = alloc[Float32](PV_M * PV_N)
+    var c_ref_host = unsafe_alloc[Float32](PV_M * PV_N)
     ctx.enqueue_copy(c_ref_host, c_ref_dev)
     ctx.synchronize()
 
@@ -925,9 +926,9 @@ def test_pv_smoke(ctx: DeviceContext) raises:
         + " K=64 .ws cta_group::1 kind::f8f6f4)"
     )
 
-    a_ref_host.free()
-    b_ref_host.free()
-    c_ref_host.free()
+    a_ref_host.unsafe_free()
+    b_ref_host.unsafe_free()
+    c_ref_host.unsafe_free()
     _ = a_ref_dev
     _ = b_ref_dev
     _ = c_ref_dev

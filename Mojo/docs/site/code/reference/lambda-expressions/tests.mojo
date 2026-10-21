@@ -461,7 +461,7 @@ def test_variadic_both() raises:
 
 
 def test_variadic_thin_pointer() raises:
-    var vd: def(* args: Int) thin -> Int = lambda (*args: Int) -> Int: len(args)
+    var vd: def(*args: Int) thin -> Int = lambda (*args: Int) -> Int: len(args)
     assert_equal(vd(1, 2, 3), 3)
 
 

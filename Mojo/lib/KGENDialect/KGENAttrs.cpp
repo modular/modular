@@ -4749,6 +4749,26 @@ static std::optional<bool> decideParamIdentical(IdentityOperand &lhs,
     return true;
   }
 
+  // We support upcast on param list too, look through those: as long as each
+  // element of a parameter list is the same, the list is identical. We need to
+  // peel off the list here since the upcast will be sunk into the constant
+  // param list during canonicalization.
+  auto lList = dyn_cast<ParamListAttr>(lhs.getCanonical());
+  auto rList = dyn_cast<ParamListAttr>(rhs.getCanonical());
+  if (lList && rList && lList.getValues().size() == rList.getValues().size()) {
+    bool allSame = true;
+    for (auto [l, r] : llvm::zip_equal(lList.getValues(), rList.getValues())) {
+      IdentityOperand lhsOperand(l), rhsOperand(r);
+      std::optional<bool> same = decideParamIdentical(lhsOperand, rhsOperand);
+      if (same && !*same)
+        return false;
+      allSame &= same.value_or(false);
+    }
+    if (allSame)
+      return true;
+    return std::nullopt;
+  }
+
   // Folding to False is a lot harder:
   // If either side contains expression nodes that still need to be evaluated,
   // we cannot fold to False since after evaluation they may become equal.

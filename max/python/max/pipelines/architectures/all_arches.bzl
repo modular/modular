@@ -35,6 +35,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/glm5_1",
     "//max/python/max/pipelines/architectures/glm5_1_modulev3",
     "//max/python/max/pipelines/architectures/glm5_next",
+    "//max/python/max/pipelines/architectures/glm5_next_modulev3",
     "//max/python/max/pipelines/architectures/gpt_oss",
     "//max/python/max/pipelines/architectures/gpt_oss_modulev3",
     "//max/python/max/pipelines/architectures/granite",

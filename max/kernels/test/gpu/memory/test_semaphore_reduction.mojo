@@ -17,6 +17,7 @@ from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.sync.semaphore import Semaphore
 from std.memory import unsafe_memset_zero
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 
@@ -60,9 +61,9 @@ def run_vector_reduction[
     )
 
     comptime PN = N * num_parts
-    var a_host = alloc[Scalar[dtype]](PN)
-    var c_host = alloc[Scalar[dtype]](N)
-    var c_host_ref = alloc[Scalar[dtype]](N)
+    var a_host = unsafe_alloc[Scalar[dtype]](PN)
+    var c_host = unsafe_alloc[Scalar[dtype]](N)
+    var c_host_ref = unsafe_alloc[Scalar[dtype]](N)
 
     rand[dtype](a_host, PN)
     unsafe_memset_zero(c_host, N)
@@ -99,9 +100,9 @@ def run_vector_reduction[
     _ = c_device
     _ = lock_dev
 
-    a_host.free()
-    c_host.free()
-    c_host_ref.free()
+    a_host.unsafe_free()
+    c_host.unsafe_free()
+    c_host_ref.unsafe_free()
 
 
 def semaphore_matrix_reduce[
@@ -147,9 +148,9 @@ def run_matrix_reduction[
     )
 
     comptime PX = M * N * num_parts
-    var a_host = alloc[Scalar[dtype]](PX)
-    var c_host = alloc[Scalar[dtype]](M * N)
-    var c_host_ref = alloc[Scalar[dtype]](M * N)
+    var a_host = unsafe_alloc[Scalar[dtype]](PX)
+    var c_host = unsafe_alloc[Scalar[dtype]](M * N)
+    var c_host_ref = unsafe_alloc[Scalar[dtype]](M * N)
 
     rand[dtype](a_host, PX)
     unsafe_memset_zero(c_host, M * N)
@@ -191,9 +192,9 @@ def run_matrix_reduction[
     _ = c_device
     _ = lock_dev
 
-    a_host.free()
-    c_host.free()
-    c_host_ref.free()
+    a_host.unsafe_free()
+    c_host.unsafe_free()
+    c_host_ref.unsafe_free()
 
 
 def main() raises:

@@ -297,6 +297,22 @@ def main() raises:
             ctx, 16, Idx[128], Idx[6144], expect_heuristic_hit=True
         )
 
+        # Decode-regime dense shapes (M3.1 shared expert and fused QKV). At
+        # these M compute closures run separately except on small-BN; store
+        # redirects stay fused. Check both against the same reference.
+        for m in [8, 16, 36, 130]:
+            test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
+                ctx, m, Idx[3072], Idx[6144], expect_heuristic_hit=True
+            )
+        test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
+            ctx, 36, Idx[6144], Idx[3072], expect_heuristic_hit=True
+        )
+        # m in (8, 16] with N past one wave of SM tiles skips the small-BN
+        # kernel.
+        test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
+            ctx, 12, Idx[9856], Idx[6144], expect_heuristic_hit=True
+        )
+
         # KERN-3024: 30k-token prefill. The heuristic has no config for this
         # M, so the dispatcher must fall back to the vendor (cuBLASLt) MXFP8
         # block-scaled matmul instead of raising.

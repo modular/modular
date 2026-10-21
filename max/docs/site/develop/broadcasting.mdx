@@ -135,7 +135,7 @@ rather than let the operation infer it, `F.broadcast_to` provides that control.
 
 When you need the target shape explicit in code rather than inferred from an
 operation,
-[`F.broadcast_to(x, shape)`](/api/python/experimental.functional#max.experimental.functional.broadcast_to)
+[`F.broadcast_to(x, shape)`](/api/python/experimental.functional/#max.experimental.functional.broadcast_to)
 expands a tensor directly to a target shape without running an elementwise
 operation.
 
@@ -181,7 +181,7 @@ dimensions.
 Multiplying a `(batch, features)` tensor by a per-row `(batch,)` vector fails
 because right-alignment places the vector's `batch` against `features`. The
 solution is to add the missing trailing dimension with
-[`Tensor.unsqueeze(axis)`](/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.unsqueeze)
+[`Tensor.unsqueeze(axis)`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.unsqueeze)
 before the operation. The following example turns a `(batch,)` vector into a
 `(batch, 1)` column so it broadcasts across the features of a
 `(batch, features)` tensor:
@@ -245,5 +245,5 @@ covers how to extract and combine values by position, runtime indices, or
 boolean masks (`F.where` relies on the broadcasting rules from this page):
 
 - **Slice, gather, mask, and scatter tensor values**:
-  [Indexing and slicing](/develop/indexing)
-- **Review elementwise APIs**: [Basic operations](/develop/basic-ops)
+  [Indexing and slicing](/develop/indexing/)
+- **Review elementwise APIs**: [Basic operations](/develop/basic-ops/)

@@ -491,9 +491,14 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
     var num_heads: Int
     var head_size: Int
     var is_mla: Bool
+    var fp8_tail_size: Int
 
     def __init__(
-        out self, num_heads: Int, head_size: Int, is_mla: Bool = False
+        out self,
+        num_heads: Int,
+        head_size: Int,
+        is_mla: Bool = False,
+        fp8_tail_size: Int = 0,
     ):
         """
         Initialize KVCacheStaticParams.
@@ -503,10 +508,20 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
             is_mla (Bool, optional): Whether to use Multi-Linear Attention (MLA) mode.
                 If true, we only store k cache. If False, we store k and v cache.
                 Defaults to False.
+            fp8_tail_size (Int, optional): Trailing bytes of a packed NVFP4
+                row that hold unscaled FP8 values instead of E2M1 pairs. They
+                have no scales, so they do not count towards the scale row.
+                Defaults to 0.
         """
         self.num_heads = num_heads
         self.head_size = head_size
         self.is_mla = is_mla
+        self.fp8_tail_size = fp8_tail_size
+
+    def nvfp4_row_elems(self) -> Int:
+        """The logical elements of a packed NVFP4 row: two per packed byte,
+        plus one per FP8 tail byte."""
+        return 2 * (self.head_size - self.fp8_tail_size) + self.fp8_tail_size
 
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
@@ -2797,7 +2812,7 @@ struct PagedKVCache[
 
     # Number of quantization scale values per token.
     comptime head_dim_granularity = ceildiv(
-        Self.kv_params.head_size,
+        Self.kv_params.head_size - Self.kv_params.fp8_tail_size,
         Self.quantization_granularity,
     )
     # Scales layout for a single K-or-V cache view.
@@ -4343,7 +4358,7 @@ struct PagedKVCacheCollection[
 
     # Match PagedKVCache.head_dim_granularity.
     comptime head_dim_granularity = ceildiv(
-        Self.kv_params.head_size,
+        Self.kv_params.head_size - Self.kv_params.fp8_tail_size,
         Self.CacheType.quantization_granularity,
     )
     # Define scales tensor with shape [total_num_blocks, 2, num_layers, page_size, num_heads, granularity]

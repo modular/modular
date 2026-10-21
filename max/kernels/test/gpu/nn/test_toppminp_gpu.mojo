@@ -19,6 +19,7 @@ from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from layout import (
+    Coord,
     Idx,
     DefaultEngine,
     TileTensor,
@@ -335,8 +336,15 @@ def test_case_sampling(
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test_flat[i] = in_logits_flat[i] / temperature
 
-    softmax_inline[simd_width=1, rank=rank](
-        in_logits_cpu_test,
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var in_logits_cpu_test} -> SIMD[dtype, width]:
+        return in_logits_cpu_test.load[width=width, alignment=1](coords)
+
+    softmax_inline[dtype, simd_width=1, rank=rank](
+        input_fn,
+        in_logits_cpu_test.layout.shape_coord(),
         probs_cpu_test,
         axis=1,
     )

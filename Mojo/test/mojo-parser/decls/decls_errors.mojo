@@ -1020,10 +1020,11 @@ struct OnlyCopyableField[T: Copyable & Deinitable](ImplicitlyCopyable where conf
 
 # MOCO-2186: Initializer syntax should reject incorrect result type
 struct StructWithSpecificInit[X: Int](Movable where False):
+    # expected-note @+1 {{constraint declared here evaluated to False, expected 'identical(X, Int(4))': Self type 'StructWithSpecificInit[X]' is not identical to the declared type 'StructWithSpecificInit[Int(4)]'}}
     def __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
         pass
 def testStructWithSpecificInit() raises:
-    # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[Int(4)]' parameter 'X' value 'Int(4)' doesn't match expected value 'Int(1)'}}
+    # expected-error @+1 {{invalid initialization: violated constraint}}
     var a = StructWithSpecificInit[1]()  # Infers to A[4]
 
     # This is ok.

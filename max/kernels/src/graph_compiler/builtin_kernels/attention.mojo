@@ -31,6 +31,7 @@ from max.gpu.host.info import is_cpu, is_gpu
 from kv_cache.paged_sparse_kv_index_remap import (
     NoRemap,
     PagedKVRemap,
+    PagedKVScaleRemap,
     SparseIndexRemap,
     paged_sparse_kv_index_remap,
 )
@@ -822,6 +823,148 @@ struct MLAIndexerRaggedFloat8PagedRemap:
         )
 
 
+@extensibility.register("mo.mla.indexer.ragged.float8.paged.remap.nvfp4")
+struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
+    """Registers the `mo.mla.indexer.ragged.float8.paged.remap.nvfp4` graph op.
+
+    `mo.mla.indexer.ragged.float8.paged.remap` for an NVFP4 MLA cache, whose
+    scales are paged apart from its values. Each row of `physical_indices` is
+    `2 * k` wide: the selected positions' physical rows in the values, then
+    their rows in the scale pool, resolved through the cache's scales lookup
+    table. The sparse NVFP4 MLA kernels read the second half instead of
+    deriving a scale row from a value row.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        num_heads: Int,
+        depth: Int,
+        k: Int,
+        quantization_granularity: Int,
+        mask_str: StaticString,
+        write_logical: Bool = False,
+    ](
+        output_indices: OutputTensor[dtype=.int32, rank=2, ...],
+        physical_indices: OutputTensor[dtype=.int32, rank=2, ...],
+        q: InputTensor[dtype=.float8_e4m3fn, rank=3, ...],
+        qs: InputTensor[dtype=.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        k_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        k_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        k_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        k_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        k_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        k_scales: MutableInputTensor[dtype=.float32, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        mla_kv_blocks: MutableInputTensor[rank=6, ...],
+        mla_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        mla_kv_scales: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
+        mla_scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        mla_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        """Computes top-k key positions and their value and scale rows.
+
+        Parameters:
+            num_heads: Number of query attention heads.
+            depth: Head dimension.
+            k: Number of top indices to return per token.
+            quantization_granularity: Quantization granularity for the K cache.
+            mask_str: Mask type - either MaskName.NULL or MaskName.CAUSAL.
+            write_logical: Whether to write `output_indices` (defaults to
+                `False`). With `False` only `physical_indices` is written, and
+                `output_indices` may have no rows.
+
+        Args:
+            output_indices: Logical top-k key positions `[total_seq_len, k]`,
+                `-1` past a token's candidates.
+            physical_indices: `[total_seq_len, 2 * k]`. Columns `[0, k)` are
+                each `output_indices` slot's physical MLA cache row,
+                `block_id * page_size + offset`; columns `[k, 2 * k)` are its
+                row in the MLA scale pool, `scale_block_id * rows_per_block +
+                offset`. `-1` where the position is `-1` or its page is
+                unmapped.
+            q: Query tensor [total_seq_len, num_heads, depth] in FP8.
+            qs: Query scales [total_seq_len, num_heads] in float32.
+            input_row_offsets: Ragged row offsets [batch_size + 1] for queries.
+            k_blocks: Paged indexer K cache blocks in FP8.
+            page_stride: Page-to-page distance in elements; -1 when packed.
+            k_cache_lengths: Cache lengths [batch_size].
+            k_lookup_table: Indexer cache page lookup table.
+            k_max_prompt_length: Max prompt (query) length scalar tensor [1].
+            k_max_cache_length: Max cache length scalar tensor [1].
+            k_scales: K scale blocks matching k_blocks shape with scale values.
+            scales_page_stride: The same, for the scales leaf.
+            k_scales_lookup_table: Page lookup table for the scale blocks.
+            layer_idx: Layer index for retrieving the correct cache layer.
+            mla_kv_blocks: The MLA cache's blocks; their page count is the
+                invalid block id and their page size the remap's.
+            mla_lookup_table: The MLA cache's page lookup table
+                `[batch_size, pages_per_seq]`.
+            mla_kv_scales: The MLA cache's scale blocks; their page count is
+                the invalid scale block id.
+            mla_scales_page_stride: Page-to-page distance of `mla_kv_scales`
+                in elements; -1 when packed.
+            mla_scales_lookup_table: The MLA cache's scales page lookup table
+                `[batch_size, pages_per_seq]`.
+            ctx: Device context for GPU execution.
+        """
+        comptime mla_page_size = Int(mla_kv_blocks.static_spec.shape_tuple[3])
+        # The scale pool's blocks sit a page stride apart, which is
+        # `rows_per_block` rows of `heads * scales_per_row` elements.
+        var scales_row_elems = mla_kv_scales.dim_size(
+            4
+        ) * mla_kv_scales.dim_size(5)
+        var scales_page_elems = Int(
+            mla_scales_page_stride.to_tile_tensor().as_imm()[0]
+        )
+        if scales_page_elems < 0:
+            scales_page_elems = scales_row_elems
+            for i in range(1, 4):
+                scales_page_elems *= mla_kv_scales.dim_size(i)
+        var remap = PagedKVScaleRemap[mla_page_size, k](
+            physical_indices.unsafe_ptr(),
+            mla_lookup_table.unsafe_ptr(),
+            mla_scales_lookup_table.unsafe_ptr(),
+            mla_lookup_table.dim_size(1),
+            mla_scales_lookup_table.dim_size(1),
+            mla_lookup_table.dim_size(0),
+            UInt32(mla_kv_blocks.dim_size(0)),
+            UInt32(mla_kv_scales.dim_size(0)),
+            scales_page_elems // scales_row_elems,
+        )
+        _mla_indexer_ragged_float8_paged_execute[
+            num_heads=num_heads,
+            depth=depth,
+            k=k,
+            quantization_granularity=quantization_granularity,
+            mask_str=mask_str,
+            kpool=1,
+            write_logical=write_logical,
+        ](
+            output_indices,
+            q,
+            qs,
+            input_row_offsets,
+            k_blocks,
+            page_stride,
+            k_cache_lengths,
+            k_lookup_table,
+            k_max_prompt_length,
+            k_max_cache_length,
+            k_scales,
+            scales_page_stride,
+            k_scales_lookup_table,
+            layer_idx,
+            remap,
+            ctx,
+        )
+
+
 @extensibility.register("mo.composite.masked_flash_attention_gpu")
 struct MaskedFlashAttentionGPU:
     """Registers the `mo.composite.masked_flash_attention_gpu` graph op with the graph compiler.
@@ -1174,7 +1317,7 @@ struct NoMaskFlashAttentionCPU:
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
         scale: Scalar[dtype=DType.float32],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @inline(.always)
@@ -1233,7 +1376,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         mask: FusedInputTensor[dtype=dtype, ...],
         scale: Scalar[dtype=DType.float32],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @inline(.always)
@@ -1356,7 +1499,7 @@ struct WithMaskFlashAttentionCPU:
         mask: FusedInputTensor[dtype=dtype, ...],
         scale: Scalar[dtype=DType.float32],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @inline(.always)
@@ -3033,13 +3176,23 @@ struct Struct_mla_prefill_ragged_plan:
             "Expected is_mla=True for MLA decompress, but found both k and"
             " v dimensions."
         )
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+        # The plan reads only cache lengths, so it builds the collection
+        # without scales whatever the cache format, NVFP4 included.
+        var kv_collection = generic_get_paged_cache[
+            dtype,
+            KVCacheStaticParams(
+                Int(kv_blocks.static_spec.shape_tuple[4]),
+                Int(kv_blocks.static_spec.shape_tuple[5]),
+                True,
+            ),
+            Int(kv_blocks.static_spec.shape_tuple[3]),
+        ](
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor(),
+            cache_lengths.to_tile_tensor(),
+            kv_lookup_table.to_tile_tensor(),
+            max_prompt_length.to_tile_tensor(),
+            max_cache_length.to_tile_tensor(),
         )
         generic_flare_mla_prefill_ragged_paged_plan[target=target](
             input_row_offsets.to_tile_tensor[.int64](),
@@ -3952,6 +4105,139 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
             _ = scratch_sparse_indices^
 
 
+@extensibility.register("mo.mla.graph.decode.paged.sparse.nvfp4")
+struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4:
+    """Registers the `mo.mla.graph.decode.paged.sparse.nvfp4` graph op.
+
+    `mo.mla.graph.decode.paged.sparse` over an NVFP4 latent cache: packed E2M1
+    rows (`uint8`, two elements per byte) with one E4M3 scale per 16 elements.
+    The fused write quantizes into it and the SM100 sparse kernels dequantize
+    it to FP8. The scale operands sit right after `max_cache_length`, where
+    `flatten_without_attention_dispatch_metadata` puts them.
+
+    Each row of `sparse_indices` is `indices_stride` wide: `indices_stride / 2`
+    physical value rows, then that many rows in the scale pool, which the
+    cache pages apart from its values (see
+    `mo.mla.indexer.ragged.float8.paged.remap.nvfp4`).
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+        indices_stride: Int,
+        physical_indices: Bool,
+        index_kpool: Int = 1,
+        index_pool_topk: Int = 0,
+        index_kpool_select_tail: Bool = True,
+        has_topk_lengths: Bool = True,
+        has_attn_sink: Bool = True,
+    ](
+        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=.bfloat16, rank=3, ...],
+        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=.uint8, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_scales: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
+        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=.int64, rank=1, ...],
+        selection_lag: Int32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.decode.paged.sparse.nvfp4 is only supported on GPU"
+        comptime assert physical_indices, (
+            "an NVFP4 MLA cache needs the indexer's physical and scale rows,"
+            " not token positions"
+        )
+        var kv_collection = generic_get_paged_cache_with_scales(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            kv_scales,
+            scales_page_stride,
+            scales_lookup_table,
+        )
+
+        @inline(.always)
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
+            topk_lengths.unsafe_ptr()
+        )
+        var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
+            attn_sink.unsafe_ptr()
+        )
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.decode.paged.sparse.nvfp4",
+            task_id=get_safe_task_id(context),
+        ):
+            var gather_indices = _sparse_indices_ptr[indices_stride](
+                sparse_indices, q.dim_size(0)
+            )
+            mla_decode_branch_bf16[
+                mask_str=mask_str,
+                target=target,
+                sparse_mla=True,
+                physical_indices=physical_indices,
+                sparse_row=SparseRowLayout(
+                    kpool=index_kpool,
+                    pool_topk=index_pool_topk,
+                    select_tail=index_kpool_select_tail,
+                ),
+            ](
+                output.to_tile_tensor[.int64](),
+                q.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
+                kv_norm_gamma.to_tile_tensor[.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                w_uk.to_tile_tensor[.int64](),
+                w_uv.to_tile_tensor[.int64](),
+                scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
+                context,
+                gather_indices,
+                indices_stride,
+                topk_lengths_ptr,
+                attn_sink_ptr,
+                num_partitions_in=None,
+                selection_lag=Int(selection_lag),
+            )
+
+
 @extensibility.register("mo.mla.graph.prefill.decode.paged.fp8")
 struct Struct_mla_prefill_graph_decode_paged_fp8:
     """Registers the `mo.mla.graph.prefill.decode.paged.fp8` graph op with the graph compiler.
@@ -4718,6 +5004,169 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
                 selection_lag=Int(selection_lag),
             )
             _ = scratch_decode_indices^
+            _ = scratch_sparse_indices^
+
+
+@extensibility.register("mo.mla.graph.prefill.decode.paged.sparse.nvfp4")
+struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4:
+    """Registers the `mo.mla.graph.prefill.decode.paged.sparse.nvfp4` graph op.
+
+    `mo.mla.graph.prefill.decode.paged.sparse` over an NVFP4 latent cache; see
+    `mo.mla.graph.decode.paged.sparse.nvfp4` for the format and operand order.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+        indices_stride: Int,
+        physical_indices: Bool,
+        has_topk_lengths: Bool = True,
+        has_attn_sink: Bool = True,
+        index_kpool: Int = 1,
+        index_pool_topk: Int = 0,
+        index_kpool_select_tail: Bool = True,
+        # Sparse prefill converts the context to FP8 once while it has at most
+        # this many rows per query token; see `nvfp4_prefill_converts_once`.
+        nvfp4_convert_ratio: Int = 0,
+        nvfp4_convert_max_rows: Int = 0,
+    ](
+        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=.bfloat16, rank=3, ...],
+        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=.uint32, rank=1, ...],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype=.bfloat16, rank=2, ...],
+        w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=.uint8, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_scales: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
+        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=.int64, rank=1, ...],
+        selection_lag: Int32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "mo.mla.graph.prefill.decode.paged.sparse.nvfp4 is only supported"
+            " on GPU"
+        )
+        comptime assert physical_indices, (
+            "an NVFP4 MLA cache needs the indexer's physical and scale rows,"
+            " not token positions"
+        )
+        var kv_collection = generic_get_paged_cache_with_scales(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            kv_scales,
+            scales_page_stride,
+            scales_lookup_table,
+        )
+
+        @inline(.always)
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+
+        var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
+            topk_lengths.unsafe_ptr()
+        )
+        var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
+            attn_sink.unsafe_ptr()
+        )
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.prefill.decode.paged.sparse.nvfp4",
+            task_id=get_safe_task_id(context),
+        ):
+            var decode_indices = _sparse_indices_ptr[indices_stride](
+                sparse_indices, q.dim_size(0)
+            )
+            var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
+            var prefill_indices = _sparse_prefill_indices[
+                target,
+                mla_page_size,
+                indices_stride,
+                DType.uint8,
+                Int(q.static_spec.shape_tuple[1]),
+                physical_indices,
+            ](
+                scratch_sparse_indices,
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                Int(kv_collection.max_seq_length),
+                context,
+            )
+            mla_prefill_decode_graph_bf16[
+                mask_str=mask_str,
+                target=target,
+                sparse_mla=True,
+                sparse_indices_stride=indices_stride,
+                physical_indices=physical_indices,
+                sparse_row=SparseRowLayout(
+                    kpool=index_kpool,
+                    pool_topk=index_pool_topk,
+                    select_tail=index_kpool_select_tail,
+                ),
+                nvfp4_convert_ratio=nvfp4_convert_ratio,
+                nvfp4_convert_max_rows=nvfp4_convert_max_rows,
+            ](
+                output.to_tile_tensor[.int64](),
+                q.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
+                kv_norm_gamma.to_tile_tensor[.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets_1d.to_tile_tensor[.int64](),
+                cache_offsets_1d.to_tile_tensor[.int64](),
+                Int(buffer_length),
+                Int(kv_collection.max_seq_length),
+                w_k.to_tile_tensor[.int64](),
+                w_uk.to_tile_tensor[.int64](),
+                w_uv.to_tile_tensor[.int64](),
+                scalar_args.to_tile_tensor[.int64](),
+                kv_input_fn,
+                context,
+                decode_indices,
+                indices_stride,
+                topk_lengths_ptr,
+                attn_sink_ptr,
+                num_partitions_in=None,
+                prefill_d_indices=prefill_indices,
+                selection_lag=Int(selection_lag),
+            )
             _ = scratch_sparse_indices^
 
 

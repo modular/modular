@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 # This code is shared between test_conv.py and test_conv_gpu.py
+#
+# Each test loads its graph before torch touches the GPU, so that
+# precompile_mefs can record the compile on a host without one.
 
 
 import numpy as np
@@ -51,7 +54,6 @@ def conv3d_impl(session: InferenceSession) -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, depth, height, width),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.Conv3d(
@@ -60,7 +62,6 @@ def conv3d_impl(session: InferenceSession) -> None:
         kernel_size=kernel_size,
         stride=stride,
         bias=False,
-        device=torch_device,
     )
 
     max_conv = Conv3D(
@@ -78,16 +79,12 @@ def conv3d_impl(session: InferenceSession) -> None:
 
     # load random weights to torch
     torch_conv.weight.data = nn.Parameter(
-        torch.rand(size=torch_conv.weight.data.shape, device=torch_device)
+        torch.rand(size=torch_conv.weight.data.shape)
     )
 
     # load weights to max
     state_dict = {"weight": torch_conv.weight.data.detach().cpu()}
     max_conv.load_state_dict(state_dict)
-
-    # get_torch_output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # get_max_output
     graph = Graph(
@@ -99,6 +96,13 @@ def conv3d_impl(session: InferenceSession) -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    torch_conv.to(torch_device)
+    input_sequence = input_sequence.to(torch_device)
+
+    # get_torch_output
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
 
     graph_api_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(graph_api_conv_result, Buffer)
@@ -133,7 +137,6 @@ def conv1d_impl(session: InferenceSession) -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     # Create PyTorch Conv1d layer
@@ -144,7 +147,6 @@ def conv1d_impl(session: InferenceSession) -> None:
         stride=stride,
         padding=padding,
         bias=True,
-        device=torch_device,
     )
 
     # Create our Conv1D layer
@@ -165,7 +167,6 @@ def conv1d_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     assert torch_conv.bias is not None
@@ -174,7 +175,6 @@ def conv1d_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     # Load the same weights into our conv
@@ -183,10 +183,6 @@ def conv1d_impl(session: InferenceSession) -> None:
         "bias": torch_conv.bias.data.detach().cpu(),
     }
     max_conv.load_state_dict(state_dict)
-
-    # Get PyTorch output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # Get Max output
     graph = Graph(
@@ -198,6 +194,14 @@ def conv1d_impl(session: InferenceSession) -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    torch_conv.to(torch_device)
+    input_sequence = input_sequence.to(torch_device)
+
+    # Get PyTorch output
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
+
     graph_api_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(graph_api_conv_result, Buffer)
 
@@ -231,7 +235,6 @@ def conv1d_tuple_padding_impl(session: InferenceSession) -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.Conv1d(
@@ -241,7 +244,6 @@ def conv1d_tuple_padding_impl(session: InferenceSession) -> None:
         stride=stride,
         padding=0,
         bias=True,
-        device=torch_device,
     )
 
     max_conv = Conv1D(
@@ -260,7 +262,6 @@ def conv1d_tuple_padding_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     assert torch_conv.bias is not None
@@ -268,7 +269,6 @@ def conv1d_tuple_padding_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -277,15 +277,6 @@ def conv1d_tuple_padding_impl(session: InferenceSession) -> None:
         "bias": torch_conv.bias.data.detach().cpu(),
     }
     max_conv.load_state_dict(state_dict)
-
-    with torch.no_grad():
-        padded_input = nn.functional.pad(
-            input_sequence,
-            (padding_tuple[0], padding_tuple[1]),
-            mode="constant",
-            value=0,
-        )
-        torch_conv_result = torch_conv(padded_input)
 
     graph = Graph(
         "conv1d_tuple_padding",
@@ -296,6 +287,19 @@ def conv1d_tuple_padding_impl(session: InferenceSession) -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    torch_conv.to(torch_device)
+    input_sequence = input_sequence.to(torch_device)
+
+    with torch.no_grad():
+        padded_input = nn.functional.pad(
+            input_sequence,
+            (padding_tuple[0], padding_tuple[1]),
+            mode="constant",
+            value=0,
+        )
+        torch_conv_result = torch_conv(padded_input)
+
     graph_api_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(graph_api_conv_result, Buffer)
 
@@ -330,7 +334,6 @@ def conv1d_tuple_padding_nonfcrs_impl(session: InferenceSession) -> None:
     torch_input = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
     max_input = torch_input.permute(0, 2, 1).contiguous()
 
@@ -341,7 +344,6 @@ def conv1d_tuple_padding_nonfcrs_impl(session: InferenceSession) -> None:
         stride=stride,
         padding=0,
         bias=True,
-        device=torch_device,
     )
 
     max_conv = Conv1D(
@@ -360,7 +362,6 @@ def conv1d_tuple_padding_nonfcrs_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     assert torch_conv.bias is not None
@@ -368,7 +369,6 @@ def conv1d_tuple_padding_nonfcrs_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -382,15 +382,6 @@ def conv1d_tuple_padding_nonfcrs_impl(session: InferenceSession) -> None:
     }
     max_conv.load_state_dict(state_dict)
 
-    with torch.no_grad():
-        padded_input = nn.functional.pad(
-            torch_input,
-            (padding_tuple[0], padding_tuple[1]),
-            mode="constant",
-            value=0,
-        )
-        torch_conv_result = torch_conv(padded_input).permute(0, 2, 1)
-
     graph = Graph(
         "conv1d_tuple_padding_nonfcrs",
         max_conv,
@@ -400,6 +391,20 @@ def conv1d_tuple_padding_nonfcrs_impl(session: InferenceSession) -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    torch_conv.to(torch_device)
+    torch_input = torch_input.to(torch_device)
+    max_input = max_input.to(torch_device)
+
+    with torch.no_grad():
+        padded_input = nn.functional.pad(
+            torch_input,
+            (padding_tuple[0], padding_tuple[1]),
+            mode="constant",
+            value=0,
+        )
+        torch_conv_result = torch_conv(padded_input).permute(0, 2, 1)
+
     graph_api_conv_result = compiled.execute(max_input)[0]
     assert isinstance(graph_api_conv_result, Buffer)
 
@@ -434,7 +439,6 @@ def conv2d_tuple_padding_impl(session: InferenceSession) -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, height, width),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.Conv2d(
@@ -444,7 +448,6 @@ def conv2d_tuple_padding_impl(session: InferenceSession) -> None:
         stride=stride,
         padding=0,
         bias=True,
-        device=torch_device,
     )
 
     max_conv = Conv2d(
@@ -463,7 +466,6 @@ def conv2d_tuple_padding_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     assert torch_conv.bias is not None
@@ -471,7 +473,6 @@ def conv2d_tuple_padding_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -480,6 +481,19 @@ def conv2d_tuple_padding_impl(session: InferenceSession) -> None:
         "bias": torch_conv.bias.data.detach().cpu(),
     }
     max_conv.load_state_dict(state_dict)
+
+    graph = Graph(
+        "conv2d_tuple_padding",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, device=max_device),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    torch_conv.to(torch_device)
+    input_sequence = input_sequence.to(torch_device)
 
     with torch.no_grad():
         padded_input = nn.functional.pad(
@@ -495,15 +509,6 @@ def conv2d_tuple_padding_impl(session: InferenceSession) -> None:
         )
         torch_conv_result = torch_conv(padded_input)
 
-    graph = Graph(
-        "conv2d_tuple_padding",
-        max_conv,
-        input_types=(
-            TensorType(max_dtype, input_sequence.shape, device=max_device),
-        ),
-    )
-
-    compiled = session.load(graph, weights_registry=max_conv.state_dict())
     graph_api_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(graph_api_conv_result, Buffer)
 
@@ -537,7 +542,6 @@ def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, depth, height, width),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.Conv3d(
@@ -547,7 +551,6 @@ def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
         stride=stride,
         padding=0,
         bias=True,
-        device=torch_device,
     )
 
     max_conv = Conv3D(
@@ -568,7 +571,6 @@ def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     assert torch_conv.bias is not None
@@ -576,7 +578,6 @@ def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -585,6 +586,19 @@ def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
         "bias": torch_conv.bias.data.detach().cpu(),
     }
     max_conv.load_state_dict(state_dict)
+
+    graph = Graph(
+        "conv3d_tuple_padding",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, device=max_device),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    torch_conv.to(torch_device)
+    input_sequence = input_sequence.to(torch_device)
 
     with torch.no_grad():
         padded_input = nn.functional.pad(
@@ -602,15 +616,6 @@ def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
         )
         torch_conv_result = torch_conv(padded_input)
 
-    graph = Graph(
-        "conv3d_tuple_padding",
-        max_conv,
-        input_types=(
-            TensorType(max_dtype, input_sequence.shape, device=max_device),
-        ),
-    )
-
-    compiled = session.load(graph, weights_registry=max_conv.state_dict())
     graph_api_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(graph_api_conv_result, Buffer)
 
@@ -651,7 +656,6 @@ def conv2d_1x1_impl(session: InferenceSession) -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, height, width),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.Conv2d(
@@ -661,7 +665,6 @@ def conv2d_1x1_impl(session: InferenceSession) -> None:
         stride=stride,
         padding=padding,
         bias=True,
-        device=torch_device,
     )
 
     max_conv = Conv2d(
@@ -680,7 +683,6 @@ def conv2d_1x1_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     assert torch_conv.bias is not None
@@ -688,7 +690,6 @@ def conv2d_1x1_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -697,9 +698,6 @@ def conv2d_1x1_impl(session: InferenceSession) -> None:
         "bias": torch_conv.bias.data.detach().cpu(),
     }
     max_conv.load_state_dict(state_dict)
-
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     graph = Graph(
         "conv2d_1x1",
@@ -710,6 +708,13 @@ def conv2d_1x1_impl(session: InferenceSession) -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    torch_conv.to(torch_device)
+    input_sequence = input_sequence.to(torch_device)
+
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
+
     graph_api_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(graph_api_conv_result, Buffer)
 
@@ -744,7 +749,6 @@ def conv2d_impl(session: InferenceSession) -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, height, width),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     # Create PyTorch Conv2d layer
@@ -755,7 +759,6 @@ def conv2d_impl(session: InferenceSession) -> None:
         stride=stride,
         padding=padding,
         bias=True,
-        device=torch_device,
     )
 
     # Create our Conv2d layer
@@ -776,7 +779,6 @@ def conv2d_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     assert torch_conv.bias is not None
@@ -785,7 +787,6 @@ def conv2d_impl(session: InferenceSession) -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -795,10 +796,6 @@ def conv2d_impl(session: InferenceSession) -> None:
         "bias": torch_conv.bias.data.detach().cpu(),
     }
     max_conv.load_state_dict(state_dict)
-
-    # Get PyTorch output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # Get Max output
     graph = Graph(
@@ -810,6 +807,14 @@ def conv2d_impl(session: InferenceSession) -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    torch_conv.to(torch_device)
+    input_sequence = input_sequence.to(torch_device)
+
+    # Get PyTorch output
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
+
     graph_api_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(graph_api_conv_result, Buffer)
 

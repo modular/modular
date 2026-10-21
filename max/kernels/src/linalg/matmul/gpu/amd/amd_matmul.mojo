@@ -213,7 +213,7 @@ struct AMDMatmul[
     ):
         """Same as `run`, storing the output through `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             c_layout: Tensor layout of the output C tile.
@@ -259,7 +259,7 @@ struct AMDMatmul[
     ):
         """Same as `run`, storing `compute_fn(idx, value)` into `c`.
 
-        Launch with `host_arg=compute_fn`.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             c_layout: Tensor layout of the output C tile.

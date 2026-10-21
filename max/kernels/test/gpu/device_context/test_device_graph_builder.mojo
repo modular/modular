@@ -1541,6 +1541,41 @@ def test_cache_shares_memory_pool(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0x22))
 
 
+def test_alloc_not_reissued_within_build(ctx: DeviceContext) raises:
+    print(
+        "Test an allocation whose handle is dropped mid-build is not reissued"
+        " to a later allocation within the same recording."
+    )
+    comptime length = 4096
+
+    # Addresses captured inside the build region; not valid to dereference
+    # outside it, used only to compare what the allocator handed back.
+    var first_addr = 0
+    var second_addr = 0
+
+    def build(
+        mut builder: DeviceGraphBuilder,
+    ) raises {imm, mut first_addr, mut second_addr}:
+        # Allocate, record the address, then drop the only external handle --
+        # as Mojo does at a buffer's last use in a real build body.
+        var first = builder.create_buffer[.uint8](length, is_host=False)
+        first_addr = Int(first.unsafe_ptr())
+        _ = first^
+
+        var second = builder.create_buffer[.uint8](length, is_host=False)
+        second_addr = Int(second.unsafe_ptr())
+        _ = second^
+
+    var graph = DeviceGraph.create(ctx, build)
+
+    # The builder pins `first` for the whole build, so the pool cannot reissue
+    # its block to `second` within the same recording -- recorded nodes bake in
+    # these addresses, and reusing one would alias two nodes. (Across graphs the
+    # block IS reused once the pins drop; see `test_cache_shares_memory_pool`.)
+    assert_not_equal(first_addr, second_addr)
+    _ = graph^
+
+
 def test_create_collective_two_graphs(ctx: DeviceContext) raises:
     print(
         "Test DeviceGraph.create_collective building and replaying two"

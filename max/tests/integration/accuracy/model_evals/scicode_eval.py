@@ -51,6 +51,7 @@ import os
 import statistics
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from typing import Any
 
 import click
@@ -58,7 +59,7 @@ from datasets import load_dataset
 from eval_common import (
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
     dump_config,
     make_client,
     response_fields,
@@ -227,10 +228,9 @@ def infer(
         prompt = build_step_prompt(
             problem, background, dependencies, accumulated_code, step, step_idx
         )
-        resp = client.chat.completions.create(
-            **build_chat_kwargs(
-                model, [{"role": "user", "content": prompt}], params
-            )
+        sent_at = datetime.now(timezone.utc).isoformat()
+        resp = chat_completion(
+            client, model, [{"role": "user", "content": prompt}], params
         )
         call_tokens = resp.usage.completion_tokens if resp.usage else 0
         call_output_tokens.append(call_tokens)
@@ -254,13 +254,14 @@ def infer(
         step_results.append(
             {
                 "prompt_index": step_index(step_number),
+                "timestamp": sent_at,
                 "problem": problem[:80],
                 "step_number": step_number,
                 "step_idx": step_idx,
                 "passed": passed,
                 "finish_reason": resp.choices[0].finish_reason,
                 "completion_tokens": call_tokens,
-                **response_fields(message),
+                **response_fields(resp.choices[0]),
             }
         )
 
@@ -361,7 +362,11 @@ def run_eval(
     call_output_tokens: list[int] = []
     problem_output_tokens: list[int] = []
     for r in results:
-        all_results.extend(r["step_results"])
+        # An errored problem's steps have no time of their own; they take
+        # the time the problem started, which run_parallel stamped.
+        all_results.extend(
+            {"timestamp": r["timestamp"], **step} for step in r["step_results"]
+        )
         if "error" in r:
             continue
         scored.extend(r["step_results"])

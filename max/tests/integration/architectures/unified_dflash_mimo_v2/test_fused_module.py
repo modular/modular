@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
+from max import mlir
 from max.driver import (
     set_virtual_device_api,
     set_virtual_device_count,
@@ -40,7 +43,7 @@ def model() -> Model:
     # The module's collectives create their devices; virtual B200s serve.
     set_virtual_device_api("cuda")
     set_virtual_device_target_arch("sm_100a")
-    set_virtual_device_count(len(REFS))
+    set_virtual_device_count(4)
     return tiny_configs()
 
 
@@ -82,3 +85,55 @@ def test_the_sampleable_vocab_fits_the_head(
     spec = model.spec(REFS, 7, sampleable_vocab_size=sampleable)
     with pytest.raises(ValueError, match="sampleable_vocab_size"):
         UnifiedDflashMiMoV2(spec, model.mask_embedding)
+
+
+@pytest.mark.parametrize("num_devices", [2, 4])
+@pytest.mark.parametrize(
+    ("sliding", "full"),
+    [(False, False), (True, False), (True, True)],
+    ids=["off", "sliding", "sliding-full"],
+)
+def test_qkv_fusion_reaches_the_unified_verify_graph(
+    model: Model, num_devices: int, sliding: bool, full: bool
+) -> None:
+    refs = [DeviceRef.GPU(i) for i in range(num_devices)]
+    # Match the production drafter's eight KV heads without changing the
+    # weight-backed TP2 fixtures that use the original tiny geometry.
+    graph_model = replace(
+        model, dflash={**model.dflash, "num_key_value_heads": 8}
+    )
+    spec = graph_model.spec(refs, 7, sampleable_vocab_size=1000)
+    spec.target.fused_sliding_qkv = sliding
+    spec.target.fused_full_qkv = full
+    nn_model = UnifiedDflashMiMoV2(spec, model.mask_embedding)
+    for name, weight in nn_model.raw_state_dict().items():
+        weight.name = name
+    target_kv = spec.target.kv_params
+    assert isinstance(target_kv, MultiKVCacheParams)
+    graph = fused_graph(
+        nn_model,
+        MultiKVCacheParams.from_params(
+            {"target": target_kv, DRAFT: spec.draft.kv_params}
+        ),
+    )
+
+    def count_fused(op: mlir.Operation | mlir.OpView) -> int:
+        count = int(
+            op.name == "mo.custom"
+            and "symbol" in op.attributes
+            and mlir.StringAttr(op.attributes["symbol"]).value
+            == "mo.chunked_qkv_rope_store.ragged.paged"
+        )
+        return count + sum(
+            count_fused(child)
+            for region in op.regions
+            for block in region.blocks
+            for child in block.operations
+        )
+
+    operation = mlir.Operation._CAPICreate(graph.module.mlir_module._CAPIPtr)
+    assert graph.name == "unified_dflash_mimo_v2"
+    assert count_fused(operation) == (
+        num_devices * (int(sliding) + 2 * int(full))
+    )
+    assert len(graph.output_types) == 3

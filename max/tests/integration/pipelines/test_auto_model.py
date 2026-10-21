@@ -141,6 +141,22 @@ def test_generate_iter_steps_synchronously_like_generate(
     assert batch.sequences == expected
 
 
+def test_generate_iter_runs_messages_like_generate(model_path: str) -> None:
+    messages: list[list[Mapping[str, object]]] = [
+        [{"role": "user", "content": "What is 2 + 2?"}]
+    ]
+    with _load_cpu(model_path) as model:
+        expected = model.generate(
+            messages=messages, max_new_tokens=NUM_NEW_TOKENS, top_k=1
+        )
+        with model.generate_iter(
+            messages=messages, max_new_tokens=NUM_NEW_TOKENS, top_k=1
+        ) as batch:
+            list(batch)
+    assert batch.sequences == expected.sequences
+    assert batch.prompt_lengths == expected.prompt_lengths
+
+
 def test_greedy_logits_and_log_probs_match_sequences(model_path: str) -> None:
     num_top_log_probs = 3
     with _load_cpu(model_path, max_batch_size=len(PROMPTS)) as model:
@@ -238,6 +254,7 @@ def test_debug_defaults_and_overrides(model_path: str) -> None:
         assert config.runtime.device_graph_capture is False
         assert config.runtime.enable_chunked_prefill is False
         assert config.model.kv_cache.enable_prefix_caching is False
+        assert config.runtime.vision_cache_utilization == 0
         assert config.runtime.max_batch_size == 2
         pipeline = model.pipeline
         assert isinstance(pipeline, TextGenerationPipeline)
@@ -630,10 +647,16 @@ def test_generate_and_generate_iter_pass_every_argument(
 
     monkeypatch.setattr(auto_model, "generate", record)
     monkeypatch.setattr(auto_model, "GenerateIterator", record)
+    messages: list[list[Mapping[str, object]]] = [
+        [{"role": "user", "content": "hi"}]
+    ]
+    images = [[b"image"]]
     with _load_cpu(model_path) as model:
         model.generate(
             PROMPTS,
             MASKS,
+            messages=messages,
+            images=images,
             max_new_tokens=3,
             min_new_tokens=2,
             temperature=0.5,
@@ -652,6 +675,8 @@ def test_generate_and_generate_iter_pass_every_argument(
         model.generate_iter(
             PROMPTS,
             MASKS,
+            messages=messages,
+            images=images,
             max_new_tokens=3,
             min_new_tokens=2,
             temperature=0.5,
@@ -668,6 +693,8 @@ def test_generate_and_generate_iter_pass_every_argument(
             output_logprobs=2,
         )
     expected_kwargs: dict[str, object] = {
+        "messages": messages,
+        "images": images,
         "max_new_tokens": 3,
         "min_new_tokens": 2,
         "temperature": 0.5,

@@ -232,16 +232,16 @@ def st_shared_frag_to_smem[
                 - warp_offset
             )
 
-            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+            dst_ptr.unsafe_store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m0n0, SIMD[dst.dtype, 1](elem0)
             )
-            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+            dst_ptr.unsafe_store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m0n1, SIMD[dst.dtype, 1](elem1)
             )
-            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+            dst_ptr.unsafe_store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m1n0, SIMD[dst.dtype, 1](elem2)
             )
-            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+            dst_ptr.unsafe_store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m1n1, SIMD[dst.dtype, 1](elem3)
             )
 
@@ -256,10 +256,10 @@ def st_shared_frag_to_smem[
             var top_ptr_offset = swizzle(top_row * stride0 + top_col * stride1)
             var bot_ptr_offset = swizzle(bot_row * stride0 + bot_col * stride1)
 
-            dst_ptr.store[alignment=align_of[type_of(top_elems)]()](
+            dst_ptr.unsafe_store[alignment=align_of[type_of(top_elems)]()](
                 top_ptr_offset, top_elems
             )
-            dst_ptr.store[alignment=align_of[type_of(bot_elems)]()](
+            dst_ptr.unsafe_store[alignment=align_of[type_of(bot_elems)]()](
                 bot_ptr_offset, bot_elems
             )
 
@@ -1258,16 +1258,16 @@ struct EpilogueApplier[
             var bot_col = local_col + bot[1] + UInt32(inc)
 
             # Load C from swizzled SMEM at matching fragment coordinates
-            var c0 = src_ptr.load(
+            var c0 = src_ptr.unsafe_load(
                 Int(swizzle(top_row * UInt32(c_smem_stride) + top_col))
             ).cast[epilogue_dtype]()
-            var c1 = src_ptr.load(
+            var c1 = src_ptr.unsafe_load(
                 Int(swizzle(top_row * UInt32(c_smem_stride) + top_col + 1))
             ).cast[epilogue_dtype]()
-            var c2 = src_ptr.load(
+            var c2 = src_ptr.unsafe_load(
                 Int(swizzle(bot_row * UInt32(c_smem_stride) + bot_col))
             ).cast[epilogue_dtype]()
-            var c3 = src_ptr.load(
+            var c3 = src_ptr.unsafe_load(
                 Int(swizzle(bot_row * UInt32(c_smem_stride) + bot_col + 1))
             ).cast[epilogue_dtype]()
 
@@ -2040,8 +2040,10 @@ def shared_memory_epilogue_transpose[
                 var row = local_i + gmem_col
                 var col = local_j + gmem_row
                 if row < UInt32(Int(M)) and col < UInt32(Int(N)):
-                    var val = ptr.load[width=simd_size, alignment=alignment]()
-                    ptr.store[width=simd_size, alignment=alignment](
+                    var val = ptr.unsafe_load[
+                        width=simd_size, alignment=alignment
+                    ]()
+                    ptr.unsafe_store[width=simd_size, alignment=alignment](
                         compute_fn[c_type, simd_size, alignment=simd_size](
                             (Int(row), Int(col)), val
                         )
@@ -2087,10 +2089,10 @@ def shared_memory_epilogue_transpose[
                     var row = UInt32(local_i) + gmem_col
                     var col = UInt32(local_j) + gmem_row
                     if row < UInt32(Int(M)) and col < UInt32(Int(N)):
-                        var val = ptr.load[
+                        var val = ptr.unsafe_load[
                             width=simd_size, alignment=alignment
                         ]()
-                        ptr.store[width=simd_size, alignment=alignment](
+                        ptr.unsafe_store[width=simd_size, alignment=alignment](
                             compute_fn[c_type, simd_size, alignment=simd_size](
                                 (Int(row), Int(col)), val
                             )

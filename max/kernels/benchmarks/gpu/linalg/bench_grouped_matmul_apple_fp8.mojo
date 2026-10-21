@@ -240,8 +240,11 @@ def _bench_grouped[
 
 def main() raises:
     with DeviceContext() as ctx:
-        if ctx.compute_capability() != 5:
-            print("skip: grouped W8A16 tiled matmul bench requires Apple M5")
+        if ctx.compute_capability() < 5:
+            print(
+                "skip: grouped W8A16 tiled matmul bench requires Apple M5 or"
+                " newer"
+            )
             return
 
         # Nemotron-3-Nano-30B-A3B MoE: 128 experts, top-6, hidden=2688,

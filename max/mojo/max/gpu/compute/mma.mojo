@@ -22,7 +22,7 @@ from std.sys.info import (
     _is_amd_rdna3,
     _is_amd_rdna4,
     is_amd_gpu,
-    is_apple_m5,
+    _is_apple_m5_or_newer,
 )
 
 from std.memory import bitcast
@@ -226,7 +226,9 @@ def mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif is_amd_gpu():
         _mma_amd(d, a, b, c)
     # MSTDL-2556: Compilation Target Check doesn't match above
-    elif is_apple_m5() and CompilationTarget._has_feature["metal4_0"]():
+    elif _is_apple_m5_or_newer() and CompilationTarget._has_feature[
+        "metal4_0"
+    ]():
         _mma_apple(d, a, b, c)
     else:
         CompilationTarget.unsupported_target_error[
@@ -274,7 +276,7 @@ def ld_matrix[
         from max.gpu.compute.mma import ld_matrix
         from std.memory import alloc, dealloc, Layout
 
-        var layout = Layout[Float16](count=8)
+        var layout = Layout[Float16](length=8)
         var allocation = alloc(layout)
         var ptr = allocation.unsafe_ptr()
 

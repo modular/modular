@@ -270,7 +270,9 @@ def _fa4_splitk_combine_kernel[
     if m == min_or_neg_inf[_ACC]():
         comptime if full_vec:
             comptime for i in range(elems_per_thread):
-                output_ptr.store[width=vec_size, alignment=out_alignment](
+                output_ptr.unsafe_store[
+                    width=vec_size, alignment=out_alignment
+                ](
                     rh * ov_depth
                     + lane_idx * vec_size
                     + i * (WARP_SIZE * vec_size),
@@ -321,7 +323,7 @@ def _fa4_splitk_combine_kernel[
         var datas = Array[_, elems_per_thread](
             fill_with_unrolled=lambda [i: Int]() -> SIMD[
                 intermediate_type, vec_size
-            ]: oaccum_base.load[width=vec_size, alignment=in_alignment](
+            ]: oaccum_base.unsafe_load[width=vec_size, alignment=in_alignment](
                 lane_idx * vec_size + i * (WARP_SIZE * vec_size)
             )
         )
@@ -349,7 +351,7 @@ def _fa4_splitk_combine_kernel[
                     result[i] = result[i] + scale * clean
 
                     comptime if p < P_STATIC - 1:
-                        datas[i] = oaccum_base.load[
+                        datas[i] = oaccum_base.unsafe_load[
                             width=vec_size, alignment=in_alignment
                         ](
                             (p + 1) * partition_stride
@@ -377,7 +379,7 @@ def _fa4_splitk_combine_kernel[
                     result[i] = result[i] + scale * clean
 
                     if p < p_count - 1:
-                        datas[i] = oaccum_base.load[
+                        datas[i] = oaccum_base.unsafe_load[
                             width=vec_size, alignment=in_alignment
                         ](
                             (p + 1) * partition_stride
@@ -386,7 +388,7 @@ def _fa4_splitk_combine_kernel[
                         )
 
         comptime for i in range(elems_per_thread):
-            output_ptr.store[width=vec_size, alignment=out_alignment](
+            output_ptr.unsafe_store[width=vec_size, alignment=out_alignment](
                 rh * ov_depth
                 + lane_idx * vec_size
                 + i * (WARP_SIZE * vec_size),

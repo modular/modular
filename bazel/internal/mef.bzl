@@ -17,6 +17,7 @@ MOJO_DEPS = [
     # @modular_wheel equivalents.
     "//Kernels/lib/attn_res",
     "//Kernels/lib/csa",
+    "//Kernels/lib/dsv4_1_flash",
     "//Kernels/lib/engram",
     "//Kernels/lib/kda",
     "//Kernels/lib/matmul_rs",

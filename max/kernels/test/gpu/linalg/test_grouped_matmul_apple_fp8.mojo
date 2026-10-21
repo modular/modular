@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unit tests for the Apple M5 weight-only FP8 (W8A16) grouped (MoE) matmul.
 
-Target: Apple M5 (`compute_capability() == 5`, Metal 4). The grouped analog of
+Target: Apple M5 (`compute_capability() >= 5`, Metal 4). The grouped analog of
 `test_fp8_gemv.mojo`: `bf16` activation x `float8_e4m3fn` expert-weight stack ->
 `bf16`, one expert group per `block_idx.z`, produced RAW (the per-expert
 `weight_scale` is a graph-level post-matmul fold, not part of the kernel -- see
@@ -273,8 +273,11 @@ def main() raises:
     with DeviceContext() as ctx:
         # Apple M5 only (the native fp8-operand simdgroup MMA); skip elsewhere so
         # the target stays runnable on non-M5 Apple CI without a hard failure.
-        if ctx.compute_capability() != 5:
-            print("skip: grouped W8A16 tiled matmul requires Apple M5 (cc==5)")
+        if ctx.compute_capability() < 5:
+            print(
+                "skip: grouped W8A16 tiled matmul requires Apple M5 or newer"
+                " (cc>=5)"
+            )
             return
 
         comptime BF16 = DType.bfloat16

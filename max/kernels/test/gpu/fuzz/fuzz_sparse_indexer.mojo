@@ -69,7 +69,7 @@ from std.random import random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
 from std.utils.numerics import min_or_neg_inf
 
-from layout import Coord, TensorLayout, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
 from nn.attention.gpu.sparse_indexer_common import block_select_topk
 
@@ -240,9 +240,11 @@ def gen_specs(n: Int) -> List[CaseSpec]:
 def _select_test_kernel[
     ScoresLT: TensorLayout,
     OutLT: TensorLayout,
+    ScoresEngine: TensorEngine,
+    OutEngine: TensorEngine,
 ](
-    scores: TileTensor[score_type, ScoresLT, MutAnyOrigin],
-    out_idxs: TileTensor[out_idx_type, OutLT, MutAnyOrigin],
+    scores: TileTensor[score_type, ScoresLT, MutAnyOrigin, Engine=ScoresEngine],
+    out_idxs: TileTensor[out_idx_type, OutLT, MutAnyOrigin, Engine=OutEngine],
     num_blocks_dev: Int32,
     k_dev: Int32,
 ):
@@ -357,7 +359,10 @@ def run_one_case(
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))
 
     comptime kernel = _select_test_kernel[
-        type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+        type_of(scores_t).LayoutType,
+        type_of(out_t).LayoutType,
+        type_of(scores_t).Engine,
+        type_of(out_t).Engine,
     ]
     ctx.enqueue_function[kernel](
         scores_t,
@@ -517,7 +522,10 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         var out_t = TileTensor(out_dev, row_major((num_rows, k)))
 
         comptime kernel = _select_test_kernel[
-            type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+            type_of(scores_t).LayoutType,
+            type_of(out_t).LayoutType,
+            type_of(scores_t).Engine,
+            type_of(out_t).Engine,
         ]
         ctx.enqueue_function[kernel](
             scores_t,
