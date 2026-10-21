@@ -20,9 +20,9 @@ sources in [`stdlib/std`](../../stdlib/std) as follows:
    APIs.
 3. **`mojodoc_json_to_markdown`** (Python) turns that JSON into Markdown using
    templates; see
-   [`mojo_doc.bzl`](https://github.com/modular/modular/blob/main/bazel/internal/mojo_doc.bzl)
+   [`mojo_doc.bzl`](https://github.com/modular/modular/blob/mojo/v1.2.0/bazel/internal/mojo_doc.bzl)
    and
-   [`mojodoc_json_to_markdown.py`](https://github.com/modular/modular/blob/main/bazel/internal/mojodoc_json_to_markdown.py).
+   [`mojodoc_json_to_markdown.py`](https://github.com/modular/modular/blob/mojo/v1.2.0/bazel/internal/mojodoc_json_to_markdown.py).
 4. This package’s [`BUILD.bazel`](BUILD.bazel) pulls
    `//Mojo/stdlib/std:docs` and puts it
    under `docs/std/` inside the site tarball with the manual and other
@@ -30,7 +30,7 @@ sources in [`stdlib/std`](../../stdlib/std) as follows:
 
 **Cross-links in generated Markdown:** ``mojo doc`` emits logical JSON paths
 (``/std/...``, ``/kernels/...``).
-[`mojodoc_api_href.py`](https://github.com/modular/modular/blob/main/bazel/internal/mojodoc_api_href.py)
+[`mojodoc_api_href.py`](https://github.com/modular/modular/blob/mojo/v1.2.0/bazel/internal/mojodoc_api_href.py)
 is the single place that knows the published site layout and rewrites them:
 stdlib → **mojolang.org** ``/docs/std/...``, kernels → **max.modular.com**
 ``/api/mojo/...``.
@@ -103,7 +103,7 @@ Be aware that we don't provide tools to generate a preview of the website,
 because the Mojo docs are built along with other content that's not included in
 this repo. As such, we recommend you preview your edits in an IDE that can
 render Markdown and MDX files, such as VS Code, including the
-[VS Code environment in GitHub](https://github.dev/modular/modular/blob/main/).
+[VS Code environment in GitHub](https://github.dev/modular/modular/blob/mojo/v1.2.0/).
 
 For more information about how to contribute, see the [Contributor
 Guide](../../CONTRIBUTING.md)

@@ -139,7 +139,7 @@ It includes:
 - [`mojo` CLI](/docs/cli/) (includes the Mojo compiler)
 - [Mojo standard library](/docs/std/)
 - [`mojo` Python
-  package](https://github.com/modular/modular/tree/main/Mojo/python/mojo)
+  package](https://github.com/modular/modular/tree/mojo/v1.2.0/Mojo/python/mojo)
 - Mojo language server (LSP) for IDE/editor integration
 - [Mojo debugger](/docs/tools/debugging/) (includes LLDB)
 - [Mojo code formatter](/docs/cli/format/)
@@ -155,7 +155,7 @@ the LSP and debugger tools. It includes:
 - [`mojo` CLI](/docs/cli/) (includes the Mojo compiler)
 - [Mojo standard library](/docs/std/)
 - [`mojo` Python
-  package](https://github.com/modular/modular/tree/main/Mojo/python/mojo)
+  package](https://github.com/modular/modular/tree/mojo/v1.2.0/Mojo/python/mojo)
 
 If you're interested in GPU programming, install the `max` package, which
 includes the MAX framework and Mojo. For details, see
@@ -166,7 +166,7 @@ in the MAX documentation.
 
 The Mojo SDK is licensed under the Apache License v2.0 with LLVM Exceptions. For
 details, see the
-[LICENSE](https://github.com/modular/modular/blob/main/LICENSE).
+[LICENSE](https://github.com/modular/modular/blob/mojo/v1.2.0/LICENSE).
 
 ### What operating systems does Mojo support?
 
@@ -264,7 +264,7 @@ Join the [Mojo Discord channel](http://discord.gg/modular) for notifications and
 
 Mojo is open source under the Apache License v2.0 with LLVM Exceptions. For
 details, see the
-[LICENSE](https://github.com/modular/modular/blob/main/LICENSE).
+[LICENSE](https://github.com/modular/modular/blob/mojo/v1.2.0/LICENSE).
 
 ### Why didn't you develop Mojo in the open from the beginning?
 

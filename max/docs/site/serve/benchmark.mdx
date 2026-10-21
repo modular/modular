@@ -44,7 +44,7 @@ This tutorial benchmarks a
 The benchmark is adapted from vLLM, with additions such as client-side GPU
 metric collection tailored to MAX. You can see the
 [benchmark script
-source](https://github.com/modular/modular/tree/main/max/python/max/benchmark).
+source](https://github.com/modular/modular/tree/max/v26.7.0/max/python/max/benchmark).
 
 An AI coding agent can run the benchmark for you with the `benchmark-model`
 skill, which drives load against an endpoint you're already serving and
@@ -175,7 +175,7 @@ Hugging Face cache. You might need to change permissions with `chown`.
 
 When you want to save your own benchmark configurations, you can define one in a
 YAML file and pass it to the `--config-file` option. For example, copy our
-[`gemma-3-27b-sonnet-decode-heavy-prefix200.yaml`](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs/gemma-3-27b-sonnet-decode-heavy-prefix200.yaml)
+[`gemma-3-27b-sonnet-decode-heavy-prefix200.yaml`](https://github.com/modular/modular/tree/max/v26.7.0/max/python/max/benchmark/configs/gemma-3-27b-sonnet-decode-heavy-prefix200.yaml)
 from GitHub, then benchmark the same model with this command:
 
 ```sh
@@ -276,7 +276,7 @@ contacting the server.
 
 For the full flag reference and the distribution grammar, see the
 [`max benchmark` documentation](/cli/benchmark). For a deeper walkthrough, see
-[Mix generated images into any benchmark workload](https://github.com/modular/modular/blob/main/max/python/max/benchmark/benchmarking_mixed_images.md).
+[Mix generated images into any benchmark workload](https://github.com/modular/modular/blob/max/v26.7.0/max/python/max/benchmark/benchmarking_mixed_images.md).
 
 ## Interpret the results
 
@@ -338,7 +338,7 @@ P99 Request Latency (ms):                25251.18
 ```
 
 For more information about each metric, see the
-[MAX benchmarking key metrics](https://github.com/modular/modular/tree/main/max/python/max/benchmark#key-metrics-explained).
+[MAX benchmarking key metrics](https://github.com/modular/modular/tree/max/v26.7.0/max/python/max/benchmark#key-metrics-explained).
 
 ### Measure latency with finite request rates
 

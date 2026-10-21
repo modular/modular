@@ -489,7 +489,7 @@ describing the active devices and KV cache.
 Reuse an existing processor when your model's batching matches a family that MAX
 already supports. One Llama 3 batch processor backs Llama 3, OLMo, Granite, Qwen
 2, and Phi-3, and Qwen 3.5 subclasses it to adjust specific steps; see the
-[`llama3` architecture](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama3)
+[`llama3` architecture](https://github.com/modular/modular/tree/max/v26.7.0/max/python/max/pipelines/architectures/llama3)
 for a reference implementation. Create a `batch_processor.py` with your own
 `BatchProcessor` subclass only when your model needs batching logic that no
 existing processor covers.
