@@ -63,7 +63,9 @@ layouts](https://max.modular.com/layout/layouts/).
 
 Using the `LayoutTensor` type to manipulate multidimensional data on both CPU
 and GPU, accompanying [Using
-LayoutTensor](https://max.modular.com/layout/tensors/).
+LayoutTensor](https://max.modular.com/layout/tensors/). `LayoutTensor` is
+deprecated as of MAX 26.7; for new code, see [Using
+TileTensor](https://max.modular.com/tile-tensor/tensors/).
 
 ## [Music generation](music_generation/)
 

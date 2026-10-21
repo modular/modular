@@ -221,185 +221,23 @@ version of Ubuntu (see our requirements for Linux).
 ### GPU compatibility
 
 MAX supports both CPUs and GPUs, so you don't always need a GPU to serve a
-model. But if you want to accelerate inference with GPUs or program for GPUs
-with Mojo, the following GPUs are compatible.
+model. To accelerate inference with GPUs, we test serving on NVIDIA B200 and
+AMD MI355X GPUs. Other compatible GPUs might also serve models, but we don't
+test them for serving. For every GPU you can program with Mojo and MAX, and the
+arch target of each, see
+[Hardware compatibility](/gpu/hardware-compatibility/).
 
-#### NVIDIA GPUs
+GPUs require the following drivers:
 
-<table>
-  <thead>
-    <tr>
-      <th>GPU</th>
-      <th>Architecture</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td colSpan="2"><strong>Tested for serving</strong></td>
-    </tr>
-    <tr>
-      <td>B200</td>
-      <td>Blackwell</td>
-    </tr>
-    <tr>
-      <td colSpan="2"><strong>Known compatible for development</strong></td>
-    </tr>
-    <tr>
-      <td>B300</td>
-      <td>Blackwell</td>
-    </tr>
-    <tr>
-      <td>B100</td>
-      <td>Blackwell</td>
-    </tr>
-    <tr>
-      <td>DGX Spark</td>
-      <td>Blackwell</td>
-    </tr>
-    <tr>
-      <td>H200</td>
-      <td>Hopper</td>
-    </tr>
-    <tr>
-      <td>H100</td>
-      <td>Hopper</td>
-    </tr>
-    <tr>
-      <td>L4</td>
-      <td>Ada Lovelace</td>
-    </tr>
-    <tr>
-      <td>L40</td>
-      <td>Ada Lovelace</td>
-    </tr>
-    <tr>
-      <td>A100</td>
-      <td>Ampere</td>
-    </tr>
-    <tr>
-      <td>A10</td>
-      <td>Ampere</td>
-    </tr>
-    <tr>
-      <td>A1000</td>
-      <td>Ampere</td>
-    </tr>
-    <tr>
-      <td>RTX 50XX series</td>
-      <td>Blackwell</td>
-    </tr>
-    <tr>
-      <td>RTX 40XX series</td>
-      <td>Ada Lovelace</td>
-    </tr>
-    <tr>
-      <td>RTX 30XX series</td>
-      <td>Ampere</td>
-    </tr>
-    <tr>
-      <td>Jetson Orin / Orin Nano</td>
-      <td>Ampere</td>
-    </tr>
-    <tr>
-      <td>Jetson Thor</td>
-      <td>Blackwell</td>
-    </tr>
-    <tr>
-      <td>T4</td>
-      <td>Turing</td>
-    </tr>
-    <tr>
-      <td>RTX 20XX series</td>
-      <td>Turing</td>
-    </tr>
-  </tbody>
-</table>
-
-Software requirement: NVIDIA GPU driver 580 or later. Check your version with
-[`nvidia-smi`](https://developer.nvidia.com/system-management-interface). To
-update, see the [NVIDIA driver docs](https://www.nvidia.com/en-us/drivers/). If
-your driver is older than 580, set the `MODULAR_NVPTX_COMPILER_PATH` environment
-variable to a system `ptxas` binary (for example,
-`export MODULAR_NVPTX_COMPILER_PATH=/usr/local/cuda/bin/ptxas`).
-
-#### AMD GPUs
-
-<table>
-  <thead>
-    <tr>
-      <th>GPU</th>
-      <th>Architecture</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td colSpan="2"><strong>Tested for serving</strong></td>
-    </tr>
-    <tr>
-      <td>MI355X</td>
-      <td>CDNA4</td>
-    </tr>
-    <tr>
-      <td>MI300X</td>
-      <td>CDNA3</td>
-    </tr>
-    <tr>
-      <td>MI325X</td>
-      <td>CDNA3</td>
-    </tr>
-    <tr>
-      <td colSpan="2"><strong>Known compatible for development</strong></td>
-    </tr>
-    <tr>
-      <td>MI250X</td>
-      <td>CDNA2</td>
-    </tr>
-    <tr>
-      <td>Radeon RX 9070</td>
-      <td>RDNA4</td>
-    </tr>
-    <tr>
-      <td>Radeon RX 9060</td>
-      <td>RDNA4</td>
-    </tr>
-    <tr>
-      <td>Radeon 880M / 890M</td>
-      <td>RDNA3.5</td>
-    </tr>
-    <tr>
-      <td>Radeon 860M</td>
-      <td>RDNA3.5</td>
-    </tr>
-    <tr>
-      <td>Radeon 8060S</td>
-      <td>RDNA3.5</td>
-    </tr>
-    <tr>
-      <td>Radeon RX 7900</td>
-      <td>RDNA3</td>
-    </tr>
-    <tr>
-      <td>Radeon RX 7800 / 7700</td>
-      <td>RDNA3</td>
-    </tr>
-    <tr>
-      <td>Radeon RX 7600</td>
-      <td>RDNA3</td>
-    </tr>
-    <tr>
-      <td>Radeon 780M</td>
-      <td>RDNA3</td>
-    </tr>
-    <tr>
-      <td>Radeon RX 6900</td>
-      <td>RDNA2</td>
-    </tr>
-  </tbody>
-</table>
-
-Software requirement: AMD GPU driver 6.3.3 or later (MI355X requires ROCm 7.0 or
-later). For installation, see the
-[Ubuntu native install guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/install-methods/package-manager/package-manager-ubuntu.html).
+- NVIDIA: GPU driver 580 or later. Check your version with
+  [`nvidia-smi`](https://developer.nvidia.com/system-management-interface). To
+  update, see the [NVIDIA driver docs](https://www.nvidia.com/en-us/drivers/).
+  If your driver is older than 580, set the `MODULAR_NVPTX_COMPILER_PATH`
+  environment variable to a system `ptxas` binary (for example,
+  `export MODULAR_NVPTX_COMPILER_PATH=/usr/local/cuda/bin/ptxas`).
+- AMD: GPU driver 6.3.3 or later (MI355X requires ROCm 7.0 or later). For
+  installation, see the
+  [Ubuntu native install guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/install-methods/package-manager/package-manager-ubuntu.html).
 
 #### Apple silicon GPUs
 
@@ -423,7 +261,7 @@ exist yet. When that happens, the model fails during graph compilation rather
 than at inference time.
 
 For hardware tables and Metal troubleshooting, see
-[Mojo system requirements](https://mojolang.org/docs/requirements/#apple-silicon-gpus).
+[Apple silicon GPUs](/gpu/hardware-compatibility/#apple-silicon-gpus).
 
 :::note Notes
 
@@ -441,10 +279,9 @@ more GPUs. When you browse our [supported models](/models/), you can check
 for multi-GPU support. To serve a model across multiple GPUs, see
 [Parallelism](/serve/parallelism/).
 
-- For comprehensive GPU hardware tables, arch targets, and troubleshooting, see
-the
-[Mojo system requirements](https://mojolang.org/docs/requirements/#gpu-compatibility)
-page.
+- For comprehensive GPU hardware tables, architecture targets, and
+  troubleshooting, see
+  [Hardware compatibility](/gpu/hardware-compatibility/).
 
 - To deploy MAX in containers, see the [deployment
 guide](/serve/local-to-cloud/).

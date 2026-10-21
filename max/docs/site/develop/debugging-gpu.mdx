@@ -41,11 +41,11 @@ sessions; do not use in production.
 
 ## Enable kernel-level bounds checking
 
-Mojo's assertion-enabled APIs can catch some kernel-authoring bugs. For
-example, flat legacy
-[`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor/) accesses have
-bounds checks when all assertions are enabled. These checks aren't present in
-every tensor or pointer API.
+Mojo's assertion-enabled APIs can catch some kernel-authoring bugs. For example,
+flat accesses to the deprecated
+[`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor/) type have bounds
+checks when all assertions are enabled. These checks aren't present in every
+tensor or pointer API.
 
 For new kernels, use [`TileTensor`](/tile-tensor/tensors/), but don't assume
 ordinary pointer-backed indexing, `load()`, or `store()` checks coordinates
@@ -79,12 +79,12 @@ assertions when actively debugging a specific kernel.
 Now that you can pin down GPU failures to the op that caused them, explore
 related debug options and profiling tools:
 
-- [Diagnose runtime errors](/develop/debugging-errors): When a GPU
+- [Diagnose runtime errors](/develop/debugging-errors/): When a GPU
   failure escalates to a crash, capture Mojo stack traces and IR dumps
   for deeper investigation.
-- [Trace op execution](/develop/debugging-tracing): Use op-level
+- [Trace op execution](/develop/debugging-tracing/): Use op-level
   tracing alongside synchronous dispatch to see the exact sequence that
   led to the failure.
-- [GPU system profiling](/gpu-system-profiling): Move beyond
+- [GPU system profiling](/gpu-system-profiling/): Move beyond
   correctness debugging to profile GPU workloads for performance
   bottlenecks.

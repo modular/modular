@@ -369,13 +369,16 @@ def tiled_matmul_kernel(
 
 This tiled algorithm leverages the GPU's memory hierarchy for better
 performance. Shared memory is an on-chip cache that's much faster than global
-memory, but it's limited in size—a typical block might have only 48KB available.
-We break the computation into stages: threads cooperatively load small tiles
-from global memory into this fast shared memory, perform computations on those
-tiles, then repeat for the next set of tiles. Each thread loads one element per
-tile, creating coalesced memory accesses that maximize bandwidth. Once a tile
-sits in shared memory, all threads in the block can access it repeatedly without
-triggering expensive global memory reads.
+memory, but it's limited in size, and the limit depends on the GPU. NVIDIA GPUs
+allow 48 KB per block by default and more when the kernel requests it through
+the `shared_mem_bytes` launch argument (up to 227 KB on B200). AMD MI355X GPUs
+provide 160 KB of local data share (LDS) per workgroup, and Apple silicon GPUs
+allow 32 KB of threadgroup memory. We break the computation into stages: threads
+cooperatively load small tiles from global memory into this fast shared memory,
+perform computations on those tiles, then repeat for the next set of tiles. Each
+thread loads one element per tile, creating coalesced memory accesses that
+maximize bandwidth. Once a tile sits in shared memory, all threads in the block
+can access it repeatedly without triggering expensive global memory reads.
 
 The first `barrier()` call appears immediately after the cooperative tile
 loading phase. This synchronization point is critical: it ensures that all

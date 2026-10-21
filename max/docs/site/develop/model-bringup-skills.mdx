@@ -20,7 +20,7 @@ model produces incorrect results. When the model serves correctly, the
 [`eval-model`](https://github.com/modular/skills/blob/main/eval-model/SKILL.md)
 skill measures its task accuracy on standard benchmarks such as GSM8K and MMLU.
 You can then compare it against the original model's published scores. Once the
-model runs correctly, the [`profile-model`](/gpu-system-profiling) skill
+model runs correctly, the [`profile-model`](/gpu-system-profiling/) skill
 helps you find where it spends time and whether the GPU is saturated.
 
 ## Install MAX skills
@@ -159,7 +159,7 @@ ends in `_ModuleV3`, and `max serve --prefer-module-v3` selects it.
 The `import-model` skill drives a phased workflow (decide and plan,
 implement, then verify), and you remain the coordinator and validator at each
 checkpoint. The agent writes the port with the
-[`max.experimental.nn`](/api/python/experimental.nn) module API, as described
+[`max.experimental.nn`](/api/python/experimental.nn/) module API, as described
 in the [Model bring-up workflow](/develop/model-bringup-workflow/). The
 sections below describe what the agent delivers in each phase and how you
 steer it. For the full procedure, see the skill's

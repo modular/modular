@@ -83,5 +83,10 @@
     "source": "/llms-kernels.txt",
     "dest": "/llms-accelerator-api.txt",
     "status": 302
+  },
+  {
+    "source": "/api/mojo/max/gpu/host/device_context/DeviceContext/?",
+    "dest": "/api/mojo/max/gpu/host/device_context/DeviceContextBase/",
+    "status": 302
   }
 ]

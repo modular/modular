@@ -5,6 +5,15 @@ description: Using LayoutTensor to manipulate multidimensional data.
 github_url: https://github.com/modular/modular/tree/main/max/examples/layout_tensor
 ---
 
+:::caution Deprecated
+
+`LayoutTensor` and `LayoutTensorIter` are deprecated as of MAX 26.7 and will be
+removed in a future release. Use [`TileTensor`](/tile-tensor/tensors/) and
+[`TileTensorIter`](/api/mojo/layout/tile_iterator/TileTensorIter/) instead. The
+examples on this page still work, but they compile with deprecation warnings.
+
+:::
+
 A
 [`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor/)
 provides a view of multi-dimensional data stored in a linear array.

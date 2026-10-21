@@ -6,7 +6,7 @@ description: Serve a fine-tuned model checkpoint with MAX when the base architec
 
 This page covers serving a fine-tune built on an architecture MAX already
 supports. To bring up a new architecture, see the
-[model bring-up workflow](/develop/model-bringup-workflow).
+[model bring-up workflow](/develop/model-bringup-workflow/).
 
 When you fine-tune a Llama 3, Mistral, or Qwen model, the resulting checkpoint
 runs the same computation as the base: the same attention mechanism, the same
@@ -27,11 +27,11 @@ each requires:
 - **Weight adapter** — a small adapter resolves mismatched weight or config
   field names that some fine-tuning pipelines introduce, without touching the
   architecture implementation. Covered in
-  [Weight adapters](/develop/weight-adapters).
+  [Weight adapters](/develop/weight-adapters/).
 - **Full architecture package** — required when the compute graph itself is
   new (a different attention variant, routing mechanism, or normalization
   scheme that MAX hasn't implemented). Also covered in the
-  [model bring-up workflow](/develop/model-bringup-workflow).
+  [model bring-up workflow](/develop/model-bringup-workflow/).
 
 The decision signal is the `architectures` field in your model's `config.json`.
 If it lists an architecture that MAX already supports (`LlamaForCausalLM`,
@@ -110,7 +110,7 @@ registration. `--weight-path` tells MAX to serve your fine-tuned weights instead
 of the base model's weights. Both flags are required when serving a custom GGUF
 checkpoint; omitting `--weight-path` causes MAX to serve the base model's
 weights rather than yours. All supported quantization encodings are listed in
-[`QuantizationEncoding`](/api/python/generated/max.graph.quantization.QuantizationEncoding).
+[`QuantizationEncoding`](/api/python/generated/max.graph.quantization.QuantizationEncoding/).
 
 ## Use LoRA adapters without merging
 
@@ -136,16 +136,16 @@ serving, so you must pass `--no-enable-prefix-caching`. LoRA serving currently
 supports Llama 3 base models with PEFT-trained adapters in safetensors format;
 it doesn't yet support other base architectures. For dynamic loading and
 unloading of adapters while the server is running, see
-[LoRA adapters](/serve/lora-adapters).
+[LoRA adapters](/serve/lora-adapters/).
 
 ## Next steps
 
-- [Serve your custom model](/develop/serve-custom-model-architectures):
+- [Serve your custom model](/develop/serve-custom-model-architectures/):
   Learn how to serve a model with a custom architecture with max serve and send
   inference requests to it.
-- [Using LoRA adapters](/serve/lora-adapters): Use LoRA adapters with MAX
+- [Using LoRA adapters](/serve/lora-adapters/): Use LoRA adapters with MAX
   to serve task-specific, fine-tuned variants of LLMs.
-- [Quantization](/develop/quantize): An introduction to the MAX Graph
+- [Quantization](/develop/quantize/): An introduction to the MAX Graph
   quantization API.
 - [LLM fine-tuning](https://handbook.modular.com/model-preparation/llm-fine-tuning/):
   Learn more in the LLM Inference Handbook.

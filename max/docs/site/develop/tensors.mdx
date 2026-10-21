@@ -10,7 +10,7 @@ They represent multi-dimensional arrays of numbers used for model inputs,
 outputs, and parameters.
 
 If you're coming from NumPy, think of a MAX
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor) like a NumPy
+[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) like a NumPy
 [`ndarray`](https://numpy.org/devdocs/reference/arrays.ndarray.html#arrays-ndarray).
 
 ## Tensor basics
@@ -43,7 +43,7 @@ of MAX tensors.
 ## Create a tensor
 
 You can create a tensor from a Python list using the
-[`Tensor()`](/api/python/generated/max.experimental.tensor.Tensor)
+[`Tensor()`](/api/python/generated/max.experimental.tensor.Tensor/)
 constructor:
 
 {/* @sync: ../../code/develop/tensors/create_first_tensor.py */}
@@ -58,7 +58,7 @@ print(x)
 ```
 
 This imports the
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor) class and
+[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) class and
 creates a 1-D tensor (a vector) with the values `[1, 2, 3, 4, 5]`. The
 `Tensor()` constructor creates a tensor from a tensor-like object—it can be a
 list, a NumPy array, or a PyTorch tensor.
@@ -75,7 +75,7 @@ Notice that when creating the tensors, the output shows the dtype and device.
 The dtype is the data type of the tensor, and the device is the device on which
 the tensor is stored. The expected output on this page comes from a machine
 without a GPU. On a GPU, the dtype is `bfloat16` and the device is the GPU. The
-[Data types (dtype)](/develop/dtypes) page and the [Device](#device) section
+[Data types (dtype)](/develop/dtypes/) page and the [Device](#device) section
 cover both in more detail.
 
 :::
@@ -107,9 +107,9 @@ Tensor([1 2 | 5 6
 
 MAX provides convenient functions for creating tensors with specific patterns,
 such as
-[`ones()`](/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.ones)
+[`ones()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.ones)
 and
-[`zeros()`](/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.zeros):
+[`zeros()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.zeros):
 
 {/* @sync: ../../code/develop/tensors/create_factory.py */}
 
@@ -223,7 +223,7 @@ The expected output is:
 ```
 
 In this example, the
-[`shape`](/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.shape)
+[`shape`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.shape)
 property returns a list of `Dim` objects representing the size of each
 dimension.
 
@@ -268,7 +268,7 @@ integers = Tensor.ones([2, 2], dtype=DType.int32)
 
 MAX supports integer, floating-point, and boolean dtypes, including
 low-precision formats such as `bfloat16` and the float8 variants. You'll
-learn more about dtypes in the [Data types (dtype)](/develop/dtypes) page.
+learn more about dtypes in the [Data types (dtype)](/develop/dtypes/) page.
 
 ### Device
 
@@ -312,12 +312,12 @@ In this example, the expected output is:
 ```
 
 The
-[`num_elements()`](/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.num_elements)
+[`num_elements()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.num_elements)
 function returns the total number of elements in the tensor, which is the
 product of the dimensions.
 
 ## Next steps
 
 Now that you understand tensor basics, continue to
-[Data types (dtype)](/develop/dtypes) to learn how to
+[Data types (dtype)](/develop/dtypes/) to learn how to
 control tensor precision and memory usage.

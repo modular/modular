@@ -61,16 +61,17 @@ information, see [Vectorizing tensors](#vectorizing-tensors).
 
 :::note TileTensor and LayoutTensor
 
-`TileTensor` is essentially a new version of
-[`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor/). `TileTensor` is
-more memory-efficient and makes it much easier to mix compile-time and runtime
-dimensions. However, some operations that are supported on `LayoutTensor` aren't
-yet supported on `TileTensor`. For these operations, you can easily create a
-`LayoutTensor` from a `TileTensor` using
-[`to_layout_tensor()`](/api/mojo/layout/tile_tensor/TileTensor/#to_layout_tensor).
-This method requires non-vectorized `DefaultEngine` or `DevicePointerEngine`
-storage. The resulting view borrows the same memory; it doesn't allocate or
-extend the lifetime of the backing storage.
+`TileTensor` replaces
+[`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor/), which is
+deprecated as of MAX 26.7. `TileTensor` is more memory-efficient and makes it
+much easier to mix compile-time and runtime dimensions. A few `LayoutTensor`
+operations, such as `simd_tile()`, don't have `TileTensor` equivalents yet. If
+you need one, you can create a `LayoutTensor` from a `TileTensor` using
+[`to_layout_tensor()`](/api/mojo/layout/tile_tensor/TileTensor/#to_layout_tensor),
+though the result is itself a deprecated type. This method requires
+non-vectorized `DefaultEngine` or `DevicePointerEngine` storage. The resulting
+view borrows the same memory; it doesn't allocate or extend the lifetime of the
+backing storage.
 
 :::
 
@@ -606,8 +607,8 @@ and
 
 ### Iterating over tiles
 
-`TileTensor` doesn't provide a tile iterator. To visit every tile in a tensor,
-loop over the tile coordinates and call `tile()` for each one:
+To visit every tile in a tensor, loop over the tile coordinates and call
+`tile()` for each one:
 
 ```mojo
 from std.math import ceildiv
@@ -624,14 +625,90 @@ for i in range(num_row_tiles):
 
 Because each tile is a view, this loop doesn't copy any data.
 
+### Stepping through a buffer of tiles
+
+When a buffer holds a sequence of equally shaped tiles, such as the stages of a
+pipelined shared-memory buffer,
+[`TileTensorIter`](/api/mojo/layout/tile_iterator/TileTensorIter/) steps
+through it one tile at a time. You create the iterator from a pointer to the
+buffer, the layout of one tile, and a `bound`: the buffer's size in elements.
+Dereferencing the iterator with `[]` (or calling `get()`) returns a `TileTensor`
+view of the current tile, and `+=` advances it:
+
+```mojo
+from std.collections import Array
+from layout import row_major
+from layout.tile_iterator import TileTensorIter
+
+comptime tile_rows = 4
+comptime tile_cols = 4
+comptime tile_size = tile_rows * tile_cols
+comptime num_tiles = 8
+comptime buf_size = num_tiles * tile_size
+var storage = Array[Int16, buf_size](
+    fill_with=lambda (i: Int) -> Int16: Int16(i)
+)
+
+# The tile layout's dimensions are all known, so the tiles sit back to
+# back: the iterator steps by the tile's element count.
+var tiles = TileTensorIter[.int16, _, _](
+    storage.unsafe_ptr(),
+    row_major[tile_rows, tile_cols](),
+    bound=buf_size,
+)
+for i in range(num_tiles):
+    var tile = tiles[]
+    # ... do something with the tile
+    tiles += 1
+```
+
+When the tile layout has run-time dimensions, or the tiles aren't back to back,
+pass the distance between consecutive tiles as `stride`, and optionally the
+first tile's position as `offset`, both in elements.
+
+An iterator created with `circular=True` wraps back to the start of the buffer
+when it reaches `bound`. This suits a multi-stage ring buffer, where the kernel
+computes on one stage while it fills the next. The `next()` method returns a
+copy of the iterator advanced by one tile (or by the number you pass), without
+moving the original:
+
+```mojo
+comptime num_stages = 3
+comptime ring_size = num_stages * tile_size
+var ring_storage = Array[Int16, ring_size](
+    fill_with=lambda (i: Int) -> Int16: Int16(i)
+)
+
+var stages = TileTensorIter[.int16, _, _, circular=True](
+    ring_storage.unsafe_ptr(),
+    row_major[tile_rows, tile_cols](),
+    bound=ring_size,
+)
+for k in range(8):
+    # Tile k lands in stage k % num_stages.
+    var stage = stages[]
+    # next() returns a copy that is one tile ahead, wrapping at bound.
+    var next_stage = stages.next()
+    # ... compute on stage while next_stage is being filled
+    stages += 1
+```
+
+Like `tile()`, the iterator never clips a tile. An iterator created with
+`masked=True` also stores a run-time count of valid rows, `num_valid_rows`,
+which you pass to the constructor, for tiles that reach past the edge of a
+tensor. The iterator doesn't shrink the tile, so pass that count as the bound
+when you copy the tile, as described in
+[Handling tensor boundaries](#handling-tensor-boundaries).
+
 ### Handling tensor boundaries
 
 The `tile()` method doesn't clip a tile at the edge of its parent tensor: the
 tile always has the shape you request. When a tensor's dimensions aren't
 multiples of the tile size, the last tile along each axis extends past the
 tensor's data, and accessing those positions reads or writes memory outside the
-tensor. (The legacy `LayoutTensor` type supports masked tiles that shrink at the
-boundary. `TileTensor` has no equivalent.)
+tensor. (The deprecated `LayoutTensor` type supports masked tiles that shrink at
+the boundary. `TileTensor` has no equivalent, and a masked `TileTensorIter`
+carries a valid-row count without clipping the tile.)
 
 To process an incomplete edge tile, compare each position's coordinates in the
 parent tensor against the parent's dimensions before you access it:

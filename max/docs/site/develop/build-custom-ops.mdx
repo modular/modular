@@ -211,9 +211,17 @@ file where we load the `add_one` custom op into a graph using
 [`ops.custom()`](/api/python/graph.ops/#max.graph.ops.custom).
 
 Here's the code that specifies the path to the Mojo custom op and adds it to the
-graph. The path passed to `custom_extensions` must be a Mojo package directory:
-it needs an `__init__.mojo` file (which can be empty) so the compiler can find
-the ops.
+graph. The path passed to `custom_extensions` takes one of two forms:
+
+- A Mojo package directory, which needs an `__init__.mojo` file (which can be
+  empty) so the compiler can find the ops. MAX precompiles the directory each
+  time it builds a graph or session, so it picks up your edits automatically.
+  Use this form during development.
+- A `.mojoc` file built with `mojo precompile`. Use this form to ship ops, and
+  build it with the same Mojo version that the consumer runs.
+
+A single `.mojo` file or a `.mojopkg` file is rejected. This example uses a
+package directory:
 
 ```python title="addition.py"
 mojo_kernels = Path(__file__).parent / "kernels"

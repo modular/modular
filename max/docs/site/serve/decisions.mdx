@@ -1,49 +1,42 @@
 ---
 title: Decisions
-sidebar_label: Decisions
-description: Answer typed questions about an input with a probability for every option, without generating text
+description: Answer questions about an input with a probability for every option, without generating text
 ---
 
-The `/v1/decisions` endpoint turns a model into a decision model. You send an
-input and a list of typed questions, and each answer comes back with the
-probability of every option. The probabilities are read from the model's
-next-token scores at the answer position, so no text is generated and no output
-is parsed.
+The [`/v1/decisions`](/rest-api/create-decisions/) endpoint returns
+probabilities for predefined answers instead of generating text. This reduces
+generation overhead, making it useful for applications that need fast,
+machine-readable decisions.
 
-Use it to route tickets, classify or filter text, rate content on a scale, or
-answer yes/no checks, where you need a number you can threshold or rank on
-rather than a sentence you have to parse.
+Use the decisions API when you need to classify input, evaluate a condition, or
+assign a score. For other tasks, choose an approach based on the output you
+need: use [structured output](/serve/structured-output/) when you need the
+model to return an object with specific fields, or use [tool
+calling](/serve/function-calling/) when the model needs to request a tool
+invocation with arguments.
 
-The wire format matches
-[SGLang's `/v1/decisions`](https://docs.sglang.io/docs/supported-models/decision_models),
-so existing clients work unchanged. `/v1/decisions` is an extension under `/v1`,
-like `/v1/embeddings`, and isn't part of the OpenAI API. Call it over HTTP
-rather than through an OpenAI SDK method.
+## Choose a question type
 
-## Start the server
+Use the decisions API for the following question types.
 
-Any text generation model serves decisions, with no extra flag:
+| Type     | Use it to                                                                                 | Main result                                                                                                        |
+|----------|-------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| `choice` | Select one option from a fixed set, such as a support team or issue category.             | `choice`: the selected option, and `probabilities`: a probability for each option.                                 |
+| `score`  | Rate input against ordered levels, such as issue severity.                                | `score`: the probability-weighted average of the level indices, and `probabilities`: a probability for each level. |
+| `yes_no` | Evaluate a condition with a binary answer, such as whether a customer requested a refund. | `probabilities`: probabilities for `yes` and `no`.                                                                 |
+
+## Send a request to `/v1/decisions`
+
+Start a server with a supported text generation model. The decisions API is
+available by default.
 
 ```sh
-max serve --model-path Qwen/Qwen3.5-2B
+max serve --model Qwen/Qwen3.5-2B
 ```
 
-The first decision request compiles a small label-gather graph, so it takes a
-few seconds longer than the ones after it. Decisions work with the overlap
-scheduler and device graph capture, though a step that scores a request waits
-for the GPU rather than overlapping.
-
-A model that ships a `decider_config.json`, such as `Mapika/decider-2b`, is
-served in the decider prompt format that it was trained on. MAX checks for the
-file when the server starts. Every other model uses its chat template.
-
-The model needs a chat template whose answer position follows a closed (or
-absent) reasoning block. MAX turns thinking off for these requests. A request
-that turns it on, or a model that can't answer with one-token labels, is
-rejected with a `400` that names the question. A request that doesn't match the
-schema is a `422`.
-
-## Ask questions
+Send a request to `/v1/decisions` with an input and one or more questions. This
+example routes a support ticket to a team and checks whether the customer
+requested a refund.
 
 ```sh
 curl -X POST http://localhost:8000/v1/decisions \
@@ -66,21 +59,12 @@ curl -X POST http://localhost:8000/v1/decisions \
   }'
 ```
 
-There are three question types:
+The first request can take several seconds longer
+than later ones, because MAX compiles a small label-gather graph.
 
-- `choice`: 2 to 26 `options`, each with a `name` and an optional
-  `description`. Options are labeled `A` to `Z` in order, and the answer
-  includes the winning `choice`.
-- `score`: 2 to 10 `levels`, labeled `0` to `9` in order. The answer includes
-  `score`, the expected level under the probabilities.
-- `yes_no`: answered by the labels `yes` and `no`, with optional `yes` and `no`
-  descriptions.
+## Understand the response
 
-Every question needs a distinct `id`, and a request takes up to 64 questions.
-Text fields accept a string, object, or array. Objects and arrays are rendered
-into the prompt as compact JSON. A malformed request returns `422`.
-
-## Read the response
+The response includes an `answers` object with one entry for each question ID:
 
 ```json
 {
@@ -90,134 +74,75 @@ into the prompt as compact JSON. A malformed request returns `422`.
   "answers": {
     "team": {
       "type": "choice",
-      "choice": "billing",
-      "probabilities": {"billing": 0.97, "technical": 0.01, "other": 0.02},
-      "label_mass": 0.99
+      "probabilities": {"billing": 0.98, "technical": 0.01, "other": 0.01},
+      "label_mass": 1.0,
+      "choice": "billing"
     },
     "refund": {
       "type": "yes_no",
-      "probabilities": {"yes": 0.95, "no": 0.05},
-      "label_mass": 0.98
+      "probabilities": {"yes": 0.98, "no": 0.02},
+      "label_mass": 0.02
     }
   },
-  "usage": {"prompt_tokens": 412, "completion_tokens": 0, "total_tokens": 412}
-}
-```
-
-`probabilities` is a softmax over the answer labels' scores, divided by
-`temperature`, so it sums to 1 over the options. It is a ranking you can
-threshold. It isn't a calibrated probability that the answer is correct unless
-you fit the temperature on your own data.
-
-`label_mass` is the full-vocabulary probability of all the answer labels at the
-answer position. It stays near 1 when the model answers with a label and drops
-when it wants to say something else, which makes it a cheap out-of-scope
-signal. `temperature` scales `probabilities` only, never `label_mass`.
-
-`usage.completion_tokens` is always 0. `prompt_tokens` sums the prompt of every
-question. Questions that share the same input reuse its prefill when prefix
-caching is on, and `usage.prompt_tokens_details.cached_tokens` reports how much
-was reused.
-
-## Request fields
-
-| Field                     | Description                                                                                           |
-|---------------------------|-------------------------------------------------------------------------------------------------------|
-| `input`                   | The text or JSON value the questions are about. Required.                                             |
-| `questions`               | One or more typed questions. Required.                                                                |
-| `temperature`             | Divides label scores before the softmax. Default `1.0`.                                               |
-| `chat_template_kwargs`    | Extra chat template arguments. Thinking is off by default and may not be turned on.                   |
-| `prompt_format_version`   | Pins the prompt wording; a different served version is rejected. Currently `1` (`2` for decider).     |
-| `return_prompt_token_ids` | Returns the exact prompt and label token IDs scored, for reproducing a result offline.                |
-| `model`                   | The model to use.                                                                                     |
-
-## How a question is scored
-
-Each question becomes its own chat prompt: the input, a blank line, the
-question with its labeled options, and an instruction such as "Answer with the
-letter of one option only." The prompt ends where the assistant's answer would
-start. MAX runs one prefill step and reads the log-probability of each answer
-label at the last position, normalized over the whole vocabulary.
-
-Because each question is independent, adding, removing, or reordering questions
-never changes another question's answer. Before scoring, MAX checks that every
-label is exactly one distinct token after the rendered prompt for the model's
-tokenizer. If one isn't, the request fails with a `400` instead of returning a
-misleading number.
-
-## System One compatible route
-
-`POST /v1/systemone` accepts the System One request shape and answers it with
-the same scoring path, so System One clients (such as `typesafe-sdk`) and the
-Decision Index `http` engine can point at a MAX server.
-
-```json
-{
-  "state": "I was charged twice for order A-104. Please refund one.",
-  "model": "Qwen/Qwen3.5-0.8B",
-  "questions": {
-    "refund": {"type": "noul", "instructions": "Is a refund requested?"},
-    "team": {
-      "type": "choice",
-      "instructions": "Which team should handle this?",
-      "criteria": {"billing": "Charges and refunds", "technical": null}
-    },
-    "urgency": {
-      "type": "score",
-      "instructions": "How urgent is this?",
-      "criteria": ["no rush", "soon", "today", "immediately"]
-    }
+  "usage": {
+    "completion_tokens": 0,
+    "prompt_tokens": 115,
+    "total_tokens": 115,
+    "prompt_tokens_details": {"cached_tokens": 0}
   }
 }
 ```
 
-Answers come back keyed by your question IDs: `noul` (the probability of yes),
-`choice` with `confidence` and `probabilities`, and `score` with `confidence`,
-a `legend`, and `probabilities`. Each also carries `x_label_mass`, the
-full-vocabulary probability of the answer labels. `usage` reports
-`input_tokens` and `output_tokens` (always `0`).
+In this example, `billing` scored highest for the team that should handle the
+request, and `yes` scored highest for whether the customer requested a refund.
 
-Prompts, label checks, and probabilities are the same as for `/v1/decisions`
-with the model's default temperature. `state` may be empty when the questions
-carry everything. Schema errors return `422`, and requests MAX can't answer
-(unknown model, unsupported server features, labels that aren't single tokens)
-return `400`. Fields that only `/v1/decisions` has (`temperature`,
-`prompt_format_version`, `return_prompt_token_ids`) are refused with a `422`.
-Choice questions take up to 26 options.
+Each answer also includes `label_mass`, the share of the model's next-token
+probability that went to the answer labels. A value near 1 means the model
+answered with one of the labels. A low value, like `0.02` for `refund`, means
+the model wanted to respond with something else, so treat that answer's
+probabilities with caution.
 
-## Decider models
+The `usage` object reports token counts for the request. `prompt_tokens` totals
+the prompt tokens across all questions because MAX scores each question as its
+own prompt. `completion_tokens` is always `0` because the endpoint doesn't
+generate text. For comprehensive information about the response body, see the
+[decisions API reference](/rest-api/create-decisions/).
 
-Models trained for decisions, such as
-[`Mapika/decider-0.8b`](https://huggingface.co/Mapika/decider-0.8b) and
-[`Mapika/decider-2b`](https://huggingface.co/Mapika/decider-2b) (Apache-2.0,
-Qwen3.5 text-only), read a different prompt than a chat model. They need no
-extra flag: MAX finds the `decider_config.json` that ships with the checkpoint
-at startup and serves the decider prompt format:
+## Serve a decider model
+
+MAX supports using chat models and decider models with the decisions API. Use a
+chat model to get started without additional configuration. Use a decider model
+when you want a model trained for decision tasks and its matching prompt
+format.
+
+For example, MAX supports the decider model `Mapika/decider-2b`:
 
 ```sh
-max serve --model-path Mapika/decider-2b
+max serve --model Mapika/decider-2b
 ```
 
-With this format the prompt is plain text with the state first and the question
-last, with no chat template. The model picks an option letter, `A` to `J`, at
-the last position. MAX reads each model's `decider_config.json`: answers are
-divided by a temperature per question type (`choice`, `noul`, `score`), and a
-`score` question is read as one yes/no row per level whose "fits" probabilities
-are normalized. Both routes use this format, and the response reports
-`prompt_format_version` `2`. On `/v1/decisions`, a request's `temperature`
-still overrides the model's own; `/v1/systemone` always uses the model's.
+At startup, MAX checks for `decider_config.json`. If the file is present, MAX
+uses the decider format; otherwise, it uses the model's chat template.
 
-These models read at most 10 options or levels per question, so wider questions
-return a `400`. Because a `score` question becomes one row per level, its
-`usage.prompt_tokens` counts the state once per level.
+## Check compatibility and limitations
 
-## Limits
+The `/v1/decisions` request and response format follows SGLang's
+`/v1/decisions` endpoint. The OpenAI SDKs don't include a method for it, so
+send requests over HTTP.
 
-- Text input only.
-- Thinking models whose chat template always reasons before answering aren't
-  supported.
-- Servers that use speculative decoding, LoRA, or variable logits, and models
-  with their own pipeline class (such as block diffusion), don't support
-  decisions.
-- Decider models take at most 10 options per question, and chat-layout decider
-  configs aren't supported.
+The decisions API works with text generation models. It doesn't work on servers
+that enable speculative decoding, LoRA adapters, or variable logits.
+
+## Next steps
+
+Now that you can answer typed questions with the decisions API, explore these
+related docs:
+
+- [Create decisions](/rest-api/create-decisions/): See every request and
+  response field of the `/v1/decisions` endpoint.
+- [Create System One answers](/rest-api/create-system-one/): Send System One
+  `noul`, `choice`, and `score` questions to a MAX server through the
+  `/v1/systemone` endpoint.
+- [Structured output](/serve/structured-output/): Constrain the model's output
+  to a JSON schema when you need specific fields instead of option
+  probabilities.

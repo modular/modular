@@ -17,6 +17,7 @@ from std.math import ceildiv
 from std.collections import Array
 from std.memory import dealloc, unsafe_memset
 
+from layout.tile_iterator import TileTensorIter
 from layout.tile_layout import (
     row_major,
     col_major,
@@ -163,32 +164,65 @@ def tile_tensor_tile_example() raises:
     assert_equal(tile[0, 0][0], Float32(tile_size))
 
 
-# Iterates through a block of memory one tile at a time.
-# This essentially treats the memory as a flat array of
-# tiles (or a 2D row-major matrix of tiles).
-def layout_tensor_iterator_example() raises:
-    # start-layout-tensor-iterator-example-1
-    comptime buf_size = 128
+def tile_iterator_example() raises:
+    # start-tile-iterator-example
+    comptime tile_rows = 4
+    comptime tile_cols = 4
+    comptime tile_size = tile_rows * tile_cols
+    comptime num_tiles = 8
+    comptime buf_size = num_tiles * tile_size
     var storage = Array[Int16, buf_size](
         fill_with=lambda (i: Int) -> Int16: Int16(i)
     )
-    comptime tile_m = 4
-    comptime tile_n = 4
-    comptime tile_size = tile_m * tile_n
-    comptime num_tiles = buf_size // tile_size
-    # Interpret the flat buffer as (num_tiles * tile_m) rows × tile_n cols,
-    # then step through tile_m-row chunks.
-    comptime full_layout = row_major[num_tiles * tile_m, tile_n]()
-    var tensor = TileTensor(storage, full_layout)
 
+    # The tile layout's dimensions are all known, so the tiles sit back to
+    # back: the iterator steps by the tile's element count.
+    var tiles = TileTensorIter[.int16, _, _](
+        storage.unsafe_ptr(),
+        row_major[tile_rows, tile_cols](),
+        bound=buf_size,
+    )
     for i in range(num_tiles):
-        var tile = tensor.tile[tile_m, tile_n](i, 0)
-        # ... do something with tile
-        # end-layout-tensor-iterator-example-1
+        var tile = tiles[]
+        # ... do something with the tile
+        # end-tile-iterator-example
         assert_equal(tile[0, 0][0], Int16(i * tile_size))
+        # start-tile-iterator-advance-example
+        tiles += 1
+        # end-tile-iterator-advance-example
 
 
-def layout_tensor_iterator_example2() raises:
+def circular_tile_iterator_example() raises:
+    comptime tile_rows = 4
+    comptime tile_cols = 4
+    comptime tile_size = tile_rows * tile_cols
+    # start-circular-tile-iterator-example
+    comptime num_stages = 3
+    comptime ring_size = num_stages * tile_size
+    var ring_storage = Array[Int16, ring_size](
+        fill_with=lambda (i: Int) -> Int16: Int16(i)
+    )
+
+    var stages = TileTensorIter[.int16, _, _, circular=True](
+        ring_storage.unsafe_ptr(),
+        row_major[tile_rows, tile_cols](),
+        bound=ring_size,
+    )
+    for k in range(8):
+        # Tile k lands in stage k % num_stages.
+        var stage = stages[]
+        # next() returns a copy that is one tile ahead, wrapping at bound.
+        var next_stage = stages.next()
+        # ... compute on stage while next_stage is being filled
+        stages += 1
+        # end-circular-tile-iterator-example
+        assert_equal(stage[0, 0][0], Int16((k % num_stages) * tile_size))
+        assert_equal(
+            next_stage[][0, 0][0], Int16(((k + 1) % num_stages) * tile_size)
+        )
+
+
+def tile_coordinate_loop_example() raises:
     comptime rows = 4
     comptime cols = 8
     comptime size = rows * cols
@@ -199,7 +233,7 @@ def layout_tensor_iterator_example2() raises:
 
     comptime layout = row_major[rows, cols]()
     var tensor = TileTensor(storage, layout)
-    # start-layout-tensor-iterator-example-2
+    # start-tile-coordinate-loop-example
     # given a tensor of size rows x cols
     comptime num_row_tiles = ceildiv(rows, tile_size)
     comptime num_col_tiles = ceildiv(cols, tile_size)
@@ -208,8 +242,10 @@ def layout_tensor_iterator_example2() raises:
         for j in range(num_col_tiles):
             var tile = tensor.tile[tile_size, tile_size](i, j)
             # ... do something with the tile
-            # end-layout-tensor-iterator-example-2
-            _ = tile
+            # end-tile-coordinate-loop-example
+            assert_equal(
+                tile[0, 0][0], Int32(i * tile_size * cols + j * tile_size)
+            )
 
 
 def nested_tile_example() raises:
@@ -314,8 +350,9 @@ def main() raises:
     tile_tensor_from_allocation_example()
     tile_tensor_tile_example()
     nested_tile_example()
-    layout_tensor_iterator_example()
-    layout_tensor_iterator_example2()
+    tile_iterator_example()
+    circular_tile_iterator_example()
+    tile_coordinate_loop_example()
     tile_boundary_example()
     copy_from_example()
     split_static_example()

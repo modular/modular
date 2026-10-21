@@ -155,12 +155,14 @@ distributed deployment for you.
 
 After choosing a strategy, use the following flags to tune the behavior.
 
-| Flag                                    | Description                                                                                                                                                                                                          |
-|-----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `--ep-use-allreduce`                    | Uses allreduce for cross-device communication in expert parallelism. Performance depends on the model and interconnect, so benchmark your deployment first.                                                          |
-| `--eplb-profile`                        | Enables expert-parallel load balancing (EPLB) MoE routing histogram profiling. You can also set the `MAX_SERVE_EPLB_PROFILE` environment variable. See [Environment variables](/environment-variables).              |
-| `--eplb-replicas-per-gpu`               | Adds redundant expert replicas per GPU to reduce routing imbalance when EPLB is active. The default, `0`, adds no replication. Setting `k` adds `k` extra replicas per GPU; total redundant slots = k * ep_size.     |
-| `--enable-dp-cross-replica-prefix-copy` | Lets MAX serve a prefix-cache hit that lives on the GPU of another data-parallel replica by copying the block device-to-device. Enabled by default. See [Prefix caching with PagedAttention](/serve/prefix-caching). |
+| Flag                                    | Description                                                                                                                                                                                                                                             |
+|-----------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `--ep-use-allreduce`                    | Uses allreduce for cross-device communication in expert parallelism. Performance depends on the model and interconnect, so benchmark your deployment first.                                                                                             |
+| `--eplb-profile`                        | Enables expert-parallel load balancing (EPLB) MoE routing histogram profiling. You can also set the `MAX_SERVE_EPLB_PROFILE` environment variable. See [Environment variables](/environment-variables).                                                 |
+| `--eplb-redundant-experts-per-gpu`      | Adds extra expert slots per GPU that EPLB fills with copies of frequently routed experts. The default, `0`, adds no slots, so EPLB only moves experts between GPUs. Setting `k` adds `k * ep_size` slots in total.                                      |
+| `--eplb-planner`                        | Sets how EPLB builds an expert placement from routing statistics. The default, `per_layer`, balances each MoE layer against its own load. `aggregated` balances the load summed across layers and applies one placement to every layer.                 |
+| `--eplb-fold-router`                    | When an EPLB placement only moves experts between GPUs, reorders each router's expert rows to match so dispatch skips the expert ID remap. Enabled by default. Has no effect while `--eplb-profile` is on. To turn it off, use `--no-eplb-fold-router`. |
+| `--enable-dp-cross-replica-prefix-copy` | Lets MAX serve a prefix-cache hit that lives on the GPU of another data-parallel replica by copying the block device-to-device. Enabled by default. See [Prefix caching with PagedAttention](/serve/prefix-caching).                                    |
 
 :::caution
 

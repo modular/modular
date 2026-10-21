@@ -429,6 +429,17 @@
             },
             {
               "type": "category",
+              "label": "sequence",
+              "link": {
+                "type": "doc",
+                "id": "api/python/graph.ops.sequence"
+              },
+              "items": [
+                "__AUTOGEN:max.graph.ops.sequence__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "weights",
               "link": {
                 "type": "doc",
@@ -738,6 +749,17 @@
                 },
                 {
                   "type": "category",
+                  "label": "artifact",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.artifact"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.artifact__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "generate",
                   "link": {
                     "type": "doc",
@@ -979,6 +1001,7 @@
       "collapsed": false,
       "items": [
         "gpu/intro-tutorial",
+        "gpu/hardware-compatibility",
         "gpu/architecture",
         "gpu/fundamentals",
         "gpu/block-and-warp",
@@ -998,7 +1021,7 @@
           ]
         },
         {
-          "label": "Layouts and LayoutTensor",
+          "label": "Layouts and LayoutTensor (deprecated)",
           "type": "category",
           "collapsed": true,
           "items": [

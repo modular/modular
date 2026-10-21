@@ -1,33 +1,28 @@
 ---
 title: Structured output
-description: Enable structured output with your GenAI deployments for predictable responses
+description: Enable structured output to constrain model responses to a specified format
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-MAX supports structured output using
-[xgrammar](https://github.com/mlc-ai/xgrammar) for constrained decoding.
-Structured output, also called constrained decoding, lets you enforce specific
-output formats so a model returns structured, predictable responses.
+MAX supports structured output through constrained decoding with
+[XGrammar](https://github.com/mlc-ai/xgrammar). Structured output constrains
+model responses to a specified format, such as a JSON schema, so applications
+can process predictable, structured data.
 
-## When to use structured output
-
-If you want to structure a model's output when it responds to a user, then you
-should use a structured output `response_format`.
-
-If you are connecting a model to tools, functions, data, or other systems, then
-you should use [function calling](/serve/function-calling) instead of
-structured outputs.
+:::note
 
 Learn more about
 [structured output](https://handbook.modular.com/model-interaction/structured-outputs/)
 in the LLM Inference Handbook.
 
-## How structured output works
+:::
 
-To use structured output, include the `--enable-structured-output` flag when
-serving your model with the [`max` CLI](/cli).
+## Quickstart
+
+To use structured output, serve a text generation model with the
+`--enable-structured-output` flag. Structured output requires a GPU deployment.
 
 ```bash
 max serve \
@@ -35,48 +30,45 @@ max serve \
   --enable-structured-output
 ```
 
-You can tune structured output behavior with the following options:
+Once the server is running, you can request structured output through the
+[`/v1/chat/completions`](/rest-api/create-chat-completion/) endpoint in the
+`response_format` field. If you start the server without the
+`--enable-structured-output` flag, the server rejects requests that use a JSON
+`response_format`.
 
-- `--structured-output-backend`: Selects the grammar backend for constrained
-  decoding. `xgrammar` is the supported backend.
-- `--structured-output-any-whitespace`: Controls whether structured output
-  grammars accept whitespace between JSON tokens. The default, `false`,
-  constrains the model to compact JSON, which mitigates runaway output on some
-  models. Pass `true` to allow whitespace-tolerant JSON.
+## Choose an output format
 
-:::note
+MAX supports two JSON output formats through the `response_format` parameter:
 
-The examples on this page use image input with a multimodal model. For
-environment setup and additional image and video input options (including local
-files), see [Image and video to text](/serve/image-to-text).
+- **[JSON Schema](https://json-schema.org/overview/what-is-jsonschema)**
+  (`json_schema`): Constrains the response to match a schema you define. Use
+  this when your application expects specific fields and data types.
 
-:::
+- **JSON object** (`json_object`): Constrains the response to valid JSON
+  without requiring a specific schema. Use this when you need valid JSON but
+  don't need to enforce a particular structure.
 
-Both the
-[`/chat/completions`](/rest-api/create-chat-completion/) and
-[`/completions`](/rest-api/create-completion/) API endpoints are
-compatible with structured output.
+For production applications that depend on a predictable response structure,
+use JSON Schema. If you're working in Python, you can define the schema with
+Pydantic instead of writing JSON Schema directly.
 
-You can define your structured output response format in two ways:
+## Send a request
 
-1. [JSON schema](#json-schema): Specify the schema directly in your request.
-2. [Pydantic](#pydantic): Use Pydantic to define and validate your schema as a
-   Python class.
+If you want the response to match a certain schema, you can define the schema
+directly with JSON Schema or use Pydantic in Python. If you only need valid
+JSON, request a [JSON object](#json-object).
 
-We recommend testing your structured output responses thoroughly as they are
-sensitive to the way the model was trained.
-
-### JSON schema
-
-To specify structured output within your inference request, use the following
-format:
-
-:::note
+:::tip
 
 You can increase the accuracy of structured output responses by mentioning JSON
 output specifications in your system prompt.
 
 :::
+
+### JSON Schema
+
+The following example sends a request for structured output with a JSON schema
+in the `response_format` field:
 
 <Tabs>
 
@@ -92,23 +84,23 @@ response = client.chat.completions.create(
     messages=[
         {
             "role": "system",
-            "content": "You are an assistant that analyzes images and returns structured descriptions."
+            "content": "You are an assistant that analyzes images and returns structured descriptions.",
         },
         {
             "role": "user",
             "content": [
                 {
                     "type": "text",
-                    "text": "Analyze this image and describe what you see."
+                    "text": "Analyze this image and describe what you see.",
                 },
                 {
                     "type": "image_url",
                     "image_url": {
                         "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
-                    }
-                }
-            ]
-        }
+                    },
+                },
+            ],
+        },
     ],
     max_completion_tokens=300,
     response_format={
@@ -119,22 +111,22 @@ response = client.chat.completions.create(
                 "type": "object",
                 "properties": {
                     "description": {"type": "string"},
-                    "subjects": {
-                        "type": "array",
-                        "items": {"type": "string"}
-                    },
-                    "colors": {
-                        "type": "array",
-                        "items": {"type": "string"}
-                    },
+                    "subjects": {"type": "array", "items": {"type": "string"}},
+                    "colors": {"type": "array", "items": {"type": "string"}},
                     "setting": {"type": "string"},
-                    "mood": {"type": "string"}
+                    "mood": {"type": "string"},
                 },
-                "required": ["description", "subjects", "colors", "setting", "mood"],
-                "additionalProperties": False
-            }
-        }
-    }
+                "required": [
+                    "description",
+                    "subjects",
+                    "colors",
+                    "setting",
+                    "mood",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    },
 )
 
 print(response.choices[0].message.content)
@@ -144,7 +136,7 @@ print(response.choices[0].message.content)
 <TabItem value="curl" label="curl">
 
 ```bash
- curl http://localhost:8000/v1/chat/completions \
+curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "google/gemma-4-31B-it",
@@ -241,10 +233,11 @@ Here's an example using a Pydantic
 image and return a validated response:
 
 ```python title="structured-image-analysis.py"
-from pydantic import BaseModel
 from openai import OpenAI
+from pydantic import BaseModel
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
 
 class ImageAnalysis(BaseModel):
     description: str
@@ -253,28 +246,29 @@ class ImageAnalysis(BaseModel):
     setting: str
     mood: str
 
+
 completion = client.chat.completions.parse(
     model="google/gemma-4-31B-it",
     messages=[
         {
             "role": "system",
-            "content": "You are an assistant that analyzes images and returns structured descriptions."
+            "content": "You are an assistant that analyzes images and returns structured descriptions.",
         },
         {
             "role": "user",
             "content": [
                 {
                     "type": "text",
-                    "text": "Analyze this image and describe what you see."
+                    "text": "Analyze this image and describe what you see.",
                 },
                 {
                     "type": "image_url",
                     "image_url": {
                         "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
-                    }
-                }
-            ]
-        }
+                    },
+                },
+            ],
+        },
     ],
     max_completion_tokens=300,
     response_format=ImageAnalysis,
@@ -284,15 +278,109 @@ analysis = completion.choices[0].message.parsed
 print(analysis)
 ```
 
-### Supported models
+### JSON object
 
-All text generation models support structured output with MAX. As new models are
-added, they will also be compatible with structured output. This functionality
-is implemented at the pipeline level, ensuring consistency across different
-models.
+To request valid JSON without defining a schema, set `response_format` to
+`{"type": "json_object"}`. MAX constrains the response to a JSON object, but
+the model chooses its keys and values. Describe the fields you want in your
+prompt.
 
-However, structured output currently doesn't support CPU deployments, only GPU
-deployments.
+<Tabs>
+
+<TabItem value="python" label="Python">
+
+```python title="json-object-image-description.py"
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+response = client.chat.completions.create(
+    model="google/gemma-4-31B-it",
+    messages=[
+        {
+            "role": "system",
+            "content": "You are an assistant that analyzes images and returns structured descriptions as JSON.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Analyze this image. Include a description, a list of subjects, and a list of colors.",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+                    },
+                },
+            ],
+        },
+    ],
+    max_completion_tokens=300,
+    response_format={"type": "json_object"},
+)
+
+print(response.choices[0].message.content)
+```
+
+</TabItem>
+<TabItem value="curl" label="curl">
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "google/gemma-4-31B-it",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are an assistant that analyzes images and returns structured descriptions as JSON."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Analyze this image. Include a description, a list of subjects, and a list of colors."
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+            }
+          }
+        ]
+      }
+    ],
+    "max_completion_tokens": 300,
+    "response_format": { "type": "json_object" }
+  }'
+```
+
+</TabItem>
+</Tabs>
+
+## Validate responses
+
+Structured output constrains the format of generated responses, but a response
+that conforms to a schema isn't necessarily correct for your use case. Test
+the generated values as well as the response structure.
+
+If a response doesn't meet your expectations, check the following:
+
+- **Request configuration:** Confirm that structured output is enabled with
+  `--enable-structured-output` and that the request uses a supported
+  `response_format`.
+- **Schema:** Verify that the schema is valid and supported. If a request
+  fails, start with a minimal schema and add constraints incrementally to
+  isolate the problem.
+- **Response content:** Check that generated values meet your application's
+  requirements. Use Pydantic or another validation library to enforce
+  constraints beyond the output schema.
+- **Model behavior:** Test representative inputs and edge cases against each
+  model you intend to deploy. Structured output behavior can vary with model
+  training.
 
 ## Next steps
 
@@ -302,4 +390,4 @@ Next, try processing local image files or deploying to the cloud.
   completions endpoint with image or video input to generate descriptions and
   answer questions about visual content.
 - [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
-  Learn how to deploy MAX pipelines to cloud.
+  Learn how to deploy MAX pipelines to the cloud.

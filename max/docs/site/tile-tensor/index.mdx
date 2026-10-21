@@ -29,21 +29,29 @@ The `layout` package also includes the older `LayoutTensor` type, and its
 associated `IntTuple`-based layout type, `layout.Layout`. `TileTensor` is
 essentially a new version of `LayoutTensor` that addresses several of the
 shortcomings of that type. Most of the concepts are the same for both the old
-and new types. However, `TileTensor` doesn't yet implement all the features
-supported by `LayoutTensor`. Here are some guidelines for when to use each type:
+and new types. `TileTensor` supports layouts with run-time dimensions, nested
+layouts, and the newer `Coord`-based layout system, which minimizes the memory
+footprint of the layout struct and can help reduce register pressure on GPUs.
 
-- Use `TileTensor` when you need layouts with run-time dimensions,
-  nested layouts, or when working with the newer `Coord`-based layout system.
-  The `Coord`-based layout system minimizes the memory footprint of the
-  layout struct, which can help reduce register pressure on GPUs.
+`LayoutTensor` and its iterator, `LayoutTensorIter`, are deprecated as of MAX
+26.7, so use `TileTensor` for new code:
 
-- Use `LayoutTensor` when you need established operations like
-  `tiled_iterator()` or `simd_tile()`, or compatibility with existing code using
-  `IntTuple`-based layouts.
+- To step through a buffer of equally shaped tiles, such as the stages of a
+  pipelined shared-memory buffer, use
+  [`TileTensorIter`](/api/mojo/layout/tile_iterator/TileTensorIter/), as shown
+  in [Stepping through a buffer of
+  tiles](/tile-tensor/tensors/#stepping-through-a-buffer-of-tiles).
+- To walk the tiles of a 2D tensor, loop over the tile coordinates and call
+  `tile()` for each one, as shown in
+  [Iterating over tiles](/tile-tensor/tensors/#iterating-over-tiles).
+- If existing code depends on an operation that only `LayoutTensor` provides,
+  such as `simd_tile()`, call
+  [`to_layout_tensor()`](/api/mojo/layout/tile_tensor/TileTensor/#to_layout_tensor)
+  at that call site. The result is a view of the same memory, so the rest of
+  the code can stay on `TileTensor`, but the result is itself a deprecated
+  `LayoutTensor`.
 
-You can convert a `TileTensor` into a `LayoutTensor`, so you can
-use both types if necessary. Likewise, you can easily convert a
-`Coord`-based layout into an `IntTuple`-based layout.
+You can also convert a `Coord`-based layout into an `IntTuple`-based layout.
 
 For more information on `LayoutTensor`, see the pages on
 [`IntTuple`-based layouts](/layout/layouts/) and

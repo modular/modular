@@ -12,11 +12,11 @@ Contents:
     extension).
   - A `modular_run_binary_test` target for each binary (with a `_test` suffix).
 
-**Note:** These examples require a [compatible
-GPU](https://mojolang.org/docs/requirements#gpu-compatibility) to compile
-and run the kernels. If your system doesn't have a compatible GPU, you can
-compile the programs but the only output you'll see when you run them is the
-message:
+**Note:** These examples require a
+[compatible GPU](https://max.modular.com/gpu/hardware-compatibility/)
+to compile and run the kernels. If your system doesn't have a compatible GPU,
+you can compile the programs but the only output you'll see when you run them is
+the message:
 
 ```output
 No GPU detected

@@ -3,6 +3,10 @@
 This directory contains examples to accompany
 [Using LayoutTensor](https://max.modular.com/layout/tensors/).
 
+`LayoutTensor` is deprecated as of MAX 26.7, so these examples compile with
+deprecation warnings. For new code, use `TileTensor`, described in
+[Using TileTensor](https://max.modular.com/tile-tensor/tensors/).
+
 If you have [Pixi](https://pixi.sh/latest/) installed, you can
 execute the examples by running the following commands:
 
