@@ -197,6 +197,60 @@ kgen.generator @recursive1() -> index {
   hlcf.return %0 : index
 }
 
+// -----
+
+// An error from a callee outside a recursive cycle fails every member of the
+// cycle. Only `reencode` calls the failing `items`, and the other members can
+// be checked before `reencode` picks up that error.
+// https://github.com/modular/modular/issues/7359
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @items() {
+  kgen.param.declare M : !kgen.string = <"needs Copyable">
+  // expected-note @below {{constraint failed: needs Copyable}}
+  kgen.param.assert <eq(2, 3)>, M
+  hlcf.return
+}
+
+kgen.generator @box_deserialize() {
+  kgen.call @de_any_node() : () -> ()
+  hlcf.return
+}
+
+kgen.generator @de_any_box() {
+  kgen.call @box_deserialize() : () -> ()
+  hlcf.return
+}
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @reencode() {
+  kgen.call @de_any_node() : () -> ()
+  // expected-note @below {{call expansion failed}}
+  kgen.call @items() : () -> ()
+  hlcf.return
+}
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @deserialize_struct() {
+  // expected-note @below {{call expansion failed}}
+  kgen.call @reencode() : () -> ()
+  kgen.call @de_any_box() : () -> ()
+  hlcf.return
+}
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @de_any_node() {
+  // expected-note @below {{call expansion failed}}
+  kgen.call @deserialize_struct() : () -> ()
+  hlcf.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @main() {
+  // expected-note @below {{call expansion failed}}
+  kgen.call @de_any_node() : () -> ()
+  hlcf.return
+}
 
 // -----
 // COM: MOCO-964 fix.
