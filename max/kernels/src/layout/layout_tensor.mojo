@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Provides the `LayoutTensor` type for representing multidimensional data.
+
+`LayoutTensor` and `LayoutTensorIter` are deprecated as of 26.7 and will be
+removed in a future release. Use `TileTensor` and `TileTensorIter` instead.
 """
 from std.math import align_up, ceildiv, exp
 from std.math.math import _Expable
@@ -277,6 +280,9 @@ struct LayoutTensor[
     with precise control over memory organization. It supports various memory
     layouts (row-major, column-major, tiled), hardware-specific optimizations,
     and efficient parallel access patterns.
+
+    Deprecated as of 26.7: use `TileTensor` instead. `LayoutTensor` will be
+    removed in a future release.
 
     Parameters:
         mut: The inferred mutability of the underlying pointer.
@@ -7569,6 +7575,9 @@ struct LayoutTensorIter[
     specific layout pattern, constructing layout tensors at each position. This
     enables efficient traversal of multi-dimensional data structures with custom
     memory layouts.
+
+    Deprecated as of 26.7: use `TileTensorIter` instead. `LayoutTensorIter`
+    will be removed in a future release.
 
     Parameters:
         mut: Whether the iterator allows mutation of the underlying data.

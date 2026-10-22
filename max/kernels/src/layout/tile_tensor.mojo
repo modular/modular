@@ -469,14 +469,13 @@ struct TileTensor[
     uses a concrete `Layout` type, `TileTensor` accepts any type implementing
     `TensorLayout`, enabling more flexible compile-time layout composition.
 
-    When to use `TileTensor` vs `LayoutTensor`:
-
-    - Use `TileTensor` when you need trait-based layout composition, nested
-      layouts, or when working with the newer `Coord`-based layout system.
-    - Use `LayoutTensor` when you need established operations like
-      `tiled_iterator()` or `simd_tile()`, or compatibility with existing code
-      using `IntTuple`-based layouts.
-    - Both types can interoperate via `to_layout_tensor()`.
+    Use `TileTensor` for new code. `LayoutTensor` is deprecated as of 26.7
+    and will be removed in a future release. To step through a buffer of
+    equally shaped tiles, such as a multi-stage shared-memory buffer, use
+    `TileTensorIter`. To walk the tiles of a multi-dimensional tensor, loop
+    over tile coordinates and call `tile()`. For an operation that only
+    `LayoutTensor` provides, such as `simd_tile()`, call `to_layout_tensor()`
+    at that call site; the result is a deprecated `LayoutTensor`.
 
     Parameters:
         mut: The inferred mutability of the underlying pointer.
@@ -3302,6 +3301,8 @@ struct TileTensor[
             ).make_dynamic[dyn_dtype](),
         )
 
+    # TODO(GPUA-6): Remove this method, along with its `DevicePointerEngine`
+    # pointer-recovery workaround, when `LayoutTensor` is removed.
     @inline(.nodebug)
     def to_layout_tensor(
         self,
@@ -3324,8 +3325,7 @@ struct TileTensor[
         `DevicePointerEngine`-backed tile the raw device pointer is recovered
         from the handle (via `Engine.unsafe_ptr`), so the resulting
         `LayoutTensor` no longer carries the owning `DevicePointer`. This is a
-        temporary workaround until `LayoutTensor` support is removed as part of
-        GPUA-6.
+        temporary workaround until `LayoutTensor` is removed.
 
         Returns:
             A LayoutTensor with the same shape, stride, and address space of

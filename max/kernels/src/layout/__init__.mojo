@@ -22,8 +22,10 @@ multidimensional data.
   tensor with explicit memory layout via a `Layout`; new code should use it.
 
 - The [`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor) type is the
-  legacy equivalent, still re-exported for the many in-flight consumers of its
-  views and iterators.
+  legacy equivalent. It's deprecated as of 26.7 and will be removed in a future
+  release. Use `TileTensor` instead, and
+  [`TileTensorIter`](/api/mojo/layout/tile_iterator/TileTensorIter) in place of
+  `LayoutTensorIter`.
 """
 from .coord import (
     _CoordReplaceAt,
