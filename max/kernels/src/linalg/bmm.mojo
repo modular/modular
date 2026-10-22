@@ -66,6 +66,7 @@ from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     use_apple_accelerate_lib,
 )
+from .accumulate import _Accumulator
 from .matmul.cpu.impl import _submatmul_sequential_sync
 from .matmul.gpu import _matmul_gpu, _amdgpu_get_mma_shape
 from .matmul.gpu._multistage_gemm_gpu import (
@@ -432,79 +433,95 @@ def _batched_matmul_cpu_impl[
                 return
 
             comptime if accum_type != c_type:
-                # Like the 2D KERN-2790 path, keep partial sums in the
-                # accumulation dtype until the final K tile. Scratch covers
-                # only this task's output partition, not the entire batch.
+                # Keep the output microtile in the accumulation dtype for the
+                # entire K reduction; round only before callbacks or stores.
                 var sub_m = sub_matmul_config.shape[0]
                 var sub_n = sub_matmul_config.shape[1]
                 var row_offset = sub_matmul_config.offset[0]
                 var col_offset = sub_matmul_config.offset[1]
-                var scratch_alloc = alloc(
-                    AllocLayout[Scalar[accum_type], alignment=alignment](
-                        count=sub_m * sub_n
-                    )
-                ).into_managed()
-                var scratch = TileTensor(
-                    scratch_alloc.unsafe_ptr(), row_major(sub_m, sub_n)
-                )
-                var a_sub = a_view[row_offset : row_offset + sub_m, :]
-                var b_row = col_offset if transpose_b else 0
-                var b_col = 0 if transpose_b else col_offset
-                var b_rows = sub_n if transpose_b else k
-                var b_cols = k if transpose_b else sub_n
-                # Preserve the original row stride when partitioning B's
-                # columns; the B packer uses this layout to address its input.
-                var b_sub = b_view[
-                    b_row : b_row + b_rows, b_col : b_col + b_cols
-                ]
 
                 @inline(.always)
-                def cast_epilogue[
-                    dtype: DType, width: SIMDLength, *, alignment: Int
-                ](out_coords: Coord, val: SIMD[dtype, width]) {
-                    var row_offset,
-                    var col_offset,
+                def full_k_tile[
+                    rows: Int, width: Int, groups: Int = 1
+                ](row: Int, col: Int) {
+                    var a_view,
+                    var b_view,
                     var c_view,
+                    var k,
+                    var n,
                     var epilogue_2d,
                     var compute_2d,
                 }:
-                    var global_coords = Coord(
-                        row_offset + Int(out_coords[0].value()),
-                        col_offset + Int(out_coords[1].value()),
-                    )
-                    var cast_val = val.cast[c_type]()
-                    comptime if has_epilogue_fn:
-                        epilogue_2d[c_type, width, alignment=alignment](
-                            global_coords, cast_val
-                        )
-                    elif has_compute_fn:
-                        c_view.store[alignment=alignment](
-                            global_coords,
-                            compute_2d[c_type, width, alignment=alignment](
-                                global_coords, cast_val
-                            ),
-                        )
+                    var acc = _Accumulator[accum_type, rows, groups, width]()
+                    acc.init(0)
+                    comptime if transpose_b:
+                        for kk in range(k):
+                            comptime for group in range(groups):
+                                var b_vec = SIMD[b_type, width](0)
+                                comptime for lane in range(width):
+                                    b_vec[lane] = b_view.ptr_at_offset(
+                                        Coord(col + group * width + lane, kk)
+                                    ).load[width=1]()
+                                comptime for rr in range(rows):
+                                    var a_val = a_view.ptr_at_offset(
+                                        Coord(row + rr, kk)
+                                    ).load[width=1]()
+                                    acc.fma(
+                                        rr,
+                                        group,
+                                        SIMD[a_type, width](a_val),
+                                        b_vec,
+                                    )
                     else:
-                        c_view.store[alignment=alignment](
-                            global_coords, cast_val
+                        acc.accumulate(
+                            k,
+                            a_view.ptr_at_offset(Coord(row, 0)),
+                            k,
+                            b_view.ptr_at_offset(Coord(0, col)),
+                            n,
                         )
+                    comptime for rr in range(rows):
+                        comptime for group in range(groups):
+                            var coords = Coord(row + rr, col + group * width)
+                            var value = acc[rr, group].cast[c_type]()
+                            comptime if has_epilogue_fn:
+                                epilogue_2d[c_type, width, alignment=1](
+                                    coords, value
+                                )
+                            elif has_compute_fn:
+                                c_view.store[alignment=1](
+                                    coords,
+                                    compute_2d[c_type, width, alignment=1](
+                                        coords, value
+                                    ),
+                                )
+                            else:
+                                c_view.store[alignment=1](coords, value)
 
-                _submatmul_sequential_sync[
-                    config,
-                    transpose_b,
-                    b_packed=False,
-                    has_epilogue_fn=True,
-                    has_compute_fn=False,
-                    saturated_vnni=saturated_vnni,
-                ](
-                    scratch,
-                    a_sub,
-                    b_sub,
-                    GemmShape(sub_m, sub_n, k),
-                    GemmShape(0, 0, 0),
-                    cast_epilogue,
-                    no_compute_fn,
-                )
+                comptime width = simd_width_of[accum_type]()
+                # Limit register pressure for strided transposed-B loads.
+                comptime groups = 1 if transpose_b else 3
+                comptime columns = groups * width
+                var wide_end = sub_n // columns * columns
+                for nc in range(0, wide_end, columns):
+                    for mr in range(0, sub_m // 4 * 4, 4):
+                        full_k_tile[4, width, groups](
+                            row_offset + mr, col_offset + nc
+                        )
+                    for mr in range(sub_m // 4 * 4, sub_m):
+                        full_k_tile[1, width, groups](
+                            row_offset + mr, col_offset + nc
+                        )
+                for nc in range(wide_end, sub_n // width * width, width):
+                    for mr in range(0, sub_m // 4 * 4, 4):
+                        full_k_tile[4, width](row_offset + mr, col_offset + nc)
+                    for mr in range(sub_m // 4 * 4, sub_m):
+                        full_k_tile[1, width](row_offset + mr, col_offset + nc)
+                for nc in range(sub_n // width * width, sub_n):
+                    for mr in range(0, sub_m // 4 * 4, 4):
+                        full_k_tile[4, 1](row_offset + mr, col_offset + nc)
+                    for mr in range(sub_m // 4 * 4, sub_m):
+                        full_k_tile[1, 1](row_offset + mr, col_offset + nc)
             elif use_i8mm:
                 var a_packed_alloc = alloc(
                     AllocLayout[Scalar[a_type], alignment=alignment](
