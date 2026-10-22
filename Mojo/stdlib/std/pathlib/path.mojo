@@ -111,7 +111,7 @@ struct Path(
         self = cwd()
 
     # Note: Not @implicit so that allocation is not implicit.
-    def __init__(out self, path: StringSlice):
+    def __init__(out self, path: StringSpan):
         """Initializes a path with the provided path.
 
         Args:
@@ -146,9 +146,9 @@ struct Path(
         Returns:
           A new path with the suffix appended to the current path.
         """
-        return self.__truediv__(StringSlice(suffix.path))
+        return self.__truediv__(StringSpan(suffix.path))
 
-    def __truediv__(self, suffix: StringSlice) -> Self:
+    def __truediv__(self, suffix: StringSpan) -> Self:
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -161,7 +161,7 @@ struct Path(
         res /= suffix
         return res
 
-    def __itruediv__(mut self, suffix: StringSlice):
+    def __itruediv__(mut self, suffix: StringSpan):
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -223,7 +223,7 @@ struct Path(
         """
         return String(self) == String(other)
 
-    def __eq__(self, other: StringSlice) -> Bool:
+    def __eq__(self, other: StringSpan) -> Bool:
         """Returns True if the two paths are equal.
 
         Args:
@@ -232,7 +232,7 @@ struct Path(
         Returns:
           True if the String and Path are equal, and False otherwise.
         """
-        return StringSlice(self.path) == other
+        return StringSpan(self.path) == other
 
     @inline(.always)
     def __lt__(self, other: Self) -> Bool:
@@ -515,7 +515,7 @@ struct Path(
         return ""
 
     # TODO(MOCO-1532):
-    #   Use StringSlice here once param inference bug for empty variadic
+    #   Use StringSpan here once param inference bug for empty variadic
     #   list of parameterized types is fixed.
     def joinpath(self, *pathsegments: String) -> Path:
         """Joins the Path using the pathsegments.
@@ -597,7 +597,7 @@ struct Path(
 
     def parts(
         self,
-    ) -> List[StringSlice[origin_of(self.path)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[origin_of(self.path)._get_owned_interior["bytes"]]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
         Returns:

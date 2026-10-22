@@ -208,13 +208,13 @@ def test_bad_utf8_sequences() raises:
         assert_false(validate_utf8[BAD_SEQUENCES[i]]())
 
 
-def test_stringslice_from_utf8() raises:
+def test_StringSpan_from_utf8() raises:
     for sequence in materialize[GOOD_SEQUENCES]():
-        _ = StringSlice(from_utf8=Span(sequence))
+        _ = StringSpan(from_utf8=Span(sequence))
 
     for sequence in materialize[BAD_SEQUENCES]():
         with assert_raises(contains="buffer is not valid UTF-8"):
-            _ = StringSlice(from_utf8=Span(sequence))
+            _ = StringSpan(from_utf8=Span(sequence))
 
 
 def test_combination_good_utf8_sequences() raises:

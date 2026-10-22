@@ -40,7 +40,7 @@ comptime LICENSE_TO_ADD = """# ===----------------------------------------------
 """
 
 
-def is_ignored_file(filename: StringSlice) -> Bool:
+def is_ignored_file(filename: StringSpan) -> Bool:
     if not (filename.endswith(".py") or filename.endswith(".mojo")):
         return True
 

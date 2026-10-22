@@ -119,7 +119,7 @@ def draw_mandelbrot(
     tensor: TileTensor[int_dtype, type_of(layout), ...], iterations: Int32
 ) raises -> String:
     """Visualizes the Mandelbrot set as ASCII art."""
-    comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
+    comptime sr = StringSpan("....,c8M@jawrpogOQEPGJ")
     var buffer = String()
     for row in range(GRID_HEIGHT):
         for col in range(GRID_WIDTH):

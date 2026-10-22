@@ -24,7 +24,5 @@ struct MetalExtensionFunctions(RawPluginComponent):
 struct MetalHALExtensions(HALExtensions):
     """`HALExtensions` implementation for Apple Metal backends."""
 
-    def __init__(
-        out self, lib: _DLHandle, so_path: StringSlice
-    ) raises HALError:
+    def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         pass

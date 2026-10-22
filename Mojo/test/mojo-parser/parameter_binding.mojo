@@ -82,7 +82,7 @@ struct MySpan[
 # // -----
 
 
-def defaulted_slice_param[param: StringSlice = "world"]() -> String:
+def defaulted_slice_param[param: StringSpan = "world"]() -> String:
     return "Hello " + param
 
 

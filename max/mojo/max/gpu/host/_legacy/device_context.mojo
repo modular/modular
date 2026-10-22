@@ -2964,7 +2964,7 @@ def _enqueue_packed_checked(
         )
 
 
-def _is_path_like(ss: StringSlice) -> Bool:
+def _is_path_like(ss: StringSpan) -> Bool:
     return ss.startswith("/") or ss.startswith("~") or ss.startswith("./")
 
 
@@ -3264,7 +3264,7 @@ struct DeviceFunction[
             return val.isa[def() thin -> Path](), val
 
     @staticmethod
-    def _cleanup_asm(s: StringSlice) -> String:
+    def _cleanup_asm(s: StringSpan) -> String:
         return (
             String(s)
             .replace("\t// begin inline asm\n", "")

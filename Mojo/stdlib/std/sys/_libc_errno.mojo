@@ -420,7 +420,7 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         var ptr = external_call[
             "strerror", Pointer[c_char, MutUntrackedOrigin]
         ](self.value)
-        var string = StringSlice(
+        var string = StringSpan(
             unsafe_from_utf8=CStringSpan(unsafe_from_ptr=ptr.as_imm())
         )
         string.write_to(writer)

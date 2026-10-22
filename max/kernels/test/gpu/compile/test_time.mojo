@@ -41,7 +41,7 @@ def clock_functions():
 
 
 @inline(.always)
-def _verify_clock_functions_nvidia(asm: StringSlice) raises -> None:
+def _verify_clock_functions_nvidia(asm: StringSpan) raises -> None:
     # NVIDIA uses globaltimer for perf_counter_ns (nanosecond resolution).
     assert_true("globaltimer" in asm)
 
@@ -81,7 +81,7 @@ def global_clock_functions():
 
 
 @inline(.always)
-def _verify_global_clock_functions_nvidia(asm: StringSlice) raises -> None:
+def _verify_global_clock_functions_nvidia(asm: StringSpan) raises -> None:
     # NVIDIA uses globaltimer for global_perf_counter_ns.
     assert_true("globaltimer" in asm)
 
@@ -129,7 +129,7 @@ def time_functions(some_value: Int) -> Int:
 
 
 @inline(.always)
-def _verify_time_functions(asm: StringSlice) raises -> None:
+def _verify_time_functions(asm: StringSpan) raises -> None:
     # time_function uses perf_counter_ns which reads globaltimer on NVIDIA.
     assert_true("globaltimer" in asm)
     assert_true("add.s64" in asm)
@@ -162,7 +162,7 @@ def sleep_function():
 
 
 @inline(.always)
-def _verify_sleep_function_nvidia(asm: StringSlice) raises -> None:
+def _verify_sleep_function_nvidia(asm: StringSpan) raises -> None:
     # Verify the nanosleep instruction is present.
     assert_true("nanosleep" in asm, "Expected nanosleep instruction in PTX")
     # Verify globaltimer read is present (used to track elapsed time).

@@ -296,7 +296,7 @@ def _test_atan2[
     print("atan2", dtype, "max ulp vs libm:", worst, "over", n, "inputs")
 
 
-def _parse_hex(digits: StringSlice) -> UInt64:
+def _parse_hex(digits: StringSpan) -> UInt64:
     var v: UInt64 = 0
     for c in digits.codepoint_slices():
         var d = ord(c)

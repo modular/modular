@@ -276,7 +276,7 @@ def _write_int[
         #   back to this code without a workaround.
         # ptr=digit_chars_array,
         writer.write(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=zero_buf.unsafe_ptr(), length=1
                 )
@@ -359,7 +359,7 @@ def _write_int[
     # Create a span to only those bytes in `buf` that have been initialized.
     # -1 because NUL terminator
     writer.write_string(
-        StringSlice(
+        StringSpan(
             unsafe_from_utf8=Span(
                 unsafe_ptr=buf.unsafe_ptr().unsafe_offset(offset),
                 length=len(buf) - offset - 1,
