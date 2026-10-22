@@ -461,11 +461,11 @@ def _batched_matmul_cpu_impl[
                                 comptime for lane in range(width):
                                     b_vec[lane] = b_view.ptr_at_offset(
                                         Coord(col + group * width + lane, kk)
-                                    ).load[width=1]()
+                                    ).unsafe_load[width=1]()
                                 comptime for rr in range(rows):
                                     var a_val = a_view.ptr_at_offset(
                                         Coord(row + rr, kk)
-                                    ).load[width=1]()
+                                    ).unsafe_load[width=1]()
                                     acc.fma(
                                         rr,
                                         group,
