@@ -163,3 +163,7 @@ This version is still a work in progress.
   element-wise path, and aligned slices narrower than the target's native
   vector width, such as the halves `split()` returns for small vectors, now
   use the intrinsic.
+
+- `std.sys.exit()` is now declared `-> Never`, so a function with a return
+  type can end in a call to `exit()` without a trailing `return`
+  ([#7297](https://github.com/modular/modular/issues/7297)).
