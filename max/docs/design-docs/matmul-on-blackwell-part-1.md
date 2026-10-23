@@ -512,7 +512,7 @@ thread reads `b[col, k]` while computing the logical `M x N` output.
 ```mojo
 var acc = Float32(0)
 for k in range(K):
-    acc += a[row, k].cast[.float32]() * b[col, k].cast[.float32]()
+    acc += (a[row, k] * b[col, k]).cast[.float32]()
 c[row, col] = acc.cast[.bfloat16]()
 ```
 
@@ -559,7 +559,7 @@ def matmul_kernel[
 
     var acc = Float32(0)
     for k in range(K):
-        acc += a[row, k].cast[.float32]() * b[col, k].cast[.float32]()
+        acc += (a[row, k] * b[col, k]).cast[.float32]()
     c[row, col] = acc.cast[.bfloat16]()
 ```
 
