@@ -41,10 +41,14 @@ def kernel_1[
         .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin
     ],
     a: TileTensor[
-        .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[K]], ImmutAnyOrigin,
+        .bfloat16,
+        RowMajorLayout[ComptimeInt[M], ComptimeInt[K]],
+        ImmutAnyOrigin,
     ],
     b: TileTensor[
-        .bfloat16, RowMajorLayout[ComptimeInt[K], ComptimeInt[N]], ImmutAnyOrigin
+        .bfloat16,
+        RowMajorLayout[ComptimeInt[K], ComptimeInt[N]],
+        ImmutAnyOrigin,
     ],
 ):
     var row = global_idx.y
