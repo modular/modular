@@ -64,8 +64,12 @@ def free(ptr: Optional[MutPointer[NoneType, _]]):
 
 
 @inline(.always)
-def exit(status: c_int):
+def exit(status: c_int) -> Never:
     external_call["exit", NoneType](status)
+
+    # We need to satisfy the noreturn checker.
+    while True:
+        pass
 
 
 # ===-----------------------------------------------------------------------===#
