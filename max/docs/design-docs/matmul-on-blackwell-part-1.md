@@ -22,9 +22,9 @@ its importance for LLMs, and why we need to optimize it. Then we explain what a
 GPU is, GPU history since Ampere, and finally how to write a simple (not super
 performant) implementation of matmul on a GPU in 4 lines of Mojo.
 
-In Part 2, we’ll explain the hardware instructions introduced in Blackwell
-GPUs, and continue to improve on our kernels' performance to make it leverage the
-new hardware instructions. As we continue through the blog series, we will
+In Part 2, we’ll explain the hardware instructions introduced in Blackwell GPUs,
+and continue to improve on our kernels' performance to make it leverage the new
+hardware instructions. As we continue through the blog series, we will
 incrementally leverage new Blackwell features to improve our matmul
 implementation until the end of the series where we achieve performance that
 surpasses that of NVIDIA's cuBLAS library.
@@ -131,26 +131,27 @@ computation throughput.
 ### GPU from the hardware architect perspective?
 
 To understand GPUs better, let's look at how the GPU is organized from a
-hardware architecture perspective. A GPU, like other [Von
-Neumann](https://en.wikipedia.org/wiki/Von_Neumann_architecture) architectures,
-is composed of elements that compute (commonly known as Arithmetic Logic
-Units or ALUs), and elements that load/store the data for these computations. A
-GPU will contain several Streaming Multiprocessor
-([SM](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/)), [L2
-Cache and global memory](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/gpu-memory/) which
-are shared among these SMs, and an interconnect to the host device (CPU).
+hardware architecture perspective. A GPU, like other
+[Von Neumann](https://en.wikipedia.org/wiki/Von_Neumann_architecture)
+architectures, is composed of elements that compute (commonly known as
+Arithmetic Logic Units or ALUs), and elements that load/store the data for these
+computations. A GPU will contain several Streaming Multiprocessor
+([SM](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/)),
+[L2 Cache and global memory](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/gpu-memory/)
+which are shared among these SMs, and an interconnect to the host device (CPU).
 
 ![image.png](./img/matmul-on-blackwell-part-1/img04-gpu-arch.jpeg)
 ///caption
 GPU architecture
 ///
 
-Threads on a GPU are grouped into blocks which are called [Thread
-Blocks](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks) or Cooperative
-Thread Arrays (CTAs). Each of these blocks gets scheduled onto **a single**
-[SM](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/). Each SM,
-in turn, accesses the data via a shared L2 cache which loads data from global
-memory. The threads in each SM have access to two more memory regions:
+Threads on a GPU are grouped into blocks which are called
+[Thread Blocks](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks)
+or Cooperative Thread Arrays (CTAs). Each of these blocks gets scheduled onto
+**a single**
+[SM](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/).
+Each SM, in turn, accesses the data via a shared L2 cache which loads data from
+global memory. The threads in each SM have access to two more memory regions:
 
 1. Registers which are local variables and are private to each thread.
 2. Shared memory which resides on the SM and is visible across threads *within
@@ -214,8 +215,8 @@ in subsequent posts).
 A detailed description of GPU programming fundamentals is beyond the scope of
 this blog post. There are many resources that explain the GPU programming
 paradigm, and a great resource is
-<https://puzzles.modular.com/introduction.html> and the [GPU architecture
-fundamentals](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/).
+<https://puzzles.modular.com/introduction.html> and the
+[GPU architecture fundamentals](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/).
 
 As a result of the massive parallelism afforded to by the GPU, one has to think
 about GPU programming differently. For example, while, in traditional CPU
@@ -248,16 +249,17 @@ If we think about the [Flynn
 taxonomy](https://en.wikipedia.org/wiki/Flynn%27s_taxonomy), this maps into the
 Single Instruction Multiple Threads (SIMT) programming model.
 
-When launching a [kernel](https://handbook.modular.com/kernel-optimization/kernel-optimization-for-llm-inference/#what-is-a-gpu-kernel)
+When launching a
+[kernel](https://handbook.modular.com/kernel-optimization/kernel-optimization-for-llm-inference/#what-is-a-gpu-kernel)
 (calling the function), you specify the number of threads in each
-[block](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks) (also called block
-size), and how many blocks you want to launch (called the
-[grid](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#grids-and-indexing) size). Each block gets
-mapped to an SM by the hardware. As a result, threads within the same block can
-share memory and synchronize with each other, but cannot directly communicate
-across blocks- unless they are within the same cluster (discussed later). Note
-that while each block of threads is executed on only one of the SMs, each
-SM can execute multiple blocks (CTAs):
+[block](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks)
+(also called block size), and how many blocks you want to launch (called the
+[grid](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#grids-and-indexing)
+size). Each block gets mapped to an SM by the hardware. As a result, threads
+within the same block can share memory and synchronize with each other, but
+cannot directly communicate across blocks- unless they are within the same
+cluster (discussed later). Note that while each block of threads is executed on
+only one of the SMs, each SM can execute multiple blocks (CTAs):
 
 ![Screenshot 2025-08-25 at 7.08.36 PM.png](./img/matmul-on-blackwell-part-1/img09-gpu-work-allocation.jpeg)
 
@@ -536,9 +538,10 @@ Concurrent dot product for every output
 ///
 
 The inputs to the matmul function are native `TileTensor` views. Each layout is
-a type implementing `TensorLayout`; `RowMajorLayout[ComptimeInt[M], ComptimeInt[N]]`
-is that static layout type. To learn more,
-see [Using TileTensor](https://max.modular.com/tile-tensor/tensors/).
+a type implementing `TensorLayout`;
+`RowMajorLayout[ComptimeInt[M], ComptimeInt[N]]` is that static layout type. To
+learn more, see
+[Using TileTensor](https://max.modular.com/tile-tensor/tensors/).
 
 ```mojo
 from max.gpu import global_idx
