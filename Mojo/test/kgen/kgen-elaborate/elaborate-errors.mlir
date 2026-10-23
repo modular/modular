@@ -573,3 +573,19 @@ kgen.generator export @nary_identical_unknown_with_target() -> !kgen.scalar<bool
   hlcf.return %0 : !kgen.scalar<bool>
 }
 }
+
+// -----
+
+// Test that a constant shift-right amount outside the operand's bit width gets
+// a clear diagnostic from validateForElaborator instead of the generic
+// "could not simplify operator" note.
+//
+// `shl` with matching types folds to zero before reaching validateForElaborator,
+// so it cannot produce this diagnostic and is not tested here.
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @shift_out_of_range_shr() {
+  // expected-note @below {{shift amount 9 is outside the valid range 0..7 for scalar<ui8>}}
+  %0 = kgen.param.constant: !kgen.scalar<ui8> = <shr(1, 9)>
+  hlcf.return
+}
