@@ -105,8 +105,8 @@ def test_kernel_1[
 
     ctx.enqueue_function[kernel](
         c.device_tensor(),
-        a.device_tensor().as_imm(),
-        b.device_tensor().as_imm(),
+        a.device_tensor(),
+        b.device_tensor(),
         grid_dim=(ceildiv(N, BLOCKSIZE), ceildiv(M, BLOCKSIZE)),
         block_dim=(BLOCKSIZE, BLOCKSIZE),
     )
@@ -121,8 +121,8 @@ def test_kernel_1[
         def run_kernel(ctx: DeviceContext) raises {mut a, mut b, mut c, imm}:
             ctx.enqueue_function[kernel](
                 c.device_tensor(),
-                a.device_tensor().as_imm(),
-                b.device_tensor().as_imm(),
+                a.device_tensor(),
+                b.device_tensor(),
                 grid_dim=(ceildiv(N, BLOCKSIZE), ceildiv(M, BLOCKSIZE)),
                 block_dim=(BLOCKSIZE, BLOCKSIZE),
             )
