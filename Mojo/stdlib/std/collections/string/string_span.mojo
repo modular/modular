@@ -2113,7 +2113,7 @@ struct StringSpan[origin: ImmOrigin](
         `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
         Parameters:
-            single_character: Whether to evaluate the stringslice as a single
+            single_character: Whether to evaluate the StringSpan as a single
                 unicode character (avoids overhead when already iterating).
 
         Returns:

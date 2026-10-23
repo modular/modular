@@ -54,7 +54,7 @@ def parameterized_on_cuda() -> Int:
 
 
 @inline(.always)
-def _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
+def _verify_parameterized_on_cuda(asm: StringSpan) raises -> None:
     assert_true("test_cuda_target_parameterized" in asm)
 
     # Now make sure that we have something like this:
@@ -96,7 +96,7 @@ def hello_mojo():
 
 
 @inline(.always)
-def _verify_hello(asm: StringSlice) raises -> None:
+def _verify_hello(asm: StringSpan) raises -> None:
     assert_true("test_cuda_target_hello_mojo" in asm)
     assert_true("vprintf" in asm)
 
@@ -135,7 +135,7 @@ def erf_elementwise(
     )
 
 
-def _verify_erf_elementwise(asm: StringSlice) raises:
+def _verify_erf_elementwise(asm: StringSpan) raises:
     assert_true("test_cuda_target_erf_elementwis" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.x" in asm)
@@ -171,7 +171,7 @@ def erf_kernel(buf: MutPointer[Float32, MutAnyOrigin], len: Int):
 
 
 @inline(.always)
-def _verify_erf_kernel(asm: StringSlice) raises -> None:
+def _verify_erf_kernel(asm: StringSpan) raises -> None:
     assert_true("erf_kernel" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.y" in asm)
@@ -200,7 +200,7 @@ def test_shared_stack_allocation() -> (
 
 
 @inline(.always)
-def _verify_shared_stack_allocation(asm: StringSlice) raises -> None:
+def _verify_shared_stack_allocation(asm: StringSpan) raises -> None:
     assert_true("test_cuda_target_test_shared_" in asm)
     assert_true(".shared .align 8 .b8" in asm)
 
@@ -229,7 +229,7 @@ def test_barrier():
 
 
 @inline(.always)
-def _verify_barrier(asm: StringSlice) raises -> None:
+def _verify_barrier(asm: StringSpan) raises -> None:
     assert_true("barrier" in asm)
     assert_true("bar.sync 	0" in asm)
 
@@ -340,7 +340,7 @@ def gemm(
             set_c(row, col + out_idx, c_reg.unsafe_load(out_idx))
 
 
-def _verify_gemm(asm: StringSlice) raises:
+def _verify_gemm(asm: StringSpan) raises:
     assert_true("gemm" in asm)
     assert_true(".shared .align 4 .b8" in asm)
     assert_true("st.shared.b32" in asm)
@@ -373,7 +373,7 @@ def test_warp_shuffle_up(val: Float32) -> Float32:
 
 
 @inline(.always)
-def _verify_warp_shuffle_up(asm: StringSlice) raises -> None:
+def _verify_warp_shuffle_up(asm: StringSpan) raises -> None:
     assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.up.b32" in asm)
 
@@ -403,7 +403,7 @@ def test_warp_shuffle_down(val: Int32) -> Int32:
 
 
 @inline(.always)
-def _verify_warp_shuffle_down(asm: StringSlice) raises -> None:
+def _verify_warp_shuffle_down(asm: StringSpan) raises -> None:
     assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.down.b32" in asm)
 
@@ -438,7 +438,7 @@ def warp_sum_reduce(val: Float32) -> Float32:
 
 
 @inline(.always)
-def _verify_warp_sum_reduce(asm: StringSlice) raises -> None:
+def _verify_warp_sum_reduce(asm: StringSpan) raises -> None:
     assert_true("warp_sum_" in asm)
     assert_true("shfl.sync.bfly.b32" in asm)
 
@@ -481,7 +481,7 @@ def block_reduce(val: Float32) -> Float32:
 
 
 @inline(.always)
-def _verify_block_reduce(asm: StringSlice) raises -> None:
+def _verify_block_reduce(asm: StringSpan) raises -> None:
     assert_true("block_reduce" in asm)
     assert_true("mov.u32" in asm)
 

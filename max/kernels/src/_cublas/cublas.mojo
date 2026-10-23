@@ -101,7 +101,7 @@ def check_cublas_error(stat: Result) raises:
 
 
 @inline(.always)
-def check_cublas_error(stat: Result, msg: StringSlice) raises:
+def check_cublas_error(stat: Result, msg: StringSpan) raises:
     if stat != Result.SUCCESS:
         raise Error(t"{msg}. Got a CUBLAS error: {stat}")
 

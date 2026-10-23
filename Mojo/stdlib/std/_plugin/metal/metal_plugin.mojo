@@ -41,7 +41,7 @@ def _print_emit[O: Origin](cstr: CStringSpan[O], file: RawFileDescriptor):
 
     Metal kernels have a single os_log stream, so `file` is ignored.
     """
-    _metal_print_write(StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul()))
+    _metal_print_write(StringSpan(unsafe_from_utf8=cstr.as_bytes_with_nul()))
 
 
 @inline(.always)

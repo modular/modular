@@ -569,7 +569,7 @@ struct String(
         """
         # Copy the data.
         self = String(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=CStringSpan(
                     unsafe_from_ptr=unsafe_from_utf8_ptr
                 )
@@ -588,7 +588,7 @@ struct String(
         """
         # Copy the data.
         self = String(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=CStringSpan(
                     unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[
                         c_char
@@ -748,12 +748,12 @@ struct String(
     # Factory dunders
     # ===------------------------------------------------------------------=== #
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         """
-        Write a `StringSlice` to this `String`.
+        Write a `StringSpan` to this `String`.
 
         Args:
-            string: The `StringSlice` to write to this String.
+            string: The `StringSpan` to write to this String.
         """
         self._iadd(string.as_bytes())
 
@@ -771,7 +771,7 @@ struct String(
     )
     def __getitem__(
         self, _index: Some[Indexer], /
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSpan[origin_of(self)]:
         ...
 
     @doc_hidden
@@ -784,7 +784,7 @@ struct String(
     )
     def __getitem__(
         self, _slice: ContiguousSlice, /
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSpan[origin_of(self)]:
         ...
 
     @doc_hidden
@@ -804,7 +804,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, byte: Int
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -816,7 +816,7 @@ struct String(
             byte: The byte index (0-based).
 
         Returns:
-            A StringSlice containing a single byte at the specified position.
+            A StringSpan containing a single byte at the specified position.
         """
         var string_slice = self._interior_slice()
         var idx = index(byte)
@@ -827,7 +827,7 @@ struct String(
     @inline(.always)
     def __getitem__[
         I: Indexer, //
-    ](self, *, byte: I) -> StringSlice[
+    ](self, *, byte: I) -> StringSpan[
         origin_of(self)._get_owned_interior["bytes"]
     ]:
         """Gets a single byte at the specified byte index.
@@ -844,7 +844,7 @@ struct String(
             byte: The byte index (0-based).
 
         Returns:
-            A StringSlice containing a single byte at the specified position.
+            A StringSpan containing a single byte at the specified position.
         """
         var string_slice = self._interior_slice()
         var idx = index(byte)
@@ -855,7 +855,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, byte: IntLiteral
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -867,7 +867,7 @@ struct String(
             byte: The byte index (0-based).
 
         Returns:
-            A StringSlice containing a single byte at the specified position.
+            A StringSpan containing a single byte at the specified position.
         """
         comptime assert IntLiteral[byte.value]() >= 0, (
             "negative indexing is not supported, use e.g."
@@ -881,7 +881,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, byte: ContiguousSlice
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a substring at the specified byte positions.
 
         This performs byte-level slicing, not character (codepoint) slicing.
@@ -897,7 +897,7 @@ struct String(
             byte: A slice that specifies byte positions of the new substring.
 
         Returns:
-            A StringSlice containing the bytes in the specified range.
+            A StringSpan containing the bytes in the specified range.
         """
         _ = check_slice_bounds(byte, self.byte_length(), call_location())
         return self._interior_slice()[byte=byte]
@@ -905,7 +905,7 @@ struct String(
     @__unsafe_nested_origins_read_only
     def __getitem__[
         I: Indexer, //
-    ](self, *, codepoint: I) -> StringSlice[
+    ](self, *, codepoint: I) -> StringSpan[
         origin_of(self)._get_owned_interior["bytes"]
     ]:
         """Gets the character at the specified position.
@@ -917,7 +917,7 @@ struct String(
             codepoint: The codepoint index.
 
         Returns:
-            A `StringSlice` view containing the unicode codepoint at the
+            A `StringSpan` view containing the unicode codepoint at the
             specified position.
         """
         return self._interior_slice()[codepoint=codepoint]
@@ -926,7 +926,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, codepoint: ContiguousSlice
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a substring at the specified codepoint positions.
 
         Args:
@@ -934,7 +934,7 @@ struct String(
                 substring.
 
         Returns:
-            A StringSlice containing the codepoints in the specified range.
+            A StringSpan containing the codepoints in the specified range.
         """
         return self._interior_slice()[codepoint=codepoint]
 
@@ -942,14 +942,14 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, grapheme: Some[Indexer]
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets the character at the specified position.
 
         Args:
             grapheme: The grapheme index.
 
         Returns:
-            A `StringSlice` view containing the unicode grapheme at the
+            A `StringSpan` view containing the unicode grapheme at the
             specified position.
         """
         return self._interior_slice()[grapheme=grapheme]
@@ -979,7 +979,7 @@ struct String(
 
     @inline(.nodebug)
     @stable(since="1.0")
-    def __eq__(self, other: StringSlice) -> Bool:
+    def __eq__(self, other: StringSpan) -> Bool:
         """Compares two Strings if they have the same values.
 
         Args:
@@ -988,11 +988,11 @@ struct String(
         Returns:
             True if the Strings are equal and False otherwise.
         """
-        return StringSlice(self) == other
+        return StringSpan(self) == other
 
     @inline(.nodebug)
     @stable(since="1.0")
-    def __ne__(self, other: StringSlice) -> Bool:
+    def __ne__(self, other: StringSpan) -> Bool:
         """Compares two Strings if they have the same values.
 
         Args:
@@ -1001,7 +1001,7 @@ struct String(
         Returns:
             True if the Strings are equal and False otherwise.
         """
-        return StringSlice(self) != other
+        return StringSpan(self) != other
 
     @inline(.nodebug)
     def __lt__(self, rhs: String) -> Bool:
@@ -1014,7 +1014,7 @@ struct String(
             True if this String is strictly less than the RHS String and False
             otherwise.
         """
-        return StringSlice(self) < StringSlice(rhs)
+        return StringSpan(self) < StringSpan(rhs)
 
     @staticmethod
     def _add(lhs: Span[Byte, _], rhs: Span[Byte, _]) -> String:
@@ -1031,7 +1031,7 @@ struct String(
         )
         return result^
 
-    def __add__(self, other: StringSlice) -> String:
+    def __add__(self, other: StringSpan) -> String:
         """Creates a string by appending a string slice at the end.
 
         Args:
@@ -1070,7 +1070,7 @@ struct String(
         )
         self._set_byte_length(new_length)
 
-    def __radd__(self, other: StringSlice[_]) -> String:
+    def __radd__(self, other: StringSpan[_]) -> String:
         """Creates a string by prepending another string slice to the start.
 
         Args:
@@ -1095,7 +1095,7 @@ struct String(
         self._set_byte_length(new_len)
         self._clear_nul_terminator()
 
-    def __iadd__(mut self, other: StringSlice[_]):
+    def __iadd__(mut self, other: StringSpan[_]):
         """Appends another string slice to this string.
 
         Args:
@@ -1114,7 +1114,7 @@ struct String(
         `codepoints()`/`codepoint_slices()` or `bytes()`.
 
         Returns:
-            An iterator yielding each grapheme cluster as a `StringSlice`.
+            An iterator yielding each grapheme cluster as a `StringSpan`.
         """
         return self.graphemes()
 
@@ -1127,7 +1127,7 @@ struct String(
 
         Returns:
             A reverse iterator yielding each grapheme cluster as a
-            `StringSlice`.
+            `StringSpan`.
         """
         return self.graphemes_reversed()
 
@@ -1163,7 +1163,7 @@ struct String(
             An error if the conversion failed.
         """
         var str_obj = py.__str__()
-        self = String(StringSlice(unsafe_borrowed_obj=str_obj))
+        self = String(StringSpan(unsafe_borrowed_obj=str_obj))
         # keep python object alive so the copy can occur
         _ = str_obj
 
@@ -1191,7 +1191,7 @@ struct String(
             of the repr. Any single quote inside a string should be escaped
             (`\\'`).
         """
-        StringSlice(self).write_repr_to(writer)
+        StringSpan(self).write_repr_to(writer)
 
     def join[T: Copyable & Writable](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
@@ -1218,7 +1218,7 @@ struct String(
             joining a very large `List` of elements to write into the stack
             instead of the heap.
         """
-        return StringSlice(self).join(elems)
+        return StringSpan(self).join(elems)
 
     def bytes(self) -> BytesIter[origin_of(self)]:
         """Returns an iterator over the raw UTF-8 bytes of this string.
@@ -1259,7 +1259,7 @@ struct String(
         assert_equal(next(iter), Byte(0xA9))
         ```
         """
-        return StringSlice(self).bytes()
+        return StringSpan(self).bytes()
 
     def codepoints(self) -> CodepointsIter[origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
@@ -1302,7 +1302,7 @@ struct String(
             _ = iter.__next__() # raises StopIteration
         ```
         """
-        return StringSlice(self).codepoints()
+        return StringSpan(self).codepoints()
 
     def codepoint_slices(self) -> CodepointSliceIter[origin_of(self)]:
         """Returns an iterator over single-character slices of this string.
@@ -1329,7 +1329,7 @@ struct String(
             _ = iter.__next__() # raises StopIteration
         ```
         """
-        return StringSlice(self).codepoint_slices()
+        return StringSpan(self).codepoint_slices()
 
     def codepoint_slices_reversed(
         self,
@@ -1352,9 +1352,9 @@ struct String(
         single "character" on screen.
 
         Returns:
-            An iterator yielding each grapheme cluster as a `StringSlice`.
+            An iterator yielding each grapheme cluster as a `StringSpan`.
         """
-        return StringSlice(self).graphemes()
+        return StringSpan(self).graphemes()
 
     def graphemes_reversed(
         self,
@@ -1366,27 +1366,27 @@ struct String(
 
         Returns:
             A reverse iterator yielding each grapheme cluster as a
-            `StringSlice`.
+            `StringSpan`.
         """
-        return StringSlice(self).graphemes_reversed()
+        return StringSpan(self).graphemes_reversed()
 
     def grapheme_indices(self) -> GraphemeIndicesIter[origin_of(self)]:
         """Return an iterator over grapheme clusters paired with their byte
         offsets.
 
-        Each yielded element is a `Tuple[Int, StringSlice]` where the first
+        Each yielded element is a `Tuple[Int, StringSpan]` where the first
         element is the byte offset at which the grapheme begins.
 
         Returns:
             An iterator yielding `(byte_offset, grapheme)` pairs.
         """
-        return StringSlice(self).grapheme_indices()
+        return StringSpan(self).grapheme_indices()
 
     def split_at_grapheme(
         self, n: Int
     ) -> Tuple[
-        StringSlice[ImmOrigin(origin_of(self))],
-        StringSlice[ImmOrigin(origin_of(self))],
+        StringSpan[ImmOrigin(origin_of(self))],
+        StringSpan[ImmOrigin(origin_of(self))],
     ]:
         """Split this string at the `n`-th grapheme-cluster boundary.
 
@@ -1395,10 +1395,10 @@ struct String(
                 non-negative.
 
         Returns:
-            A tuple `(prefix, suffix)` of `StringSlice`s. The prefix covers
+            A tuple `(prefix, suffix)` of `StringSpan`s. The prefix covers
             grapheme clusters `[0, n)` and the suffix covers the rest.
         """
-        return StringSlice(self).split_at_grapheme(n)
+        return StringSpan(self).split_at_grapheme(n)
 
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.
@@ -1408,7 +1408,7 @@ struct String(
         Returns:
             The number of grapheme clusters.
         """
-        return StringSlice(self).count_graphemes()
+        return StringSpan(self).count_graphemes()
 
     @inline(.nodebug)
     def unsafe_ptr(
@@ -1511,11 +1511,11 @@ struct String(
     @__unsafe_nested_origins_read_only
     def _interior_slice(
         ref self,
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         # Canonical interior-origin string-slice view of the whole string. All
         # view-returning accessors derive from this so element/substring views
         # are invalidated when the string is mutated.
-        return StringSlice(unsafe_from_utf8=self.as_bytes())
+        return StringSpan(unsafe_from_utf8=self.as_bytes())
 
     @__unsafe_nested_origins_read_only
     def unsafe_as_bytes_mut(
@@ -1573,7 +1573,7 @@ struct String(
             ```mojo
             from std.testing import assert_equal
 
-            var s = StringSlice("ನಮಸ್ಕಾರ")
+            var s = StringSpan("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
             assert_equal(s.byte_length(), 21)
             ```
@@ -1584,7 +1584,7 @@ struct String(
             ```mojo
             from std.testing import assert_equal
 
-            var s = StringSlice("abc")
+            var s = StringSpan("abc")
             assert_equal(s.count_codepoints(), 3)
             assert_equal(s.byte_length(), 3)
             ```
@@ -1595,7 +1595,7 @@ struct String(
             ```mojo
             from std.testing import assert_equal
 
-            var s = StringSlice("á")
+            var s = StringSpan("á")
             assert_equal(s.count_codepoints(), 2)
             assert_equal(s.byte_length(), 3)
             ```
@@ -1604,7 +1604,7 @@ struct String(
             This method needs to traverse the whole string to count, so it has
             a performance hit compared to using the byte length.
         """
-        return StringSlice(self).count_codepoints()
+        return StringSpan(self).count_codepoints()
 
     def _set_byte_length(mut self, new_len: Int):
         """Set the byte length of the `String`.
@@ -1622,7 +1622,7 @@ struct String(
         else:
             self._len_or_data = new_len
 
-    def count(self, substr: StringSlice) -> Int:
+    def count(self, substr: StringSpan) -> Int:
         """Return the number of non-overlapping occurrences of substring
         `substr` in the string.
 
@@ -1635,9 +1635,9 @@ struct String(
         Returns:
           The number of occurrences of `substr`.
         """
-        return StringSlice(self).count(substr)
+        return StringSpan(self).count(substr)
 
-    def __contains__(self, substr: StringSlice) -> Bool:
+    def __contains__(self, substr: StringSpan) -> Bool:
         """Returns True if the substring is contained within the current string.
 
         Args:
@@ -1646,9 +1646,9 @@ struct String(
         Returns:
           True if the string contains the substring.
         """
-        return substr in StringSlice(self)
+        return substr in StringSpan(self)
 
-    def find(self, substr: StringSlice, start: Int = 0) -> Int:
+    def find(self, substr: StringSpan, start: Int = 0) -> Int:
         """Finds the offset in bytes of the first occurrence of `substr`
         starting at `start`. If not found, returns `-1`.
 
@@ -1661,9 +1661,9 @@ struct String(
           string.
         """
 
-        return StringSlice(self).find(substr, start)
+        return StringSpan(self).find(substr, start)
 
-    def rfind(self, substr: StringSlice, start: Int = 0) -> Int:
+    def rfind(self, substr: StringSpan, start: Int = 0) -> Int:
         """Finds the offset in bytes of the last occurrence of `substr` starting
         at `start`. If not found, returns `-1`.
 
@@ -1676,7 +1676,7 @@ struct String(
           string.
         """
 
-        return StringSlice(self).rfind(substr, start=start)
+        return StringSpan(self).rfind(substr, start=start)
 
     def is_ascii_whitespace(self) -> Bool:
         """Determines whether every character in the given String is a
@@ -1689,7 +1689,7 @@ struct String(
             True if the whole String is made up of whitespace characters
                 listed above, otherwise False.
         """
-        return StringSlice(self).is_ascii_whitespace()
+        return StringSpan(self).is_ascii_whitespace()
 
     @doc_hidden
     @deprecated(use=is_ascii_whitespace)
@@ -1698,8 +1698,8 @@ struct String(
 
     @inline(.always)
     def split(
-        self, sep: StringSlice
-    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
+        self, sep: StringSpan
+    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by a separator.
 
         Args:
@@ -1712,21 +1712,21 @@ struct String(
 
         ```mojo
         # Splitting a space
-        _ = StringSlice("hello world").split(" ") # ["hello", "world"]
+        _ = StringSpan("hello world").split(" ") # ["hello", "world"]
         # Splitting adjacent separators
-        _ = StringSlice("hello,,world").split(",") # ["hello", "", "world"]
+        _ = StringSpan("hello,,world").split(",") # ["hello", "", "world"]
         # Splitting with starting or ending separators
-        _ = StringSlice(",1,2,3,").split(",") # ['', '1', '2', '3', '']
+        _ = StringSpan(",1,2,3,").split(",") # ['', '1', '2', '3', '']
         # Splitting with an empty separator
-        _ = StringSlice("123").split("") # ['', '1', '2', '3', '']
+        _ = StringSpan("123").split("") # ['', '1', '2', '3', '']
         ```
         """
         return self._interior_slice().split(sep)
 
     @inline(.always)
     def split(
-        self, sep: StringSlice, maxsplit: Int
-    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
+        self, sep: StringSpan, maxsplit: Int
+    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by a separator.
 
         Args:
@@ -1740,11 +1740,11 @@ struct String(
 
         ```mojo
         # Splitting with maxsplit
-        _ = StringSlice("1,2,3").split(",", maxsplit=1) # ['1', '2,3']
+        _ = StringSpan("1,2,3").split(",", maxsplit=1) # ['1', '2,3']
         # Splitting with starting or ending separators
-        _ = StringSlice(",1,2,3,").split(",", maxsplit=1) # ['', '1,2,3,']
+        _ = StringSpan(",1,2,3,").split(",", maxsplit=1) # ['', '1,2,3,']
         # Splitting with an empty separator
-        _ = StringSlice("123").split("", maxsplit=1) # ['', '123']
+        _ = StringSpan("123").split("", maxsplit=1) # ['', '123']
         ```
         """
         return self._interior_slice().split(sep, maxsplit=maxsplit)
@@ -1752,7 +1752,7 @@ struct String(
     @inline(.always)
     def split(
         self, sep: NoneType = None
-    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1765,13 +1765,13 @@ struct String(
 
         ```mojo
         # Splitting an empty string or filled with whitespaces
-        _ = StringSlice("      ").split() # []
-        _ = StringSlice("").split() # []
+        _ = StringSpan("      ").split() # []
+        _ = StringSpan("").split() # []
 
         # Splitting a string with leading, trailing, and middle whitespaces
-        _ = StringSlice("      hello    world     ").split() # ["hello", "world"]
+        _ = StringSpan("      hello    world     ").split() # ["hello", "world"]
         # Splitting adjacent universal newlines:
-        _ = StringSlice(
+        _ = StringSpan(
             "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85world"
         ).split()  # ["hello", "world"]
         ```
@@ -1781,7 +1781,7 @@ struct String(
     @inline(.always)
     def split(
         self, sep: NoneType = None, *, maxsplit: Int
-    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1794,14 +1794,14 @@ struct String(
         Examples:
         ```mojo
         # Splitting with maxsplit
-        _ = StringSlice("1     2  3").split(maxsplit=1) # ['1', '2  3']
+        _ = StringSpan("1     2  3").split(maxsplit=1) # ['1', '2  3']
         ```
         """
         return self._interior_slice().split(sep, maxsplit=maxsplit)
 
     def splitlines(
         self, keepends: Bool = False
-    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
@@ -1815,7 +1815,7 @@ struct String(
         """
         return self._interior_slice().splitlines(keepends)
 
-    def replace(self, old: StringSlice, new: StringSlice) -> String:
+    def replace(self, old: StringSpan, new: StringSpan) -> String:
         """Return a copy of the string with all occurrences of substring `old`
         if replaced by `new`.
 
@@ -1826,11 +1826,11 @@ struct String(
         Returns:
             The string where all occurrences of `old` are replaced with `new`.
         """
-        return StringSlice(self).replace(old, new)
+        return StringSpan(self).replace(old, new)
 
     def strip(
-        self, chars: StringSlice
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        self, chars: StringSpan
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with leading and trailing characters
         removed.
 
@@ -1838,7 +1838,7 @@ struct String(
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A `StringSlice` into this string with no leading or trailing
+            A `StringSpan` into this string with no leading or trailing
             characters.
         """
 
@@ -1846,66 +1846,66 @@ struct String(
 
     def strip(
         self,
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with leading and trailing whitespaces
         removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A `StringSlice` into this string with no leading or trailing
+            A `StringSpan` into this string with no leading or trailing
             whitespaces.
         """
         return self.lstrip().rstrip()
 
     def rstrip(
-        self, chars: StringSlice
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        self, chars: StringSpan
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with trailing characters removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A `StringSlice` into this string with no trailing characters.
+            A `StringSpan` into this string with no trailing characters.
         """
 
         return self._interior_slice().rstrip(chars)
 
     def rstrip(
         self,
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with trailing whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A `StringSlice` into this string with no trailing whitespaces.
+            A `StringSpan` into this string with no trailing whitespaces.
         """
         return self._interior_slice().rstrip()
 
     def lstrip(
-        self, chars: StringSlice
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        self, chars: StringSpan
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with leading characters removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A `StringSlice` into this string with no leading characters.
+            A `StringSpan` into this string with no leading characters.
         """
 
         return self._interior_slice().lstrip(chars)
 
     def lstrip(
         self,
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with leading whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A `StringSlice` into this string with no leading whitespaces.
+            A `StringSpan` into this string with no leading whitespaces.
         """
         return self._interior_slice().lstrip()
 
@@ -1918,7 +1918,7 @@ struct String(
         Args:
             hasher: The hasher instance.
         """
-        StringSlice(self).__hash__(hasher)
+        StringSpan(self).__hash__(hasher)
 
     def lower(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -1928,7 +1928,7 @@ struct String(
             A new string where cased letters have been converted to lowercase.
         """
 
-        return StringSlice(self).lower()
+        return StringSpan(self).lower()
 
     def upper(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -1938,10 +1938,10 @@ struct String(
             A new string where cased letters have been converted to uppercase.
         """
 
-        return StringSlice(self).upper()
+        return StringSpan(self).upper()
 
     def startswith(
-        self, prefix: StringSlice, start: Int = 0, end: Int = -1
+        self, prefix: StringSpan, start: Int = 0, end: Int = -1
     ) -> Bool:
         """Checks if the string starts with the specified prefix between start
         and end positions. Returns True if found and False otherwise.
@@ -1957,10 +1957,10 @@ struct String(
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
-        return StringSlice(self).startswith(prefix, start, end)
+        return StringSpan(self).startswith(prefix, start, end)
 
     def endswith(
-        self, suffix: StringSlice, start: Int = 0, end: Int = -1
+        self, suffix: StringSpan, start: Int = 0, end: Int = -1
     ) -> Bool:
         """Checks if the string end with the specified suffix between start
         and end positions. Returns True if found and False otherwise.
@@ -1976,11 +1976,11 @@ struct String(
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
-        return StringSlice(self).endswith(suffix, start, end)
+        return StringSpan(self).endswith(suffix, start, end)
 
     def removeprefix(
-        self, prefix: StringSlice, /
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        self, prefix: StringSpan, /
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with the prefix removed if it was
         present.
 
@@ -1988,7 +1988,7 @@ struct String(
             prefix: The prefix to remove from the string.
 
         Returns:
-            A `StringSlice` into this string:
+            A `StringSpan` into this string:
             `string[byte=prefix.byte_length():]` if the string starts with
             the prefix string, or the whole string otherwise.
 
@@ -2002,8 +2002,8 @@ struct String(
         return self._interior_slice().removeprefix(prefix)
 
     def removesuffix(
-        self, suffix: StringSlice, /
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        self, suffix: StringSpan, /
+    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with the suffix removed if it was
         present.
 
@@ -2011,7 +2011,7 @@ struct String(
             suffix: The suffix to remove from the string.
 
         Returns:
-            A `StringSlice` into this string:
+            A `StringSpan` into this string:
             `string[byte=:(self.byte_length()-suffix.byte_length())]` if the string ends with the suffix string,
             or the whole string otherwise.
 
@@ -2057,7 +2057,7 @@ struct String(
         Returns:
             The string concatenated `n` times.
         """
-        return StringSlice(self) * n
+        return StringSpan(self) * n
 
     def format[*Ts: Writable](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
@@ -2102,7 +2102,7 @@ struct String(
         Returns:
             True if all characters are digits and it's not empty else False.
         """
-        return StringSlice(self).is_ascii_digit()
+        return StringSpan(self).is_ascii_digit()
 
     def isupper(self) -> Bool:
         """Returns True if all cased characters in the string are uppercase and
@@ -2112,7 +2112,7 @@ struct String(
             True if all cased characters in the string are uppercase and there
             is at least one cased character, False otherwise.
         """
-        return StringSlice(self).isupper()
+        return StringSpan(self).isupper()
 
     def islower(self) -> Bool:
         """Returns True if all cased characters in the string are lowercase and
@@ -2122,7 +2122,7 @@ struct String(
             True if all cased characters in the string are lowercase and there
             is at least one cased character, False otherwise.
         """
-        return StringSlice(self).islower()
+        return StringSpan(self).islower()
 
     def is_ascii_printable(self) -> Bool:
         """Returns True if all characters in the string are ASCII printable.
@@ -2132,7 +2132,7 @@ struct String(
         Returns:
             True if all characters are printable else False.
         """
-        return StringSlice(self).is_ascii_printable()
+        return StringSpan(self).is_ascii_printable()
 
     def ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
@@ -2162,7 +2162,7 @@ struct String(
         print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
-        return StringSlice(self).ascii_rjust(width, fillchar)
+        return StringSpan(self).ascii_rjust(width, fillchar)
 
     def ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
@@ -2192,7 +2192,7 @@ struct String(
         print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
-        return StringSlice(self).ascii_ljust(width, fillchar)
+        return StringSpan(self).ascii_ljust(width, fillchar)
 
     def ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
@@ -2223,7 +2223,7 @@ struct String(
         print(s.ascii_center(3))         # "hello" (no padding)
         ```
         """
-        return StringSlice(self).ascii_center(width, fillchar)
+        return StringSpan(self).ascii_center(width, fillchar)
 
     def resize(mut self, length: Int, fill_byte: UInt8 = 0):
         """Resize the string to a new length. Panics if new_len does not
@@ -2252,7 +2252,7 @@ struct String(
             )
         else:
             debug_assert[assert_mode="safe"](
-                StringSlice(self).is_codepoint_boundary(length),
+                StringSpan(self).is_codepoint_boundary(length),
                 "String shrunk to length ",
                 length,
                 " which does not lie on a codepoint boundary.",
@@ -2274,7 +2274,7 @@ struct String(
         self._clear_nul_terminator()
         debug_assert(
             unsafe_uninit_length >= self.byte_length()
-            or StringSlice(self).is_codepoint_boundary(unsafe_uninit_length),
+            or StringSpan(self).is_codepoint_boundary(unsafe_uninit_length),
             "String shrunk to length ",
             unsafe_uninit_length,
             " which does not lie on a codepoint boundary.",
@@ -2338,7 +2338,7 @@ struct String(
 # ===----------------------------------------------------------------------=== #
 
 
-def ord(s: StringSlice) -> Int:
+def ord(s: StringSpan) -> Int:
     """Returns an integer that represents the codepoint of a single-character
     string.
 
@@ -2449,7 +2449,7 @@ def _repr_ascii(c: UInt8) -> String:
             return hex(uc, prefix=r"\x")
 
 
-def ascii(value: StringSlice) -> String:
+def ascii(value: StringSpan) -> String:
     """Get the ASCII representation of the object.
 
     Args:
@@ -2479,7 +2479,7 @@ def ascii(value: StringSlice) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
+def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
     """Parses and returns the given string as an integer in the given base.
 
     If base is set to 0, the string is parsed as an integer literal, with the
@@ -2637,12 +2637,12 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
 
 def _trim_and_handle_sign(
-    str_slice: StringSlice, str_len: Int
+    str_slice: StringSpan, str_len: Int
 ) -> Tuple[Int, Bool]:
     """Trims leading whitespace, handles the sign of the number in the string.
 
     Args:
-        str_slice: A StringSlice containing the number to parse.
+        str_slice: A StringSpan containing the number to parse.
         str_len: The length of the string.
 
     Returns:
@@ -2665,7 +2665,7 @@ def _trim_and_handle_sign(
 
 
 def _handle_base_prefix(
-    pos: Int, str_slice: StringSlice, str_len: Int, base: Int
+    pos: Int, str_slice: StringSpan, str_len: Int, base: Int
 ) -> Tuple[Int, Bool]:
     """Adjusts the starting position if a valid base prefix is present.
 
@@ -2674,7 +2674,7 @@ def _handle_base_prefix(
 
     Args:
         pos: Current position in the string.
-        str_slice: The input StringSlice.
+        str_slice: The input StringSpan.
         str_len: Length of the input string.
         base: The specified base.
 
@@ -2696,7 +2696,7 @@ def _handle_base_prefix(
     return start, start != pos
 
 
-def _str_to_base_error(base: Int, str_slice: StringSlice) -> String:
+def _str_to_base_error(base: Int, str_slice: StringSpan) -> String:
     return String(
         "String is not convertible to integer with base ",
         base,
@@ -2706,7 +2706,7 @@ def _str_to_base_error(base: Int, str_slice: StringSlice) -> String:
     )
 
 
-def _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
+def _identify_base(str_slice: StringSpan, start: Int) -> Tuple[Int, Int]:
     var length = str_slice.byte_length()
     # just 1 digit, assume base 10
     if start == (length - 1):
@@ -2730,7 +2730,7 @@ def _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
                     continue
             else:
                 was_last_character_underscore = False
-            if str_slice[byte=i] != StringSlice("0"):
+            if str_slice[byte=i] != StringSpan("0"):
                 return -1, -1
     elif ord("1") <= ord(str_slice[byte=start]) <= ord("9"):
         return 10, start
@@ -2740,7 +2740,7 @@ def _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
     return 10, start
 
 
-def _atof_error[reason: StaticString = ""](str_ref: StringSlice) -> Error:
+def _atof_error[reason: StaticString = ""](str_ref: StringSpan) -> Error:
     comptime if reason:
         return Error(
             "String is not convertible to float: '",
@@ -2751,7 +2751,7 @@ def _atof_error[reason: StaticString = ""](str_ref: StringSlice) -> Error:
     return Error("String is not convertible to float: '", str_ref, "'")
 
 
-def atof(str_slice: StringSlice) raises -> Float64:
+def atof(str_slice: StringSpan) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
     For example, `atof("2.25")` returns `2.25`.

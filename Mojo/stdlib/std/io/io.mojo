@@ -112,7 +112,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         """
         return self.read_until_delimiter("\n")
 
-    def read_until_delimiter(self, delimiter: StringSlice) raises -> String:
+    def read_until_delimiter(self, delimiter: StringSpan) raises -> String:
         """Reads an entire line from a stream, up to the `delimiter`.
         Does not include the delimiter in the result.
 
@@ -162,7 +162,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )
@@ -280,8 +280,8 @@ def print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StringSlice = " ",
-    end: StringSlice = "\n",
+    sep: StringSpan = " ",
+    end: StringSpan = "\n",
     flush: Bool = False,
     var file: RawFileDescriptor = stdout,
 ):

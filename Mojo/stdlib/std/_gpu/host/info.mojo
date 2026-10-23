@@ -485,7 +485,7 @@ def _build_unsupported_arch_error[
 # ===-----------------------------------------------------------------------===#
 
 
-def is_gpu[target: StringSlice]() -> Bool:
+def is_gpu[target: StringSpan]() -> Bool:
     """Checks if the target is a GPU (compile-time version).
 
     Parameters:
@@ -497,7 +497,7 @@ def is_gpu[target: StringSlice]() -> Bool:
     return is_gpu(target)
 
 
-def is_gpu(target: StringSlice) -> Bool:
+def is_gpu(target: StringSpan) -> Bool:
     """Checks if the target is a GPU (runtime version).
 
     Args:
@@ -509,7 +509,7 @@ def is_gpu(target: StringSlice) -> Bool:
     return target == "gpu"
 
 
-def is_cpu[target: StringSlice]() -> Bool:
+def is_cpu[target: StringSpan]() -> Bool:
     """Checks if the target is a CPU (compile-time version).
 
     Parameters:
@@ -521,7 +521,7 @@ def is_cpu[target: StringSlice]() -> Bool:
     return is_cpu(target)
 
 
-def is_cpu(target: StringSlice) -> Bool:
+def is_cpu(target: StringSpan) -> Bool:
     """Checks if the target is a CPU (runtime version).
 
     Args:
@@ -533,7 +533,7 @@ def is_cpu(target: StringSlice) -> Bool:
     return target == "cpu"
 
 
-def is_accelerator[target: StringSlice]() -> Bool:
+def is_accelerator[target: StringSpan]() -> Bool:
     """Checks if the target is an accelerator (compile-time version).
 
     True for any non-CPU compute target.
@@ -547,7 +547,7 @@ def is_accelerator[target: StringSlice]() -> Bool:
     return is_accelerator(target)
 
 
-def is_accelerator(target: StringSlice) -> Bool:
+def is_accelerator(target: StringSpan) -> Bool:
     """Checks if the target is an accelerator (runtime version).
 
     True for any non-CPU compute target.
@@ -561,7 +561,7 @@ def is_accelerator(target: StringSlice) -> Bool:
     return is_gpu(target)
 
 
-def is_valid_target[target: StringSlice]() -> Bool:
+def is_valid_target[target: StringSpan]() -> Bool:
     """Checks if the target is valid (compile-time version).
 
     Parameters:
@@ -573,7 +573,7 @@ def is_valid_target[target: StringSlice]() -> Bool:
     return is_valid_target(target)
 
 
-def is_valid_target(target: StringSlice) -> Bool:
+def is_valid_target(target: StringSpan) -> Bool:
     """Checks if the target is valid (runtime version).
 
     Args:

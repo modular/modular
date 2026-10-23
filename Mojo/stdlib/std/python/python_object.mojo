@@ -266,7 +266,7 @@ struct PythonObject(
             self = Self(from_owned=cpy.PyFloat_FromDouble(val))
 
     @implicit
-    def __init__(out self, string: StringSlice) raises:
+    def __init__(out self, string: StringSpan) raises:
         """Initialize the object from a string.
 
         Args:
@@ -276,7 +276,7 @@ struct PythonObject(
             If the string is not valid UTF-8.
         """
         ref cpy = Python().cpython()
-        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # TODO: This should not be necessary, as `StringSpan` is guaranteed to
         # be valid UTF-8.
         var unicode = cpy.PyUnicode_DecodeUTF8(string)
         if not unicode:
@@ -293,7 +293,7 @@ struct PythonObject(
         Raises:
             If the string is not valid UTF-8.
         """
-        self = Self(StringSlice(value))
+        self = Self(StringSpan(value))
 
     @implicit
     def __init__(out self, value: String) raises:
@@ -305,7 +305,7 @@ struct PythonObject(
         Raises:
             If the string is not valid UTF-8.
         """
-        self = Self(StringSlice(value))
+        self = Self(StringSpan(value))
 
     @implicit
     def __init__(out self, slice: Slice):

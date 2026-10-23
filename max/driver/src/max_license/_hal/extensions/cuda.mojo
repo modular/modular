@@ -29,9 +29,7 @@ struct CUDAHALExtensions(HALExtensions, SupportsPeerAccessV1):
     comptime PeerAccessTy = RawPluginPeerAccess
     var _peer: OptionalReg[RawPluginPeerAccess]
 
-    def __init__(
-        out self, lib: _DLHandle, so_path: StringSlice
-    ) raises HALError:
+    def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         self._peer = RawPluginPeerAccess.load(lib, so_path)
 
     def peer_access(self) -> OptionalReg[Self.PeerAccessTy]:

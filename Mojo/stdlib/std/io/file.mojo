@@ -159,7 +159,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """Default constructor."""
         self.handle = -1
 
-    def __init__(out self, path: StringSlice, mode: StringSlice) raises:
+    def __init__(out self, path: StringSpan, mode: StringSpan) raises:
         """Construct the FileHandle using the file path and mode.
 
         Args:
@@ -603,14 +603,14 @@ struct FileHandle(Defaultable, Movable, Writer):
 
             total_written += bytes_written
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         """
-        Write a `StringSlice` to this `FileHandle`.
+        Write a `StringSpan` to this `FileHandle`.
 
         This method is required by the `Writer` trait.
 
         Args:
-            string: The `StringSlice` to write to this `FileHandle`.
+            string: The `StringSpan` to write to this `FileHandle`.
         """
         self.write_bytes(string.as_bytes())
 
@@ -694,7 +694,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
 def open[
     PathLike: stdPathLike
-](path: PathLike, mode: StringSlice) raises -> FileHandle:
+](path: PathLike, mode: StringSpan) raises -> FileHandle:
     """Opens the file specified by path using the mode provided, returning a
     FileHandle.
 

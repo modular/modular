@@ -137,14 +137,14 @@ trait SizedRaising:
 
 @doc_hidden
 @unavailable(
-    "`len(String/StringSlice)` is not supported because Mojo strings are UTF-8"
+    "`len(String/StringSpan)` is not supported because Mojo strings are UTF-8"
     " encoded, so a single length is ambiguous: it could mean the number of"
     " UTF-8 bytes, the number of Unicode code points, or the number of"
     " user-visible characters (grapheme clusters). Use `s.byte_length()` or"
     " `len(s.bytes())` for the number of UTF-8 bytes, `len(s.codepoints())` for"
     " Unicode code points, or `len(s.graphemes())` for grapheme clusters."
 )
-def len(value: StringSlice) -> Int:
+def len(value: StringSpan) -> Int:
     ...
 
 

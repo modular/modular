@@ -53,7 +53,7 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
         self.at_element_start = True
 
     @inline(.always)
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         self.write(string)
 
     @inline(.always)
@@ -416,7 +416,7 @@ struct _FixedWriteBuffer(Writer):
         self._pos = 0
 
     @inline(.always)
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         var len_bytes = string.byte_length()
         if len_bytes + self._pos > FIXED_WRITE_BUFFER_BYTES:
             _fixed_buffer_exceeded()
@@ -467,7 +467,7 @@ struct _FlushingWriteBuffer[
 
     def flush(mut self):
         self.writer[].write_string(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=self.data.unsafe_ptr(), length=self.pos
                 )
@@ -475,7 +475,7 @@ struct _FlushingWriteBuffer[
         )
         self.pos = 0
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         var len_bytes = string.byte_length()
         # If span is too large to fit in buffer, write directly and return
         if len_bytes > Int(Self.capacity_bytes):
@@ -507,7 +507,7 @@ struct _TotalWritableBytes(Writer):
     ](
         out self,
         values: Span[T, _],
-        sep: StringSlice[origin] = StringSlice[origin](),
+        sep: StringSpan[origin] = StringSpan[origin](),
     ):
         self.size = 0
         var length = len(values)
@@ -518,11 +518,11 @@ struct _TotalWritableBytes(Writer):
             for i in range(1, length):
                 self.write(sep, values[i])
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         self.size += string.byte_length()
 
 
-def _ord_ascii(s: StringSlice) -> UInt8:
+def _ord_ascii(s: StringSpan) -> UInt8:
     return UInt8(ord(s))
 
 
@@ -546,12 +546,12 @@ def _hex_digits_to_hex_chars(
     ```mojo
     from std.memory import unsafe_memset_zero
     from std.testing import assert_equal
-    from std.utils import StringSlice
+    from std.utils import StringSpan
     from std.format._utils import _hex_digits_to_hex_chars
 
     def main() raises:
         var items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-        comptime S = StringSlice[origin_of(items)]
+        comptime S = StringSpan[origin_of(items)]
         var ptr = items.unsafe_ptr()
         ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
         assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
@@ -580,7 +580,7 @@ def _write_hex[
     ```mojo
     from std.memory import unsafe_memset_zero
     from std.testing import assert_equal
-    from std.utils import StringSlice
+    from std.utils import StringSpan
     from std.format._utils import _write_hex
     var s = String()
     _write_hex[amnt_hex_bytes=8](s, UInt32(ord("🔥")))
@@ -608,18 +608,18 @@ def _write_hex[
             buf[0] = `\\`
             buf[1] = `x`
             buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+            writer.write_string(StringSpan(unsafe_from_utf8=Span(buf)))
         case 4:
             var chars = _hex_digits_to_hex_chars(UInt16(decimal))
             var buf = Array[Byte, 6](uninitialized=True)
             buf[0] = `\\`
             buf[1] = `u`
             buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+            writer.write_string(StringSpan(unsafe_from_utf8=Span(buf)))
         case _:
             var chars = _hex_digits_to_hex_chars(UInt32(decimal))
             var buf = Array[Byte, 10](uninitialized=True)
             buf[0] = `\\`
             buf[1] = `U`
             buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+            writer.write_string(StringSpan(unsafe_from_utf8=Span(buf)))

@@ -76,7 +76,7 @@ struct _POpenHandle:
                 break
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
-            res += StringSlice(
+            res += StringSpan(
                 from_utf8=Span(
                     unsafe_ptr=line.value().unsafe_bitcast[Byte](), length=read
                 )

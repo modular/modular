@@ -177,7 +177,7 @@ def _write_float[
                     n //= 10
                     pos -= 1
             writer.write_string(
-                StringSlice(
+                StringSpan(
                     unsafe_from_utf8=Span(
                         unsafe_ptr=digits.unsafe_ptr().unsafe_offset(pos + 1),
                         length=11 - pos,
@@ -203,7 +203,7 @@ def _write_float[
                     if frac < 1e-7:
                         break
             writer.write_string(
-                StringSlice(
+                StringSpan(
                     unsafe_from_utf8=Span(
                         unsafe_ptr=frac_digits.unsafe_ptr(),
                         length=frac_len,

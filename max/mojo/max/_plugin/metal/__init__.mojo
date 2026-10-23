@@ -39,7 +39,7 @@ def _syncwarp(mask: Int):
 
 @inline(.always)
 def _shuffle_apple_helper[
-    op: StringSlice, dtype: DType, simd_width: SIMDLength
+    op: StringSpan, dtype: DType, simd_width: SIMDLength
 ](
     mask: UInt,  # Ignored, for API parity
     val: SIMD[dtype, simd_width],

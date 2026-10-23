@@ -393,7 +393,7 @@ def _get_global_handle[
     with KernelLoadScope(ctx):
         handle_ptr.unsafe_write(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(HANDLE_NAME),
+        StringSpan(HANDLE_NAME),
         handle_ptr.unsafe_bitcast[NoneType](),
     )
 

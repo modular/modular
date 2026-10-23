@@ -242,7 +242,7 @@ struct Format(ImplicitlyCopyable, Writable):
     var value: StaticString
     """The format to print results."""
 
-    def __init__(out self, value: StringSlice):
+    def __init__(out self, value: StringSpan):
         """Constructs a Format object from a string.
 
         Args:
