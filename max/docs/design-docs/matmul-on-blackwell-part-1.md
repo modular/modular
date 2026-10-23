@@ -601,7 +601,7 @@ in higher precision:
 var acc = Float32(0)
 for k in range(K):
     acc += (
-        a[row, k][0].cast[.float32]() * b[col, k][0].cast[.float32]()
+        a[row, k].cast[.float32]() * b[col, k].cast[.float32]()
     )
 c[row, col] = acc.cast[.bfloat16]()
 ```
