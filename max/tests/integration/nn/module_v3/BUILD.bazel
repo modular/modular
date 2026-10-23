@@ -84,6 +84,7 @@ modular_eager_py_test(
     name = "tests_gpu",
     srcs = [
         "norm/test_group_norm.py",
+        "rope/test_rotary_embedding.py",
         "test_conv.py",
         "test_conv2d_orientation.py",
         "test_module_gpt2.py",
