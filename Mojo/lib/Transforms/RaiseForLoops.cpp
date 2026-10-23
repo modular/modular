@@ -278,15 +278,12 @@ static void normalizeRangeForIdiom(LoopOp loop, LIT::TryOp tryOp) {
       !initAttr.getValues().front().getData().isZero())
     return;
 
-  // The except break carries the loop's exit values.
-  BreakOp breakOp;
-  tryOp.getExceptRegion().walk([&](BreakOp b) {
-    if (!breakOp)
-      breakOp = b;
-  });
-  if (!breakOp)
+  Block &exceptBlock = tryOp.getExceptRegion().front();
+  if (!llvm::hasSingleElement(exceptBlock) ||
+      !isa<BreakOp>(exceptBlock.getTerminator()))
     return;
-  SmallVector<Value> breakOperands(breakOp.getOperands());
+
+  SmallVector<Value> breakOperands(exceptBlock.getTerminator()->getOperands());
   // The break is rebuilt outside the `lit.try`, which is then erased, so an
   // operand defined inside it (the except block's exception payload) would be
   // left dangling. Bail rather than build a use of a value about to die.
