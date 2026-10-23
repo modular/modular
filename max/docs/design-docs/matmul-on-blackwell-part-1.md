@@ -115,7 +115,7 @@ Matrix multiplication as a collection of inner products
 CPUs are limited to on the order of a few hundred cores (with lower-end CPUs
 having around 32 cores and high-end models having on the order of 128 cores).
 GPUs, on the other hand, offer massive parallelism: modern GPUs handle over
-100,000 threads simultaneously (a B200 can handle up to 303,104 resident
+100,000 threads concurrently (a B200 can handle up to 303,104 resident
 threads across its 148 SMs; 2,048 threads or 64 warps per SM), making them the
 ideal hardware choice for repetitive, data-parallel operations like matrix
 multiplication.
