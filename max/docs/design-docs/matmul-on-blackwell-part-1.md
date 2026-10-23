@@ -7,7 +7,7 @@ This series of blog posts will showcase how one can:
 
 1. Write a high-performance GPU kernel on Blackwell that offers performance
    competitive to that of NVIDIA's cuBLAS implementation.
-2. Shows how one can leverage Mojo's special features to make the kernel as
+2. Show how one can leverage Mojo's special features to make the kernel as
    simple as possible.
 
 It is our hope that this series of blogs serves as *the reference worklog* for
@@ -23,7 +23,7 @@ GPU is, GPU history since Ampere, and finally how to write a simple (not super
 performant) implementation of matmul on a GPU in 4 lines of Mojo.
 
 In Part 2, we’ll explain the hardware instructions introduced in Blackwell
-GPUs, and continue improve on our kernels' performance to make it leverage the
+GPUs, and continue to improve on our kernels' performance to make it leverage the
 new hardware instructions. As we continue through the blog series, we will
 incrementally leverage new Blackwell features to improve our matmul
 implementation until the end of the series where we achieve performance that
@@ -64,7 +64,7 @@ encouraged to read our blog post from
 
 ### Why does matmul matter today?
 
-All LLMs, be it Meta's Llama, Alibaba's Qwen, Deepseek, Anthropic's Claude,
+All LLMs, be it Meta's Llama, Alibaba's Qwen, DeepSeek, Anthropic's Claude,
 OpenAI's ChatGPT, or Google's Gemini, utilize matrix multiplications at their
 core. These matmuls might be disguised under multiple names, for instance, the
 multi-layer perceptron (MLP) which is sometimes called the Linear layer is an
@@ -94,7 +94,7 @@ simplicity, let’s assume both A and B matrices are square, such that:
 Simplified illustration of matrix multiplication
 ///
 
-If we want to do the matmul on a CPU, then here’s pseudocode code we’ll have to
+If we want to do the matmul on a CPU, then here’s the pseudocode we’ll have to
 write:
 
 ```pseudocode
@@ -133,7 +133,7 @@ computation throughput.
 To understand GPUs better, let's look at how the GPU is organized from a
 hardware architecture perspective. A GPU, like other [Von
 Neumann](https://en.wikipedia.org/wiki/Von_Neumann_architecture) architectures,
-is composed of elements that compute (commonly known as Arithmetic Logical
+is composed of elements that compute (commonly known as Arithmetic Logic
 Units or ALUs), and elements that load/store the data for these computations. A
 GPU will contain several Streaming Multiprocessor
 ([SM](https://max.modular.com/glossary/gpu/streaming-multiprocessor)), [L2
@@ -149,7 +149,7 @@ Threads on a GPU are grouped into blocks which are called [Thread
 Blocks](https://max.modular.com/glossary/gpu/thread-block) or Cooperative
 Thread Arrays (CTAs). Each of these blocks gets scheduled onto **a single**
 [SM](https://max.modular.com/glossary/gpu/streaming-multiprocessor). Each SM,
-in turn, access the data via a shared L2 cache which loads data from global
+in turn, accesses the data via a shared L2 cache which loads data from global
 memory. The threads in each SM have access to two more memory regions:
 
 1. Registers which are local variables and are private to each thread.
@@ -256,7 +256,7 @@ size), and how many blocks you want to launch (called the
 mapped to an SM by the hardware. As a result, threads within the same block can
 share memory and synchronize with each other, but cannot directly communicate
 across blocks- unless they are within the same cluster (discussed later). Note
-that while each block of threads is executed on only one of the SM’s, but each
+that while each block of threads is executed on only one of the SMs, each
 SM can execute multiple blocks (CTAs):
 
 ![Screenshot 2025-08-25 at 7.08.36 PM.png](./img/matmul-on-blackwell-part-1/img09-gpu-work-allocation.jpeg)
@@ -305,7 +305,7 @@ additional layer: the cluster, positioned between the block and the grid.
 ![Screenshot 2025-08-25 at 7.22.33 PM.png](./img/matmul-on-blackwell-part-1/img12-cta-clusters.jpeg)
 ///caption Thread block clustering ///
 
-Visualized, this how a cluster will get scheduled on the GPU:
+Visualized, this is how a cluster will get scheduled on the GPU:
 
 ![Screenshot 2025-08-25 at 8.23.47 PM.png](./img/matmul-on-blackwell-part-1/img13-cta-cluster-scheduling.jpeg)
 //caption Thread block cluster scheduling ///
@@ -320,7 +320,7 @@ hardware provides to enable us to squeeze the best performance out of each GPU.
 ### NVIDIA's Ampere architecture
 
 Released in May 2020, Ampere advanced Tensor Cores considerably (even though
-tensor cores were introduced a few generations earlier) From a spec point of
+tensor cores were introduced a few generations earlier). From a spec point of
 view, Ampere had:
 
 - 108 Streaming Multiprocessors (SMs)
@@ -414,7 +414,7 @@ blocked compute, and we had to do something like: Load data from global → Wait
 As a result, one would perform double buffering operations on pre-Ampere
 architecture and use multiple CTAs per SM for overlapping data transfer and
 computation. This caused contention for the SM’s limited memory resources, and
-force trade-offs between memory latency and optimal tiling.
+forced trade-offs between memory latency and optimal tiling.
 
 ### Ampere optimization
 
@@ -611,8 +611,8 @@ c[row, col] = acc.cast[.bfloat16]()
 
 Using FP32 for accumulation preserves numerical accuracy during the reduction,
 while still getting the memory benefits of BFloat16. Note that tensor cores
-    would accumulate BFloat16 in Float32 as well. The reduction result is then
-    downcast to BFloat16 before storing to global memory.
+would accumulate BFloat16 in Float32 as well. The reduction result is then
+downcast to BFloat16 before storing to global memory.
 
 To measure the performance of our kernel, we measure how many FLOPS
 (FLoating-point OPerations per Second) it achieves. A runnable naive baseline is
