@@ -164,3 +164,6 @@ This version is still a work in progress.
   element-wise path, and aligned slices narrower than the target's native
   vector width, such as the halves `split()` returns for small vectors, now
   use the intrinsic.
+
+- Fixed rejection of negative integer and floating-point literals in `match`
+  patterns.
