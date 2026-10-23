@@ -4739,7 +4739,9 @@ LogicalResult StructFieldASTDecl::resolveBody(Lexer &) {
   if (op.getAllowLegacyAnyOrigin())
     return success();
 
-  ASTType fieldType = op.getType();
+  ASTType fieldType = op.getReboundType(
+      sugarCast<LIT::StructType>(getStructDecl().getSelfType().mlirType),
+      &shared.getEvaluationContext());
   for (TypedAttr origin :
        shared.cachedOriginFinder.findOriginsIn(getCanonicalType(fieldType))) {
     if (sugarIsa<AnyOriginAttr>(OriginType::stripMutCastAndRebind(origin))) {
