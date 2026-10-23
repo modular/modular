@@ -136,8 +136,8 @@ Neumann](https://en.wikipedia.org/wiki/Von_Neumann_architecture) architectures,
 is composed of elements that compute (commonly known as Arithmetic Logic
 Units or ALUs), and elements that load/store the data for these computations. A
 GPU will contain several Streaming Multiprocessor
-([SM](https://max.modular.com/glossary/gpu/streaming-multiprocessor)), [L2
-Cache and global memory](https://max.modular.com/glossary/gpu/memory) which
+([SM](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/)), [L2
+Cache and global memory](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/gpu-memory/) which
 are shared among these SMs, and an interconnect to the host device (CPU).
 
 ![image.png](./img/matmul-on-blackwell-part-1/img04-gpu-arch.jpeg)
@@ -146,9 +146,9 @@ GPU architecture
 ///
 
 Threads on a GPU are grouped into blocks which are called [Thread
-Blocks](https://max.modular.com/glossary/gpu/thread-block) or Cooperative
+Blocks](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks) or Cooperative
 Thread Arrays (CTAs). Each of these blocks gets scheduled onto **a single**
-[SM](https://max.modular.com/glossary/gpu/streaming-multiprocessor). Each SM,
+[SM](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/). Each SM,
 in turn, accesses the data via a shared L2 cache which loads data from global
 memory. The threads in each SM have access to two more memory regions:
 
@@ -214,8 +214,8 @@ in subsequent posts).
 A detailed description of GPU programming fundamentals is beyond the scope of
 this blog post. There are many resources that explain the GPU programming
 paradigm, and a great resource is
-<https://puzzles.modular.com/introduction.html> and the GPU
-[glossary](https://max.modular.com/glossary/).
+<https://puzzles.modular.com/introduction.html> and the [GPU architecture
+fundamentals](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/).
 
 As a result of the massive parallelism afforded to by the GPU, one has to think
 about GPU programming differently. For example, while, in traditional CPU
@@ -248,11 +248,11 @@ If we think about the [Flynn
 taxonomy](https://en.wikipedia.org/wiki/Flynn%27s_taxonomy), this maps into the
 Single Instruction Multiple Threads (SIMT) programming model.
 
-When launching a [kernel](https://max.modular.com/glossary/gpu/kernel)
+When launching a [kernel](https://handbook.modular.com/kernel-optimization/kernel-optimization-for-llm-inference/#what-is-a-gpu-kernel)
 (calling the function), you specify the number of threads in each
-[block](https://max.modular.com/glossary/gpu/thread-block) (also called block
+[block](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks) (also called block
 size), and how many blocks you want to launch (called the
-[grid](https://max.modular.com/glossary/gpu/grid) size). Each block gets
+[grid](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#grids-and-indexing) size). Each block gets
 mapped to an SM by the hardware. As a result, threads within the same block can
 share memory and synchronize with each other, but cannot directly communicate
 across blocks- unless they are within the same cluster (discussed later). Note
