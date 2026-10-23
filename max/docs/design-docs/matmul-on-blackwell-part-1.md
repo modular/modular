@@ -64,7 +64,7 @@ encouraged to read our blog post from
 
 ### Why does matmul matter today?
 
-All LLMs, be it Meta's Llama, Alibaba's Qwen, Deepseek, Anthropics' Claude,
+All LLMs, be it Meta's Llama, Alibaba's Qwen, Deepseek, Anthropic's Claude,
 OpenAI's ChatGPT, or Google's Gemini, utilize matrix multiplications at their
 core. These matmuls might be disguised under multiple names, for instance, the
 multi-layer perceptron (MLP) which is sometimes called the Linear layer is an
@@ -115,16 +115,18 @@ Matrix multiplication as a collection of inner products
 CPUs are limited to on the order of a few hundred cores (with lower-end CPUs
 having around 32 cores and high-end models having on the order of 128 cores).
 GPUs, on the other hand, offer massive parallelism: modern GPUs handle over
-100,000 threads simultaneously (B200s can handle up to 151,552 threads), making
-them the ideal hardware choice for repetitive, data-parallel operations like
-matrix multiplication.
+100,000 threads simultaneously (a B200 can handle up to 303,104 resident
+threads across its 148 SMs; 2,048 threads or 64 warps per SM), making them the
+ideal hardware choice for repetitive, data-parallel operations like matrix
+multiplication.
 
 To accelerate things even further, recent GPUs (since Volta) have a dedicated
 fast hardware unit for matrix multiply accumulate (MMA) operations called
 tensor core. While originally Tensor cores were limited to small matmuls (on
-the order of 16x16x16), the 5th generation tensors cores introduced in
-Blackwell can perform a large sub-matrix multiplication (up to 256x256x16).
-This enables the Blackwell GPUs to increase the peak computation throughput.
+the order of 16x16x16), the 5th generation tensor cores introduced in
+Blackwell can perform a large sub-matrix multiplication (up to 256x256x16
+across a 2-SM CTA pair). This enables the Blackwell GPUs to increase the peak
+computation throughput.
 
 ### GPU from the hardware architect perspective?
 
@@ -151,9 +153,10 @@ in turn, access the data via a shared L2 cache which loads data from global
 memory. The threads in each SM have access to two more memory regions:
 
 1. Registers which are local variables and are private to each thread.
-2. Shared memory which is visible across threads in an SM*. Since Hopper,
-   multiple CTAs can form a cluster and CTAs within the same cluster can access
-   each other's shared memory*.
+2. Shared memory which resides on the SM and is visible across threads *within
+   a CTA (thread block)*. *Since Hopper, multiple CTAs can form a cluster and
+   CTAs within the same cluster can access each other's shared memory
+   (distributed shared memory).*
 
 ![image.png](./img/matmul-on-blackwell-part-1/img05-gpu-memory-arch.jpeg)
 ///caption
@@ -323,7 +326,8 @@ view, Ampere had:
 - 108 Streaming Multiprocessors (SMs)
 - 4 Tensor Cores per SM
 - 80GB High Bandwidth Memory (up to 2.0 TB/s)
-- 192KB combined Shared Memory + L1 cache per SM
+- 192KB combined Shared Memory + L1 cache per SM (up to 164KB configurable as
+  Shared Memory)
 - 65,536 registers per SM
 - 40MB L2 Cache shared between all SMs
 - Asynchronous copies to allow deeper software pipeline between global ->
@@ -342,11 +346,13 @@ for wide LLM deployments today. Hopper had the following specifications:
 - 132 Streaming Multiprocessors (SMs)
 - 4 Tensor Cores per SM
 - 80GB High Bandwidth Memory (3.35TB/s)
-- 256KB combined Shared Memory + L1 cache per SM
+- 256KB combined Shared Memory + L1 cache per SM (up to 228KB configurable as
+  Shared Memory)
 - 65,536 registers per SM
 - 50MB L2 Cache shared between all SMs
 - Introduced a TMA engine to optimize block memory copies
-- Is not forward compatible with next generation hardware
+- Architecture-specific WGMMA instructions (`sm_90a`) are not
+  forward-compatible with next generation hardware
 
 ![image.png](./img/matmul-on-blackwell-part-1/img15-hopper.jpeg)
 //caption
@@ -355,19 +361,20 @@ Hopper architecture
 
 ### NVIDIA's Blackwell architecture
 
-Blackwell is the latest NVIDIA architecture and is currently the SOTA
-architecture for LLM deployment. It improved upon Hopper and Ampere by
-increasing the compute capacity as well as providing a few key features to
-enable faster execution:
+At the time this post was originally published, Blackwell was the latest
+shipping NVIDIA architecture and the SOTA architecture for LLM deployment. It
+improved upon Hopper and Ampere by increasing the compute capacity as well as
+providing a few key features to enable faster execution:
 
 - 148 Streaming Multiprocessors (SMs)
 - 4 Tensor Cores per SM
-- 7.672 TB/s High Bandwidth Memory
-- 228 KB combined Shared Memory + L1 cache per SM
+- 180 GB High Bandwidth Memory (HBM3e, up to 8.0 TB/s)
+- 256 KB combined Shared Memory + L1 cache per SM (up to 228 KB configurable as
+  Shared Memory)
 - 65,536 registers per SM
-- 192 MB L2 Cache shared between all SMs
+- 126 MB L2 Cache shared between all SMs
 - 5th Generation Tensor core architecture
-- **256 KB of Tensor Memory**
+- **256 KB of Tensor Memory per SM**
 
 Blackwell’s architecture can be more or less visualized as follows:
 
@@ -378,8 +385,8 @@ Blackwell architecture
 
 ### GPU comparison at a glance
 
-To give the reader’s a sense of the magnitude of the differences, here’s a
-table comparing peer-to-peer performance:
+To give readers a sense of the magnitude of the differences, here’s a table
+comparing generation-to-generation performance:
 
 | Metric                       | A100 (Baseline) | H100 | H200 | B100 | B200 |
 |------------------------------|-----------------|------|------|------|------|
@@ -387,6 +394,9 @@ table comparing peer-to-peer performance:
 | **NVLink Bandwidth**         | 1.0x            | 1.5x | 1.5x | 3.0x | 3.0x |
 | **Peak BF16 TFLOPS (dense)** | 1.0x            | 3.2x | 3.2x | 5.6x | 7.2x |
 | **Peak FP8 TFLOPS (dense)**  | N/A             | 1.0x | 1.0x | 1.8x | 2.3x |
+
+*Note: Because A100 does not natively support FP8, the **Peak FP8 TFLOPS
+(dense)** row uses H100 (`1.0x`) as the baseline.*
 
 As the GPU becomes more powerful in terms of FLOPs/s and bandwidth, the
 programming model to achieve this peak performance also evolves. Below is a
@@ -566,7 +576,7 @@ threads outside the matrix; the tensor view doesn't supply bounds checking.
 
 This allows us to abstract away the algebra required to index/offset into
 memory to fetch it (for instance, for matrix A, that would’ve been `a[row * K +
-col]` ).
+k]`).
 
 ### Data types and casting
 
