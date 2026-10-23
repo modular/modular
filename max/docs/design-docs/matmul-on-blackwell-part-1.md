@@ -512,7 +512,7 @@ thread reads `b[col, k]` while computing the logical `M x N` output.
 ```mojo
 var acc = Float32(0)
 for k in range(K):
-    acc += (a[row, k][0] * b[col, k][0]).cast[.float32]()
+    acc += a[row, k].cast[.float32]() * b[col, k].cast[.float32]()
 c[row, col] = acc.cast[.bfloat16]()
 ```
 
@@ -536,25 +536,22 @@ Concurrent dot product for every output
 ///
 
 The inputs to the matmul function are native `TileTensor` views. Each layout is
-a type implementing `TensorLayout`; `row_major[M, N]()` constructs a static
-native layout, and `type_of()` supplies its type to `TileTensor`. To learn more,
+a type implementing `TensorLayout`; `RowMajorLayout[ComptimeInt[M], ComptimeInt[N]]`
+is that static layout type. To learn more,
 see [Using TileTensor](https://max.modular.com/tile-tensor/tensors/).
 
 ```mojo
 from max.gpu import global_idx
-from layout import TileTensor, row_major
+from layout import ComptimeInt, RowMajorLayout, TileTensor
 
 
 def matmul_kernel[
     M: Int, N: Int, K: Int
 ](
-    c: TileTensor[
-        mut=True, .bfloat16, type_of(row_major[M, N]()), MutAnyOrigin
-    ],
-    a: TileTensor[.bfloat16, type_of(row_major[M, K]()), ImmutAnyOrigin],
-    b: TileTensor[.bfloat16, type_of(row_major[N, K]()), ImmutAnyOrigin],
+    c: TileTensor[.bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin],
+    a: TileTensor[.bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[K]], ImmutAnyOrigin],
+    b: TileTensor[.bfloat16, RowMajorLayout[ComptimeInt[N], ComptimeInt[K]], ImmutAnyOrigin],
 ):
-    comptime assert c.flat_rank == 2 and a.flat_rank == 2 and b.flat_rank == 2
     var row = global_idx.y
     var col = global_idx.x
     if row >= M or col >= N:
@@ -562,7 +559,7 @@ def matmul_kernel[
 
     var acc = Float32(0)
     for k in range(K):
-        acc += (a[row, k][0] * b[col, k][0]).cast[.float32]()
+        acc += a[row, k].cast[.float32]() * b[col, k].cast[.float32]()
     c[row, col] = acc.cast[.bfloat16]()
 ```
 
