@@ -14,5 +14,14 @@
 import std.sys
 
 
-def main():
+def exit_or_value(should_exit: Bool) -> Int:
+    # `exit` returns `Never`, so this function needs no trailing `return`
+    # (https://github.com/modular/modular/issues/7297).
+    if not should_exit:
+        return 1
     std.sys.exit(0)
+
+
+def main():
+    _ = exit_or_value(False)
+    _ = exit_or_value(True)

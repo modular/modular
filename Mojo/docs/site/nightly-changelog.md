@@ -184,3 +184,7 @@ This version is still a work in progress.
 
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns.
+
+- `std.sys.exit()` is now declared `-> Never`, so a function with a return
+  type can end in a call to `exit()` without a trailing `return`
+  ([#7297](https://github.com/modular/modular/issues/7297)).
