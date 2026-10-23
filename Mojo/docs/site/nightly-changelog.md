@@ -451,3 +451,8 @@ This version is still a work in progress.
 - Building a `SIMD` value from a list literal with the wrong number of elements
   is now a compile-time error. Previously, `var x: Int = [1, 2, 3, 4]` compiled
   and kept only the first element.
+
+- `input()` no longer drops piped input after the first line. Each call read
+  ahead into a stream buffer that was then discarded, so the next call raised
+  `EOF`
+  ([#7198](https://github.com/modular/modular/issues/7198)).
