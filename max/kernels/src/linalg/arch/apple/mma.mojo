@@ -23,11 +23,35 @@ kernel should check once per simdgroup, not per load.
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from max.gpu import lane_id
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from max.gpu.memory import build_edge_mask, gmem_edge_masked_load
+from max.gpu.memory import (
+    build_edge_mask,
+    gmem_edge_masked_load,
+    smem_edge_masked_load,
+)
 from std.math import divmod
+from std.memory import AddressSpace
 from std.sys.info import align_of
 
 from layout import Coord, TileTensor
+
+
+@inline(.always)
+def _edge_masked_load4[
+    dtype: DType, address_space: AddressSpace, //
+](
+    ptr: Pointer[Scalar[dtype], _, address_space=address_space],
+    mask: Int16,
+) -> SIMD[dtype, 4]:
+    """Edge-masked 4-wide fragment load from device or threadgroup memory.
+
+    `gmem_edge_masked_load` reinterprets its pointer as device memory, so a
+    threadgroup operand (e.g. the FP4 kernel's dequantized SMEM B tile) must
+    use the threadgroup form or the load reads the wrong address space.
+    """
+    comptime if address_space == AddressSpace.SHARED:
+        return smem_edge_masked_load[4](ptr, mask)
+    else:
+        return gmem_edge_masked_load[4](ptr, mask)
 
 
 @fieldwise_init
@@ -301,12 +325,8 @@ struct MmaOpApple[
         )
         var lo_mask = col_mask if self.rb < valid_rows else Int16(0)
         var hi_mask = col_mask if self.rb + 8 < valid_rows else Int16(0)
-        var lo = gmem_edge_masked_load[4](
-            tile.ptr.unsafe_offset(lo_off), lo_mask
-        )
-        var hi = gmem_edge_masked_load[4](
-            tile.ptr.unsafe_offset(hi_off), hi_mask
-        )
+        var lo = _edge_masked_load4(tile.ptr.unsafe_offset(lo_off), lo_mask)
+        var hi = _edge_masked_load4(tile.ptr.unsafe_offset(hi_off), hi_mask)
         return lo.join(hi)
 
     @inline(.always)
@@ -535,16 +555,12 @@ struct MmaOpApple[
             var lo_mask_b = mask_b if self.rb < valid_rows else Int16(0)
             var hi_mask_a = mask_a if self.rb + 8 < valid_rows else Int16(0)
             var hi_mask_b = mask_b if self.rb + 8 < valid_rows else Int16(0)
-            lo_a = gmem_edge_masked_load[4](
-                tile.ptr.unsafe_offset(lo_off), lo_mask_a
-            )
-            lo_b = gmem_edge_masked_load[4](
+            lo_a = _edge_masked_load4(tile.ptr.unsafe_offset(lo_off), lo_mask_a)
+            lo_b = _edge_masked_load4(
                 tile.ptr.unsafe_offset(lo_off).unsafe_offset(4), lo_mask_b
             )
-            hi_a = gmem_edge_masked_load[4](
-                tile.ptr.unsafe_offset(hi_off), hi_mask_a
-            )
-            hi_b = gmem_edge_masked_load[4](
+            hi_a = _edge_masked_load4(tile.ptr.unsafe_offset(hi_off), hi_mask_a)
+            hi_b = _edge_masked_load4(
                 tile.ptr.unsafe_offset(hi_off).unsafe_offset(4), hi_mask_b
             )
         else:
