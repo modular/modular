@@ -757,3 +757,53 @@ kgen.generator export @tail_call_error_fn(%cond: !kgen.scalar<bool>, %arg0: inde
   }
   hlcf.return %4 : !kgen.scalar<bool>
 }
+
+
+// CHECK-LABEL: @preserve_elif_side_effects
+// CHECK: hlcf.if
+// CHECK: hlcf.if.elifcond.yield
+// CHECK: } else {
+// CHECK-NEXT: [[LATER:%.*]] = "test.condition"() : () -> !kgen.scalar<bool>
+// CHECK-NEXT: hlcf.if.elifcond.yield [[LATER]]
+// CHECK: } then {
+// CHECK: hlcf.return
+kgen.func @preserve_elif_side_effects(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>) {
+  hlcf.if %c0 {
+    hlcf.yield
+  } else {
+    hlcf.if.elifcond.yield %c1
+  } then {
+    hlcf.yield
+  } else {
+    %c2 = "test.condition"() : () -> !kgen.scalar<bool>
+    hlcf.if.elifcond.yield %c2
+  } then {
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  hlcf.return
+}
+
+
+// CHECK-LABEL: @preserve_elif_side_effects_with_results(
+// CHECK-SAME: %{{.*}}: !kgen.scalar<bool>, [[VALUE:%.*]]: index)
+// CHECK-NEXT: hlcf.if %{{.*}} {
+// CHECK: } else {
+// CHECK-NEXT: [[COND:%.*]] = "test.condition"() : () -> !kgen.scalar<bool>
+// CHECK-NEXT: hlcf.if.elifcond.yield [[COND]]
+// CHECK: } then {
+// CHECK: hlcf.return [[VALUE]] : index
+kgen.func @preserve_elif_side_effects_with_results(%c0: !kgen.scalar<bool>, %value: index) -> index {
+  %result = hlcf.if %c0 -> index {
+    hlcf.yield %value : index
+  } else {
+    %c1 = "test.condition"() : () -> !kgen.scalar<bool>
+    hlcf.if.elifcond.yield %c1
+  } then {
+    hlcf.yield %value : index
+  } else {
+    hlcf.yield %value : index
+  }
+  hlcf.return %result : index
+}
