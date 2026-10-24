@@ -148,7 +148,10 @@ This version is still a work in progress.
   `ConvertibleToPython` gains an associated `ConversionToPythonErrorType`
   (default `Never`), so conversions that cannot fail, such as `Bool` and
   `Scalar`, stay non-raising, while `String` conversions keep raising
-  `Error`.
+  `Error`. This is a breaking change. If a conversion is non-raising, the
+  `raises` effect can be removed from the `ConvertibleToPython` constructor.
+  If a conversion is raising, an error type must be assigned to
+  `ConversionToPythonErrorType`.
 
 ## Tooling changes
 
