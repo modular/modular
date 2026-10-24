@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.python import PythonObject
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
+from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_default() raises:
@@ -161,6 +163,22 @@ def test_any() raises:
     assert_true(any(map[gt0](l)))
     var l2 = [-1, -2, -3]
     assert_false(any(map[gt0](l2)))
+
+
+def test_convertible_to_python() raises:
+    check_convertible_to_python(True, "True")
+    check_convertible_to_python(False, "False")
+
+    # test implicit conversions
+    check_python_object(True, "True")
+    check_python_object(False, "False")
+
+    # non raising conversion to PythonObject
+    def non_raising_to_python(var value: Bool) -> PythonObject:
+        return PythonObject(value)
+
+    assert_equal(String(non_raising_to_python(True)), "True")
+    assert_equal(String(non_raising_to_python(False)), "False")
 
 
 def main() raises:

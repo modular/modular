@@ -140,6 +140,19 @@ This version is still a work in progress.
   detected automatically, so you no longer need to pass
   `--target-accelerator=apple-m5` on M6 hardware.
 
+- `Bool`, `Scalar` (including `Int`), `String`, `StringSpan`, and
+  `StringLiteral` now conform to `ConvertibleToPython`, so they can be passed
+  to generic code bounded on that trait. The dedicated `PythonObject`
+  constructors for these types are removed; implicit conversion still works
+  through the single `ConvertibleToPython` constructor.
+  `ConvertibleToPython` gains an associated `ConversionToPythonErrorType`
+  (default `Never`), so conversions that cannot fail, such as `Bool` and
+  `Scalar`, stay non-raising, while `String` conversions keep raising
+  `Error`. This is a breaking change. If a conversion is non-raising, the
+  `raises` effect can be removed from the `ConvertibleToPython` constructor.
+  If a conversion is raising, an error type must be assigned to
+  `ConversionToPythonErrorType`.
+
 ## Tooling changes
 
 ## Removed

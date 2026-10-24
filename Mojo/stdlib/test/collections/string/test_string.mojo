@@ -29,7 +29,11 @@ from std.testing import (
 )
 from std.testing import TestSuite
 from std.sys import size_of
-from test_utils import check_niches
+from test_utils import (
+    check_convertible_to_python,
+    check_niches,
+    check_python_object,
+)
 
 
 def test_constructors() raises:
@@ -1848,6 +1852,17 @@ def test_string_zero_init() raises:
     assert_equal(s._capacity_or_data, String.FLAG_IS_INLINE)
 
 
+def test_convertible_to_Python() raises:
+    check_convertible_to_python(StringSlice("Foo"), "Foo")
+    check_convertible_to_python(String("Bar"), "Bar")
+    check_convertible_to_python("Baz", "Baz")
+
+    # test implicit conversions
+    check_python_object(StringSlice("Foo"), "Foo")
+    check_python_object(String("Bar"), "Bar")
+    check_python_object("Baz", "Baz")
+
+
 def test_string_niche() raises:
     assert_equal(String.niche_count(), String.FLAG_IS_REF_COUNTED)
     assert_equal(size_of[Optional[String]](), size_of[String]())
@@ -1895,7 +1910,7 @@ def test_string_niche() raises:
     var heap_copy = heap
     assert_optional_keeps(heap)
     assert_optional_keeps(heap_copy)
-
+    assert_false(Optional[String](None))
     assert_false(Optional[String](None))
 
 
