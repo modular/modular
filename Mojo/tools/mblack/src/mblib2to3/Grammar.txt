@@ -249,7 +249,7 @@ type_atom: functype | generatortype | atom
 classdef: (STRUCT | ENUM) NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 typeconvexpr: atom trailer* | functype | generatortype
-typeconv: (['*'|VAR|IMM|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
+typeconv: (['*'|convention] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
 # A `thin` function type may carry trailing `where` clauses constraining its own
 # parameters. The clauses bind to the innermost function type, so a declaration
 # whose result type is a function type must parenthesize it to keep a trailing
