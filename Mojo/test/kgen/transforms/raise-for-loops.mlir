@@ -841,3 +841,143 @@ kgen.func @break_carries_except_payload(%end: !kgen.scalar<index>) -> !kgen.scal
   }
   hlcf.return %r : !kgen.scalar<index>
 }
+
+// -----
+
+// CHECK-LABEL: @range_loop_preserves_else
+// CHECK: hlcf.for [
+// CHECK: hlcf.for.yield
+// CHECK-NEXT: }
+// CHECK: kgen.call @else_body() : () -> ()
+// CHECK: hlcf.return
+kgen.func @range_loop_preserves_else(%end: !kgen.scalar<index>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+  hlcf.loop "_loop_0" (%counter = %c0 : !kgen.scalar<index>) {
+    %next = pop.add %counter, %c1 : !kgen.scalar<index>
+    %done = pop.cmp eq(%counter, %end) : <1, index>
+    %current = pop.select %done, %counter, %next : !kgen.scalar<index>
+    %iter:2 = lit.try "try0" -> !kgen.scalar<index>, !kgen.scalar<index> {
+      hlcf.if %done {
+        lit.try.raise "try0" %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+    } except (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      kgen.call @else_body() : () -> ()
+      hlcf.break "_loop_0"
+    } else (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      lit.try.yield %a, %b : !kgen.scalar<index>, !kgen.scalar<index>
+    }
+    hlcf.continue "_loop_0" %iter#0 : !kgen.scalar<index>
+  }
+  hlcf.return
+}
+
+// -----
+
+// CHECK-LABEL: @except_nested_region_not_raised
+// CHECK: hlcf.loop
+// CHECK: lit.try
+// CHECK: } except
+// CHECK-NEXT: hlcf.if
+// CHECK-NEXT: kgen.call @else_body
+// CHECK: hlcf.return
+kgen.func @except_nested_region_not_raised(%end: !kgen.scalar<index>, %cond: !kgen.scalar<bool>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+  hlcf.loop "_loop_0" (%counter = %c0 : !kgen.scalar<index>) {
+    %next = pop.add %counter, %c1 : !kgen.scalar<index>
+    %done = pop.cmp eq(%counter, %end) : <1, index>
+    %current = pop.select %done, %counter, %next : !kgen.scalar<index>
+    %iter:2 = lit.try "try0" -> !kgen.scalar<index>, !kgen.scalar<index> {
+      hlcf.if %done {
+        lit.try.raise "try0" %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+    } except (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      hlcf.if %cond {
+        kgen.call @else_body(%counter) : (!kgen.scalar<index>) -> ()
+        hlcf.yield
+      } else {
+        hlcf.yield
+      }
+      hlcf.break "_loop_0"
+    } else (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      lit.try.yield %a, %b : !kgen.scalar<index>, !kgen.scalar<index>
+    }
+    hlcf.continue "_loop_0" %iter#0 : !kgen.scalar<index>
+  }
+  hlcf.return
+}
+
+// -----
+
+// CHECK-LABEL: @except_payload_not_raised
+// CHECK: hlcf.loop
+// CHECK: lit.try
+// CHECK: } except
+// CHECK-NEXT: kgen.call @else_body
+// CHECK-NEXT: hlcf.break
+// CHECK: hlcf.return
+kgen.func @except_payload_not_raised(%end: !kgen.scalar<index>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+  hlcf.loop "_loop_0" (%counter = %c0 : !kgen.scalar<index>) {
+    %next = pop.add %counter, %c1 : !kgen.scalar<index>
+    %done = pop.cmp eq(%counter, %end) : <1, index>
+    %current = pop.select %done, %counter, %next : !kgen.scalar<index>
+    %iter:2 = lit.try "try0" -> !kgen.scalar<index>, !kgen.scalar<index> {
+      hlcf.if %done {
+        lit.try.raise "try0" %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+    } except (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      kgen.call @else_body(%b) : (!kgen.scalar<index>) -> ()
+      hlcf.break "_loop_0"
+    } else (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      lit.try.yield %a, %b : !kgen.scalar<index>, !kgen.scalar<index>
+    }
+    hlcf.continue "_loop_0" %iter#0 : !kgen.scalar<index>
+  }
+  hlcf.return
+}
+
+// -----
+
+// CHECK-LABEL: @except_loop_value_not_raised
+// CHECK: hlcf.loop
+// CHECK: lit.try
+// CHECK: } except
+// CHECK-NEXT: kgen.call @else_body
+// CHECK-NEXT: hlcf.break
+// CHECK: hlcf.return
+kgen.func @except_loop_value_not_raised(%end: !kgen.scalar<index>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+  hlcf.loop "_loop_0" (%counter = %c0 : !kgen.scalar<index>) {
+    %next = pop.add %counter, %c1 : !kgen.scalar<index>
+    %done = pop.cmp eq(%counter, %end) : <1, index>
+    %current = pop.select %done, %counter, %next : !kgen.scalar<index>
+    %iter:2 = lit.try "try0" -> !kgen.scalar<index>, !kgen.scalar<index> {
+      hlcf.if %done {
+        lit.try.raise "try0" %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+    } except (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      kgen.call @else_body(%counter) : (!kgen.scalar<index>) -> ()
+      hlcf.break "_loop_0"
+    } else (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      lit.try.yield %a, %b : !kgen.scalar<index>, !kgen.scalar<index>
+    }
+    hlcf.continue "_loop_0" %iter#0 : !kgen.scalar<index>
+  }
+  hlcf.return
+}

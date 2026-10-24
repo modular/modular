@@ -278,15 +278,15 @@ static void normalizeRangeForIdiom(LoopOp loop, LIT::TryOp tryOp) {
       !initAttr.getValues().front().getData().isZero())
     return;
 
-  // The except break carries the loop's exit values.
-  BreakOp breakOp;
-  tryOp.getExceptRegion().walk([&](BreakOp b) {
-    if (!breakOp)
-      breakOp = b;
-  });
-  if (!breakOp)
+  Block &exceptBlock = tryOp.getExceptRegion().front();
+  if (!isa<BreakOp>(exceptBlock.getTerminator()))
     return;
-  SmallVector<Value> breakOperands(breakOp.getOperands());
+
+  auto breakOp = cast<BreakOp>(exceptBlock.getTerminator());
+  if (!isMatchingLoop(loop, breakOp.getLabelAttr()))
+    return;
+
+  SmallVector<Value> breakOperands(breakOp->getOperands());
   // The break is rebuilt outside the `lit.try`, which is then erased, so an
   // operand defined inside it (the except block's exception payload) would be
   // left dangling. Bail rather than build a use of a value about to die.
@@ -341,25 +341,30 @@ static void normalizeRangeForIdiom(LoopOp loop, LIT::TryOp tryOp) {
   // soft error. Track results so a leading op may feed a later one.
   Block *raiseBlock = raiseOp->getBlock();
   DenseSet<Value> movableResults;
-  for (Operation &leadingOp : raiseBlock->without_terminator()) {
-    for (Value operand : leadingOp.getOperands()) {
-      if (movableResults.contains(operand))
-        continue;
-      Operation *defScope = operand.getParentBlock()->getParentOp();
-      if (loop->isAncestor(defScope)) {
-        InFlightDiagnostic diag = mlir::emitWarning(leadingOp.getLoc())
-                                  << "raise-for-loops: loop-exit op depends on "
-                                     "a loop-internal value; cannot hoist it "
-                                     "out of the loop";
-        bool dropDiag = true;
-        LLVM_DEBUG(dropDiag = false;);
-        if (dropDiag)
-          diag.abandon();
+  for (Block *exitBlock : {raiseBlock, &exceptBlock}) {
+    for (Operation &leadingOp : exitBlock->without_terminator()) {
+      if (exitBlock == &exceptBlock && leadingOp.getNumRegions() != 0)
         return;
+      for (Value operand : leadingOp.getOperands()) {
+        if (movableResults.contains(operand))
+          continue;
+        Operation *defScope = operand.getParentBlock()->getParentOp();
+        if (loop->isAncestor(defScope)) {
+          InFlightDiagnostic diag =
+              mlir::emitWarning(leadingOp.getLoc())
+              << "raise-for-loops: loop-exit op depends on "
+                 "a loop-internal value; cannot hoist it "
+                 "out of the loop";
+          bool dropDiag = true;
+          LLVM_DEBUG(dropDiag = false;);
+          if (dropDiag)
+            diag.abandon();
+          return;
+        }
       }
+      for (Value result : leadingOp.getResults())
+        movableResults.insert(result);
     }
-    for (Value result : leadingOp.getResults())
-      movableResults.insert(result);
   }
 
   OpBuilder b(loop.getContext());
@@ -378,6 +383,10 @@ static void normalizeRangeForIdiom(LoopOp loop, LIT::TryOp tryOp) {
        llvm::make_early_inc_range(raiseBlock->without_terminator()))
     leadingOp.moveBefore(elseBlock, elseBlock->end());
   b.setInsertionPointToEnd(elseBlock);
+  for (Operation &op :
+       llvm::make_early_inc_range(exceptBlock.without_terminator()))
+    op.moveBefore(elseBlock, elseBlock->end());
+
   BreakOp::create(b, loc, breakOperands, label);
 
   // Rewire try results, then drop the `lit.try` and now-dead bookkeeping.
