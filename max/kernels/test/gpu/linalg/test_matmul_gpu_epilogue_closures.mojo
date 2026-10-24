@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests the `_matmul_gpu` epilogues: the legacy store and compute lambdas,
-and the compute closure value.
+"""Tests the `_matmul_gpu` epilogue and compute closures.
 
 The shapes land on the GEMV, small-M, tile GEMM and vendor BLAS paths of the
 SM100 dispatch, and on the 4-wave, split-K and multistage paths of the AMD
 CDNA dispatch, with and without `transpose_b`. Each epilogue scales by a power
-of two, so its result must match the plain `_matmul_gpu` exactly.
+of two, so its result must match the plain `_matmul_gpu` exactly. The store
+epilogue owns every output store, so its `c` is a shape-only tile over a null
+pointer: no path may read or write it.
 
 The tuned SM100 (N, K) = (2112, 14336) has split-K rows that the epilogues skip,
 so its plain dispatch sums K in another order and cannot match them bit for
@@ -61,7 +62,13 @@ def test_epilogues[
     var b = TileTensor(b_dev, row_major(Idx[b_rows], Idx[b_cols])).as_imm()
     var c_ref = TileTensor(c_ref_dev, row_major(m, Idx[N]))
     var c = TileTensor(c_dev, row_major(m, Idx[N]))
-    # A raw-pointer tile: `@__copy_capture` byte-copies its capture.
+    var null_c_ptr: Optional[
+        MutPointer[Scalar[dtype], MutUntrackedOrigin]
+    ] = None
+    var c_shape_only = TileTensor(
+        null_c_ptr._unsafe_nullable(), row_major(m, Idx[N])
+    )
+    # A raw-pointer tile: the epilogue closure copies its capture.
     var d = TileTensor(d_dev.unsafe_ptr(), row_major(m, Idx[N]))
 
     def identity_fn[
@@ -78,54 +85,28 @@ def test_epilogues[
             c_ref, a, b, ctx
         )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(d)
-    def store_lambda[
-        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+    def epilogue_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var d}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -2 if Int(idx[0].value()) % 2 == 1 else 2
-        d.store[width=width](
-            idx, (val * SIMD[_dtype, width](row_scale)).cast[dtype]()
-        )
-
-    @__parameter
-    @inline(.always)
-    def compute_lambda[
-        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[_dtype, width]:
-        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -2 if Int(idx[0].value()) % 2 == 1 else 2
-        return val * SIMD[_dtype, width](row_scale)
+        var row_scale = -2 if Int(idx[0]) % 2 == 1 else 2
+        d.store(idx, (val * SIMD[_dtype, width](row_scale)).cast[dtype]())
 
     def compute_fn[
         _dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -2 if Int(idx[0].value()) % 2 == 1 else 2
+        var row_scale = -2 if Int(idx[0]) % 2 == 1 else 2
         return val * SIMD[_dtype, width](row_scale)
 
-    _matmul_gpu[
-        use_tensor_core=True,
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=store_lambda,
-    ](c, a, b, ctx)
+    _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+        c_shape_only, a, b, epilogue_fn, ctx
+    )
     with c_ref_dev.map_to_host() as h_ref, d_dev.map_to_host() as h_d:
         for i in range(m * N):
             var row_scale = -2 if (i // N) % 2 == 1 else 2
             assert_equal(h_d[i], h_ref[i] * Scalar[dtype](row_scale))
-
-    ctx.enqueue_memset(c_dev, 0)
-    _matmul_gpu[
-        use_tensor_core=True,
-        transpose_b=transpose_b,
-        elementwise_compute_lambda_fn=compute_lambda,
-    ](c, a, b, ctx)
-    with c_ref_dev.map_to_host() as h_ref, c_dev.map_to_host() as h_c:
-        for i in range(m * N):
-            var row_scale = -2 if (i // N) % 2 == 1 else 2
-            assert_equal(h_c[i], h_ref[i] * Scalar[dtype](row_scale))
 
     ctx.enqueue_memset(c_dev, 0)
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](

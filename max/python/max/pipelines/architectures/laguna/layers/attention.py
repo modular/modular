@@ -12,16 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 """Laguna attention layer.
 
-Uniform GQA causal attention with two Laguna-specific touches vs the
+GQA attention, causal or sliding-window depending on the layer's type in the
+HF config's ``layer_types``, with two Laguna-specific touches vs the
 MiniMax-M2 donor:
 
 1. **Per-head Q/K RMSNorm.** ``q_norm`` and ``k_norm`` gammas are
    ``[head_dim]`` (128), applied per-head after reshape. (Donor was
    ``[num_heads * head_dim]``, applied across all heads at once.)
 
-2. **Softplus per-element output gate** (`g_proj`). ``gate =
-   softplus(g_proj(hidden_states))`` is multiplied into the post-attention
-   tensor element-wise before ``o_proj``.
+2. **Softplus output gate** (`g_proj`). ``gate =
+   softplus(g_proj(hidden_states))`` scales the post-attention tensor before
+   ``o_proj`` -- one scalar per query head under ``gating_mode="per-head"``,
+   one per ``(head, head_dim)`` channel under ``"per-element"``.
+
+3. **Partial-rotary lane permutation.** On a layer whose ``rotary_dim`` is
+   below ``head_dim``, q and k lanes are reordered before the fused RoPE store
+   so the kernel's rotation pairs land on the reference's. See
+   :meth:`LagunaAttention._permute_rotary_lanes`.
 """
 
 from __future__ import annotations
@@ -41,9 +48,29 @@ from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import RotaryEmbedding
 
+# The lane permutation halves both the rotated and pass-through blocks,
+# and each half must hold whole (cos, sin) pairs.
+_ROTARY_DIM_MULTIPLE = 4
+
+
+def _softplus(x: TensorValue) -> TensorValue:
+    """Computes ``log(1 + exp(x))`` without overflowing on large inputs.
+
+    MAX has no ``ops.softplus``, and the direct form saturates to ``inf`` once
+    ``exp(x)`` does, near ``x = 88`` in float32. Folding out ``max(x, 0)``
+    leaves a non-positive exponent argument, so the identity below is finite
+    across the whole range.
+    """
+    return ops.max(x, 0.0) + ops.log1p(ops.exp(-ops.abs(x)))
+
 
 class LagunaAttention(Module, Shardable):
-    """Per-layer attention with per-head QK-norm and softplus output gate."""
+    """Per-layer attention with per-head QK-norm and softplus output gate.
+
+    A sliding layer (``is_sliding``) masks to ``local_window_size`` keys and
+    reads the sliding cache leaf; a full layer is plain causal over the full
+    cache. ``kv_params`` is the leaf this layer addresses, not the whole tree.
+    """
 
     def __init__(
         self,
@@ -54,6 +81,10 @@ class LagunaAttention(Module, Shardable):
         hidden_size: int,
         kv_params: KVCacheParams,
         layer_idx: int,
+        is_sliding: bool = False,
+        local_window_size: int = -1,
+        gating_mode: str = "per-element",
+        rotary_dim: int | None = None,
         dtype: DType = DType.float32,
         devices: list[DeviceRef],
         linear_cls: Callable[..., Linear] = Linear,
@@ -67,7 +98,36 @@ class LagunaAttention(Module, Shardable):
         self.n_heads = num_attention_heads
         self.num_key_value_heads = num_key_value_heads
         self.layer_idx = layer_idx
+        self.is_sliding = is_sliding
+        self.local_window_size = local_window_size
+        if is_sliding and local_window_size <= 0:
+            raise ValueError(
+                "A sliding-attention Laguna layer needs a positive window, "
+                f"got local_window_size={local_window_size}."
+            )
+        if gating_mode not in ("per-head", "per-element"):
+            raise ValueError(
+                "Laguna attention gating must be 'per-head' or 'per-element', "
+                f"got {gating_mode!r}."
+            )
+        self.gating_mode = gating_mode
         self.kv_params = kv_params
+        # ``None`` means full rotary, which needs no lane permutation.
+        self.rotary_dim = (
+            kv_params.head_dim if rotary_dim is None else rotary_dim
+        )
+        if not 0 < self.rotary_dim <= kv_params.head_dim:
+            raise ValueError(
+                f"Laguna rotary_dim must be in (0, head_dim="
+                f"{kv_params.head_dim}], got {self.rotary_dim}."
+            )
+        if self.rotary_dim % _ROTARY_DIM_MULTIPLE:
+            # The permutation halves the rotated block and the pass-through
+            # block; an odd half would straddle a (cos, sin) pair.
+            raise ValueError(
+                f"Laguna rotary_dim must be a multiple of {_ROTARY_DIM_MULTIPLE}, got "
+                f"{self.rotary_dim}."
+            )
         self.devices = devices
         self.hidden_size = hidden_size
         self.dtype = dtype
@@ -127,13 +187,15 @@ class LagunaAttention(Module, Shardable):
             device=devices[0],
             has_bias=False,
         )
-        # Softplus output gate (M.1 = per-element). g_proj: hidden ->
-        # num_heads * head_dim, one gate per (head, head_dim) channel, applied
-        # element-wise to the attention output before o_proj. (The XS.2 donor
-        # used a per-head scalar gate, out_dim=num_heads.)
+        # The checkpoint's ``g_proj.weight`` shape forces the gating mode, so
+        # it arrives as a constructor argument rather than being inferred here.
         self.g_proj = linear_cls(
             in_dim=hidden_size,
-            out_dim=q_weight_dim,
+            out_dim=(
+                num_attention_heads
+                if gating_mode == "per-head"
+                else q_weight_dim
+            ),
             dtype=dtype,
             device=devices[0],
             has_bias=False,
@@ -190,6 +252,10 @@ class LagunaAttention(Module, Shardable):
                 hidden_size=self.hidden_size,
                 kv_params=self.kv_params,
                 layer_idx=self.layer_idx,
+                is_sliding=self.is_sliding,
+                local_window_size=self.local_window_size,
+                gating_mode=self.gating_mode,
+                rotary_dim=self.rotary_dim,
                 dtype=self.dtype,
                 devices=[device],
                 linear_cls=self.linear_cls,
@@ -226,6 +292,43 @@ class LagunaAttention(Module, Shardable):
         )
         return normed.reshape((-1, num_heads * head_dim))
 
+    def _permute_rotary_lanes(
+        self, x: TensorValue, num_heads: int, head_dim: int
+    ) -> TensorValue:
+        """Reorders head lanes so the kernel's RoPE pairs match the reference's.
+
+        The reference rotates lanes ``[0, rotary_dim)``, pairing ``j`` with
+        ``j + rotary_dim // 2``, and passes ``[rotary_dim, head_dim)`` through.
+        The fused store pairs lane ``i`` with ``i + head_dim // 2`` across the
+        whole head. Interleaving the two blocks at their midpoints -- rotated
+        first half, pass-through first half, rotated second half, pass-through
+        second half -- makes every kernel pair either one reference pair or two
+        pass-through lanes, which the table's identity angles leave alone.
+
+        Attention is unaffected: ``q . k`` is invariant under a permutation
+        shared by q and k, and V is never permuted, so the attention output
+        stays in checkpoint lane order for ``o_proj``.
+
+        Args:
+            x: Flat ``[*, num_heads * head_dim]`` activations.
+            num_heads: Number of heads packed into ``x``.
+            head_dim: Lanes per head.
+
+        Returns:
+            The permuted activations, in the same flat layout.
+        """
+        half_rotated = self.rotary_dim // 2
+        half_passed = (head_dim - self.rotary_dim) // 2
+        heads = x.reshape((-1, num_heads, head_dim))
+        rotated_lo = heads[:, :, :half_rotated]
+        rotated_hi = heads[:, :, half_rotated : 2 * half_rotated]
+        passed_lo = heads[:, :, self.rotary_dim : self.rotary_dim + half_passed]
+        passed_hi = heads[:, :, self.rotary_dim + half_passed :]
+        permuted = ops.concat(
+            (rotated_lo, passed_lo, rotated_hi, passed_hi), axis=-1
+        )
+        return permuted.reshape((-1, num_heads * head_dim))
+
     def __call__(
         self,
         layer_idx: TensorValue,
@@ -246,8 +349,11 @@ class LagunaAttention(Module, Shardable):
         accuracy-validated; the default bf16 KV cache is the validated path).
         Q/K RMSNorm is therefore applied per-head *before* the store — equivalent
         to the previous in-cache K-norm, since both normalise each [head_dim]
-        vector. (Laguna-M.1 is uniform full-rotary GQA, so the fused path needs
-        no partial-rotary / per-layer-head handling.)
+        vector.
+
+        ``layer_idx`` is the layer's index *within its own cache leaf*, which
+        is what the store and attention kernels address; it is not the layer's
+        position in the model.
         """
         total_seq_len = x.shape[0]
         head_dim = self.kv_params.head_dim
@@ -265,6 +371,14 @@ class LagunaAttention(Module, Shardable):
         k = self._per_head_rms_norm(
             k, self.k_norm, self.num_key_value_heads, head_dim
         )
+
+        # After the norms, so the checkpoint's [head_dim] gammas stay in
+        # checkpoint lane order.
+        if self.rotary_dim < head_dim:
+            q = self._permute_rotary_lanes(q, self.n_heads, head_dim)
+            k = self._permute_rotary_lanes(
+                k, self.num_key_value_heads, head_dim
+            )
 
         qkv = ops.concat((q, k, v), axis=-1)
 
@@ -298,26 +412,28 @@ class LagunaAttention(Module, Shardable):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=input_row_offsets,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            mask_variant=(
+                MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+                if self.is_sliding
+                else MHAMaskVariant.CAUSAL_MASK
+            ),
+            local_window_size=self.local_window_size if self.is_sliding else -1,
             scale=self.scale,
             output_dtype=self.dtype,
         )
 
-        # Softplus output gate (M.1 = per-element): one gate per
-        # (head, head_dim) channel, applied element-wise before o_proj.
-        # HF: gate = F.softplus(g_proj(hidden_states).float()).to(dtype)
-        #     attn_output = attn_output * gate   # [*, n_heads*head_dim]
-        # Computed on the original (pre-attention) hidden_states ``x``.
-        #
-        # MAX has no ``ops.softplus``; HF upcasts to float32 before softplus and
-        # casts back. ``softplus(x) = log(1 + exp(x))`` via ``log1p``.
-        gate_logits = ops.cast(
-            self.g_proj(x), DType.float32
-        )  # [T, n_heads*head_dim]
-        gate = ops.log1p(ops.exp(gate_logits))
-        gate = ops.cast(gate, attn_out.dtype)
-        # Flatten attn_out [T, n_heads, head_dim] -> [T, n_heads*head_dim] and
-        # multiply element-wise by the gate (same layout).
-        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
-        attn_out = attn_out * gate
+        # Softplus output gate, computed on the pre-attention hidden states
+        # ``x``. HF accumulates it in float32 and casts back:
+        #     gate = F.softplus(g_proj(hidden_states).float()).to(dtype)
+        gate = ops.cast(
+            _softplus(ops.cast(self.g_proj(x), DType.float32)), attn_out.dtype
+        )
+        if self.gating_mode == "per-head":
+            # gate is [T, n_heads]; broadcast one scalar over each head's lanes.
+            gated = attn_out.reshape(
+                (total_seq_len, self.n_heads, head_dim)
+            ) * ops.unsqueeze(gate, -1)
+            attn_out = ops.reshape(gated, shape=[total_seq_len, -1])
+        else:
+            attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1]) * gate
         return self.o_proj(attn_out)

@@ -19,13 +19,9 @@ from max.gpu.memory import async_copy_commit_group, async_copy_wait_group
 from layout import (
     TileTensor,
     TensorLayout,
-    coord,
     row_major,
     stack_allocation,
 )
-from layout.tile_layout import Layout
-from layout.layout_tensor import LayoutTensorIter
-from layout.layout import Layout as LegacyLayout
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from quantization.qmatmul_gpu import (
     _quantized_scale_stage,
@@ -55,46 +51,26 @@ def scale_stream_kernel[
     comptime GROUPS = 16
     comptime ITERS = GROUPS * CADENCE
     comptime RING = (STAGES - 1 + CADENCE - 1) // CADENCE + 1
-    var lane = Int(thread_idx.x % WARP_SIZE)
-    var partition = Int(thread_idx.x // WARP_SIZE)
+    var lane = thread_idx.x % WARP_SIZE
+    var partition = thread_idx.x // WARP_SIZE
     # The BF16 suffix is reached through a byte pointer, as in packed weights.
-    var suffix = source.unsafe_ptr().bitcast[UInt8]() + 16
+    var suffix = source.unsafe_ptr().unsafe_bitcast[UInt8]().unsafe_offset(16)
     var global_scales = TileTensor(
-        suffix.bitcast[BFloat16](), row_major[2 * GROUPS, N]()
+        suffix.unsafe_bitcast[BFloat16](), row_major[2 * GROUPS, N]()
     )
     var storage = stack_allocation[.bfloat16, address_space=.SHARED](
         row_major[2, RING, BN]()
     )
-    var shared = TileTensor(
-        storage.unsafe_ptr() + partition * RING * BN,
-        row_major[RING, BN](),
+    var shared = storage.tile[1, RING, BN]((partition, 0, 0)).reshape(
+        row_major[RING, BN]()
     )
-    comptime LegacyIter = LayoutTensorIter[
-        .bfloat16,
-        LegacyLayout.row_major(1, BN),
-        _,
-        address_space=.SHARED,
-        circular=True,
-    ]
-    var previous = LegacyIter(
-        shared.unsafe_ptr(), LegacyIter.linear_uint_type(RING * BN)
-    )
-    var legacy_global = global_scales.to_layout_tensor().tiled_iterator[
-        1, BN, axis=0
-    ](partition * GROUPS, 1)
     var registers_storage = stack_allocation[.bfloat16, address_space=.LOCAL](
         row_major[8, 3]()
     )
-    var registers = TileTensor(
-        registers_storage.unsafe_ptr() + 1,
-        Layout(coord[8, 1], coord[3, 1]),
-    )
+    var registers = registers_storage.tile[8, 1]((0, 1))
     comptime for i in range(8):
         registers_storage[i, 0] = -29
         registers_storage[i, 2] = -30
-    var legacy_registers = stack_allocation[.bfloat16, address_space=.LOCAL](
-        row_major[8, 1]()
-    )
     var consumer = 0
     var producer = 0
     comptime for stage in range(STAGES - 1):
@@ -105,7 +81,6 @@ def scale_stream_kernel[
             ).address_space_cast[.GENERIC]()
             _copy_quantized_scale_tile(dst, src)
             producer += 1
-            legacy_global._incr()
     async_copy_commit_group()
     async_copy_wait_group(0)
     barrier()
@@ -113,51 +88,32 @@ def scale_stream_kernel[
         var stage = shared.tile[1, BN]((consumer, 0))
         var warp_scales = stage.tile[1, 64]((0, 1))
         _load_quantized_scale_registers(registers, warp_scales, lane)
-        var legacy_scales = previous[].tile[1, 64](0, 1)
-        legacy_registers.to_layout_tensor().vectorize[8, 1]().copy_from(
-            legacy_scales.vectorize[1, 8]().distribute[
-                LegacyLayout.row_major(8, 4), axis=0
-            ](lane)
-        )
         comptime for i in range(8):
             output[partition, k, lane, i] = registers[i, 0]
-            output[partition, k, lane, 8 + i] = legacy_registers[i, 0]
-            output[partition, k, lane, 16 + i] = registers_storage[i, 0]
-            output[partition, k, lane, 24 + i] = registers_storage[i, 2]
-        output[partition, k, lane, 32] = BFloat16(1)
-        output[partition, k, lane, 33] = BFloat16(1)
+            output[partition, k, lane, 8 + i] = registers_storage[i, 0]
+            output[partition, k, lane, 16 + i] = registers_storage[i, 2]
         # The real loop issues this copy before advancing the scale consumer.
         if k + STAGES - 1 < ITERS and (k + STAGES - 1) % CADENCE == 0:
             var next_stage = _quantized_scale_stage(consumer, RING - 1, RING)
             var dst = shared.tile[1, BN]((next_stage, 0))
-            var old_dst = previous.next_unsafe(
-                LegacyIter.linear_uint_type(RING - 1)
-            )[]
-            output[partition, k, lane, 32] = BFloat16(
-                1 if dst.unsafe_ptr() == old_dst.ptr else 0
-            )
             var src = global_scales.tile[1, BN](
                 (partition * GROUPS + producer, 1)
             ).address_space_cast[.GENERIC]()
-            output[partition, k, lane, 33] = BFloat16(
-                1 if src.unsafe_ptr() == legacy_global[].ptr else 0
-            )
             _copy_quantized_scale_tile(dst, src)
             producer += 1
-            legacy_global._incr()
         async_copy_commit_group()
         async_copy_wait_group(0)
         barrier()
         if (k + 1) % CADENCE == 0:
             consumer = _quantized_scale_stage(consumer, 1, RING)
-            previous._incr()
 
 
 def test_scale_stream[CADENCE: Int, STAGES: Int](ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime N = 384
     comptime GROUPS = 16
     comptime input_layout = row_major[1, 8 + 2 * GROUPS * N]()
-    comptime output_layout = row_major[2, GROUPS * CADENCE, WARP_SIZE, 34]()
+    comptime output_layout = row_major[2, GROUPS * CADENCE, warp_size, 24]()
     var source = HostDeviceTileTensor[.bfloat16](input_layout, ctx)
     var output = HostDeviceTileTensor[.bfloat16](output_layout, ctx)
     var host = source.host_tensor()
@@ -174,27 +130,24 @@ def test_scale_stream[CADENCE: Int, STAGES: Int](ctx: DeviceContext) raises:
         source.device_tensor().as_unsafe_any_origin(),
         output.device_tensor().as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=2 * WARP_SIZE,
+        block_dim=2 * warp_size,
     )
     output.to_host()
     var actual = output.host_tensor()
     for partition in range(2):
         for k in range(GROUPS * CADENCE):
-            for lane in range(WARP_SIZE):
-                assert_equal(actual[partition, k, lane, 32], BFloat16(1))
-                assert_equal(actual[partition, k, lane, 33], BFloat16(1))
+            for lane in range(warp_size):
                 for i in range(8):
                     var expected = scale_value(
                         partition * GROUPS + k // CADENCE,
                         128 + 64 + 8 * (lane // 4) + i,
                     )
                     assert_equal(actual[partition, k, lane, i], expected)
-                    assert_equal(actual[partition, k, lane, 8 + i], expected)
                     assert_equal(
-                        actual[partition, k, lane, 16 + i], BFloat16(-29)
+                        actual[partition, k, lane, 8 + i], BFloat16(-29)
                     )
                     assert_equal(
-                        actual[partition, k, lane, 24 + i], BFloat16(-30)
+                        actual[partition, k, lane, 16 + i], BFloat16(-30)
                     )
 
 

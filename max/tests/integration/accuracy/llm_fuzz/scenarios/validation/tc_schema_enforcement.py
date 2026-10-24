@@ -2037,6 +2037,9 @@ class TCSchemaEnforcement(BaseScenario):
                 "'gamma'. The last node's next should be null."
             ),
             validate=validate,
+            # A one-node list is schema-valid, so the depth check measures what
+            # the model volunteers; a sampled draw stops at one node sometimes.
+            temperature=0,
         )
 
     # ------------------------------------------------------------------

@@ -421,6 +421,45 @@ def test_float32(ctx: DeviceContext) raises:
     ](ctx, 256, 256, 128)
 
 
+def test_k_tail(ctx: DeviceContext) raises:
+    """Covers bf16 transpose_b with a K that ends in a partial K tile or is
+    shorter than the two K tiles the pipeline prologue loads.
+
+    The columns past K must read as zero, not as the next row's data.
+    """
+    print("=== test_k_tail")
+
+    def test_block_shape[N: Int, K: Int, block: Int](m: Int) raises {imm}:
+        comptime config = _amdgpu_matmul_config_from_block_shape[
+            .float32, .bfloat16, .bfloat16, True, K
+        ](Index(block, block))
+        test[config, N=N, K=K](ctx, m, N, K)
+
+    test_block_shape[1152, 4304, 128](300)
+    test_block_shape[1152, 4304, 64](300)
+    test_block_shape[1152, 100, 128](300)
+    test_block_shape[1152, 48, 128](300)
+    test_block_shape[1152, 16, 32](17)
+    test_block_shape[260, 1000, 32](17)
+
+    comptime for K in [16, 48, 100, 1000, 4304]:
+        for m in [1, 17, 300, 2048]:
+            test[
+                in_type=.bfloat16,
+                out_type=.float32,
+                transpose_b=True,
+                N=1152,
+                K=K,
+            ](ctx, m, 1152, K)
+        test[
+            in_type=.bfloat16,
+            out_type=.bfloat16,
+            transpose_b=True,
+            N=260,
+            K=K,
+        ](ctx, 300, 260, K)
+
+
 def test_partial_tile[
     dtype: DType, M: Int, N: Int, K: Int
 ](ctx: DeviceContext) raises:
@@ -699,6 +738,7 @@ def main() raises:
         test_block_k(ctx)
         test_warp_k_partitions(ctx)
         test_float32(ctx)
+        test_k_tail(ctx)
 
         # C tiles that run past (M, N): an N below the block tile, an odd N, a
         # large N with a partial trailing block (GPT-2's lm_head), and an M

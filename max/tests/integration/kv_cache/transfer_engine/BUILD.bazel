@@ -253,7 +253,7 @@ modular_py_test(
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "1",
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
         # Without InfiniBand, GPU data either takes cuda_ipc or is staged
-        # through host memory over tcp, which the test's bandwidth floor
+        # through host memory over tcp, which the test's protocol check
         # rejects. NIXL requires cuda_copy whenever a GPU is present, and its
         # endpoints need tcp for peer failure handling.
         "UCX_TLS": "cuda_ipc,cuda_copy,tcp,sm,self",

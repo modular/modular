@@ -30,6 +30,7 @@ loudly (via ``debug_assert``) instead of returning silently wrong offsets.
 
 from std.math import ceildiv
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.utils.index import IndexList
 
 from max.gpu.host import DeviceContext
@@ -71,9 +72,9 @@ def test_chunk_overflow(ctx: DeviceContext) raises:
     var lut_size = batch_size * max_pages_per_batch
     var block_elems = paged_block_elems(total_pages, PAGE_SIZE, CACHE_DEPTH)
 
-    var blocks_host = alloc[Scalar[.bfloat16]](block_elems)
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var blocks_host = unsafe_alloc[Scalar[.bfloat16]](block_elems)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
 
     fill_paged_blocks_uniform[.bfloat16](
         blocks_host, batch_size, num_keys, PAGE_SIZE
@@ -138,7 +139,7 @@ def test_chunk_overflow(ctx: DeviceContext) raises:
         UInt32(num_keys),
     )
 
-    var input_row_offsets_host = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
     for b in range(batch_size + 1):
         input_row_offsets_host[b] = UInt32(b * seq_len)
     var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
@@ -184,10 +185,10 @@ def test_chunk_overflow(ctx: DeviceContext) raises:
     # binary exits.
     ctx.synchronize()
 
-    blocks_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    input_row_offsets_host.free()
+    blocks_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    input_row_offsets_host.unsafe_free()
 
     _ = blocks_device
     _ = cache_lengths_device

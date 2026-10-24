@@ -22,6 +22,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassOptions.h"
+#include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/SmallSet.h"
 
 #include <optional>
@@ -103,29 +104,63 @@ enum class InlinerDebugInfoUpdateTime {
 void registerDefaultKGENPasses(const std::string &cacheBaseExtra);
 
 //===----------------------------------------------------------------------===//
+// Lowering to Arith
+//
+// Scalar values and arithmetic. Independent of the control-flow lowering
+// below, which only borrows the type converter.
+//===----------------------------------------------------------------------===//
+
+/// `KGENDType` → builtin MLIR element type. `nullopt` if unsupported.
+std::optional<mlir::Type> dtypeToBuiltin(mlir::MLIRContext *ctx,
+                                         KGENDType dtype);
+
+/// Maps `!pop.scalar<T>` to its builtin type and bridges values whose
+/// producer and consumer are lowered by different passes with
+/// `unrealized_conversion_cast`s, which fold once both sides are converted.
+/// A target extends it with its own conversions for the SIMD forms. Both
+/// lowerings here use it.
+class POPScalarTypeConverter : public mlir::TypeConverter {
+public:
+  explicit POPScalarTypeConverter(mlir::MLIRContext *ctx);
+};
+
+/// Patterns lowering scalar `kgen.param.constant` and the scalar POP arith,
+/// compare, select, and builtin-cast ops to `arith`/`index`.
+void populateKGENToArithConversionPatterns(const mlir::TypeConverter &converter,
+                                           mlir::RewritePatternSet &patterns);
+
+//===----------------------------------------------------------------------===//
+// Lowering to SCF
+//
+// Structured control flow. Values crossing a region boundary are bridged with
+// the type converter above.
+//===----------------------------------------------------------------------===//
+
+/// Patterns lowering `hlcf.for` and its yield to `scf.for`.
+void populateHLCFForToSCFConversionPatterns(
+    const mlir::TypeConverter &converter, mlir::RewritePatternSet &patterns);
+
+/// Patterns lowering all HLCF structured control flow (`for`, `if`, `switch`,
+/// `loop`, and their terminators) to SCF. `hlcf.return` is left for the
+/// function conversion.
+void populateHLCFToSCFConversionPatterns(const mlir::TypeConverter &converter,
+                                         mlir::RewritePatternSet &patterns);
+
+//===----------------------------------------------------------------------===//
 // Elaborator
 //===----------------------------------------------------------------------===//
 
-/// This struct represents the result of a cross-device compilation, which is a
-/// function or closure reference.
+/// This struct represents the result of a cross-device compilation.
 struct CrossDeviceFunction {
   /// The compiled cross-device function contents, which can be assembly, object
   /// code, or something else.
   StringAttr contents;
-  /// The number of captures that need to be propagated to the cross-device
-  /// closure.
-  unsigned numCaptures;
-  /// A function for populating the captured values opaquely.
-  /// FIXME(#22670): The expected API is tightly bound with the GPU module in
-  /// the standard library.
-  OwningOpRef<Operation *> populateCapturesFn;
 };
 
 struct OffloadInfo {
   struct KernelInfo {
     StringAttr name;
     uint64_t kernelId;
-    FuncTypeGeneratorType populateFnType;
     llvm::SmallSet<EmitAs, 4> emissionKinds;
     /// The source-level name of the kernel function (e.g. "add_one_kernel"),
     /// used to name the GPU ASM output file when --emit=asm is requested.
@@ -152,6 +187,10 @@ struct OffloadInfo {
     /// group key includes it, so a group cannot mix dictionaries. Stamped onto
     /// each sliced clone in `compileOffloads`.
     mlir::DictionaryAttr targetAttrs;
+    /// The target with `opaque_plugin` references rewritten to generator
+    /// references, so they resolve against the sliced module. Null when the
+    /// target carries no payload.
+    TargetInfoAttr slicedTarget;
   };
 
   /// Groups are keyed by `makeOffloadGroupKey`, so kernels differing in any
@@ -162,10 +201,6 @@ struct OffloadInfo {
 };
 
 struct OffloadCompilationResult {
-  OwningOpRef<Operation *> func;
-  IntegerAttr numCaptures;
-  mlir::DenseI64ArrayAttr captureSizes;
-  SymbolConstantAttr populate;
   DenseMap<EmitAs, StringAttr> contents;
 
   /// Hashed module name based on contents.

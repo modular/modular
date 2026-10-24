@@ -11,38 +11,54 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.pipelines.lib import Speculator
+from dataclasses import replace
 
-from ..deepseekV3.arch import deepseekV3_arch
-from .batch_processor import (
-    Eagle3DeepseekV3BatchProcessor,
-    Eagle3MHADeepseekV3BatchProcessor,
+from max.graph.weights import WeightsFormat
+from max.pipelines.context import TextContext
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.modeling.types import InputModality, PipelineTask
+
+from ..deepseekV3.model_config import DeepseekV3Config
+from ..kimik2_5.weight_adapters import (
+    convert_eagle3_draft_state_dict,
+    convert_llama_eagle3_draft_state_dict,
 )
-from .mha_pipeline import Eagle3MHADeepseekV3Model
-from .model import Eagle3DeepseekV3Model
-
-# Eagle3 with an MLA draft shipped as its own repo.
-eagle3_deepseekV3_speculator = Speculator(
-    name="Eagle3DeepseekV3ForCausalLM",
-    base=deepseekV3_arch,
-    draft_arch="Eagle3DeepseekV2ForCausalLM",
-    method="eagle",
-    pipeline_model=Eagle3DeepseekV3Model,
-    batching=Eagle3DeepseekV3BatchProcessor,
-    # TODO(MXSERV-7): Move ``austinpowers/...`` to the official Modular HF org
-    # so CI doesn't depend on a personal account.
-    example_repo_ids=["austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"],
-    opt_out_cascade=True,
+from .model import (
+    Eagle3DeepseekV3DraftArchConfig,
+    Eagle3MHADeepseekV3DraftArchConfig,
 )
 
-# Eagle3 with a Llama-style MHA draft, which runs Kimi's fused graph.
-eagle3_mha_deepseekV3_speculator = Speculator(
-    name="Eagle3MHADeepseekV3ForCausalLM",
-    base=deepseekV3_arch,
-    draft_arch="LlamaForCausalLMEagle3",
-    method="eagle",
-    pipeline_model=Eagle3MHADeepseekV3Model,
-    batching=Eagle3MHADeepseekV3BatchProcessor,
-    example_repo_ids=["austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"],
-    opt_out_cascade=True,
+# The MLA head's checkpoint names Kimi K2.5's fused Eagle3 architecture, so
+# spec decoding renames it to this one beside a DeepseekV3 target. It has
+# no pipeline model of its own.
+eagle3_deepseekV3_draft_arch = SupportedArchitecture(
+    name="Eagle3DeepseekV3DraftModel",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["nvidia/Kimi-K2.5-Thinking-Eagle3"],
+    default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV3Config.SUPPORTED_ENCODINGS,
+    # Split over the target's devices, as the target is.
+    multi_gpu_supported=True,
+    pipeline_model=None,
+    tokenizer=TextTokenizer,
+    context_type=TextContext,
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: convert_eagle3_draft_state_dict,
+    },
+    config=Eagle3DeepseekV3DraftArchConfig,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+)
+
+# The Llama-style MHA head's checkpoint names Llama 3's Eagle3 draft, so
+# spec decoding renames it to this one beside a DeepseekV3 target.
+eagle3_mha_deepseekV3_draft_arch = replace(
+    eagle3_deepseekV3_draft_arch,
+    name="Eagle3MHADeepseekV3DraftModel",
+    example_repo_ids=["modularai/kimi-k2.5-eagle3"],
+    pipeline_model=None,
+    weight_adapters={
+        WeightsFormat.safetensors: convert_llama_eagle3_draft_state_dict,
+    },
+    config=Eagle3MHADeepseekV3DraftArchConfig,
 )

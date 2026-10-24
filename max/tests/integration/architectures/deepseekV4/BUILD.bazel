@@ -43,6 +43,29 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_routed_expert_groups_gpu",
+    srcs = ["test_routed_expert_groups_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+    ],
+)
+
+modular_py_test(
     name = "test_top_k_per_row_gpu",
     srcs = ["test_top_k_per_row_gpu.py"],
     exec_properties = {
@@ -62,6 +85,29 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+    ],
+)
+
+modular_py_test(
+    name = "test_rope_tail_gpu",
+    srcs = ["test_rope_tail_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV4",
     ],
 )
 

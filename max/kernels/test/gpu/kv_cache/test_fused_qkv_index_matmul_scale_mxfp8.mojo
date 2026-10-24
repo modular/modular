@@ -480,14 +480,14 @@ def execute_dual_cache_fused[
     var iq_maxdiff = Float32(0.0)
     for m in range(total_length):
         for c in range(q_dim):
-            var a = fused_q_host.ptr[m * q_dim + c].cast[.float32]()
-            var b = q_host.ptr[m * q_dim + c].cast[.float32]()
+            var a = fused_q_host[m, c].cast[.float32]()
+            var b = q_host[m, c].cast[.float32]()
             if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
                 q_mm += 1
             q_maxdiff = max(q_maxdiff, abs(a - b))
         for c in range(iq_dim):
-            var a = fused_iq_host.ptr[m * iq_dim + c].cast[.float32]()
-            var b = iq_host.ptr[m * iq_dim + c].cast[.float32]()
+            var a = fused_iq_host[m, c].cast[.float32]()
+            var b = iq_host[m, c].cast[.float32]()
             if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
                 iq_mm += 1
             iq_maxdiff = max(iq_maxdiff, abs(a - b))
@@ -513,21 +513,25 @@ def execute_dual_cache_fused[
     # both buffers zero-initialized, a mis-route would show O(written-elements)
     # large diffs; a benign reduction-order difference shows O(1) 1-ULP diffs.
     var main_n = main_host.num_elements()
+    var main_flat = main_host.reshape(row_major(main_n))
+    var main_ref_flat = main_ref_host.reshape(row_major(main_n))
     var main_mismatches = 0
     var main_max_diff = Float32(0.0)
     for i in range(main_n):
-        var a = main_host.ptr[i].cast[.float32]()
-        var b = main_ref_host.ptr[i].cast[.float32]()
+        var a = main_flat[i].cast[.float32]()
+        var b = main_ref_flat[i].cast[.float32]()
         if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
             main_mismatches += 1
         main_max_diff = max(main_max_diff, abs(a - b))
 
     var index_n = index_host.num_elements()
+    var index_flat = index_host.reshape(row_major(index_n))
+    var index_ref_flat = index_ref_host.reshape(row_major(index_n))
     var index_mismatches = 0
     var index_max_diff = Float32(0.0)
     for i in range(index_n):
-        var a = index_host.ptr[i].cast[.float32]()
-        var b = index_ref_host.ptr[i].cast[.float32]()
+        var a = index_flat[i].cast[.float32]()
+        var b = index_ref_flat[i].cast[.float32]()
         if abs(a - b) > atol_f + rtol_f * max(abs(a), abs(b)):
             index_mismatches += 1
         index_max_diff = max(index_max_diff, abs(a - b))
@@ -559,9 +563,141 @@ def execute_dual_cache_fused[
     _ = index_lut^
 
 
+def test_single_cache_band_boundaries[q_heads: Int](ctx: DeviceContext) raises:
+    comptime m = 4
+    comptime hidden = 128
+    comptime head_size = 40
+    comptime q_dim = q_heads * head_size
+    comptime n = q_dim + 2 * head_size
+    comptime page_size = 128
+    comptime params = KVCacheStaticParams(num_heads=1, head_size=head_size)
+    comptime Collection = PagedKVCacheCollection[
+        KV_DTYPE,
+        params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+
+    var hs = HostDeviceTileTensor[DATA_DTYPE](row_major(m, Idx[hidden]), ctx)
+    _ = hs.host_tensor().fill(1)
+    var weight = HostDeviceTileTensor[DATA_DTYPE](
+        row_major(Idx[n], Idx[hidden]), ctx
+    )
+    var weight_host = weight.host_tensor()
+    for col in range(n):
+        var value = 1 if col < q_dim else (2 if col < q_dim + head_size else 3)
+        for k in range(hidden):
+            weight_host[col, k] = Scalar[DATA_DTYPE](value)
+
+    comptime k_sf = ceildiv(hidden, SF_VECTOR_SIZE * SF_ATOM_K)
+    var a_scales = HostDeviceTileTensor[SCALE_DTYPE](
+        row_major(
+            1, Idx[k_sf], Idx[SF_ATOM_M[0]], Idx[SF_ATOM_M[1]], Idx[SF_ATOM_K]
+        ),
+        ctx,
+    )
+    var b_scales = HostDeviceTileTensor[SCALE_DTYPE](
+        row_major(
+            ceildiv(n, SF_MN_GROUP_SIZE),
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
+        ),
+        ctx,
+    )
+    _ = a_scales.host_tensor().fill(1)
+    _ = b_scales.host_tensor().fill(1)
+
+    var offsets = HostDeviceTileTensor[DType.uint32](row_major(2), ctx)
+    offsets.host_tensor()[0] = 0
+    offsets.host_tensor()[1] = m
+    var lengths = HostDeviceTileTensor[DType.uint32](row_major(1), ctx)
+    _ = lengths.host_tensor().fill(0)
+    var lut = HostDeviceTileTensor[DType.uint32](row_major(1, 1), ctx)
+    _ = lut.host_tensor().fill(0)
+    var blocks = HostDeviceTileTensor[KV_DTYPE](
+        row_major(
+            Int64(2), Idx[2], Int64(1), Idx[page_size], Idx[1], Idx[head_size]
+        ),
+        ctx,
+    )
+    _ = blocks.host_tensor().fill(-1)
+    # The extra output row and cache capacity catch stores past a band.
+    var output = HostDeviceTileTensor[OUT_DTYPE](
+        row_major(m + 1, Idx[q_dim]), ctx
+    )
+    _ = output.host_tensor().fill(-1)
+    hs.to_device()
+    weight.to_device()
+    a_scales.to_device()
+    b_scales.to_device()
+    offsets.to_device()
+    lengths.to_device()
+    lut.to_device()
+    blocks.to_device()
+    output.to_device()
+
+    var collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            blocks.device_tensor().as_unsafe_any_origin()
+        ),
+        lengths.device_tensor().as_imm().as_unsafe_any_origin(),
+        lut.device_tensor().as_imm().as_unsafe_any_origin(),
+        UInt32(m),
+        UInt32(m),
+    )
+    var q_output = output.device_tensor().tile((m, Idx[q_dim]), (0, 0))
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        target="gpu",
+    ](
+        hs.device_tensor().as_imm().as_unsafe_any_origin(),
+        offsets.device_tensor(),
+        weight.device_tensor().as_imm().as_unsafe_any_origin(),
+        a_scales.device_tensor().as_imm().as_unsafe_any_origin(),
+        b_scales.device_tensor().as_imm().as_unsafe_any_origin(),
+        Float32(1.0),
+        collection,
+        UInt32(0),
+        q_output,
+        ctx,
+    )
+    output.to_host()
+    blocks.to_host()
+    var q_host = output.host_tensor()
+    for token in range(m + 1):
+        for col in range(q_dim):
+            assert_equal(
+                q_host[token, col],
+                Scalar[OUT_DTYPE](hidden if token < m else -1),
+            )
+    var cache_host = blocks.host_tensor()
+    for block in range(2):
+        for kv in range(2):
+            for token in range(page_size):
+                var expected = (
+                    hidden * (kv + 2) if block == 0 and token < m else -1
+                )
+                for dim in range(head_size):
+                    assert_equal(
+                        cache_host[block, kv, 0, token, 0, dim],
+                        Scalar[KV_DTYPE](expected),
+                    )
+
+
 def main() raises:
     seed(42)
     with DeviceContext() as ctx:
+        test_single_cache_band_boundaries[1](ctx)
+        test_single_cache_band_boundaries[2](ctx)
+        var fused_prefill_lens = List[Int]()
+        for _ in range(4):
+            fused_prefill_lens.append(256)
+        execute_dual_cache_fused[hidden=6144](fused_prefill_lens, 4, 1, ctx)
         # ---- K=256 (fast) coverage of both regimes ----
         # Context-encoding (prefill): a couple of small ragged prompts.
         var ce_lens = List[Int]()

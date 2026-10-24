@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Attention struct for gfx950 MHA/MLA kernels (prefill + decode).
 
-TileTensor-only API: no LayoutTensor in struct fields, constructor
-parameters, method signatures, or internal bridges. Mask application is
+TileTensor-only API in struct fields, constructor parameters, and
+method signatures. Mask application is
 delegated to `MaskTileOp` (see `mask_op.mojo`), which uses
 TileTensor.vectorize with local SIMD read/modify/write for per-element edits.
 
@@ -29,7 +29,7 @@ from std.math.uutils import udivmod
 from std.memory import bitcast, unsafe_stack_allocation
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import align_of, simd_width_of
-from std.sys.intrinsics import readfirstlane
+from max.gpu.intrinsics import readfirstlane
 from max.gpu import block_idx, lane_id, thread_idx
 from layout import TileTensor
 from layout import row_major
@@ -420,10 +420,10 @@ struct Attention[
     var out_reg_buffer: Self.OutputRegisterBufferType
     var p_reg_buffer: Self.PRegisterBufferType
 
-    var k_smem_ptr: UnsafePointer[
+    var k_smem_ptr: MutPointer[
         Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
-    var v_smem_ptr: UnsafePointer[
+    var v_smem_ptr: MutPointer[
         Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     # Dedicated warp-reduction scratch SMEM. Decoupling from K SMEM
@@ -431,7 +431,7 @@ struct Attention[
     # in-flight K ds_reads. Overlaying scratch onto K SMEM is unsafe in
     # `mla_kv_alias` mode (V reads from K's SMEM, so there's no later
     # V DMA to overwrite the corruption).
-    var warp_scratch_ptr: UnsafePointer[
+    var warp_scratch_ptr: MutPointer[
         Scalar[Self.accum_type], MutUntrackedOrigin, address_space=.SHARED
     ]
 
@@ -542,13 +542,13 @@ struct Attention[
     @inline(.always)
     def __init__(
         out self,
-        output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
-        q: UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin],
+        output_ptr: MutPointer[Scalar[Self.output_type], MutAnyOrigin],
+        q: ImmPointer[Scalar[Self.q_type], ImmutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
         sink_weights: OptionalReg[
-            UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[Self.q_type], ImmutAnyOrigin]
         ],
         batch_idx: Int,
         scale: Float32,
@@ -616,7 +616,7 @@ struct Attention[
             address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
-        self.v_smem_ptr = self.k_smem_ptr.bitcast[
+        self.v_smem_ptr = self.k_smem_ptr.unsafe_bitcast[
             Scalar[Self.v_t.dtype]
         ]() if Self.amd_structured_config.shared_kv else unsafe_stack_allocation[
             Self._v_smem_size,
@@ -673,7 +673,7 @@ struct Attention[
         ]()
 
         var q_tile = TileTensor[Self.q_type, Self.QTileLayout, ImmutAnyOrigin](
-            ptr=q + Int(q_offset),
+            ptr=q.unsafe_offset(Int(q_offset)),
             layout=Self.QTileLayout(
                 Coord(
                     Int64(valid_rows),
@@ -687,7 +687,7 @@ struct Attention[
         self.output_tile = TileTensor[
             Self.output_type, Self.OutputTileLayout, MutAnyOrigin
         ](
-            ptr=output_ptr + Int(output_offset),
+            ptr=output_ptr.unsafe_offset(Int(output_offset)),
             layout=Self.OutputTileLayout(
                 Coord(
                     Int64(valid_rows),
@@ -1202,8 +1202,8 @@ struct Attention[
     def store_partition_info(
         self,
         num_partitions: Int,
-        exp_sum_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
-        qk_max_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
+        exp_sum_ptr: MutPointer[Scalar[Self.accum_type], MutAnyOrigin],
+        qk_max_ptr: MutPointer[Scalar[Self.accum_type], MutAnyOrigin],
     ):
         """Write softmax stats for split-K reduction (decode only).
 

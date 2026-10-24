@@ -16,13 +16,13 @@
 from std.collections import Optional
 from std.math import align_down, align_up, ceildiv, iota
 from std.sys._build import is_debug_build
-from std.sys.info import CompilationTarget, simd_width_of, size_of
+from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 from std.sys.intrinsics import masked_load, masked_store
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from layout.layout import *
 from layout import TileTensor, Coord, TensorLayout
-from layout.tile_layout import Layout as _NewLayout
+from layout.tile_layout import Layout as _NewLayout, row_major
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.reflection import reflect
 
@@ -31,7 +31,7 @@ from std.reflection import reflect
 def partial_simd_load[
     dtype: DType, //, width: Int
 ](
-    storage: UnsafePointer[mut=False, Scalar[dtype], ...],
+    storage: ImmPointer[Scalar[dtype], ...],
     lbound: Int,
     rbound: Int,
     pad_value: Scalar[dtype],
@@ -72,7 +72,7 @@ def partial_simd_load[
 def partial_simd_store[
     dtype: DType, //, width: SIMDLength
 ](
-    storage: UnsafePointer[mut=True, Scalar[dtype], ...],
+    storage: MutPointer[Scalar[dtype], ...],
     lbound: Int,
     rbound: Int,
     data: SIMD[dtype, width],
@@ -107,27 +107,6 @@ def partial_simd_store[
     return masked_store(data, storage, mask)
 
 
-comptime elementwise_epilogue_type = def[
-    dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](Coord, SIMD[dtype, width]) capturing -> None
-"""Fused elementwise epilogue lambda: `(coord, value) -> None`.
-
-The coordinate is always rank 2 (row, column) in the output's own space.
-`Coord` cannot express that constraint in the type -- it is variadic over
-`CoordLike`, and `Coord[_, _]` is rejected as unbound variadic syntax -- so
-every implementation asserts `coord.rank == 2` instead. Kernels whose epilogue
-is genuinely rank-N (concat, conv, allreduce, the reduction generators) use
-their own aliases and do not share this one.
-"""
-
-comptime elementwise_compute_lambda_type = def[
-    dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](Coord, SIMD[dtype, width]) capturing -> SIMD[dtype, width]
-"""Fused elementwise compute lambda: `(coord, value) -> value`.
-
-Same rank-2 coordinate contract as `elementwise_epilogue_type`; see there.
-"""
-
 comptime _elementwise_compute_fn_signature = def[
     dtype: DType, width: SIMDLength, *, alignment: Int
 ](Coord, SIMD[dtype, width]) -> SIMD[dtype, width]
@@ -135,12 +114,12 @@ comptime _elementwise_compute_fn_signature = def[
 comptime ElementwiseComputeFn = (
     ImplicitlyCopyable & RegisterPassable & _elementwise_compute_fn_signature
 )
-"""Value-taking counterpart of `elementwise_compute_lambda_type`.
+"""Fused elementwise compute closure: `(coord, value) -> value`.
 
-A unified closure passed as a runtime value carries the origins of its
+The coordinate has the same rank-2 contract as `ElementwiseEpilogueFn`; see
+there. A unified closure passed as a runtime value carries the origins of its
 captures, so the buffers it reads stay alive until the kernel that calls it
-has launched. `alignment` has no default; pass `alignment=1` where the
-legacy type relied on its default.
+has launched.
 """
 
 comptime _elementwise_output_compute_fn_signature = def[
@@ -168,12 +147,17 @@ comptime _elementwise_epilogue_fn_signature = def[
 comptime ElementwiseEpilogueFn = (
     ImplicitlyCopyable & RegisterPassable & _elementwise_epilogue_fn_signature
 )
-"""Value-taking counterpart of `elementwise_epilogue_type`.
+"""Fused elementwise epilogue closure: `(coord, value) -> None`.
+
+The coordinate is always rank 2 (row, column) in the output's own space.
+`Coord` cannot express that constraint in the type -- it is variadic over
+`CoordLike`, and `Coord[_, _]` is rejected as unbound variadic syntax -- so
+every implementation asserts `coord.rank == 2` instead. Kernels whose epilogue
+is genuinely rank-N (concat, conv, allreduce, the reduction generators) use
+their own aliases and do not share this one.
 
 The closure stores the output itself, so a kernel that receives one writes
-nothing to its output argument. Pass it to a named kernel with `host_arg=`.
-`alignment` has no default; pass `alignment=1` where the legacy type relied
-on its default.
+nothing to its output argument. Pass it to a named kernel with `host_args=`.
 """
 
 
@@ -191,7 +175,7 @@ def _as_epilogue_fn[
     """Binds a parametric function to its `ElementwiseEpilogueFn` closure type.
 
     A bare parametric function only converts where a function-type bound gives
-    it context, so neither `type_of` nor a `host_arg` slot accepts it directly.
+    it context, so neither `type_of` nor a `host_args` slot accepts it directly.
 
     Parameters:
         EpilogueFnType: Type of the epilogue function (inferred).
@@ -208,41 +192,6 @@ def _as_epilogue_fn[
 comptime no_epilogue_fn = _as_epilogue_fn(_no_epilogue_body)
 """Stands in for an `ElementwiseEpilogueFn` argument on code paths that store
 the output directly."""
-
-
-@inline(.always)
-def apply_elementwise_epilogue[
-    EpilogueFnType: ElementwiseEpilogueFn,
-    dtype: DType,
-    width: SIMDLength,
-    //,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    *,
-    alignment: Int = 1,
-](epilogue_fn: EpilogueFnType, idx: Coord, val: SIMD[dtype, width],):
-    """Applies the legacy epilogue lambda if set, otherwise `epilogue_fn`.
-
-    Kernels that accept both epilogue forms call this under
-    `comptime if elementwise_lambda_fn or has_epilogue_fn`.
-
-    Parameters:
-        EpilogueFnType: Type of `epilogue_fn` (inferred).
-        dtype: Element dtype of `val` (inferred).
-        width: SIMD width of `val` (inferred).
-        elementwise_lambda_fn: Legacy epilogue lambda; takes precedence
-            when set.
-        alignment: Alignment of `val` in elements.
-
-    Args:
-        epilogue_fn: Value epilogue, used when `elementwise_lambda_fn` is
-            unset.
-        idx: Output coordinates.
-        val: Output value.
-    """
-    comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
-        elementwise_lambda[dtype, width, alignment=alignment](idx, val)
-    else:
-        epilogue_fn[dtype, width, alignment=alignment](idx, val)
 
 
 @inline(.always)
@@ -388,7 +337,7 @@ trait TileOperation(DevicePassable, TrivialRegisterPassable):
         Args:
             tile_coord: Absolute element coord of this sub-tile's top-left in
                 the global output tensor — consistent with `TileConsumer.__call__`
-                and the legacy `elementwise_compute_lambda_type`.
+                and `ElementwiseComputeFn`.
             thread_layout: Logical layout of the threads collaborating on this
                 call. Passed as a value (its static dims are comptime-readable
                 via `type_of(thread_layout)`), so the kernel states "this call
@@ -1270,8 +1219,8 @@ def packA_i8mm[
     t0: Int,
     t1: Int,
     k: Int,
-    a_ptr: UnsafePointer[mut=False, Scalar[a_type], ...],
-    a_packed_ptr: UnsafePointer[mut=True, Scalar[a_type], ...],
+    a: TileTensor[a_type, ...],
+    a_packed_ptr: MutPointer[Scalar[a_type], ...],
 ):
     """Packs a range of rows of matrix A for the i8mm kernel layout.
 
@@ -1282,28 +1231,33 @@ def packA_i8mm[
         t0: The starting row index of the range to pack.
         t1: The ending row index of the range to pack (exclusive).
         k: The K dimension of the matmul.
-        a_ptr: Pointer to the source A matrix in row-major layout.
+        a: The source A matrix in row-major layout.
         a_packed_ptr: Pointer to the destination packed A buffer.
     """
+
+    comptime assert a.flat_rank == 2, "a must be rank 2"
 
     @inline(.always)
     def packA_helper[
         nrow: Int
-    ](offset: Int) {var k, var t0, imm a_ptr, imm a_packed_ptr}:
+    ](offset: Int) {var k, var t0, imm a, imm a_packed_ptr}:
         var kl = align_down(k, 8)
         var kh = align_up(k, 8)
         var j = t0 + offset
+        var a_rows = a.reshape(row_major(Int(a.dim[0]()), k))
         for l in range(0, k, 8):
             comptime for idx in range(nrow):
-                var t0 = a_ptr.load[width=8]((j + idx) * k + l)
-                a_packed_ptr.store(kh * j + 2 * l + 8 * idx, t0)
+                var t0 = a_rows.load[
+                    width=8, alignment=align_of[a_type](), invariant=False
+                ](Coord(j + idx, l))
+                a_packed_ptr.unsafe_store(kh * j + 2 * l + 8 * idx, t0)
 
         comptime for idx in range(nrow):
             var t0 = partial_simd_load[8](
-                a_ptr + ((j + idx) * k + kl), 0, k - kl, 0
+                a.ptr_at_offset(Coord(j + idx, kl)), 0, k - kl, 0
             )
             partial_simd_store(
-                a_packed_ptr + (kh * j + 2 * kl + 8 * idx),
+                a_packed_ptr.unsafe_offset(kh * j + 2 * kl + 8 * idx),
                 0,
                 k - kl,
                 t0,
@@ -1335,7 +1289,7 @@ struct InnerKernelID(EnumLike, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)

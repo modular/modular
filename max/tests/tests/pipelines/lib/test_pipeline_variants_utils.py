@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -42,6 +43,7 @@ from max.pipelines.lib.pipeline_variants.utils import (
     CommittedSpanSnapshot,
     StructuredOutputHelper,
     build_response,
+    get_rope_theta,
     update_spec_decode_context_and_prepare_responses,
 )
 from max.pipelines.lib.tool_parsing import StructuralTagToolParser, register
@@ -191,6 +193,20 @@ class _ToEosParser(_SectionParser):
     ENFORCE_TOOL_REGION_TO_EOS = True
 
 
+# Deliberately not a ToolParser: these model a standalone parser class.
+@register("_test_standalone_flat_parser")  # type: ignore[arg-type]
+class _StandaloneFlatParser:
+    """Not a ``StructuralTagToolParser``; declares only a flat ``CALL_BEGIN``."""
+
+    CALL_BEGIN = "<call>"
+
+
+# Deliberately not a ToolParser: these model a standalone parser class.
+@register("_test_standalone_no_markers_parser")  # type: ignore[arg-type]
+class _StandaloneNoMarkersParser:
+    """Not a ``StructuralTagToolParser`` and declares no markers at all."""
+
+
 class TestGetToolRegionTags:
     """``StructuredOutputHelper._get_tool_region_tags``."""
 
@@ -208,6 +224,30 @@ class TestGetToolRegionTags:
             "_test_to_eos_parser"
         )
         assert tags == ("<sec>", None)
+
+    def test_standalone_parser_with_flat_call_begin_is_a_start_tag(
+        self,
+    ) -> None:
+        """A parser that is not a ``StructuralTagToolParser`` but declares a
+        flat ``CALL_BEGIN`` still gets a start tag. Without one, a
+        ``tool_choice=auto`` grammar is never enforced (Qwen 3.5)."""
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_standalone_flat_parser"
+        )
+        assert tags == ("<call>", None)
+
+    def test_qwen3_5_parser_is_enforced_in_auto_mode(self) -> None:
+        # Importing the module registers the parser.
+        import max.pipelines.architectures.qwen3_5.tool_parser  # noqa: F401
+
+        tags = StructuredOutputHelper._get_tool_region_tags("qwen3_5")
+        assert tags == ("<tool_call>", None)
+
+    def test_standalone_parser_without_call_begin_has_no_tags(self) -> None:
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_standalone_no_markers_parser"
+        )
+        assert tags == (None, None)
 
 
 class TestBuildResponse:
@@ -1559,3 +1599,17 @@ class TestCommittedSpanSnapshot:
             self._matcher(backend, [_OBJ_OPEN, *committed[:eos_offset]]),
         )
         assert (self._mask(backend, ctx.matcher) == expected).all()
+
+
+def test_get_rope_theta_reads_transformers_4_attribute() -> None:
+    """Transformers 4 configs store ``rope_theta`` as a top-level attribute."""
+    config = SimpleNamespace(rope_theta=1_000_000.0)
+    assert get_rope_theta(config) == 1_000_000.0
+
+
+def test_get_rope_theta_reads_transformers_5_rope_parameters() -> None:
+    """Transformers 5 configs store ``rope_theta`` in ``rope_parameters``."""
+    config = SimpleNamespace(
+        rope_parameters={"rope_type": "default", "rope_theta": 1_000_000.0}
+    )
+    assert get_rope_theta(config) == 1_000_000.0

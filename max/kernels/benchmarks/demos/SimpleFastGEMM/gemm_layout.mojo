@@ -18,7 +18,7 @@ from std.memory import Layout as AllocLayout, alloc, dealloc
 from std.sys import align_of, simd_width_of
 
 import std.benchmark
-from layout import Coord, Idx, TileTensor, row_major, stack_allocation
+from layout import Idx, TileTensor, row_major, stack_allocation
 from layout.tensor_engine import DefaultEngine
 
 comptime MR = 6
@@ -84,7 +84,7 @@ def kernel(
             if pr * NR + k + 4 < K:
                 var b_next_tile = b_packed.tile[1, NR](0, pr * NR + k + 4)
                 comptime for n in range(0, NR, simd_size):
-                    b_next_tile.prefetch(Coord(0, n))
+                    b_next_tile.prefetch((0, n))
 
             var b_tile = b_row.tile[1, NR](0, k)
 
@@ -182,26 +182,22 @@ def main() raises:
         print("N must be a multiple of", NR)
         return
 
-    print(M, end="")
-    print("x", end="")
-    print(N, end="")
-    print("x", end="")
-    print(K)
+    print(t"{M}x{N}x{K}")
 
     var a_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=M * K)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=M * K)
     ).into_managed()
     var b_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=K * N)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=K * N)
     ).into_managed()
     var b_packed_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=K * N)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=K * N)
     ).into_managed()
     var c_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=M * N)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=M * N)
     ).into_managed()
     var c2_alloc = alloc(
-        AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=M * N)
+        AllocLayout[Float32, alignment=.of_bytes[alignment]()](length=M * N)
     ).into_managed()
 
     var a = TileTensor(a_alloc.unsafe_ptr(), row_major[M, K]())
@@ -238,9 +234,7 @@ def main() raises:
                 errors += 1
 
     print(errors)
-    print("/", end="")
-    print(M * N, end="")
-    print(" errors")
+    print(t"/{M * N} errors")
 
     def bench_gemm() {var}:
         gemm[N, K](c2, a.as_imm(), b_packed.as_imm())
@@ -248,15 +242,12 @@ def main() raises:
     var num_warmup: Int = 1
     var time = std.benchmark.run(bench_gemm, num_warmup).mean()
     var flops = Float64(2 * M * N * K) / time / 1e9
-    print(time, end="")
-    print(" seconds")
-    print(flops, end="")
-    print(" GFLOPS")
+    print(t"{time} seconds")
+    print(t"{flops} GFLOPS")
 
     # assume turbo is disabled and the frequency set to 2.9 GHz
     var rpeak = flops / (2.9 * 64)
-    print(rpeak, end="")
-    print(" measured/peak FLOPS assuming 2.9 GHz")
+    print(t"{rpeak} measured/peak FLOPS assuming 2.9 GHz")
 
     dealloc(a_alloc^)
     dealloc(b_alloc^)

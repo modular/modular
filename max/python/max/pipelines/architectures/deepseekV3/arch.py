@@ -49,4 +49,18 @@ deepseekV3_arch = SupportedArchitecture(
     tool_parser=resolve_deepseekv3_tool_parser,
     memory_planner=DeepseekV3MemoryPlanner,
     cascade_pipeline_factory=CommonTextGenPipeline,
+    checkpoint_drafts={"mtp": "MTPDeepseekV3DraftModel"},
+    # DeepseekV3's Eagle3 drafts declare names Kimi K2.5's fused Eagle3 graph
+    # and Llama 3's Eagle3 draft register.
+    draft_architectures={
+        "eagle": {
+            "Eagle3DeepseekV2ForCausalLM": "Eagle3DeepseekV3DraftModel",
+            "LlamaForCausalLMEagle3": "Eagle3MHADeepseekV3DraftModel",
+        }
+    },
+    spec_decode_graph_names={
+        "eagle": "eagle3_deepseekV3_graph",
+        "Eagle3MHADeepseekV3DraftModel": "eagle3_mha_deepseekV3_graph",
+        "mtp": "deepseekV3_with_mtp_graph",
+    },
 )

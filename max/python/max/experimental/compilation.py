@@ -58,6 +58,7 @@ from __future__ import annotations
 import functools
 import itertools
 import re
+import shutil
 from collections.abc import (
     Callable,
     Iterable,
@@ -70,8 +71,15 @@ from types import MappingProxyType
 from typing import Any, Generic, ParamSpec, TypeVar
 
 from max import _validation_hooks, tree
+from max._artifact.value_types import (
+    ArtifactFile,
+    ArtifactType,
+    decode_field,
+    treedef_from_json,
+    treedef_to_json,
+)
 from max.driver import Accelerator, Buffer, Device, DLPackArray
-from max.engine import CompiledModel, Model
+from max.engine import CompiledModel, InferenceSession, Model
 from max.experimental.realization_context import (
     GraphRealizationContext,
     _cached_signal_buffers,
@@ -93,6 +101,10 @@ from max.experimental.tensor import (
     current_realization_context,
     realization_context,
 )
+from max.experimental.tensor_spec_serialization import (
+    layout_to_json,
+    layouts_from_json,
+)
 from max.graph import (
     BufferType,
     BufferValue,
@@ -104,6 +116,7 @@ from max.graph import (
     Value,
     ops,
 )
+from typing_extensions import Self
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -298,15 +311,18 @@ class StagedGraph(Generic[_P, _R]):
         *,
         prefix: str = "",
         subgraph_cache: dict[Any, Any] | None = None,
+        signal_buffer_index: int | None = None,
     ) -> None:
         arity = sum(len(layout.local_types) for layout in layouts)
+        at = arity if signal_buffer_index is None else signal_buffer_index
+        end = at + len(graph.inputs) - arity
         ctx = GraphRealizationContext(
             graph,
-            signal_buffers=[i.buffer for i in graph.inputs[arity:]] or None,
+            signal_buffers=[i.buffer for i in graph.inputs[at:end]] or None,
             prefix=prefix,
         )
         ctx.subgraph_cache = subgraph_cache
-        rest = iter(graph.inputs[:arity])
+        rest = iter([*graph.inputs[:at], *graph.inputs[end:]])
         with realization_context(ctx), ctx:
             in_args, in_kwargs = tree.unflatten(
                 treedef, [_argument_tensor(rest, layout) for layout in layouts]
@@ -327,6 +343,7 @@ class StagedGraph(Generic[_P, _R]):
         self.out_layouts = [r.layout for r in results]
         self.out_tree = out_tree
         self._signal_device_ids = signal_device_ids
+        self._signal_buffer_index = signal_buffer_index
 
     def __str__(self) -> str:
         """Returns the MLIR of the whole module, including subgraphs."""
@@ -378,6 +395,9 @@ class CompiledCallable(Generic[_P, _R]):
         weights: The weight registry: a mapping from the name of each weight
             the graph declares to its data, with one entry per shard for a
             distributed weight.
+        session: The session that compiles and initializes the graph,
+            including its precompiled or exported MEFs and its kernel
+            options. Defaults to a session shared by the whole process.
     """
 
     #: See :attr:`StagedGraph.in_layouts`.
@@ -390,29 +410,116 @@ class CompiledCallable(Generic[_P, _R]):
     out_tree: tree.TreeDef
 
     _weights: dict[str, DLPackArray]
-    _artifact: CompiledModel
+    # A deserialized callable holds the path of its MEF instead.
+    _artifact: CompiledModel | Path
     _signal_device_ids: tuple[int, ...]
-    _engine_model: Model
+    # ``None`` for a callable built without an initialized model.
+    _engine_model: Model | None
     _signal_buffers: list[Buffer]
 
     def __init__(
         self,
         staged: StagedGraph[_P, _R],
         weights: Mapping[str, DLPackArray] | None = None,
+        *,
+        session: InferenceSession | None = None,
+    ) -> None:
+        session = _session() if session is None else session
+        # Use the session's MEF cache. Plain ``compile`` bypasses it.
+        artifact = session.compile_reusing_mefs(staged.graph)
+        # Bind the weights now rather than on the first call, so that the
+        # first call is not slower than the rest.
+        engine_model = session.init(
+            artifact, weights_registry=dict(weights or {})
+        )
+        self._bind(staged, artifact, engine_model, weights)
+
+    @classmethod
+    def from_engine_model(
+        cls,
+        staged: StagedGraph[_P, _R],
+        artifact: CompiledModel,
+        engine_model: Model,
+        weights: Mapping[str, DLPackArray] | None = None,
+    ) -> CompiledCallable[_P, _R]:
+        """Wraps a graph that was compiled and initialized elsewhere.
+
+        Use this when the caller compiles and initializes ``staged.graph``
+        itself, for example together with other graphs.
+
+        Args:
+            staged: The traced graph that ``artifact`` was compiled from.
+            artifact: The compiled artifact.
+            engine_model: The model initialized from ``artifact``.
+            weights: The weight registry ``engine_model`` was initialized
+                with.
+
+        Returns:
+            The callable that runs ``engine_model``.
+        """
+        compiled = cls.__new__(cls)
+        compiled._bind(staged, artifact, engine_model, weights)
+        return compiled
+
+    def _bind(
+        self,
+        staged: StagedGraph[_P, _R],
+        artifact: CompiledModel,
+        engine_model: Model,
+        weights: Mapping[str, DLPackArray] | None,
     ) -> None:
         self.in_layouts, self.in_tree = staged.in_layouts, staged.in_tree
         self.out_layouts, self.out_tree = staged.out_layouts, staged.out_tree
         self._signal_device_ids = staged._signal_device_ids
-        # Use the session's MEF cache. Plain ``compile`` bypasses it.
-        self._artifact = _session().compile_reusing_mefs(staged.graph)
+        self._signal_buffer_index = staged._signal_buffer_index
+        self._artifact = artifact
         self._weights = dict(weights or {})
-        # Bind the weights and allocate the signal buffers now rather than on
-        # the first call, so that the first call is not slower than the rest.
-        self._engine_model = _session().init(
-            self._artifact, weights_registry=dict(self._weights)
-        )
+        self._engine_model = engine_model
+        # Allocate the signal buffers now rather than on the first call.
         ids = self._signal_device_ids
         self._signal_buffers = _cached_signal_buffers(ids)[0] if ids else []
+
+    @classmethod
+    def from_compiled(
+        cls,
+        artifact: CompiledModel,
+        engine_model: Model | None,
+        in_layouts: Sequence[TensorLayout],
+        in_tree: tree.TreeDef,
+        out_layouts: Sequence[TensorLayout],
+        out_tree: tree.TreeDef,
+        weights: Mapping[str, DLPackArray] | None = None,
+    ) -> CompiledCallable[..., Any]:
+        """Wraps a graph compiled elsewhere, given its signature.
+
+        Use this for a graph that was traced without :func:`stage`, such as
+        a :class:`~max.nn.Module` graph. Any signal buffers are among its
+        inputs.
+
+        Args:
+            artifact: The compiled artifact, holding the one graph.
+            engine_model: The model initialized from ``artifact``, or
+                ``None`` if the callable only describes the graph.
+            in_layouts: The layout of each tensor argument, in graph order.
+            in_tree: The tree structure of the arguments.
+            out_layouts: The layout of each tensor result, in graph order.
+            out_tree: The tree structure of the return value.
+            weights: The weight registry ``engine_model`` was initialized
+                with.
+
+        Returns:
+            The callable that runs ``engine_model``.
+        """
+        compiled = cls.__new__(cls)
+        compiled.in_layouts, compiled.in_tree = list(in_layouts), in_tree
+        compiled.out_layouts, compiled.out_tree = list(out_layouts), out_tree
+        compiled._signal_device_ids = ()
+        compiled._signal_buffer_index = None
+        compiled._artifact = artifact
+        compiled._weights = dict(weights or {})
+        compiled._engine_model = engine_model
+        compiled._signal_buffers = []
+        return compiled
 
     @property
     def weights(self) -> Mapping[str, DLPackArray]:
@@ -435,7 +542,15 @@ class CompiledCallable(Generic[_P, _R]):
 
             run.engine_model.capture(key, *buffers, *run.signal_buffers)
             run.engine_model.replay(key, *buffers, *run.signal_buffers)
+
+        Raises:
+            RuntimeError: If the callable has no initialized model, as a
+                deserialized one does not.
         """
+        if self._engine_model is None:
+            raise RuntimeError(
+                "the compiled graph is not initialized, so it cannot run"
+            )
         return self._engine_model
 
     @property
@@ -488,12 +603,22 @@ class CompiledCallable(Generic[_P, _R]):
         Args:
             buffers: One buffer per graph input, in graph order. A distributed
                 argument takes one buffer per shard. Do not pass the signal
-                buffers; they are appended automatically.
+                buffers; they are added automatically, after the other
+                inputs or where ``signal_buffer_index`` placed them.
 
         Returns:
             One buffer per graph output, in graph order.
         """
-        results = list(self.engine_model(*buffers, *self._signal_buffers))
+        at = (
+            len(buffers)
+            if self._signal_buffer_index is None
+            else self._signal_buffer_index
+        )
+        results = list(
+            self.engine_model(
+                *buffers[:at], *self._signal_buffers, *buffers[at:]
+            )
+        )
         _validation_hooks.compiled_call(self.engine_model, buffers, results)
         return results
 
@@ -506,7 +631,69 @@ class CompiledCallable(Generic[_P, _R]):
         Args:
             path: The path of the file to write.
         """
-        self._artifact.export_mef(path)
+        if isinstance(self._artifact, Path):
+            shutil.copyfile(self._artifact, path)
+        else:
+            self._artifact.export_mef(path)
+
+    def __serialize__(self) -> Mapping[str, ArtifactType]:
+        """Returns the MEF, stored as ``model.mef``, and the call's layouts.
+
+        The layouts and tree structures of the call rebuild the callable.
+
+        Raises:
+            ArtifactError: If a layout has a dimension built from an operator
+                other than ``+``, ``*`` and ``//``, or a tree structure cannot
+                be encoded as JSON.
+        """
+        return {
+            "mef": ArtifactFile(
+                "model.mef",
+                self._artifact
+                if isinstance(self._artifact, Path)
+                else self._artifact.export_mef,
+            ),
+            "in_layouts": [layout_to_json(t) for t in self.in_layouts],
+            "in_tree": treedef_to_json(self.in_tree),
+            "out_layouts": [layout_to_json(t) for t in self.out_layouts],
+            "out_tree": treedef_to_json(self.out_tree),
+        }
+
+    @classmethod
+    def __deserialize__(cls, value: Mapping[str, ArtifactType]) -> Self:
+        """Rebuilds a callable from the output of :meth:`__serialize__`.
+
+        The callable describes its graph, with its MEF at the file inside the
+        artifact, but has no initialized model to run it.
+
+        Raises:
+            ArtifactError: If a field is malformed.
+        """
+        mef = decode_field(value, "mef", _mef_path)
+        compiled = cls.__new__(cls)
+        compiled.in_layouts = layouts_from_json(
+            value.get("in_layouts"), "in_layouts"
+        )
+        compiled.in_tree = decode_field(value, "in_tree", treedef_from_json)
+        compiled.out_layouts = layouts_from_json(
+            value.get("out_layouts"), "out_layouts"
+        )
+        compiled.out_tree = decode_field(value, "out_tree", treedef_from_json)
+        compiled._signal_device_ids = ()
+        compiled._signal_buffer_index = None
+        compiled._artifact = mef
+        compiled._weights = {}
+        compiled._engine_model = None
+        compiled._signal_buffers = []
+        return compiled
+
+
+def _mef_path(value: ArtifactType) -> Path:
+    if not isinstance(value, ArtifactFile) or not isinstance(
+        value.content, Path
+    ):
+        raise TypeError(f"expected an artifact file, got {value!r}")
+    return value.content
 
 
 def _argument_tensor(
@@ -548,6 +735,7 @@ def stage(
     allow_subgraphs: bool = True,
     signal_devices: Iterable[Device] = (),
     is_device_graph: bool = False,
+    signal_buffer_index: int | None = None,
 ) -> Callable[..., StagedGraph[_P, _R]]:
     """Traces a function into a graph without compiling it.
 
@@ -590,6 +778,12 @@ def stage(
             for, beyond the devices of the input types and of the tensors
             held by ``fn``.
         is_device_graph: Whether to build a device graph.
+        signal_buffer_index: The graph input position of the signal buffers,
+            counted over the flattened input types. Defaults to after the
+            last input. Set it to match a calling convention that fixes
+            their position, such as an exported graph's.
+            Setting it keeps the signal buffer on a single accelerator,
+            which otherwise needs none.
 
     Returns:
         A function that takes one input type per tensor argument of ``fn``
@@ -599,7 +793,9 @@ def stage(
     def record(*args: Any, **kwargs: Any) -> StagedGraph[_P, _R]:
         layouts, treedef = _declared_layouts(args, kwargs)
         # Signal buffers are only needed when at least two accelerators take
-        # part in the graph.
+        # part in the graph, unless the caller places them: then they belong
+        # to its calling convention, as on one accelerator.
+        placed = signal_buffer_index is not None
         ids = tuple(
             dict.fromkeys(
                 device.id
@@ -607,7 +803,7 @@ def stage(
                     (
                         device
                         for layout in layouts
-                        if layout.mesh.num_devices > 1
+                        if placed or layout.mesh.num_devices > 1
                         for device in layout.mesh.devices
                     ),
                     _own_devices(fn),
@@ -616,13 +812,14 @@ def stage(
                 if isinstance(device, Accelerator)
             )
         )
-        ids = ids if len(ids) > 1 else ()
+        ids = ids if placed or len(ids) > 1 else ()
         graph = Graph(
             name or _sanitized_graph_name(fn),
-            input_types=[
-                *(t for layout in layouts for t in layout.local_types),
-                *_signal_buffer_types(ids),
-            ],
+            input_types=_with_signal_buffers(
+                [t for layout in layouts for t in layout.local_types],
+                _signal_buffer_types(ids),
+                signal_buffer_index,
+            ),
             custom_extensions=custom_extensions,
             is_device_graph=is_device_graph,
         )
@@ -633,9 +830,22 @@ def stage(
             treedef,
             ids,
             subgraph_cache={} if allow_subgraphs else None,
+            signal_buffer_index=signal_buffer_index,
         )
 
     return record
+
+
+def _with_signal_buffers(
+    inputs: list[Any], signals: Sequence[Any], at: int | None
+) -> list[Any]:
+    """Returns ``inputs`` with ``signals`` inserted at ``at``, or appended."""
+    at = len(inputs) if at is None else at
+    if not 0 <= at <= len(inputs):
+        raise ValueError(
+            f"signal_buffer_index={at} is outside the {len(inputs)} inputs."
+        )
+    return [*inputs[:at], *signals, *inputs[at:]]
 
 
 def compile(
@@ -647,6 +857,8 @@ def compile(
     allow_subgraphs: bool = True,
     signal_devices: Iterable[Device] = (),
     is_device_graph: bool = False,
+    session: InferenceSession | None = None,
+    signal_buffer_index: int | None = None,
 ) -> Callable[..., CompiledCallable[_P, _R]]:
     """Traces and compiles a function.
 
@@ -701,6 +913,10 @@ def compile(
             for, beyond the devices of the input types and of the tensors
             held by ``fn``.
         is_device_graph: Whether to build a device graph.
+        session: The session that compiles and initializes the graph.
+            Defaults to a session shared by the whole process.
+        signal_buffer_index: The graph input position of the signal buffers.
+            See :func:`stage`.
 
     Returns:
         A function that takes one input type per tensor argument of ``fn``
@@ -717,8 +933,9 @@ def compile(
             allow_subgraphs=allow_subgraphs,
             signal_devices=signal_devices,
             is_device_graph=is_device_graph,
+            signal_buffer_index=signal_buffer_index,
         )(*args, **kwargs)
-        return CompiledCallable(staged, weights)
+        return CompiledCallable(staged, weights, session=session)
 
     return stage_and_compile
 

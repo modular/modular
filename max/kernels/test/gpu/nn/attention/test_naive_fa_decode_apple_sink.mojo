@@ -35,10 +35,9 @@ combine.
 """
 
 from std.collections import OptionalReg
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.math import exp
 from std.random import seed
-from std.sys import default_accelerator
 
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -266,7 +265,7 @@ def main() raises:
         return
     seed(42)
     with DeviceContext() as ctx:
-        if ctx.compute_capability() != 5:
+        if ctx.compute_capability() < 5:
             # The sink seed is dtype-agnostic, but keep this Apple-decode test
             # aligned with the M5-gated suite.
             print("SKIP: Apple M5 required")

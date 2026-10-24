@@ -300,12 +300,19 @@ class LatentAttentionWithRope(Module[..., Tensor]):
         if self.q_lora_rank is not None:
             # Use fused matmul because weights in `wqkv` (`q_proj` and
             # `kv_a_proj_with_mqa`) have the same placement.
-            qkv = x @ self.wqkv.T
+            wqkv = self.wqkv
+            qkv = x.cast(wqkv.dtype) @ wqkv.T
             xq, kv = qkv.split([self.q_lora_rank, self.cache_head_dim], axis=1)
-            xq = self.q_a_layernorm(xq) @ self.q_b_proj.T
+            xq = (
+                self.q_a_layernorm(xq).cast(self.q_b_proj.dtype)
+                @ self.q_b_proj.T
+            )
         else:
-            xq = x @ self.q_proj.T
-            kv = x @ self.kv_a_proj_with_mqa.T
+            xq = x.cast(self.q_proj.dtype) @ self.q_proj.T
+            kv = (
+                x.cast(self.kv_a_proj_with_mqa.dtype)
+                @ self.kv_a_proj_with_mqa.T
+            )
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
 

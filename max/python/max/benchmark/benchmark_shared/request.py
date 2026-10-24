@@ -218,6 +218,9 @@ class RequestFuncInput(BaseRequestFuncInput):
     # The adapter the request is routed to. ``model`` already names it for the
     # server; this keeps it apart from a base-model request for the metrics.
     lora_id: str | None = None
+    # Cache seeding needs a completed generation, even if its tokens are
+    # special tokens that the server does not expose as text.
+    is_cache_warmup: bool = False
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         return RequestFuncOutput
@@ -715,6 +718,8 @@ class OpenAIStreamRecorder:
         chat: Whether the stream carries chat completion chunks rather than
             completion chunks.
         tokenizer: The tokenizer for per-chunk TPOT, or ``None`` to skip it.
+        is_cache_warmup: Accepts a completed, usage-bearing generation without
+            visible text when its output is discarded for cache seeding.
     """
 
     def __init__(
@@ -723,6 +728,7 @@ class OpenAIStreamRecorder:
         prompt_len: int,
         chat: bool,
         tokenizer: PreTrainedTokenizerBase | None = None,
+        is_cache_warmup: bool = False,
     ) -> None:
         self.output = RequestFuncOutput()
         self.output.prompt_len = prompt_len
@@ -736,6 +742,8 @@ class OpenAIStreamRecorder:
         self.output.request_submit_time = self._st
         self._most_recent_timestamp = self._st
         self._has_content = False
+        self._is_cache_warmup = is_cache_warmup
+        self._stream_complete = False
         self._latency = 0.0
         self._done = False
 
@@ -764,6 +772,7 @@ class OpenAIStreamRecorder:
 
         self._latency = now() - self._st
         if data == "[DONE]":
+            self._stream_complete = True
             return None
 
         chunk = self._chunk_type.model_validate_json(data)
@@ -829,7 +838,12 @@ class OpenAIStreamRecorder:
             The request's output.
         """
         self._done = True
-        if not self._has_content:
+        cache_warmup_completed = (
+            self._is_cache_warmup
+            and self._stream_complete
+            and (self.output.server_token_stats.completion_tokens or 0) > 0
+        )
+        if not self._has_content and not cache_warmup_completed:
             self.output.error = (
                 "No text content captured from the response"
                 " (choices were present but"
@@ -881,9 +895,13 @@ async def _run_openai_stream_request(
     prompt_len: int,
     chat: bool,
     tokenizer: PreTrainedTokenizerBase | None = None,
+    is_cache_warmup: bool = False,
 ) -> RequestFuncOutput:
     recorder = OpenAIStreamRecorder(
-        prompt_len=prompt_len, chat=chat, tokenizer=tokenizer
+        prompt_len=prompt_len,
+        chat=chat,
+        tokenizer=tokenizer,
+        is_cache_warmup=is_cache_warmup,
     )
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         try:
@@ -919,12 +937,14 @@ class OpenAICompletionsRequestDriver(RequestDriver):
         )
 
         base_payload: dict[
-            str, bool | str | int | float | list[ChatMessage]
+            str,
+            bool | str | int | float | list[ChatMessage] | dict[str, bool],
         ] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "best_of": 1,
             "stream": True,
+            "stream_options": {"include_usage": True},
             "ignore_eos": request_func_input.ignore_eos,
         }
 
@@ -944,6 +964,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             prompt_len=request_func_input.prompt_len,
             chat=False,
             tokenizer=self.tokenizer,
+            is_cache_warmup=request_func_input.is_cache_warmup,
         )
 
 
@@ -1131,6 +1152,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 prompt_len=request_func_input.prompt_len,
                 chat=True,
                 tokenizer=self.tokenizer,
+                is_cache_warmup=request_func_input.is_cache_warmup,
             )
         output.tools_offered = "tools" in payload
         output.carries_image = _messages_carry_image(messages_data)

@@ -11,19 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/custom-ops-matmul.mdx
+# DOC: develop/custom-ops-matmul.mdx
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.sys import default_accelerator
 from std.sys.info import has_accelerator, simd_width_of
 
 import extensibility
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_dim,
     block_idx,
     thread_idx,
@@ -1053,7 +1051,8 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     comptime BN = 64
                     comptime BK = OPTIMIZED_BLOCK_SIZE
                     comptime WM = 32
-                    comptime WN = WARP_SIZE
+                    comptime warp_size = gpu_ctx.default_device_info.warp_size
+                    comptime WN = warp_size
                     # different MMA shapes for AMD and NVIDIA, see:
                     # https://max.modular.com/api/mojo/layout/tensor_core/TensorCore/
                     comptime MMA_M = 16
@@ -1079,7 +1078,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                         b_tt,
                         out_tt,
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                        block_dim=(NUM_WARPS * WARP_SIZE),
+                        block_dim=(NUM_WARPS * warp_size),
                     )
                 else:
                     raise Error("Tensor Cores are not available on this device")

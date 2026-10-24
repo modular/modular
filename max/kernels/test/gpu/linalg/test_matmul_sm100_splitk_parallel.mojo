@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """SM100 split-K: the parallel reduction (one accumulator row per epilogue
-thread), the tuned (2112, 14336) dispatch, and the k-group tail of the split
-ranges."""
+thread), the tuned (2112, 14336) dispatch, the tuned fp32-output (384, 5120)
+dispatch, and the k-group tail of the split ranges."""
 
 from std.random import rand
 from std.sys import size_of
@@ -20,6 +20,11 @@ from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu.sm100_structured.default.dispatch import (
+    DISPATCH_HIT,
+    DISPATCH_MISS,
+    sm100_heuristic_and_outliers_dispatch,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     _get_splitk_scratch,
     _splitk_context,
@@ -31,6 +36,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_scheduler_splitk
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
+from linalg.utils import identity_compute_fn, no_epilogue_fn
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
@@ -82,9 +88,9 @@ def _vendor[
     )
 
 
-def _untracked(
-    buf: DeviceBuffer[dtype],
-) -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
+def _untracked[
+    t: DType
+](buf: DeviceBuffer[t]) -> MutPointer[Scalar[t], MutUntrackedOrigin]:
     # vendor BLAS takes a mutable output tensor; the caller keeps every
     # buffer alive past the call.
     return (
@@ -365,6 +371,56 @@ def test_dispatch_exact[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     print(t"dispatch exact OK: M={m} N={N} K={K}")
 
 
+def test_dispatch_f32_out[
+    N: Int, K: Int
+](ctx: DeviceContext, m: Int, expect_tuned: Bool) raises:
+    # bf16 inputs with fp32 output take a tuned row or vendor BLAS, never the
+    # heuristic configs.
+    comptime c_type = DType.float32
+    var ab = _exact_inputs[N, K](ctx, m, 1)
+    ref a = ab[0]
+    ref b = ab[1]
+    var c = ctx.enqueue_create_buffer[c_type](m * N)
+    var r = ctx.enqueue_create_buffer[c_type](m * N)
+    var c_tile = TileTensor(c, row_major(m, Idx[N]))
+    var a_tile = TileTensor(a, row_major(m, Idx[K])).as_imm()
+    var b_tile = TileTensor(b, row_major(Idx[N], Idx[K])).as_imm()
+    vendor_blas.matmul(
+        ctx,
+        TileTensor(_untracked(r), row_major(m, Idx[N])),
+        TileTensor(_untracked(a), row_major(m, Idx[K])),
+        TileTensor(_untracked(b), row_major(Idx[N], Idx[K])),
+        c_row_major=True,
+        transpose_b=True,
+    )
+    var status = sm100_heuristic_and_outliers_dispatch[
+        transpose_b=True, has_compute_fn=False, outliers_only=True
+    ](c_tile, a_tile, b_tile, no_epilogue_fn, identity_compute_fn, ctx)
+    var want = DISPATCH_HIT if expect_tuned else DISPATCH_MISS
+    if status != want:
+        raise Error(
+            t"fp32 out: dispatch status {status}, expected {want} (M={m})"
+        )
+    _get_splitk_scratch(ctx).enqueue_fill(UInt8(0xFF))
+    var c_host = ctx.enqueue_create_host_buffer[c_type](m * N)
+    var r_host = ctx.enqueue_create_host_buffer[c_type](m * N)
+    ctx.enqueue_copy(r_host, r)
+    for _ in range(2):
+        c.enqueue_fill(Scalar[c_type](-7))
+        _matmul_gpu[use_tensor_core=True, transpose_b=True](
+            c_tile, a_tile, b_tile, ctx
+        )
+        ctx.enqueue_copy(c_host, c)
+        ctx.synchronize()
+        for i in range(m * N):
+            if c_host[i] != r_host[i]:
+                raise Error(
+                    t"fp32 out: c[{i // N}, {i % N}] = {c_host[i]}, expected"
+                    t" {r_host[i]} (M={m} N={N})"
+                )
+    print(t"fp32 out OK: M={m} N={N} K={K} tuned={expect_tuned}")
+
+
 def test_k_group_tail[
     N: Int, K: Int, num_split_k: Int, k_group_size: Int
 ](ctx: DeviceContext) raises:
@@ -456,6 +512,12 @@ def main() raises:
         # the 2-SM rows at 385-512.
         for m in [2, 16, 32, 64, 96, 128, 129, 160, 176, 385, 448, 512]:
             test_dispatch_exact[N, K](ctx, m)
+
+        # The tuned row covers M 1-192 (three 64-wide X tiles, 144 CTAs at
+        # most); M 193 is the vendor control. M 1 takes the GEMV.
+        for m in [2, 47, 64, 65, 96, 144, 191, 192]:
+            test_dispatch_f32_out[384, 5120](ctx, m, True)
+        test_dispatch_f32_out[384, 5120](ctx, 193, False)
 
         # Splits must be whole k-groups of 2: 6 K tiles split 4 + 2 (3 + 3
         # would end mid group); 224 K tiles split 76/76/72 (S=3) and

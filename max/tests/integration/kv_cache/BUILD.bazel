@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -13,6 +14,7 @@ modular_py_test(
         ["*.py"],
         exclude = [
             "*_gpu.py",
+            "test_jenga_arch_geometry.py",
             "test_print_kv_cache.py",
             "test_rotary_embedding.py",
         ],
@@ -100,8 +102,10 @@ modular_py_test(
         ["*_gpu.py"],
         exclude = [
             "*_distributed_gpu.py",
+            "benchmark_chunked_qkv_rope_store_gpu.py",
             "test_lora_*.py",
             "test_msa_fp8_kv_store_gpu.py",
+            "test_chunked_qkv_rope_store_gpu.py",
             "test_msa_mxfp8_attention_gpu.py",
             "test_dual_qk_fp8_kv_store_gpu.py",
             "test_msa_nvfp4_kv_gpu.py",
@@ -174,6 +178,66 @@ modular_py_test(
     ],
 )
 
+modular_py_test(
+    name = "test_chunked_qkv_rope_store_gpu",
+    srcs = ["test_chunked_qkv_rope_store_gpu.py"],
+    # Producer runfiles and sandboxed replay otherwise infer different project
+    # roots, changing node IDs and preventing the recorded MEFs from matching.
+    args = ["--rootdir=max/tests/integration/kv_cache"],
+    exec_properties = {"test.resources:gpu-memory": "2"},
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "benchmark_chunked_qkv_rope_store_gpu",
+    srcs = [
+        "benchmark_chunked_qkv_rope_store_gpu.py",
+        "test_chunked_qkv_rope_store_gpu.py",
+    ],
+    # Producer runfiles and sandboxed replay otherwise infer different project
+    # roots, changing node IDs and preventing the recorded MEFs from matching.
+    args = [
+        "--rootdir=max/tests/integration/kv_cache",
+        "-o",
+        "python_files=benchmark_chunked_qkv_rope_store_gpu.py",
+    ],
+    exec_properties = {"test.resources:gpu-memory": "2"},
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
 # Dedicated target for the FP8 KV store round-trip test
 modular_py_test(
     name = "test_msa_fp8_kv_store_gpu",
@@ -215,7 +279,8 @@ modular_py_test(
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:mi355_gpu"],
+    # Needs mo.msa.attention.ragged.paged, registered only by the closed-source kernels.
+    target_compatible_with = ["//:mi355_gpu"] + REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -265,11 +330,17 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    gpu_constraints = ["//:b200_gpu"],
+    gpu_constraints = select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     precompile_mefs = True,
     tags = [
         "gpu",
     ],
+    # Needs mo.msa.attention.ragged.paged, registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max:tree",
         "//max/python/max/driver",
@@ -358,4 +429,39 @@ modular_py_test(
         "gpu",
     ],
     deps = _LORA_TEST_DEPS,
+)
+
+# Guards the Jenga huge-block geometry (pipelines/kv_cache/paged_kv_cache
+# jenga_block_pool.py) each architecture's real config plans.
+modular_py_test(
+    name = "test_jenga_arch_geometry",
+    srcs = ["test_jenga_arch_geometry.py"],
+    data = [
+        "//max/tests/integration/architectures/deepseekV2/testdata",
+        "//max/tests/integration/architectures/deepseekV41/testdata",
+        "//max/tests/integration/architectures/gemma3/testdata",
+        "//max/tests/integration/architectures/gemma4/testdata",
+        "//max/tests/integration/architectures/glm5_1/testdata",
+        "//max/tests/integration/architectures/gpt-oss:config",
+        "//max/tests/integration/architectures/llama3/testdata",
+        "//max/tests/integration/architectures/qwen3/testdata",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV2",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/gemma3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/gpt_oss",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/qwen3",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("transformers"),
+    ],
 )

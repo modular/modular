@@ -198,7 +198,7 @@ def test_prefill[
             var q_max = Float32(-1e10)
             for h in range(num_heads):
                 for d in range(depth):
-                    var q_abs = abs(q_bf16[Coord(i * seq_len + j, h, d)]).cast[
+                    var q_abs = abs(q_bf16[i * seq_len + j, h, d]).cast[
                         DType.float32
                     ]()
                     q_max = max(q_max, q_abs)
@@ -211,17 +211,17 @@ def test_prefill[
         for j in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    var q_bf16_value = q_bf16[Coord(i * seq_len + j, h, d)]
-                    var q_scale_value = q_scale[
-                        Coord(i * seq_len + j, Idx[0])
-                    ].cast[.bfloat16]()
+                    var q_bf16_value = q_bf16[i * seq_len + j, h, d]
+                    var q_scale_value = q_scale[i * seq_len + j, Idx[0]].cast[
+                        .bfloat16
+                    ]()
                     if d < kv_depth:
-                        q_nope[Coord(i * seq_len + j, h, d)] = (
+                        q_nope[i * seq_len + j, h, d] = (
                             q_bf16_value / q_scale_value
                         ).cast[qkv_type]()
 
                     else:
-                        q_rope[Coord(i * seq_len + j, h, d - kv_depth)] = (
+                        q_rope[i * seq_len + j, h, d - kv_depth] = (
                             q_bf16_value / q_scale_value
                         ).cast[rope_type]()
 
@@ -231,7 +231,7 @@ def test_prefill[
             var k_max = Float32(-1e10)
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var k_abs = abs(k_bf16[Coord(i * num_keys + j, h, d)]).cast[
+                    var k_abs = abs(k_bf16[i * num_keys + j, h, d]).cast[
                         DType.float32
                     ]()
                     k_max = max(k_max, k_abs)
@@ -243,11 +243,11 @@ def test_prefill[
         for j in range(num_keys):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var k_bf16_value = k_bf16[Coord(i * num_keys + j, h, d)]
-                    var k_scale_value = k_scale[
-                        Coord(i * num_keys + j, Idx[0])
-                    ].cast[.bfloat16]()
-                    k[Coord(i * num_keys + j, h, d)] = (
+                    var k_bf16_value = k_bf16[i * num_keys + j, h, d]
+                    var k_scale_value = k_scale[i * num_keys + j, Idx[0]].cast[
+                        .bfloat16
+                    ]()
+                    k[i * num_keys + j, h, d] = (
                         k_bf16_value / k_scale_value
                     ).cast[qkv_type]()
 
@@ -255,23 +255,21 @@ def test_prefill[
         for j in range(num_keys):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var v_bf16_value = v_bf16[Coord(i * num_keys + j, h, d)]
-                    v[Coord(i * num_keys + j, h, d)] = (v_bf16_value).cast[
-                        qkv_type
-                    ]()
+                    var v_bf16_value = v_bf16[i * num_keys + j, h, d]
+                    v[i * num_keys + j, h, d] = (v_bf16_value).cast[qkv_type]()
 
     # cache stays in bf16, but it gets divided by k_scale to convert into fp8 domain
     for i in range(batch_size):
         for j in range(num_keys):
             for h in range(cache_num_heads):
                 for d in range(cache_depth):
-                    var cache_bf16_value = cache_bf16[Coord(i, j, h, d)]
-                    var k_scale_value = k_scale[
-                        Coord(i * num_keys + j, Idx[0])
-                    ].cast[.bfloat16]()
-                    cache[Coord(i, j, h, d)] = (
-                        cache_bf16_value / k_scale_value
-                    ).cast[rope_type]()
+                    var cache_bf16_value = cache_bf16[i, j, h, d]
+                    var k_scale_value = k_scale[i * num_keys + j, Idx[0]].cast[
+                        .bfloat16
+                    ]()
+                    cache[i, j, h, d] = (cache_bf16_value / k_scale_value).cast[
+                        rope_type
+                    ]()
 
     var q_nope_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_nope_size)
     var q_rope_device_ptr = ctx.enqueue_create_buffer[rope_type](q_rope_size)
@@ -402,22 +400,16 @@ def test_prefill[
     # Q_ref = [q_nope_fp8 * q_scale | q_rope_bf16 * q_scale]
     for b in range(batch_size):
         for s in range(seq_len):
-            var qs = q_scale[Coord(b * seq_len + s, Idx[0])].cast[
-                DType.bfloat16
-            ]()
+            var qs = q_scale[b * seq_len + s, Idx[0]].cast[DType.bfloat16]()
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    q_ref_host[Coord(b, s, h, d)] = (
-                        q_nope[Coord(b * seq_len + s, h, d)].cast[
-                            DType.bfloat16
-                        ]()
+                    q_ref_host[b, s, h, d] = (
+                        q_nope[b * seq_len + s, h, d].cast[DType.bfloat16]()
                         * qs
                     )
                 for d in range(depth - kv_depth):
-                    q_ref_host[Coord(b, s, h, d + kv_depth)] = (
-                        q_rope[Coord(b * seq_len + s, h, d)].cast[
-                            DType.bfloat16
-                        ]()
+                    q_ref_host[b, s, h, d + kv_depth] = (
+                        q_rope[b * seq_len + s, h, d].cast[DType.bfloat16]()
                         * qs
                     )
 
@@ -426,31 +418,24 @@ def test_prefill[
     # V_ref = v_fp8 dequantized to BF16 (no scaling)
     for b in range(batch_size):
         for s in range(num_keys):
-            var ks = k_scale[Coord(b * num_keys + s, Idx[0])].cast[
-                DType.bfloat16
-            ]()
+            var ks = k_scale[b * num_keys + s, Idx[0]].cast[DType.bfloat16]()
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    k_ref_host[Coord(b, s, h, d)] = (
-                        k[Coord(b * num_keys + s, h, d)].cast[.bfloat16]() * ks
+                    k_ref_host[b, s, h, d] = (
+                        k[b * num_keys + s, h, d].cast[.bfloat16]() * ks
                     )
-                    v_ref_host[Coord(b, s, h, d)] = v[
-                        Coord(b * num_keys + s, h, d)
-                    ].cast[.bfloat16]()
+                    v_ref_host[b, s, h, d] = v[b * num_keys + s, h, d].cast[
+                        .bfloat16
+                    ]()
 
     for b in range(batch_size):
         for s in range(num_keys):
             for h in range(num_heads):
                 for d in range(depth - kv_depth):
-                    k_ref_host[Coord(b, s, h, d + kv_depth)] = cache_bf16[
-                        Coord(
-                            b,
-                            s,
-                            Idx[0],
-                            cache_depth - (depth - kv_depth) + d,
-                        )
+                    k_ref_host[b, s, h, d + kv_depth] = cache_bf16[
+                        b, s, Idx[0], cache_depth - (depth - kv_depth) + d
                     ]
-                    v_ref_host[Coord(b, s, h, d + kv_depth)] = 0
+                    v_ref_host[b, s, h, d + kv_depth] = 0
 
     var q_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](q_size)
     var k_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](
@@ -521,8 +506,8 @@ def test_prefill[
         for j in range(seq_len):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var lhs = output[Coord(i * seq_len + j, h, d)]
-                    var rhs = output_ref_host[Coord(i, j, h, d)]
+                    var lhs = output[i * seq_len + j, h, d]
+                    var rhs = output_ref_host[i, j, h, d]
                     if abs(lhs - rhs) > 5e-2:
                         print("[", i, j, h, d, "]", lhs, rhs, lhs / rhs)
                     assert_almost_equal(

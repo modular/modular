@@ -25,7 +25,7 @@ from std.collections.string.string_span import (
     GraphemeSliceIter,
 )
 from std.builtin.builtin_slice import ContiguousSlice
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.reflection import call_location
 from std.format.tstring import TString
 from std.format._utils import (
@@ -34,14 +34,16 @@ from std.format._utils import (
     _FlushingWriteBuffer,
 )
 from std.os import PathLike, abort
+from std._plugin import CurrentPlugin
 from std.atomic import Atomic, Ordering, fence
 from std.sys import size_of, bit_width_of
 from std.ffi import c_char, CStringSpan
-from std.sys.info import is_32bit, is_apple_gpu
+from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
 from std.memory import (
     Layout,
+    MaybeUninit,
     ThinAllocation,
     dealloc,
     unsafe_memcmp,
@@ -49,6 +51,7 @@ from std.memory import (
     unsafe_memset,
 )
 from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
+from std.utils._nicheable import NicheIndex, UnsafeNicheable
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -67,6 +70,7 @@ struct String(
     IntableRaising,
     KeyElement,
     PathLike,
+    UnsafeNicheable,
     Writable,
     Writer,
 ):
@@ -661,6 +665,8 @@ struct String(
             UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_INLINE)
         )
 
+    # Only out-of-line strings are ref counted: `String`'s niches rely on an
+    # inline string never having this flag.
     @inline(.nodebug)
     def _set_ref_counted(mut self):
         self._capacity_or_data |= Self.FLAG_IS_REF_COUNTED
@@ -670,6 +676,45 @@ struct String(
         return Bool(
             UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED)
         )
+
+    # No live `String` is both inline and ref counted, so a niche sets both
+    # flags and stores its index in the bits below them. Only the flag bits
+    # are meaningful in every representation; the inline form clobbers the
+    # pointer, the length, and the rest of this field with string data.
+    comptime _NICHE_FLAGS = Self.FLAG_IS_INLINE | Self.FLAG_IS_REF_COUNTED
+
+    @staticmethod
+    @inline(.always)
+    def _capacity_field[
+        origin: Origin, //
+    ](memory: Pointer[MaybeUninit[Self], origin]) -> Pointer[Int, origin]:
+        comptime offset = reflect[Self].field_offset[name="_capacity_or_data"]()
+        return (
+            memory.unsafe_bitcast[Byte]()
+            .unsafe_offset(offset)
+            .unsafe_bitcast[Int]()
+        )
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def niche_count() -> Int:
+        return Self.FLAG_IS_REF_COUNTED
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
+        Self._capacity_field(memory).unsafe_write(Self._NICHE_FLAGS | index)
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
+        var capacity = Self._capacity_field(memory)[]
+        if capacity & Self._NICHE_FLAGS != Self._NICHE_FLAGS:
+            return NicheIndex.NotANiche
+        return NicheIndex(capacity & ~Self._NICHE_FLAGS)
 
     # ===------------------------------------------------------------------=== #
     # Pointer Field Helpers
@@ -696,9 +741,9 @@ struct String(
     @inline(.nodebug)
     def _add_ref(mut self):
         """Atomically increment the refcount."""
-        comptime if is_apple_gpu():
-            # No-op: heap-string refcounting is unsupported on Apple GPU.
-            # See MSTDL-2907.
+        comptime if not CurrentPlugin.supports_atomic_rmw[DType.int]:
+            # No-op where the refcount's atomics don't lower (64-bit on
+            # Metal). See MSTDL-2907.
             return
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
@@ -709,9 +754,9 @@ struct String(
     def _drop_ref(mut self):
         """Atomically decrement the refcount and deallocate self if the result
         hits zero."""
-        comptime if is_apple_gpu():
-            # No-op: heap-string refcounting is unsupported on Apple GPU.
-            # See MSTDL-2907.
+        comptime if not CurrentPlugin.supports_atomic_rmw[DType.int]:
+            # No-op where the refcount's atomics don't lower (64-bit on
+            # Metal). See MSTDL-2907.
             return
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
@@ -722,7 +767,8 @@ struct String(
                 dealloc(
                     ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                         Layout[Byte](
-                            count=self.capacity_bytes() + Self.REF_COUNT_SIZE
+                            _unsafe_unchecked_length=self.capacity_bytes()
+                            + Self.REF_COUNT_SIZE
                         )
                     )
                 )
@@ -731,7 +777,7 @@ struct String(
     def _alloc(capacity: Int) -> Pointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
         var ptr = alloc(
-            Layout[Byte](count=capacity + Self.REF_COUNT_SIZE)
+            Layout[Byte](length=capacity + Self.REF_COUNT_SIZE)
         ).unsafe_leak()
 
         # Initialize the Atomic refcount into the header.
@@ -1435,12 +1481,7 @@ struct String(
 
         if self._is_inline():
             # The string itself holds the data.
-            return (
-                Pointer(to=self)
-                .unsafe_bitcast[Byte]()
-                .as_imm()
-                .unsafe_origin_cast[origin_of(self)]()
-            )
+            return Pointer(to=self).unsafe_bitcast[Byte]().as_imm()
         else:
             return self._ptr_or_data.as_imm().unsafe_origin_cast[
                 origin_of(self)

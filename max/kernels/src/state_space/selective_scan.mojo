@@ -43,7 +43,35 @@ comptime MAX_DSTATE = 16
 def _is_unit_stride[axis: Int](t: TileTensor[...]) -> Bool:
     """Returns whether `t` has unit stride along `axis`, read from its layout.
     """
-    return Int(t.layout.stride[axis]().value()) == 1
+    return Int(t.dynamic_stride(axis)) == 1
+
+
+@always_inline
+def _load_dstate_2[
+    DSTATE: Int
+](t: TileTensor[...], i0: Int) -> SIMD[.float32, MAX_DSTATE]:
+    """Loads `t[i0, 0:DSTATE]` as float32, zero-padded to `MAX_DSTATE`."""
+    comptime if DSTATE == MAX_DSTATE:
+        if _is_unit_stride[1](t):
+            return t.load[width=MAX_DSTATE]((i0, 0)).cast[.float32]()
+    var vals = SIMD[.float32, MAX_DSTATE](0.0)
+    comptime for n in range(DSTATE):
+        vals[n] = t.load[width=1]((i0, n)).cast[.float32]()[0]
+    return vals
+
+
+@always_inline
+def _load_dstate_3[
+    DSTATE: Int
+](t: TileTensor[...], i0: Int, i1: Int) -> SIMD[.float32, MAX_DSTATE]:
+    """Loads `t[i0, i1, 0:DSTATE]` as float32, zero-padded to `MAX_DSTATE`."""
+    comptime if DSTATE == MAX_DSTATE:
+        if _is_unit_stride[2](t):
+            return t.load[width=MAX_DSTATE]((i0, i1, 0)).cast[.float32]()
+    var vals = SIMD[.float32, MAX_DSTATE](0.0)
+    comptime for n in range(DSTATE):
+        vals[n] = t.load[width=1]((i0, i1, n)).cast[.float32]()[0]
+    return vals
 
 
 # ===----------------------------------------------------------------------=== #
@@ -297,10 +325,10 @@ def selective_scan_fwd_gpu[
 
             if is_chunk_boundary or is_last_step:
                 comptime for n in range(DSTATE):
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
                     )
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2 + 1),
                         cum_b[n].cast[kernel_dtype](),
                     )
@@ -313,18 +341,18 @@ def selective_scan_fwd_gpu[
 
         # The stores stay scalar so every layout of `output` / `out_z` works.
         for i in range(TILE_SIZE):
-            output.store[width=1]((b, d, t + i), output_buffer[i])
+            output.store((b, d, t + i), output_buffer[i])
 
         if has_z and has_out_z:
             for i in range(TILE_SIZE):
-                out_z.store[width=1]((b, d, t + i), out_z_buffer[i])
+                out_z.store((b, d, t + i), out_z_buffer[i])
 
         t += TILE_SIZE
 
     # Tail loop (scalar)
     while t < _seqlen:
         t_in_chunk += 1
-        var u_val = u.load[width=1]((b, d, t)).cast[DType.float32]()
+        var u_val = u.load[width=1]((b, d, t)).cast[.float32]()
         var delta_val = delta.load[width=1]((b, d, t)).cast[.float32]()
         if has_delta_bias:
             delta_val += delta_bias_val
@@ -345,15 +373,15 @@ def selective_scan_fwd_gpu[
         cum_a = cum_a * a_t
         if has_D:
             output_val += D_val * u_val
-        output.store[width=1](
+        output.store(
             (b, d, t),
             output_val.cast[kernel_dtype](),
         )
         if has_z:
-            var z_val = z.load[width=1]((b, d, t)).cast[DType.float32]()
+            var z_val = z.load[width=1]((b, d, t)).cast[.float32]()
             var out_z_val = output_val * silu(z_val)
             if has_out_z:
-                out_z.store[width=1](
+                out_z.store(
                     (b, d, t),
                     out_z_val.cast[kernel_dtype](),
                 )
@@ -362,10 +390,8 @@ def selective_scan_fwd_gpu[
         var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
             comptime for n in range(DSTATE):
-                x.store[width=1](
-                    (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
-                )
-                x.store[width=1](
+                x.store((b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]())
+                x.store(
                     (b, d, chunk_idx, n * 2 + 1), cum_b[n].cast[kernel_dtype]()
                 )
                 cum_a[n] = 1.0
@@ -483,7 +509,7 @@ def selective_scan_fwd_gpu_minimal[
     for t in range(_seqlen):
         t_in_chunk += 1
 
-        var u_val = u.load[width=1]((b, d, t)).cast[DType.float32]()
+        var u_val = u.load[width=1]((b, d, t)).cast[.float32]()
         var delta_val = delta.load[width=1]((b, d, t)).cast[.float32]()
         if delta_softplus_bool:
             delta_val = softplus(delta_val)
@@ -503,7 +529,7 @@ def selective_scan_fwd_gpu_minimal[
         cum_b = cum_b * a_t + b_t
         cum_a = cum_a * a_t
         # No D skip connection in minimal version
-        output.store[width=1](
+        output.store(
             (b, d, t),
             output_val.cast[kernel_dtype](),
         )
@@ -513,10 +539,8 @@ def selective_scan_fwd_gpu_minimal[
         var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
             comptime for n in range(DSTATE):
-                x.store[width=1](
-                    (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
-                )
-                x.store[width=1](
+                x.store((b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]())
+                x.store(
                     (b, d, chunk_idx, n * 2 + 1), cum_b[n].cast[kernel_dtype]()
                 )
                 cum_a[n] = 1.0
@@ -658,12 +682,12 @@ def selective_scan_update_gpu[
     var group_id = d // _group_size
 
     # Load dt value
-    var dt_val = dt.load[width=1]((b, d)).cast[DType.float32]()
+    var dt_val = dt.load[width=1]((b, d)).cast[.float32]()
 
     # Apply dt_bias if present
     var has_dt_bias = Int(dt_bias.dim[0]()) > 0
     if has_dt_bias:
-        var bias_val = dt_bias.load[width=1]((d,)).cast[DType.float32]()
+        var bias_val = dt_bias.load[width=1]((d,)).cast[.float32]()
         dt_val += bias_val
 
     # Apply softplus if requested
@@ -687,7 +711,7 @@ def selective_scan_update_gpu[
     var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
     comptime for n in range(DSTATE):
-        B_vals[n] = B.load[width=1]((b, group_id, n)).cast[DType.float32]()
+        B_vals[n] = B.load[width=1]((b, group_id, n)).cast[.float32]()
 
     # Compute dB = B * dt
     var dB = B_vals * dt_val
@@ -703,7 +727,7 @@ def selective_scan_update_gpu[
 
     # Store updated state to state_out
     comptime for n in range(DSTATE):
-        state_out.store[width=1](
+        state_out.store(
             (b, d, n),
             state_vals[n].cast[kernel_dtype](),
         )
@@ -711,7 +735,7 @@ def selective_scan_update_gpu[
     var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
     comptime for n in range(DSTATE):
-        C_vals[n] = C.load[width=1]((b, group_id, n)).cast[DType.float32]()
+        C_vals[n] = C.load[width=1]((b, group_id, n)).cast[.float32]()
 
     # Compute output: out = sum(state * C, axis=-1)
     var out_val = (state_vals * C_vals).reduce_add()
@@ -719,19 +743,19 @@ def selective_scan_update_gpu[
     # Add skip connection if D is present
     var has_D = Int(D.dim[0]()) > 0
     if has_D:
-        var D_val = D.load[width=1]((d,)).cast[DType.float32]()
+        var D_val = D.load[width=1]((d,)).cast[.float32]()
         out_val += x_val * D_val
 
     # Apply gating if z is present
     var has_z = Int(z.dim[0]()) > 0
     if has_z:
-        var z_val = z.load[width=1]((b, d)).cast[DType.float32]()
+        var z_val = z.load[width=1]((b, d)).cast[.float32]()
         out_val *= z_val * sigmoid(
             z_val
         )  # z * sigmoid(z) = silu(z) but formulated differently
 
     # Store output
-    output.store[width=1]((b, d), out_val.cast[kernel_dtype]())
+    output.store((b, d), out_val.cast[kernel_dtype]())
 
 
 def selective_scan_update_cpu[
@@ -808,7 +832,7 @@ def selective_scan_update_cpu[
         var group_id = d // group_size
 
         # Load dt value
-        var dt_val = dt.load[width=1]((b, d)).cast[DType.float32]()
+        var dt_val = dt.load[width=1]((b, d)).cast[.float32]()
 
         # Apply dt_bias if present
         if has_dt_bias:
@@ -820,62 +844,50 @@ def selective_scan_update_cpu[
             dt_val = softplus(dt_val)
 
         # Load x value
-        var x_val = x.load[width=1]((b, d)).cast[DType.float32]()
+        var x_val = x.load[width=1]((b, d)).cast[.float32]()
 
         # Load A values and pre-multiply by LOG2E
-        var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
-
-        comptime for n in range(DSTATE):
-            A_vals[n] = A.load[width=1]((d, n)).cast[.float32]() * LOG2E
+        var A_vals = _load_dstate_2[DSTATE](A, d) * LOG2E
 
         # Compute dA
         var dA = exp2(A_vals * dt_val)
 
         # Load B values using group_id
-        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-
-        comptime for n in range(DSTATE):
-            B_vals[n] = B.load[width=1]((b, group_id, n)).cast[DType.float32]()
+        var B_vals = _load_dstate_3[DSTATE](B, b, group_id)
 
         # Compute dB
         var dB = B_vals * dt_val
 
         # Load current state from state_in
-        var state_vals = SIMD[.float32, MAX_DSTATE](0.0)
-
-        comptime for n in range(DSTATE):
-            state_vals[n] = state_in.load[width=1]((b, d, n)).cast[.float32]()
+        var state_vals = _load_dstate_3[DSTATE](state_in, b, d)
 
         # Update state
         state_vals = state_vals * dA + dB * x_val
 
         # Store updated state to state_out
         comptime for n in range(DSTATE):
-            state_out.store[width=1](
+            state_out.store(
                 (b, d, n),
                 state_vals[n].cast[kernel_dtype](),
             )
 
         # Load C values using group_id
-        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
-
-        comptime for n in range(DSTATE):
-            C_vals[n] = C.load[width=1]((b, group_id, n)).cast[DType.float32]()
+        var C_vals = _load_dstate_3[DSTATE](C, b, group_id)
         # Compute output
         var out_val = (state_vals * C_vals).reduce_add()
 
         # Add skip connection
         if has_D:
-            var D_val = D.load[width=1]((d,)).cast[DType.float32]()
+            var D_val = D.load[width=1]((d,)).cast[.float32]()
             out_val += x_val * D_val
 
         # Apply gating
         if has_z:
-            var z_val = z.load[width=1]((b, d)).cast[DType.float32]()
+            var z_val = z.load[width=1]((b, d)).cast[.float32]()
             out_val *= z_val * sigmoid(z_val)
 
         # Store output
-        output.store[width=1]((b, d), out_val.cast[kernel_dtype]())
+        output.store((b, d), out_val.cast[kernel_dtype]())
 
     sync_parallelize(worker, batch * dim, ctx)
 
@@ -928,7 +940,7 @@ def selective_scan_fwd_cpu[
         var has_D = Int(D.dim[0]()) > 0
         var D_val = Float32(0.0)
         if has_D:
-            D_val = D.load[width=1]((d,)).cast[DType.float32]()
+            D_val = D.load[width=1]((d,)).cast[.float32]()
 
         var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
         var has_z = Int(z.dim[0]()) > 0
@@ -1017,22 +1029,22 @@ def selective_scan_fwd_cpu[
                     var z_val = z_vec[i].cast[.float32]()
                     var out_z_val = output_val * silu(z_val)
                     if has_out_z:
-                        out_z.store[width=1](
+                        out_z.store(
                             (b, d, t + i),
                             out_z_val.cast[kernel_dtype](),
                         )
-                output.store[width=1]((b, d, t + i), final_val)
+                output.store((b, d, t + i), final_val)
                 var is_chunk_boundary = t_in_chunk == chunk_size
                 var current_t = t + i
                 var is_last_step = current_t == seqlen - 1
 
                 if is_chunk_boundary or is_last_step:
                     comptime for n in range(DSTATE):
-                        x.store[width=1](
+                        x.store(
                             (b, d, chunk_idx, n * 2),
                             cum_a[n].cast[kernel_dtype](),
                         )
-                        x.store[width=1](
+                        x.store(
                             (b, d, chunk_idx, n * 2 + 1),
                             cum_b[n].cast[kernel_dtype](),
                         )
@@ -1047,7 +1059,7 @@ def selective_scan_fwd_cpu[
 
         while t < seqlen:
             t_in_chunk += 1
-            var u_val = u.load[width=1]((b, d, t)).cast[DType.float32]()
+            var u_val = u.load[width=1]((b, d, t)).cast[.float32]()
             var delta_val = delta.load[width=1]((b, d, t)).cast[.float32]()
             if has_delta_bias:
                 delta_val += delta_bias_val
@@ -1072,7 +1084,7 @@ def selective_scan_fwd_cpu[
             cum_a = cum_a * a_t
             if has_D:
                 output_val += D_val * u_val
-            output.store[width=1](
+            output.store(
                 (b, d, t),
                 output_val.cast[kernel_dtype](),
             )
@@ -1080,7 +1092,7 @@ def selective_scan_fwd_cpu[
                 var z_val = z.load[width=1]((b, d, t)).cast[.float32]()
                 var out_z_val = output_val * silu(z_val)
                 if has_out_z:
-                    out_z.store[width=1](
+                    out_z.store(
                         (b, d, t),
                         out_z_val.cast[kernel_dtype](),
                     )
@@ -1089,10 +1101,10 @@ def selective_scan_fwd_cpu[
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
                 comptime for n in range(DSTATE):
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
                     )
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2 + 1),
                         cum_b[n].cast[kernel_dtype](),
                     )
@@ -1179,7 +1191,7 @@ def selective_scan_fwd_cpu_minimal[
         for t in range(seqlen):
             t_in_chunk += 1
 
-            var u_val = u.load[width=1]((b, d, t)).cast[DType.float32]()
+            var u_val = u.load[width=1]((b, d, t)).cast[.float32]()
             var delta_val = delta.load[width=1]((b, d, t)).cast[.float32]()
             if delta_softplus_bool:
                 delta_val = softplus(delta_val)
@@ -1203,7 +1215,7 @@ def selective_scan_fwd_cpu_minimal[
             cum_b = cum_b * a_t + b_t
             cum_a = cum_a * a_t
             # No D skip connection
-            output.store[width=1](
+            output.store(
                 (b, d, t),
                 output_val.cast[kernel_dtype](),
             )
@@ -1213,10 +1225,10 @@ def selective_scan_fwd_cpu_minimal[
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
                 comptime for n in range(DSTATE):
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
                     )
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2 + 1),
                         cum_b[n].cast[kernel_dtype](),
                     )
@@ -1395,7 +1407,7 @@ def ssd_combined_gpu[
         A_vals[n] = A.load[width=1]((d, n)).cast[.float32]() * LOG2E
 
     # Load gamma value for normalization
-    var gamma_val = gamma.load[width=1]((d,)).cast[DType.float32]()
+    var gamma_val = gamma.load[width=1]((d,)).cast[.float32]()
     var epsilon_val = epsilon.cast[.float32]()
     var weight_offset_val = weight_offset.cast[.float32]()
 
@@ -1498,15 +1510,13 @@ def ssd_combined_gpu[
                 var z_val = z_vec[i].cast[.float32]()
                 var out_z_val = normalized * silu(z_val)
                 if has_out_z:
-                    out_z.store[width=1](
+                    out_z.store(
                         (b, d, t + i),
                         out_z_val.cast[kernel_dtype](),
                     )
                 normalized = out_z_val
 
-            output.store[width=1](
-                (b, d, t + i), normalized.cast[kernel_dtype]()
-            )
+            output.store((b, d, t + i), normalized.cast[kernel_dtype]())
 
             # Check chunk boundary
             var is_chunk_boundary = t_in_chunk == chunk_size
@@ -1515,10 +1525,10 @@ def ssd_combined_gpu[
 
             if is_chunk_boundary or is_last_step:
                 comptime for n in range(DSTATE):
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
                     )
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2 + 1),
                         cum_b[n].cast[kernel_dtype](),
                     )
@@ -1534,7 +1544,7 @@ def ssd_combined_gpu[
     # Handle remaining timesteps
     while t < _seqlen:
         t_in_chunk += 1
-        var u_val = u.load[width=1]((b, d, t)).cast[DType.float32]()
+        var u_val = u.load[width=1]((b, d, t)).cast[.float32]()
         var delta_val = delta.load[width=1]((b, d, t)).cast[.float32]()
         var residual_val = residual.load[width=1]((b, d, t)).cast[.float32]()
 
@@ -1567,16 +1577,16 @@ def ssd_combined_gpu[
         var normalized = combined * (gamma_val + weight_offset_val)
 
         if has_z:
-            var z_val = z.load[width=1]((b, d, t)).cast[DType.float32]()
+            var z_val = z.load[width=1]((b, d, t)).cast[.float32]()
             var out_z_val = normalized * silu(z_val)
             if has_out_z:
-                out_z.store[width=1](
+                out_z.store(
                     (b, d, t),
                     out_z_val.cast[kernel_dtype](),
                 )
             normalized = out_z_val
 
-        output.store[width=1](
+        output.store(
             (b, d, t),
             normalized.cast[kernel_dtype](),
         )
@@ -1585,10 +1595,8 @@ def ssd_combined_gpu[
         var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
             comptime for n in range(DSTATE):
-                x.store[width=1](
-                    (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
-                )
-                x.store[width=1](
+                x.store((b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]())
+                x.store(
                     (b, d, chunk_idx, n * 2 + 1), cum_b[n].cast[kernel_dtype]()
                 )
                 cum_a[n] = 1.0
@@ -1731,7 +1739,7 @@ def ssd_combined_cpu[
         var has_D = D.dim(0) > 0
         var D_val = Float32(0.0)
         if has_D:
-            D_val = D.load[width=1]((d,)).cast[DType.float32]()
+            D_val = D.load[width=1]((d,)).cast[.float32]()
 
         var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
         var has_z = z.dim(0) > 0
@@ -1740,7 +1748,7 @@ def ssd_combined_cpu[
         comptime for n in range(DSTATE):
             A_vals[n] = A.load[width=1]((d, n)).cast[.float32]() * LOG2E
 
-        var gamma_val = gamma.load[width=1]((d,)).cast[DType.float32]()
+        var gamma_val = gamma.load[width=1]((d,)).cast[.float32]()
         var epsilon_val = epsilon.cast[.float32]()
         var weight_offset_val = weight_offset.cast[.float32]()
 
@@ -1836,13 +1844,13 @@ def ssd_combined_cpu[
                     var z_val = z_vec[i].cast[.float32]()
                     var out_z_val = normalized * silu(z_val)
                     if has_out_z:
-                        out_z.store[width=1](
+                        out_z.store(
                             (b, d, t + i),
                             out_z_val.cast[kernel_dtype](),
                         )
                     normalized = out_z_val
 
-                output.store[width=1](
+                output.store(
                     (b, d, t + i),
                     normalized.cast[kernel_dtype](),
                 )
@@ -1852,11 +1860,11 @@ def ssd_combined_cpu[
 
                 if is_chunk_boundary or is_last_step:
                     comptime for n in range(DSTATE):
-                        x.store[width=1](
+                        x.store(
                             (b, d, chunk_idx, n * 2),
                             cum_a[n].cast[kernel_dtype](),
                         )
-                        x.store[width=1](
+                        x.store(
                             (b, d, chunk_idx, n * 2 + 1),
                             cum_b[n].cast[kernel_dtype](),
                         )
@@ -1871,7 +1879,7 @@ def ssd_combined_cpu[
 
         while t < seqlen:
             t_in_chunk += 1
-            var u_val = u.load[width=1]((b, d, t)).cast[DType.float32]()
+            var u_val = u.load[width=1]((b, d, t)).cast[.float32]()
             var delta_val = delta.load[width=1]((b, d, t)).cast[.float32]()
             var residual_val = residual.load[width=1]((b, d, t)).cast[
                 .float32
@@ -1913,13 +1921,13 @@ def ssd_combined_cpu[
                 var z_val = z.load[width=1]((b, d, t)).cast[.float32]()
                 var out_z_val = normalized * silu(z_val)
                 if has_out_z:
-                    out_z.store[width=1](
+                    out_z.store(
                         (b, d, t),
                         out_z_val.cast[kernel_dtype](),
                     )
                 normalized = out_z_val
 
-            output.store[width=1](
+            output.store(
                 (b, d, t),
                 normalized.cast[kernel_dtype](),
             )
@@ -1928,10 +1936,10 @@ def ssd_combined_cpu[
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
                 comptime for n in range(DSTATE):
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
                     )
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2 + 1),
                         cum_b[n].cast[kernel_dtype](),
                     )
@@ -2083,9 +2091,9 @@ def mamba_split_conv1d_scan_combined_cpu[
             # D is (nheads, headdim), or (nheads, 0) with head stride 0 when
             # headdim == 1; then the head index runs along the last axis.
             if D.dim(1) > 0:
-                D_val = D.load[width=1]((h, p)).cast[DType.float32]()
+                D_val = D.load[width=1]((h, p)).cast[.float32]()
             else:
-                D_val = D.load[width=1]((0, h)).cast[DType.float32]()
+                D_val = D.load[width=1]((0, h)).cast[.float32]()
 
         var has_dt_bias = dt_bias.dim(0) > 0
         var dt_bias_val = Float32(0.0)
@@ -2112,7 +2120,7 @@ def mamba_split_conv1d_scan_combined_cpu[
                 dt_val = softplus(dt_val)
 
             # Store dt
-            dt.store[width=1]((b, h, t), dt_val.cast[kernel_dtype]())
+            dt.store((b, h, t), dt_val.cast[kernel_dtype]())
 
             # Step 2: Compute conv for x channel (d is the x channel index)
             var x_channel_in_xBC = d  # x channel in xBC space (0 to dim-1)
@@ -2163,7 +2171,7 @@ def mamba_split_conv1d_scan_combined_cpu[
                 )  # SiLU
 
                 # Store B
-                B.store[width=1](
+                B.store(
                     (b, group_id, n, t),
                     B_vals[n].cast[kernel_dtype](),
                 )
@@ -2191,7 +2199,7 @@ def mamba_split_conv1d_scan_combined_cpu[
                 )  # SiLU
 
                 # Store C
-                C.store[width=1](
+                C.store(
                     (b, group_id, n, t),
                     C_vals[n].cast[kernel_dtype](),
                 )
@@ -2235,9 +2243,9 @@ def mamba_split_conv1d_scan_combined_cpu[
                 out_val = out_val * silu(z_val)
 
             # Store z and out_z
-            z.store[width=1]((b, d, t), z_val.cast[kernel_dtype]())
+            z.store((b, d, t), z_val.cast[kernel_dtype]())
             if out_z.dim(0) > 0:
-                out_z.store[width=1](
+                out_z.store(
                     (b, d, t),
                     out_val.cast[kernel_dtype](),
                 )
@@ -2265,7 +2273,7 @@ def mamba_split_conv1d_scan_combined_cpu[
                             bias_val = outproj_bias.load[width=1]((o,)).cast[
                                 .float32
                             ]()
-                        output.store[width=1](
+                        output.store(
                             (b, t, o),
                             (bias_val + contribution).cast[kernel_dtype](),
                         )
@@ -2277,13 +2285,13 @@ def mamba_split_conv1d_scan_combined_cpu[
                             .float32
                         ]()
                         current_out = current_out + contribution
-                        output.store[width=1](
+                        output.store(
                             (b, t, o),
                             current_out.cast[kernel_dtype](),
                         )
             else:
                 # No output projection - store directly
-                output.store[width=1](
+                output.store(
                     (b, t, d),
                     out_val.cast[kernel_dtype](),
                 )
@@ -2294,10 +2302,10 @@ def mamba_split_conv1d_scan_combined_cpu[
 
             if is_chunk_boundary or is_last_step:
                 comptime for n in range(DSTATE):
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
                     )
-                    x.store[width=1](
+                    x.store(
                         (b, d, chunk_idx, n * 2 + 1),
                         cum_b[n].cast[kernel_dtype](),
                     )
@@ -2423,14 +2431,14 @@ def mamba_split_conv1d_scan_combined_gpu[
         # D is (nheads, headdim), or (nheads, 0) with head stride 0 when
         # headdim == 1; then the head index runs along the last axis.
         if D.dim(1) > 0:
-            D_val = D.load[width=1]((h, p)).cast[DType.float32]()
+            D_val = D.load[width=1]((h, p)).cast[.float32]()
         else:
-            D_val = D.load[width=1]((0, h)).cast[DType.float32]()
+            D_val = D.load[width=1]((0, h)).cast[.float32]()
 
     var has_dt_bias = dt_bias.dim(0) > 0
     var dt_bias_val = Float32(0.0)
     if has_dt_bias:
-        dt_bias_val = dt_bias.load[width=1]((h,)).cast[DType.float32]()
+        dt_bias_val = dt_bias.load[width=1]((h,)).cast[.float32]()
 
     var chunk_idx = 0
     var t_in_chunk = 0
@@ -2452,7 +2460,7 @@ def mamba_split_conv1d_scan_combined_gpu[
             dt_val = softplus(dt_val)
 
         # Store dt
-        dt.store[width=1]((b, h, t), dt_val.cast[kernel_dtype]())
+        dt.store((b, h, t), dt_val.cast[kernel_dtype]())
         # Step 2: Compute conv for x channel
         var x_channel_in_xBC = d
         var xBC_channel_in_zxbcdt = xBC_start + x_channel_in_xBC
@@ -2500,9 +2508,7 @@ def mamba_split_conv1d_scan_combined_gpu[
             B_vals[n] = B_conv_sum / (1.0 + exp(-B_conv_sum))  # SiLU
 
             # Store B
-            B.store[width=1](
-                (b, group_id, n, t), B_vals[n].cast[kernel_dtype]()
-            )
+            B.store((b, group_id, n, t), B_vals[n].cast[kernel_dtype]())
             # C channel
             var C_channel_in_xBC = (
                 _dim + _ngroups * DSTATE + group_id * DSTATE + n
@@ -2525,9 +2531,7 @@ def mamba_split_conv1d_scan_combined_gpu[
             C_vals[n] = C_conv_sum / (1.0 + exp(-C_conv_sum))  # SiLU
 
             # Store C
-            C.store[width=1](
-                (b, group_id, n, t), C_vals[n].cast[kernel_dtype]()
-            )
+            C.store((b, group_id, n, t), C_vals[n].cast[kernel_dtype]())
         # Step 4: Selective scan computation
         var a_t = exp2(dt_val * A_vals)
         var b_t = B_vals * dt_val
@@ -2561,9 +2565,9 @@ def mamba_split_conv1d_scan_combined_gpu[
             out_val = out_val * silu(z_val)
 
         # Store z and out_z
-        z.store[width=1]((b, d, t), z_val.cast[kernel_dtype]())
+        z.store((b, d, t), z_val.cast[kernel_dtype]())
         if out_z.dim(0) > 0:
-            out_z.store[width=1]((b, d, t), out_val.cast[kernel_dtype]())
+            out_z.store((b, d, t), out_val.cast[kernel_dtype]())
         # Step 6: Output projection (if present)
         if has_outproj:
             # Output projection: output[b, t, o] = sum(input[b, t, d] * weight[o, d] for all d) + bias[o]
@@ -2588,7 +2592,7 @@ def mamba_split_conv1d_scan_combined_gpu[
                         bias_val = outproj_bias.load[width=1]((o,)).cast[
                             .float32
                         ]()
-                    output.store[width=1](
+                    output.store(
                         (b, t, o),
                         (bias_val + contribution).cast[kernel_dtype](),
                     )
@@ -2600,14 +2604,14 @@ def mamba_split_conv1d_scan_combined_gpu[
                         .float32
                     ]()
                     current_out = current_out + contribution
-                    output.store[width=1](
+                    output.store(
                         (b, t, o),
                         current_out.cast[kernel_dtype](),
                     )
 
         else:
             # No output projection - store directly
-            output.store[width=1]((b, t, d), out_val.cast[kernel_dtype]())
+            output.store((b, t, d), out_val.cast[kernel_dtype]())
         # Check chunk boundary
         t_in_chunk += 1
         var is_chunk_boundary = t_in_chunk == _chunk_size
@@ -2615,10 +2619,8 @@ def mamba_split_conv1d_scan_combined_gpu[
 
         if is_chunk_boundary or is_last_step:
             comptime for n in range(DSTATE):
-                x.store[width=1](
-                    (b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]()
-                )
-                x.store[width=1](
+                x.store((b, d, chunk_idx, n * 2), cum_a[n].cast[kernel_dtype]())
+                x.store(
                     (b, d, chunk_idx, n * 2 + 1), cum_b[n].cast[kernel_dtype]()
                 )
                 cum_a[n] = 1.0

@@ -18,13 +18,14 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.functional_kernels import (
-    mla_fp8_index_top_k,
+    mla_fp8_index_top_k_physical,
     quantize_dynamic_scaled_float8,
     rope_ragged,
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
 from max.experimental.nn.norm import LayerNorm
 from max.experimental.tensor import Tensor
 from max.nn.attention.mask_config import MHAMaskVariant
@@ -36,8 +37,6 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-
-from ...deepseekV3_modulev3.layers.quant_linear import QuantizedLinear
 
 
 def act_quant(
@@ -75,8 +74,8 @@ def act_quant(
     return x, x_scales
 
 
-def _indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
-    """Return the quant config used for dynamic FP8 activation quant in the indexer.
+def indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
+    """Returns the quant config used for dynamic FP8 activation quant in the indexer.
 
     Full FP8 checkpoints reuse the model quant config. Mixed-precision paths
     (for example NVFP4 MoE with bf16 MLA) still dynamic-quantize indexer
@@ -111,6 +110,7 @@ class Indexer(
             Tensor,
             PagedCacheValues,
             Tensor,
+            PagedCacheValues,
             MHAMaskVariant,
         ],
         Tensor,
@@ -146,7 +146,7 @@ class Indexer(
         self.index_topk = index_topk
         self.q_lora_rank = q_lora_rank
         self.softmax_scale = self.head_dim**-0.5
-        self.quant_config = _indexer_act_quant_config(quant_config)
+        self.quant_config = indexer_act_quant_config(quant_config)
 
         indexer_weights_fp8 = quant_config.format == QuantFormat.BLOCKSCALED_FP8
         linear_quant_config = quant_config if indexer_weights_fp8 else None
@@ -180,6 +180,7 @@ class Indexer(
         input_row_offsets: Tensor,
         indexer_k_collection: PagedCacheValues,
         layer_idx: Tensor,
+        mla_collection: PagedCacheValues,
         mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
     ) -> Tensor:
         """
@@ -192,11 +193,13 @@ class Indexer(
                 ends in a concatenated "ragged" input.
             indexer_k_collection: Indexer's K cache values
             layer_idx: Layer index for cache lookup
+            mla_collection: The MLA cache the selected rows index.
             mask_variant: Mask applied to the index scores.
 
         Returns:
-            Tensor of shape (total_seq_len, index_topk): indices of the top k
-            keys selected by the indexer for MLA to attend to.
+            Tensor of shape (total_seq_len, index_topk): the physical rows in
+            ``mla_collection`` of the top k keys selected for MLA to attend
+            to, ``-1`` past a token's candidates.
         """
         # qr comes projected to lora rank and pre-normed;
         # q_lora_rank -> self.n_heads * self.head_dim
@@ -249,16 +252,20 @@ class Indexer(
             ],
         )
 
+        # DeepSeek projects the scoring weights in float32.
+        proj = self.weights_proj.weight
+        assert isinstance(proj, Tensor)
         weights = (
-            self.weights_proj(F.cast(x, DType.float32)) * self.n_heads**-0.5
-        )  # dim -> n_heads
+            F.cast(x, DType.float32) @ F.cast(proj, DType.float32).T
+        ) * self.n_heads**-0.5  # dim -> n_heads
         weights = F.unsqueeze(weights, axis=-1) * q_scale * self.softmax_scale
 
-        return mla_fp8_index_top_k(
+        return mla_fp8_index_top_k_physical(
             q_fp8,
             F.squeeze(weights, axis=-1),
             input_row_offsets,
             indexer_k_collection,
+            mla_collection,
             layer_idx,
             self.index_topk,
             self.quant_config.scales_granularity_mnk[2],

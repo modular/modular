@@ -14,7 +14,14 @@
 from std.math import ceildiv
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from std.reflection import get_function_name
+from std.time import global_perf_counter_ns
 from std.testing import (
     assert_equal,
     assert_false,
@@ -93,6 +100,28 @@ struct Kernels:
         if tid >= length:
             return
         buf[unsafe_offset=tid] += Float32(delta)
+
+    # The primary spins until its dependent sets `state[0]`. The dependent can
+    # run that early only through a programmatic edge, so `state[1]` records
+    # 1 for overlap and 2 for a timeout. `state[2]` is written after the spin
+    # and copied to `state[3]` after the dependent's wait.
+    @staticmethod
+    def pdl_primary(state: Pointer[Int32, MutAnyOrigin], timeout_ns: UInt64):
+        launch_dependent_grids()
+        var start = global_perf_counter_ns()
+        var overlapped = Int32(1)
+        while state.unsafe_load[volatile=True]() == 0:
+            if global_perf_counter_ns() - start > timeout_ns:
+                overlapped = 2
+                break
+        state[unsafe_offset=1] = overlapped
+        state[unsafe_offset=2] = 42
+
+    @staticmethod
+    def pdl_secondary(state: Pointer[Int32, MutAnyOrigin]):
+        state.unsafe_store[volatile=True](Int32(1))
+        wait_on_dependent_grids()
+        state[unsafe_offset=3] = state[unsafe_offset=2]
 
 
 def test_vec_add_kernel_node(ctx: DeviceContext) raises:
@@ -1046,6 +1075,77 @@ def test_as_context_kernel_chain(ctx: DeviceContext) raises:
             assert_equal(host[i], Float32(15))
 
 
+def _check_pdl_pair(
+    ctx: DeviceContext, pdl: Bool, recorded: Bool, mixed: Bool = False
+) raises:
+    var state = ctx.enqueue_create_buffer[.int32](4)
+    var primary = ctx.compile_function[Kernels.pdl_primary]()
+    var secondary = ctx.compile_function[Kernels.pdl_secondary]()
+    var attrs = pdl_launch_attributes(PDLLevel.ON if pdl else PDLLevel.OFF)
+    var timeout_ns = UInt64(100_000_000)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        if recorded:
+            with builder.recording_context() as rec:
+                rec.enqueue_memset(state, Int32(0))
+                rec.enqueue_function(
+                    primary, state, timeout_ns, grid_dim=1, block_dim=1
+                )
+                rec.enqueue_function(
+                    secondary,
+                    state,
+                    grid_dim=1,
+                    block_dim=1,
+                    attributes=attrs.copy(),
+                )
+        else:
+            var reset = builder.add_memset(state, Int32(0))
+            var first = builder.add_function(
+                primary,
+                state,
+                timeout_ns,
+                grid_dim=1,
+                block_dim=1,
+                dependencies=[reset],
+            )
+            var deps: List[type_of(first)] = [first]
+            if mixed:
+                deps.append(reset)
+            _ = builder.add_function(
+                secondary,
+                state,
+                grid_dim=1,
+                block_dim=1,
+                dependencies=deps^,
+                attributes=attrs.copy(),
+            )
+
+    var graph = DeviceGraph.create(ctx, build)
+    for _ in range(2):
+        graph.replay()
+        ctx.synchronize()
+        with state.map_to_host() as host:
+            # The driver may serialize a node that also has a full incoming
+            # edge, so the mixed case checks ordering only.
+            if not mixed:
+                assert_equal(host[1], Int32(1 if pdl else 2))
+            assert_equal(host[3], Int32(42))
+
+
+def test_pdl_programmatic_edge(ctx: DeviceContext) raises:
+    print(
+        "Test that a PDL launch overlaps its kernel predecessor in a device"
+        " graph and still waits for its writes."
+    )
+    if len(pdl_launch_attributes(PDLLevel.ON)) == 0:
+        return
+    _check_pdl_pair(ctx, pdl=True, recorded=False)
+    _check_pdl_pair(ctx, pdl=True, recorded=True)
+    _check_pdl_pair(ctx, pdl=True, recorded=False, mixed=True)
+    # Without the attribute the edge stays full and the primary times out.
+    _check_pdl_pair(ctx, pdl=False, recorded=False)
+
+
 def test_create_buffer(ctx: DeviceContext) raises:
     print("Test allocating graph-owned device and host buffers.")
     comptime length = 1024
@@ -1541,6 +1641,41 @@ def test_cache_shares_memory_pool(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0x22))
 
 
+def test_alloc_not_reissued_within_build(ctx: DeviceContext) raises:
+    print(
+        "Test an allocation whose handle is dropped mid-build is not reissued"
+        " to a later allocation within the same recording."
+    )
+    comptime length = 4096
+
+    # Addresses captured inside the build region; not valid to dereference
+    # outside it, used only to compare what the allocator handed back.
+    var first_addr = 0
+    var second_addr = 0
+
+    def build(
+        mut builder: DeviceGraphBuilder,
+    ) raises {imm, mut first_addr, mut second_addr}:
+        # Allocate, record the address, then drop the only external handle --
+        # as Mojo does at a buffer's last use in a real build body.
+        var first = builder.create_buffer[.uint8](length, is_host=False)
+        first_addr = Int(first.unsafe_ptr())
+        _ = first^
+
+        var second = builder.create_buffer[.uint8](length, is_host=False)
+        second_addr = Int(second.unsafe_ptr())
+        _ = second^
+
+    var graph = DeviceGraph.create(ctx, build)
+
+    # The builder pins `first` for the whole build, so the pool cannot reissue
+    # its block to `second` within the same recording -- recorded nodes bake in
+    # these addresses, and reusing one would alias two nodes. (Across graphs the
+    # block IS reused once the pins drop; see `test_cache_shares_memory_pool`.)
+    assert_not_equal(first_addr, second_addr)
+    _ = graph^
+
+
 def test_create_collective_two_graphs(ctx: DeviceContext) raises:
     print(
         "Test DeviceGraph.create_collective building and replaying two"
@@ -1624,16 +1759,8 @@ def test_create_collective_stable_slots(ctx: DeviceContext) raises:
     var buf0 = ctx.enqueue_create_buffer[.float32](length)
     var buf1 = ctx.enqueue_create_buffer[.float32](length)
 
-    var source0 = (
-        buf0.unsafe_ptr()
-        .unsafe_bitcast[NoneType]()
-        .unsafe_origin_cast[MutUntrackedOrigin]()
-    )
-    var source1 = (
-        buf1.unsafe_ptr()
-        .unsafe_bitcast[NoneType]()
-        .unsafe_origin_cast[MutUntrackedOrigin]()
-    )
+    var source0 = buf0.unsafe_ptr().unsafe_bitcast[NoneType]()
+    var source1 = buf1.unsafe_ptr().unsafe_bitcast[NoneType]()
 
     # Slot addresses as observed from each region, for cross-region checks.
     # Written through an untracked pointer so the build closures can record

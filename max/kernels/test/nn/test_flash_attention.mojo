@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp, isclose
+from std.memory.alloc import unsafe_alloc
 from std.random import rand, seed
 
 from layout import (
@@ -387,9 +388,15 @@ def verify_output[
     """Checks output against the reference, printing at most six mismatches."""
     var mismatches = 0
     for i in range(output.num_elements()):
-        var idx = Int(output.layout(output.layout.idx2crd(i)))
+        var crd = output.layout.idx2crd(i)
+        var idx = Int(output.layout(crd))
+        var actual = output.load[width=1](crd)
+        var expected = ref_output.load[width=1](crd)
         if not isclose(
-            output.ptr[idx], ref_output.ptr[idx], atol=1e-5, rtol=1e-4
+            actual,
+            expected,
+            atol=1e-5,
+            rtol=1e-4,
         ):
             if mismatches == 0:
                 print(
@@ -404,8 +411,8 @@ def verify_output[
             print(
                 "Mismatch at",
                 idx,
-                output.ptr[idx],
-                ref_output.ptr[idx],
+                actual,
+                expected,
             )
 
             mismatches = mismatches + 1
@@ -426,7 +433,7 @@ def build_ndbuffer[
     ],
     MutUntrackedOrigin,
 ]:
-    var ptr = alloc[Scalar[dtype]](shape.flattened_length())
+    var ptr = unsafe_alloc[Scalar[dtype]](shape.flattened_length())
     rand(ptr, shape.flattened_length())
     comptime ShapeTypes = _IntTupleToCoordLike[
         .int64, Layout.row_major(static_shape).shape
@@ -473,34 +480,34 @@ def test_case[
 
     reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
 
-    @__parameter
     @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(rebind[IndexList[k.rank]](idx))
         )
 
-    @__parameter
     @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(rebind[IndexList[v.rank]](idx))
         )
 
-    @__parameter
     @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(rebind[IndexList[mask.rank]](idx))
         )
 
-    flash_attention[input_k_fn, input_v_fn, mask_fn](
+    flash_attention(
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
         q.as_imm(),
         coord_to_index_list(k.layout.shape_coord()),
         coord_to_index_list(v.layout.shape_coord()),
@@ -511,12 +518,12 @@ def test_case[
 
     verify_output(output, ref_output, cfg)
 
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    output.ptr.free()
-    ref_output.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    output.ptr.unsafe_free()
+    ref_output.ptr.unsafe_free()
 
 
 def test_flash_attention[dtype: DType]() raises:
@@ -641,47 +648,42 @@ def test_case_split_kv[
     reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
 
     # Define input lambdas for split KV cache attn `flash_attention_split_kv`.
-    @__parameter
     @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
+            (idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
         )
 
-    @__parameter
     @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
+            (idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3])
         )
 
-    @__parameter
     @inline(.always)
     def input_k_cache_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx[1], idx[3], idx[2], idx[4])
+            (idx[1], idx[3], idx[2], idx[4])
         )
 
-    @__parameter
     @inline(.always)
     def input_v_cache_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx[1], idx[3], idx[2], idx[4])
+            (idx[1], idx[3], idx[2], idx[4])
         )
 
-    @__parameter
     @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(rebind[IndexList[mask.rank]](idx))
         )
@@ -693,15 +695,12 @@ def test_case_split_kv[
         shape_rank=cfg.kv_cache_rank, is_kv=True
     ](cfg.prev_seq_len(), cfg.depth_dim)
 
-    flash_attention_split_kv[
-        dtype=dtype,
-        rank=batch_rank + 2,
+    flash_attention_split_kv[dtype=dtype, rank=batch_rank + 2](
         input_k_fn,
         input_v_fn,
         input_k_cache_fn,
         input_v_cache_fn,
         mask_fn,
-    ](
         q.as_imm(),
         kv_present_shape,
         kv_present_shape,
@@ -714,12 +713,12 @@ def test_case_split_kv[
 
     verify_output(output, ref_output, cfg)
 
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    output.ptr.free()
-    ref_output.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    output.ptr.unsafe_free()
+    ref_output.ptr.unsafe_free()
 
 
 def test_flash_attention_split_kv[dtype: DType]() raises:
@@ -820,35 +819,35 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     reference_attention_bshd(q, k, v, mask, ref_output_no_sinks, scale)
 
     # Test flash attention without sinks
-    @__parameter
     @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(rebind[IndexList[k.rank]](idx))
         )
 
-    @__parameter
     @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(rebind[IndexList[v.rank]](idx))
         )
 
-    @__parameter
     @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(rebind[IndexList[mask.rank]](idx))
         )
 
     # Call without sink weights
-    flash_attention[input_k_fn, input_v_fn, mask_fn](
+    flash_attention(
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
         q.as_imm(),
         coord_to_index_list(k.layout.shape_coord()),
         coord_to_index_list(v.layout.shape_coord()),
@@ -860,9 +859,10 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     # Verify no-sinks result
     var mismatches_no_sinks = 0
     for i in range(output_no_sinks.num_elements()):
+        var coord = output_no_sinks.layout.idx2crd(i)
         if not isclose(
-            output_no_sinks.ptr[i],
-            ref_output_no_sinks.ptr[i],
+            output_no_sinks[coord],
+            ref_output_no_sinks[coord],
             atol=1e-5,
             rtol=1e-4,
         ):
@@ -871,9 +871,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
                     "No-sinks mismatch at",
                     i,
                     ":",
-                    output_no_sinks.ptr[i],
+                    output_no_sinks[coord],
                     "vs",
-                    ref_output_no_sinks.ptr[i],
+                    ref_output_no_sinks[coord],
                 )
             mismatches_no_sinks += 1
 
@@ -907,7 +907,10 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         scale,
     )
 
-    flash_attention[input_k_fn, input_v_fn, mask_fn](
+    flash_attention(
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
         q.as_imm(),
         coord_to_index_list(k.layout.shape_coord()),
         coord_to_index_list(v.layout.shape_coord()),
@@ -920,9 +923,10 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     # Verify sinks result
     var mismatches_with_sinks = 0
     for i in range(output_with_sinks.num_elements()):
+        var coord = output_with_sinks.layout.idx2crd(i)
         if not isclose(
-            output_with_sinks.ptr[i],
-            ref_output_with_sinks.ptr[i],
+            output_with_sinks[coord],
+            ref_output_with_sinks[coord],
             atol=1e-5,
             rtol=1e-4,
         ):
@@ -931,9 +935,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
                     "With-sinks mismatch at",
                     i,
                     ":",
-                    output_with_sinks.ptr[i],
+                    output_with_sinks[coord],
                     "vs",
-                    ref_output_with_sinks.ptr[i],
+                    ref_output_with_sinks[coord],
                 )
             mismatches_with_sinks += 1
 
@@ -953,15 +957,15 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     )
 
     # Free memory
-    q.ptr.free()
-    k.ptr.free()
-    v.ptr.free()
-    mask.ptr.free()
-    sink_weights.ptr.free()
-    output_no_sinks.ptr.free()
-    ref_output_no_sinks.ptr.free()
-    output_with_sinks.ptr.free()
-    ref_output_with_sinks.ptr.free()
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    sink_weights.ptr.unsafe_free()
+    output_no_sinks.ptr.unsafe_free()
+    ref_output_no_sinks.ptr.unsafe_free()
+    output_with_sinks.ptr.unsafe_free()
+    ref_output_with_sinks.ptr.unsafe_free()
 
 
 def main() raises:

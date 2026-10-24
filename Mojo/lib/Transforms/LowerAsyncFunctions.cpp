@@ -1048,7 +1048,7 @@ Value LowerAsyncBuildContext::initializeContinuation(FuncOp rampFunction,
   Value resumeFunctionSlot =
       StructGEPOp::create(builder, continuation, ResumeFunction);
   Value functionPointer =
-      CreateClosureOp::create(builder, SymbolConstantAttr::get(resumeFunction));
+      CreateFuncPtrOp::create(builder, SymbolConstantAttr::get(resumeFunction));
   functionPointer = PointerBitcastOp::create(
       builder, coTypes.typeForField(ResumeFunction), functionPointer);
   StoreOp::create(builder, functionPointer, resumeFunctionSlot);

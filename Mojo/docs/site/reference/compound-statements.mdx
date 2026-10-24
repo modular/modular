@@ -3,14 +3,19 @@ title: Mojo compound statements reference
 sidebar_label: Compound statements
 description: >
   Complete reference for Mojo compound statements. Covers if statements,
-  loops, error handling with try/except, context managers with with,
-  and compile-time control flow with comptime if/for.
+  match statements and patterns, if case and while case, loops, error
+  handling with try/except, context managers with with, and compile-time
+  control flow with comptime if/for/match.
 ---
 
 <!-- VERIFIED: ParserStmts.cpp parseIfStmt(), parseWhileStmt(),
-     parseForStmt(), parseTryStmt(), parseWithStmt(),
+     parseMatchStmt(), parseForStmt(), parseTryStmt(), parseWithStmt(),
      parseComptimeCompoundStmt(), parseComptimeIf(), parseComptimeFor(),
-     parseSuite(); Signatures.cpp parseCaptureList() -->
+     parseSuite(); ExprPatterns.h; Signatures.cpp parseCaptureList()
+     Compiler verified: 2026-10-15, Mojo 1.2.0.dev2026101405 (48ec2d26)
+       (match, if case, while case, comptime match sections only)
+     Last updated: 2026-10-15 (adds match, if case, while case,
+       comptime match) -->
 
 A *compound statement* has a header and a body. The header ends
 with `:` and is followed by an indented block with the body.
@@ -65,6 +70,158 @@ x > 0 and print("positive")  # Error because 'None' isn't truthy
 
 print("positive") if x > 0 else pass
     # Error because 'pass' isn't an expression
+```
+
+## Match statements
+
+A `match` statement compares one value, the *subject*, against a series of
+`case` patterns:
+
+```mojo
+match status_code:
+    case 200:
+        print("ok")
+    case 301 | 302:
+        print("redirect")
+    case code if code >= 500:
+        print("server error", code)
+    case _:
+        print("other")
+```
+
+The subject is evaluated once. Cases are checked top to bottom, and only the
+first match runs. Execution doesn't fall through to the next case. If no case
+matches, no body runs.
+
+Each `case` can be indented under `match` or aligned with it.
+
+### Patterns
+
+<!-- markdownlint-disable MD013 -->
+
+| Pattern          | Example                                 | Matches                                         |
+|------------------|-----------------------------------------|-------------------------------------------------|
+| Literal          | `case 200:`                             | A value equal to the literal                    |
+| Wildcard         | `case _:`                               | Any value, without binding it                   |
+| Name             | `case code:`                            | Any value, bound to `code`                      |
+| Or               | `case 301 \| 302:`                      | A value that matches any alternative            |
+| Value            | `case == threshold:`                    | A value equal to an existing expression         |
+| Tuple            | `case (0, 0):` or `case True, False:`   | Each element against its own pattern            |
+| Struct           | `case Point(x=0, y=0):`                 | Each named field against its own pattern        |
+| Initializer list | `case {x = 0, y = 0}:`                  | Each named subject field against its pattern    |
+| Enum case        | `case .Some(reading):` or `case .None:` | One case of an `EnumLike` type, like `Optional` |
+| List             | `case [first, *middle, last]:`          | A collection by length and elements             |
+
+<!-- markdownlint-enable MD013 -->
+
+Patterns nest, so one case can reach several layers into the subject:
+
+```mojo
+match marker:   # Optional[Point]
+    case .Some(Point(x=0, y=0)):
+        print("at origin")
+    case .Some(Point(x=x, y=y)) if x == y:
+        print("on diagonal")
+    case .None:
+        print("no marker")
+    case _:
+        print("elsewhere")
+```
+
+A list pattern takes at most one `*name`, which captures the elements between
+the leading and trailing patterns. A list with a different length doesn't
+match. The subject must conform to `Sized` and support integer subscripts. A
+`*name` pattern also requires slice subscripts.
+
+A tuple subject doesn't need parentheses. `match x > 0, y > 0:` matches a
+tuple of two `Bool` values.
+
+### Bindings
+
+A bare name in a pattern binds that part of the subject for the case body. It
+always creates a new binding, even if a variable with the same name exists.
+To compare against an existing value, use `==`:
+
+```mojo
+var limit = 100
+match reading:
+    case == limit:
+        print("at limit")    # Compares reading with limit
+    case limit:
+        print(limit)         # Binds a new `limit`; matches any reading
+```
+
+Bound names are immutable. Use `var` for a mutable copy, or `ref` for a
+reference that writes through to the subject:
+
+```mojo
+match marker:   # A mutable Point
+    case Point(x=ref x, y=0):
+        x = 0       # Updates marker.x
+    case Point(x=var x, y=_):
+        x += 1      # Updates the copy only
+```
+
+Use `as` to bind the whole value a pattern matched:
+
+```mojo
+match status_code:
+    case 404 as code:
+        print("not found:", code)
+    case _:
+        pass
+```
+
+### Guards
+
+A guard adds a condition after the pattern: `case pattern if condition:`.
+The guard runs only after the pattern matches, and it can use the names the
+pattern bound. If the guard is false, matching continues with the next case.
+
+### Exhaustiveness
+
+When the subject's type has a fixed set of values, such as `Bool`, `Optional`,
+or another `EnumLike` type, the compiler warns if the cases don't cover every
+value. Subjects with open-ended values, such as `Int` and `String`, don't need
+to be exhaustive.
+
+The compiler also warns about unreachable cases, such as a repeated literal or
+a case that follows one that matches everything.
+
+## Conditional patterns
+
+`if case` and `while case` test a single pattern without a full `match`
+statement. Both use the patterns that `match` supports.
+
+### if case
+
+`if case pattern = value:` runs its body when the value matches the pattern.
+The value is evaluated once. Names the pattern binds are available only in
+that body:
+
+```mojo
+if case .Some(reading) = primary:
+    print("primary:", reading)
+elif case .Some(reading) = backup:
+    print("backup:", reading)
+else:
+    print("no reading")
+```
+
+If the pattern doesn't match, execution continues with the next `elif` or
+`else`.
+
+### while case
+
+`while case pattern = value:` evaluates the value before each iteration and
+runs the body while it matches the pattern. When the pattern fails, the loop
+exits normally, so an `else` clause runs:
+
+```mojo
+while case .Some(job) = queue.next_job():
+    process(job)
+else:
+    print("queue drained")
 ```
 
 ## While loops
@@ -302,8 +459,8 @@ def main():
 
 ## Compile-time control flow
 
-`comptime if` and `comptime for` run at compile time. The condition
-or sequence must be a compile-time value or expression.
+`comptime if`, `comptime for`, and `comptime match` run at compile time. The
+condition, sequence, or subject must be a compile-time value or expression.
 
 Use them to generate code based on compile-time conditions. You
 cannot use runtime values in `comptime` statements.
@@ -347,6 +504,25 @@ comptime for i in range(3):
 
 Use `comptime for` to generate repeated code patterns or iterate over
 compile-time sequences.
+
+### comptime match
+
+`comptime match` selects a case at compile time. The subject must be a
+compile-time value, and only the selected case is compiled. Names a pattern
+binds are compile-time parameters, so `var` and `ref` bindings aren't allowed.
+
+Comparing with `==` lets `comptime match` act as a type switch:
+
+```mojo
+def element_kind[T: AnyType]() -> String:
+    comptime match T:
+        case == Int:
+            return "integer"
+        case == String:
+            return "string"
+        case _:
+            return "other"
+```
 
 ## Scopes
 

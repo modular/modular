@@ -25,6 +25,7 @@ from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     spec_decode_cache_slack,
 )
+from max.nn.kv_cache.cache_params import FP4_KV_CACHE_QUANTIZATION_GRANULARITY
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
@@ -41,6 +42,31 @@ from max.pipelines.modeling.config_enums import (
 )
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+
+def mla_kv_cache_quant_config(
+    cache_dtype: DType, qk_rope_head_dim: int
+) -> KVCacheQuantizationConfig | None:
+    """Returns the quantization config of an MLA latent cache of `cache_dtype`.
+
+    A `uint8` cache is a packed NVFP4 latent with one E4M3 scale per 16
+    elements. Its `qk_rope_head_dim` rope dims stay FP8, as in an FP8 cache:
+    rope dominates the attention scores, so E2M1 there costs accuracy. An FP8
+    cache reads at unit scale and carries no scales.
+    """
+    if cache_dtype == DType.uint8:
+        return KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn,
+            quantization_granularity=FP4_KV_CACHE_QUANTIZATION_GRANULARITY,
+            fp8_tail_dim=qk_rope_head_dim,
+        )
+    if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        # TODO(SERVOPT-1094): Set a valid scale_dtype when SnapMLA needs
+        # kv_scales.
+        return KVCacheQuantizationConfig(
+            scale_dtype=DType.int8, quantization_granularity=32
+        )
+    return None
 
 
 @dataclass(kw_only=True)
@@ -108,6 +134,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     quant_config: QuantConfig | None = None
+    attn_quant_config: QuantConfig | None = None
+    """Quantization of the MLA projections when it differs from
+    ``quant_config``, such as rowwise FP8 attention beside MXFP4 experts."""
     dense_mlp_layers_without_quant: frozenset[int] = frozenset()
     """Dense prefix layers (indices ``< first_k_dense_replace``) that skip MLP quant."""
     ep_config: EPConfig | None = None
@@ -181,16 +210,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-        kvcache_quant_config = None
-        if cache_dtype in (
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-        ):
-            # Configure the KVCacheParams quantization parameters.
-            # TODO: Set valid scale_dtype when kv_scales are needed (SERVOPT-1094: [EPIC] SnapMLA Implementation).
-            kvcache_quant_config = KVCacheQuantizationConfig(
-                scale_dtype=DType.int8, quantization_granularity=32
-            )
+        kvcache_quant_config = mla_kv_cache_quant_config(
+            cache_dtype, huggingface_config.qk_rope_head_dim
+        )
 
         return kv_cache_config.to_params(
             dtype=cache_dtype,

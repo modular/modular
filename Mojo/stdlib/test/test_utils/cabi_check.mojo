@@ -59,6 +59,19 @@ comptime _MACROS: StaticString = """\
     (void)ptr;                                                                \\
   }
 
+// Mojo has a single 64-bit integer type, which C spells `long` or
+// `long long` depending on the platform and the declaration (macOS declares
+// `time_t` as `long` but `int64_t` as `long long`), so a 64-bit field
+// matches either spelling of the right signedness.
+#define MOJO_CHECK_CABI_FIELD_INT64(name, type, field)                        \\
+  _Static_assert(_Generic(((type *)0)->field, long: 1, long long: 1,          \\
+                          default: 0),                                        \\
+                 #name "." #field " is not a signed 64-bit integer");
+#define MOJO_CHECK_CABI_FIELD_UINT64(name, type, field)                       \\
+  _Static_assert(_Generic(((type *)0)->field, unsigned long: 1,               \\
+                          unsigned long long: 1, default: 0),                 \\
+                 #name "." #field " is not an unsigned 64-bit integer");
+
 // An expression's type is signed exactly when -1 cast to it stays negative.
 #define MOJO_CHECK_CABI_IS_SIGNED(e) ((__typeof__(e))-1 < 0)
 
@@ -187,7 +200,9 @@ def struct_checks[T: AnyType]() raises -> String:
         isn't a 1-byte integer or an array of them. The latter checks the
         field's C type by assigning its address to a pointer declared at the
         expected type, so an incompatible field type fails to compile rather
-        than failing an assertion.
+        than failing an assertion. A 64-bit integer field gets a
+        `MOJO_CHECK_CABI_FIELD_INT64` or `MOJO_CHECK_CABI_FIELD_UINT64` line
+        instead, which accepts both C spellings of that width.
     """
     comptime name = _unqualified_type_name[T]()
     var out = String(t"MOJO_CHECK_CABI_LAYOUT({name}, struct {name})")
@@ -198,14 +213,23 @@ def struct_checks[T: AnyType]() raises -> String:
         out += String(
             t"\nMOJO_CHECK_CABI_FIELD({name}, struct {name}, {field})"
         )
-        match _c_field_decl[types[i]]():
-            case .Some(decl):
+        comptime match types[i]:
+            case == Int64:
                 out += String(
-                    t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"
-                    t" {field}, {decl})"
+                    t"\nMOJO_CHECK_CABI_FIELD_INT64({name}, struct {name},"
+                    t" {field})"
                 )
-            case .None:
-                pass
+            case == UInt64:
+                out += String(
+                    t"\nMOJO_CHECK_CABI_FIELD_UINT64({name}, struct {name},"
+                    t" {field})"
+                )
+            case _:
+                if case .Some(decl) = _c_field_decl[types[i]]():
+                    out += String(
+                        t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"
+                        t" {field}, {decl})"
+                    )
     return out^
 
 

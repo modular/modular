@@ -19,7 +19,7 @@ import pytest
 from fastapi import FastAPI
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.api_server import fastapi_config
-from max.serve.config import Settings
+from max.serve.config import Settings, parse_api_and_target_arch
 
 
 def test_deprecated_dispatcher_config_fails() -> None:
@@ -212,3 +212,33 @@ def test_max_media_bytes_is_independent_of_max_request_bytes(
     settings = Settings()
     assert settings.max_request_bytes == 2 * 1024 * 1024 * 1024
     assert settings.max_media_bytes == 100 * 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        # Device-API names.
+        ("cuda:sm_90", ("cuda", "sm_90")),
+        ("hip:gfx950", ("hip", "gfx950")),
+        ("metal:4", ("metal", "4")),
+        # The `--target-accelerator` vendor name for the same device, which
+        # `mojo_targets_from_toolchain` hands straight through (GEX-4019).
+        ("nvidia:sm_90", ("cuda", "sm_90")),
+        ("amdgpu:gfx950", ("hip", "gfx950")),
+        ("amd:gfx950", ("hip", "gfx950")),
+        # Bare, taking the API's default arch. The vendor name has to resolve
+        # before that lookup, or it silently yields an empty arch.
+        ("cuda", ("cuda", "sm_80")),
+        ("nvidia", ("cuda", "sm_80")),
+        ("amdgpu", ("hip", "gfx942")),
+    ],
+)
+def test_parse_api_and_target_arch(
+    spec: str, expected: tuple[str, str]
+) -> None:
+    assert parse_api_and_target_arch(spec) == expected
+
+
+def test_parse_api_and_target_arch_rejects_unknown_api() -> None:
+    with pytest.raises(ValueError, match="wombat42"):
+        parse_api_and_target_arch("wombat42:sm_90")

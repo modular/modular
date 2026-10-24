@@ -19,7 +19,7 @@ from max.nn.identity import Identity
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.nn.transformer import TransformerBlock
+from max.nn.transformer import DecoderOutputs, TransformerBlock
 
 from ..llama3.llama3 import Llama3
 from ..llama3.model_config import Llama3Config
@@ -58,7 +58,7 @@ class EagleLlama3(Llama3):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         hidden_states: TensorValue | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         assert isinstance(hidden_states, TensorValue)
         h = self.embed_tokens(tokens)
 

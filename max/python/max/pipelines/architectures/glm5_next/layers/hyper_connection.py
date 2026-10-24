@@ -26,9 +26,14 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.kernels import hyper_connection_gates
+from max.nn.kernels import (
+    hyper_connection_gates,
+    mhc_post,
+    mhc_post_supports,
+)
 from max.nn.layer import Module, Shardable
 
 from ..model_config import Glm5NextConfig
@@ -84,9 +89,9 @@ def mean_collapse_streams(streams: TensorValue) -> TensorValue:
 class StreamMixing:
     """One mHC site's mapping outputs.
 
-    :attr:`post` and :attr:`comb` stay float32 until the write-back casts them,
-    matching the reference: a bias in the projection would compound over all 90
-    sites of the model.
+    :attr:`post` and :attr:`comb` stay float32 into the write-back, matching
+    the reference: a bias in the projection would compound over all 90 sites of
+    the model.
     """
 
     post: TensorValue
@@ -125,8 +130,7 @@ class HyperConnection(Module, Shardable):
 
     The split is the fused-kernel boundary: everything in :meth:`__call__` is one
     kernel's worth of work (stream norm, mix logits, Sinkhorn, collapse and the
-    block's input layernorm), while :meth:`write_back` is a handful of
-    bandwidth-bound dispatches.
+    block's input layernorm), while :meth:`write_back` is bandwidth-bound.
 
     The streams are replicated on every rank, exactly as a single residual is.
     The mapping is a fraction of a percent of a model's arithmetic, and sharding
@@ -267,9 +271,11 @@ class HyperConnection(Module, Shardable):
     ) -> TensorValue:
         """Places a sublayer output back into the residual streams.
 
-        ``streams' = post * y + comb^T @ streams``: an outer product in the
-        stream axis plus a small batched matmul, both in the model's compute
-        dtype.
+        ``streams' = post * y + comb^T @ streams``. On AMD GPUs, for shapes
+        it supports, the :func:`~max.nn.kernels.mhc_post` kernel evaluates it
+        in float32 and rounds once to the streams' dtype; elsewhere it is an
+        outer product in the stream axis plus a small batched matmul, both in
+        the streams' dtype.
 
         Args:
             streams: The streams that went into :meth:`__call__`,
@@ -279,7 +285,26 @@ class HyperConnection(Module, Shardable):
 
         Returns:
             The updated streams, same shape and dtype as ``streams``.
+
+        Raises:
+            ValueError: If ``streams`` or ``y`` does not have the configured
+                stream count and width.
         """
+        if (
+            streams.rank != 3
+            or tuple(streams.shape[-2:]) != (self.hc_mult, self.hidden_size)
+            or y.rank != 2
+            or y.shape[-1] != self.hidden_size
+        ):
+            raise ValueError(
+                "write_back expects streams [total_tokens, "
+                f"{self.hc_mult}, {self.hidden_size}] and y [total_tokens, "
+                f"{self.hidden_size}], got {streams.shape} and {y.shape}."
+            )
+        if accelerator_api() == "hip" and mhc_post_supports(
+            self.hc_mult, self.hidden_size, streams.dtype
+        ):
+            return mhc_post(streams, y, mixing.post, mixing.comb)
         dtype = streams.dtype
         placed = ops.unsqueeze(
             ops.cast(mixing.post, dtype), -1

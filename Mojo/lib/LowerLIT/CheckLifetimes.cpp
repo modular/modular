@@ -216,21 +216,15 @@ struct WholeProgramState {
 WholeProgramState::WholeProgramState(Operation *module,
                                      std::vector<FnOp> &funcList) {
   module->walk([&](Operation *op) {
-    // Collect functions and nested functions.
+    // Collect functions.
     if (auto funcOp = dyn_cast<FnOp>(op)) {
-      if (!funcOp.isOptionalSymbol())
-        funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
+      funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
 
       // We don't process external functions. They don't have a body to check.
       if (funcOp.isExternal())
         return;
 
-      // Only top-level functions are parallel work items. A nested function
-      // (an old closure) reads SSA values from the function it is nested in,
-      // so it is processed within that top-level ancestor's task (see
-      // runOnOperation) rather than concurrently with it.
-      if (!funcOp->getParentOfType<FnOp>())
-        funcList.emplace_back(funcOp);
+      funcList.emplace_back(funcOp);
 
       // Remember the Deinitable.__deinit__ member function.
       if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit &&
@@ -1189,11 +1183,6 @@ ValueSet::ValueSet(PerThreadCache &perThreadCache, FnOp func,
 
   func.getBodyRegion().walk<mlir::WalkOrder::PreOrder>(
       [&](Operation *op) -> WalkResult {
-        // Skip looking at nested functions, they are handled as separate
-        // contexts.
-        if (isa<FnOp>(op))
-          return WalkResult::skip();
-
         // All the ops that define trackable values have a single result.
         if (op->getNumResults() == 1) {
           Value result = op->getResult(0);
@@ -1846,11 +1835,6 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
 
   // Scan the body region to find all the interior origins.
   func.getBodyRegion().walk([&](Operation *op) -> WalkResult {
-    // Skip looking at nested functions, they are handled as separate
-    // contexts.
-    if (isa<FnOp>(op))
-      return WalkResult::skip();
-
     // Interior origins can be found by scanning all the operation results
     // and arguments.  We can ignore any operands because they'll be using
     // the other things.
@@ -2730,19 +2714,6 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   Operation *liftedDefiningOp = liftToCommonRegion(definingOp, &op);
   Operation *liftedOperandPt = liftToCommonRegion(operandPt, &op);
   if (valueSet.domInfo.dominates(liftedDefiningOp, liftedOperandPt))
-    return;
-
-  // TODO(remove legacy closures): Legacy closures can have operands defined
-  // outside the function that are referenced directly from within it.  For
-  // example:
-  //   ptr = ...
-  //   @__parameter
-  //   def inner():
-  //     use(ptr)
-  // This gets represented as a direct use of the operand but we mark the origin
-  // live on the function itself. This trips up the dominance check, so special
-  // case this.
-  if (isa<FnOp>(definingOp))
     return;
 
   // Otherwise, it is valid for some other reference but was reinitialized since
@@ -5622,23 +5593,12 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     // that persists across all functions it processes; it is reset between
     // functions.
     PerThreadCache cache(std::move(typeDeclInfo));
-    // `functionVector` holds only top-level functions. Each task walks its
-    // function's nested functions and processes the whole subtree on one
-    // thread. A nested function (an old closure) reads SSA values from the
-    // function it is nested in, so keeping the subtree on a single thread
-    // avoids racing that function's own IR mutation (destructor insertion);
-    // distinct top-level functions are op-disjoint.
-    //
-    // FIXME(MOCO-3942): remove this code once old closures are removed -- every
-    // function is then op-disjoint and this becomes a plain per-function loop.
     M::parallelForEach(
         &getContext(), functionVector,
-        [&](PerThreadCache &cache, FnOp topFunc) {
-          topFunc.walk([&](FnOp func) {
-            if (failed(processFunction(func, cache)))
-              hadError = true;
-            cache.reset();
-          });
+        [&](PerThreadCache &cache, FnOp func) {
+          if (failed(processFunction(func, cache)))
+            hadError = true;
+          cache.reset();
         },
         cache);
 

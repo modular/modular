@@ -32,6 +32,7 @@
 # same finite-guard as the FP8 dynamic-quant reciprocal.
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from std.utils.numerics import isinf, isnan
@@ -59,14 +60,14 @@ def test_nvfp4_quant_near_zero[
     output (fp4_value * fp8_scale) is finite for every element."""
     comptime out_dtype = DType.uint8
 
-    var M = Int(m.value())
-    var N = Int(n.value())
+    var M = Int(m)
+    var N = Int(n)
 
     var input_shape = Coord(m, n)
     comptime output_n = ceildiv(NType.static_value, 2)
     var output_shape = Coord(m, Idx[output_n])
 
-    var host_ptr = alloc[Scalar[dtype]](M * N)
+    var host_ptr = unsafe_alloc[Scalar[dtype]](M * N)
     var host_tensor = TileTensor(host_ptr, row_major(input_shape))
 
     # Pathological input: every 16-wide scale group is a near-zero denormal
@@ -83,7 +84,7 @@ def test_nvfp4_quant_near_zero[
             else:
                 host_tensor[r, c] = tiny
 
-    var host_ptr_output = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_ptr_output = unsafe_alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
 
     var device_buffer = ctx.enqueue_create_buffer[dtype](M * N)
     var device_buffer_output = ctx.enqueue_create_buffer[out_dtype](
@@ -106,7 +107,7 @@ def test_nvfp4_quant_near_zero[
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_total)
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_total)
 
     var input_tensor = TileTensor(device_buffer, row_major(input_shape))
@@ -143,7 +144,7 @@ def test_nvfp4_quant_near_zero[
     # Scan the raw stored scales for non-finite (defense in depth: an e4m3 NaN
     # scale would propagate through any downstream dequant as NaN).
     for i in range(scales_total):
-        var s = scales_host._storage.load(i).cast[.float32]()
+        var s = scales_host._storage.unsafe_load(i).cast[.float32]()
         if isnan(s) or isinf(s):
             num_nonfinite_scales += 1
 
@@ -178,9 +179,9 @@ def test_nvfp4_quant_near_zero[
     assert_equal(num_nonfinite, 0)
     assert_equal(num_nonfinite_scales, 0)
 
-    host_ptr.free()
-    host_ptr_output.free()
-    scales_host_ptr.free()
+    host_ptr.unsafe_free()
+    host_ptr_output.unsafe_free()
+    scales_host_ptr.unsafe_free()
 
 
 def main() raises:

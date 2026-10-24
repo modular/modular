@@ -13,11 +13,27 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+from max import tree
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kv_cache import PagedCacheValues
+from max.graph import DeviceRef, Graph, TensorValue, Type, Value, ops
+from max.graph import Module as GraphModule
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
+from max.nn.transformer import DecoderOutputs
 from max.pipelines.architectures.llama3.llama3 import Llama3
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    vision_merge_inputs,
+)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 
@@ -59,6 +75,99 @@ class Idefics3LanguageModel(Llama3):
         # Store image token ID for multimodal processing
         self.image_token_id = image_token_id
 
+    def input_tree(
+        self,
+        kv_params: KVCacheParamInterface,
+        needs_hidden_state_input: bool = False,
+    ) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; its leaves are its inputs.
+
+        Image embeddings are always inputs: a text-only batch feeds zero rows.
+
+        Args:
+            kv_params: The KV cache parameters.
+            needs_hidden_state_input: Must be ``False``: Idefics3 has no
+                draft model that takes hidden states.
+
+        Returns:
+            The input types under ``batch``, ``vision`` and ``kv``, in graph
+            order.
+        """
+        if needs_hidden_state_input:
+            raise ValueError("Idefics3 takes no hidden-state input")
+        return OrderedDict(
+            batch=ragged_batch_inputs(
+                self.device, ("tokens", "row_offsets", "return_n_logits")
+            ),
+            vision=vision_merge_inputs(
+                [self.device],
+                self.dtype,
+                self.config.hidden_size,
+                rows_dim="num_image_tokens",
+            ),
+            kv=kv_params.get_symbolic_inputs(),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        # The KV cache comes last, and unflattens through the KV params.
+        head = OrderedDict(
+            (key, types)
+            for key, types in self.input_tree(self.kv_params).items()
+            if key != "kv"
+        )
+        head_treedef = tree.flatten(head)[1]
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            remaining = iter(inputs)
+            named = tree.unflatten(head_treedef, remaining, exact=False)
+            assert isinstance(named, OrderedDict)
+            batch, vision = named["batch"], named["vision"]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(remaining),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens=batch["tokens"].tensor,
+                kv_collection=kv_collections[0],
+                return_n_logits=batch["return_n_logits"].tensor,
+                input_row_offsets=batch["row_offsets"].tensor,
+                image_embeddings=vision["image_embeddings"][0].tensor,
+                image_token_indices=vision["image_token_indices"][0].tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def __call__(  # type: ignore[override]
         self,
         tokens: TensorValue,
@@ -67,7 +176,7 @@ class Idefics3LanguageModel(Llama3):
         input_row_offsets: TensorValue,
         image_embeddings: TensorValue,
         image_token_indices: TensorValue,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Executes the language model forward pass with multimodal embedding merging.
 
         Args:

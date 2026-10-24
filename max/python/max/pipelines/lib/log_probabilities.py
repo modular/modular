@@ -255,14 +255,15 @@ class _RaggedModelInputs(Protocol):
     """Model inputs with tokens and input_row_offsets buffers."""
 
     tokens: Buffer
-    input_row_offsets: Buffer
+    input_row_offsets: Buffer | Sequence[Buffer]
 
 
 class LogProbabilitiesMixin(_MixinBase):
     """Mixin providing log probability computation for pipeline models.
 
     Requires the host class to be a ``PipelineModel`` whose ``ModelInputs``
-    subclass has ``tokens`` and ``input_row_offsets`` ``Buffer`` fields.
+    subclass has a ``tokens`` ``Buffer`` and an ``input_row_offsets`` field
+    holding one ``Buffer`` or a per-device sequence of equal ones.
     """
 
     _logprobs_device: Device
@@ -299,7 +300,10 @@ class LogProbabilitiesMixin(_MixinBase):
         sampled_tokens = next_tokens.to_numpy()
         ragged_inputs = cast(_RaggedModelInputs, model_inputs)
         tokens = ragged_inputs.tokens.to_numpy()
-        input_row_offsets = ragged_inputs.input_row_offsets.to_numpy()
+        row_offsets = ragged_inputs.input_row_offsets
+        if not isinstance(row_offsets, Buffer):
+            row_offsets = row_offsets[0]
+        input_row_offsets = row_offsets.to_numpy()
 
         has_full_logits = self.return_logits in (
             ReturnLogits.ALL,

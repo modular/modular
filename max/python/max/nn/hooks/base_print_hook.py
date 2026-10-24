@@ -21,6 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from max import tree
 from max.nn._identity import IdentityMap
 from max.nn.layer import Layer
 
@@ -135,6 +136,10 @@ class BasePrintHook(ABC):
         elif isinstance(outputs, list | tuple):
             for n, out in enumerate(outputs):
                 self.print_and_record(f"{debug_name}-output_{n}", out)
+        elif isinstance(outputs, Mapping):
+            # A named tree, such as a decoder's logits and hidden states.
+            for path, out in tree.paths(outputs).items():
+                self.print_and_record(f"{debug_name}-output_{path}", out)
         elif dataclasses.is_dataclass(outputs):
             for field in dataclasses.fields(outputs):
                 self.print_and_record(

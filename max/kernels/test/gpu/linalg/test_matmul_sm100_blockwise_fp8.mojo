@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
-from std.sys import align_of, size_of
+from std.sys import size_of
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -29,7 +28,7 @@ from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8,
 )
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import _as_compute_fn
 
 from std.utils.index import Index, IndexList
 
@@ -45,16 +44,17 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     umma_shape: IndexList[3],
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
-    use_epilogue: Bool = False,
+    value_epilogue: Bool = False,
+    value_compute: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType,) raises:
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     assert (
         M * size_of[DType.float32]() % 16 == 0
@@ -137,21 +137,18 @@ def test_matmul_sm100_blockwise_scaled_fp8[
 
     var c_tensor = c_device_nd
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_tensor)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+    def store_doubled[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        comptime assert c_tensor.flat_rank >= 2
-        c_tensor.store[alignment=alignment](
-            idx,
-            rebind[SIMD[c_type, width]](val),
-        )
+        var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
+        c_tensor.store[alignment=alignment](idx, scaled)
+
+    def double[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val * 2
 
     rand(a_host.as_span())
     rand(b_host.as_span())
@@ -170,23 +167,55 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    matmul_sm100_blockwise_scaled_fp8[
-        transpose_b=transpose_b,
-        umma_shape=umma_shape,
-        block_tile_shape=block_tile_shape,
-        a_swizzle=swizzle,
-        b_swizzle=swizzle,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            epilogue_fn
-        ) if use_epilogue else None,
-    ](
-        c_device_nd,
-        a_device_nd,
-        b_device_nd,
-        a_scales_device_nd,
-        b_scales_device_nd,
-        ctx,
-    )
+    comptime if value_epilogue:
+        # `store_doubled` owns `c_tensor`, so `c_device_ref_nd` (written by
+        # the reference below) carries the output shape.
+        matmul_sm100_blockwise_scaled_fp8[
+            transpose_b=transpose_b,
+            umma_shape=umma_shape,
+            block_tile_shape=block_tile_shape,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+        ](
+            c_device_ref_nd,
+            a_device_nd,
+            b_device_nd,
+            a_scales_device_nd,
+            b_scales_device_nd,
+            store_doubled,
+            ctx,
+        )
+    elif value_compute:
+        matmul_sm100_blockwise_scaled_fp8[
+            transpose_b=transpose_b,
+            umma_shape=umma_shape,
+            block_tile_shape=block_tile_shape,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+        ](
+            c_device_nd,
+            a_device_nd,
+            b_device_nd,
+            a_scales_device_nd,
+            b_scales_device_nd,
+            _as_compute_fn(double),
+            ctx,
+        )
+    else:
+        matmul_sm100_blockwise_scaled_fp8[
+            transpose_b=transpose_b,
+            umma_shape=umma_shape,
+            block_tile_shape=block_tile_shape,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+        ](
+            c_device_nd,
+            a_device_nd,
+            b_device_nd,
+            a_scales_device_nd,
+            b_scales_device_nd,
+            ctx,
+        )
 
     ctx.synchronize()
 
@@ -208,6 +237,13 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_copy(c_host_ptr, c_device)
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
+
+    comptime if value_epilogue or value_compute:
+        var c_host_ref_flat = c_host_ref.reshape(
+            row_major(c_host_ref.num_elements())
+        )
+        for i in range(c_host_ref.num_elements()):
+            c_host_ref_flat[i] = c_host_ref_flat[i] * Scalar[c_type](2)
 
     assert_with_measure[relative_difference](
         c_host._storage,
@@ -262,7 +298,22 @@ def main() raises:
             umma_shape=Index(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
-            use_epilogue=True,
+            value_epilogue=True,
+        ](
+            ctx,
+            Int(128),
+            Idx[576],
+            Idx[7168],
+        )
+
+        test_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+            value_compute=True,
         ](
             ctx,
             Int(128),

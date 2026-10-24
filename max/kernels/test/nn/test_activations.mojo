@@ -24,7 +24,6 @@ from nn.activations import (
     sigmoid,
     silu,
 )
-from test_utils.math import libm_call
 
 
 # CHECK-LABEL: test_elu
@@ -154,13 +153,6 @@ def test_gelu_quick():
     # gelu_quick([0, 1, 2, 3]) = x * sigmoid(1.702 * x)
     # CHECK: [0.0, 0.84579{{[0-9]+}}, 1.93565{{[0-9]+}}, 2.98192{{[0-9]+}}]
     print(gelu_quick(simd_val))
-
-
-@inline(.always)
-def erf_libm[
-    dtype: DType, simd_width: SIMDLength
-](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    return libm_call["erff", "err"](arg)
 
 
 def main() raises:

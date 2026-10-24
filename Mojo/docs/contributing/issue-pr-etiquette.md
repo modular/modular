@@ -51,45 +51,8 @@ to prove you're using AI.
 
 ## Keep pull requests small
 
-We limit new contributors to two concurrent open pull requests.
-
-We also ask that you make each pull request as small as possible. When you open
-a pull request, check the number of lines modified in GitHub: the smaller the
-better, though don't drop tests or docstrings to get there. If your pull request
-is over 100 lines, try to split it into multiple pull requests. If you can make
-them independent of each other, that's even better, because no synchronization
-is needed for the merge.
-
-This guideline exists for the following reasons:
-
-- *Higher quality reviews.* It's much easier to spot a bug in a few lines than
-  in 1000 lines.
-- *Faster overall review.* To approve a pull request, reviewers need to
-  understand every line and how it fits into your overall change. They also need
-  to move back and forth between files and functions to follow the flow of the
-  code. That gets exponentially harder as the change grows.
-- *Avoiding blocking changes that are valid.* In a huge pull request, some
-  changes are usually valid and some need to be reworked or discussed. If they
-  all sit in the same pull request, the valid changes stay blocked until every
-  discussion is resolved.
-- *Fewer merge conflicts.* A bigger pull request means a slower review, which
-  means the pull request stays open longer and accumulates more conflicts to
-  resolve before it can merge.
-- *Parallel processing.* Reviewers like to parallelize code reviews to merge
-  your code faster. If you open two independent pull requests, two reviewers can
-  work on your code at the same time.
-- *Finding the time for a code review.* A code review often needs to happen in
-  one sitting, because it's hard to hold functions and code logic in your head
-  from one session to the next. A big pull request requires the reviewer to
-  find a big block of time, which isn't always possible and can delay your
-  review and merge by days.
-
-Smaller pull requests mean less work for maintainers and faster reviews and
-merges for contributors. It's a win-win.
-
-## Keep each pull request to one contribution
-
-Along with keeping a pull request small, keep it inside a single
-[contribution area](contribution-areas.md). A pull request that changes the
-standard library shouldn't also change the compiler, and neither should carry
-an unrelated documentation edit along for the ride.
+Make each pull request one change, in one
+[contribution area](contribution-areas.md), ideally under 100 lines. Small
+pull requests get reviewed faster and more carefully, merge the parts that
+are fine without waiting on the parts that aren't, and pick up fewer
+conflicts while open.

@@ -6,8 +6,7 @@ description: >
 hide_title: true
 hide_table_of_contents: true
 compiler_verified: "2026-10-02, Mojo 1.2.0.dev2026100205 (7791487a)"
-last_updated: "2026-10-10"
-build_version: "1.2.0.dev"
+last_updated: "2026-10-21 (restores comptime match)"
 ---
 
 import {
@@ -191,6 +190,24 @@ removing loop overhead.
 
 </Panel>
 
+<Panel title="comptime match" summary="specialize by pattern">
+
+```mojo
+comptime match (m, n): # pick a path by pattern
+    case (16, 16):
+        use_tuned_16x16()
+    case (mt, nt) if mt * nt <= 256: # names bind as parameters
+        use_small_tile[mt, nt]()
+    case _:
+        use_generic()
+```
+
+The subject must be a parameter. A guard is proof for its case, so it
+satisfies a matching `where` on the call. An unmatched subject skips the
+match, so add `case _` when every path must return.
+
+</Panel>
+
 <Panel title="Inlining" summary="force or forbid compiler substitution">
 
 ```mojo
@@ -235,7 +252,7 @@ scaled[.never](3) # kept as a call
 
 ```mojo
 from std.sys.info import simd_width_of, size_of, align_of
-from std.sys.info import CompilationTarget
+from max.gpu.host import default_accelerator
 
 # lanes that fit a register
 comptime w = simd_width_of[DType.float32]()
@@ -245,7 +262,7 @@ size_of[T](); align_of[T]()
 
 # ask about another target: for example,
 # the accelerator, from host code
-comptime gpu = CompilationTarget.default_accelerator()
+comptime gpu = default_accelerator()
 simd_width_of[DType.float32, gpu]()
 ```
 

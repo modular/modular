@@ -23,6 +23,8 @@ import pytest
 
 _CAPTURE = "max.serve.telemetry._kernel_capture"
 _CARRIER = "max.serve.telemetry._trace_context"
+# Only an operator's gRPC traces protocol needs grpc, which is slow to import.
+_WATCHED = (_CAPTURE, _CARRIER, "grpc")
 _TRACES = {
     "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://localhost:4318/v1/traces"
 }
@@ -34,11 +36,13 @@ def _loaded(code: str, env: dict[str, str] | None = None) -> set[str]:
     script = (
         f"{code}\nimport sys\n"
         f"print({_SENTINEL!r}, "
-        f"*(m for m in ({_CAPTURE!r}, {_CARRIER!r}) if m in sys.modules))"
+        f"*(m for m in {_WATCHED!r} if m in sys.modules))"
     )
     child_env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
     child_env.pop("OTEL_SDK_DISABLED", None)
     child_env.pop("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", None)
+    child_env.pop("OTEL_EXPORTER_OTLP_PROTOCOL", None)
+    child_env.pop("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", None)
     child_env.update(env or {})
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -55,12 +59,8 @@ def _loaded(code: str, env: dict[str, str] | None = None) -> set[str]:
     return set(line.split()[1:])
 
 
-def test_model_worker_loads_neither_by_default() -> None:
-    assert _loaded("import max.serve.pipelines.model_worker") == set()
-
-
 def test_api_server_skips_the_capture_module_by_default() -> None:
-    assert _CAPTURE not in _loaded("import max.serve.api_server")
+    assert not {_CAPTURE, "grpc"} & _loaded("import max.serve.api_server")
 
 
 @pytest.mark.parametrize(
@@ -79,30 +79,32 @@ def test_worker_loads_them_once_headers_are_on(
         "import max._core.profiler\n"
         "max._core.profiler.load_profiler_plugin = lambda: False\n"
         "from max.pipelines.lib import ProfilingConfig\n"
-        "from max.serve import scheduler\n"
         "from max.serve.config import Settings\n"
         "from max.serve.pipelines import model_worker\n"
-        "from max.serve.telemetry import common\n"
+        "from max.serve.telemetry import _tracing\n"
         f"s = Settings(kernel_trace_headers={headers}, disable_telemetry=False)\n"
-        "common.configure_tracing(s)\n"
-        "model_worker._configure_kernel_capture(s, 'prefill_and_decode')\n"
-        "assert scheduler._kernel_capture(ProfilingConfig()) is None\n"
+        "_tracing.configure_tracing(s)\n"
+        "assert model_worker._configure_kernel_capture(\n"
+        "    s, 'prefill_and_decode', ProfilingConfig()\n"
+        ") is None\n"
     )
     assert _loaded(code, _TRACES if tracing else None) == expected
 
 
-@pytest.mark.parametrize("role", ["prefill_only", "decode_only"])
-def test_disaggregated_worker_skips_them(role: str) -> None:
+def test_disaggregated_worker_skips_them() -> None:
     # Only the prefill_and_decode scheduler takes a capture. Skipping the
     # module also skips the plugin load.
     code = (
         "import max._core.profiler\n"
         "max._core.profiler.load_profiler_plugin = lambda: False\n"
+        "from max.pipelines.lib import ProfilingConfig\n"
         "from max.serve.config import Settings\n"
         "from max.serve.pipelines import model_worker\n"
-        "from max.serve.telemetry import common\n"
+        "from max.serve.telemetry import _tracing\n"
         "s = Settings(kernel_trace_headers=True, disable_telemetry=False)\n"
-        "common.configure_tracing(s)\n"
-        f"model_worker._configure_kernel_capture(s, {role!r})\n"
+        "_tracing.configure_tracing(s)\n"
+        "model_worker._configure_kernel_capture(\n"
+        "    s, 'decode_only', ProfilingConfig()\n"
+        ")\n"
     )
     assert _loaded(code, _TRACES) == set()

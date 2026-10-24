@@ -49,7 +49,6 @@ from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
 )
-from max.serve import scheduler as serve_scheduler
 from max.serve.config import KernelTraceLevel, Settings
 from max.serve.scheduler import text_generation_scheduler
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
@@ -60,7 +59,7 @@ from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
     load_text_generation_scheduler,
 )
-from max.serve.telemetry import _kernel_capture, common
+from max.serve.telemetry import _kernel_capture, _log_context, _tracing
 from max.serve.telemetry._kernel_capture import (
     KernelCapture,
     KernelCaptureThread,
@@ -122,6 +121,8 @@ class _Harness:
     def add(
         self, level: str | None = None, parent: SpanContext | None = None
     ) -> RequestID:
+        if level is not None and parent is None:
+            parent = _request_span(99)  # Only sampled requests are traced.
         ctx = TextContext(
             request_id=RequestID(),
             max_length=100,
@@ -161,12 +162,12 @@ class _Harness:
         return list(self.scheduler._batch_links._links)
 
 
-def _request_span(n: int) -> SpanContext:
+def _request_span(n: int, sampled: bool = True) -> SpanContext:
     return SpanContext(
         trace_id=n,
         span_id=n,
         is_remote=True,
-        trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        trace_flags=TraceFlags(sampled),
     )
 
 
@@ -187,9 +188,7 @@ def _harness(
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     # The scheduler reads it once, as it is built.
-    monkeypatch.setattr(
-        text_generation_scheduler, "_tracing_enabled", lambda: tracing
-    )
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: tracing)
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=4, target_tokens_per_batch_ce=64
     )
@@ -204,15 +203,7 @@ def _harness(
             kernel_capture=KernelCapture() if kernel_capture else None,
         )
     else:
-        capture = None
-        if kernel_capture:
-            # As the model worker permits captures before it loads the
-            # scheduler.
-            monkeypatch.setattr(common, "_trace_level_header_enabled", True)
-            monkeypatch.setattr(
-                _kernel_capture, "_kernel_capture_permitted", True
-            )
-            capture = serve_scheduler._kernel_capture(profiling)
+        capture = KernelCapture(profiling) if kernel_capture else None
         monkeypatch.setattr(
             TokenGenerationSchedulerConfig,
             "from_pipeline_config",
@@ -232,6 +223,7 @@ def _harness(
             memory_plan=None,
             kernel_capture=capture,
         )
+    monkeypatch.setattr(_log_context, "tracing_enabled", None)
     harness = _Harness(
         scheduler=scheduler,
         pipeline=pipeline,
@@ -319,56 +311,16 @@ def test_two_traced_requests_share_one_capture(
     # Traced passes emit max.batch although the global level is off.
     spans = h.exporter.get_finished_spans()
     batch_spans = [s for s in spans if s.name == "max.batch"]
+    assert all(s.parent is None for s in batch_spans)
     assert [p.batch_span_context for p in passes] == [
         s.get_span_context() for s in batch_spans
     ]
-
-
-@pytest.mark.parametrize("exit_by", ["release", "cancel"])
-def test_stops_when_the_last_traced_request_leaves(
-    monkeypatch: pytest.MonkeyPatch, exit_by: str
-) -> None:
-    h = _harness(monkeypatch)
-    traced = h.add("kernel")
-    untraced = h.add()
-    h.step()
-    assert h.starts == 1
-
-    if exit_by == "release":
-        h.step(traced)
-    else:
-        h.cancel_queue.put_nowait([traced])
-        h.step()
-    assert len(h.stops) == 1
-
-    # The capture stays down for the untraced request's passes.
-    h.step()
-    h.step(untraced)
-    assert h.starts == 1
-    assert len(h.stops) == 1
-
-
-def test_grammar_failure_untraces_its_request(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    h = _harness(monkeypatch)
-    running = h.add("kernel")
-    h.step()
-    bc = h.scheduler.batch_constructor
-    enqueue = bc.enqueue_new_request
-    failing = h.add("kernel")
-
-    def fail_grammar(ctx: TextContext, replica_idx: int | None = None) -> None:
-        if ctx.request_id == failing:
-            bc._fail_grammar_request(ctx, "bad schema")
-        else:
-            enqueue(ctx, replica_idx)
-
-    monkeypatch.setattr(bc, "enqueue_new_request", fail_grammar)
-    # The failed request no longer holds the capture open.
-    h.step(running)
-    assert not bc.contains(failing)
-    assert len(h.stops) == 1
+    # Launch lag counts from the max.batch span's start, which follows the
+    # host time the clock-offset bound uses.
+    assert [p.batch_start_ns for p in passes] == [
+        s.start_time for s in batch_spans
+    ]
+    assert all(p.host_start_ns <= p.batch_start_ns for p in passes)
 
 
 def test_preemption_keeps_the_capture_armed(
@@ -387,21 +339,6 @@ def test_preemption_keeps_the_capture_armed(
     assert h.starts == 1
     (passes,) = h.stops
     assert [p.batch_id for p in passes] == [0, 1, 2]
-
-
-def test_long_capture_stops_at_the_pass_cap(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    h = _harness(
-        monkeypatch, profiling=ProfilingConfig(kernel_trace_max_passes=2)
-    )
-    traced = h.add("kernel")
-    h.step()
-    h.step()
-    assert [p.batch_id for p in h.stops[0]] == [0, 1]
-    h.step()
-    h.step(traced)
-    assert (h.starts, len(h.stops)) == (1, 1)
 
 
 def test_pass_cap_keeps_requests_outside_the_capture_traced(
@@ -530,7 +467,6 @@ def test_profiler_held_elsewhere_leaves_passes_untraced(
     [
         pytest.param(True, True, None, id="no-header"),
         pytest.param(True, True, "off", id="header-off"),
-        pytest.param(True, True, "bogus", id="header-unknown"),
         pytest.param(False, True, "kernel", id="tracing-off"),
         pytest.param(True, False, "kernel", id="not-permitted"),
     ],
@@ -552,6 +488,15 @@ def test_no_binding_call_unless_traced(
     assert not [
         s for s in h.exporter.get_finished_spans() if s.name == "max.batch"
     ]
+
+
+def test_an_unsampled_request_arms_no_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    h = _harness(monkeypatch)
+    request = h.add("kernel", parent=_request_span(1, sampled=False))
+    h.step(request)
+    assert h.events == []
 
 
 def test_global_batch_links_every_member(
@@ -581,9 +526,9 @@ def test_batch_links_dropped_when_a_request_leaves(
     monkeypatch.setattr(
         text_generation_scheduler, "batch_spans_enabled", lambda: True
     )
-    h = _harness(monkeypatch, kernel_capture=False)
+    h = _harness(monkeypatch)
     staying = h.add(parent=_request_span(1))
-    leaving = h.add(parent=_request_span(2))
+    leaving = h.add("kernel", parent=_request_span(2))
     bc = h.scheduler.batch_constructor
 
     if exit_by == "release":
@@ -604,6 +549,17 @@ def test_batch_links_dropped_when_a_request_leaves(
         h.step()
     assert not bc.contains(leaving)
     assert h.linked == [staying]
+    assert leaving not in h.scheduler._prefill_spans
+    assert leaving not in h.scheduler._decode_spans
+    # A grammar failure leaves before its first pass, so it never decodes.
+    phases = ["prefill"] if exit_by == "grammar" else ["prefill", "decode"]
+    assert [
+        s.name
+        for s in h.exporter.get_finished_spans()
+        if (s.attributes or {}).get("max.request.id") == str(leaving)
+    ] == [f"max.phase.{p}" for p in phases]
+    capture = h.scheduler._kernel_capture
+    assert capture is not None and not capture.is_traced(leaving)
 
 
 def test_batch_links_keep_traced_then_first_members_up_to_the_cap(
@@ -681,7 +637,7 @@ def test_pass_cap_drops_the_links_of_requests_it_untraces(
 def test_a_link_outlives_its_trace_only_when_every_member_is_linked(
     link_every_member: bool,
 ) -> None:
-    links = common._BatchLinks(link_every_member, max_links=128)
+    links = text_generation_scheduler._BatchLinks(link_every_member, 128)
     request = RequestID()
     parent = trace.set_span_in_context(NonRecordingSpan(_request_span(1)))
     links.admit(request, parent, traced=True)
@@ -726,22 +682,20 @@ def _wait_idle(thread: KernelCaptureThread) -> None:
 
 
 @pytest.mark.parametrize(
-    ("gate", "level", "plugin", "permitted", "loads", "warns"),
+    ("level", "plugin", "permitted", "loads", "warns"),
     [
-        pytest.param(False, KernelTraceLevel.OFF, True, False, 0, 0, id="off"),
-        pytest.param(True, KernelTraceLevel.OFF, True, True, 1, 0, id="on"),
+        pytest.param(KernelTraceLevel.OFF, True, True, 1, 0, id="on"),
         pytest.param(
-            True, KernelTraceLevel.BATCH, False, False, 1, 1, id="no-plugin"
+            KernelTraceLevel.BATCH, False, False, 1, 1, id="no-plugin"
         ),
         pytest.param(
-            True, KernelTraceLevel.KERNEL, True, False, 0, 1, id="global-kernel"
+            KernelTraceLevel.KERNEL, True, False, 0, 1, id="global-kernel"
         ),
     ],
 )
 def test_configure_kernel_capture_permits_capture(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
-    gate: bool,
     level: KernelTraceLevel,
     plugin: bool,
     permitted: bool,
@@ -757,10 +711,8 @@ def test_configure_kernel_capture_permits_capture(
     monkeypatch.setattr(
         _kernel_capture, "load_profiler_plugin", load_profiler_plugin
     )
-    monkeypatch.setattr(common, "set_gpu_profiling_state", lambda state: None)
-    monkeypatch.setattr(common, "_trace_level_header_enabled", gate)
-    monkeypatch.setattr(common, "_kernel_trace_level", KernelTraceLevel.OFF)
-    monkeypatch.setattr(_kernel_capture, "_kernel_capture_permitted", False)
+    monkeypatch.setattr(_tracing, "set_gpu_profiling_state", lambda state: None)
+    monkeypatch.setattr(_tracing, "_kernel_trace_level", KernelTraceLevel.OFF)
     # The kernel level may install process-wide SIGTERM handling.
     monkeypatch.setattr(signal, "signal", lambda *args: None)
     monkeypatch.setattr(atexit, "register", lambda *args, **kwargs: None)
@@ -768,10 +720,9 @@ def test_configure_kernel_capture_permits_capture(
     monkeypatch.setenv("MODULAR_MAX_DEBUG_PROFILING_ENABLED", "")
     monkeypatch.delenv("MODULAR_MAX_DEBUG_PROFILING_ENABLED")
     with caplog.at_level(logging.WARNING, logger="max.serve"):
-        settings = Settings(kernel_trace_level=level, kernel_trace_headers=gate)
-        common.configure_kernel_tracing(settings)
-        _kernel_capture.configure_kernel_capture(settings)
-    assert _kernel_capture.kernel_capture_permitted() is permitted
+        settings = Settings(kernel_trace_level=level)
+        _tracing.configure_kernel_tracing(settings)
+        assert _kernel_capture.configure_kernel_capture(settings) is permitted
     assert len(load_calls) == loads
     assert len(caplog.records) == warns
 

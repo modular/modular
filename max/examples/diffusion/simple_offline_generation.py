@@ -554,7 +554,7 @@ async def generate_image(args: argparse.Namespace) -> None:
     # (ModuleV2) subclass, so the type check here mirrors that.
     if msg := getattr(arch.pipeline_model, "not_implemented_message", None):
         raise NotImplementedError(msg)
-    if not issubclass(
+    if arch.pipeline_model is None or not issubclass(
         arch.pipeline_model, (DiffusionPipeline, PipelineExecutor)
     ):
         raise TypeError(

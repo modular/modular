@@ -104,6 +104,7 @@ VARARGS_PARENTS: Final = {
     syms.metaparams,
     syms.trailer,  # single argument to call
     syms.typedargslist,
+    syms.typeconv,
     syms.varargslist,  # lambdas
 }
 UNPACKING_PARENTS: Final = {
@@ -404,6 +405,10 @@ def whitespace(
                     f"Cannot format: unknown argument convention"
                     f" '{prev.value}' before '{v}'"
                 )
+            return NO
+
+    elif p.type == syms.typeconv:
+        if prev and prev.type in STARS:
             return NO
 
     elif p.type in TYPED_NAMES:

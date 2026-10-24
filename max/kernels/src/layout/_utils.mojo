@@ -12,29 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import align_of
-from std.sys.intrinsics import readfirstlane
 
-from max.gpu.intrinsics import AMDBufferResource
+from max.gpu.intrinsics import AMDBufferResource, readfirstlane
 from layout import *
-from layout.layout_tensor import LayoutTensor
-from layout.tile_layout import Layout as TileLayout
 
 from std.utils import IndexList
-
-from .int_tuple import product
-
-
-def load_to_simd(
-    tensor: LayoutTensor,
-    out res: SIMD[tensor.dtype, product(tensor.layout.shape)],
-):
-    comptime assert (
-        tensor.layout.all_dims_known()
-    ), "load_to_simd is supported only for tensors with known layout"
-    comptime size = type_of(res).length
-    return rebind[type_of(res)](
-        tensor.reshape[Layout(Int(size))]().vectorize[size]()[0]
-    )
 
 
 @inline(.always)
@@ -62,72 +44,6 @@ def load_to_simd(
 
 
 @inline(.always)
-def _get_bounds(tensor: LayoutTensor) -> Int:
-    comptime assert (
-        tensor.element_layout.all_dims_known()
-    ), "Element layout must be known for _get_bounds"
-    comptime assert (
-        tensor.element_layout.size() == 1
-    ), "Element layout must be a scalar"
-
-    comptime assert tensor.rank == 2 or tensor.num_strides == 2
-
-    var strides = tensor.runtime_layout.stride.value
-    # Masked views use runtime extents even when their layout shape is static.
-    var native_layout = TileLayout(
-        Coord(tensor.dim[0](), tensor.dim[1]()),
-        Coord(strides[0], strides[1]),
-    )
-    var native = TileTensor[
-        tensor.dtype,
-        type_of(native_layout),
-        tensor.origin,
-        address_space=tensor.address_space,
-        linear_idx_type=.int64,
-    ](tensor.ptr, native_layout)
-    return _get_bounds_impl[tensor.linear_idx_type, True](native)
-
-
-@inline(.always)
-def make_amd_buffer_resource(
-    tensor: LayoutTensor,
-) -> AMDBufferResource:
-    var ptr = tensor.ptr
-    var size = _get_bounds(tensor)
-    return AMDBufferResource(readfirstlane(ptr), readfirstlane(size))
-
-
-@inline(.always)
-def _get_bounds_impl[
-    legacy_index_type: DType, legacy_bounds: Bool
-](tensor: TileTensor) -> Int:
-    var dim0 = Int(tensor.dim[0]())
-    var dim1 = Int(tensor.dim[1]())
-    comptime if legacy_bounds:
-        if dim0 == 0 or dim1 == 0:
-            return 0
-        var index0 = Scalar[legacy_index_type](dim0 - 1)
-        var index1 = Scalar[legacy_index_type](dim1 - 1)
-        var stride0 = Scalar[legacy_index_type](
-            tensor.layout.stride[0]().value()
-        )
-        var stride1 = Scalar[legacy_index_type](
-            tensor.layout.stride[1]().value()
-        )
-        # Legacy offsets wrap before widening; the final +1 occurs in Int.
-        var offset = Scalar[legacy_index_type](0)
-        offset += index0 * stride0
-        offset += index1 * stride1
-        return Int(offset) + 1
-    else:
-        if dim0 <= 0 or dim1 <= 0:
-            return 0
-        var stride0 = Int(tensor.layout.stride[0]().value())
-        var stride1 = Int(tensor.layout.stride[1]().value())
-        return (dim0 - 1) * stride0 + (dim1 - 1) * stride1 + 1
-
-
-@inline(.always)
 def _get_bounds(tensor: TileTensor) -> Int:
     """Computes buffer bounds from a rank-2 TileTensor.
 
@@ -135,7 +51,13 @@ def _get_bounds(tensor: TileTensor) -> Int:
     Only dim[0] may be runtime; strides and dim[1] are typically comptime,
     so the compiler constant-folds everything except the valid_rows multiply.
     """
-    return _get_bounds_impl[.int64, False](tensor)
+    var dim0 = Int(tensor.dim[0]())
+    var dim1 = Int(tensor.dim[1]())
+    if dim0 <= 0 or dim1 <= 0:
+        return 0
+    var stride0 = Int(tensor.dynamic_stride(0))
+    var stride1 = Int(tensor.dynamic_stride(1))
+    return (dim0 - 1) * stride0 + (dim1 - 1) * stride1 + 1
 
 
 @inline(.always)

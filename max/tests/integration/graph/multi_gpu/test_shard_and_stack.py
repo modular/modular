@@ -120,7 +120,7 @@ def test_shard_and_stack_to_multiple_gpus(
         outputs = ops.shard_and_stack(
             [inp.tensor for inp in graph.inputs], devices, axis
         )
-        graph.output(*outputs)
+        graph.output(outputs)
 
     # Compile and execute
     model = session.load(graph)

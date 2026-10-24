@@ -661,7 +661,7 @@ def _grouped_allreduce_graph(
             [inp.buffer for inp in graph.inputs[num_devices:]],
             group_size=group_size,
         )
-        graph.output(*outputs)
+        graph.output(outputs)
         return graph
 
 

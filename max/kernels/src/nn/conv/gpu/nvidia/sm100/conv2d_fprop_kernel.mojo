@@ -34,7 +34,6 @@ Supported configurations (Flux VAE optimized):
 - BF16/FP16 data types
 """
 
-from std.collections import Optional
 from std.math import ceildiv
 
 from std.sys import size_of
@@ -100,8 +99,9 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import 
 )
 from linalg.utils import (
     ElementwiseComputeFn,
-    elementwise_epilogue_type,
+    ElementwiseEpilogueFn,
     identity_compute_fn,
+    no_epilogue_fn,
 )
 
 from .conv_config import Conv2dConfig
@@ -124,8 +124,6 @@ struct Conv2dFpropKernel[
     config: Conv2dConfig[act_type, filter_type, out_type],
     # Cluster shape
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
-    # Optional epilogue lambda for fusion (bias, activation, residual add)
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     register_based_epilogue: Bool = True,
 ]:
     """SM100 Conv2D forward propagation kernel.
@@ -146,9 +144,7 @@ struct Conv2dFpropKernel[
         out_type: Output data type.
         config: Kernel configuration.
         cluster_shape: CUDA cluster dimensions.
-        elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(Coord, SIMD) -> None`.
-        register_based_epilogue: Whether to apply the lambda in registers.
+        register_based_epilogue: Whether to apply the epilogue in registers.
     """
 
     # ========== Derived Constants ==========
@@ -415,8 +411,6 @@ struct Conv2dFpropKernel[
         c_smem_dim1=Self.SmemType.OutputN,
         num_output_stages=Self.SmemType.num_output_stages,
         num_output_warps=Self.num_output_warps,
-        # Epilogue lambda for fusion (bias, activation, residual add)
-        elementwise_lambda_fn=Self.elementwise_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
     ]
 
@@ -678,11 +672,15 @@ struct Conv2dFpropKernel[
 
                 # Peer CTA slicing
                 var act_peer_tile = type_of(act_tile)(
-                    act_tile.ptr + peer_m_rank * Self.act_tma_load_size,
+                    act_tile.ptr.unsafe_offset(
+                        peer_m_rank * Self.act_tma_load_size
+                    ),
                     act_tile.layout,
                 )
                 var filter_peer_tile = type_of(filter_tile)(
-                    filter_tile.ptr + peer_rank_m * Self.filter_tma_load_size,
+                    filter_tile.ptr.unsafe_offset(
+                        peer_rank_m * Self.filter_tma_load_size
+                    ),
                     filter_tile.layout,
                 )
 
@@ -740,6 +738,7 @@ struct Conv2dFpropKernel[
             mnk,
             Float32(0.0),
             identity_compute_fn,
+            no_epilogue_fn,
         )
 
     @staticmethod
@@ -788,6 +787,56 @@ struct Conv2dFpropKernel[
             mnk,
             Float32(0.0),
             compute_fn,
+            no_epilogue_fn,
+        )
+
+    @staticmethod
+    @inline(.always)
+    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
+    @__name(
+        t"sm100_conv2d_fprop_epilogue_fn_{Self.act_type}_{Self.filter_type}_{Self.out_type}",
+    )
+    def run_with_epilogue_fn[
+        EpilogueFnType: ElementwiseEpilogueFn
+    ](
+        act_tma_op: Self.ActTmaOp,
+        filter_tma_op: Self.FilterTmaOp,
+        out_tma_op: Self.OutTmaOp,
+        cluster_dim: StaticTuple[Int32, 3],
+        mnk: StaticTuple[UInt32, 3],
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Kernel entry point for Conv2D fprop with an elementwise epilogue.
+
+        Parameters:
+            EpilogueFnType: Type of the elementwise epilogue closure.
+
+        Args:
+            act_tma_op: Im2col TMA descriptor for activation.
+            filter_tma_op: TMA descriptor for filter.
+            out_tma_op: TMA descriptor for output.
+            cluster_dim: Cluster dimensions.
+            mnk: GEMM dimensions (M, N, K).
+            epilogue_fn: Elementwise epilogue that stores each output value.
+        """
+        Self._run_impl[
+            has_residual=False,
+            has_epilogue_fn=True,
+            _src_tile_shape=Self.OutTmaOp.tile_shape,
+            _src_desc_shape=Self.OutTmaOp.desc_shape,
+        ](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            out_tma_op,  # Unused dummy for src_tma_op
+            cluster_dim,
+            mnk,
+            Float32(0.0),
+            identity_compute_fn,
+            epilogue_fn,
         )
 
     @staticmethod
@@ -833,6 +882,62 @@ struct Conv2dFpropKernel[
             mnk,
             beta,
             identity_compute_fn,
+            no_epilogue_fn,
+        )
+
+    @staticmethod
+    @inline(.always)
+    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(src_tma_op, `nvvm.grid_constant`)
+    @__name(
+        t"sm100_conv2d_fprop_with_residual_epilogue_fn_{Self.act_type}_{Self.filter_type}_{Self.out_type}",
+    )
+    def run_with_residual_and_epilogue_fn[
+        EpilogueFnType: ElementwiseEpilogueFn
+    ](
+        act_tma_op: Self.ActTmaOp,
+        filter_tma_op: Self.FilterTmaOp,
+        out_tma_op: Self.OutTmaOp,
+        src_tma_op: Self.SrcTmaOp,
+        cluster_dim: StaticTuple[Int32, 3],
+        mnk: StaticTuple[UInt32, 3],
+        beta: Float32,
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Kernel entry point for Conv2D fprop with residual and an epilogue.
+
+        Parameters:
+            EpilogueFnType: Type of the elementwise epilogue closure.
+
+        Args:
+            act_tma_op: Im2col TMA descriptor for activation.
+            filter_tma_op: TMA descriptor for filter.
+            out_tma_op: TMA descriptor for output D.
+            src_tma_op: TMA descriptor for source C (residual input).
+            cluster_dim: Cluster dimensions.
+            mnk: GEMM dimensions (M, N, K).
+            beta: Residual scale factor.
+            epilogue_fn: Elementwise epilogue that stores each output value
+                after the residual add.
+        """
+        Self._run_impl[
+            has_residual=True,
+            has_epilogue_fn=True,
+            _src_tile_shape=Self.SrcTmaOp.tile_shape,
+            _src_desc_shape=Self.SrcTmaOp.desc_shape,
+        ](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            src_tma_op,
+            cluster_dim,
+            mnk,
+            beta,
+            identity_compute_fn,
+            epilogue_fn,
         )
 
     # ========== Unified Kernel Implementation ==========
@@ -841,9 +946,11 @@ struct Conv2dFpropKernel[
     @inline(.always)
     def _run_impl[
         ComputeFnType: ElementwiseComputeFn,
+        EpilogueFnType: ElementwiseEpilogueFn,
         //,
         has_residual: Bool,
         has_compute_fn: Bool = False,
+        has_epilogue_fn: Bool = False,
         _src_tile_shape: Coord = Self.SrcTmaOp.tile_shape,
         _src_desc_shape: Coord = Self.SrcTmaOp.desc_shape,
     ](
@@ -857,6 +964,7 @@ struct Conv2dFpropKernel[
         mnk: StaticTuple[UInt32, 3],
         beta: Float32,
         compute_fn: ComputeFnType,
+        epilogue_fn: EpilogueFnType,
     ):
         """Unified Conv2D fprop implementation with optional residual.
 
@@ -867,8 +975,11 @@ struct Conv2dFpropKernel[
 
         Parameters:
             ComputeFnType: Type of `compute_fn` (inferred).
+            EpilogueFnType: Type of `epilogue_fn` (inferred).
             has_residual: Whether to load source C and apply residual add.
             has_compute_fn: Whether to apply `compute_fn` in the epilogue.
+            has_epilogue_fn: Whether `epilogue_fn` stores the output in
+                place of the TMA store.
             _src_tile_shape: Source C TMA tile shape (internal, set by
                 entry points).
             _src_desc_shape: Source C TMA descriptor shape (internal, set
@@ -885,13 +996,18 @@ struct Conv2dFpropKernel[
             beta: Residual scale factor (only used when has_residual is True).
             compute_fn: Compute epilogue (only used when has_compute_fn is
                 True).
+            epilogue_fn: Elementwise epilogue (only used when
+                has_epilogue_fn is True).
         """
+        comptime assert not (
+            has_compute_fn and has_epilogue_fn
+        ), "an elementwise epilogue value excludes the compute epilogue"
         # Access shared memory
         ref smem = external_memory[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Create input pipeline with payload
         var tile_payload = Self.TilePayload(
@@ -1133,17 +1249,41 @@ struct Conv2dFpropKernel[
                             # cycle per inner epilogue stage, matching the
                             # CUTLASS `sm100_epilogue_tma_warpspecialized`
                             # lockstep pattern (MODELS-1484).
-                            tile_writer.write_with_residual[
-                                Self.SmemType.num_epi_load_stages
-                            ](
+                            comptime if has_epilogue_fn:
+                                tile_writer.write_with_residual[
+                                    Self.SmemType.num_epi_load_stages
+                                ](
+                                    smem.out_tiles(),
+                                    output_stage,
+                                    src_tiles,
+                                    Pointer(to=epi_load_pipeline.pipeline),
+                                    Scalar[Self.out_type](beta),
+                                    (current.m, current.n),
+                                    (mnk[0], mnk[1]),
+                                    ctx.elect_one_warp,
+                                    epilogue_fn,
+                                )
+                            else:
+                                tile_writer.write_with_residual[
+                                    Self.SmemType.num_epi_load_stages
+                                ](
+                                    smem.out_tiles(),
+                                    output_stage,
+                                    src_tiles,
+                                    Pointer(to=epi_load_pipeline.pipeline),
+                                    Scalar[Self.out_type](beta),
+                                    (current.m, current.n),
+                                    (mnk[0], mnk[1]),
+                                    ctx.elect_one_warp,
+                                )
+                        elif has_epilogue_fn:
+                            tile_writer.write(
                                 smem.out_tiles(),
                                 output_stage,
-                                src_tiles,
-                                Pointer(to=epi_load_pipeline.pipeline),
-                                Scalar[Self.out_type](beta),
                                 (current.m, current.n),
                                 (mnk[0], mnk[1]),
                                 ctx.elect_one_warp,
+                                epilogue_fn,
                             )
                         elif has_compute_fn:
                             tile_writer.write(

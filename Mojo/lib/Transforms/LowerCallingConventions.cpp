@@ -74,7 +74,8 @@ static StructType lowerPackStructType(StructType type) {
     return type;
   // Strip off the isParamPack bit.
   return StructType::get(type.getContext(), type.getElementTypesVariadic(),
-                         type.getIsMemoryOnly(), type.getMinAlignment(), false);
+                         type.getIsMemoryOnly(), type.getMinAlignment(), false,
+                         type.getDomain());
 }
 
 /// Lower `!kgen.variant` to a pair of `!pop.union` and a `!kgen.scalar`.
@@ -104,27 +105,36 @@ static StructAttr lowerVariantAttr(VariantAttr attr) {
   return StructAttr::get({unionAttr, discrAttr}, structType);
 }
 
-static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
+static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op,
+                                 SymbolTable &symtab) {
   FuncTypeGeneratorType resSigGen = op.getResult().getType();
   auto calleeSigGen = cast<FuncTypeGeneratorType>(op.getCallee().getType());
   SymbolConstantAttr callee = cast<SymbolConstantAttr>(op.getCallee());
 
   if (calleeSigGen == resSigGen) {
     // Signatures are equal, no need to transform the arguments.
-    // Directly lower to CreateClosureOp.
-    b.replaceOpWithNewOp<CreateClosureOp>(op, callee);
+    // Directly lower to CreateFuncPtrOp.
+    b.replaceOpWithNewOp<CreateFuncPtrOp>(op, callee);
     return;
   }
 
-  // The created closure is a synthesized operation. No debug scopes should be
-  // carried into it from the originating op.
+  // The wrapper is a synthesized function. No debug scopes should be carried
+  // into it from the originating op.
   LocationAttr loc = DebugInfo::stripDebugScopesRecursively(op->getLoc());
-  auto closureWrapper = StageClosureOp::create(b, loc, resSigGen);
-  closureWrapper.setCallLocAttr(op->getLoc());
-  Block *body = b.createBlock(&closureWrapper.getBodyRegion());
+  FuncType resSig = resSigGen.getBody();
+  OpBuilder detached(op.getContext());
+  auto wrapper = FuncOp::create(
+      detached, loc,
+      b.getStringAttr(callee.getSymbol().getRootReference().getValue() +
+                      "_reg_stub"),
+      resSig);
+  // Insert before the enclosing top-level function so the in-progress module
+  // walk does not visit the already-lowered wrapper.
+  Block &moduleBody = symtab.getOp()->getRegion(0).front();
+  symtab.insert(wrapper, moduleBody.findAncestorOpInBlock(*op)->getIterator());
+  Block *body = b.createBlock(&wrapper.getBodyRegion());
 
   // Bitcast the function arguments and load the inputs.
-  FuncType resSig = resSigGen.getBody();
   FuncType calleeSig = calleeSigGen.getBody();
   SmallVector<Value> insValues;
   SmallVector<Value> outsPointers;
@@ -165,18 +175,22 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
   // Add the terminator (HLCF::ReturnOp).
   ReturnOp::create(b, loc);
 
-  b.replaceOp(op, closureWrapper);
+  b.setInsertionPoint(op);
+  b.replaceOpWithNewOp<CreateFuncPtrOp>(
+      op, SymbolConstantAttr::get(wrapper.getSymNameAttr(), resSigGen));
 }
 
 /// We need to roll our own walk function because we are converting types and
 /// operations at the same time. We need a pre-order walk to convert argument
 /// types before their users, but we are also erasing ops with regions.
-static void recursiveRewrite(Operation *op, mlir::AttrTypeReplacer &replacer);
+static void recursiveRewrite(Operation *op, mlir::AttrTypeReplacer &replacer,
+                             SymbolTable &symtab);
 
 /// Rewrite a single operation, recursing if it has regions.
-static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
+static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer,
+                      SymbolTable &symtab) {
   // Recursively replace all signatures in the operation. This will handle the
-  // signatures of `kgen.func`, `kgen.stage_closure`, and `co.execute`.
+  // signatures of `kgen.func` and `co.execute`.
   replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
                              /*replaceTypes=*/true);
 
@@ -200,7 +214,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     auto [anyNone, newResults] = removeNoneTypes(op->getResultTypes());
     // Exit early if there are no none results.
     if (!anyNone)
-      return recursiveRewrite(op, replacer);
+      return recursiveRewrite(op, replacer, symtab);
     OperationState state(op->getLoc(), op->getName(), op->getOperands(),
                          newResults);
     // Micro-optimization: set the DictionaryAttr directly to avoid a re-hash.
@@ -234,7 +248,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     assert(newResultIdx == newOp->getNumResults());
     op->erase();
     // Recurse on the new op.
-    recursiveRewrite(newOp, replacer);
+    recursiveRewrite(newOp, replacer, symtab);
     return;
   }
 
@@ -305,20 +319,21 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
 
   // Handle thunking operations.
   if (auto createRegStubOp = dyn_cast<CreateRegStubOp>(op)) {
-    lowerCreateRegStubOp(b, createRegStubOp);
+    lowerCreateRegStubOp(b, createRegStubOp, symtab);
     return;
   }
 
   // In the general case, try to recurse on the op.
-  recursiveRewrite(op, replacer);
+  recursiveRewrite(op, replacer, symtab);
 }
 
 /// Out-of-line definition.
-static void recursiveRewrite(Operation *op, mlir::AttrTypeReplacer &replacer) {
+static void recursiveRewrite(Operation *op, mlir::AttrTypeReplacer &replacer,
+                             SymbolTable &symtab) {
   for (Region &region : op->getRegions())
     if (!region.empty())
       for (Operation &op : llvm::make_early_inc_range(region.front()))
-        rewriteFn(&op, replacer);
+        rewriteFn(&op, replacer, symtab);
 }
 
 void LowerCallingConventionsPass::runOnOperation() {
@@ -363,5 +378,6 @@ void LowerCallingConventionsPass::runOnOperation() {
         return std::make_pair(Attribute(lna), WalkResult::skip());
       });
 
-  rewriteFn(getOperation(), replacer);
+  SymbolTable symtab(getOperation());
+  rewriteFn(getOperation(), replacer, symtab);
 }

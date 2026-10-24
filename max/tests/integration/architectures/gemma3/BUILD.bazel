@@ -24,8 +24,7 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
     },
     exec_properties = {
-        # Increased from 4 to 16 due to MODELS-958
-        "test.resources:gpu-memory": "16",
+        "test.resources:gpu-memory": "4",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

@@ -19,7 +19,7 @@ import logging
 import re
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import Buffer, bfloat16_as_uint16_to_float32
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData, Weights
@@ -36,7 +36,7 @@ _FP4_E2M1_MAX = 6.0
 _TEXT = "model.llm."
 _VISION = "model.visual."
 _SKIP = {
-    "model.mtp.": "MTP draft heads, which this architecture does not implement",
+    "model.mtp.": "MTP depths, which load as their own draft",
     "model.audio.": "the audio tower, which this architecture does not serve",
 }
 
@@ -123,8 +123,7 @@ def _as_float32(data: WeightData) -> np.ndarray:
     """
     buf = data.to_buffer()
     if data.dtype == DType.bfloat16:
-        bits = buf.view(DType.uint16).to_numpy().astype(np.uint32)
-        return (bits << 16).view(np.float32)
+        return bfloat16_as_uint16_to_float32(buf.view(DType.uint16).to_numpy())
     return buf.to_numpy().astype(np.float32)
 
 

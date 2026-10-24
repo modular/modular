@@ -32,6 +32,8 @@ from std.collections import OptionalReg
 from std.utils.index import IndexList, Index
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
+from nn.attention.mha_operand import MHAOperand, SparseRowsMHAOperand
+
 # ===-----------------------------------------------------------------------===#
 # MaskName
 # ===-----------------------------------------------------------------------===#
@@ -67,7 +69,7 @@ struct MaskName(EnumLike, Equatable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -2105,6 +2107,186 @@ struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
 
 
 # ===-----------------------------------------------------------------------===#
+# SparseRowsDecodeMask
+# ===-----------------------------------------------------------------------===#
+
+
+struct SparseRowsDecodeMask[base_t: MHAOperand, //, row_width: Int](
+    MHAMask, TrivialRegisterPassable
+):
+    """Padding mask for in-place sparse decode, plus a key-count bound.
+
+    A position `(seq_id, head, q, k)` is visible iff `k` is below the
+    entry's closed-form valid length, which `rows` computes from the cache
+    length (see `SparseRowsMHAOperand.valid_length`), so masking and the
+    in-place loader agree without a lengths buffer. Like `PaddingMask` there
+    is no causal check; the top-k selection already enforces causality.
+
+    `mask_out_of_bound` is set on every target, so the AMD decode kernel
+    also masks the keys of a tile past its split-K partition's end, which
+    lets partitions be smaller than a tile.
+
+    Parameters:
+        base_t: The operand over the full paged cache (inferred).
+        row_width: Elements per cache row.
+    """
+
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
+
+    var rows: SparseRowsMHAOperand[
+        base_t=Self.base_t, row_width=Self.row_width, predicated=True
+    ]
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "SparseRowsDecodeMask"
+
+    @staticmethod
+    def name() -> String:
+        return "SparseRowsDecodeMask"
+
+    def __init__(
+        out self,
+        rows: SparseRowsMHAOperand[
+            base_t=Self.base_t, row_width=Self.row_width, predicated=True
+        ],
+    ):
+        """Masks with `rows`' closed-form valid lengths.
+
+        Args:
+            rows: The in-place operand the decode reads.
+        """
+        self.rows = rows
+
+    @always_inline
+    def mask[
+        dtype: DType,
+        width: SIMDLength,
+        //,
+        *,
+        element_type: DType = .uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        comptime index_type = coord.element_type
+        var k_idx = coord[3]
+        var valid_len = Scalar[index_type](
+            Int(self.rows.valid_length(UInt32(coord[0])))
+        )
+        var k_positions = iota[index_type, width](Scalar[index_type](k_idx))
+
+        return k_positions.lt(valid_len).select(score_vec, MASK_VALUE)
+
+    @always_inline
+    def status[
+        *, element_type: DType = .uint32
+    ](
+        self,
+        seq_id: UInt32,
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
+    ) -> TileMaskStatus:
+        var valid_len = Scalar[element_type](
+            Int(self.rows.valid_length(UInt32(seq_id)))
+        )
+
+        # Tile fully masked when its first column is already past valid_len.
+        if tile_offset.data[1] >= valid_len:
+            return TileMaskStatus.FULL_MASK
+
+        if tile_offset.data[1] + tile_size.data[1] <= valid_len:
+            return TileMaskStatus.NO_MASK
+
+        return TileMaskStatus.PARTIAL_MASK
+
+    @always_inline
+    def start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32) -> UInt32:
+        # No causal restriction: every batch starts at column 0.
+        return 0
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        return BN
+
+    @always_inline
+    def total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        var valid_len = UInt32(Int(self.rows.valid_length(UInt32(seq_id))))
+        var effective = min(num_cols, valid_len)
+        return ceildiv(effective, UInt32(BN))
+
+    @staticmethod
+    def count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 2
+
+    @always_inline
+    def last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+
+    @always_inline
+    def masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        var valid_len = UInt32(Int(self.rows.valid_length(UInt32(seq_id))))
+        var effective = min(num_cols, valid_len)
+        var num_unmasked = effective // UInt32(BN)
+        var total = self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+        return {num_unmasked, total}
+
+    @staticmethod
+    def nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.NO_MASK, TileMaskStatus.PARTIAL_MASK}
+
+    @staticmethod
+    def mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.NO_MASK, MaskStrategy.BITMASK}
+
+    @always_inline
+    def mask_bits(
+        self,
+        seq_id: UInt32,
+        score_row: Int32,
+        col_start: Int32,
+        num_keys: Int32,
+    ) -> UInt32:
+        # Padding-only: low `n_valid_pad` bits set, no causal component.
+        var valid_len: Int32 = Int32(
+            Int(self.rows.valid_length(UInt32(seq_id)))
+        )
+        var n_valid_pad: Int32 = max(valid_len - col_start, 0)
+        return (
+            (UInt32(1) << UInt32(n_valid_pad)) - UInt32(1)
+        ) if n_valid_pad < 32 else UInt32(0xFFFF_FFFF)
+
+    @staticmethod
+    def sliding_window_size() -> Int:
+        return 0
+
+
+# ===-----------------------------------------------------------------------===#
 # MaterializedMask
 # ===-----------------------------------------------------------------------===#
 
@@ -2306,7 +2488,7 @@ struct MaterializedMask[
                     )
                 ):
                     adjusted_coord[rank - 1] = coord[3] + i
-                    retval[i] = self.mask_tensor.load[width=1](
+                    retval[i] = self.mask_tensor.load(
                         Coord(adjusted_coord)
                     ).cast[dtype]()
 
@@ -3180,7 +3362,9 @@ struct RelativeLogitsMask[
             # funnel shift can realign them by one element when `lo` is odd.
             var lo_even = lo & ~1
             if lo_even >= 0 and lo_even + BN + 2 <= extent:
-                var words = (row_ptr + lo_even).bitcast[UInt32]()
+                var words = row_ptr.unsafe_offset(lo_even).unsafe_bitcast[
+                    UInt32
+                ]()
                 var shift = UInt32(lo & 1) * 16
                 var w = words[0]
                 comptime for m in range(BN // 2):

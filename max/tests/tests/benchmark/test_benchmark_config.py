@@ -119,18 +119,17 @@ class TestServingConfigFileLoading:
     Config YAML format notes
     ------------------------
     ``ServingBenchmarkConfig`` uses ``section_name = "benchmark_config"`` as
-    its default, but that default is NOT visible to the ``model_validator``
-    because it runs before Pydantic applies defaults.  The section is only
-    extracted when ``section_name`` is explicitly supplied at construction time.
+    its default. The section is extracted when the file has it; a file
+    without it is read from the top level.
 
     Two valid file formats therefore exist:
 
-    * **Flat** (no section wrapper) — works without passing ``section_name``::
+    * **Flat** (no section wrapper)::
 
           model: myorg/model
           host: 10.0.0.1
 
-    * **Sectioned** — requires ``section_name="benchmark_config"``::
+    * **Sectioned**::
 
           benchmark_config:
               model: myorg/model
@@ -525,6 +524,58 @@ class TestExtraBodyValidator:
         assert args.extra_body == self._NESTED
 
 
+_RESPONSE_FORMAT: dict[str, Any] = {"type": "json_object"}
+_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {"name": "f", "parameters": {"type": "object"}},
+    }
+]
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["extra_body", "agentic_tool_profiles", "response_format", "tools"],
+)
+@pytest.mark.parametrize("content", ["", "null\n", "# only a comment\n"])
+def test_empty_file_rejected(tmp_path: Path, field: str, content: str) -> None:
+    """A file that loads as nothing is an error, not an unset field."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text(content)
+    with pytest.raises(ValueError, match=rf"{field} \(file .*\) is empty"):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: str(payload)}
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["extra_body", "agentic_tool_profiles", "response_format", "tools"],
+)
+def test_at_prefixed_file_path_rejected(tmp_path: Path, field: str) -> None:
+    """``@`` is part of the path, not a prefix to strip."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text("{}\n")
+    with pytest.raises(ValueError, match=rf"{field} .* not a readable file"):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: f"@{payload}"}
+        )
+
+
+@pytest.mark.parametrize("field", ["extra_body", "agentic_tool_profiles"])
+@pytest.mark.parametrize("content", ["- stop\n", "42\n"])
+def test_non_mapping_file_rejected(
+    tmp_path: Path, field: str, content: str
+) -> None:
+    """A file holding something other than a mapping is an error."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text(content)
+    with pytest.raises(ValidationError, match=field):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: str(payload)}
+        )
+
+
 class TestApplyWorkload:
     """`apply_workload` applies an in-memory workload like a YAML file."""
 
@@ -538,6 +589,70 @@ class TestApplyWorkload:
         )
         assert args.extra_body == {"k": "v"}
         assert args.num_prompts == 7
+
+    def test_resolves_response_format_and_tools_against_base_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Bare paths resolve beside the workload, not in cwd."""
+        (tmp_path / "schema.json").write_text(json.dumps(_RESPONSE_FORMAT))
+        (tmp_path / "tools.json").write_text(json.dumps(_TOOLS))
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        args = ServingBenchmarkConfig(model="m")
+        apply_workload(
+            args,
+            {"response-format": "schema.json", "tools": "tools.json"},
+            base_dir=tmp_path,
+        )
+        assert args.response_format == _RESPONSE_FORMAT
+        assert args.tools == _TOOLS
+
+    def test_falls_back_to_cwd_when_nothing_is_beside_the_workload(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A repo-root path in a workload written elsewhere still resolves."""
+        (tmp_path / "repo" / "tools").mkdir(parents=True)
+        (tmp_path / "repo" / "tools" / "t.json").write_text(json.dumps(_TOOLS))
+        (tmp_path / "workloads").mkdir()
+        monkeypatch.chdir(tmp_path / "repo")
+
+        args = ServingBenchmarkConfig(model="m")
+        apply_workload(
+            args, {"tools": "tools/t.json"}, base_dir=tmp_path / "workloads"
+        )
+        assert args.tools == _TOOLS
+
+    def test_at_prefixed_path_rejected(self, tmp_path: Path) -> None:
+        """A workload path keeps its ``@``, so the file it names is missing."""
+        (tmp_path / "tools.json").write_text(json.dumps(_TOOLS))
+
+        args = ServingBenchmarkConfig(model="m")
+        with pytest.raises(ValueError, match="not a readable file path"):
+            apply_workload(args, {"tools": "@tools.json"}, base_dir=tmp_path)
+
+    def test_inline_response_format_and_tools_are_not_paths(
+        self, tmp_path: Path
+    ) -> None:
+        """Path resolution must not touch a value that is the content itself."""
+        for options in (
+            {"response-format": _RESPONSE_FORMAT, "tools": _TOOLS},
+            {
+                "response-format": json.dumps(_RESPONSE_FORMAT),
+                "tools": json.dumps(_TOOLS),
+            },
+        ):
+            args = ServingBenchmarkConfig(model="m")
+            apply_workload(args, options, base_dir=tmp_path)
+            assert args.response_format == _RESPONSE_FORMAT
+            assert args.tools == _TOOLS
+
+    def test_invalid_response_format_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid response_format"):
+            ServingBenchmarkConfig.model_validate(
+                {"model": "m", "response_format": '{"type": "nope"}'}
+            )
 
 
 class TestLoadWorkloadFile:
@@ -897,3 +1012,12 @@ class TestImageFlags:
         assert config.image_count == "DU(1,3)"
         assert config.image_long_side == "U(256,1024)"
         assert config.image_turn == "last"
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_max_output_len_must_be_positive(value: int) -> None:
+    # Single-turn once read 0 as "no cap" while the fitted path rejected it.
+    with pytest.raises(ValidationError, match="max_output_len"):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", "max_output_len": value}
+        )

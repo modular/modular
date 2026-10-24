@@ -86,6 +86,10 @@ public:
   /// `GeneratorType::getSpecializedGenerator` API.
   Type specializeGeneratorType(GeneratorType genType) const;
 
+  void setBindings(ParameterExprArrayAttr bindings) {
+    this->bindings = bindings;
+  }
+
 private:
   VerifiedParamBindings(ParameterExprArrayAttr bindings,
                         llvm::BitVector dischargedBodyConstraints,

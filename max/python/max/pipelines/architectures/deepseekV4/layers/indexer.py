@@ -98,8 +98,7 @@ class DeepseekV4Indexer(Module):
         )
         # The reference pins this one to bf16 explicitly
         # (``dtype=torch.bfloat16`` on the ColumnParallelLinear), which for this
-        # checkpoint is what ``config.dtype`` already is; ``wo_a`` in the block
-        # is declared the same way and followed the config there too.
+        # checkpoint is what ``config.dtype`` already is.
         self.weights_proj = Linear(
             config.hidden_size, self.n_heads, config.dtype, device
         )
@@ -231,7 +230,7 @@ class DeepseekV4Indexer(Module):
             stream.windows.base,
             cutoff,
             stream.zone_leaf.values,
-            ops.constant(stream.layer, DType.uint32, DeviceRef.CPU()),
+            stream.layer,
             num_candidates=stream.n_cand,
         )
 
@@ -266,16 +265,16 @@ class DeepseekV4Indexer(Module):
         n = int(index_score.shape[1])
 
         # Rule 1: an entry that had not closed by the query cannot be selected.
+        # Neither can a NaN score, which the top-k does not accept.
         index_score = ops.where(
-            valid,
+            valid & ~ops.is_nan(index_score),
             index_score,
             float("-inf"),
         )
 
         k = min(self.index_topk, n)
         # Until more than ``k`` entries have closed a query selects all of
-        # them, so it asks for no more picks than it has candidates: the
-        # same picks in the same order, without the kernel's padding rounds.
+        # them, so it asks for no more picks than it has candidates.
         live = ops.squeeze(
             ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
         )

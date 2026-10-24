@@ -21,31 +21,15 @@
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/Lexer.h"
 #include "Mojo/MojoParser/SharedState.h"
-#include "Mojo/Support/TriBool.h"
-#include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/Builders.h"
-#include "llvm/ADT/MapVector.h"
-#include "llvm/ADT/PointerIntPair.h"
+
+#include "Mojo/LITDialect/LITOps.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TinyPtrVector.h"
-
-namespace M::KGEN {
-class ConstraintAttr;
-class ParamDeclRefAttr;
-} // end namespace M::KGEN
+#include <string>
 
 namespace M::KGEN::LIT {
-class ASTDecl;
-class AliasASTDecl;
-class AliasDeclOp;
-class WitnessASTDecl;
-class StructType;
-class DocStringAttr;
 class DocString;
-class TraitDeclOp;
-class TraitType;
-
-using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
+class TypeScopeASTDecl;
 
 struct UnresolvedWildcardImport {
   ImportPathAttr moduleName;
@@ -77,30 +61,78 @@ class ASTDecl {
 public:
   enum class Kind : uint8_t {
     Base,
+    IR,
+    OtherOp,
+    Var,
     Alias,
+    Conformance,
+    Extension,
+    Def,
+    FnSignature,
+    EnumCase,
+    Import,
+    TopLevelModule,
+    FileModule,
+    Package,
+    Struct,
+    StructField,
+    Trait,
     Witness,
   };
 
   virtual ~ASTDecl();
 
-  Kind getKind() const { return parentDeclAndKind.getInt(); }
+  Kind getKind() const { return static_cast<Kind>(kind); }
+
+  /// Resolve this source declaration's signature.
+  virtual LogicalResult resolveSignature(Lexer &lexer);
+
+  /// Resolve this declaration's signature when it has no source to parse.
+  virtual LogicalResult resolveSyntheticSignature();
+
+  /// Resolve this source declaration's body.
+  virtual LogicalResult resolveBody(Lexer &lexer);
+
+  /// Resolve this declaration's body when it has no source to parse.
+  virtual LogicalResult resolveSyntheticBody();
 
   /// ASTDecl's always have a notion of where they came from.
   SharedState &getShared() const { return shared; }
   MLIRContext *getContext() const { return shared.getContext(); }
 
-  CValue getIfIRValue() const { return dyn_cast<CValue>(irValue); }
+  /// Return tooling information for this declaration.
+  ASTType getToolingType();
+  std::optional<StringRef> getName();
+  std::optional<StringRef> getDeprecationWarning();
 
-  /// If the IRValue is an Operation*, return it, otherwise return null.
-  /// This is used for things like Module, StructDecl, Func, or ParamDecl.
-  Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
-  void setIRValue(DeclIRValue value) { irValue = value; }
+  virtual CValue getIfIRValue() const { return {}; }
+
+  /// Returns this function argument's number, or -1 for a non-argument.
+  virtual ssize_t getArgNumber() const { return -1; }
+
+  /// Returns this parameter's number, or -1 for a non-parameter.
+  virtual ssize_t getParamNumber() const { return -1; }
+
+  /// Returns this argument's ABI convention. Asserts if this is not an
+  /// argument declaration.
+  ArgConvention getArgConvention() const;
+
+  /// Returns whether this argument appears in the user-visible signature.  This
+  /// filters out implicitly declared error slots and result slots, but keeps
+  /// user-declared "out" argument slots.
+  bool isUserArgument() const;
+
+  /// Return the operation backing this decl, or null if it does not have one.
+  /// Callers that know the decl kind should downcast and use the typed
+  /// getOp() accessors instead.
+  virtual Operation *getIfOperation() const { return nullptr; }
 
   /// Return true if this decl is callable: a `FnOp`, or a witness for one.
   bool isCallableDecl() const;
 
-  /// Return the full signature of this callable decl.
-  FnTypeGeneratorType getDeclFullSignature() const;
+  /// Return the full signature of this callable decl. `contextualType` is the
+  /// type the decl is referenced through (e.g. the type of `x` in `x.foo`).
+  FnTypeGeneratorType getDeclFullSignature(ASTType contextualType = {}) const;
 
   /// Return true if this decl is a static method.
   bool isStaticMethodDecl() const;
@@ -122,17 +154,18 @@ public:
   void setLoc(llvm::SMLoc newLoc) { loc = newLoc; }
   LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG ASTDecl *
   getParentDecl() const {
-    return parentDeclAndKind.getPointer();
+    return parentDecl;
   }
 
-  /// Get the nearest decl backed by one of the given operations. This can
-  /// return itself, a parent decl, or null if no such decl is found.
-  template <typename... OpTs>
-  ASTDecl *getNearestDeclOfType() {
-    ASTDecl *cur = this;
-    while (cur && !isa_and_nonnull<OpTs...>(cur->getIfOperation()))
-      cur = cur->getParentDecl();
-    return cur;
+  /// Get the nearest declaration of the given AST declaration class. This can
+  /// return itself, a parent declaration, or null if no matching declaration
+  /// is found.
+  template <typename DeclT>
+  DeclT *getNearestDeclOfType() {
+    for (ASTDecl *cur = this; cur; cur = cur->getParentDecl())
+      if (auto *decl = dyn_cast<DeclT>(cur))
+        return decl;
+    return nullptr;
   }
 
   /// Return the indentation of the introducer token or -1 if it wasn't on the
@@ -163,32 +196,6 @@ public:
   /// named values that do not have a declaration.
   SymbolRefAttr getSymbolRef() const;
 
-  /// Return the builder at the end of the region that the decl contains.
-  OpBuilder getDeclEndBuilder() {
-    Operation *op = getIfOperation();
-    assert(op && op->getNumRegions() == 1 &&
-           "can't get builder for this ASTDecl");
-    return OpBuilder::atBlockEnd(&op->getRegion(0).front());
-  }
-
-  /// This return the 'Self' type for a struct or trait, which includes
-  /// parameters bound to references to the struct parameter declarations.
-  ASTType getTypeDeclSelf() const {
-    assert(resolvedness != DeclResolvedness::unparsed &&
-           "signature must be resolved to get a resolved type");
-    return typeDeclSelf;
-  }
-  void setTypeDeclSelf(ASTType type) {
-    assert(type && "Cannot set null types");
-    typeDeclSelf = type;
-  }
-
-  /// Given an MLIR op for a struct declaration, return the self type.
-  static Type computeSelfTypeForStruct(StructDeclOp structOp);
-
-  /// Given an MLIR op for a trait declaration, return the self type.
-  static Type computeSelfTypeForTrait(TraitDeclOp traitOp);
-
   /// Add an unresolved wild card import into this scope.
   void addUnresolvedWildcardImport(UnresolvedWildcardImport unresolvedImport);
 
@@ -217,6 +224,13 @@ public:
 
   /// Return the parsed `DocString` for this decl if available.
   std::optional<DocString> getParsedDocString() const;
+
+  /// Return the docstring summary, or an empty string when absent.
+  std::string getDocumentationSummary() const;
+
+  /// Return the formatted docstring description, or an empty string when
+  /// absent.
+  std::string getDocumentationDescription() const;
 
   /// Given a decl for a struct or trait type, check if this type conforms
   /// to the specified trait type. Returns a 3-state result:
@@ -256,12 +270,11 @@ public:
   llvm::SmallVector<ASTDecl *, 4> collectTypeAndExtensions(ASTType type,
                                                            llvm::SMLoc callLoc);
 
-  /// If this is a method of a struct or trait, return the decl for the struct
-  /// or trait.
-  ASTDecl *tryGetMethodParentDecl() const;
-
   /// Whether this decl was loaded from bytecode.
   bool isLoadedFromBytecode() const { return loadedFromBytecode; }
+
+  /// Whether this decl has been erased from the module and retired.
+  bool isRetired() const { return retired; }
 
   //===--------------------------------------------------------------------===//
   // Name lookup
@@ -346,11 +359,6 @@ public:
   void setExplicitParamScope() { isExplicitParamScope = true; }
   bool getIsExplicitParamScope() const { return isExplicitParamScope; }
 
-  /// Get the map of trait conformance lineage for this decl. This is lazily
-  /// initialized because it is only needed for structs.
-  DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *
-  getTraitConformanceLineage(bool createIfMissing = false);
-
   /// Get the set of assumptions for this decl and all its parent decls.
   void getKnownAssumptionsIncludingParents(
       SmallVectorImpl<ConstraintAttr> &assumptions) const;
@@ -374,39 +382,29 @@ public:
   }
 
 private:
+  friend class M::BumpAllocator;
   friend class DeclResolver;
   friend class ModuleLoader;
   friend class SharedState;
-  ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
-          ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
-          ssize_t indentation);
+  ASTDecl(SharedState &shared, llvm::SMLoc loc, ASTDecl *parentDecl,
+          LexerCursor cursor, LexerCursor endCursor, ssize_t indentation);
   ASTDecl(const ASTDecl &) = delete;
   ASTDecl &operator=(const ASTDecl &) = delete;
 
 protected:
-  ASTDecl(Kind kind, SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
+  ASTDecl(Kind declKind, SharedState &shared, llvm::SMLoc loc,
           ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
           ssize_t indentation);
 
-private:
   /// The Mojo shared state this decl is associated with.
   SharedState &shared;
-
-  /// This is the IRValue or MLIR operation that this decl corresponds to if it
-  /// has one.
-  DeclIRValue irValue;
 
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.
   llvm::SMLoc loc;
 
-  /// For a type declaration like a struct, this is the type of 'self' in a
-  /// member.  This is only valid after signature resolution.
-  ASTType typeDeclSelf;
-
-  /// The parent scope that should continue name lookup, plus the declaration
-  /// kind in the pointer's low bits.
-  llvm::PointerIntPair<ASTDecl *, 3, Kind> parentDeclAndKind;
+  /// The parent scope that should continue name lookup.
+  ASTDecl *parentDecl;
 
   /// This is the cursor that points to the next part of declaration to continue
   /// parsing as the declaration is progressively resolved.
@@ -421,6 +419,9 @@ private:
   /// parsing the body of the declaration.  If the declaration was not at the
   /// start of a line or this is the top level module, then this is set to -1.
   ssize_t indentation;
+
+  /// The kind of the ASTDecl subclass, tested with isa/dyn_cast etc.
+  const uint8_t kind;
 
 public:
   /// This keeps track of what level of type checking this declaration has been
@@ -453,6 +454,11 @@ private:
   /// scope by `mangleParamName` even though its IR value isn't a
   /// `DeclInterface` op
   bool isExplicitParamScope : 1;
+
+  /// True once this decl has been erased from the module and moved to
+  /// retiredDeclList. Set by DeclResolver so a liveness check is O(1) instead
+  /// of scanning parsedDeclList.
+  bool retired : 1;
 
   /// The counter to allow the generation of unique IDs for this ASTDecl.
   unsigned counter = 0;
@@ -501,36 +507,622 @@ private:
   /// @__doc_inline.
   std::unique_ptr<llvm::DenseSet<mlir::StringAttr>> docInlineNames;
 
-  /// A map from each trait symbol that a struct conforms to, to the first
-  /// symbol that explicitly inherits from it. This provides better diagnostics
-  /// when a struct does not conform to a trait. This is lazily initialized
-  /// because it is only needed for structs.
-  using TraitConformanceLineageType =
-      DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>>;
-  std::unique_ptr<TraitConformanceLineageType> traitConformanceLineage;
-
   /// This is the set of constraints that can be assumed to be true inside
   /// this declaration. It may reference parameter declarations from this
   /// ASTDecl or its parent ASTDecls.
   std::unique_ptr<llvm::SetVector<ConstraintAttr>> knownAssumptions;
 };
 
+/// An AST declaration backed by an MLIR operation through shared storage.
+///
+/// Function signatures keep their `FnOp` in `DefASTDecl` so function types can
+/// share their declaration-list base without pretending to have an operation.
+class OpASTDecl : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    switch (decl->getKind()) {
+    case Kind::OtherOp:
+    case Kind::Var:
+    case Kind::Alias:
+    case Kind::Conformance:
+    case Kind::Extension:
+    case Kind::EnumCase:
+    case Kind::Import:
+    case Kind::TopLevelModule:
+    case Kind::FileModule:
+    case Kind::Package:
+    case Kind::Struct:
+    case Kind::StructField:
+    case Kind::Trait:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  Operation *getIfOperation() const final { return operation; }
+  Operation &getOperation() const {
+    assert(operation && "OpASTDecl must have an operation");
+    return *operation;
+  }
+
+  /// Return the builder at the end of the operation's sole region.
+  OpBuilder getDeclEndBuilder() {
+    assert(getOperation().getNumRegions() == 1 &&
+           "can't get builder for this OpASTDecl");
+    return OpBuilder::atBlockEnd(&getOperation().getRegion(0).front());
+  }
+
+protected:
+  OpASTDecl(Kind kind, SharedState &shared, Operation &operation,
+            llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+            LexerCursor endCursor, ssize_t indentation);
+
+  void setOperation(Operation &newOperation) { operation = &newOperation; }
+
+private:
+  Operation *operation;
+};
+
+/// An AST declaration backed by a compile-time or runtime IR value.
+class IRASTDecl final : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::IR;
+  }
+
+  CValue getIfIRValue() const override { return value; }
+
+  /// Returns this function argument's number, or -1 for a non-argument.
+  ssize_t getArgNumber() const override {
+    if (isParameter)
+      return -1;
+    return argOrParamNumber;
+  }
+
+  /// Returns this parameter's number, or -1 for a non-parameter.
+  ssize_t getParamNumber() const override {
+    if (!isParameter)
+      return -1;
+    return argOrParamNumber;
+  }
+
+  void setArgOrParamNumber(ssize_t argOrParamNumber, bool isParameter) {
+    this->argOrParamNumber = argOrParamNumber;
+    this->isParameter = isParameter;
+  }
+  StringAttr getCapturedName() const { return capturedName; }
+  void setCapturedName(StringAttr newCapturedName) {
+    assert(newCapturedName && "captured declarations require a name");
+    capturedName = newCapturedName;
+  }
+  void setValue(CValue newValue) { value = std::move(newValue); }
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  IRASTDecl(SharedState &shared, CValue value, llvm::SMLoc loc,
+            ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+            ssize_t indentation);
+
+  CValue value;
+  ssize_t argOrParamNumber;
+  bool isParameter;
+  StringAttr capturedName;
+};
+
+/// An AST declaration backed by an operation without dedicated declaration
+/// semantics. This is intended for the long tail of operations that are
+/// uncommonly used but are represented by an Operation.
+class OtherOpASTDecl final : public OpASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::OtherOp;
+  }
+
+  Operation &getOp() const { return getOperation(); }
+  ParamAssertOp getIfParamAssertOp() const {
+    return dyn_cast<ParamAssertOp>(getOp());
+  }
+  UnboundRegionOp getIfUnboundRegionOp() const {
+    return dyn_cast<UnboundRegionOp>(getOp());
+  }
+  bool isParamAssert() const { return bool(getIfParamAssertOp()); }
+  bool isUnboundRegion() const { return bool(getIfUnboundRegionOp()); }
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  OtherOpASTDecl(SharedState &shared, Operation &op, llvm::SMLoc loc,
+                 ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+                 ssize_t indentation);
+};
+
+/// The AST representation of a variable declaration.
+class VarASTDecl final : public OpASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Var;
+  }
+
+  VarDeclOp getOp() const { return cast<VarDeclOp>(getOperation()); }
+  ssize_t getArgNumber() const override { return argNumber; }
+  bool isArgument() const {
+    VarDeclKind kind = getOp().getKind();
+    return argNumber >= 0 || kind == VarDeclKind::Arg ||
+           kind == VarDeclKind::InitOutArg;
+  }
+  void setArgNumber(ssize_t newArgNumber) { argNumber = newArgNumber; }
+  CValue getIfIRValue() const override {
+    VarDeclKind kind = getOp().getKind();
+    if (kind == VarDeclKind::Arg || kind == VarDeclKind::InitOutArg)
+      return MLValue(getOp());
+    return {};
+  }
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  VarASTDecl(SharedState &shared, VarDeclOp varOp, llvm::SMLoc loc,
+             ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+             ssize_t indentation);
+
+  ssize_t argNumber;
+};
+
+/// Base class for top-level, file, and package module declarations.
+class ModuleASTDecl : public OpASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() >= Kind::TopLevelModule &&
+           decl->getKind() <= Kind::Package;
+  }
+
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveSyntheticSignature() override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override;
+
+  /// Return the module operation backing this decl. Subclasses shadow this
+  /// with a typed version.
+  Operation *getOp() const { return &getOperation(); }
+
+  /// Return the absolute import path for this module, or null if it has no
+  /// symbol.
+  ImportPathAttr getAbsoluteModuleName() const;
+
+protected:
+  ModuleASTDecl(Kind kind, SharedState &shared, Operation &moduleOp,
+                llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                LexerCursor endCursor, ssize_t indentation);
+};
+
+/// The AST representation of the outer MLIR module.
+class TopLevelModuleASTDecl final : public ModuleASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::TopLevelModule;
+  }
+
+  ModuleOp getOp() const { return cast<ModuleOp>(getOperation()); }
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  TopLevelModuleASTDecl(SharedState &shared, ModuleOp moduleOp, llvm::SMLoc loc,
+                        ASTDecl *parentDecl, LexerCursor cursor,
+                        LexerCursor endCursor, ssize_t indentation);
+};
+
+/// The AST representation of a source file module.
+class FileModuleASTDecl final : public ModuleASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::FileModule;
+  }
+
+  FileModuleOp getOp() const { return cast<FileModuleOp>(getOperation()); }
+  LogicalResult resolveBody(Lexer &lexer) override;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  FileModuleASTDecl(SharedState &shared, FileModuleOp moduleOp, llvm::SMLoc loc,
+                    ASTDecl *parentDecl, LexerCursor cursor,
+                    LexerCursor endCursor, ssize_t indentation);
+};
+
+/// The AST representation of a source package.
+class PackageASTDecl final : public ModuleASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Package;
+  }
+
+  PackageOp getOp() const { return cast<PackageOp>(getOperation()); }
+  /// Resolve and return the package's __init__ module, if present.
+  FailureOr<ModuleASTDecl *> resolveInitModule(llvm::SMLoc loc);
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  LogicalResult resolvePackage();
+
+  PackageASTDecl(SharedState &shared, PackageOp packageOp, llvm::SMLoc loc,
+                 ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+                 ssize_t indentation);
+};
+
+/// Base class for declarations that own a function signature: this is
+/// DefASTNode and FunctionTypeASTNode.
+class FnSignatureASTDecl : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Def || decl->getKind() == Kind::FnSignature;
+  }
+
+  virtual FnTypeGeneratorType getSignature() const = 0;
+
+  ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
+  ArrayRef<ASTDecl *> getArgDecls() const { return argDecls; }
+
+  /// Return a list of user-declared argument declarations that we'd want to
+  /// show in document generation, for example.  This filters out implicitly
+  /// declared error slots and result slots, but keeps user-declared "out"
+  /// argument slots.
+  SmallVector<ASTDecl *> getUserArgDecls() const;
+
+protected:
+  FnSignatureASTDecl(Kind kind, SharedState &shared, llvm::SMLoc loc,
+                     ASTDecl *parentDecl, LexerCursor cursor,
+                     LexerCursor endCursor, ssize_t indentation);
+
+  /// Copies parameter declarations into persistent AST storage.
+  void setParamDecls(ArrayRef<ASTDecl *> decls);
+
+  /// Copies argument declarations into persistent AST storage.
+  void setArgDecls(ArrayRef<ASTDecl *> decls);
+
+private:
+  ArrayRef<ASTDecl *> paramDecls;
+  ArrayRef<ASTDecl *> argDecls;
+};
+
+/// The AST representation of a function declaration.
+class DefASTDecl final : public FnSignatureASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Def;
+  }
+
+  FnOp getOp() const {
+    assert(operation && "DefASTDecl must have an operation");
+    return operation;
+  }
+  void setOp(FnOp op) { operation = op; }
+  Operation *getIfOperation() const override {
+    return operation ? const_cast<FnOp &>(operation).getOperation() : nullptr;
+  }
+
+  FnTypeGeneratorType getSignature() const override {
+    return getOp().getFuncTypeGenerator();
+  }
+
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveSyntheticSignature() override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override;
+
+  /// If this is a method of a struct, trait, or extension, return its parent.
+  TypeScopeASTDecl *tryGetMethodParentDecl() const;
+
+  /// Create unlisted declarations for the parameters and arguments represented
+  /// only by this function's IR signature.
+  void createIRSignatureDecls(DeclResolver &resolver);
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+  friend class ClosureEmitter;
+
+  DefASTDecl(SharedState &shared, FnOp fnOp, llvm::SMLoc loc,
+             ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+             ssize_t indentation);
+
+  FnOp operation;
+};
+
+/// The AST representation of an anonymous function type.
+class FunctionTypeASTDecl final : public FnSignatureASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::FnSignature;
+  }
+
+  FnTypeGeneratorType getSignature() const override { return signature; }
+
+  /// Stores the completed signature and copies its declarations into
+  /// persistent AST storage.
+  void setSignature(FnTypeGeneratorType signature, ArrayRef<ASTDecl *> params,
+                    ArrayRef<ASTDecl *> args);
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  FunctionTypeASTDecl(SharedState &shared, llvm::SMLoc loc, ASTDecl *parentDecl,
+                      LexerCursor cursor, LexerCursor endCursor,
+                      ssize_t indentation);
+
+  FnTypeGeneratorType signature;
+};
+
+/// An AST declaration that provides a `Self` type to its members.
+class TypeScopeASTDecl : public OpASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Extension ||
+           decl->getKind() == Kind::Struct || decl->getKind() == Kind::Trait;
+  }
+
+  /// Return the `Self` type in this declaration's member scope.
+  ASTType getSelfType() const {
+    assert(resolvedness != DeclResolvedness::unparsed &&
+           "signature must be resolved to get a resolved type");
+    return selfType;
+  }
+  void setSelfType(ASTType type) {
+    assert(type && "cannot set a null self type");
+    selfType = type;
+  }
+
+  /// Get the map from each conformed trait to the first symbol that explicitly
+  /// inherits from it.
+  DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *
+  getTraitConformanceLineage(bool createIfMissing = false);
+  LogicalResult resolveSyntheticBody() override { return success(); }
+
+protected:
+  TypeScopeASTDecl(Kind kind, SharedState &shared, Operation &op,
+                   llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                   LexerCursor endCursor, ssize_t indentation);
+
+private:
+  ASTType selfType;
+
+  using TraitConformanceLineageType =
+      DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>>;
+  std::unique_ptr<TraitConformanceLineageType> traitConformanceLineage;
+};
+
+/// The common AST representation for struct and trait declarations.
+class TypeASTDecl : public TypeScopeASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Struct || decl->getKind() == Kind::Trait;
+  }
+
+protected:
+  TypeASTDecl(Kind kind, SharedState &shared, Operation &op, llvm::SMLoc loc,
+              ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+              ssize_t indentation);
+};
+
+/// The AST representation of an extension declaration.
+class ExtensionASTDecl final : public TypeScopeASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Extension;
+  }
+
+  ExtensionDeclOp getOp() const {
+    return cast<ExtensionDeclOp>(getOperation());
+  }
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  ExtensionASTDecl(SharedState &shared, ExtensionDeclOp extensionOp,
+                   llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                   LexerCursor endCursor, ssize_t indentation);
+};
+
+/// The AST representation of a struct declaration.
+class StructASTDecl final : public TypeASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Struct;
+  }
+
+  StructDeclOp getOp() const { return cast<StructDeclOp>(getOperation()); }
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+
+  /// Compute the `Self` type represented by a struct declaration operation.
+  static Type computeSelfType(StructDeclOp structOp);
+
+  /// Return this struct's parameter declarations in signature order.
+  ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
+
+  /// Return the parameter declaration with the given internal name, if any.
+  ASTDecl *getParamByName(StringAttr name) const;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+  friend class SharedState;
+
+  /// Copies parameter declarations into persistent AST storage.
+  void setParamDecls(ArrayRef<ASTDecl *> decls);
+
+  StructASTDecl(SharedState &shared, StructDeclOp structOp, llvm::SMLoc loc,
+                ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+                ssize_t indentation);
+
+  ArrayRef<ASTDecl *> paramDecls;
+};
+
+/// The AST representation of a trait declaration.
+class TraitASTDecl final : public TypeASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Trait;
+  }
+
+  TraitDeclOp getOp() const { return cast<TraitDeclOp>(getOperation()); }
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+
+  /// Compute the `Self` type represented by a trait declaration operation.
+  static Type computeSelfType(TraitDeclOp traitOp);
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  TraitASTDecl(SharedState &shared, TraitDeclOp traitOp, llvm::SMLoc loc,
+               ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+               ssize_t indentation);
+};
+
 /// An AST declaration backed by an alias declaration operation.
-class AliasASTDecl final : public ASTDecl {
+class AliasASTDecl final : public OpASTDecl {
 public:
   static bool classof(const ASTDecl *decl) {
     return decl->getKind() == Kind::Alias;
   }
 
   /// Return the alias operation represented by this declaration.
-  AliasDeclOp getOp() const;
+  AliasDeclOp getOp() const { return cast<AliasDeclOp>(getOperation()); }
+  void setOp(AliasDeclOp op) { setOperation(*op.getOperation()); }
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveSyntheticSignature() override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override { return success(); }
 
 private:
+  friend class M::BumpAllocator;
   friend class DeclResolver;
 
   AliasASTDecl(SharedState &shared, AliasDeclOp aliasOp, llvm::SMLoc loc,
                ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
                ssize_t indentation);
+};
+
+/// The AST representation of a trait conformance declaration.
+class ConformanceASTDecl final : public OpASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Conformance;
+  }
+
+  ConformanceOp getOp() const { return cast<ConformanceOp>(getOperation()); }
+  StructASTDecl &getStructDecl() const;
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  LogicalResult resolveConformance();
+
+  ConformanceASTDecl(SharedState &shared, ConformanceOp conformanceOp,
+                     llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                     LexerCursor endCursor, ssize_t indentation);
+};
+
+/// The AST representation of an import declaration.
+class ImportASTDecl final : public OpASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Import;
+  }
+
+  ImportOp getIfResolvedOp() const {
+    return dyn_cast_if_present<ImportOp>(getIfOperation());
+  }
+  UnresolvedImportOp getIfUnresolvedOp() const {
+    return dyn_cast_if_present<UnresolvedImportOp>(getIfOperation());
+  }
+  bool isResolved() const { return bool(getIfResolvedOp()); }
+  bool isUnresolved() const { return bool(getIfUnresolvedOp()); }
+  void setResolvedOp(ImportOp op) { setOperation(*op.getOperation()); }
+
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveSignature(bool resolveTarget);
+  LogicalResult resolveSyntheticSignature() override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  ImportASTDecl(SharedState &shared, Operation &importOp, llvm::SMLoc loc,
+                ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+                ssize_t indentation);
+};
+
+/// The AST representation of an enum case declaration.
+class EnumCaseASTDecl final : public OpASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::EnumCase;
+  }
+
+  EnumCaseOp getOp() const { return cast<EnumCaseOp>(getOperation()); }
+  StructASTDecl &getEnumDecl() const {
+    return cast<StructASTDecl>(*getParentDecl());
+  }
+  LogicalResult
+  resolveAndCheckRedefinition(EnumCaseASTDecl *previousDefinition);
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override { return success(); }
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  EnumCaseASTDecl(SharedState &shared, EnumCaseOp caseOp, llvm::SMLoc loc,
+                  ASTDecl *parentDecl, LexerCursor cursor,
+                  LexerCursor endCursor, ssize_t indentation);
+};
+
+/// The AST representation of a stored struct field declaration.
+class StructFieldASTDecl final : public OpASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::StructField;
+  }
+
+  StructFieldOp getOp() const { return cast<StructFieldOp>(getOperation()); }
+  StructASTDecl &getStructDecl() const {
+    return cast<StructASTDecl>(*getParentDecl());
+  }
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override { return success(); }
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  StructFieldASTDecl(SharedState &shared, StructFieldOp fieldOp,
+                     llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                     LexerCursor endCursor, ssize_t indentation);
 };
 
 /// A synthesized declaration for a member inherited through trait composition.
@@ -557,6 +1149,10 @@ public:
 
   UnresolvedDecls getDecls() const { return cast<UnresolvedDecls>(storage); }
   ResolvedType getWitnessEntry() const { return cast<ResolvedType>(storage); }
+  LogicalResult resolveSignature(Lexer &lexer) override;
+  LogicalResult resolveSyntheticSignature() override;
+  LogicalResult resolveBody(Lexer &lexer) override;
+  LogicalResult resolveSyntheticBody() override;
 
   /// Holds contributing declarations before resolution and the merged type
   /// afterward.
@@ -566,6 +1162,7 @@ public:
   TraitSymbolAttr traitSymbol;
 
 private:
+  friend class M::BumpAllocator;
   friend class DeclResolver;
 
   WitnessASTDecl(SharedState &shared, UnresolvedDecls unresolvedDecls,

@@ -35,7 +35,7 @@ from max.nn.kv_cache.cache_params import (
 from max.pipelines.kv_cache.paged_kv_cache._seed_helpers import (
     resolve_kv_hash_seed,
 )
-from pydantic import ConfigDict, Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 if TYPE_CHECKING:
     from max.pipelines.modeling.config_enums import SupportedEncoding
@@ -148,11 +148,21 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Type of KV cache connector to use."""
 
+    @field_validator("type", mode="before")
+    @classmethod
+    def _resolve_type(cls, value: object) -> object:
+        # Pydantic's enum validator never calls `KVConnectorType._missing_`,
+        # so raise the removed-type error here. Every other value passes
+        # through, so pydantic's own enum error lists the valid choices.
+        if value == "mojo_tiered":
+            KVConnectorType(value)
+        return value
+
     host_offload_max_gb: float | None = Field(
         default=None,
         description=(
             "Maximum host memory (GiB) for KV cache offloading, used by the "
-            "tiered connectors. When unset, sized to hold 1.5 times the device "
+            "tiered connector. When unset, sized to hold 1.5 times the device "
             "page pool."
         ),
     )
@@ -182,8 +192,7 @@ class KVConnectorConfig(ConfigFileModel):
     allocations with movable user pages unless ``HSA_USERPTR_FOR_PAGED_MEM=0``
     is set before it initializes; with it set they are driver-owned and count
     against the driver's system memory limit, which every process on the node
-    shares. Only the tiered connectors (``rust_tiered`` / ``mojo_tiered``) read
-    this.
+    shares. Only the tiered connector (``rust_tiered``) reads this.
     """
 
     host_staging_mlock: bool = Field(
@@ -233,7 +242,7 @@ class KVConnectorConfig(ConfigFileModel):
             "queue faster under load; returns diminish past ~32."
         ),
     )
-    """Number of disk I/O worker threads for the tiered connectors."""
+    """Number of disk I/O worker threads for the tiered connector."""
 
     num_h2d_onload_lanes: int = Field(
         default=1,
@@ -341,7 +350,8 @@ class KVCacheConfig(ConfigFileModel):
             "``float4_e2m1fn`` (alias ``float4_e2m1``). ``float4_e2m1fn`` "
             "is NVFP4: two E2M1 values per byte with an E4M3 scale per 16 "
             "values. It is supported only by architectures that implement "
-            "it (MiniMax-M3 sparse attention on NVIDIA SM100), and there it "
+            "it (MiniMax-M3 sparse attention on NVIDIA SM100 and AMD "
+            "MI355X/gfx950), and there it "
             "also puts the indexer cache in NVFP4 unless "
             "``indexer_kv_cache_format`` says otherwise."
         ),
@@ -359,8 +369,9 @@ class KVCacheConfig(ConfigFileModel):
             "bfloat16 otherwise, so ``--kv-cache-format=float8_e4m3fn`` "
             "still means main GQA FP8 plus indexer BF16. Ignored by "
             "architectures without an indexer cache. FP8 IndexK is "
-            "scale-free and AMD-only. FP4 IndexK is NVIDIA SM100-only and "
-            "needs ``--kv-cache-format=float4_e2m1fn``."
+            "scale-free and AMD-only. FP4 IndexK runs on NVIDIA SM100 and "
+            "AMD MI355X (gfx950) and needs "
+            "``--kv-cache-format=float4_e2m1fn``."
         ),
     )
     """Independent IndexK cache dtype for MiniMax sparse attention."""
@@ -426,6 +437,8 @@ class KVCacheConfig(ConfigFileModel):
         page_size: int | None = None,
         slots_per_page: int | None = None,
         window_size: int | None = None,
+        stride_alignment: int | None = None,
+        scratch: bool = False,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -463,6 +476,13 @@ class KVCacheConfig(ConfigFileModel):
                 An architecture whose attention compresses a run of tokens into
                 one cached entry passes the entries a page compresses into.
             window_size: Window size for the attention layer.
+            stride_alignment: The page stride alignment the cache's kernels
+                honor, letting the pool pad its pages, or ``None`` to keep
+                them packed. See
+                :attr:`~max.nn.kv_cache.cache_params.KVLeafRegion.stride_alignment`.
+            scratch: Whether the cache is per-request scratch: one block a
+                request, never published (see
+                :attr:`~max.nn.kv_cache.cache_params.KVCacheParams.scratch`).
 
         Returns:
             The constructed KV cache parameters.
@@ -491,6 +511,8 @@ class KVCacheConfig(ConfigFileModel):
             kv_hash_algo=self.kv_cache_hash_algo,
             kv_hash_seed=kv_hash_seed,
             window_size=window_size,
+            stride_alignment=stride_alignment,
+            scratch=scratch,
         )
         if is_mla:
             if num_q_heads is None:

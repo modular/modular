@@ -124,41 +124,42 @@ def print_input_prompts(samples: Samples) -> None:
         print(elide_data_uris_in_string(str(prompt_info)))
 
 
-def _format_distribution_table(
-    values: Sequence[float | int], label: str
+def _format_distribution(
+    dist: Distribution | Sequence[float | int], label: str
 ) -> str:
-    """Format distribution statistics as a mini-table with header and value rows."""
-    _STAT_COLUMNS = (
-        "min",
-        "max",
-        "mean",
-        "std",
-        "p5",
-        "p25",
-        "p50",
-        "p75",
-        "p95",
-        "p99",
-    )
-    _COL_WIDTH = 10
+    """Formats a distribution as a mini-table with header and value rows.
 
-    arr = np.array(values, dtype=float)
-    p5, p25, p50, p75, p95, p99 = np.percentile(arr, [5, 25, 50, 75, 95, 99])
-    stat_values = (
-        np.min(arr),
-        np.max(arr),
-        np.mean(arr),
-        np.std(arr),
-        p5,
-        p25,
-        p50,
-        p75,
-        p95,
-        p99,
-    )
-    header = "    " + "".join(f"{name:<{_COL_WIDTH}}" for name in _STAT_COLUMNS)
-    row = "    " + "".join(f"{v:<{_COL_WIDTH}.2f}" for v in stat_values)
-    return f"  {label}:\n{header}\n{row}"
+    Every table carries the workload stats JSON's percentiles, so the sections
+    of the dry-run report line up with each other and with production. Raw
+    values also get std, p5 and p25, which show the spread and the low end of
+    per-session quantities that a :class:`Distribution` does not keep.
+    """
+    spread: dict[str, float] = {}
+    if not isinstance(dist, Distribution):
+        summary = Distribution.of(dist)
+        assert summary is not None, f"{label}: no values to summarize"
+        arr = np.asarray(dist, dtype=float)
+        p5, p25 = np.percentile(arr, (5, 25))
+        spread = {"std": float(arr.std()), "p5": float(p5), "p25": float(p25)}
+        dist = summary
+    cells = {
+        "count": f"{dist.count}",
+        "min": f"{dist.min:.2f}",
+        "mean": f"{dist.mean:.2f}",
+        **{name: f"{v:.2f}" for name, v in spread.items()},
+        **{f"p{p}": f"{v:.2f}" for p, v in dist.percentiles.items()},
+        "max": f"{dist.max:.2f}",
+    }
+    header = "    " + "".join(f"{name:<10}" for name in cells)
+    row = "    " + "".join(f"{v:<10}" for v in cells.values())
+    lines = [f"  {label}:", header, row]
+    if dist.fraction_above:
+        shares = ", ".join(
+            f">{t // 1000}k: {share:.2%}"
+            for t, share in dist.fraction_above.items()
+        )
+        lines.append(f"    share above {shares}")
+    return "\n".join(lines)
 
 
 def _image_dimensions(image: OpenAIImage) -> tuple[int, int] | None:
@@ -189,7 +190,7 @@ def _print_image_stats(
     if sum(images_per_item) == 0:
         return
     print()
-    print(_format_distribution_table(images_per_item, f"Image count ({label})"))
+    print(_format_distribution(images_per_item, f"Image count ({label})"))
     # One decode per image feeds both tables; long side alone cannot show
     # what shapes a sampled --image-aspect-ratio actually produced.
     dimensions = [
@@ -198,31 +199,16 @@ def _print_image_stats(
     if dimensions:
         print()
         print(
-            _format_distribution_table(
+            _format_distribution(
                 [max(d) for d in dimensions], "Image long side (px)"
             )
         )
         print()
         print(
-            _format_distribution_table(
+            _format_distribution(
                 [w / h for w, h in dimensions], "Image aspect ratio (w/h)"
             )
         )
-
-
-def _format_stats_distribution(dist: Distribution, label: str) -> str:
-    columns = ["count", "mean", *(f"p{p}" for p in dist.percentiles), "max"]
-    values = [dist.count, dist.mean, *dist.percentiles.values(), dist.max]
-    header = "    " + "".join(f"{name:<10}" for name in columns)
-    row = "    " + "".join(f"{v:<10.2f}" for v in values)
-    lines = [f"  {label}:", header, row]
-    if dist.fraction_above:
-        shares = ", ".join(
-            f">{t // 1000}k: {share:.2%}"
-            for t, share in dist.fraction_above.items()
-        )
-        lines.append(f"    share above {shares}")
-    return "\n".join(lines)
 
 
 def _print_requests_sent(stats: WorkloadStats) -> None:
@@ -246,7 +232,7 @@ def _print_requests_sent(stats: WorkloadStats) -> None:
     ):
         if dist is not None:
             print()
-            print(_format_stats_distribution(dist, label))
+            print(_format_distribution(dist, label))
     print()
     for share, label in (
         (stats.tool_request_fraction, "Tool-offering requests:"),
@@ -278,10 +264,10 @@ def print_workload_stats(
 
         print(f"  {'Total requests:':<30} {len(samples.requests)}")
         print()
-        print(_format_distribution_table(input_lens, "Input length"))
+        print(_format_distribution(input_lens, "Input length"))
         if output_lens:
             print()
-            print(_format_distribution_table(output_lens, "Output length"))
+            print(_format_distribution(output_lens, "Output length"))
         else:
             print()
             print("  Output length:  not specified (server-determined)")
@@ -347,28 +333,22 @@ def print_workload_stats(
         else:
             print(f"  {'Total turns (across all):':<30} {total_turns}")
         print()
-        print(
-            _format_distribution_table(
-                all_input_lens, "Input length (per turn)"
-            )
-        )
+        print(_format_distribution(all_input_lens, "Input length (per turn)"))
         print()
         if all_output_lens:
             print(
-                _format_distribution_table(
+                _format_distribution(
                     all_output_lens, "Output length (per turn)"
                 )
             )
         else:
             print("  Output length (per turn):  none recorded")
         print()
-        print(
-            _format_distribution_table(num_turns_list, "Num turns per session")
-        )
+        print(_format_distribution(num_turns_list, "Num turns per session"))
         if all_delays:
             print()
             print(
-                _format_distribution_table(
+                _format_distribution(
                     all_delays, "Delay between chat turns (ms)"
                 )
             )

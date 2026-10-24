@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import math
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from unittest.mock import Mock
 
@@ -35,6 +36,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.functional import collective_ops
+from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMesh,
     Replicated,
@@ -42,16 +44,24 @@ from max.experimental.sharding import (
     auto_reshard,
 )
 from max.experimental.tensor import Tensor, default_device, default_dtype
-from max.graph import DeviceRef
+from max.graph import DeviceRef, TensorValue
 from max.nn import kernels
+from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.mamba2 import (
+    CausalConv1d,
     NemotronHMamba2Mixer,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
+    NemotronHMLP,
     NemotronHMoE,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
+    NVFP4Linear,
+    RowGroupedLinear,
+    nvfp4_block_scale_shape,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.memory_planner import (
     NemotronHMemoryPlanner,
@@ -66,6 +76,7 @@ from max.pipelines.architectures.nemotron_h_modulev3.nemotron_h import (
 from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
     ModuleFormat,
     NemotronHQuantScheme,
+    linear_parallelism,
 )
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     plan_jenga_geometry,
@@ -126,7 +137,7 @@ def test_lightning_state_tiles_one_huge_page_exactly(n_devices: int) -> None:
     geometry = plan_jenga_geometry(
         100 * 1024 * MIB,
         page_bytes,
-        {key: leaf.row_bytes for key, leaf in leaves.items()},
+        {key: leaf.stride_alignment for key, leaf in leaves.items()},
     )
 
     assert geometry.huge_page_bytes == 414 * MIB // n_devices
@@ -169,11 +180,34 @@ def test_each_mamba_layer_reads_its_own_state_row(
     assert layers == [0, 1, 2]
 
 
+def _mesh(n: int) -> DeviceMesh:
+    return DeviceMesh((CPU(),) * n, (n,), ("tp",))
+
+
 def _model_on_devices(config: NemotronHConfig) -> NemotronH:
-    n = len(config.devices)
-    mesh = DeviceMesh((CPU(),) * n, (n,), ("tp",))
-    with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
+    with (
+        F.lazy(),
+        default_dtype(DType.bfloat16),
+        default_device(_mesh(len(config.devices))),
+    ):
         return NemotronH(config)
+
+
+@contextmanager
+def _built_on_devices(config: NemotronHConfig) -> Iterator[NemotronH]:
+    """Builds the model on a CPU mesh, staying in its lazy context so the
+    graph's weight preparation can be traced without running it."""
+    with (
+        F.lazy(),
+        default_dtype(DType.bfloat16),
+        default_device(_mesh(len(config.devices))),
+        ensure_context(),
+    ):
+        yield NemotronH(config)
+
+
+def _shapes(values: Iterable[TensorValue | Tensor]) -> list[tuple[int, ...]]:
+    return [tuple(int(d) for d in v.shape) for v in values]
 
 
 def _trace_on_devices(
@@ -297,14 +331,19 @@ def test_lm_head_shards_the_vocabulary(n: int) -> None:
 
 
 def test_each_device_holds_a_whole_kv_head() -> None:
-    """With more devices than KV heads, each head repeats per device."""
+    """With more devices than KV heads, the k and v projections stay on the
+    host as stored, and the graph gives each device its group's head."""
     config = model_config(TINY_LAYERS, WIDE, n_devices=4)
-    attention = _model_on_devices(config).backbone.layers[3].mixer
-    assert isinstance(attention, NemotronHAttention)
-    for proj in (attention.qkv_proj.k_proj, attention.qkv_proj.v_proj):
-        # Four heads of eight channels: one per device.
-        assert tuple(int(d) for d in proj.weight.shape) == (32, 32)
-        assert proj.weight.mapping.placements == (Sharded(0),)
+    with _built_on_devices(config) as model:
+        attention = model.backbone.layers[3].mixer
+        assert isinstance(attention, NemotronHAttention)
+        for proj in (attention.qkv_proj.k_proj, attention.qkv_proj.v_proj):
+            # Two heads of eight channels.
+            assert _shapes([proj.weight]) == [(16, 32)]
+            assert proj.weight.mesh.num_devices == 1
+        qkv = attention.qkv_weight(_mesh(4))
+        # Two of the eight query heads, then one k and one v head.
+        assert _shapes(qkv.local_shards) == [(16 + 8 + 8, 32)] * 4
 
 
 def _with_w4a4_experts(config: NemotronHConfig) -> NemotronHConfig:
@@ -325,55 +364,109 @@ def test_moe_splits_each_experts_channels(w4a4: bool) -> None:
     padded to 64, and half the shared expert.
 
     The up projection splits its rows and the down projection its columns.
-    The W4A4 block scales stay on the host in the same padded blocks, for
-    the graph to interleave each device's block at init.
+    The expert stacks stay on the host as stored, and the graph cuts, pads
+    and copies each device's share at init, interleaving W4A4 block scales.
     """
-    # Hidden size 64 gives the W4A4 up projection whole scale atoms.
-    config = model_config(TINY_LAYERS, TINY | dict(hidden_size=64), n_devices=2)
+    # Hidden size 64 gives the W4A4 up projection whole scale atoms, and 32
+    # channels give each device whole NVFP4 blocks.
+    config = model_config(
+        TINY_LAYERS,
+        TINY | dict(hidden_size=64, moe_intermediate_size=32),
+        n_devices=2,
+    )
     if w4a4:
         config = _with_w4a4_experts(config)
-    moe = _model_on_devices(config).backbone.layers[1].mixer
+    with _built_on_devices(config) as model:
+        moe = model.backbone.layers[1].mixer
+        assert isinstance(moe, NemotronHMoE)
+        # Four experts of 32 channels, as stored.
+        stored = [moe.up_weight, moe.down_weight]
+        if w4a4:
+            stored += [
+                moe.up_block_scale,
+                moe.down_block_scale,
+                moe.up_scale,
+                moe.down_scale,
+            ]
+            assert _shapes(stored) == [
+                (4, 32, 32),
+                (4, 64, 16),
+                (4, 32, 4),
+                (4, 64, 2),
+                (4,),
+                (4,),
+            ]
+        else:
+            assert _shapes(stored) == [(4, 32, 64), (4, 64, 32)]
+        for param in stored:
+            assert param.mesh.num_devices == 1
+        # Sixteen channels per device, padded to 64.
+        for up_d, down_d in zip(
+            *(moe.device_params(proj, _mesh(2)) for proj in ("up", "down")),
+            strict=True,
+        ):
+            up, down = _shapes(up_d), _shapes(down_d)
+            if w4a4:
+                assert up == [(4, 64, 32), (4, 1, 1, 32, 4, 4), (4,)]
+                assert down == [(4, 64, 32), (4, 1, 1, 32, 4, 4), (4,)]
+            else:
+                assert up == [(4, 64, 64)]
+                assert down == [(4, 64, 64)]
+        assert isinstance(moe.shared_experts, NemotronHMLP)
+        assert moe.shared_experts.up_proj.weight.placements == (Sharded(0),)
+        assert moe.shared_experts.down_proj.weight.placements == (Sharded(1),)
+        # Every device routes every token.
+        assert moe.gate.weight.placements == (Replicated(),)
+
+
+@pytest.mark.parametrize("bf16_gate", [False, True])
+def test_router_gate_is_built_in_the_dtype_it_loads(bf16_gate: bool) -> None:
+    """The router's gate weight has the dtype that ``_prepare_state_dict``
+    casts the checkpoint's gate to."""
+    config = model_config(TINY_LAYERS, TINY)
+    config.bf16_router_gate = bf16_gate
+    moe = _model(config).backbone.layers[1].mixer
     assert isinstance(moe, NemotronHMoE)
-
-    def layout(t: Tensor) -> tuple[tuple[int, ...], tuple[object, ...]]:
-        return tuple(int(d) for d in t.shape), t.mapping.placements
-
-    # Four experts of 16 channels: 8 per device, padded to 64.
-    if w4a4:
-        assert layout(moe.up_weight) == ((4, 128, 32), (Sharded(1),))
-        assert layout(moe.down_weight) == ((4, 64, 64), (Sharded(2),))
-        assert tuple(int(d) for d in moe.up_block_scale.shape) == (4, 128, 4)
-        assert tuple(int(d) for d in moe.down_block_scale.shape) == (4, 64, 8)
-        for scales in (moe.up_block_scale, moe.down_block_scale):
-            assert scales.device == CPU()
-        for scale in (moe.up_scale, moe.down_scale):
-            assert layout(scale) == ((4,), (Replicated(),))
-    else:
-        assert layout(moe.up_weight) == ((4, 128, 64), (Sharded(1),))
-        assert layout(moe.down_weight) == ((4, 64, 128), (Sharded(2),))
-    assert moe.shared_experts is not None
-    assert moe.shared_experts.up_proj.weight.placements == (Sharded(0),)
-    assert moe.shared_experts.down_proj.weight.placements == (Sharded(1),)
-    # Every device routes every token.
-    assert moe.gate.weight.placements == (Replicated(),)
+    assert moe.gate.weight.dtype == config.router_gate_dtype
+    assert config.router_gate_dtype == (
+        DType.bfloat16 if bf16_gate else DType.float32
+    )
 
 
 def test_mamba_shards_by_head() -> None:
-    """Each device runs half the heads and the groups they read."""
-    model = _model_on_devices(model_config(TINY_LAYERS, TINY, n_devices=2))
-    mamba = model.backbone.layers[0].mixer
-    assert isinstance(mamba, NemotronHMamba2Mixer)
-    for param in (
-        mamba.in_proj.weight,
-        mamba.conv1d.weight,
-        mamba.conv1d.bias,
-        mamba.A_log,
-        mamba.D,
-        mamba.dt_bias,
-        mamba.norm.weight,
-    ):
-        assert param.mapping.placements == (Sharded(0),)
-    assert mamba.out_proj.weight.mapping.placements == (Sharded(1),)
+    """Each device runs half the heads and the groups they read.
+
+    The fused in_proj and conv rows stack parts that each split across the
+    devices, so they stay on the host as stored, and the graph gives each
+    device its share of every part.
+    """
+    with _built_on_devices(
+        model_config(TINY_LAYERS, TINY, n_devices=2)
+    ) as model:
+        mamba = model.backbone.layers[0].mixer
+        assert isinstance(mamba, NemotronHMamba2Mixer)
+        for param in (
+            mamba.A_log,
+            mamba.D,
+            mamba.dt_bias,
+            mamba.norm.weight,
+        ):
+            assert param.mapping.placements == (Sharded(0),)
+        assert mamba.out_proj.weight.mapping.placements == (Sharded(1),)
+        assert isinstance(mamba.in_proj, RowGroupedLinear)
+        for param in (
+            mamba.in_proj.weight,
+            mamba.conv1d.weight,
+            mamba.conv1d.bias,
+        ):
+            assert param.mesh.num_devices == 1
+        # gate 32, x 32, B 16, C 16 and dt 4 rows, half of each per device.
+        in_proj = mamba.in_proj.placed_weight(_mesh(2))
+        assert in_proj.placements == (Sharded(0),)
+        assert _shapes(in_proj.local_shards) == [(50, 32)] * 2
+        conv_weight, conv_bias = mamba.conv1d.placed(_mesh(2))
+        assert _shapes(conv_weight.local_shards) == [(32, 4)] * 2
+        assert _shapes(conv_bias.local_shards) == [(32,)] * 2
 
 
 def test_quantized_modules_keep_their_checkpoint_tensors() -> None:
@@ -403,26 +496,40 @@ def test_quantized_modules_keep_their_checkpoint_tensors() -> None:
 
 
 def test_nvfp4_linears_are_placed_like_bf16_ones() -> None:
+    """The weight splits as a BF16 one's would, and its block scales with
+    it, as stored. The graph interleaves each device's share of them."""
     config = model_config(TINY_LAYERS, NVFP4_DIMS, n_devices=2)
     config.quant_scheme = dense_nvfp4_scheme(config)
-    weights = dict(_model_on_devices(config).parameters)
-    shared = "backbone.layers.1.mixer.shared_experts"
-    for module, placement in (
-        (f"{shared}.up_proj", Sharded(0)),
-        (f"{shared}.down_proj", Sharded(1)),
-        ("lm_head", Sharded(0)),
-    ):
-        in_dim, out_dim = config.linear_shape(module)
-        weight = weights[f"{module}.weight"]
-        assert weight.dtype == DType.uint8
-        assert [int(d) for d in weight.shape] == [out_dim, in_dim // 2]
-        assert weight.placements == (placement,)
-        block = weights[f"{module}.weight_scale"]
-        assert block.dtype == DType.float8_e4m3fn
-        assert block.placements == (
-            Replicated() if placement == Replicated() else Sharded(0),
-        )
-        assert weights[f"{module}.weight_scale_2"].dtype == DType.float32
+    with _built_on_devices(config) as model:
+        weights = dict(model.parameters)
+        modules = dict(model.descendants)
+        shared = "backbone.layers.1.mixer.shared_experts"
+        for module, placement in (
+            (f"{shared}.up_proj", Sharded(0)),
+            (f"{shared}.down_proj", Sharded(1)),
+            ("lm_head", Sharded(0)),
+        ):
+            in_dim, out_dim = config.linear_shape(module)
+            weight = weights[f"{module}.weight"]
+            assert weight.dtype == DType.uint8
+            assert [int(d) for d in weight.shape] == [out_dim, in_dim // 2]
+            assert weight.placements == (placement,)
+            block = weights[f"{module}.weight_scale"]
+            assert block.dtype == DType.float8_e4m3fn
+            assert _shapes([block]) == [(out_dim, in_dim // 16)]
+            assert block.placements == (placement,)
+            global_scale = weights[f"{module}.weight_scale_2"]
+            assert global_scale.dtype == DType.float32
+            assert _shapes([global_scale]) == [()]
+            linear = modules[module]
+            assert isinstance(linear, NVFP4Linear)
+            interleaved = nvfp4_block_scale_shape(
+                out_dim, in_dim, linear_parallelism(module), 2
+            )[1:]
+            for params in linear.device_params(_mesh(2)):
+                _, scales, scale = _shapes(params)
+                assert scales == (1, *interleaved)
+                assert scale == (1,)
 
 
 @pytest.mark.parametrize(
@@ -486,29 +593,32 @@ def test_nvfp4_row_parallel_input_splits_into_whole_scale_blocks() -> None:
 def test_nvfp4_shared_expert_runs_as_routed_experts(n: int) -> None:
     """The shared expert's two expert-wide slices stack after the routed
     experts, so their channels split across devices with the routed
-    experts'. The block scales load on the host, where the graph interleaves
-    them at init."""
+    experts'. Both load on the host as stored, where the graph slices,
+    stacks and interleaves them at init."""
     config = model_config(TINY_LAYERS, NVFP4_DIMS, n_devices=n)
     config.quant_scheme = lightning_scheme(config)
     mixer = "backbone.layers.1.mixer"
     assert config.shared_expert_slices(mixer) == 2
     config.check_quantized_modules()
 
-    model = _model_on_devices(config) if n > 1 else _model(config)
-    moe = model.backbone.layers[1].mixer
-    assert isinstance(moe, NemotronHMoE)
-    assert moe.shared_experts is None
-    weights = dict(model.parameters)
-    assert not any(".shared_experts." in name for name in weights)
-    stacked = config.num_experts + 2
-    for proj, axis in (("up", 1), ("down", 2)):
-        for suffix in ("weight", "block_scale", "scale"):
-            param = weights[f"{mixer}.{proj}_{suffix}"]
-            assert int(param.shape[0]) == stacked
-            if suffix == "block_scale":
-                assert param.device == CPU()
-            elif n > 1 and suffix == "weight":
-                assert param.placements == (Sharded(axis),)
+    with _built_on_devices(config) as model:
+        moe = model.backbone.layers[1].mixer
+        assert isinstance(moe, NemotronHMoE)
+        assert not isinstance(moe.shared_experts, NemotronHMLP)
+        weights = dict(model.parameters)
+        shared = f"{mixer}.shared_experts"
+        for proj in ("up_proj", "down_proj"):
+            for suffix in ("weight", "weight_scale", "weight_scale_2"):
+                assert (
+                    weights[f"{shared}.{proj}.{suffix}"].mesh.num_devices == 1
+                )
+        for proj in ("up", "down"):
+            for suffix in ("weight", "block_scale", "scale"):
+                param = weights[f"{mixer}.{proj}_{suffix}"]
+                assert int(param.shape[0]) == config.num_experts
+            stacked = config.num_experts + 2
+            for params in moe.device_params(proj, _mesh(n)):
+                assert [s[0] for s in _shapes(params)] == [stacked] * 3
 
 
 def test_a_shared_expert_runs_alone_unless_it_slices_evenly() -> None:
@@ -616,35 +726,69 @@ def _on_every_device(param: Tensor, n: int) -> bool:
     )
 
 
-def _interleaved_bytes(name: str, param: Tensor, n: int) -> int:
-    """Returns the device bytes of host W4A4 block scales once interleaved.
+def _bytes_on_devices(config: NemotronHConfig) -> int:
+    """Sums the weight bytes on the devices, as the graph places them.
 
-    Each device interleaves its block, the rows of ``up`` or the columns of
-    ``down``, padding rows to whole granules of 128.
+    A weight the graph places as declared counts once if sharded and once
+    per device if replicated. A module that prepares its weights from their
+    host copies counts as the tensors it gives each device.
     """
-    experts, rows, cols = (int(d) for d in param.shape)
-    if name.endswith(".up_block_scale"):
-        rows //= n
-    else:
-        cols //= n
-    return n * experts * math.ceil(rows / 128) * 128 * cols
-
-
-def _bytes_on_devices(model: NemotronH, n: int) -> int:
-    """Sums the parameter bytes across devices, from their placements.
-
-    The W4A4 block scales count as the devices hold them, interleaved.
-    """
+    n = len(config.devices)
+    mesh = _mesh(n)
+    prepared: list[TensorValue | Tensor] = []
+    replaced: set[int] = set()
     total = 0
-    for name, param in model.parameters:
-        if name.endswith("_block_scale"):
-            total += _interleaved_bytes(name, param, n)
-            continue
-        total += (
-            math.prod(int(d) for d in param.shape)
-            * param.dtype.size_in_bytes
-            * (n if _on_every_device(param, n) else 1)
-        )
+    with _built_on_devices(config) as model:
+        for _, module in model.descendants:
+            sources: list[Tensor] = []
+            if isinstance(module, NVFP4Linear):
+                for params in module.device_params(mesh):
+                    prepared.extend(params)
+                sources = [param for _, param in module.parameters]
+            elif isinstance(module, NemotronHMoE):
+                for proj in ("up", "down"):
+                    for expert_params in module.device_params(proj, mesh):
+                        prepared.extend(expert_params)
+                # The router and a shared expert run on its own are placed
+                # as declared.
+                runs_alone = isinstance(module.shared_experts, NemotronHMLP)
+                sources = [
+                    param
+                    for name, param in module.parameters
+                    if name.startswith(("up_", "down_"))
+                    or (name.startswith("shared_experts.") and not runs_alone)
+                ]
+            elif isinstance(module, RowGroupedLinear):
+                prepared.extend(module.placed_weight(mesh).local_shards)
+                sources = [module.weight]
+            elif isinstance(module, CausalConv1d) and module.segments:
+                for placed in module.placed(mesh):
+                    prepared.extend(placed.local_shards)
+                sources = [module.weight, module.bias]
+            elif (
+                isinstance(module, NemotronHAttention) and module.kv_repeats > 1
+            ):
+                prepared.extend(module.qkv_weight(mesh).local_shards)
+                qkv = module.qkv_proj
+                sources = [
+                    qkv.q_proj.weight,
+                    qkv.k_proj.weight,
+                    qkv.v_proj.weight,
+                ]
+            replaced.update(id(param) for param in sources)
+        for _, param in model.parameters:
+            if id(param) in replaced:
+                continue
+            total += (
+                math.prod(int(d) for d in param.shape)
+                * param.dtype.size_in_bytes
+                * (n if _on_every_device(param, n) else 1)
+            )
+        for value in prepared:
+            total += (
+                math.prod(int(d) for d in value.shape)
+                * value.dtype.size_in_bytes
+            )
     return total
 
 
@@ -670,16 +814,20 @@ def _scheme_with_w4a4_experts(config: NemotronHConfig) -> NemotronHQuantScheme:
         (8, W4A4_DIMS, _scheme_with_w4a4_experts),
     ],
 )
+@pytest.mark.parametrize("bf16_gate", [False, True])
 def test_weights_are_planned_as_the_modules_place_them(
-    n: int, dims: dict[str, int], scheme: Scheme | None
+    n: int, dims: dict[str, int], scheme: Scheme | None, bf16_gate: bool
 ) -> None:
     """Sharded weights are counted once, replicated ones per device, and a
-    repeated KV head once per device that holds it. NVFP4 block scales are
-    counted with each device's padding."""
+    repeated KV head once per device that holds it. Weights the graph
+    prepares are counted as each device holds them, padding included, and
+    the router gates in their dtype."""
     pipeline = Mock()
     pipeline.model.weights_size.return_value = 1000
     one_config = model_config(TINY_LAYERS, dims)
     config = model_config(TINY_LAYERS, dims, n_devices=n)
+    one_config.bf16_router_gate = bf16_gate
+    config.bf16_router_gate = bf16_gate
     if scheme is not None:
         one_config.quant_scheme = scheme(one_config)
         config.quant_scheme = scheme(config)
@@ -687,6 +835,13 @@ def test_weights_are_planned_as_the_modules_place_them(
     one = NemotronHMemoryPlanner(one_config).estimate_weights_size(pipeline)
     planned = NemotronHMemoryPlanner(config).estimate_weights_size(pipeline)
 
-    placed = _bytes_on_devices(_model_on_devices(config), n)
-    assert planned - one == placed - _bytes_on_devices(_model(one_config), 1)
+    placed = _bytes_on_devices(config)
+    assert planned - one == placed - _bytes_on_devices(one_config)
     assert planned > one
+
+
+def test_per_device_hidden_states_are_refused() -> None:
+    config = model_config(TINY_LAYERS, TINY)
+    config.return_hidden_states = ReturnHiddenStates.LAST_PER_DEVICE
+    with pytest.raises(ValueError, match="per-device hidden states"):
+        _model(config)

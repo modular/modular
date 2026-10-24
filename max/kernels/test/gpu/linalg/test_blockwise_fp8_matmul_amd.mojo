@@ -55,9 +55,9 @@ def test_blockwise_fp8_matmul_amd[
     comptime BLOCK_SCALE_N = 128
     comptime BLOCK_SCALE_K = 128
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         "== test_blockwise_fp8_matmul_amd c_type=",
@@ -149,7 +149,6 @@ def test_blockwise_fp8_matmul_amd[
                 scales_granularity_mnk=Index(
                     BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
                 ),
-                elementwise_lambda_fn=None,
                 device_info=ctx.default_device_info,
                 a_static_k=type_of(a_dev).static_shape[1],
                 c_static_n=type_of(c_my_dev).static_shape[1],

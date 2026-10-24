@@ -77,6 +77,12 @@ def _poisson_interval(request_rate: float, burstiness: float) -> float:
     return float(np.random.gamma(shape=burstiness, scale=theta))
 
 
+def _cap_output_len(output_len: int, max_output_len: int | None) -> int:
+    if max_output_len is None:
+        return output_len
+    return min(output_len, max_output_len)
+
+
 async def chat_session_driver(
     model_id: str,
     api_url: str,
@@ -94,6 +100,7 @@ async def chat_session_driver(
     use_session_id_as_cache_salt: bool = False,
     lora_id: str | None = None,
     disable_ignore_eos: bool = False,
+    max_output_len: int | None = None,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
@@ -163,7 +170,11 @@ async def chat_session_driver(
         chat_len += messages[content_idx].num_tokens
         if content_idx == 0 and run_prefix:
             chat_len += run_prefix_len
-        output_len = messages[content_idx + 1].num_tokens
+        # A fitted workload is already capped, before its context budgeting;
+        # this catches datasets whose lengths come from their own messages.
+        output_len = _cap_output_len(
+            messages[content_idx + 1].num_tokens, max_output_len
+        )
         if chat_len + output_len > max_chat_len:
             logger.warning(
                 f"Ending conversation: hitting max chat length {max_chat_len}"
@@ -304,6 +315,7 @@ async def prerun_warmup_turns(
     max_concurrency: int,
     disable_tqdm: bool = False,
     use_session_id_as_cache_salt: bool = False,
+    max_output_len: int | None = None,
 ) -> None:
     """Send one warmup request per session with prefix_turns > 0.
 
@@ -357,8 +369,11 @@ async def prerun_warmup_turns(
                 images=[],
                 api_url=api_url,
                 prompt_len=chat_len,
-                max_tokens=output_len,
+                # The reply is discarded; history takes the dataset's text.
+                max_tokens=_cap_output_len(output_len, max_output_len),
                 ignore_eos=True,
+                tools=messages[content_idx].tools,
+                is_cache_warmup=True,
             )
             assistant_content = messages[content_idx + 1].content
             if not assistant_content:
@@ -440,6 +455,7 @@ async def run_multiturn_benchmark(
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
     disable_ignore_eos: bool = False,
+    max_output_len: int | None = None,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run multi-turn chat benchmark scenario.
 
@@ -483,6 +499,7 @@ async def run_multiturn_benchmark(
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,
+                max_output_len=max_output_len,
             )
         session_id = (
             str(chat_session.id)

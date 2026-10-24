@@ -20,7 +20,6 @@ launch shape themselves.
 """
 
 from max.gpu.host import DeviceContext
-from std.sys.info import _has_sm_9x_or_newer
 from layout import (
     ComptimeInt,
     Coord,
@@ -73,10 +72,14 @@ def topk_topp_masked_probs[
     TopKArrEngine: TensorEngine = DefaultEngine[element_width=1],
     TopPArrEngine: TensorEngine = DefaultEngine[element_width=1],
     TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    *,
+    ProbsEngine: TensorEngine,
 ](
     ctx: DeviceContext,
     logits: TileTensor[mut=False, dtype, ...],
-    probs: TileTensor[.float32, ProbsLayoutType, MutAnyOrigin],
+    probs: TileTensor[
+        .float32, ProbsLayoutType, MutAnyOrigin, Engine=ProbsEngine
+    ],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
     top_k_arr: Optional[
@@ -108,7 +111,7 @@ def topk_topp_masked_probs[
     See `topk_fi.topk_topp_masked_probs` for the parameters, arguments and
     output contract; both sides share them.
     """
-    comptime if _has_sm_9x_or_newer():
+    comptime if ctx.target._is_sm_9x_or_newer():
         topk_topp_masked_probs_cluster[
             dtype,
             block_size,
@@ -119,6 +122,7 @@ def topk_topp_masked_probs[
             TopKArrEngine,
             TopPArrEngine,
             TemperatureEngine,
+            ProbsEngine=ProbsEngine,
         ](
             ctx,
             logits,
@@ -140,6 +144,7 @@ def topk_topp_masked_probs[
             TopKArrEngine,
             TopPArrEngine,
             TemperatureEngine,
+            ProbsEngine=ProbsEngine,
         ](
             ctx,
             logits,
@@ -193,6 +198,9 @@ def topk_topp_sampling_from_prob[
     SeedEngine: TensorEngine = DefaultEngine[element_width=1],
     TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
     MinPEngine: TensorEngine = DefaultEngine[element_width=1],
+    # Defaulted because `out_dist` is optional: when it is None there is no
+    # tile argument for the engine to be inferred from.
+    OutDistEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     probs: TileTensor[mut=False, dtype, ...],
@@ -240,7 +248,9 @@ def topk_topp_sampling_from_prob[
         TileTensor[.float32, MinPLayoutType, ImmutAnyOrigin, Engine=MinPEngine]
     ] = None,
     out_dist: Optional[
-        TileTensor[dist_dtype, DistLayoutType, MutAnyOrigin]
+        TileTensor[
+            dist_dtype, DistLayoutType, MutAnyOrigin, Engine=OutDistEngine
+        ]
     ] = None,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
@@ -254,7 +264,7 @@ def topk_topp_sampling_from_prob[
     See `topk_fi.topk_topp_sampling_from_prob` for the parameters,
     arguments and output contract; both sides share them.
     """
-    comptime if emit_dist and from_logits and _has_sm_9x_or_newer():
+    comptime if emit_dist and from_logits and ctx.target._is_sm_9x_or_newer():
         topk_topp_sampling_from_prob_cluster[
             dtype,
             out_idx_type,

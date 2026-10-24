@@ -13,82 +13,23 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-"""End-to-end pattern matching: literals, tuples, structs, Optional, EnumLike,
+"""End-to-end pattern matching: literals, tuples, structs, Optional, enums,
 and comptime match."""
 
 from std.collections import List, Optional
-from std.utils import Variant
 from std.os import abort
 
 
-@fieldwise_init
-struct _Eof(TrivialRegisterPassable):
-    pass
+__enum Token(ImplicitlyCopyable):
+    """A tiny lexer token for pattern matching."""
 
-
-# FIXME: Adopt "enum" syntax when it is implemented in the future.
-struct Token(Copyable, Deinitable, EnumLike, Movable):
-    """A tiny lexer token with EnumLike cases for pattern matching."""
-
-    # Should all be synthesized by the compiler.
-    comptime _enum_case_names = ParameterList.of[
-        "eof".value, "identifier".value, "integer".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, String, Int
-    ].values
-    var _value: Variant[_Eof, String, Int]
-
-    def __init__(out self, *, eof: NoneType):
-        self._value = Variant[_Eof, String, Int](_Eof())
-
-    def __init__(out self, *, var identifier: String):
-        self._value = Variant[_Eof, String, Int](identifier^)
-
-    def __init__(out self, *, integer: Int):
-        self._value = Variant[_Eof, String, Int](integer)
-
-    @staticmethod
-    def eof() -> Self:
-        return Self(eof=None)
-
-    @staticmethod
-    def identifier(var name: String) -> Self:
-        return Self(identifier=name^)
-
-    @staticmethod
-    def integer(value: Int) -> Self:
-        return Self(integer=value)
-
-    def _get_enum_discriminant(self) -> Int:
-        if self._value.isa[_Eof]():
-            return 0
-        if self._value.isa[String]():
-            return 1
-        return 2
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
-        id
-    ]:
-        comptime assert id != 0, "eof has no payload"
-        comptime if id == 1:
-            return rebind[TypeList[Trait=AnyType, Self._enum_case_types]()[id]](
-                Pointer(to=self._value.unsafe_get[String]()).unsafe_origin_cast[
-                    origin_of(self)
-                ]()[]
-            )
-        else:
-            return rebind[TypeList[Trait=AnyType, Self._enum_case_types]()[id]](
-                Pointer(to=self._value.unsafe_get[Int]()).unsafe_origin_cast[
-                    origin_of(self)
-                ]()[]
-            )
+    case eof
+    case identifier(String)
+    case integer(Int)
 
 
 @fieldwise_init
-struct Point(Copyable, ImplicitlyCopyable, Movable):
+struct Point(ImplicitlyCopyable):
     var x: Int
     var y: Int
 
@@ -367,7 +308,7 @@ def test_enum_like_token():
     print("== test_enum_like_token")
 
     # CHECK: eof
-    print(describe_token(Token.eof()))
+    print(describe_token(Token.eof))
     # CHECK: id:main
     print(describe_token(Token.identifier("main")))
     # CHECK: int:99

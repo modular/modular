@@ -18,7 +18,7 @@ data-dependent, so no dim of a declared `CustomOp` signature can size it.
 # MXF-353
 
 import extensibility
-from extensibility import InputTensor, OutputTensor, foreach
+from extensibility import InputTensor, OutputTensor, TileTensorable, foreach
 from max.gpu.host import DeviceContext
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
@@ -115,15 +115,17 @@ struct Mxf353Filter:
 
 
 @extensibility.register_shape_function("mxf353_filter")
-def mxf353_filter_shape(x: InputTensor) raises -> IndexList[2]:
+def mxf353_filter_shape(x: Some[TileTensorable]) raises -> IndexList[2]:
     """Counts the rows of `x` whose first column is positive: the
     data-dependent output row count for `mxf353_filter`.
     """
+    var input = x.to_tile_tensor()
+    var shape = coord_to_index_list(x.shape())
     var count = 0
-    for row in range(x.dim_size(0)):
-        if x[row, 0] > 0:
+    for row in range(shape[0]):
+        if input[row, 0] > 0:
             count += 1
-    return IndexList[2](count, x.dim_size(1))
+    return IndexList[2](count, shape[1])
 
 
 # --- Device-portable NVFP4 pipeline ops -------------------------------------

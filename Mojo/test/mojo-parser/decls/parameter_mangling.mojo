@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s --check-prefix=NESTED
+# RUN: %parse-mojo-isolated %s | FileCheck %s --check-prefix=NESTED2
 
 # CHECK: lit.alias.decl *"z`0x" = <0>
 comptime z = __mlir_attr.`0: index`
@@ -34,9 +36,9 @@ struct A[x: Int, x_0: Int](Movable where False):
         # CHECK: lit.alias.decl *"yy`2x3" = <22>
         comptime yy = __mlir_attr.`22: index`
 
-        # CHECK-LABEL: lit.fn *"bar{{.*}}<*"x`3x": !Int, x_2: !Int>
-        def bar[x: Int, x_2: Int]() capturing:
-            # CHECK: lit.alias.decl *"z`3x1" = <3>
+        # NESTED: lit.fn @"bar{{.*}}<*"x`3x": !Int, x_2: !Int>
+        def bar[x: Int, x_2: Int]():
+            # NESTED: lit.alias.decl *"z`3x1"
             comptime z = __mlir_attr.`3: index`
 
 
@@ -73,8 +75,8 @@ def test_nested_alias_mangling_2[x: Int](c: Bool):
         comptime y = x
         _ = y
 
-    # CHECK: lit.fn *"nested()"
-    def nested() capturing:
-        # CHECK: lit.alias.decl *"y`2x"
+    # NESTED2: lit.fn @"nested()
+    def nested():
+        # NESTED2: lit.alias.decl *"y`2x"
         comptime y = x
         _ = y

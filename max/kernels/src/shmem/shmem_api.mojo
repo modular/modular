@@ -22,7 +22,6 @@ The headings below corrosspond to section 9: OpenSHMEM Library API.
 from std.os import getenv
 from std.sys import (
     CompilationTarget,
-    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     size_of,
@@ -33,9 +32,10 @@ from max.gpu.host import (
     DeviceContext,
     DeviceFunction,
     DeviceStream,
+    default_accelerator,
 )
-from max.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
-from max.gpu.host._amdgpu_hip import HIP, HIP_MODULE
+from max.gpu.host import CUDA, CUDA_MODULE
+from max.gpu.host import HIP, HIP_MODULE
 
 from ._rocshmem import (
     rocshmem_my_pe,
@@ -319,7 +319,7 @@ def shmem_init_thread_tcp(
         var uid = shmem_create_uniqueid(server_ip, c_int(server_port))
         rocshmem_init_thread_tcp(
             ctx,
-            UnsafePointer(to=uid).as_unsafe_any_origin(),
+            Pointer(to=uid).as_unsafe_any_origin(),
             node_id=node_id,
             total_nodes=total_nodes,
             gpus_per_node=gpus_per_node,
@@ -411,7 +411,7 @@ def shmem_n_pes() -> c_int:
 
 def shmem_malloc[
     dtype: DType
-](size: Int) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
+](size: Int) raises -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
@@ -453,7 +453,7 @@ def shmem_malloc[
 
 def shmem_calloc[
     dtype: DType
-](count: Int, size: Int = Int(size_of[dtype]())) raises -> UnsafePointer[
+](count: Int, size: Int = Int(size_of[dtype]())) raises -> MutPointer[
     Scalar[dtype], MutUntrackedOrigin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
@@ -499,7 +499,7 @@ def shmem_calloc[
 
 def shmem_free[
     dtype: DType, //
-](ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]):
+](ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin]):
     """Collectively deallocate symmetric memory.
 
     Parameters:
@@ -572,8 +572,8 @@ def shmem_get[
     dtype: DType,
     scope: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -604,8 +604,8 @@ def shmem_get_nbi[
     dtype: DType,
     scope: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -637,7 +637,7 @@ def shmem_get_nbi[
 
 def shmem_g[
     dtype: DType
-](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
+](source: Pointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     """Copies one data item from a remote PE.
 
     Very low latency get capability for single elements.
@@ -666,8 +666,8 @@ def shmem_put[
     //,
     kind: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -703,8 +703,8 @@ def shmem_put_nbi[
     //,
     kind: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -740,7 +740,7 @@ def shmem_put_nbi[
 def shmem_p[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dest: MutPointer[Scalar[dtype], MutAnyOrigin],
     value: Scalar[dtype],
     pe: c_int,
 ):
@@ -776,10 +776,10 @@ def shmem_p[
 def shmem_put_signal_nbi[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: Int,
-    sig_addr: UnsafePointer[UInt64, _],
+    sig_addr: Pointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -885,7 +885,7 @@ def shmem_barrier_all():
 
 
 def shmem_signal_wait_until(
-    sig_addr: UnsafePointer[mut=True, UInt64, _], cmp: c_int, cmp_value: UInt64
+    sig_addr: MutPointer[UInt64, _], cmp: c_int, cmp_value: UInt64
 ):
     """Wait for a variable on the local PE to change from a signaling operation.
 
@@ -957,7 +957,7 @@ def shmem_fence():
 
 
 def shmem_signal_op(
-    sig_addr: UnsafePointer[mut=True, UInt64, _],
+    sig_addr: MutPointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,

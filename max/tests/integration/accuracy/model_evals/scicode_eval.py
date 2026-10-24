@@ -51,6 +51,7 @@ import os
 import statistics
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from typing import Any
 
 import click
@@ -58,8 +59,10 @@ from datasets import load_dataset
 from eval_common import (
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
+    dump_config,
     make_client,
+    response_fields,
     run_parallel,
     select_rows,
 )
@@ -185,6 +188,16 @@ def run_step_tests(
                 pass
 
 
+def step_index(step_number: str) -> int:
+    """Encodes a step number such as ``"77.3"`` as ``7703``.
+
+    Used as the step's ``prompt_index``: stable across subsampling and
+    dataset reordering, and ``prompt_index // 100`` recovers the problem.
+    """
+    problem, _, step = step_number.partition(".")
+    return int(problem) * 100 + int(step)
+
+
 def infer(
     client: ChatClient,
     model: str,
@@ -215,15 +228,15 @@ def infer(
         prompt = build_step_prompt(
             problem, background, dependencies, accumulated_code, step, step_idx
         )
-        resp = client.chat.completions.create(
-            **build_chat_kwargs(
-                model, [{"role": "user", "content": prompt}], params
-            )
+        sent_at = datetime.now(timezone.utc).isoformat()
+        resp = chat_completion(
+            client, model, [{"role": "user", "content": prompt}], params
         )
         call_tokens = resp.usage.completion_tokens if resp.usage else 0
         call_output_tokens.append(call_tokens)
         problem_output_tokens += call_tokens
-        code = extract_code(resp.choices[0].message.content)
+        message = resp.choices[0].message
+        code = extract_code(message.content)
         accumulated_code = code
 
         passed = (
@@ -240,10 +253,15 @@ def infer(
         )
         step_results.append(
             {
+                "prompt_index": step_index(step_number),
+                "timestamp": sent_at,
                 "problem": problem[:80],
                 "step_number": step_number,
                 "step_idx": step_idx,
                 "passed": passed,
+                "finish_reason": resp.choices[0].finish_reason,
+                "completion_tokens": call_tokens,
+                **response_fields(resp.choices[0]),
             }
         )
 
@@ -284,10 +302,11 @@ def run_eval(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Runs SciCode over ``indexed_dataset`` and returns ``(step_results, summary)``.
 
-    A problem whose inference raises is dropped (its sub-steps are not scored),
-    matching the historical inline behavior. When ``out_dir`` is set, results
-    stream to ``<out_dir>/results.jsonl`` as they complete, so a crash mid-run
-    doesn't lose already-finished problems.
+    A problem whose inference raises keeps one errored row per sub-step in
+    ``step_results`` but is left out of the summary (its sub-steps are not
+    scored), matching the historical inline behavior. When ``out_dir`` is set,
+    results stream to ``<out_dir>/results.jsonl`` as they complete, so a crash
+    mid-run doesn't lose already-finished problems.
 
     Args:
         client: OpenAI-compatible chat client.
@@ -319,24 +338,43 @@ def run_eval(
     def on_error(
         item: tuple[int, dict[str, Any]], exc: Exception
     ) -> dict[str, Any]:
-        return {"error": str(exc)}
+        _, sample = item
+        return {
+            "error": str(exc),
+            "step_results": [
+                {
+                    "prompt_index": step_index(step["step_number"]),
+                    "step_number": step["step_number"],
+                    "step_idx": step_idx,
+                    "passed": False,
+                    "error": str(exc),
+                }
+                for step_idx, step in enumerate(sample.get("sub_steps", []))
+            ],
+        }
 
     results, _ = run_parallel(
         indexed_dataset, fn, on_error, workers, "SciCode", out_dir=out_dir
     )
 
     all_results: list[dict[str, Any]] = []
+    scored: list[dict[str, Any]] = []
     call_output_tokens: list[int] = []
     problem_output_tokens: list[int] = []
     for r in results:
+        # An errored problem's steps have no time of their own; they take
+        # the time the problem started, which run_parallel stamped.
+        all_results.extend(
+            {"timestamp": r["timestamp"], **step} for step in r["step_results"]
+        )
         if "error" in r:
             continue
-        all_results.extend(r["step_results"])
+        scored.extend(r["step_results"])
         call_output_tokens.extend(r["call_output_tokens"])
         problem_output_tokens.append(r["problem_output_tokens"])
 
-    passed = sum(1 for r in all_results if r["passed"])
-    pass_at1 = passed / len(all_results) if all_results else 0.0
+    passed = sum(1 for r in scored if r["passed"])
+    pass_at1 = passed / len(scored) if scored else 0.0
     # Primary metric: per-call completion tokens (one entry per sub-step
     # generation request), matching the per-call reference baseline.
     mean_output_tokens = (
@@ -363,7 +401,7 @@ def run_eval(
     summary = {
         "pass_at_1": pass_at1,
         "passed": passed,
-        "total": len(all_results),
+        "total": len(scored),
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
         "mean_problem_output_tokens": mean_problem_tokens,
@@ -444,11 +482,12 @@ def main(
             "--test-data (or $SCICODE_DATA) must point at test_data.h5"
         )
     client = make_client(base_url)
-    indexed_dataset = select_rows(load_scicode_dataset(), sample_size, row_ids)
+    dataset = load_scicode_dataset()
+    indexed_dataset = select_rows(dataset, sample_size, row_ids)
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
     )
-    os.makedirs(out_dir, exist_ok=True)
+    dump_config(out_dir, base_url, params, indexed_dataset, dataset)
     all_results, summary = run_eval(
         client,
         indexed_dataset,

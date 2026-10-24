@@ -41,7 +41,7 @@ re-converged behind a shared helper.
 from std.sys import get_defined_bool
 from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
-from max.gpu import block_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu import warp_id as get_warp_id
 from max.gpu.sync import s_waitcnt
 from std.utils.numerics import get_accum_type, min_or_neg_inf
@@ -55,15 +55,18 @@ from .mma import TiledMmaOp
 
 from .kv_buffer import KVBuffer, _get_k_swizzle
 
+# Partition alignment for a predicated K operand: one indexed-load strip.
+comptime _PREDICATED_SPLIT_ALIGN = 16
+
 
 __extension Attention:
     @inline(.always)
     def mla_decode(
         mut self,
-        exp_sum_ptr: UnsafePointer[
+        exp_sum_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
-        qk_max_ptr: UnsafePointer[
+        qk_max_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
         num_partitions: Int,
@@ -97,10 +100,20 @@ __extension Attention:
 
         var warp_id = UInt32(get_warp_id[broadcast=True]())
 
-        # Split-K: compute this partition's key range.
-        var start, end = get_start_and_end_for_partitions[Self.BN](
+        # Split-K: compute this partition's key range. A predicated
+        # (in-place sparse) K operand's partitions need only strip alignment,
+        # so a top-k decode can spread one sequence over many CUs: its
+        # loader skips (and zeroes) the keys past the partition end or the
+        # entry's valid length, and the mask bounds each tile at `num_keys`.
+        comptime split_align = (
+            _PREDICATED_SPLIT_ALIGN if Self.k_t.rows_predicated else Self.BN
+        )
+        var start, end = get_start_and_end_for_partitions[split_align](
             self.num_keys, num_partitions, block_idx.x
         )
+        comptime if Self.k_t.rows_predicated:
+            if block_idx.x == 0 and thread_idx.x == 0:
+                self.k.check_indexed_rows(UInt32(self.batch_idx))
 
         # Empty partitions (from power-of-two bucketing): reset to
         # rowsum=0/rowmax=-inf so the reduce masks them via `scale > 0`.
@@ -200,7 +213,9 @@ __extension Attention:
             self.batch_idx,
             self.kv_head_idx(),
             VBufT.SmemParentType(
-                (self.v_smem_ptr + v_warp_smem_offset).as_unsafe_any_origin(),
+                self.v_smem_ptr.unsafe_offset(
+                    v_warp_smem_offset
+                ).as_unsafe_any_origin(),
                 VBufT._SmemParentLayout(),
             ),
             end,
@@ -363,6 +378,30 @@ __extension Attention:
         # Prologue: load first tile's K (slot 0).  V is aliased onto K's
         # SMEM and is consumed mid-tile after K's reads finish.
         _ = k_buffer.load_from_dram[0]()
+
+        # The valid length is applied only now, so its load overlaps the
+        # loader's index reads instead of gating them. Capping the key
+        # bound at it makes the tile mask cover the padding too; a partition
+        # wholly past it issued no copies (only zero writes) and is empty.
+        comptime if Self.k_t.rows_predicated:
+            var valid_end = min(
+                end, self.k.indexed_valid_length(UInt32(self.batch_idx))
+            )
+            if start >= valid_end:
+                _ = self.softmax.rowmax_tensor.fill(
+                    min_or_neg_inf[Self.accum_type]()
+                )
+                _ = self.softmax.rowsum_tensor.fill(0)
+                self.store_partition_info(
+                    num_partitions, exp_sum_ptr, qk_max_ptr
+                )
+                # Without a split-K reduce nothing else writes this entry,
+                # so store the zero accumulator, as the gather path does.
+                if num_partitions <= 1:
+                    self.store_output()
+                return
+            self.num_keys = valid_end
+            num_tiles = ceildiv(valid_end - start, Self.BN)
 
         # Single-buffer K: simple linear loop.  MLA never enables
         # `double_buffer_k_only` because BN=128 > 64.

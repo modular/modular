@@ -46,6 +46,7 @@ def mla_dispatch_args_scalar(
     num_heads: int,
     is_fp8_kv: bool,
     device: Device,
+    sparse_indices_stride: int = 0,
 ) -> tuple[int, int, int]:
     """Returns the MLA dispatch metadata scalars for the given request.
 
@@ -53,6 +54,11 @@ def mla_dispatch_args_scalar(
     These three values populate the size-3 device-side buffer that the
     kernel reads as ``scalar_args``.  ``effective_split_len`` is no longer
     returned; the MoGG ops compute it directly from ``max_cache_length``.
+
+    ``sparse_indices_stride`` is the selected rows per token of a sparse
+    MLA cache (``0`` for dense). On AMD it sizes ``num_partitions`` from the
+    selection instead of from ``max_cache_valid_length``, matching the
+    split the sparse decode kernel launches.
     """
     result = _mla_dispatch_args_scalar(
         batch_size,
@@ -61,6 +67,7 @@ def mla_dispatch_args_scalar(
         num_heads,
         is_fp8_kv,
         device._device_context_ptr(),
+        sparse_indices_stride,
     )
     return int(result[0]), int(result[1]), int(result[2])
 

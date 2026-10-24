@@ -17,9 +17,10 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import TileTensor, CoordLike, row_major, Idx
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -53,9 +54,9 @@ def test_blackwell_matmul_with_epilogue_tensor[
     num_accum_pipeline_stages: Int = 2,
     num_clc_pipeline_stages: Int = 2,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
@@ -76,15 +77,15 @@ def test_blackwell_matmul_with_epilogue_tensor[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
-    var epilogue_host_ptr = alloc[Scalar[c_type]](c_size)
+    var epilogue_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var epilogue_host = TileTensor(epilogue_host_ptr, epilogue_shape)
 
     # Device allocations
@@ -158,7 +159,7 @@ def test_blackwell_matmul_with_epilogue_tensor[
     # Add epilogue tensor to reference on host: C_ref[m, n] += epilogue[m, n]
     for i in range(M):
         for j in range(N):
-            c_host_ref[Coord(i, j)] += epilogue_host[Coord(i, j)]
+            c_host_ref[i, j] += epilogue_host[i, j]
 
     comptime rtol = 1e-2
     assert_almost_equal(
@@ -171,11 +172,11 @@ def test_blackwell_matmul_with_epilogue_tensor[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    epilogue_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_host_ref_ptr.unsafe_free()
+    epilogue_host_ptr.unsafe_free()
     _ = a_device^
     _ = b_device^
     _ = c_device^

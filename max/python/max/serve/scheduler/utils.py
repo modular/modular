@@ -18,12 +18,19 @@ import os
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from typing import TypeVar
+from dataclasses import dataclass, field, fields
+from typing import NamedTuple, TypeVar
 
 from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import PagedKVCacheManagerInterface
+from max.pipelines.kv_cache import (
+    JengaKVCacheManager,
+    PagedKVCacheManagerInterface,
+)
+from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
+    _LeafOccupancy,
+    _PoolOccupancy,
+)
 from max.pipelines.lib.vision_encoder_cache import (
     VideoEncoderMetrics,
     VisionEncoderMetrics,
@@ -38,6 +45,7 @@ from max.pipelines.speculative.utils import (
     _SpeculativeDecodingMetrics,
 )
 from max.serve.queue import MAXPullQueue, drain_queue
+from max.serve.telemetry._log_context import batch_id_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import (
     to_human_readable_bytes,
@@ -163,6 +171,77 @@ def _format_spec_decode_clause(
     )
 
 
+def _format_kv_leaves(occupancy: Sequence[_PoolOccupancy]) -> str:
+    """Formats every Jenga leaf, summed across replicas."""
+    leaves = {
+        leaf_id: _LeafOccupancy(
+            *(
+                sum(getattr(s.leaves[leaf_id], f.name) for s in occupancy)
+                for f in fields(_LeafOccupancy)
+            )
+        )
+        for leaf_id in occupancy[0].leaves
+    }
+    clauses = ", ".join(
+        f"{leaf_id} {leaf.pressure_pct:.1f}% ({leaf.used} used, "
+        f"{leaf.evictable} evictable, {leaf.empty} empty of {leaf.total}; "
+        f"{leaf.used_huge_blocks} huge used, {leaf.evictable_huge_blocks} "
+        f"evictable)"
+        for leaf_id, leaf in leaves.items()
+    )
+    return f"KV leaves: {clauses} | "
+
+
+def _format_leaf_dump(replica_idx: int, snapshot: _PoolOccupancy) -> str:
+    leaves = " | ".join(
+        f"{leaf_id}: {leaf.pressure_pct:.1f}% full, {leaf.used} used"
+        f" / {leaf.evictable} evictable / {leaf.empty} empty of {leaf.total}"
+        f" small blocks, {leaf.used_huge_blocks} huge blocks used /"
+        f" {leaf.evictable_huge_blocks} evictable"
+        for leaf_id, leaf in snapshot.leaves.items()
+    )
+    return (
+        f"KV leaf occupancy, replica {replica_idx}: "
+        f"{snapshot.empty_huge_blocks} empty huge blocks | {leaves}"
+    )
+
+
+def _publish_jenga_occupancy(occupancy: Sequence[_PoolOccupancy]) -> None:
+    with METRICS.transaction():
+        for replica_idx, snapshot in enumerate(occupancy):
+            replica = str(replica_idx)
+            for leaf_id, leaf in snapshot.leaves.items():
+                for state, blocks in (
+                    ("used", leaf.used),
+                    ("evictable", leaf.evictable),
+                    ("empty", leaf.empty),
+                ):
+                    METRICS.cache_jenga_small_blocks(
+                        blocks, replica=replica, leaf=leaf_id, state=state
+                    )
+                for state, blocks in (
+                    ("used", leaf.used_huge_blocks),
+                    ("evictable", leaf.evictable_huge_blocks),
+                ):
+                    METRICS.cache_jenga_huge_blocks(
+                        blocks, replica=replica, leaf=leaf_id, state=state
+                    )
+            METRICS.cache_jenga_huge_blocks(
+                snapshot.empty_huge_blocks,
+                replica=replica,
+                leaf="none",
+                state="empty",
+            )
+
+
+class _ScheduledBatch(NamedTuple):
+    """Executor service time and returned counts for one scheduler step."""
+
+    terminated_reqs: int
+    execution_time_s: float
+    output_tokens: int
+
+
 @dataclass
 class BatchMetrics:
     batch_type: BatchType
@@ -228,6 +307,15 @@ class BatchMetrics:
     dkv_total_clients: int = 0
     dkv_reconnect_attempts: int = 0
 
+    # The dKV settle worker and the owner release halt. The depth, the oldest
+    # job's age and the halt are levels that publish as gauges, and
+    # settle_jobs_finished is a per-window delta that publishes as a counter.
+    # See KVCacheMetrics for how each folds. Zero when no dKV tier is attached.
+    dkv_settle_queue_depth: int = 0
+    dkv_settle_queue_oldest_age_ms: float = 0.0
+    dkv_settle_jobs_finished: int = 0
+    dkv_owner_releases_halted: int = 0
+
     # Cache blocks dKV landed in device memory this batch, credited from
     # transfer accounting: a block behind a hole in the request's hash chain is
     # served and then dropped untransferred, and never reaches this count. The
@@ -254,8 +342,20 @@ class BatchMetrics:
     dkv_peers_dropped: int = 0
     dkv_peer_loads: int = 0
     dkv_peer_load_failures: int = 0
+    dkv_peer_transfer_failures: int = 0
+    dkv_peer_metadata_refreshes: int = 0
+    dkv_peer_metadata_refresh_failures: int = 0
     dkv_hints_rejected: int = 0
     dkv_hints_rejected_by_reason: dict[str, int] = field(default_factory=dict)
+    # Recency touches the dKV client dropped because a recent one covered
+    # them. A per-window delta, 0 against an extension that predates it.
+    dkv_touches_deduplicated: int = 0
+    # Loads the dKV connector answered as misses because it was degraded or
+    # a lease expired. Per-window deltas, published on the peer counters'
+    # guard so a tier serving every load as a miss is visible.
+    dkv_prepare_load_degraded: int = 0
+    dkv_load_with_plan_degraded: int = 0
+    dkv_load_with_plan_expired: int = 0
 
     # Per-call dKV client counters this batch, keyed by RPC or by connector
     # entry point. Published as labeled counters, so a dashboard derives the
@@ -265,8 +365,15 @@ class BatchMetrics:
     dkv_rpc_socket_wait_ms: dict[str, float] = field(default_factory=dict)
     dkv_lock_waits: dict[str, int] = field(default_factory=dict)
     dkv_lock_wait_ms: dict[str, float] = field(default_factory=dict)
+    # Calls into each entry point and the wall time the scheduler thread spent
+    # inside it, lock wait and any RPC included. Near zero for an entry that
+    # returns at once, which is how the thread is shown to have stopped
+    # waiting. Empty against an extension that predates them.
+    dkv_blocked_calls: dict[str, int] = field(default_factory=dict)
+    dkv_blocked_ms: dict[str, float] = field(default_factory=dict)
 
-    # Host/disk tier refusals, from the tiered connector. Always 0 without one.
+    # Loads a connector refused, from the tiered connector's host and disk
+    # tiers or from dKV. Always 0 without either.
     connector_loads_refused: int = 0
     connector_offload_blocks_dropped: int = 0
 
@@ -338,6 +445,10 @@ class BatchMetrics:
     # metrics are gated on this being non-None.
     video_metrics: VideoEncoderMetrics | None = None
 
+    # Per-replica Jenga pool snapshots. Each scans its pool, so they are
+    # taken only for batches that log. None otherwise, and for other caches.
+    jenga_occupancy: list[_PoolOccupancy] | None = None
+
     @classmethod
     def create(
         cls,
@@ -354,11 +465,20 @@ class BatchMetrics:
         batch_video_metrics: VideoEncoderMetrics | None = None,
         overlap_active: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
+        num_output_tokens: int | None = None,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = inputs.batch_size
-        prompt_throughput = num_input_tokens / batch_execution_time_s
-        if (
+        prompt_throughput = (
+            num_input_tokens / batch_execution_time_s
+            if batch_execution_time_s > 0.0
+            else 0.0
+        )
+        if batch_execution_time_s <= 0.0:
+            generation_throughput = 0.0
+        elif num_output_tokens is not None:
+            generation_throughput = num_output_tokens / batch_execution_time_s
+        elif (
             batch_spec_decode_metrics is not None
             and batch_spec_decode_metrics.num_verifications > 0
         ):
@@ -393,6 +513,10 @@ class BatchMetrics:
         dkv_connected_clients = 0
         dkv_total_clients = 0
         dkv_reconnect_attempts = 0
+        dkv_settle_queue_depth = 0
+        dkv_settle_queue_oldest_age_ms = 0.0
+        dkv_settle_jobs_finished = 0
+        dkv_owner_releases_halted = 0
         dkv_read_blocks = 0
         dkv_read_bytes = 0
         dkv_peer_attaches = 0
@@ -400,13 +524,22 @@ class BatchMetrics:
         dkv_peers_dropped = 0
         dkv_peer_loads = 0
         dkv_peer_load_failures = 0
+        dkv_peer_transfer_failures = 0
+        dkv_peer_metadata_refreshes = 0
+        dkv_peer_metadata_refresh_failures = 0
         dkv_hints_rejected = 0
         dkv_hints_rejected_by_reason: dict[str, int] = {}
+        dkv_touches_deduplicated = 0
+        dkv_prepare_load_degraded = 0
+        dkv_load_with_plan_degraded = 0
+        dkv_load_with_plan_expired = 0
         dkv_rpc_calls: dict[str, int] = {}
         dkv_rpc_time_ms: dict[str, float] = {}
         dkv_rpc_socket_wait_ms: dict[str, float] = {}
         dkv_lock_waits: dict[str, int] = {}
         dkv_lock_wait_ms: dict[str, float] = {}
+        dkv_blocked_calls: dict[str, int] = {}
+        dkv_blocked_ms: dict[str, float] = {}
         connector_loads_refused = 0
         connector_offload_blocks_dropped = 0
         connector_load_failures = 0
@@ -504,6 +637,15 @@ class BatchMetrics:
             dkv_connected_clients = metrics_agg.dkv_connected_clients
             dkv_total_clients = metrics_agg.dkv_total_clients
             dkv_reconnect_attempts = metrics_agg.dkv_reconnect_attempts
+            # The settle worker's levels stay in place the same way, and its
+            # finished count is a per-window delta take_metrics_aggregated
+            # cleared.
+            dkv_settle_queue_depth = metrics_agg.dkv_settle_queue_depth
+            dkv_settle_queue_oldest_age_ms = (
+                metrics_agg.dkv_settle_queue_oldest_age_ms
+            )
+            dkv_settle_jobs_finished = metrics_agg.dkv_settle_jobs_finished
+            dkv_owner_releases_halted = metrics_agg.dkv_owner_releases_halted
             dkv_read_blocks = metrics_agg.nixl_read_blocks
             dkv_read_bytes = metrics_agg.nixl_read_bytes
 
@@ -514,15 +656,30 @@ class BatchMetrics:
             dkv_peers_dropped = metrics_agg.dkv_peers_dropped
             dkv_peer_loads = metrics_agg.dkv_peer_loads
             dkv_peer_load_failures = metrics_agg.dkv_peer_load_failures
+            dkv_peer_transfer_failures = metrics_agg.dkv_peer_transfer_failures
+            dkv_peer_metadata_refreshes = (
+                metrics_agg.dkv_peer_metadata_refreshes
+            )
+            dkv_peer_metadata_refresh_failures = (
+                metrics_agg.dkv_peer_metadata_refresh_failures
+            )
             dkv_hints_rejected = metrics_agg.dkv_hints_rejected
             dkv_hints_rejected_by_reason = (
                 metrics_agg.dkv_hints_rejected_by_reason
             )
+            dkv_touches_deduplicated = metrics_agg.dkv_touches_deduplicated
+            dkv_prepare_load_degraded = metrics_agg.dkv_prepare_load_degraded
+            dkv_load_with_plan_degraded = (
+                metrics_agg.dkv_load_with_plan_degraded
+            )
+            dkv_load_with_plan_expired = metrics_agg.dkv_load_with_plan_expired
             dkv_rpc_calls = metrics_agg.dkv_rpc_calls
             dkv_rpc_time_ms = metrics_agg.dkv_rpc_time_ms
             dkv_rpc_socket_wait_ms = metrics_agg.dkv_rpc_socket_wait_ms
             dkv_lock_waits = metrics_agg.dkv_lock_waits
             dkv_lock_wait_ms = metrics_agg.dkv_lock_wait_ms
+            dkv_blocked_calls = metrics_agg.dkv_blocked_calls
+            dkv_blocked_ms = metrics_agg.dkv_blocked_ms
 
         # Capture per-request KV cache hit rates for newly admitted requests.
         # The block manager set ``cached_prefix_length`` on each context's
@@ -640,6 +797,10 @@ class BatchMetrics:
             dkv_connected_clients=dkv_connected_clients,
             dkv_total_clients=dkv_total_clients,
             dkv_reconnect_attempts=dkv_reconnect_attempts,
+            dkv_settle_queue_depth=dkv_settle_queue_depth,
+            dkv_settle_queue_oldest_age_ms=dkv_settle_queue_oldest_age_ms,
+            dkv_settle_jobs_finished=dkv_settle_jobs_finished,
+            dkv_owner_releases_halted=dkv_owner_releases_halted,
             dkv_read_blocks=dkv_read_blocks,
             dkv_read_bytes=dkv_read_bytes,
             dkv_peer_attaches=dkv_peer_attaches,
@@ -647,13 +808,22 @@ class BatchMetrics:
             dkv_peers_dropped=dkv_peers_dropped,
             dkv_peer_loads=dkv_peer_loads,
             dkv_peer_load_failures=dkv_peer_load_failures,
+            dkv_peer_transfer_failures=dkv_peer_transfer_failures,
+            dkv_peer_metadata_refreshes=dkv_peer_metadata_refreshes,
+            dkv_peer_metadata_refresh_failures=dkv_peer_metadata_refresh_failures,
             dkv_hints_rejected=dkv_hints_rejected,
             dkv_hints_rejected_by_reason=dkv_hints_rejected_by_reason,
+            dkv_touches_deduplicated=dkv_touches_deduplicated,
+            dkv_prepare_load_degraded=dkv_prepare_load_degraded,
+            dkv_load_with_plan_degraded=dkv_load_with_plan_degraded,
+            dkv_load_with_plan_expired=dkv_load_with_plan_expired,
             dkv_rpc_calls=dkv_rpc_calls,
             dkv_rpc_time_ms=dkv_rpc_time_ms,
             dkv_rpc_socket_wait_ms=dkv_rpc_socket_wait_ms,
             dkv_lock_waits=dkv_lock_waits,
             dkv_lock_wait_ms=dkv_lock_wait_ms,
+            dkv_blocked_calls=dkv_blocked_calls,
+            dkv_blocked_ms=dkv_blocked_ms,
             connector_loads_refused=connector_loads_refused,
             connector_offload_blocks_dropped=connector_offload_blocks_dropped,
             connector_load_failures=connector_load_failures,
@@ -715,6 +885,8 @@ class BatchMetrics:
                 )
             else:
                 kv_str = f"{usage_str} | "
+        if self.jenga_occupancy:
+            kv_str += _format_kv_leaves(self.jenga_occupancy)
 
         host_kv_str = ""
         if self.total_host_kv_bytes != 0:
@@ -799,6 +971,9 @@ class BatchMetrics:
                 self.dkv_peer_attaches,
                 self.dkv_peer_attach_failures,
                 self.dkv_peers_dropped,
+                self.dkv_peer_transfer_failures,
+                self.dkv_peer_metadata_refreshes,
+                self.dkv_peer_metadata_refresh_failures,
             )
         ):
             dkv_peer_str = (
@@ -807,7 +982,10 @@ class BatchMetrics:
                 f"{self.dkv_peer_attaches} attaches "
                 f"({self.dkv_peer_attach_failures} failed, "
                 f"{self.dkv_peers_dropped} dropped), "
-                f"{self.dkv_hints_rejected} hints rejected | "
+                f"{self.dkv_hints_rejected} hints rejected, "
+                f"{self.dkv_peer_transfer_failures} transfers failed, "
+                f"{self.dkv_peer_metadata_refreshes} metadata refreshes "
+                f"({self.dkv_peer_metadata_refresh_failures} failed) | "
             )
 
         vision_str = ""
@@ -999,10 +1177,13 @@ class BatchMetrics:
             extra["used_host_kv_pct"] = self.used_host_kv_pct
             extra["h2d_bytes_copied"] = self.h2d_bytes_copied
             extra["d2h_bytes_copied"] = self.d2h_bytes_copied
-            extra["connector_loads_refused"] = self.connector_loads_refused
             extra["connector_offload_blocks_dropped"] = (
                 self.connector_offload_blocks_dropped
             )
+
+        # dKV reports no host tier but refuses loads too.
+        if self.total_host_kv_bytes != 0 or self.dkv_total_clients > 0:
+            extra["connector_loads_refused"] = self.connector_loads_refused
 
         # Outside the host tier's guard: dKV reports no host tier.
         if self.connector_load_failures:
@@ -1086,13 +1267,36 @@ class BatchMetrics:
             extra["dkv_connected_clients"] = self.dkv_connected_clients
             extra["dkv_total_clients"] = self.dkv_total_clients
             extra["dkv_reconnect_attempts"] = self.dkv_reconnect_attempts
+            extra["dkv_settle_queue_depth"] = self.dkv_settle_queue_depth
+            extra["dkv_settle_queue_oldest_age_ms"] = (
+                self.dkv_settle_queue_oldest_age_ms
+            )
+            extra["dkv_settle_jobs_finished"] = self.dkv_settle_jobs_finished
+            extra["dkv_owner_releases_halted"] = self.dkv_owner_releases_halted
             # Same guard as the health gauges above.
             extra["dkv_peer_attaches"] = self.dkv_peer_attaches
             extra["dkv_peer_attach_failures"] = self.dkv_peer_attach_failures
             extra["dkv_peers_dropped"] = self.dkv_peers_dropped
             extra["dkv_peer_loads"] = self.dkv_peer_loads
             extra["dkv_peer_load_failures"] = self.dkv_peer_load_failures
+            extra["dkv_peer_transfer_failures"] = (
+                self.dkv_peer_transfer_failures
+            )
+            extra["dkv_peer_metadata_refreshes"] = (
+                self.dkv_peer_metadata_refreshes
+            )
+            extra["dkv_peer_metadata_refresh_failures"] = (
+                self.dkv_peer_metadata_refresh_failures
+            )
             extra["dkv_hints_rejected"] = self.dkv_hints_rejected
+            extra["dkv_touches_deduplicated"] = self.dkv_touches_deduplicated
+            extra["dkv_prepare_load_degraded"] = self.dkv_prepare_load_degraded
+            extra["dkv_load_with_plan_degraded"] = (
+                self.dkv_load_with_plan_degraded
+            )
+            extra["dkv_load_with_plan_expired"] = (
+                self.dkv_load_with_plan_expired
+            )
             # One scalar key per label that moved, as publish_metrics sends.
             labeled: tuple[tuple[str, Mapping[str, float]], ...] = (
                 ("dkv_hints_rejected", self.dkv_hints_rejected_by_reason),
@@ -1101,6 +1305,8 @@ class BatchMetrics:
                 ("dkv_rpc_socket_wait_ms", self.dkv_rpc_socket_wait_ms),
                 ("dkv_lock_waits", self.dkv_lock_waits),
                 ("dkv_lock_wait_ms", self.dkv_lock_wait_ms),
+                ("dkv_blocked_calls", self.dkv_blocked_calls),
+                ("dkv_blocked_ms", self.dkv_blocked_ms),
             )
             for prefix, counts in labeled:
                 for label, count in _moved(counts):
@@ -1143,15 +1349,16 @@ class BatchMetrics:
         METRICS.reqs_queued(self.num_pending_reqs)
 
         if not defer_execution_metrics:
-            METRICS.batch_prompt_throughput(
-                self.prompt_throughput, batch_type=bt
-            )
-            METRICS.batch_generation_throughput(
-                self.generation_throughput, batch_type=bt
-            )
             METRICS.batch_execution_time(
                 self.batch_execution_time_s * 1000, batch_type=bt
             )
+            if self.batch_execution_time_s > 0.0:
+                METRICS.batch_prompt_throughput(
+                    self.prompt_throughput, batch_type=bt
+                )
+                METRICS.batch_generation_throughput(
+                    self.generation_throughput, batch_type=bt
+                )
 
         METRICS.batch_creation_time(
             self.batch_creation_time_s * 1000, batch_type=bt
@@ -1220,10 +1427,13 @@ class BatchMetrics:
             METRICS.cache_used_host_kv_pct(self.used_host_kv_pct * 100)
             METRICS.cache_h2d_bytes_copied(self.h2d_bytes_copied)
             METRICS.cache_d2h_bytes_copied(self.d2h_bytes_copied)
-            METRICS.cache_connector_loads_refused(self.connector_loads_refused)
             METRICS.cache_connector_offload_blocks_dropped(
                 self.connector_offload_blocks_dropped
             )
+
+        # dKV reports no host tier but refuses loads too.
+        if self.total_host_kv_bytes != 0 or self.dkv_total_clients > 0:
+            METRICS.cache_connector_loads_refused(self.connector_loads_refused)
 
         # Outside the host tier's guard: dKV reports no host tier.
         if self.connector_load_failures:
@@ -1263,6 +1473,14 @@ class BatchMetrics:
             METRICS.dkv_connected_clients(self.dkv_connected_clients)
             METRICS.dkv_total_clients(self.dkv_total_clients)
             METRICS.dkv_reconnect_attempts(self.dkv_reconnect_attempts)
+            METRICS.dkv_settle_queue_depth(self.dkv_settle_queue_depth)
+            METRICS.dkv_settle_queue_oldest_age_ms(
+                self.dkv_settle_queue_oldest_age_ms
+            )
+            METRICS.dkv_owner_releases_halted(self.dkv_owner_releases_halted)
+            # A per-window delta, so a window skipped here loses its count for
+            # good, the same as the peer counters below.
+            METRICS.dkv_settle_jobs_finished(self.dkv_settle_jobs_finished)
             # Same guard as the health gauges: per-window deltas, so a window
             # skipped here loses its count for good.
             METRICS.dkv_peer_attaches(self.dkv_peer_attaches)
@@ -1270,7 +1488,20 @@ class BatchMetrics:
             METRICS.dkv_peers_dropped(self.dkv_peers_dropped)
             METRICS.dkv_peer_loads(self.dkv_peer_loads)
             METRICS.dkv_peer_load_failures(self.dkv_peer_load_failures)
+            METRICS.dkv_peer_transfer_failures(self.dkv_peer_transfer_failures)
+            METRICS.dkv_peer_metadata_refreshes(
+                self.dkv_peer_metadata_refreshes
+            )
+            METRICS.dkv_peer_metadata_refresh_failures(
+                self.dkv_peer_metadata_refresh_failures
+            )
             METRICS.dkv_hints_rejected(self.dkv_hints_rejected)
+            METRICS.dkv_touches_deduplicated(self.dkv_touches_deduplicated)
+            METRICS.dkv_prepare_load_degraded(self.dkv_prepare_load_degraded)
+            METRICS.dkv_load_with_plan_degraded(
+                self.dkv_load_with_plan_degraded
+            )
+            METRICS.dkv_load_with_plan_expired(self.dkv_load_with_plan_expired)
             # Labeled counters only move by their increment, so a zero would
             # cost a trip through the telemetry queue and change nothing.
             for reason, count in _moved(self.dkv_hints_rejected_by_reason):
@@ -1285,6 +1516,10 @@ class BatchMetrics:
                 METRICS.dkv_lock_waits(waits, entry=entry)
             for entry, ms in _moved(self.dkv_lock_wait_ms):
                 METRICS.dkv_lock_wait_ms(ms, entry=entry)
+            for entry, calls in _moved(self.dkv_blocked_calls):
+                METRICS.dkv_blocked_calls(calls, entry=entry)
+            for entry, ms in _moved(self.dkv_blocked_ms):
+                METRICS.dkv_blocked_ms(ms, entry=entry)
 
         if self.draft_tokens_generated > 0:
             METRICS.spec_decode_avg_acceptance_length(
@@ -1333,18 +1568,14 @@ def publish_completed_batch_metrics(
             Derived by the scheduler rather than the pipeline, but it
             describes ``stats``' batch.
     """
-    if stats.execution_time_s <= 0.0:
-        return
     bt = stats.batch_type.value
     METRICS.batch_terminated_reqs(terminated_reqs, batch_type=bt)
-    prompt_throughput = stats.num_input_tokens / stats.execution_time_s
-    if stats.num_output_tokens is not None and stats.batch_type == BatchType.TG:
-        generation_throughput = stats.num_output_tokens / stats.execution_time_s
-    else:
-        generation_throughput = stats.batch_size / stats.execution_time_s
-    METRICS.batch_prompt_throughput(prompt_throughput, batch_type=bt)
-    METRICS.batch_generation_throughput(generation_throughput, batch_type=bt)
     METRICS.batch_execution_time(stats.execution_time_s * 1000, batch_type=bt)
+    if stats.execution_time_s > 0.0:
+        METRICS.batch_prompt_throughput(stats.prompt_throughput, batch_type=bt)
+        METRICS.batch_generation_throughput(
+            stats.generation_throughput, batch_type=bt
+        )
     if stats.early_sync_duration_s is not None:
         METRICS.di_early_sync_time(stats.early_sync_duration_s * 1000)
 
@@ -1352,11 +1583,17 @@ def publish_completed_batch_metrics(
 class SchedulerLogger:
     """Class to periodically log batch-level metrics to console."""
 
-    def __init__(self, log_interval_s: float | None = None):
+    def __init__(
+        self,
+        log_interval_s: float | None = None,
+        leaf_dump_interval_s: float | None = None,
+    ):
         """Initializes the SchedulerLogger.
 
         Args:
             log_interval_s: How frequently to log CE and TG batches, in seconds.
+            leaf_dump_interval_s: How frequently to log every Jenga leaf's
+                occupancy, busy or idle, in seconds.
         """
 
         if log_interval_s is None:
@@ -1374,6 +1611,42 @@ class SchedulerLogger:
         # The last time we last logged a CE or TG batch.
         self.time_of_last_log = 0.0
 
+        if leaf_dump_interval_s is None:
+            leaf_dump_interval_s = float(
+                os.getenv("MAX_SERVE_KV_LEAF_DUMP_INTERVAL_S", "60")
+            )
+        self.leaf_dump_interval_s = leaf_dump_interval_s
+        self.time_of_last_leaf_dump = 0.0
+
+    def _sample_cache_occupancy(
+        self,
+        kv_cache: PagedKVCacheManagerInterface | None,
+        num_replicas: int,
+        now: float,
+    ) -> list[_PoolOccupancy] | None:
+        """Publishes the per-leaf gauges, logging every leaf when due."""
+        if not isinstance(kv_cache, JengaKVCacheManager):
+            return None
+        occupancy = [kv_cache.occupancy(r) for r in range(num_replicas)]
+        _publish_jenga_occupancy(occupancy)
+        if self.leaf_dump_interval_s < now - self.time_of_last_leaf_dump:
+            self.time_of_last_leaf_dump = now
+            for replica_idx, snapshot in enumerate(occupancy):
+                logger.info(_format_leaf_dump(replica_idx, snapshot))
+        return occupancy
+
+    def log_idle(
+        self, kv_cache: PagedKVCacheManagerInterface | None, num_replicas: int
+    ) -> None:
+        """Logs every Jenga leaf while no batch runs, at the dump interval.
+
+        Pages an idle pool still holds have no running request to explain
+        them, so this is where a leak or a pinned huge block shows.
+        """
+        now = time.monotonic()
+        if self.leaf_dump_interval_s < now - self.time_of_last_leaf_dump:
+            self._sample_cache_occupancy(kv_cache, num_replicas, now)
+
     def log_metrics(
         self,
         sch_config: TokenGenerationSchedulerConfig,
@@ -1389,6 +1662,8 @@ class SchedulerLogger:
         batch_video_metrics: VideoEncoderMetrics | None = None,
         overlap_active: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
+        num_output_tokens: int | None = None,
+        batch_id: int | None = None,
     ) -> None:
         """Periodically logs batch-level metrics to console.
 
@@ -1412,12 +1687,16 @@ class SchedulerLogger:
                 and termination telemetry for ``inputs`` is suppressed in
                 favor of ``completed_batch_stats``, and the log line describes
                 the enqueued and completed batches as separate clauses.
+            num_output_tokens: Tokens returned by the synchronous executor,
+                before filtering or advancing requests. Includes prefill outputs
+                and all accepted plus bonus speculative outputs.
             completed_batch_stats: Stats for the batch whose outputs were
                 synchronized this iteration (overlap scheduling), used with
                 ``num_terminated_reqs`` to publish execution-time, throughput
                 and termination telemetry and to render the log line's
                 ``Completed`` clause. ``None`` when no batch completed this
                 iteration or overlap is inactive.
+            batch_id: The ID of the pass the line reports, or None.
 
         Returns:
             None
@@ -1437,6 +1716,7 @@ class SchedulerLogger:
             batch_video_metrics=batch_video_metrics,
             overlap_active=overlap_active,
             completed_batch_stats=completed_batch_stats,
+            num_output_tokens=num_output_tokens,
         )
 
         # Always publish metrics. Under overlap scheduling the wall-clock
@@ -1460,6 +1740,17 @@ class SchedulerLogger:
         if self.log_interval_s < time_since_last_log:
             # Reset the time of the last log.
             self.time_of_last_log = now
+            metrics.jenga_occupancy = self._sample_cache_occupancy(
+                kv_cache, sch_config.data_parallel_degree, now
+            )
+            if batch_id is not None:
+                # Not ``extra``: the OTLP log handler exports extras.
+                batch_id_token = batch_id_ctx.set(batch_id)
+                logger.info(
+                    metrics.pretty_format(), extra=metrics.to_log_extra()
+                )
+                batch_id_ctx.reset(batch_id_token)
+                return
             logger.info(metrics.pretty_format(), extra=metrics.to_log_extra())
 
 

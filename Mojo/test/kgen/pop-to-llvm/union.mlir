@@ -317,8 +317,8 @@ kgen.func @union_wrap_nonempty_with_empty_sibling(%arg0: !kgen.struct<(i8)>) -> 
 // Wrap the empty struct variant into the same union type. lower-kgen-to-llvm
 // eliminates the zero-size struct argument and replaces its use with undef.
 kgen.func @union_wrap_empty_with_nonempty_sibling(%arg0: !kgen.struct<()>) -> !pop.union<struct<(i8)>, struct<()>> {
-  // CHECK:           %[[VAL_0:.*]] = llvm.mlir.constant(1 : i64) : i64
-  // CHECK:           %[[VAL_1:.*]] = llvm.mlir.undef : !llvm.struct<()>
+  // CHECK-DAG:       %[[VAL_0:.*]] = llvm.mlir.constant(1 : i64) : i64
+  // CHECK-DAG:       %[[VAL_1:.*]] = llvm.mlir.undef : !llvm.struct<()>
   // CHECK:           %[[VAL_2:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(i8)> {alignment = 1 : i64} : (i64) -> !llvm.ptr
   // CHECK:           llvm.intr.lifetime.start %[[VAL_2]] : !llvm.ptr
   // CHECK:           llvm.store %[[VAL_1]], %[[VAL_2]] : !llvm.struct<()>, !llvm.ptr

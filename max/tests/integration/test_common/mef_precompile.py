@@ -60,7 +60,9 @@ def set_virtual_gpu(target: str, cpu_target: str, count: int = 1) -> None:
     ``max._interpreter_ops``, which freezes its device set at import).
 
     Args:
-        target: The GPU target as ``"api:arch"`` (e.g. ``"cuda:sm_100a"``).
+        target: The GPU target as ``"api:arch"``, where ``api`` is either a
+            device-API name or the Mojo ``--target-accelerator`` vendor name
+            for the same device (e.g. ``"nvidia:sm_100a"``, ``"cuda:sm_100a"``).
         cpu_target: The host-CPU codegen descriptor (e.g.
             ``"triple=x86_64-unknown-linux-gnu;cpu=x86-64-v3"``); part of the
             compile key, so it must match the consuming host.

@@ -20,16 +20,17 @@ reference, exercising all three backends: NVIDIA's `vote.ballot.sync`, AMD's
 """
 
 from max.gpu import lane_id
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import GPUInfo
+from max.gpu.host.info import get_gpu_info
 from max.gpu.primitives.warp import vote
 from std.testing import assert_equal, TestSuite
 
-# WARP_SIZE-appropriate mask type: NVIDIA/Apple SIMD-groups are 32 lanes
+comptime _WARP_SIZE = DeviceContext.default_device_info.warp_size
+
+# Warp-size-appropriate mask type: NVIDIA/Apple SIMD-groups are 32 lanes
 # (`uint32`), AMD wavefronts are 64 lanes (`uint64`). Matches the `match_any`
 # default and keeps the probe portable across all three backends.
-comptime _MASK = DType.uint32 if WARP_SIZE <= 32 else DType.uint64
+comptime _MASK = DType.uint32 if _WARP_SIZE <= 32 else DType.uint64
 
 # The *target-accelerator* vendor, resolved in host context. Do NOT gate the
 # `uint64` ballot on `is_nvidia_gpu()`: that predicate reads the *current
@@ -37,8 +38,9 @@ comptime _MASK = DType.uint32 if WARP_SIZE <= 32 else DType.uint64
 # cross-compiling `--target-accelerator=nvidia:...`, and the `uint64` device
 # kernel would still be instantiated -- tripping `vote`'s NVIDIA uint32-only
 # constraint. `_accelerator_arch()` reflects the build's accelerator flag (the
-# same mechanism `WARP_SIZE` resolves through), so it is correct in host code.
-comptime _TARGET_API = GPUInfo.default_accelerator().api
+# same lookup `DeviceContext.default_device_info` uses), so it is correct in
+# host code.
+comptime _TARGET_API = get_gpu_info().api
 
 
 def _vote_probe[
@@ -56,7 +58,7 @@ def _vote_probe[
 def _check[
     ret_type: DType = _MASK
 ](ctx: DeviceContext, name: String, preds: List[Int]) raises:
-    var n = len(preds)  # == WARP_SIZE
+    var n = len(preds)  # == _WARP_SIZE
     var p_host = ctx.enqueue_create_host_buffer[.uint8](n)
     var out_host = ctx.enqueue_create_host_buffer[.uint64](n)
     ctx.synchronize()
@@ -88,40 +90,40 @@ def _check[
 def test_vote_all_true() raises:
     # Whole warp votes True -> low WARP_SIZE bits set, no bit above.
     with DeviceContext() as ctx:
-        _check(ctx, "all_true", List[Int](length=WARP_SIZE, fill=1))
+        _check(ctx, "all_true", List[Int](length=_WARP_SIZE, fill=1))
 
 
 def test_vote_all_false() raises:
     with DeviceContext() as ctx:
-        _check(ctx, "all_false", List[Int](length=WARP_SIZE, fill=0))
+        _check(ctx, "all_false", List[Int](length=_WARP_SIZE, fill=0))
 
 
 def test_vote_alternating() raises:
     # Even lanes vote True (0x...55 pattern).
     with DeviceContext() as ctx:
-        var preds = List[Int](length=WARP_SIZE, fill=0)
-        for i in range(WARP_SIZE):
+        var preds = List[Int](length=_WARP_SIZE, fill=0)
+        for i in range(_WARP_SIZE):
             preds[i] = 1 if (i % 2 == 0) else 0
         _check(ctx, "alternating", preds)
 
 
 def test_vote_single_first_lane() raises:
     with DeviceContext() as ctx:
-        var preds = List[Int](length=WARP_SIZE, fill=0)
+        var preds = List[Int](length=_WARP_SIZE, fill=0)
         preds[0] = 1
         _check(ctx, "single_first", preds)
 
 
 def test_vote_single_last_lane() raises:
     with DeviceContext() as ctx:
-        var preds = List[Int](length=WARP_SIZE, fill=0)
-        preds[WARP_SIZE - 1] = 1
+        var preds = List[Int](length=_WARP_SIZE, fill=0)
+        preds[_WARP_SIZE - 1] = 1
         _check(ctx, "single_last", preds)
 
 
 def test_vote_single_middle_lane() raises:
     with DeviceContext() as ctx:
-        var preds = List[Int](length=WARP_SIZE, fill=0)
+        var preds = List[Int](length=_WARP_SIZE, fill=0)
         preds[13] = 1
         _check(ctx, "single_middle", preds)
 
@@ -130,13 +132,13 @@ def test_vote_uint64_high_bits_masked() raises:
     # Force a `uint64` return on backends where WARP_SIZE < 64 and assert no
     # bit `>= WARP_SIZE` survives (exact equality against a low-bits-only
     # reference). Gated off NVIDIA, which supports only a 32-bit return.
-    comptime if _TARGET_API != "cuda" and WARP_SIZE < 64:
+    comptime if _TARGET_API != "cuda" and _WARP_SIZE < 64:
         with DeviceContext() as ctx:
             _check[.uint64](
-                ctx, "u64_all_true", List[Int](length=WARP_SIZE, fill=1)
+                ctx, "u64_all_true", List[Int](length=_WARP_SIZE, fill=1)
             )
-            var preds = List[Int](length=WARP_SIZE, fill=0)
-            for i in range(WARP_SIZE):
+            var preds = List[Int](length=_WARP_SIZE, fill=0)
+            for i in range(_WARP_SIZE):
                 preds[i] = 1 if (i % 3 == 0) else 0
             _check[.uint64](ctx, "u64_mod3", preds)
 

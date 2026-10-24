@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
-from std.sys import align_of, size_of
+from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
@@ -31,7 +30,6 @@ from layout import (
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     matmul_sm100_fallback,
 )
-from linalg.utils import elementwise_epilogue_type
 
 from std.utils.index import Index, IndexList
 
@@ -57,9 +55,9 @@ def test_matmul_sm100_fallback[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = Int(n.value()) * Int(k.value())
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k)
+    var c_size = Int(m) * Int(n)
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
@@ -94,11 +92,11 @@ def test_matmul_sm100_fallback[
         "use_epilogue:",
         use_epilogue,
         " : PROBLEM SHAPE (M,N,K): (",
-        Int(m.value()),
+        Int(m),
         "x",
-        Int(n.value()),
+        Int(n),
         "x",
-        Int(k.value()),
+        Int(k),
         ") - ",
         "BLOCKS SHAPE (BM,BN,BK): (",
         umma_shape[0],
@@ -109,19 +107,12 @@ def test_matmul_sm100_fallback[
         ")",
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+    def compute_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        c_tensor.store[alignment=alignment](
-            idx, rebind[SIMD[c_type, width]](val)
-        )
+        return val
 
     # Initialize matmul operands
     rand(a_host.as_span())
@@ -146,10 +137,8 @@ def test_matmul_sm100_fallback[
         block_tile_shape=block_tile_shape,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            epilogue_fn
-        ) if use_epilogue else None,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+        has_compute_fn=use_epilogue,
+    ](c_tensor, a_tensor, b_tensor, ctx, compute_fn)
 
     ctx.synchronize()
 

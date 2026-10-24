@@ -35,12 +35,13 @@ var filled = Array[Int, 5](fill=42)
 
 from std.math import max, min, align_down
 import std.memory
+from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.collections import check_bounds
+from std.collections import check_bounds, check_slice_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.sys import size_of
 from std.memory import (
     MaybeUninit,
@@ -209,16 +210,15 @@ struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
         return (remaining, {remaining})
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy an `Array` of"
-    " non-`Deinitable` elements"
-)
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Comparable where conforms_to(T, Comparable),
     Copyable where conforms_to(T, Copyable),
     Defaultable where conforms_to(T, Defaultable),
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy an `Array` of"
+        " non-`Deinitable` elements"
+    ),
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
@@ -720,6 +720,35 @@ struct Array[T: AnyType, length: Int](
         check_bounds(idx, len(self))
         return self._unchecked_get(idx)
 
+    @inline(.always)
+    def __getitem__(
+        ref self, slc: ContiguousSlice, /
+    ) -> Span[Self.T, origin_of(self)]:
+        """Gets a span over the elements at the specified slice positions.
+
+        Aborts if `slc`'s start or end index is out of bounds (valid range is
+        `0` to `len(self)`, inclusive).
+
+        Args:
+            slc: The slice specifying the range of elements.
+
+        Returns:
+            A span over the specified slice of the array.
+
+        Examples:
+
+        ```mojo
+        var arr = [1, 2, 3, 4]
+        var middle = arr[1:3]
+        print(middle[0], middle[1])  # Prints 2 3
+        ```
+        """
+        var start, end = check_slice_bounds(slc, len(self))
+        return {
+            unsafe_ptr = self.unsafe_ptr().unsafe_offset(start),
+            length = end - start,
+        }
+
     @stable(since="1.0")
     @inline(.always)
     def __getitem_param__[idx: Int, /](ref self) -> ref[self] Self.T:
@@ -1051,7 +1080,6 @@ struct Array[T: AnyType, length: Int](
             Pointer(to=self._array)
             .unsafe_bitcast[Self.T]()
             .unsafe_origin_cast[origin]()
-            .unsafe_address_space_cast[address_space]()
         )
 
     @inline(.always)

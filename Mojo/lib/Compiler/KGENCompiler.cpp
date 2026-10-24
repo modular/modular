@@ -48,6 +48,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
@@ -180,84 +181,6 @@ static FuncOp findFuncByKernelId(ModuleOp module, uint64_t kernelId) {
   return {};
 }
 
-/// HACK HACK HACK https://github.com/modularml/modular/issues/22959
-/// HACK: Read out the magic attribute used to propagate captures across device
-/// boundaries, generate the capture function, and write them into the buffer.
-static std::tuple<OwningOpRef<FuncOp>, unsigned, mlir::DenseI64ArrayAttr>
-writeCaptureArgs(ModuleOp module, FuncOp sliced, StringAttr preRenameSym) {
-  // This is held together with duct tape, so check the invariant.
-  assert(sliced && sliced.isExported() && "expected a sliced function");
-  // For offload kernels renamed by @__name, the host stub was created using the
-  // pre-rename auto-mangled sym (in evaluateCompileOffloadClosureAttr). Pass
-  // preRenameSym to use that same name so the fill step in the host elaborator
-  // can match the populate function to the host stub by name.
-  StringAttr name = preRenameSym ? preRenameSym : sliced.getSymNameAttr();
-  ArrayRef<StringAttr> captures = sliced.getCrossDeviceCaptures();
-
-  // The location to use for generated code. Remove all debuginfo from it.
-  Location loc = sliced.getLoc();
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([](mlir::FusedLocWith<DebugInfo::DIAttr> loc) {
-    return FusedLoc::get(loc.getContext(), loc.getLocations());
-  });
-  loc = cast<LocationAttr>(replacer.replace(loc));
-
-  // Generate a function on the host side that opaquely populates a piece of
-  // memory with the capture values.
-  ImplicitLocOpBuilder b(loc, OpBuilder(name.getContext()));
-
-  // The expected signature is `fn(Pointer[None]) capturing -> None`.
-  auto noneType = b.getType<KGEN::NoneType>();
-  auto nonePtr = PointerType::get(noneType);
-  auto sig = FuncType::get(b.getFunctionType(nonePtr, noneType),
-                           ArgConvention::ImmReg, FnEffects().setCapturing());
-  OwningOpRef<FuncOp> func =
-      FuncOp::create(b, b.getStringAttr(name.getValue() + "_populate_captures"),
-                     sig, InlineLevel::Always);
-
-  // Populate the body. Generate a local variable for each capture argument
-  // and store the addresses to the pointer.
-  // The function has to be `always_inline`, so that the stack allocated ptr
-  // will not go out of scope before use.
-  // FIXME: This does not account for copy constructors, obviously.
-  Block *body = b.createBlock(&func->getBodyRegion());
-  Value argPtrs = body->addArgument(sig.getArguments().front(), b.getLoc());
-  TargetInfoAttr target = lookupTargetInfo(module);
-  SmallVector<int64_t> typeSizes;
-  for (auto [i, capture] : llvm::enumerate(captures)) {
-    // ```
-    // %value = pop.compiler.global_load "var" : T
-    // %ptr = pop.stack_allocation 1 x T
-    // pop.store %value, %ptr
-    // %gep = pop.offset %argPtrs[%i]
-    // %opaque = pop.pointer.bitcast %ptr : pointer<T> to pointer<none>
-    // pop.store %opaque, %gep
-    // ```
-    Type type = capture.getType();
-    Value value = POP::CompilerGlobalLoadOp::create(
-        b,
-        // Make sure to strip off the type of the StringAttr.
-        type, b.getStringAttr(capture.getValue()));
-    Value ptr = POP::StackAllocationOp::create(b, PointerType::get(type));
-    POP::StoreOp::create(b, value, ptr);
-    Value argPtrPtrs =
-        POP::PointerBitcastOp::create(b, PointerType::get(nonePtr), argPtrs);
-    Value gep = POP::OffsetOp::create(
-        b, argPtrPtrs, ParamConstantOp::create(b, b.getIndexAttr(i)));
-    Value opaque = POP::PointerBitcastOp::create(b, nonePtr, ptr);
-    std::optional<int64_t> typeStoreSize =
-        DataLayoutInterface::getTypeStoreSize(target, type);
-    if (!typeStoreSize)
-      llvm_unreachable("unable to get the size of the type");
-    typeSizes.push_back(*typeStoreSize);
-    POP::StoreOp::create(b, opaque, gep);
-  }
-  ReturnOp::create(
-      b, ParamConstantOp::create(b, b.getAttr<NoneAttr>()).getResult());
-
-  return {std::move(func), captures.size(), b.getDenseI64ArrayAttr(typeSizes)};
-}
-
 static StringAttr getXXH3Hash(StringAttr strAttr) {
   XXH128_hash_t hash = XXH3_128bits(strAttr.data(), strAttr.size());
   StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(XXH128_hash_t));
@@ -270,19 +193,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
     const SymbolTable &symtab, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elabOptions);
-
-/// Everything compiling one generator produces. Each caller below projects out
-/// the subset its own result type carries, so neither `CrossDeviceFunction` nor
-/// `OffloadCompilationResult` grows a field only the other one reads.
-namespace {
-struct CompiledStandaloneKernel {
-  StringAttr contents;
-  unsigned numCaptures;
-  /// Per-capture storage size in bytes; length equals `numCaptures`.
-  mlir::DenseI64ArrayAttr captureSizes;
-  OwningOpRef<Operation *> capturesFunc;
-};
-} // namespace
 
 static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
@@ -303,7 +213,7 @@ compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func`,
 /// elaborate it, and compile it for `target`.
-static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
+static ErrorOr<StringAttr> compileStandaloneKernel(
     GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
     const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
     EmissionOptions emissionOptions, CompilationOptions compilationOptions,
@@ -386,6 +296,11 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
   });
   for (TypedAttr attr : symbol.getParamValues())
     walker.walk(attr);
+  // No parameter reaches a struct that only `opaque_plugin` references.
+  // `bundleCompileOffloadOp` rewrote them to generator references,
+  // which the walker exports.
+  if (TypedAttr plugin = target.getOpaquePlugin())
+    walker.walk(plugin);
 
   IRMapping mapping;
   OwningOpRef<ModuleOp> module = produceStandaloneModule(
@@ -413,6 +328,13 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
     sliced.setFnAttrsAttr(ArrayAttr::get(sliced.getContext(), fnAttrs));
   }
 
+  // Lets a target annotate its own entry arguments before elaboration.
+  if (backend) {
+    if (auto entry = dyn_cast_or_null<GeneratorOp>(
+            mlir::SymbolTable::lookupSymbolIn(*module, name)))
+      backend->preprocessGenerator(entry, func, symbol, *module);
+  }
+
   // Run elaboration through to the end of the optimization pipeline.
   mlir::PassManager pm(target.getContext());
   // Ignore potential error that could happen when `mojo` tool is called, which
@@ -428,11 +350,8 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
     return Error("failed to run the pass manager");
   // Find the entry function by kernel ID (robust against offload name
   // sanitization).
-  FuncOp entryFunc = findFuncByKernelId(*module, kAsmEntryKernelId);
-  if (!entryFunc)
+  if (!findFuncByKernelId(*module, kAsmEntryKernelId))
     return Error("internal error: cannot find kernel by its ID");
-  auto [capturesFunc, numCaptures, captureSizes] =
-      writeCaptureArgs(*module, entryFunc, name);
 
   // Handle the emission options.
   ErrorOrSuccess parseResult = parseEmissionOptions(clEmissionOptions);
@@ -456,9 +375,7 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
     if (artifactOr.isError())
       return artifactOr.takeError();
     os << artifactOr.takeValue()->getBuffer();
-    return CompiledStandaloneKernel{
-        StringAttr::get(buf, StringType::get(func.getContext())), numCaptures,
-        captureSizes, std::move(capturesFunc)};
+    return StringAttr::get(buf, StringType::get(func.getContext()));
   }
 
   // Emit the module in the requested form.
@@ -504,9 +421,7 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
     break;
   }
 
-  return CompiledStandaloneKernel{
-      StringAttr::get(buf, StringType::get(func.getContext())), numCaptures,
-      captureSizes, std::move(capturesFunc)};
+  return StringAttr::get(buf, StringType::get(func.getContext()));
 }
 
 /// Cross-device closure compilation (the comptime `compile_closure` path).
@@ -515,19 +430,15 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
     EmissionOptions emissionOptions, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elaboratorOptions) {
-  ErrorOr<CompiledStandaloneKernel> compiledOr = compileStandaloneKernel(
+  ErrorOr<StringAttr> compiledOr = compileStandaloneKernel(
       func, symbol, name, symtab, target, emissionKind, emissionOptions,
       compilationOptions, elaboratorOptions);
   if (compiledOr.isError())
     return compiledOr.takeError();
-  CompiledStandaloneKernel compiled = compiledOr.takeValue();
-  return CrossDeviceFunction{compiled.contents, compiled.numCaptures,
-                             std::move(compiled.capturesFunc)};
+  return CrossDeviceFunction{compiledOr.takeValue()};
 }
 
-/// Per-kernel offload compilation. Builds the elaborator's record directly so
-/// the capture sizes the `kgen.compile_offload` lowering emits come from the
-/// compile that computed them.
+/// Per-kernel offload compilation.
 static ErrorOr<OffloadCompilationResult>
 compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
                         StringAttr name, const SymbolTable &symtab,
@@ -546,26 +457,17 @@ compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
     kinds.push_back(outputKind);
 
   // An owning backend's artifact differs by kind, so every kind is compiled.
-  // The captures describe the kernel, not a kind, so the first compile's win.
   DenseMap<EmitAs, StringAttr> contents;
   DenseMap<EmitAs, StringAttr> moduleNames;
-  unsigned numCaptures = 0;
-  mlir::DenseI64ArrayAttr captureSizes;
-  OwningOpRef<Operation *> capturesFunc;
-  for (auto [index, kind] : llvm::enumerate(kinds)) {
-    ErrorOr<CompiledStandaloneKernel> compiledOr = compileStandaloneKernel(
+  for (EmitAs kind : kinds) {
+    ErrorOr<StringAttr> compiledOr = compileStandaloneKernel(
         func, symbol, name, symtab, target, kind, emissionOptions,
         compilationOptions, elaboratorOptions);
     if (compiledOr.isError())
       return compiledOr.takeError();
-    CompiledStandaloneKernel compiled = compiledOr.takeValue();
-    contents.insert({kind, compiled.contents});
-    moduleNames.insert({kind, getXXH3Hash(compiled.contents)});
-    if (index == 0) {
-      numCaptures = compiled.numCaptures;
-      captureSizes = compiled.captureSizes;
-      capturesFunc = std::move(compiled.capturesFunc);
-    }
+    StringAttr compiled = compiledOr.takeValue();
+    contents.insert({kind, compiled});
+    moduleNames.insert({kind, getXXH3Hash(compiled)});
   }
 
   if (wantsOutputFile) {
@@ -577,14 +479,7 @@ compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
       return err.takeError();
   }
 
-  auto populateOp = cast<FuncOp>(capturesFunc.get());
-  OpBuilder b(symbol.getContext());
-  return OffloadCompilationResult{std::move(capturesFunc),
-                                  b.getIndexAttr(numCaptures),
-                                  captureSizes,
-                                  SymbolConstantAttr::get(populateOp),
-                                  std::move(contents),
-                                  std::move(moduleNames)};
+  return OffloadCompilationResult{std::move(contents), std::move(moduleNames)};
 }
 
 //===----------------------------------------------------------------------===//
@@ -676,6 +571,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             .split(perKernelOptions, /*Separator=*/",",
                    /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
+        TargetInfoAttr kernelTarget =
+            offloadInfo.slicedTarget ? offloadInfo.slicedTarget : target;
         for (auto &[op, symbols] : offloadInfo.symbols) {
           auto func = cast<GeneratorOp>(op);
           for (auto &[symbol, kernelInfo] : symbols) {
@@ -684,10 +581,10 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             SmallVector<EmitAs> emissionKinds(kernelInfo.emissionKinds.begin(),
                                               kernelInfo.emissionKinds.end());
             ErrorOr<OffloadCompilationResult> kernelOr =
-                compileElaboratorKernel(func, symbol, kernelInfo.name, symtab,
-                                        target, emissionKinds, perKernelOptions,
-                                        compilationOptions, elabOptions,
-                                        kernelNameCounts, offloadPendingWrites);
+                compileElaboratorKernel(
+                    func, symbol, kernelInfo.name, symtab, kernelTarget,
+                    emissionKinds, perKernelOptions, compilationOptions,
+                    elabOptions, kernelNameCounts, offloadPendingWrites);
             if (kernelOr.isError())
               return kernelOr.takeError();
             targetResult.insert({kernelInfo.kernelId, kernelOr.takeValue()});
@@ -720,8 +617,15 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       // Override the target.
       eraseTargetInfo(*module);
-      setTargetInfo(*module, target);
+      setTargetInfo(*module, offloadInfo.slicedTarget ? offloadInfo.slicedTarget
+                                                      : target);
       SymbolTable slicedSymtab(*module);
+
+      // Collect the callee names once per group, so the callee check below is
+      // a set lookup instead of a walk of the whole module for every kernel.
+      DenseSet<FlatSymbolRefAttr> callees;
+      module->walk(
+          [&](CallOp call) { callees.insert(call.getCalleeSymbol()); });
 
       // Collect SymbolConstantAttr names to rename.
       DenseMap<SymbolRefAttr, StringAttr> symToRename;
@@ -759,14 +663,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             // up with two functions with the same name one for the kernel entry
             // wrapper for instantiated stub, and one for the callee in another
             // kernel (they have different function bodies).
-            module->walk(
-                [&newCalleeName, &newName, &func, &symToRename](CallOp call) {
-                  if (call.getCalleeSymbol() == FlatSymbolRefAttr::get(func)) {
-                    newName = newCalleeName;
-                    symToRename.insert(
-                        {call.getCallee().getSymbol(), newCalleeName});
-                  }
-                });
+            auto funcSym = FlatSymbolRefAttr::get(func);
+            if (callees.contains(funcSym)) {
+              newName = newCalleeName;
+              symToRename.insert({funcSym, newCalleeName});
+            }
 
             generateInstantiateStub(func, symbol, kernelInfo.name, mapping,
                                     &slicedSymtab, kernelInfo.kernelId);
@@ -863,13 +764,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if (failed(pm.run(*module)))
         return Error("failed to run the pass manager for offload functions");
 
-      struct CaptureEntry {
-        OwningOpRef<FuncOp> func;
-        unsigned numCaptures;
-        mlir::DenseI64ArrayAttr captureSizes;
-        mlir::StringAttr nameForFile;
-      };
-      llvm::MapVector<uint64_t, CaptureEntry> captures;
+      // Output file basename for each kernel, keyed by kernel ID.
+      llvm::MapVector<uint64_t, mlir::StringAttr> kernelFileNames;
 
       llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds;
 
@@ -878,8 +774,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           FuncOp kernelFunc = findFuncByKernelId(*module, kernel.kernelId);
           if (!kernelFunc)
             return Error("internal error: cannot find kernel by its ID");
-          auto [capturesFunc, numCaptures, captureSizes] =
-              writeCaptureArgs(*module, kernelFunc, kernel.name);
 
           // renameFunctions has already run, so sym_name is the exact name
           // that will be emitted. Use it directly as the output file basename
@@ -887,9 +781,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           mlir::StringAttr nameForFile = kernelFunc.getSymNameAttr();
           assert(nameForFile && !nameForFile.getValue().empty() &&
                  "kernel sym_name must be non-empty after renameFunctions");
-          captures.insert({kernel.kernelId,
-                           CaptureEntry{std::move(capturesFunc), numCaptures,
-                                        captureSizes, nameForFile}});
+          kernelFileNames.insert({kernel.kernelId, nameForFile});
           kernelEmissionKinds.insert({kernel.kernelId, kernel.emissionKinds});
         }
       }
@@ -947,21 +839,14 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if (!compiler->getBitcodeLibs().empty())
         currentBitcodeLibs = compiler->getBitcodeLibs();
 
-      OpBuilder b(theModule);
       for (auto idAndKernels : *compiledKernelsOr) {
         uint64_t kernelID = idAndKernels.first;
         DenseMap<EmitAs, BufferRef> &bufs = idAndKernels.second;
 
-        auto iter = captures.find(kernelID);
-        if (iter == captures.end())
-          return Error("Can't find offload capture.");
+        auto iter = kernelFileNames.find(kernelID);
+        if (iter == kernelFileNames.end())
+          return Error("Can't find offload kernel.");
 
-        OwningOpRef<FuncOp> func = std::move(iter->second.func);
-        unsigned numCaptures = iter->second.numCaptures;
-        mlir::DenseI64ArrayAttr captureSizes = iter->second.captureSizes;
-
-        auto populate = cast<FuncOp>(func.get());
-        auto populateFnRef = SymbolConstantAttr::get(populate);
         DenseMap<EmitAs, StringAttr> contents;
         DenseMap<EmitAs, StringAttr> moduleNames;
 
@@ -974,7 +859,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           if (!compilationOptions.offloadOutputPrefix.empty() &&
               kind == compilationOptions.offloadOutputKind) {
             if (ErrorOrSuccess err =
-                    queueOffloadWrite(target, kind, iter->second.nameForFile,
+                    queueOffloadWrite(target, kind, iter->second,
                                       kindAndContent.second->getBuffer(),
                                       kernelNameCounts, offloadPendingWrites))
               return err.takeError();
@@ -1004,11 +889,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         }
 
         targetResult.insert(
-            {kernelID, OffloadCompilationResult{{std::move(func)},
-                                                b.getIndexAttr(numCaptures),
-                                                captureSizes,
-                                                populateFnRef,
-                                                std::move(contents),
+            {kernelID, OffloadCompilationResult{std::move(contents),
                                                 std::move(moduleNames)}});
       }
 

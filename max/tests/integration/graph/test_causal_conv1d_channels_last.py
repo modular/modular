@@ -94,10 +94,12 @@ def _conv_arm(
     x = ops.transpose(x_cl, 0, 1) if not channels_last else x_cl
     n = x_cl.shape[0]
     shape: list[DimLike] = [n, _DIM] if channels_last else [_DIM, n]
+    # An empty `update_state` writes every sequence's window.
+    update_state = ops.constant(np.zeros(0, dtype=np.bool_), DType.bool, gpu)
     out = ops.inplace_custom(
         "causal_conv1d_varlen_fwd",
         gpu,
-        [x, *operands],
+        [x, *operands, update_state],
         [TensorType(DType.float32, shape, device=gpu)],
         parameters={
             "activation": "silu",

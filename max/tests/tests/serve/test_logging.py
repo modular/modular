@@ -28,21 +28,24 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import DummyKVCache
-from max.pipelines.modeling.types import RequestID, TextGenerationInputs
-from max.serve import request as request_module
+from max.pipelines.modeling.types import (
+    BatchType,
+    CompletedBatchStats,
+    RequestID,
+    TextGenerationInputs,
+)
 from max.serve.config import KernelTraceLevel, Settings
 from max.serve.request import register_request
-from max.serve.scheduler import text_generation_scheduler
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
-from max.serve.telemetry import _trace_context, common
-from max.serve.telemetry.common import (
+from max.serve.telemetry import _log_context, _trace_context, _tracing, common
+from max.serve.telemetry._tracing import (
     batch_spans_enabled,
     configure_kernel_tracing,
-    configure_logging,
 )
+from max.serve.telemetry.common import configure_logging
 from opentelemetry import propagate as otel_propagate
 from opentelemetry.sdk._logs import LogData
 from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
@@ -117,7 +120,7 @@ def test_kernel_trace_level_gates_batch_spans(
 ) -> None:
     # setattr records the pre-test global so teardown restores it even after
     # the configure calls below overwrite it.
-    monkeypatch.setattr(common, "_kernel_trace_level", KernelTraceLevel.OFF)
+    monkeypatch.setattr(_tracing, "_kernel_trace_level", KernelTraceLevel.OFF)
     for level, expected in (("batch", True), ("off", False)):
         monkeypatch.setenv("MAX_SERVE_KERNEL_TRACE_LEVEL", level)
         configure_kernel_tracing(Settings())
@@ -125,7 +128,7 @@ def test_kernel_trace_level_gates_batch_spans(
     # op/kernel imply batch spans. Set the global directly: at these levels
     # configure_kernel_tracing also touches GPU profiling state.
     for deep_level in (KernelTraceLevel.OP, KernelTraceLevel.KERNEL):
-        monkeypatch.setattr(common, "_kernel_trace_level", deep_level)
+        monkeypatch.setattr(_tracing, "_kernel_trace_level", deep_level)
         assert batch_spans_enabled()
 
 
@@ -138,33 +141,34 @@ _TRACE_ID_HEX = "4bf92f3577b34da6a3ce929d0e0e4736"
 @pytest.fixture(autouse=True)
 def reset_request_context() -> Iterator[None]:
     """Stops one test's request context leaking into the next."""
-    trace_token = common.request_trace_ctx.set(None)
-    id_token = common._request_id_ctx.set(None)
-    batch_token = common._batch_id_ctx.set(None)
+    trace_token = _log_context.request_trace_ctx.set(None)
+    id_token = _log_context.request_id_ctx.set(None)
+    batch_token = _log_context.batch_id_ctx.set(None)
     try:
         yield
     finally:
-        common.request_trace_ctx.reset(trace_token)
-        common._request_id_ctx.reset(id_token)
-        common._batch_id_ctx.reset(batch_token)
+        _log_context.request_trace_ctx.reset(trace_token)
+        _log_context.request_id_ctx.reset(id_token)
+        _log_context.batch_id_ctx.reset(batch_token)
 
 
-def _configure_structured(log_path: Path) -> None:
+def _configure_structured(log_path: Path, request_ids: bool = True) -> None:
     configure_logging(
         Settings(
             logs_console_level=None,
-            logs_file_level="WARNING",
+            logs_file_level="INFO",
             logs_file_path=str(log_path),
             structured_logging=True,
             disable_telemetry=True,
-        )
+        ),
+        sets_request_ids=request_ids,
     )
 
 
 @pytest.fixture
 def structured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Structured file logging with tracing on, so records are correlated."""
-    monkeypatch.setattr(common, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     log_path = tmp_path / "max-serve.json"
     _configure_structured(log_path)
     return log_path
@@ -178,7 +182,7 @@ def _emit_structured(path: Path, name: str, message: str) -> dict[str, object]:
 
 
 def _set_inbound_context() -> None:
-    common.request_trace_ctx.set(
+    _log_context.request_trace_ctx.set(
         otel_propagate.extract({"traceparent": _TRACEPARENT})
     )
 
@@ -190,7 +194,7 @@ def test_correlation_fields_reach_records_from_child_loggers(
     # logger, which a logger-level filter would skip. The key and encoding
     # matter as much as the value: Datadog joins on the exact string.
     _set_inbound_context()
-    common._request_id_ctx.set("req-1234")
+    _log_context.request_id_ctx.set("req-1234")
     record = _emit_structured(
         structured, "max.serve.router.openai_routes", "handled"
     )
@@ -218,7 +222,7 @@ def test_middleware_stamps_both_ids_on_an_arbitrary_route(
     # covers the wiring. This route builds no max.request span, which is what
     # makes it a test of "every route". The server span needs a real tracer
     # to continue the inbound trace.
-    monkeypatch.setattr(request_module, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     monkeypatch.setattr(
         _trace_context, "_tracer", TracerProvider().get_tracer("test")
     )
@@ -243,6 +247,24 @@ def test_middleware_stamps_both_ids_on_an_arbitrary_route(
     record = json.loads(lines[0])
     assert record["request_id"] == response.headers["X-Request-ID"]
     assert record["dd.trace_id"] == _TRACE_ID_HEX
+    rid = record["request_id"]
+    done = json.loads(structured.read_text().splitlines()[-1])
+    assert done["message"] == f"Request {rid} returned status 200"
+    assert (done["request_id"], done["dd.trace_id"]) == (rid, _TRACE_ID_HEX)
+
+
+@pytest.mark.parametrize("tracing", [False, True], ids=["off", "tracing"])
+def test_a_process_without_request_ids_reads_none_unless_tracing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tracing: bool
+) -> None:
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: tracing)
+    log_path = tmp_path / "max-serve.json"
+    _configure_structured(log_path, request_ids=False)
+    _log_context.request_id_ctx.set("req-1234")
+
+    record = _emit_structured(log_path, "max.pipelines", "in-batch")
+
+    assert record["request_id"] == ("req-1234" if tracing else None)
 
 
 def _run_forward_pass(
@@ -250,10 +272,15 @@ def _run_forward_pass(
         [TextGenerationInputs[TextContext]],
         dict[RequestID, TextGenerationOutput],
     ],
+    stats: CompletedBatchStats | None = None,
 ) -> None:
-    """Schedules one empty batch, numbered 41, through ``execute``."""
-    pipeline = Mock()
-    pipeline.execute = Mock(side_effect=execute)
+    """Runs one scheduler iteration, whose empty batch is numbered 41."""
+    # A spec, so the scheduler's other hasattr probes fail.
+    pipeline = Mock(
+        spec=["execute", "take_completed_batch_stats"],
+        execute=Mock(side_effect=execute),
+        take_completed_batch_stats=Mock(return_value=stats),
+    )
     scheduler = TokenGenerationScheduler(
         scheduler_config=TokenGenerationSchedulerConfig(
             max_batch_size=1, target_tokens_per_batch_ce=32
@@ -263,19 +290,24 @@ def _run_forward_pass(
         response_queue=queue.Queue(),
         cancel_queue=queue.Queue(),
         kv_cache=DummyKVCache(),
+        support_empty_batches=True,
     )
     scheduler._batch_counter = 41
-    scheduler._schedule(TextGenerationInputs(batches=[[]]))
+    scheduler.run_iteration()
 
 
+@pytest.mark.parametrize(
+    "stats", [None, CompletedBatchStats(BatchType.TG, 1, 1, 1, 0.01)]
+)
 def test_batch_id_is_scoped_to_the_forward_pass(
-    structured: Path, monkeypatch: pytest.MonkeyPatch
+    structured: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stats: CompletedBatchStats | None,
 ) -> None:
     # The record the pipeline logs mid-pass carries the batch ID; one logged
-    # after the pass must not keep the finished batch's ID.
-    monkeypatch.setattr(
-        text_generation_scheduler, "_tracing_enabled", lambda: True
-    )
+    # after the pass must not keep the finished batch's ID. The batch_metrics
+    # line names the pass it reports: under overlap, the completed one.
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
 
     def execute(
         inputs: TextGenerationInputs[TextContext],
@@ -283,7 +315,7 @@ def test_batch_id_is_scoped_to_the_forward_pass(
         logging.getLogger("max.pipelines").warning("in-batch")
         return {}
 
-    _run_forward_pass(execute)
+    _run_forward_pass(execute, stats)
     _emit("max.serve", logging.WARNING, "after-batch")
 
     records = {
@@ -291,7 +323,9 @@ def test_batch_id_is_scoped_to_the_forward_pass(
         for record in map(json.loads, structured.read_text().splitlines())
     }
     assert records["in-batch"]["batch_id"] == 41
-    assert records["after-batch"]["batch_id"] is None
+    assert "batch_id" not in records["after-batch"]
+    (metrics,) = [r for r in records.values() if "event" in r]
+    assert metrics["batch_id"] == (40 if stats else 41)
 
 
 def test_batch_id_is_not_set_without_tracing(
@@ -299,20 +333,19 @@ def test_batch_id_is_not_set_without_tracing(
 ) -> None:
     # Nothing reads it then, even with structured logging on, so a forward
     # pass must not pay to set it.
-    monkeypatch.setattr(
-        text_generation_scheduler, "_tracing_enabled", lambda: False
-    )
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: False)
     seen: list[int | None] = []
 
     def execute(
         inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:
-        seen.append(common._batch_id_ctx.get())
+        seen.append(_log_context.batch_id_ctx.get())
         return {}
 
     _run_forward_pass(execute)
 
     assert seen == [None]
+    assert "batch_id" not in structured.read_text()
 
 
 @pytest.mark.parametrize("tracing", [False, True], ids=["off", "tracing"])
@@ -324,16 +357,15 @@ def test_middleware_captures_the_context_only_when_something_reads_it(
 ) -> None:
     # Structured logs read only the request ID, and spans and dd.trace_id
     # need tracing, so the middleware must capture no more than that.
-    monkeypatch.setattr(request_module, "_tracing_enabled", lambda: tracing)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: tracing)
     app = FastAPI()
     register_request(app, structured_logging=structured_logging)
     seen: list[object] = []
 
     @app.get("/probe")
     async def probe() -> dict[str, bool]:
-        seen.extend(
-            [common._request_id_ctx.get(), common.request_trace_ctx.get()]
-        )
+        seen.append(_log_context.request_id_ctx.get())
+        seen.append(_log_context.request_trace_ctx.get())
         return {"ok": True}
 
     with TestClient(app) as client:
@@ -353,8 +385,7 @@ def test_structured_logging_without_tracing_adds_only_the_request_id(
 ) -> None:
     # The MAX container images turn structured logging on. With tracing off
     # its lines carry request_id, but no dd.trace_id field.
-    monkeypatch.setattr(common, "_tracing_enabled", lambda: False)
-    monkeypatch.setattr(request_module, "_tracing_enabled", lambda: False)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: False)
     log_path = tmp_path / "max-serve.json"
     _configure_structured(log_path)
     app = FastAPI()
@@ -378,6 +409,7 @@ def test_structured_logging_without_tracing_adds_only_the_request_id(
     record = json.loads(line)
     assert record["request_id"] == response.headers["X-Request-ID"]
     assert "dd.trace_id" not in record
+    assert "returned status" not in log_path.read_text()
 
 
 @pytest.fixture
@@ -412,7 +444,7 @@ def test_otlp_export_without_tracing_carries_no_request_id(
 ) -> None:
     # Structured logging alone renders request_id, and it too must stay in
     # the console and file output.
-    monkeypatch.setattr(common, "_tracing_enabled", lambda: False)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: False)
     log_path = tmp_path / "max-serve.json"
     configure_logging(
         Settings(
@@ -424,11 +456,13 @@ def test_otlp_export_without_tracing_carries_no_request_id(
             disable_telemetry=False,
         )
     )
-    common._request_id_ctx.set("req-1234")
+    _log_context.request_id_ctx.set("req-1234")
+    _log_context.batch_id_ctx.set(7)
     _emit("max.serve", logging.WARNING, "handled")
 
     rendered = json.loads(log_path.read_text().splitlines()[0])
     assert rendered["request_id"] == "req-1234"
+    assert "batch_id" not in rendered
     assert "dd.trace_id" not in rendered
     assert exported, "expected the handler to export a record"
     for attributes in exported:
@@ -444,7 +478,7 @@ def test_otlp_export_carries_no_correlation_ids(
     # SDK handler exports every non-reserved record attribute. A customer's
     # traceparent is their data, so it must not ride along, even though the
     # console and file handlers render it from the same record first.
-    monkeypatch.setattr(common, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     log_path = tmp_path / "max-serve.json"
     configure_logging(
         Settings(
@@ -457,8 +491,8 @@ def test_otlp_export_carries_no_correlation_ids(
         )
     )
     _set_inbound_context()
-    common._request_id_ctx.set("req-1234")
-    common._batch_id_ctx.set(7)
+    _log_context.request_id_ctx.set("req-1234")
+    _log_context.batch_id_ctx.set(7)
     _emit("max.serve", logging.WARNING, "handled")
 
     rendered = json.loads(log_path.read_text().splitlines()[0])

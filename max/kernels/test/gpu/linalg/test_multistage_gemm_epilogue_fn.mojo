@@ -131,7 +131,7 @@ def test_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -scale if Int(idx[0].value()) % 2 == 1 else scale
+        var row_scale = -scale if Int(idx[0]) % 2 == 1 else scale
         return val * SIMD[dtype, width](row_scale)
 
     comptime if config.num_k_partitions > 1:

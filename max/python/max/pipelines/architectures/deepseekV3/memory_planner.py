@@ -28,7 +28,11 @@ from max.nn.comm.ep.ep_manager import (
     _bound_fused_moe_workspace,
     _ep_sync_counter_bytes,
 )
-from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.nn.kernels import nvfp4_mla_prefill_convert_bytes
+from max.pipelines.kv_cache import (
+    cache_dtype_for_encoding,
+    is_fp4_kv_cache_format,
+)
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -181,6 +185,52 @@ def fused_ep_moe_memory(
         f"{to_human_readable_bytes(arena)} per device"
     )
     return n_gpus_per_node * arena
+
+
+def nvfp4_mla_prefill_convert_memory(
+    pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+) -> int:
+    """Bytes the NVFP4 sparse MLA prefill's FP8 conversion can allocate on all
+    of this node's devices.
+
+    Over an NVFP4 cache, a prefill step may convert its context to FP8 once
+    and allocate the copy inside the attention op, outside the graph's
+    planned buffers. Every device converts its own whole latent cache, under
+    TP as under DP, so each reserves the bound.
+
+    Args:
+        pipeline_config: Pipeline configuration.
+        huggingface_config: HuggingFace model configuration.
+
+    Returns:
+        The bytes over all devices of the node, or 0 for another cache
+        format, a decode-only worker, or the conversion turned off.
+    """
+    if pipeline_config.runtime.pipeline_role == "decode_only" or (
+        not is_fp4_kv_cache_format(
+            pipeline_config.model.kv_cache.kv_cache_format
+        )
+    ):
+        return 0
+    runtime = pipeline_config.runtime
+    max_query_tokens = (
+        runtime.max_batch_input_tokens
+        if runtime.enable_chunked_prefill
+        else pipeline_config.model.max_length or 0
+    )
+    per_device = nvfp4_mla_prefill_convert_bytes(
+        max_query_tokens,
+        top_k=huggingface_config.index_topk,
+        row_dim=huggingface_config.kv_lora_rank
+        + huggingface_config.qk_rope_head_dim,
+        page_size=pipeline_config.model.kv_cache.kv_cache_page_size,
+    )
+    memory = len(pipeline_config.model.device_specs) * per_device
+    logger.info(
+        "Estimated NVFP4 MLA prefill conversion scratch: "
+        f"{to_human_readable_bytes(memory)}"
+    )
+    return memory
 
 
 def ep_fuse_ffn_combine_send_for_pipeline(
@@ -370,8 +420,9 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
         """Estimates activation memory for DeepseekV3 models.
 
         Accounts for MLA up-projection buffers during prefill, expert-parallel
-        routing buffers, EP SHMEM communication buffers, and optional CUDA
-        graph capture headroom.
+        routing buffers, EP SHMEM communication buffers, optional CUDA graph
+        capture headroom, and the FP8 conversion scratch of sparse prefill
+        over an NVFP4 cache.
 
         Args:
             pipeline_config: Pipeline configuration.
@@ -512,6 +563,9 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
         # memories, because the MLA and MoE layers are executed sequentially.
         activation_memory = max(mla_activation_memory, moe_activation_memory)
         activation_memory += ep_buffer_memory
+        activation_memory += nvfp4_mla_prefill_convert_memory(
+            pipeline_config, huggingface_config
+        )
 
         if activation_memory != 0:
             logger.info(

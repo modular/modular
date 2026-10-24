@@ -32,11 +32,13 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib.config import (
+    KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
     SpeculativeConfig,
 )
 from transformers import AutoConfig
+from typing_extensions import Self
 
 logger = logging.getLogger("max.pipelines")
 
@@ -53,12 +55,18 @@ def _get(obj: Any, name: str, default: Any = None) -> Any:
 
 def construct_draft_kv_params(
     pipeline_config: PipelineConfig,
-    draft_config: DSparkSpeculatorsDraftConfig,
     devices: list[DeviceRef],
     *,
-    num_draft_tokens: int,
+    n_kv_heads: int,
+    head_dim: int,
+    num_layers: int,
+    num_draft_tokens: int = 0,
 ) -> KVCacheParams:
-    """Builds the draft KV leaf from the DSpark drafter's own geometry."""
+    """Builds a DSpark draft's KV leaf from its own geometry.
+
+    A draft served by the unified spec-decode model leaves
+    ``num_draft_tokens`` unset: the model stamps it on the whole KV tree.
+    """
     assert pipeline_config.speculative is not None
     # The dtype is deliberately pinned rather than derived from
     # ``kv_cache_format``: the draft block runs generic ``AttentionWithRope``,
@@ -68,9 +76,9 @@ def construct_draft_kv_params(
     # draft leaf; mixed-dtype trees are valid (dtype is per-leaf).
     return pipeline_config.model.kv_cache.to_params(
         dtype=DType.bfloat16,
-        n_kv_heads=draft_config.num_key_value_heads,
-        head_dim=draft_config.head_dim,
-        num_layers=draft_config.num_hidden_layers,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        num_layers=num_layers,
         devices=devices,
         data_parallel_degree=pipeline_config.model.data_parallel_degree,
         speculative_method=pipeline_config.speculative.speculative_method,
@@ -412,7 +420,7 @@ class DSparkSpeculatorsDraftArchConfig:
         model_config: MAXModelConfig | None = None,
         *,
         max_seq_len: int,
-    ) -> DSparkSpeculatorsDraftArchConfig:
+    ) -> Self:
         del pipeline_config
         assert model_config is not None
         huggingface_config = model_config.huggingface_config
@@ -452,6 +460,31 @@ class DSparkSpeculatorsDraftArchConfig:
                 " transformer_layer_config.max_position_embeddings."
             )
         return int(max_pos)
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Returns the draft's KV leaf, from its own geometry.
+
+        The draft's cache is bfloat16 whatever the target's is.
+        """
+        del kv_cache_config, cache_dtype
+        draft = DSparkSpeculatorsDraftConfig.from_huggingface_config(
+            huggingface_config
+        )
+        return construct_draft_kv_params(
+            pipeline_config,
+            devices,
+            n_kv_heads=draft.num_key_value_heads,
+            head_dim=draft.head_dim,
+            num_layers=draft.num_hidden_layers,
+        )
 
 
 def speculators_dspark_width(

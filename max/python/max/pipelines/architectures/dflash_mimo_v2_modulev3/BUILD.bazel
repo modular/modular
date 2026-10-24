@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "dflash_mimo_v2_modulev3",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        # The drafter's config and checkpoint naming are shared with the
+        # graph-API drafter.
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/nn",
+    ],
+)

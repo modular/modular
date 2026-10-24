@@ -8,6 +8,7 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         requirement("transformers"),
+        requirement("typing-extensions"),
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",

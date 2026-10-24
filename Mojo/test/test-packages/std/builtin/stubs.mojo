@@ -330,6 +330,12 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     ]:
         return {}
 
+    @always_inline("builtin")
+    def __truediv__(
+        self, rhs: FloatLiteral
+    ) -> type_of(FloatLiteral(self) / rhs):
+        return {}
+
 
 @__nonmaterializable(FloatDyn)
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
@@ -977,7 +983,7 @@ trait EnumLike:
 struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     TrivialRegisterPassable
 ):
-    comptime size: Int = Int(
+    comptime length: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             type_of(Self.values),
@@ -1167,7 +1173,6 @@ struct TypeList[
 
     comptime tabulate[
         Trait: type_of(AnyType),
-        ToT: Trait,
         //,
         count: Int,
         Mapper: __generator_type[Idx: Int] Trait,
@@ -1177,7 +1182,7 @@ struct TypeList[
             `#kgen.param_list.tabulate<`,
             count.__mlir_index__(),
             `,`,
-            _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+            _IndexToIntTypeTabulateWrap[Trait=Trait, Mapper, ...],
             `> : `,
             _MLIR.KGENParamListType[Trait],
         ],
@@ -1190,7 +1195,7 @@ struct TypeList[
     comptime splat[
         Trait: type_of(AnyType), //, count: Int, type: Trait
     ] = TypeList.tabulate[
-        Trait=Trait, ToT=type, count, Self._SplatTypeTabulator[Trait, type, _]
+        Trait=Trait, count, Self._SplatTypeTabulator[Trait, type, _]
     ]
 
     comptime _MapTabulator[
@@ -1212,7 +1217,6 @@ struct TypeList[
 
 comptime _IndexToIntTypeTabulateWrap[
     Trait: type_of(AnyType),
-    ToT: Trait,
     //,
     ToWrap: __generator_type[Idx: Int] Trait,
     idx: __mlir_type.index,
@@ -1385,7 +1389,7 @@ struct AddressSpace(EnumLike, TrivialRegisterPassable):
     comptime _enum_case_types: _MLIR.KGENParamListType[
         AnyType
     ] = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
     comptime _enum_is_exhaustive = False
 
@@ -1400,6 +1404,12 @@ struct AddressSpace(EnumLike, TrivialRegisterPassable):
     @always_inline("builtin")
     def __mlir_index__(self) -> __mlir_type.index:
         return self._value.__mlir_index__()
+
+    @always_inline("builtin")
+    def __eq__(self, other: Self) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred=__mlir_attr.`#index.cmp_predicate<eq>`
+        ](self.__mlir_index__(), other.__mlir_index__())
 
 
 struct Pointer[
@@ -1511,10 +1521,16 @@ struct Pointer[
         )
 
     @always_inline
-    def unsafe_take_pointee[
-        U: Movable, //
-    ](self: Pointer[U, _]) -> U where type_of(self).mut:
-        return __get_address_as_owned_value(self._mlir_value)
+    def unsafe_take_pointee(
+        self,
+    ) -> Self.T where (
+        Self.mut
+        and Self.address_space == .GENERIC
+        and conforms_to(Self.T, Movable)
+    ):
+        return __get_address_as_owned_value(
+            self.unsafe_address_space_cast[.GENERIC]()._mlir_value
+        )
 
     @always_inline("builtin")
     def unsafe_bitcast[
@@ -1523,6 +1539,16 @@ struct Pointer[
         return __mlir_op.`pop.pointer.bitcast`[
             _type=Pointer[
                 U, Self.origin, address_space=Self.address_space
+            ]._mlir_type,
+        ](self._mlir_value)
+
+    @always_inline("builtin")
+    def unsafe_address_space_cast[
+        target_address_space: AddressSpace = Self.address_space,
+    ](self) -> Pointer[Self.T, Self.origin, address_space=target_address_space]:
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Pointer[
+                Self.T, Self.origin, address_space=target_address_space
             ]._mlir_type,
         ](self._mlir_value)
 
@@ -1623,6 +1649,8 @@ comptime MutOpaquePointer[
 
 
 struct _StridedRangeIterator(Iterator, TrivialRegisterPassable):
+    comptime Element = Int
+
     var start: Int
     var end: Int
     var step: Int

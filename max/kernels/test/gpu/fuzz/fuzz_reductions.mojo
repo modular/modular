@@ -11,51 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-# Fuzz target: the `builtin_kernels.rowwise_reductions` entry points (`reduce_sum`,
-# `reduce_max`, `reduce_min`, `reduce_mean`, `reduce_argmax`, `reduce_argmin`)
-# over the `rowwise` GPU scaffolder.
+# Fuzz target: the `builtin_kernels.rowwise_reductions` arg reductions
+# (`reduce_argmax`, `reduce_argmin`) over the `rowwise` GPU scaffolder. Sum,
+# max, min and mean compile to generated rowwise kernels, so they're fuzzed
+# through the graph instead, in
+# `//max/tests/integration/graph:test_rowwise_reductions_fuzz`.
 #
 # Two things distinguish this target from its normalize-shaped neighbours
 # (`fuzz_softmax`, `fuzz_rms_norm`, `fuzz_layer_norm`):
 #
 # 1. The reduced axis is drawn from `lo=0`, not `lo=1`. A reduction over a
 #    zero-extent axis is IN the contract — it owns `product(shape \ axis)`
-#    outputs that must receive the monoid identity — so the usual "clamp the
-#    generator to lo=1" rule does not apply to this dimension. Getting that
-#    wrong is what this target exists to catch: the empty axis used to return
-#    without writing anything.
-# 2. Outputs are pre-filled with a sentinel no identity can produce, and every
+#    outputs that must receive index 0 — so the usual "clamp the generator to
+#    lo=1" rule does not apply to this dimension. Getting that wrong is what
+#    this target exists to catch: the empty axis used to return without
+#    writing anything.
+# 2. Outputs are pre-filled with a sentinel no valid index can be, and every
 #    slot is checked to have been overwritten. A missing write is the bug class
 #    here, and it is invisible to `diff` (no crash) and can slip past a plain
 #    reference compare — a freshly-zeroed output reads back `0`, which IS the
-#    correct answer for `sum`. The sentinel makes "never written" distinct from
-#    "correct" for every op, including the case a poisoned allocation cannot
-#    reach: empty-axis float `mean` is legitimately NaN, so an unwritten NaN
-#    and a correct NaN are indistinguishable without it.
-#
-# `reduce_product` is deliberately absent: an fp64 reference for a long product
-# of uniform values disagrees with the fp32 kernel once intermediates underflow
-# to zero, which is a tolerance argument rather than a bug, and the identity it
-# would exercise (`1`) is already covered by the hand-written regressions.
+#    correct answer for an empty axis.
 
 from max.gpu.globals import WARP_SIZE
-from std.math import isfinite
 from std.random import random_ui64, seed
 from std.sys import align_of
 from std.sys.defines import get_defined_int
 
-from builtin_kernels.rowwise_reductions import (
-    reduce_argmax,
-    reduce_argmin,
-    reduce_max,
-    reduce_mean,
-    reduce_min,
-    reduce_sum,
-)
+from builtin_kernels.rowwise_reductions import reduce_argmax, reduce_argmin
 from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from std.utils.index import Index, IndexList
-from std.utils.numerics import inf, max_finite, min_finite
+from std.utils.numerics import max_finite, min_finite
 
 from _fuzz import (
     boundary_int,
@@ -63,7 +49,6 @@ from _fuzz import (
     fill_by_dist,
     flag,
     flag_int,
-    numeric_check,
     value_dist_name,
 )
 
@@ -89,18 +74,12 @@ comptime other_hi = get_defined_int["other_hi", 16]()
 comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
 comptime budget = get_defined_int["budget", 16]()
 
-comptime OP_SUM = 0
-comptime OP_MAX = 1
-comptime OP_MIN = 2
-comptime OP_MEAN = 3
-comptime OP_ARGMAX = 4
-comptime OP_ARGMIN = 5
-comptime NUM_OPS = 6
+comptime OP_ARGMAX = 0
+comptime OP_ARGMIN = 1
+comptime NUM_OPS = 2
 
-# Neither value is reachable as a result: no monoid identity is 111, and no
-# valid index is negative. A slot still holding one after the launch was never
-# written.
-comptime OUT_SENTINEL = Scalar[rd_type](111)
+# No valid index is negative, so a slot still holding this after the launch
+# was never written.
 comptime IDX_SENTINEL = Scalar[idx_type](-12345)
 
 # `_reduce_ref` marks "no candidate ever won" (an empty axis, an all-NaN row, a
@@ -110,17 +89,9 @@ comptime NO_WINNER = Scalar[idx_type](-1)
 
 
 def op_name(op: Int) -> String:
-    if op == OP_MAX:
-        return "max"
-    if op == OP_MIN:
-        return "min"
-    if op == OP_MEAN:
-        return "mean"
-    if op == OP_ARGMAX:
-        return "argmax"
     if op == OP_ARGMIN:
         return "argmin"
-    return "sum"
+    return "argmax"
 
 
 @fieldwise_init
@@ -220,17 +191,14 @@ def _reduce_ref(
     `ref_idx[row]` is `NO_WINNER` when no candidate ever won the tie-break —
     an empty axis, an all-NaN row, or a row of pure identity values — because
     `ArgMax`/`ArgMin` compare with a strict `>` / `<` that NaN and the identity
-    both lose. `ref_vals[row]` then holds the monoid identity, which is what
-    the kernel must emit.
+    both lose. `ref_vals[row]` holds the extremum the index must point at.
     """
-    var sum_id = Float64(0)
     var max_id = Float64(min_finite[rd_type]())
     var min_id = Float64(max_finite[rd_type]())
 
     for o in range(outer):
         for k in range(inner):
             var row = o * inner + k
-            var acc = sum_id
             var best_max = max_id
             var best_min = min_id
             var idx_max = NO_WINNER
@@ -240,7 +208,6 @@ def _reduce_ref(
                 var v = src[(o * axis_size + a) * inner + k].cast[
                     DType.float64
                 ]()
-                acc += v
                 # Strict compares, so NaN never wins and the FIRST occurrence
                 # of a repeated extremum keeps the slot — the same rule the
                 # monoid's min-index tie-break lands on.
@@ -251,22 +218,7 @@ def _reduce_ref(
                     best_min = v
                     idx_min = Scalar[idx_type](a)
 
-            if op == OP_SUM:
-                ref_vals[row] = acc.cast[rd_type]()
-            elif op == OP_MEAN:
-                # Integer dtypes substitute a divisor; float lets IEEE-754
-                # answer, and `0 * inf` is the NaN numpy.mean reports.
-                if axis_size == 0:
-                    ref_vals[row] = (Float64(0) * inf[.float64]()).cast[
-                        rd_type
-                    ]()
-                else:
-                    ref_vals[row] = (acc / Float64(axis_size)).cast[rd_type]()
-            elif op == OP_MAX:
-                ref_vals[row] = best_max.cast[rd_type]()
-            elif op == OP_MIN:
-                ref_vals[row] = best_min.cast[rd_type]()
-            elif op == OP_ARGMAX:
+            if op == OP_ARGMAX:
                 ref_vals[row] = best_max.cast[rd_type]()
                 ref_idx[row] = idx_max
             else:
@@ -360,78 +312,44 @@ def _run_shaped[
     # An empty axis makes `total` zero; a zero-byte device allocation is not
     # meaningful, and nothing reads the slot.
     var in_h = ctx.enqueue_create_host_buffer[rd_type](max(total, 1))
-    var out_h = ctx.enqueue_create_host_buffer[rd_type](num_outputs)
     var out_idx_h = ctx.enqueue_create_host_buffer[idx_type](num_outputs)
     ctx.synchronize()
     fill_by_dist(in_h.as_span(), dist)
     for i in range(num_outputs):
-        out_h[i] = OUT_SENTINEL
         out_idx_h[i] = IDX_SENTINEL
 
     var in_d = ctx.enqueue_create_buffer[rd_type](max(total, 1))
-    var out_d = ctx.enqueue_create_buffer[rd_type](num_outputs)
     var out_idx_d = ctx.enqueue_create_buffer[idx_type](num_outputs)
     ctx.enqueue_copy(in_d, in_h)
-    ctx.enqueue_copy(out_d, out_h)
     ctx.enqueue_copy(out_idx_d, out_idx_h)
 
     var in_buf = TileTensor(in_d, row_major(Coord(shape)))
-    var out_ptr = out_d.unsafe_ptr()
     var out_idx_ptr = out_idx_d.unsafe_ptr()
 
     @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
-        var idx = in_buf.layout(coords)
         return rebind[SIMD[dtype, width]](
-            in_buf.raw_load[
-                width=width, alignment=alignment * align_of[rd_type]()
-            ](idx)
-        )
-
-    @inline(.always)
-    def output_fn[
-        width: SIMDLength
-    ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr, var shape}:
-        # `Row.emit` zeroes the reduced axis rather than dropping it, so the
-        # output row is the row-major flatten over the OTHER dims.
-        var row = 0
-        comptime for i in range(nd):
-            if i != dim:
-                row = row * shape[i] + Int(coords[i].value())
-        out_ptr.unsafe_store[width=width](
-            row, rebind[SIMD[rd_type, width]](val)
+            in_buf.load[width=width, alignment=alignment * align_of[rd_type]()](
+                coords
+            )
         )
 
     @inline(.always)
     def idx_output_fn[
         width: SIMDLength
     ](coords: Coord, val: SIMD[idx_type, width]) {var out_idx_ptr, var shape}:
+        # `Row.emit` zeroes the reduced axis rather than dropping it, so the
+        # output row is the row-major flatten over the OTHER dims.
         var row = 0
         comptime for i in range(nd):
             if i != dim:
-                row = row * shape[i] + Int(coords[i].value())
+                row = row * shape[i] + Int(coords[i])
         out_idx_ptr.unsafe_store[width=width](row, val)
 
     var coord = Coord(shape)
-    if op == OP_SUM:
-        reduce_sum[dtype, target="gpu", reduce_dim=dim](
-            input_fn, output_fn, coord, ctx
-        )
-    elif op == OP_MAX:
-        reduce_max[dtype, target="gpu", reduce_dim=dim](
-            input_fn, output_fn, coord, ctx
-        )
-    elif op == OP_MIN:
-        reduce_min[dtype, target="gpu", reduce_dim=dim](
-            input_fn, output_fn, coord, ctx
-        )
-    elif op == OP_MEAN:
-        reduce_mean[dtype, target="gpu", reduce_dim=dim](
-            input_fn, output_fn, coord, ctx
-        )
-    elif op == OP_ARGMAX:
+    if op == OP_ARGMAX:
         reduce_argmax[dtype, target="gpu", reduce_dim=dim](
             input_fn, idx_output_fn, coord, ctx
         )
@@ -442,9 +360,7 @@ def _run_shaped[
     ctx.synchronize()
 
     if check:
-        var got_h = ctx.enqueue_create_host_buffer[rd_type](num_outputs)
         var got_idx_h = ctx.enqueue_create_host_buffer[idx_type](num_outputs)
-        ctx.enqueue_copy(got_h, out_d)
         ctx.enqueue_copy(got_idx_h, out_idx_d)
         ctx.synchronize()
 
@@ -463,28 +379,10 @@ def _run_shaped[
             op,
         )
 
-        var is_arg = op == OP_ARGMAX or op == OP_ARGMIN
-
-        # Written contract, first and independent of any tolerance: a slot
-        # still holding the sentinel was never written. This is the whole
-        # reason the target exists, and it is the only check that catches the
-        # empty-axis `mean` case, whose correct answer (NaN) a value compare
-        # exempts from the finite contract.
+        # Written contract, first: a slot still holding the sentinel was never
+        # written. This is the bug class this target exists for.
         for i in range(num_outputs):
-            if is_arg:
-                if got_idx_h[i] == IDX_SENTINEL:
-                    raise Error(
-                        "output slot ",
-                        i,
-                        " of ",
-                        num_outputs,
-                        " was never written (axis_size=",
-                        axis_size,
-                        ", op=",
-                        op_name(op),
-                        ")",
-                    )
-            elif got_h[i] == OUT_SENTINEL and ref_vals[i] != OUT_SENTINEL:
+            if got_idx_h[i] == IDX_SENTINEL:
                 raise Error(
                     "output slot ",
                     i,
@@ -497,62 +395,17 @@ def _run_shaped[
                     ")",
                 )
 
-        if is_arg:
-            _check_arg_outputs(
-                in_h.as_span(),
-                got_idx_h.as_span(),
-                ref_vals.as_span(),
-                ref_idx.as_span(),
-                outer,
-                axis_size,
-                inner,
-            )
-        else:
-            # Tolerance from the math, not a global constant. `max`/`min` are
-            # exact selections. `sum`/`mean` accumulate in fp32 across a tier's
-            # own order, so the honest bound is the forward error
-            # `n * eps * max|x|` with a factor for reassociation; on a
-            # cancelling `large` distribution that bound is deliberately loose,
-            # which costs nothing here because the written-contract check above
-            # is what catches this target's bug class.
-            var atol = Float64(1e-3)
-            var rtol = Float64(1e-2)
-            var allow_nonfinite = False
-            if op == OP_MAX or op == OP_MIN:
-                atol = 0.0
-                rtol = 0.0
-            elif op == OP_SUM or op == OP_MEAN:
-                var max_abs = Float64(0)
-                for i in range(total):
-                    var v = in_h[i].cast[.float64]()
-                    var a = -v if v < 0 else v
-                    if isfinite(a) and a > max_abs:
-                        max_abs = a
-                var bound = 8.0 * 1.1920929e-7 * Float64(axis_size) * max_abs
-                if op == OP_MEAN and axis_size > 0:
-                    bound /= Float64(axis_size)
-                atol = bound
-                rtol = 1e-5
-                # `_reduce_ref` sums in f64 and only narrows at the end, so it
-                # divides (mean) or cancels (sum) its way back into range. The
-                # kernel has no such luxury: once a running fp32 partial passes
-                # `max_finite` it saturates, and +-Inf is absorbing. Whenever
-                # the worst-case partial `n * max|x|` clears that ceiling the
-                # overflow is a property of the format rather than of the
-                # kernel, so the finite contract has nothing to say about it.
-                var ceiling = Float64(max_finite[rd_type]())
-                allow_nonfinite = Float64(axis_size) * max_abs > ceiling
-            if not numeric_check(
-                got_h.as_span(),
-                ref_vals.as_span(),
-                atol=atol,
-                rtol=rtol,
-                allow_nonfinite=allow_nonfinite,
-            ):
-                raise Error(op_name(op), " numeric mismatch")
+        _check_arg_outputs(
+            in_h.as_span(),
+            got_idx_h.as_span(),
+            ref_vals.as_span(),
+            ref_idx.as_span(),
+            outer,
+            axis_size,
+            inner,
+        )
 
     _ = in_d
-    _ = out_d
     _ = out_idx_d
     _ = in_buf
 
@@ -565,7 +418,7 @@ def run_one_case(
     # without knowing which combinations exist, so a raise here would read as
     # the bug still reproducing and the "minimal" repro would be a spec this
     # target cannot run at all. Clamping keeps the shrink honest: an all-zero
-    # spec lands on rank 1 / axis 0 / sum, which is the genuine minimal repro.
+    # spec lands on rank 1 / axis 0 / argmax, which is the genuine minimal repro.
     var rank = max(1, min(3, spec.rank))
     var dim = max(0, min(rank - 1, spec.reduce_dim))
     if rank == 3:
@@ -629,7 +482,7 @@ def main() raises:
             flag_int(args, "--d0", 8),
             flag_int(args, "--d1", 128),
             flag_int(args, "--d2", 1),
-            flag_int(args, "--op", OP_SUM),
+            flag_int(args, "--op", OP_ARGMAX),
             flag_int(args, "--dist", 0),
         )
         print("FUZZ_SINGLE", spec)

@@ -444,7 +444,7 @@ def test_tp_moe_nvfp4() -> None:
             shard(inp) for shard, inp in zip(tp_moe_shards, inputs, strict=True)
         ]
         outputs = allreduce(outputs, signal_buffers)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     compiled = session.load(graph, weights_registry=moe.state_dict())
 

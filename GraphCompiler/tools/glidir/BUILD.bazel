@@ -1,0 +1,87 @@
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//GraphCompiler:__subpackages__",
+])
+
+modular_cc_library(
+    name = "glidir-font",
+    srcs = [
+        "font.cpp",
+        "font.h",
+    ],
+    additional_compiler_inputs = [
+        "font/Hack-Regular.ttf",
+        "font/TwemojiMozilla.ttf",
+    ],
+    copts = [
+        "-std=c++23",
+        "-Wno-c23-extensions",
+    ],
+    local_defines = [
+        "MLIR_VIZ_FONT=\\\"$(execpath font/Hack-Regular.ttf)\\\"",
+        "MLIR_VIZ_EMOJI_FONT=\\\"$(execpath font/TwemojiMozilla.ttf)\\\"",
+    ],
+    deps = [
+        "//Support:Compiler",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
+    name = "glidir-textviewer",
+    srcs = ["TextViewer/TextViewer.cpp"],
+    hdrs = ["TextViewer/TextViewer.h"],
+    copts = [
+        "-std=c++23",
+        "-Wno-c23-extensions",
+    ],
+    # Expose the package root so consumers can write
+    # #include "TextViewer/TextViewer.h" without relative paths.
+    includes = ["."],
+    deps = ["@imgui_docking"],
+)
+
+modular_cc_binary(
+    name = "glidir",
+    srcs = [
+        "Views/Common.h",
+        "Views/GraphView.cpp",
+        "Views/GraphView.h",
+        "Views/SourceView.cpp",
+        "Views/SourceView.h",
+        "Views/TextView.cpp",
+        "Views/TextView.h",
+        "Views/TreeView.cpp",
+        "Views/TreeView.h",
+        "glidir.cpp",
+    ],
+    copts = [
+        "-std=c++23",
+        "-Wno-c23-extensions",
+    ],
+    linkopts = select({
+        "@platforms//os:linux": [
+            "-lxcb",
+            "-lGL",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "glidir-font",
+        "glidir-textviewer",
+        "//GraphCompiler:MAPDialect",
+        "//GraphCompiler:MGPDialect",
+        "//GraphCompiler:MODialect",
+        "//GraphCompiler:MOGGDialect",
+        "//GraphCompiler:RMODialect",
+        "//Mojo:KGENDialect",
+        "@hello_imgui",
+        "@imgui_docking",
+        "@imgui_docking//:platform-glfw",
+        "@imgui_docking//:renderer-opengl3",
+        "@portable_file_dialogs",
+    ],
+)

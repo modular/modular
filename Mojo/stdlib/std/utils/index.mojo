@@ -20,7 +20,7 @@ from std.utils import IndexList
 ```
 """
 
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.sys import bit_width_of
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder

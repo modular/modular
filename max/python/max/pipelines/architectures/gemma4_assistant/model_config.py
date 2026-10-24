@@ -15,15 +15,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.transformer.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.gemma3.model_config import (
+    _HIDDEN_ACTIVATION_MAP,
+)
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
 from max.pipelines.lib import (
+    KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
 )
@@ -159,6 +163,83 @@ class Gemma4AssistantConfig:
         else:
             max_pos = text_config.max_position_embeddings
         return cls(max_position_embeddings=max_pos)
+
+    @classmethod
+    def from_huggingface_config(
+        cls,
+        huggingface_config: AutoConfig,
+        *,
+        backbone_hidden_size: int,
+        devices: list[DeviceRef],
+    ) -> Self:
+        """Builds the assistant's config from its checkpoint's.
+
+        Args:
+            huggingface_config: The assistant checkpoint's config.
+            backbone_hidden_size: The target's hidden size.
+            devices: The target's devices, which the assistant runs on.
+        """
+        text_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        # The HF shim may store it as a dict or a sub-config object.
+        tc: dict[str, Any] = (
+            text_config if isinstance(text_config, dict) else vars(text_config)
+        )
+        global_rope_scaling = None
+        full_attention = (tc.get("rope_parameters") or {}).get("full_attention")
+        if full_attention is not None:
+            partial_rotary_factor = full_attention.get("partial_rotary_factor")
+            if partial_rotary_factor is not None:
+                global_rope_scaling = ProportionalScalingParams(
+                    partial_rotary_factor=partial_rotary_factor,
+                )
+        num_hidden_layers = tc["num_hidden_layers"]
+        hidden_activation = tc.get("hidden_activation", "gelu_pytorch_tanh")
+        return cls(
+            devices=devices,
+            backbone_hidden_size=backbone_hidden_size,
+            hidden_size=tc["hidden_size"],
+            num_hidden_layers=num_hidden_layers,
+            num_attention_heads=tc["num_attention_heads"],
+            num_key_value_heads=tc["num_key_value_heads"],
+            num_global_key_value_heads=tc.get("num_global_key_value_heads", 4),
+            head_dim=tc["head_dim"],
+            global_head_dim=tc.get("global_head_dim", 512),
+            intermediate_size=tc["intermediate_size"],
+            vocab_size=tc["vocab_size"],
+            rms_norm_eps=tc["rms_norm_eps"],
+            hidden_activation=_HIDDEN_ACTIVATION_MAP.get(
+                hidden_activation, hidden_activation
+            ),
+            layer_types=tc.get(
+                "layer_types",
+                ["sliding_attention"] * (num_hidden_layers - 1)
+                + ["full_attention"],
+            ),
+            sliding_window=tc.get("sliding_window", 1024),
+            sliding_window_rope_theta=tc.get(
+                "sliding_window_rope_theta", 10000.0
+            ),
+            global_rope_theta=tc.get("global_rope_theta", 1000000.0),
+            global_rope_scaling=global_rope_scaling,
+            attention_k_eq_v=tc.get("attention_k_eq_v", True),
+            num_kv_shared_layers=tc.get("num_kv_shared_layers", 4),
+            max_position_embeddings=tc.get("max_position_embeddings", 262144),
+        )
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> None:
+        """Returns ``None``: the assistant attends into the target's cache."""
+        del huggingface_config, pipeline_config, devices
+        del kv_cache_config, cache_dtype
 
     def get_max_seq_len(self) -> int:
         return self.max_position_embeddings

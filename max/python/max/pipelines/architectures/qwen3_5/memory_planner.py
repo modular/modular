@@ -34,12 +34,14 @@ class Qwen3_5MemoryPlanner(PagedMemoryPlanner):
     def spec_state_bytes(self, pipeline_config: PipelineConfig) -> int:
         """Returns the bytes a request holds beyond its live state, or 0.
 
-        An unspeculated arch allocates one pool set, so nothing here. A
-        speculative one prices what its verify holds per request, such as a
-        ring. Counted only when a batch size is inferred.
+        An unspeculated model allocates one pool set, so nothing here. A
+        speculative one holds its verify's ring per request. Counted only
+        when a batch size is inferred.
         """
-        del pipeline_config
-        return 0
+        assert isinstance(self._config, Qwen3_5Config)
+        return self._config._per_request_ring_bytes(
+            self._config._verify_ring_len(pipeline_config)
+        )
 
     def infer_max_batch_size(
         self,

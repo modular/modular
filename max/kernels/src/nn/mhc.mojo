@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Manifold-Constrained Hyper-Connections (mHC) gate computation.
+"""Manifold-Constrained Hyper-Connections (mHC) gates and stream write-back.
 
 Reference: Xie et al. 2026, "Manifold-Constrained Hyper-Connections", section
 2.2 equation 8.
@@ -26,6 +26,9 @@ which this module turns into the three gate tensors the site applies:
 - `comb`: the `hc_mult x hc_mult` stream mixer, softmax-initialized and then
   Sinkhorn-Knopp projected onto the doubly-stochastic manifold.
 
+After the sublayer runs, `mhc_post` writes its output back into the streams:
+`streams'[k] = post[k] * y + sum_j comb[j, k] * streams[j]`.
+
 The projection itself and the final collapse stay outside: they are a GEMM and
 a broadcast-reduce that the graph compiler already handles well.
 """
@@ -36,13 +39,15 @@ from max.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
+    thread_idx,
     warp_id,
 )
 from std.math import ceildiv, exp
+from std.sys import size_of
 from std.utils.index import StaticTuple
 
-from layout import Coord, TensorLayout, TileTensor
-from max.gpu.host import DeviceContext
+from layout import TensorLayout, TileTensor
+from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
 from max.gpu.host.info import is_gpu
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -158,12 +163,12 @@ def hyper_connection_gates_kernel[
     # the grid this one waits on. Loading them first puts the fetch in flight
     # across the wait instead of behind it. Every index here is within the
     # bias, whatever `elem` is, so none of it needs a bound.
-    var s_pre = pre_post_comb_scale.load[width=1](Coord(0))
-    var s_post = pre_post_comb_scale.load[width=1](Coord(1))
-    var s_comb = pre_post_comb_scale.load[width=1](Coord(2))
-    var pre_b = pre_post_comb_b.load[width=1](Coord(elem))
-    var post_b = pre_post_comb_b.load[width=1](Coord(H + elem))
-    var comb_b = pre_post_comb_b.load[width=1](Coord(2 * H + elem))
+    var s_pre = pre_post_comb_scale.load((0,))
+    var s_post = pre_post_comb_scale.load((1,))
+    var s_comb = pre_post_comb_scale.load((2,))
+    var pre_b = pre_post_comb_b.load((elem,))
+    var post_b = pre_post_comb_b.load((H + elem,))
+    var comb_b = pre_post_comb_b.load((2 * H + elem,))
 
     wait_on_dependent_grids()
     launch_dependent_grids()
@@ -175,15 +180,15 @@ def hyper_connection_gates_kernel[
     var in_range = row < Int(num_rows)
 
     if in_range and elem < H:
-        var pre_w = hc_proj.load[width=1]((row, elem))
+        var pre_w = hc_proj.load((row, elem))
         pre[row, elem] = sigmoid(pre_w * s_pre + pre_b) + hc_eps
 
-        var post_w = hc_proj.load[width=1]((row, H + elem))
+        var post_w = hc_proj.load((row, H + elem))
         post[row, elem] = 2 * sigmoid(post_w * s_post + post_b)
 
     var logit = Float32(0)
     if in_range:
-        logit = hc_proj.load[width=1]((row, 2 * H + elem)) * s_comb + comb_b
+        logit = hc_proj.load((row, 2 * H + elem)) * s_comb + comb_b
 
     # Softmax over the matrix row, max-subtracted to match torch.
     var e = exp(logit - warp.lane_group_max[num_lanes=H](logit))
@@ -311,3 +316,344 @@ def hyper_connection_gates[
             block_dim=warps_per_block * WARP_SIZE,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
+
+
+@always_inline
+def mhc_post_tile[
+    dtype: DType,
+    OutLayoutType: TensorLayout,
+    StreamsLayoutType: TensorLayout,
+    YLayoutType: TensorLayout,
+    //,
+    hc_mult: Int,
+    width: Int,
+    non_temporal: Bool = False,
+](
+    output: TileTensor[mut=True, dtype, OutLayoutType, MutAnyOrigin],
+    streams: TileTensor[dtype, StreamsLayoutType, ImmutAnyOrigin],
+    y: TileTensor[dtype, YLayoutType, ImmutAnyOrigin],
+    post: SIMD[.float32, hc_mult],
+    comb: SIMD[.float32, hc_mult * hc_mult],
+    row: Int,
+    col: Int,
+):
+    """Writes one `width`-wide slice of one token's mHC streams back.
+
+    Covers columns `[col, col + width)`. Every load is issued before the
+    first FMA, so all `hc_mult + 1` vectors are in flight together. Math is
+    fp32, rounded to `dtype` once.
+
+    Parameters:
+        dtype: Element type of the streams, `y` and the output.
+        OutLayoutType: Layout of `output`.
+        StreamsLayoutType: Layout of `streams`.
+        YLayoutType: Layout of `y`.
+        hc_mult: Number of parallel residual streams.
+        width: Elements per vector access.
+        non_temporal: Whether to mark the loads and stores non-temporal.
+
+    Args:
+        output: Updated streams. Shape: `[num_rows, hc_mult, hidden]`.
+        streams: Incoming streams. Shape: `[num_rows, hc_mult, hidden]`.
+        y: Sublayer output. Shape: `[num_rows, hidden]`.
+        post: `post[row, :]`, the weight of `y` in each output stream.
+        comb: `comb[row, :, :]` row-major, so `comb[j * hc_mult + k]` is the
+            weight of input stream `j` in output stream `k`.
+        row: Token index.
+        col: First column of the slice.
+    """
+    comptime assert output.flat_rank == 3
+    comptime assert streams.flat_rank == 3
+    comptime assert y.flat_rank == 2
+
+    var y_v = y.load[width=width, non_temporal=non_temporal]((row, col))
+    var s_v = Array[SIMD[dtype, width], hc_mult](uninitialized=True)
+    comptime for j in range(hc_mult):
+        s_v[j] = streams.load[width=width, non_temporal=non_temporal](
+            (row, j, col)
+        )
+
+    var y_f = y_v.cast[.float32]()
+    comptime for k in range(hc_mult):
+        var acc = y_f * post[k]
+        comptime for j in range(hc_mult):
+            acc = s_v[j].cast[.float32]().fma(comb[j * hc_mult + k], acc)
+        output.store[width=width, non_temporal=non_temporal](
+            (row, k, col), acc.cast[dtype]()
+        )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
+@__name(
+    t"mhc_post_h{hc_mult}_d{hidden_size}_b{block_size}_nt{Int(non_temporal)}"
+)
+def mhc_post_kernel[
+    dtype: DType,
+    OutLayoutType: TensorLayout,
+    StreamsLayoutType: TensorLayout,
+    YLayoutType: TensorLayout,
+    PostLayoutType: TensorLayout,
+    CombLayoutType: TensorLayout,
+    hc_mult: Int,
+    hidden_size: Int,
+    block_size: Int,
+    non_temporal: Bool,
+](
+    output: TileTensor[mut=True, dtype, OutLayoutType, MutAnyOrigin],
+    streams: TileTensor[dtype, StreamsLayoutType, ImmutAnyOrigin],
+    y: TileTensor[dtype, YLayoutType, ImmutAnyOrigin],
+    post: TileTensor[.float32, PostLayoutType, ImmutAnyOrigin],
+    comb: TileTensor[.float32, CombLayoutType, ImmutAnyOrigin],
+):
+    """Writes one token's slice of the mHC streams back.
+
+    Block `(row, kb)` owns columns `[kb * chunk, (kb + 1) * chunk)` of token
+    `row`, where `chunk = block_size * width`. Each thread loads `y` and all
+    `hc_mult` streams for its `width` columns and writes all `hc_mult`
+    outputs, so no data crosses threads and no LDS is needed. The `post` and
+    `comb` coefficients depend only on `row`, so the compiler keeps them in
+    scalar registers.
+
+    Parameters:
+        dtype: Element type of the streams, `y` and the output.
+        OutLayoutType: Layout of `output`.
+        StreamsLayoutType: Layout of `streams`.
+        YLayoutType: Layout of `y`.
+        PostLayoutType: Layout of `post`.
+        CombLayoutType: Layout of `comb`.
+        hc_mult: Number of parallel residual streams.
+        hidden_size: Width of one stream.
+        block_size: Threads per block.
+        non_temporal: Whether to mark the loads and stores non-temporal.
+
+    Args:
+        output: Updated streams. Shape: `[num_rows, hc_mult, hidden_size]`.
+        streams: Incoming streams. Shape: `[num_rows, hc_mult, hidden_size]`.
+        y: Sublayer output. Shape: `[num_rows, hidden_size]`.
+        post: Weight of `y` in each output stream. Shape:
+            `[num_rows, hc_mult]`.
+        comb: Stream mixer; `comb[t, j, k]` weighs input stream `j` in output
+            stream `k`. Shape: `[num_rows, hc_mult, hc_mult]`.
+    """
+    comptime width = 16 // size_of[dtype]()
+    comptime chunk = block_size * width
+    comptime assert post.flat_rank == 2
+    comptime assert comb.flat_rank == 3
+
+    var row = block_idx.x
+    var col = block_idx.y * chunk + thread_idx.x * width
+
+    wait_on_dependent_grids()
+
+    var post_v = post.load[width=hc_mult, alignment=4]((row, 0))
+    var comb_v = comb.load[width=hc_mult * hc_mult, alignment=4]((row, 0, 0))
+
+    # Safe before the stores: a dependent's `wait_on_dependent_grids()` waits
+    # for this whole grid to finish and its writes to land.
+    launch_dependent_grids()
+
+    mhc_post_tile[
+        hc_mult=hc_mult,
+        width=width,
+        non_temporal=non_temporal,
+    ](output, streams, y, post_v, comb_v, row, col)
+
+
+@inline(.always)
+def mhc_post_block_size[dtype: DType, hidden_size: Int]() -> Int:
+    """Returns the threads per block `mhc_post` takes for `hidden_size`.
+
+    256 where their 16-byte vectors split the hidden axis into whole blocks,
+    else 128.
+
+    Parameters:
+        dtype: Element type of the streams.
+        hidden_size: Width of one stream.
+
+    Returns:
+        The threads per block.
+    """
+    comptime width = 16 // size_of[dtype]()
+    return 256 if hidden_size % (256 * width) == 0 else 128
+
+
+@inline(.always)
+def mhc_post_non_temporal(num_rows: Int, num_cus: Int) -> Bool:
+    """Returns whether `mhc_post` marks its accesses non-temporal.
+
+    On MI355X non-temporal accesses win from one token per CU up (17% at 256
+    tokens, 12% at 16384); NVIDIA is unmeasured and keeps 8 per SM.
+
+    Args:
+        num_rows: Number of tokens.
+        num_cus: Compute units (SMs) on the device.
+
+    Returns:
+        True to mark the loads and stores non-temporal.
+    """
+    comptime if default_accelerator().is_amd_gpu():
+        return num_rows >= num_cus
+    else:
+        return num_rows > 8 * num_cus
+
+
+@inline(.always)
+def _is_vec_ok(t: TileTensor) -> Bool:
+    """Returns whether `t` has a unit inner stride and 16-byte aligned rows."""
+    comptime rank = t.flat_rank
+    var ok = (
+        Int(t.unsafe_ptr()) % 16 == 0
+        and Int(t.layout.stride[rank - 1]().value()) == 1
+    )
+    comptime for i in range(rank - 1):
+        ok = ok and (
+            Int(t.layout.stride[i]().value()) * size_of[t.dtype]() % 16 == 0
+        )
+    return ok
+
+
+@inline(.always)
+def mhc_post[
+    hc_mult: Int,
+    hidden_size: Int,
+    target: StaticString,
+    block_size: Int = 256,
+](
+    output: TileTensor[mut=True, ...],
+    streams: TileTensor[mut=False, output.dtype, ...],
+    y: TileTensor[mut=False, output.dtype, ...],
+    post: TileTensor[mut=False, .float32, ...],
+    comb: TileTensor[mut=False, .float32, ...],
+    context: DeviceContext,
+    force_non_temporal: Optional[Bool] = None,
+) raises:
+    """Launches the mHC write-back, `(num_rows, k_blocks)` blocks.
+
+    Computes `output[t, k, :] = post[t, k] * y[t, :] + sum_j comb[t, j, k] *
+    streams[t, j, :]` in fp32 and rounds once. Each thread covers one 16-byte
+    slice, so `k_blocks = hidden_size / (block_size * width)` blocks split
+    each token, and memory accesses turn non-temporal from one token per CU
+    on AMD (`num_rows >= CUs`) and past `8 * CUs` tokens elsewhere.
+
+    Parameters:
+        hc_mult: Number of parallel residual streams.
+        hidden_size: Width of one stream.
+        target: The target device to run the kernel on.
+        block_size: Threads per block.
+
+    Args:
+        output: Updated streams. Shape: `[num_rows, hc_mult, hidden_size]`.
+        streams: Incoming streams. Shape: `[num_rows, hc_mult, hidden_size]`.
+        y: Sublayer output. Shape: `[num_rows, hidden_size]`.
+        post: Weight of `y` in each output stream. Shape:
+            `[num_rows, hc_mult]`.
+        comb: Stream mixer; `comb[t, j, k]` weighs input stream `j` in output
+            stream `k`. Shape: `[num_rows, hc_mult, hc_mult]`.
+        context: The device context.
+        force_non_temporal: Overrides the non-temporal threshold; for
+            benchmarks and tests only.
+
+    Raises:
+        If a shape disagrees with `hc_mult`, `hidden_size` or the token
+        count of `streams`, or a tensor is not laid out for the kernel's
+        16-byte vector accesses.
+    """
+    comptime assert is_gpu[target](), "mhc_post is only supported on GPU"
+
+    comptime width = 16 // size_of[output.dtype]()
+    comptime chunk = block_size * width
+    comptime assert hidden_size % chunk == 0, (
+        "hidden_size must be a multiple of block_size * (16 bytes / element"
+        " size)"
+    )
+    comptime k_blocks = hidden_size // chunk
+
+    var num_rows = Int(streams.dim(0))
+    if (
+        Int(output.dim(0)) != num_rows
+        or Int(output.dim(1)) != hc_mult
+        or Int(output.dim(2)) != hidden_size
+        or Int(streams.dim(1)) != hc_mult
+        or Int(streams.dim(2)) != hidden_size
+        or Int(y.dim(0)) != num_rows
+        or Int(y.dim(1)) != hidden_size
+        or Int(post.dim(0)) != num_rows
+        or Int(post.dim(1)) != hc_mult
+        or Int(comb.dim(0)) != num_rows
+        or Int(comb.dim(1)) != hc_mult
+        or Int(comb.dim(2)) != hc_mult
+    ):
+        raise Error(
+            "mhc_post expects streams/output [T, ",
+            hc_mult,
+            ", ",
+            hidden_size,
+            "], y [T, ",
+            hidden_size,
+            "], post [T, ",
+            hc_mult,
+            "] and comb [T, ",
+            hc_mult,
+            ", ",
+            hc_mult,
+            "] with T = ",
+            num_rows,
+        )
+    # The kernel moves 16-byte vectors along the hidden dimension and reads
+    # each token's coefficients as one contiguous vector.
+    if not (
+        _is_vec_ok(output)
+        and _is_vec_ok(streams)
+        and _is_vec_ok(y)
+        and Int(post.layout.stride[1]().value()) == 1
+        and Int(comb.layout.stride[1]().value()) == hc_mult
+        and Int(comb.layout.stride[2]().value()) == 1
+    ):
+        raise Error(
+            "mhc_post needs unit inner strides, 16-byte aligned rows of"
+            " streams/y/output and contiguous rows of post and comb"
+        )
+    if num_rows == 0:
+        return
+
+    var gpu_ctx = context
+    var num_cus = gpu_ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var non_temporal = mhc_post_non_temporal(num_rows, num_cus)
+    if force_non_temporal:
+        non_temporal = force_non_temporal.value()
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.mhc.post", task_id=Int(gpu_ctx.id())
+    ):
+
+        @always_inline
+        def launch[non_temporal: Bool]() raises {var}:
+            comptime kernel = mhc_post_kernel[
+                output.dtype,
+                output.LayoutType,
+                streams.LayoutType,
+                y.LayoutType,
+                post.LayoutType,
+                comb.LayoutType,
+                hc_mult,
+                hidden_size,
+                block_size,
+                non_temporal,
+            ]
+            gpu_ctx.enqueue_function[kernel](
+                output,
+                streams,
+                y,
+                post,
+                comb,
+                grid_dim=(num_rows, k_blocks),
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            )
+
+        if non_temporal:
+            launch[True]()
+        else:
+            launch[False]()

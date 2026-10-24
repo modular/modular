@@ -27,6 +27,7 @@ from layout import (
     row_major,
 )
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.sys import size_of
 from std.testing import assert_true
 
@@ -55,7 +56,7 @@ def do_test[
 
     var blocks_ptr = List(length=shape.flattened_length(), fill=Float32(0))
     comptime Collection = PagedKVCacheCollection[
-        DType.float32,
+        .float32,
         kv_params,
         page_size,
         MutAnyOrigin,
@@ -94,12 +95,14 @@ def do_test[
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
 
-    comptime scales_dtype = scale_dtype.or_else(DType.float32)
+    comptime scales_dtype = scale_dtype.or_else(.float32)
     var scales: OptionalReg[Collection.scales_tt_type] = None
 
     comptime if scale_dtype == DType.float8_e4m3fn:
         # Use the same shape as the blocks.
-        var scales_ptr = alloc[Scalar[scales_dtype]](shape.flattened_length())
+        var scales_ptr = unsafe_alloc[Scalar[scales_dtype]](
+            shape.flattened_length()
+        )
         scales = rebind[Collection.scales_tt_type](
             TileTensor(scales_ptr, row_major(shape.flattened_length()))
             .reshape(
@@ -145,7 +148,7 @@ def test_paged_kv_cache_stride_is_unknown() raises:
     from just the 4D shape, which was incorrect for view tensors.
     """
     comptime CacheType = PagedKVCache[
-        DType.float32,
+        .float32,
         kv_params,
         16,
         MutUntrackedOrigin,
@@ -235,7 +238,7 @@ def test_paged_kv_cache_offset_correctness() raises:
         blocks_ptr[i] = Float32(i)
 
     comptime Collection = PagedKVCacheCollection[
-        DType.float32,
+        .float32,
         kv_params_small,
         page_size,
         MutAnyOrigin,
@@ -310,7 +313,7 @@ def test_paged_kv_cache_offset_correctness() raises:
 
     # Access via the blocks TileTensor - this tests the layout offset computation
     var idx = dyn_coord[.int64]((1, 0, 1, 2))
-    var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
+    var value = key_cache.blocks.load(idx)
     var expected_value = Float32(expected_6d_offset)
 
     assert_true(
@@ -327,7 +330,7 @@ def test_paged_kv_cache_offset_correctness() raises:
 
 def test_paged_kv_cache_quantization() raises:
     comptime CacheType = PagedKVCache[
-        DType.float32,
+        .float32,
         kv_params,
         16,
         MutUntrackedOrigin,
@@ -371,7 +374,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
         length=blocks_shape.flattened_length(), fill=Float32(0)
     )
     comptime Collection = PagedKVCacheCollection[
-        DType.float32,
+        .float32,
         kv_params_small,
         page_size,
         MutAnyOrigin,
@@ -400,7 +403,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     ).reshape(Coord(Int64(batch_size)))
 
     # Values resolve through block 0.
-    var lookup_table_ptr = alloc[UInt32](batch_size)
+    var lookup_table_ptr = unsafe_alloc[UInt32](batch_size)
     lookup_table_ptr[0] = UInt32(0)
     var lookup_table = (
         TileTensor(lookup_table_ptr, row_major(batch_size))
@@ -411,7 +414,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
 
     # Scales resolve through block 2 -- distinct from what lookup_table
     # points at, and only reachable through scales_lookup_table.
-    var scales_lookup_table_ptr = alloc[UInt32](batch_size)
+    var scales_lookup_table_ptr = unsafe_alloc[UInt32](batch_size)
     scales_lookup_table_ptr[0] = UInt32(2)
     var scales_lookup_table_opt: OptionalReg[
         Collection.CacheType.lookup_table_tt_type
@@ -425,7 +428,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     comptime scales_shape = IndexList[6](
         num_scale_blocks, 2, 1, page_size, kv_params_small.num_heads, 1
     )
-    var scales_ptr = alloc[Float32](scales_shape.flattened_length())
+    var scales_ptr = unsafe_alloc[Float32](scales_shape.flattened_length())
     var scales = rebind[Collection.scales_tt_type](
         TileTensor(scales_ptr, row_major(scales_shape.flattened_length()))
         .reshape(
@@ -500,7 +503,7 @@ def _build_collection_and_page_stride[
     var page = packed_page if page_stride < 0 else page_stride
     var blocks_ptr = List(length=num_blocks * page, fill=Float32(0))
     comptime Collection = PagedKVCacheCollection[
-        DType.float32,
+        .float32,
         kv_params,
         page_size,
         MutAnyOrigin,

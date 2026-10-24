@@ -19,9 +19,9 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer, EPConfig
+from max.nn.comm.ep import EPConfig
+from max.pipelines.lib import GraphRole, GraphSpec
 from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
@@ -178,67 +178,30 @@ class DeepseekV3_2Model(DeepseekV3Model):
         self.ep_comm_initializer = None
         if model_config.ep_config is None:
             return
-        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-        self.ep_comm_initializer.ep_init(session)
+        self.ep_comm_initializer = self._init_ep_comm(
+            session, model_config.ep_config
+        )
         if model_config.ep_config.node_id == -1:
             raise ValueError(
                 "EP node ID is not set. Please check if the EP initialization is successful."
             )
 
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, WeightData],
-        model_config: DeepseekV3_2Config,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(
+        self, model_config: DeepseekV3_2Config
+    ) -> dict[str, GraphSpec]:
+        """Returns the decoder graph."""
         nn_model = DeepseekV3_2(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
-        weights_registry = nn_model.state_dict()
-
-        with Graph(
-            "deepseekV3_2_graph",
-            input_types=nn_model.input_types(self.kv_params),
-        ) as graph:
-            (
-                tokens,
-                devices_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
-
-            variadic_args_iter = iter(variadic_args)
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            mla_kv_caches_per_dev, indexer_kv_caches_per_dev = (
-                self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
+        nn_model.load_state_dict(
+            self._weights_dict, weight_alignment=1, strict=True
+        )
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "deepseekV3_2_graph",
+                self._bind_graph_inputs(
+                    nn_model.input_tree(model_config.kv_params)
+                ),
+                weights=nn_model.state_dict(),
             )
-
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            ep_model_inputs = list(variadic_args_iter)
-
-            outputs = nn_model(
-                tokens.tensor,
-                signal_buffers,
-                mla_kv_caches_per_dev,
-                indexer_kv_caches_per_dev,
-                return_n_logits.tensor,
-                devices_input_row_offsets.tensor,
-                host_input_row_offsets.tensor,
-                data_parallel_splits.tensor,
-                batch_context_lengths,
-                ep_model_inputs,
-            )
-
-            graph.output(*outputs)
-            return graph, weights_registry
+        }

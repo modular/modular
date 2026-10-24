@@ -25,7 +25,7 @@
 # The var holds the promoted function's value, not a closure instance (the
 # NOT precedes the matches: storage structs print before the enclosing fn).
 # CHECK-NOT: @"{{.*}}`lambda_0::__storage"
-# CHECK: kgen.create_closure[{{.*}}("x": !Int) -> !{{.*}}Int{{[0-9]*}}>: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
+# CHECK: kgen.create_func_ptr[{{.*}}("x": !Int) -> !{{.*}}Int{{[0-9]*}}>: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
 
 # The synthetic def is named `lambda_<n> and promoted to module scope; its body
 # (x + 1) is a plain thin function's -- no capture machinery.
@@ -47,7 +47,7 @@ def withNoCapture():
 # init call), so body checks are CHECK-DAG.
 # CHECK-DAG: lit.struct.decl @"closure$withCapturingMut()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK-DAG: lit.fn @"`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}} capturing -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
+# CHECK-DAG: lit.fn @"`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}} -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
 # CHECK-DAG: lit.ref.struct.ger %{{.*}}[z]
 # CHECK-DAG: lit.call tail @{{.*}}::@"__add__{{.*}}"{{.*}}(%x, %{{.*}})
 # CHECK: lit.call @{{.*}}::@"closure$withCapturingMut()::`lambda_0::__storage"::@"__init__
@@ -122,7 +122,7 @@ def withCapturingOverride():
 # COM: as `[::SIMD[DType.int, 1]]` and declared as `<N: ...>`).
 
 # CHECK: lit.struct.decl @"closure$withParameter()::`lambda_0::__storage"
-# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]){{.*}}"<N: !Int{{[0-9]*}}>{{.*}} capturing -> {{.*}}
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]){{.*}}"<N: !Int{{[0-9]*}}>{{.*}} -> {{.*}}
 
 
 def withParameter():
@@ -173,7 +173,7 @@ def withVarArg():
 # // -----
 
 # CHECK: lit.struct.decl @"closure$withRefArg()::`lambda_0::__storage"
-# CHECK: , %x: !lit.ref<{{.*}}> ref) capturing -> {{.*}}
+# CHECK: , %x: !lit.ref<{{.*}}> ref) -> {{.*}}
 
 
 def withRefArg():
@@ -211,7 +211,7 @@ def withVariadics():
 
 # CHECK: lit.struct.decl @"closure$withEverything()::`lambda_0::__storage"
 # CHECK: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}} throws|capturing -> {{.*}}
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}} throws -> {{.*}}
 
 
 def withEverything():
@@ -246,7 +246,7 @@ def withComptimeBound() -> Int:
 # CHECK-NOT: @"closure$withElidedReturn()::`lambda_0::__storage"
 # CHECK-DAG: lit.struct.decl @"closure$withElidedReturn()::`lambda_1::__storage"
 # CHECK-DAG: lit.struct.field lst : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(){{.*}}"{{.*}} capturing -> !kgen.none
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(){{.*}}"{{.*}} -> !kgen.none
 # CHECK-DAG: lit.call @{{.*}}List{{.*}}append
 # CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"(%x: !Int) -> !kgen.none
 
@@ -289,7 +289,7 @@ def withOmittedCaptures():
 
 # CHECK: lit.struct.decl @"closure$withEverythingAndWithElision()::`lambda_0::__storage"
 # CHECK: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
-# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}}!lit.ref<none, {{.*}}> byref_result{{.*}} throws|capturing -> {{.*}}
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}}!lit.ref<none, {{.*}}> byref_result{{.*}} throws -> {{.*}}
 
 
 def noop(v: Int):
@@ -326,8 +326,8 @@ def withComptimeBoundElided() -> Int:
 # COM: the call through the var is indirect.
 
 # CHECK: lit.var.decl "f" var : !lit.ref<!lit.generator<("x": !Int) -> !{{.*}}Int{{[0-9]*}}>
-# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
-# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_1(::SIMD[DType.int, 1]){{.*}}"]()
+# CHECK: kgen.create_func_ptr[{{.*}}: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
+# CHECK: kgen.create_func_ptr[{{.*}}: @{{.*}}::@"{{.*}}`lambda_1(::SIMD[DType.int, 1]){{.*}}"]()
 # CHECK: lit.call_indirect
 
 
@@ -344,7 +344,7 @@ def typedDecay() -> Int:
 # COM: use site binds it, exactly as a stateless nested `def` using `N` does.
 # COM: (Only a lambda's OWN unbound parameters keep the closure-instance form.)
 
-# CHECK: kgen.create_closure[{{.*}}@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"<:!Int N>]()
+# CHECK: kgen.create_func_ptr[{{.*}}@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"<:!Int N>]()
 # CHECK: lit.call_indirect
 
 

@@ -26,5 +26,8 @@ sh_test(
     srcs = ["run_without_sys_cpu.sh"],
     args = ["$(rootpath :minimal_mojo_program)"],
     data = [":minimal_mojo_program"],
+    # Needs unprivileged user namespaces, which GitHub-hosted runners don't
+    # allow; the script fails rather than skips without them.
+    tags = ["skip-external-ci"],
     target_compatible_with = ["@platforms//os:linux"],
 )

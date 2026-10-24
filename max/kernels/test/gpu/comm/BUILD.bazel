@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//bazel:api.bzl", "mojo_test")
 load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
@@ -80,7 +81,21 @@ _GPU_MEMORY = {
     "test_scatter.mojo": "3",
     "test_broadcast_subgroup.mojo": "2",
     "test_ep_ord_r_completion.mojo": "2",
+    # On four GPUs the 8,168-token case holds 9.1 GiB a GPU, 8.5 of it the
+    # receive buffer.
+    "test_ep_dispatch_prefill_send.mojo": "11",
     "test_kernel_load_gate.mojo": "2",
+}
+
+# Platform constraints for tests that do not run on every multi-GPU host; the
+# rest take the glob's default.
+_TARGET_COMPATIBLE_WITH = {
+    # The warp-per-token dispatch it tests is NVIDIA-only, and its NVFP4
+    # quantize needs SM100.
+    "test_ep_dispatch_prefill_send.mojo": select({
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 }
 
 # Tests where assertions push register usage past hardware limits,
@@ -154,10 +169,13 @@ mojo_test(
         },
         main = src,
         tags = ["gpu"],
-        target_compatible_with = [
-            "//:has_gpu",
-            "//:has_multi_gpu",
-        ],
+        target_compatible_with = _TARGET_COMPATIBLE_WITH.get(
+            src,
+            [
+                "//:has_gpu",
+                "//:has_multi_gpu",
+            ],
+        ),
         deps = [
             "//max:internal_utils",
             "//max:kv_cache",
@@ -177,9 +195,60 @@ mojo_test(
             "test_allreduce_residual_rmsnorm.mojo",  # Has its own standalone rule above
             "test_enum_like_conformance.mojo",  # Has its own standalone rule below
             "test_bundled_allreduce_build_graph.mojo",  # Has its own standalone rule above
+            "test_blocking_driver_calls.mojo",  # One rule per round, below
         ],
     )
 ]
+
+# One driver call per round, landed in a collective's launch window on the
+# worker a peer's launch is pinned to. The driver does its own blocking, so a
+# round reproduces a deadlock only if the call really waits for a busy device.
+#
+# `pageable_copy` deadlocks today: the copy waits out device 0's whole spin
+# bound. It is manual until the runtime survives it, and a fix moves it into
+# `_BLOCKING_CALL_ROUNDS_PASSING`.
+_BLOCKING_CALL_ROUNDS_PASSING = [
+    "control",
+    "device_free",
+]
+
+_BLOCKING_CALL_ROUNDS_HANGING = ["pageable_copy"]
+
+[
+    mojo_test(
+        name = "test_blocking_driver_calls_" + round + ".mojo.test",
+        size = "large",
+        srcs = ["test_blocking_driver_calls.mojo"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        env = {"BLOCKING_CALL": round},
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        main = "test_blocking_driver_calls.mojo",
+        tags = ["gpu"] + (["manual"] if round in _BLOCKING_CALL_ROUNDS_HANGING else []),
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:has_multi_gpu",
+        ],
+        deps = [
+            "//max:comm",
+            "//max:max_mojo",
+            "@mojo//:std",
+        ],
+    )
+    for round in _BLOCKING_CALL_ROUNDS_PASSING + _BLOCKING_CALL_ROUNDS_HANGING
+]
+
+# The hanging rounds are `manual`, so this non-manual build_test keeps them in
+# the build graph.
+build_test(
+    name = "blocking_driver_calls_build_test",
+    tags = ["gpu"],
+    targets = [
+        "test_blocking_driver_calls_" + round + ".mojo.test"
+        for round in _BLOCKING_CALL_ROUNDS_HANGING
+    ],
+)
 
 # CPU-runnable: exercises the `EnumLike` conformances added across the
 # kernels' enum-behaving structs (runtime `match`, discriminants,

@@ -20,6 +20,10 @@ build the sparse ``mla_decode_graph`` graph only (no execution).
 layout masks the ``-1`` padding inside the scan, including for a reused row.
 ``test_mla_graph_sparse_plain_topk_selection_lag`` checks the same for a
 reused plain top-k row, through the decode and the combined op.
+``test_mla_decode_graph_sparse_bf16_gfx950_matches_dense`` checks the gfx950
+gather arm against dense attention, and
+``test_mla_decode_graph_sparse_bf16_gfx950_topk_lengths_bound`` checks that it
+drops slots past ``topk_lengths``.
 ``test_mla_decode_graph_sparse_multi_step_smoke`` runs prefill and decode through
 :class:`SparseLatentAttentionWithRopeFp8` and :class:`PagedKVCacheManager`.
 The prefill-routing tests live in ``test_mla_sparse_prefill_graph_gpu.py``.
@@ -1095,6 +1099,301 @@ def test_mla_graph_sparse_plain_topk_selection_lag(
     assert np.array_equal(h.run(reused, stale, h.width), want)
     # Without the lag the padding below the causal limit is scored.
     assert not np.array_equal(h.run(plain, stale, h.width), want)
+
+
+_GFX950_SPARSE_WIDTH = 320
+
+
+@dataclasses.dataclass
+class _Gfx950SparseHarness:
+    """BF16 sparse MLA decode and a dense reference over one shared cache."""
+
+    sparse: Model
+    dense: Model
+    run: Callable[..., np.ndarray]
+
+
+@functools.cache
+def _gfx950_sparse_harness() -> _Gfx950SparseHarness:
+    num_heads = 16
+    hidden_size = 1024
+    q_lora_rank = 256
+    kv_lora_rank = 512
+    qk_nope_head_dim = 128
+    qk_rope_head_dim = 64
+    v_head_dim = 128
+    page_size = 128
+    width = _GFX950_SPARSE_WIDTH
+    cache_head_dim = kv_lora_rank + qk_rope_head_dim
+
+    kv_params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=cache_head_dim,
+        num_layers=1,
+        page_size=page_size,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+    )
+
+    def make_layers() -> tuple[
+        DeepseekYarnRotaryEmbedding, LatentAttentionWithRope
+    ]:
+        rope = DeepseekYarnRotaryEmbedding(
+            dim=qk_rope_head_dim,
+            n_heads=num_heads,
+            theta=10000.0,
+            max_seq_len=4096,
+            scaling_params=DeepseekYarnRopeScalingParams(
+                scaling_factor=40.0,
+                original_max_position_embeddings=4096,
+                beta_fast=32,
+                beta_slow=1,
+                mscale=1.0,
+                mscale_all_dim=1.0,
+            ),
+        )
+        attn = LatentAttentionWithRope(
+            rope=rope,
+            num_attention_heads=num_heads,
+            num_key_value_heads=1,
+            hidden_size=hidden_size,
+            kv_params=kv_params,
+            dtype=DType.bfloat16,
+            devices=[DeviceRef.GPU()],
+            graph_mode="auto",
+            q_lora_rank=q_lora_rank,
+            kv_lora_rank=kv_lora_rank,
+            qk_nope_head_dim=qk_nope_head_dim,
+            qk_rope_head_dim=qk_rope_head_dim,
+            v_head_dim=v_head_dim,
+            buffer_size=4096,
+        )
+        _ = attn.state_dict()
+        return rope, attn
+
+    gpu = DeviceRef.GPU()
+    base_types = [
+        TensorType(
+            DType.bfloat16,
+            ["total_tokens", num_heads, qk_nope_head_dim + qk_rope_head_dim],
+            gpu,
+        ),
+        TensorType(DType.bfloat16, ["total_tokens", cache_head_dim], gpu),
+        TensorType(DType.uint32, ["row_offsets_len"], gpu),
+    ]
+    kv_types = tree.leaves(kv_params.get_symbolic_inputs()[0])
+    sparse_types = [
+        TensorType(DType.int32, ["total_tokens", width], gpu),
+        TensorType(DType.int32, ["total_tokens"], gpu),
+    ]
+
+    def common(
+        attn: LatentAttentionWithRope, kv_inputs: Sequence[Any]
+    ) -> dict[str, Any]:
+        kv_collection = paged_kv_from_flat_graph_inputs(
+            kv_params, list(kv_inputs)
+        )
+        assert kv_collection.attention_dispatch_metadata is not None
+        assert kv_collection.mla_num_partitions is not None
+        return dict(
+            kv_params=kv_params,
+            kv_collection=kv_collection,
+            layer_idx=ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=attn.scale,
+            epsilon=1e-6,
+            v_head_dim=v_head_dim,
+            scalar_args=kv_collection.attention_dispatch_metadata,
+            num_partitions_scalar=kv_collection.mla_num_partitions,
+        )
+
+    def construct_sparse() -> Graph:
+        with Graph(
+            "gfx950_sparse", input_types=[*base_types, *kv_types, *sparse_types]
+        ) as g:
+            q, kv, row_offsets = (x.tensor for x in g.inputs[:3])
+            indices, lengths = (x.tensor for x in g.inputs[-2:])
+            rope, attn = make_layers()
+            out = mla_decode_graph(
+                q,
+                kv,
+                row_offsets,
+                ops.cast(rope.freqs_cis, q.dtype).to(q.device),
+                attn.kv_a_proj_layernorm,
+                attn.w_uk,
+                attn.w_uv,
+                **common(attn, g.inputs[3:-2]),
+                sparse_indices=indices,
+                physical_indices=False,
+                sparse_topk_lengths=lengths,
+                sparse_indices_stride=width,
+            )
+            g.output(out)
+        return g
+
+    def construct_dense() -> Graph:
+        with Graph("gfx950_dense", input_types=[*base_types, *kv_types]) as g:
+            q, kv, row_offsets = (x.tensor for x in g.inputs[:3])
+            rope, attn = make_layers()
+            args = common(attn, g.inputs[3:])
+            metadata = attn.create_mla_prefill_metadata(
+                row_offsets, args["kv_collection"]
+            )
+            out = mla_prefill_decode_graph(
+                q,
+                kv,
+                row_offsets,
+                ops.cast(rope.freqs_cis, q.dtype).to(q.device),
+                attn.kv_a_proj_layernorm,
+                metadata.buffer_row_offsets,
+                metadata.cache_offsets,
+                metadata.buffer_lengths.to(DeviceRef.CPU()),
+                attn.w_k,
+                attn.w_uk,
+                attn.w_uv,
+                **args,
+            )
+            g.output(out)
+        return g
+
+    device = Accelerator(0)
+    session = InferenceSession(devices=[Accelerator()])
+    weights = random_weights(make_layers()[1])
+    sparse = session.load(construct_sparse(), weights_registry=weights)
+    dense = session.load(construct_dense(), weights_registry=weights)
+
+    def run(
+        model: Model,
+        cache_len: int,
+        seq_len: int,
+        *sparse_inputs: np.ndarray,
+    ) -> np.ndarray:
+        # Seeded per shape, so every model sees the same cache and query.
+        gen = torch.Generator().manual_seed(cache_len * 4096 + seq_len)
+        kv_inputs = paged_kv_cache_inputs(
+            kv_params, [seq_len], cache_lengths=[cache_len]
+        )
+        # Reversed pages, so a remap that skips the page table reads the
+        # wrong keys.
+        lut = from_dlpack(kv_inputs.lookup_table).cpu().numpy()
+        num_pages = -(-(cache_len + seq_len) // page_size)
+        lut[0, :num_pages] = lut[0, :num_pages][::-1].copy()
+        blocks = (
+            torch.randn(tuple(kv_inputs.kv_blocks.shape), generator=gen) * 0.5
+        )
+        kv_inputs = dataclasses.replace(
+            kv_inputs,
+            lookup_table=Buffer.from_numpy(lut).to(device),
+            kv_blocks=Buffer.from_dlpack(blocks.to(torch.bfloat16)).to(device),
+        )
+        q = torch.randn(
+            (seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim),
+            generator=gen,
+        )
+        kv = torch.randn((seq_len, cache_head_dim), generator=gen)
+        inputs = [
+            Buffer.from_dlpack((q * 0.1).to(torch.bfloat16)).to(device),
+            Buffer.from_dlpack((kv * 0.1).to(torch.bfloat16)).to(device),
+            Buffer.from_numpy(np.array([0, seq_len], dtype=np.uint32)).to(
+                device
+            ),
+            *tree.leaves(kv_inputs),
+            *(Buffer.from_numpy(x).to(device) for x in sparse_inputs),
+        ]
+        out = model.execute(*inputs)[0]
+        return from_dlpack(out).cpu().float().numpy()
+
+    return _Gfx950SparseHarness(sparse, dense, run)
+
+
+def _scattered_rows(
+    rng: np.random.Generator, visible: Sequence[int], keep: float = 1.0
+) -> np.ndarray:
+    """Spreads each token's visible keys over a row with ``-1`` holes."""
+    rows = np.full((len(visible), _GFX950_SPARSE_WIDTH), -1, dtype=np.int32)
+    for t, n in enumerate(visible):
+        keys = rng.permutation(n)[: max(1, int(n * keep))]
+        cols = rng.choice(_GFX950_SPARSE_WIDTH, size=len(keys), replace=False)
+        rows[t, cols] = keys
+    return rows
+
+
+@pytest.mark.skipif(
+    not is_gfx950(), reason="Exercises the gfx950 sparse MLA gather arm."
+)
+@pytest.mark.parametrize(
+    "cache_len, seq_len",
+    [
+        (200, 1),
+        # Past one 256-token gather chunk, so the second chunk's offsets apply.
+        (8, 290),
+    ],
+)
+def test_mla_decode_graph_sparse_bf16_gfx950_matches_dense(
+    cache_len: int, seq_len: int
+) -> None:
+    """Selecting every visible key matches dense causal attention.
+
+    Each token selects all the keys it can see, in shuffled order and spread
+    over a row with interior ``-1`` holes, as a k-pool selection leaves them.
+    The sparse op takes logical positions through a reversed page table, so
+    the remap, the compaction and the per-chunk offsets must all be right for
+    it to match the dense op. Keeping only half the keys must not.
+    """
+    h = _gfx950_sparse_harness()
+    rng = np.random.default_rng(seq_len)
+    visible = [cache_len + t + 1 for t in range(seq_len)]
+    lengths = np.full(seq_len, _GFX950_SPARSE_WIDTH, dtype=np.int32)
+
+    want = h.run(h.dense, cache_len, seq_len)
+    got = h.run(
+        h.sparse,
+        cache_len,
+        seq_len,
+        _scattered_rows(rng, visible),
+        lengths,
+    )
+    np.testing.assert_allclose(got, want, rtol=2e-2, atol=2e-3)
+
+    half = h.run(
+        h.sparse,
+        cache_len,
+        seq_len,
+        _scattered_rows(rng, visible, keep=0.5),
+        lengths,
+    )
+    assert not np.allclose(half, want, rtol=2e-2, atol=2e-3)
+
+
+@pytest.mark.skipif(
+    not is_gfx950(), reason="Exercises the gfx950 sparse MLA gather arm."
+)
+def test_mla_decode_graph_sparse_bf16_gfx950_topk_lengths_bound() -> None:
+    """Slots past ``topk_lengths`` are dropped even when they hold keys.
+
+    A row whose every slot is valid, read with a shorter ``topk_lengths``,
+    must match the same row with those slots cleared to ``-1``.
+    """
+    h = _gfx950_sparse_harness()
+    cache_len = 1000
+    topk = 250
+    rng = np.random.default_rng(0)
+    row = rng.choice(
+        cache_len + 1, size=(1, _GFX950_SPARSE_WIDTH), replace=False
+    )
+    row = row.astype(np.int32)
+    cleared = row.copy()
+    cleared[0, topk:] = -1
+
+    got = h.run(h.sparse, cache_len, 1, row, np.array([topk], dtype=np.int32))
+    want = h.run(
+        h.sparse,
+        cache_len,
+        1,
+        cleared,
+        np.array([_GFX950_SPARSE_WIDTH], dtype=np.int32),
+    )
+    assert np.array_equal(got, want)
 
 
 @pytest.mark.skipif(

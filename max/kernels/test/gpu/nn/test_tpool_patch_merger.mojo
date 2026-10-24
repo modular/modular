@@ -59,7 +59,7 @@ def cpu_reference_one_video[
                 var row = in_offset + ti * (h * w) + spatial_flat
                 acc += x[row * D + d]
             acc = acc / Scalar[dtype](t)
-            out_base.store(pat_idx * D + d, acc)
+            out_base.unsafe_store(pat_idx * D + d, acc)
 
 
 def test_tpool_patch_merger(ctx: DeviceContext) raises:

@@ -161,6 +161,9 @@ KGENCLOptionsParser::commands() {
        "Diagnostics on stderr and the exit status are unaffected; only "
        "useful when a caller checks for crashes/diagnostics and never reads "
        "stdout, since serializing the IR is not free."},
+      {"precompile",
+       "Precompile the Mojo package directory given as the input. Writes a "
+       "`.mojoc` file, or prints the package with -S."},
   };
   return kCommands;
 }
@@ -224,6 +227,14 @@ bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
     else
       return o.error("unsupported 'lsp' option value '" + argValue + "'");
 
+    return false;
+  }
+
+  if (argName == "precompile") {
+    if (!argValue.empty())
+      return o.error("unsupported 'precompile' option value '" + argValue +
+                     "'");
+    val = "precompile";
     return false;
   }
   return o.error("unsupported option '" + argName + "'");

@@ -53,10 +53,12 @@ def augment_samples_with_tools(
     The rendered tool definitions are carved out of the prompt they join rather
     than added on top of it: the first user turn of a selected session, or a
     selected single-turn string prompt, is trimmed by the block's token cost
-    while its drawn length stays put. An input-length distribution fitted to
-    production traffic already includes the tools its clients send, so adding
-    the block on top would inflate processed tokens per minute. Single-turn
-    prompts already split into chat messages are sent untrimmed.
+    while its drawn length stays put. A prompt shorter than the block is sent
+    as the block alone, and its recorded length grows to the block's. An
+    input-length distribution fitted to production traffic already includes
+    the tools its clients send, so adding the block on top would inflate
+    processed tokens per minute. Single-turn prompts already split into chat
+    messages are sent untrimmed.
 
     A single-turn request whose dataset already attached its own tools keeps
     them, and is neither selected nor trimmed.
@@ -100,8 +102,11 @@ def augment_samples_with_tools(
     # draw both selections from the same stream, which would correlate them.
     rng = random.Random(None if seed is None else f"tools-{seed}")
 
+    max_context = tokenizer.model_max_length if tokenizer is not None else None
     if isinstance(samples, RequestSamples):
         selected = 0
+        grown = 0
+        over_context = 0
         kept_dataset_tools = 0
         untrimmed = 0
         for request in samples.requests:
@@ -118,6 +123,15 @@ def augment_samples_with_tools(
                 request.prompt_formatted = _trim_tail(
                     tokenizer, request.prompt_formatted, block_tokens
                 )
+                if request.prompt_len < block_tokens:
+                    request.prompt_len = block_tokens
+                    grown += 1
+                    if (
+                        max_context is not None
+                        and request.prompt_len + (request.output_len or 0)
+                        > max_context
+                    ):
+                        over_context += 1
             else:
                 untrimmed += 1
         logger.info(
@@ -140,6 +154,7 @@ def augment_samples_with_tools(
                 untrimmed,
                 block_tokens,
             )
+        _warn_grown(grown, over_context, block_tokens, "requests")
     elif isinstance(samples, ChatJudgeChatSamples):
         # chat_judge_session_driver builds its own requests and never reads the
         # per-turn field, so attaching here would be reported but never sent.
@@ -151,6 +166,8 @@ def augment_samples_with_tools(
         selected_sessions = 0
         tool_turns = 0
         total_turns = 0
+        grown = 0
+        over_context = 0
         for session in samples.chat_sessions:
             user_turns = [m for m in session.messages if m.source == "user"]
             total_turns += len(user_turns)
@@ -159,9 +176,19 @@ def augment_samples_with_tools(
             for message in user_turns:
                 message.tools = tool_list
             if tokenizer is not None:
-                user_turns[0].content = _trim_tail(
-                    tokenizer, user_turns[0].content, block_tokens
+                first = user_turns[0]
+                first.content = _trim_tail(
+                    tokenizer, first.content, block_tokens
                 )
+                if first.num_tokens < block_tokens:
+                    first.num_tokens = block_tokens
+                    grown += 1
+                    if (
+                        max_context is not None
+                        and sum(m.num_tokens for m in session.messages)
+                        > max_context
+                    ):
+                        over_context += 1
             selected_sessions += 1
             tool_turns += len(user_turns)
         # Sessions are selected but production reports requests; turn counts
@@ -177,6 +204,7 @@ def augment_samples_with_tools(
             total_turns,
             100.0 * tool_turns / total_turns if total_turns else 0.0,
         )
+        _warn_grown(grown, over_context, block_tokens, "sessions")
     else:
         raise TypeError(f"Unsupported samples type: {type(samples)}")
 
@@ -218,6 +246,30 @@ def _tool_block_tokens(
     return len(tokenizer.encode(json.dumps(tools), add_special_tokens=False))
 
 
+def _warn_grown(
+    grown: int, over_context: int, block_tokens: int, unit: str
+) -> None:
+    """Reports prompts that the tool block outgrew, once per workload."""
+    if not grown:
+        return
+    logger.warning(
+        "Tool mixing: %d %s open with a prompt shorter than the ~%d-token tool"
+        " block, so each is sent as the block alone, longer than drawn and"
+        " without its shared prefix",
+        grown,
+        unit,
+        block_tokens,
+    )
+    if over_context:
+        # The drivers still stop at the context limit; this says how often.
+        logger.warning(
+            "Tool mixing: %d of those %s now exceed the model's max context"
+            " and will end early",
+            over_context,
+            unit,
+        )
+
+
 def _trim_tail(
     tokenizer: PreTrainedTokenizerBase, text: str, num_tokens: int
 ) -> str:
@@ -231,11 +283,5 @@ def _trim_tail(
         return text
     ids = tokenizer.encode(text, add_special_tokens=False)
     if num_tokens >= len(ids):
-        logger.warning(
-            "Tool mixing: a %d-token prompt is shorter than the %d-token tool"
-            " block, so it grows by the difference",
-            len(ids),
-            num_tokens,
-        )
         return ""
     return tokenizer.decode(ids[:-num_tokens])

@@ -116,10 +116,12 @@ def convert_safetensor_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: LlamaConfig,
     pipeline_config: PipelineConfig,
+    model_config: MAXModelConfig | None = None,
     **unused_kwargs,
 ) -> dict[str, WeightData]:
+    """Converts a Llama checkpoint, a draft's under its own model config."""
     return _convert_safetensor_with_model_config(
-        state_dict, huggingface_config, pipeline_config.model
+        state_dict, huggingface_config, model_config or pipeline_config.model
     )
 
 
@@ -146,13 +148,14 @@ LLAMA_GGUF_QUANTIZED_MAPPING = LLAMA_GGUF_UNFUSED_QKV_MAPPING
 def convert_gguf_state_dict(
     state_dict: dict[str, Weights],
     pipeline_config: PipelineConfig | None = None,
+    model_config: MAXModelConfig | None = None,
     **unused_kwargs,
 ) -> dict[str, WeightData]:
     gguf_mapping = LLAMA_GGUF_UNFUSED_QKV_MAPPING
     if pipeline_config is not None:
         # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
         resolved_encoding = _select_quantization_encoding(
-            pipeline_config.model, Llama3Config.DEFAULT_ENCODING
+            model_config or pipeline_config.model, Llama3Config.DEFAULT_ENCODING
         )
         if supported_encoding_quantization(resolved_encoding) is not None:
             gguf_mapping = LLAMA_GGUF_QUANTIZED_MAPPING

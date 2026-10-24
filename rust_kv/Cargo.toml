@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = [
+    "kv-core",
+    "kv-core-pyo3",
+    "max-profiler",
+    "kv-tier-connector",
+    "kv-tier-connector-pyo3",
+]
+
+[workspace.dependencies]
+itertools = "0.14"
+parking_lot = "0.12"
+thiserror = "2.0.18"
+tracing = "0.1"
+
+[workspace.lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+unreachable_pub = "deny"
+let_underscore_drop = "deny"
+unused_qualifications = "deny"
+
+[workspace.lints.clippy]
+# correctness & safety
+dbg_macro = "deny"
+needless_bool = "deny"
+needless_match = "deny"
+needless_pass_by_value = "deny"
+panic = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+todo = "deny"
+unimplemented = "deny"
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+
+# pattern matching hygiene
+redundant_guards = "deny"
+redundant_pattern = "deny"
+redundant_pattern_matching = "deny"
+single_match_else = "deny"
+
+# style & readability
+allow_attributes_without_reason = "deny"
+cloned_instead_of_copied = "deny"
+str_to_string = "deny"
+uninlined_format_args = "deny"

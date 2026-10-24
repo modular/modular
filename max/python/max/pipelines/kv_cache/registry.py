@@ -57,9 +57,9 @@ def _use_jenga_kv_cache(
 
     Raises:
         ValueError: If no manager can serve the configuration. The legacy
-            manager supports neither disaggregated inference nor a KV
-            connector, and disaggregated inference on Jenga supports only full
-            attention caches.
+            manager supports neither disaggregated inference, a KV connector
+            nor a scratch leaf, and disaggregated inference on Jenga supports
+            only full attention caches.
 
     TODO: temporary flag for the Jenga cutover. Delete once the transition is complete.
     """
@@ -70,6 +70,14 @@ def _use_jenga_kv_cache(
         "y",
     )
     if prefer_legacy and recurrent_leaf(params) is None:
+        if any(leaf.group_id.is_scratch() for leaf in params.leaves().values()):
+            # The legacy manager gives every leaf the request's page table, so
+            # a scratch leaf would write into prefix-shared pages.
+            raise ValueError(
+                "This model has a scratch KV cache leaf, which the legacy KV"
+                " manager selected by MODULAR_USE_LEGACY_KV_CACHE cannot hold."
+                " Unset MODULAR_USE_LEGACY_KV_CACHE."
+            )
         if is_di_enabled:
             raise ValueError(
                 "Disaggregated inference is incompatible with the legacy KV"

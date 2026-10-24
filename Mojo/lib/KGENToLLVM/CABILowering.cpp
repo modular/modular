@@ -15,6 +15,7 @@
 #include "CABIAAPCS.h"
 #include "CABISystemV.h"
 #include "LLVMLoweringUtils.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/STLExtras.h"
@@ -42,7 +43,55 @@ static llvm::ManagedStatic<CABIOptions> CABIOpts;
 
 SignatureClassification
 CABIInfo::computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
-                               mlir::Location loc, size_t numFixedArgs) const {
+                               mlir::Location loc, CABIRole role,
+                               size_t numFixedArgs) const {
+  SignatureClassification result =
+      classifySignature(argTypes, retType, loc, numFixedArgs);
+  // FIXME(MOCO-5129) - Here be dragons!
+  // Because we flatten single-element structs early on during LowerLIT, we
+  // can't distinguish between the C equivalents of passing 'char' vs 'struct {
+  // char; }'. These need to be lowered differently - 'i8 signext' vs 'i8'.
+  // As such we must be conservatively correct and strip extension attributes
+  // differently depending on Mojo's role:
+  if (role.isCaller) {
+    // If we were to set an extension attr on the *return* we get back from C,
+    // our codegen would be able to assume it's extended when it may not have
+    // been:
+    //   %a = call signext i8 @some_c_fn()
+    //   %b = sext i8 to i64
+    // If, in C, we have defined struct { char c; } some_c_fn() { ... }
+    // then we have not in fact received a sign-extended integer! The code
+    // generator would essentially be able to elide the sext instruction.
+    for (auto [info, isSigned] : llvm::zip_equal(result.args, role.isArgSigned))
+      info.applySignedness(isSigned);
+    result.ret.ext = IntExtKind::None;
+  } else {
+    // If we were to set extension attrs on the *arguments* of an exported
+    // function (i.e., we are defining the callee), our codegen could assume
+    // that arguments have been extended by the C-side caller when they may not
+    // have been:
+    //
+    //   define i32 @some_exported_fn(signext i8 %arg) {
+    //     %a = sext i8 to i32
+    //     ret i32 %a
+    //   }
+    //
+    // If a C program was in fact:
+    //   extern int some_exported_fn(struct { char; });
+    //
+    // Then it would not extend arguments before calling into Mojo. Our codegen
+    // would then be able to elide the extension incorrectly!
+    for (CoercionInfo &info : result.args)
+      info.ext = IntExtKind::None;
+    result.ret.applySignedness(role.isResultSigned);
+  }
+  return result;
+}
+
+SignatureClassification CABIInfo::classifySignature(mlir::TypeRange argTypes,
+                                                    mlir::Type retType,
+                                                    mlir::Location loc,
+                                                    size_t numFixedArgs) const {
   SignatureClassification result;
   if (retType)
     result.ret = classifyReturnType(retType, loc);
@@ -52,6 +101,101 @@ CABIInfo::computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
     result.args.push_back(classifyArgumentType(type, loc, isVariadicArg));
   }
   return result;
+}
+
+//===----------------------------------------------------------------------===//
+// SignatureClassification
+//===----------------------------------------------------------------------===//
+
+unsigned SignatureClassification::getLLVMParamIndex(size_t argIdx) const {
+  assert(argIdx <= args.size() && "argument index out of range");
+  unsigned paramIdx = ret.useSRet ? 1 : 0;
+  for (const CoercionInfo &coercion : llvm::ArrayRef(args).take_front(argIdx))
+    paramIdx += coercion.getNumLLVMParams();
+  return paramIdx;
+}
+
+mlir::LLVM::LLVMFunctionType SignatureClassification::getFunctionType(
+    mlir::MLIRContext *ctx, mlir::TypeRange argTypes, mlir::Type retType,
+    bool isVarArg, size_t numFixedArgs) const {
+  auto ptrType = mlir::LLVM::LLVMPointerType::get(ctx);
+  llvm::SmallVector<mlir::Type> paramTypes;
+  if (ret.useSRet)
+    paramTypes.push_back(ptrType);
+  for (auto [coercion, type] :
+       llvm::zip(llvm::ArrayRef(args).take_front(numFixedArgs), argTypes)) {
+    if (coercion.isIdentity()) {
+      paramTypes.push_back(type);
+    } else if (coercion.useIndirect) {
+      paramTypes.push_back(ptrType);
+    } else {
+      assert(coercion.coercedType &&
+             "non-identity, non-indirect coercion must have a coercedType");
+      paramTypes.push_back(coercion.coercedType);
+      if (coercion.isTwoRegister()) {
+        assert(coercion.coercedSecondType &&
+               "two-register classification must have coercedSecondType");
+        paramTypes.push_back(coercion.coercedSecondType);
+      }
+    }
+  }
+
+  mlir::Type resultType;
+  if (ret.useSRet) {
+    resultType = mlir::LLVM::LLVMVoidType::get(ctx);
+  } else if (ret.isTwoRegister()) {
+    assert(ret.coercedType && ret.coercedSecondType &&
+           "two-register classification must have both coerced types");
+    resultType = mlir::LLVM::LLVMStructType::getLiteral(
+        ctx, {ret.coercedType, ret.coercedSecondType});
+  } else if (ret.coercedType) {
+    resultType = ret.coercedType;
+  } else if (retType) {
+    resultType = retType;
+  } else {
+    resultType = mlir::LLVM::LLVMVoidType::get(ctx);
+  }
+  return mlir::LLVM::LLVMFunctionType::get(resultType, paramTypes, isVarArg);
+}
+
+static llvm::StringRef getExtAttrName(IntExtKind kind) {
+  switch (kind) {
+  case IntExtKind::None:
+    return {};
+  case IntExtKind::ZExt:
+    return mlir::LLVM::LLVMDialect::getZExtAttrName();
+  case IntExtKind::SExt:
+    return mlir::LLVM::LLVMDialect::getSExtAttrName();
+  }
+  llvm_unreachable("unknown IntExtKind");
+}
+
+llvm::SmallVector<mlir::NamedAttrList> SignatureClassification::getParamAttrs(
+    mlir::TypeRange argTypes, mlir::Type retType, size_t numArgs) const {
+  numArgs = std::min(numArgs, args.size());
+  llvm::SmallVector<mlir::NamedAttrList> attrs(getLLVMParamIndex(numArgs));
+  if (ret.useSRet)
+    attrs[0].set(mlir::LLVM::LLVMDialect::getStructRetAttrName(),
+                 mlir::TypeAttr::get(retType));
+  unsigned paramIdx = getLLVMParamIndex(0);
+  for (auto [coercion, type] :
+       llvm::zip(llvm::ArrayRef(args).take_front(numArgs), argTypes)) {
+    if (coercion.useIndirect && coercion.useByval)
+      attrs[paramIdx].set(mlir::LLVM::LLVMDialect::getByValAttrName(),
+                          mlir::TypeAttr::get(type));
+    if (llvm::StringRef ext = getExtAttrName(coercion.ext); !ext.empty())
+      attrs[paramIdx].set(ext, mlir::UnitAttr::get(type.getContext()));
+    paramIdx += coercion.getNumLLVMParams();
+  }
+  return attrs;
+}
+
+mlir::NamedAttrList
+SignatureClassification::getResultAttrs(mlir::MLIRContext *ctx) const {
+  mlir::NamedAttrList attrs;
+  if (llvm::StringRef ext = getExtAttrName(ret.ext); !ext.empty())
+    attrs.set(ext, mlir::UnitAttr::get(ctx));
+  return attrs;
 }
 
 //===----------------------------------------------------------------------===//
@@ -174,6 +318,16 @@ CoercionInfo CabiUtils::classifySmallIntegerStruct(int64_t size,
   CoercionInfo info;
   info.argClass = ABIArgClass::Integer;
   info.coercedType = getIntegerTypeForSize(size, ctx);
+  return info;
+}
+
+CoercionInfo CabiUtils::classifyExtendedScalar(mlir::Type type) {
+  CoercionInfo info;
+  // The integers narrower than C `int`, which is 32 bits on every target that
+  // uses this.
+  if (auto intTy = dyn_cast<mlir::IntegerType>(type);
+      intTy && intTy.getWidth() < 32)
+    info.ext = IntExtKind::ZExt;
   return info;
 }
 

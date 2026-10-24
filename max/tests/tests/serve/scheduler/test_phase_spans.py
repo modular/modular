@@ -21,6 +21,7 @@ from max.serve.scheduler.base import SchedulerProgress
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
+from max.serve.telemetry import _log_context
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -47,7 +48,7 @@ def finished(monkeypatch: pytest.MonkeyPatch) -> InMemorySpanExporter:
     monkeypatch.setattr(
         f"{_SCHEDULER_MODULE}._tracer", provider.get_tracer("test")
     )
-    monkeypatch.setattr(f"{_SCHEDULER_MODULE}._tracing_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     return exporter
 
 
@@ -58,7 +59,7 @@ def _spans(
         span
         for span in exporter.get_finished_spans()
         if span.name == name
-        and (span.attributes or {}).get("max.request_id") == str(request_id)
+        and (span.attributes or {}).get("max.request.id") == str(request_id)
     ]
 
 
@@ -67,8 +68,8 @@ def _batch_counts(exporter: InMemorySpanExporter) -> list[tuple[int, int]]:
     for span in exporter.get_finished_spans():
         if span.name == "max.batch":
             attributes = span.attributes or {}
-            ce_count = attributes["max.ce_count"]
-            tg_count = attributes["max.tg_count"]
+            ce_count = attributes["max.batch.ce_count"]
+            tg_count = attributes["max.batch.tg_count"]
             assert isinstance(ce_count, int) and isinstance(tg_count, int)
             counts.append((ce_count, tg_count))
     return counts
@@ -208,6 +209,12 @@ def test_batch_span_counts_the_pass_requests(
     scheduler.run_iteration()
 
     assert _batch_counts(finished) == [(1, 0), (1, 0), (0, 2)]
+    _run_until_idle(scheduler)
+    assert all(
+        key.startswith(("max.request.", "max.batch."))
+        for span in finished.get_finished_spans()
+        for key in span.attributes or {}
+    )
 
 
 def test_batch_span_skips_dp_padding(

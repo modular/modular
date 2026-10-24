@@ -241,6 +241,81 @@ class DeepseekV4HFConfig(PretrainedConfig):
 AutoConfig.register("deepseek_v4", DeepseekV4HFConfig, exist_ok=True)
 
 
+class _DeepseekV41TextHFConfig(PretrainedConfig):
+    """The ``text_config`` half of a DeepSeek-V4.1-Flash config, verbatim.
+
+    transformers >= 5.12 standardizes RoPE params in ``__post_init__`` and,
+    for a scaling RoPE type such as ``yarn``, eagerly reads
+    ``self.max_position_embeddings``. That field (and ``rope_scaling``) lives
+    on ``text_config``, so it is bound here before the base initializer runs.
+    """
+
+    model_type = "deepseek_v41_text"
+
+    def __init__(
+        self, max_position_embeddings: int = 1048576, **kwargs: Any
+    ) -> None:
+        self.max_position_embeddings = max_position_embeddings
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+class _DeepseekV41VisionHFConfig(PretrainedConfig):
+    """The ``vision_config`` half of a DeepSeek-V4.1-Flash config, verbatim."""
+
+    model_type = "deepseek_v41_vision"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+class DeepseekV41HFConfig(PretrainedConfig):
+    """HuggingFace configuration class for DeepSeek-V4.1-Flash models.
+
+    ``deepseek_v41`` is not registered in transformers and the repo ships no
+    ``auto_map``, so ``AutoConfig.from_pretrained`` cannot resolve it
+    without this class. Every model field is nested under ``text_config``
+    and ``vision_config``; both become config objects rather than dicts, so
+    their fields read as attributes (``config.text_config.<field>``).
+    """
+
+    model_type = "deepseek_v41"
+    sub_configs = {
+        "text_config": _DeepseekV41TextHFConfig,
+        "vision_config": _DeepseekV41VisionHFConfig,
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _DeepseekV41TextHFConfig | None = None,
+        vision_config: dict[str, Any]
+        | _DeepseekV41VisionHFConfig
+        | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if isinstance(text_config, dict) or text_config is None:
+            text_config = _DeepseekV41TextHFConfig(**(text_config or {}))
+        if isinstance(vision_config, dict) or vision_config is None:
+            vision_config = _DeepseekV41VisionHFConfig(**(vision_config or {}))
+        self.text_config = text_config
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+try:
+    AutoConfig.register("deepseek_v41", DeepseekV41HFConfig)
+except ValueError:
+    pass
+
+
 class LagunaHFConfig(PretrainedConfig):
     """Local config class for poolside's Laguna models (``model_type: laguna``).
 
@@ -258,7 +333,17 @@ class LagunaHFConfig(PretrainedConfig):
     model_type = "laguna"
 
     def __init__(self, **kwargs: object) -> None:
+        # Laguna nests its rope config per attention type, which transformers'
+        # flat rope validation rejects, so withhold the rope keys from the base
+        # initializer and restore them afterwards.
+        deferred_rope = {
+            key: kwargs.pop(key)
+            for key in ("rope_parameters", "rope_scaling", "rope_theta")
+            if key in kwargs
+        }
         super().__init__(**kwargs)
+        for key, value in deferred_rope.items():
+            setattr(self, key, value)
         for k, v in kwargs.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -708,3 +793,113 @@ AutoConfig.register("muse_glimmer", MuseGlimmerHFConfig, exist_ok=True)
 AutoConfig.register(
     "muse_glimmer_text", _MuseGlimmerTextHFConfig, exist_ok=True
 )
+
+
+# TODO: drop this shim once bazel pins transformers >= 5.16, which
+# ships native hy_v4 (huggingface/transformers#48473).
+class HYV4HFConfig(PretrainedConfig):
+    """Local config class for Hy4 (``model_type: hy_v4``).
+
+    Defaults and derivations follow transformers 5.17.0's ``HYV4Config``, except
+    that ``num_key_value_heads`` stays as published: MLA expands the latent to
+    one KV head per query head, and :class:`HYV4Config` derives that on the
+    MAX side.
+    """
+
+    model_type = "hy_v4"
+    keys_to_ignore_at_inference = ["past_key_values"]
+    attribute_map = {"num_local_experts": "n_routed_experts"}
+    _defaults: ClassVar[dict[str, Any]] = {
+        "vocab_size": 120832,
+        "hidden_size": 2816,
+        "intermediate_size": 6912,
+        "moe_intermediate_size": 768,
+        "num_hidden_layers": 34,
+        "num_attention_heads": 32,
+        "num_key_value_heads": 32,
+        "head_dim": 256,
+        "hidden_act": "silu",
+        "max_position_embeddings": 262144,
+        "initializer_range": 0.006,
+        "rms_norm_eps": 1e-5,
+        "use_cache": True,
+        "pad_token_id": 120002,
+        "bos_token_id": 120000,
+        "eos_token_id": 120025,
+        "tie_word_embeddings": False,
+        "attention_bias": False,
+        "attention_dropout": 0.0,
+        "n_routed_experts": 256,
+        "n_shared_experts": 1,
+        "num_experts_per_tok": 8,
+        "routed_scaling_factor": 2.827,
+        "norm_topk_prob": True,
+        "n_group": 1,
+        "topk_group": 1,
+        "q_lora_rank": 1536,
+        "kv_lora_rank": 512,
+        "qk_nope_head_dim": 192,
+        "qk_rope_head_dim": 64,
+        "v_head_dim": 256,
+        "mlp_layer_types": None,
+        "layer_types": None,
+        "index_topk": 2048,
+        "index_head_dim": 128,
+        "index_n_heads": 16,
+        "indexer_types": None,
+        "hc_mult": 4,
+        "hc_magnitude": 2.0,
+        "hc_eps": 1e-6,
+        "learnable_sink_init": 0.0,
+        "swiglu_limit": 10.0,
+        "rope_parameters": None,
+    }
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs = {**copy.deepcopy(self._defaults), **kwargs}
+        n = kwargs["num_hidden_layers"]
+        # transformers >= 5.18 writes DSA layers as "indexed_attention"
+        # (huggingface/transformers#48974), which 5.12's layer-type
+        # validation rejects.
+        kwargs["layer_types"] = [
+            "deepseek_sparse_attention" if t == "indexed_attention" else t
+            for t in kwargs["layer_types"] or ["deepseek_sparse_attention"] * n
+        ]
+        if kwargs["mlp_layer_types"] is None:
+            kwargs["mlp_layer_types"] = ["dense"] * min(1, n) + [
+                "sparse"
+            ] * max(n - 1, 0)
+        if kwargs["indexer_types"] is None:
+            kwargs["indexer_types"] = [
+                "full" if i == 0 or (i - 1) % 4 == 0 else "shared"
+                for i in range(n)
+            ]
+        kwargs["qk_head_dim"] = (
+            kwargs["qk_nope_head_dim"] + kwargs["qk_rope_head_dim"]
+        )
+        kwargs["head_dim"] = kwargs["qk_rope_head_dim"]
+        super().__init__(**kwargs)
+        # The base init pops generation parameters; the reference declares it.
+        self.use_cache = kwargs["use_cache"]
+
+
+AutoConfig.register("hy_v4", HYV4HFConfig, exist_ok=True)
+
+# Use the native FlintConfig if a transformers release ships one;
+# otherwise this passthrough shim covers the "flint" model_type.
+try:
+    from transformers import FlintConfig as FlintHFConfig
+except ImportError:
+
+    class FlintHFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Configuration shim for the ``flint`` model type.
+
+        Every field comes from the repo's config.json, and unknown
+        keyword arguments become attributes on ``PretrainedConfig``, so
+        no field mapping is needed.
+        """
+
+        model_type = "flint"
+
+
+AutoConfig.register("flint", FlintHFConfig, exist_ok=True)

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import math
 import types
 from collections.abc import Callable
@@ -26,7 +27,11 @@ from typing import Any
 import torch
 
 # Import bench utilities from Bazel dependency (bench_utils target)
-from bench import bench_kineto_with_cupti_warmup, setup_ninja_path
+from bench import (
+    bench_kineto_with_cupti_warmup,
+    setup_cutlass_dsl,
+    setup_ninja_path,
+)
 from bencher_utils import Bench, ThroughputMeasure
 
 # MAX imports
@@ -37,9 +42,10 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
 
-# Try importing external libraries (installed via Bazel pycross_wheel_library)
+# Try importing external baselines (resolved from the pip lock)
 _flashinfer: types.ModuleType | None
 try:
+    setup_cutlass_dsl()
     setup_ninja_path()  # Required for FlashInfer JIT compilation
     import flashinfer as _flashinfer
 except ImportError as e:
@@ -48,32 +54,15 @@ except ImportError as e:
 
 _flash_attn_varlen_func: Callable[..., Any] | None
 try:
-    # The pure Python flash-attention wheel's __init__.py tries to import
-    # flash_attn_2_cuda (CUDA extension not in pure wheel).
-    # Bypass this by creating a stub flash_attn module with valid __path__
-    # but no imports.
-    import importlib.util
-    import sys
-
-    flash_attn_spec = importlib.util.find_spec("flash_attn")
-    if (
-        flash_attn_spec is None
-        or flash_attn_spec.submodule_search_locations is None
-    ):
-        raise ImportError("flash_attn package not found")
-
-    # Create stub module with valid __path__ but no imports
-    flash_attn_stub = types.ModuleType("flash_attn")
-    flash_attn_stub.__path__ = list(flash_attn_spec.submodule_search_locations)
-    flash_attn_stub.__file__ = flash_attn_spec.origin
-    sys.modules["flash_attn"] = flash_attn_stub
-
-    # Now import the cute subpackage and interface
-    from flash_attn.cute.interface import (
-        flash_attn_varlen_func as _flash_attn_varlen_func,
-    )
+    # Upstream ships the FA4 cute kernels as their own `flash-attn-4`
+    # distribution, which installs `flash_attn.cute` under a PEP 420 namespace
+    # package. There is no `flash_attn/__init__.py`, so importing this does not
+    # drag in flash-attention 2's `flash_attn_2_cuda` extension.
+    _flash_attn_varlen_func = importlib.import_module(
+        "flash_attn.cute.interface"
+    ).flash_attn_varlen_func
 except ImportError as e:
-    print(f"Error: flash_attn not available: {e}")
+    print(f"Error: flash-attn-4 not available: {e}")
     _flash_attn_varlen_func = None
 
 
@@ -434,10 +423,13 @@ def bench_tridao(
         torch.cuda.synchronize()
         return None
 
-    # Use bench_kineto_with_cupti_warmup to handle CUPTI warmup
+    # Match on the cute kernel's class name alone. The full symbol is
+    # `kernel_cutlass_kernel_<module path><ClassName>`, and the prefix is
+    # nvidia-cutlass-dsl's, so it moves when that pin moves; the class name is
+    # FA4's and is unique among the kernels this call launches.
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
-        kernel_names="kernel_cutlass_kernel_flash_attncuteflash_fwd_sm100FlashAttentionForwardSm100",
+        kernel_names="FlashAttentionForwardSm100",
         num_tests=num_iters,
         suppress_kineto_output=True,
         flush_l2=True,

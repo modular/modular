@@ -150,7 +150,7 @@ def test_view_fuses_into_existing_prologue(session: InferenceSession) -> None:
 
     Regression test for the `LoopInvariantViewMotion` fix that let it hoist
     an index-transform chain out of a `map.iter.prologue`, not just a
-    `map.iter.foreach.body` (see
+    `map.iter.elementwise.body` (see
     GraphCompiler/test/mo-opt/MAPDialect/Transforms/LoopInvariantViewMotion/
     loop-invariant-view-motion-prologue.mlir), and for the `EmitMojo` fix
     letting a fused prologue/epilogue capture a view (not just a plain

@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "modular_cc_library")
+
+# gazelle:default_visibility //SDK:consumers
+
+package(default_visibility = ["//SDK:consumers"])
+
+package_group(
+    name = "consumers",
+    packages = [
+        "//MLRT/...",
+        "//Target/...",
+        "//plugins/...",
+    ],
+)
+
+modular_cc_library(
+    name = "HAL",
+    hdrs = glob([
+        "include/HAL/*.h",
+    ]) + [
+        "include/HAL/M_driver_hal_symbols.inc",
+    ],
+    includes = ["include"],
+    # HAL headers define a pure C interface; run clang-tidy as C so C++-only
+    # constructs (e.g. <cstddef>, enum class) are caught.
+    tags = ["clang-tidy-is-c-tu"],
+)

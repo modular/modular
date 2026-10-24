@@ -51,7 +51,7 @@ comptime K3_K = 16
 def fill_row_major[
     dtype: DType
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     batch_size: Int,
     n: Int,
     fill: String,

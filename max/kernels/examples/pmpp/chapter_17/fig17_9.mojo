@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import List
 from spmv_utils import CSRMatrix, generate_sparse_matrix, spmv_cpu, verify
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 
 def spmv_csr_kernel(
     csrMatrix: CSRMatrix,
-    x: UnsafePointer[Float32, ImmutAnyOrigin],
-    y: UnsafePointer[Float32, MutAnyOrigin],
+    x: ImmPointer[Float32, ImmutAnyOrigin],
+    y: MutPointer[Float32, MutAnyOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
     if row < csrMatrix.numRows:
@@ -72,11 +72,11 @@ def main() raises:
     spmv_cpu(rows, cols, h_row_idx, h_col_idx, h_values, h_x, h_y_ref)
 
     # Prepare host pointers
-    var h_rowPtrs_ptr = alloc[UInt32](rows + 1)
-    var h_colIdx_ptr = alloc[UInt32](numNonzeros)
-    var h_value_ptr = alloc[Float32](numNonzeros)
-    var h_x_ptr = alloc[Float32](cols)
-    var h_y_ptr = alloc[Float32](rows)
+    var h_rowPtrs_ptr = unsafe_alloc[UInt32](rows + 1)
+    var h_colIdx_ptr = unsafe_alloc[UInt32](numNonzeros)
+    var h_value_ptr = unsafe_alloc[Float32](numNonzeros)
+    var h_x_ptr = unsafe_alloc[Float32](cols)
+    var h_y_ptr = unsafe_alloc[Float32](rows)
 
     for i in range(rows + 1):
         h_rowPtrs_ptr[i] = h_rowPtrs[i]
@@ -104,11 +104,11 @@ def main() raises:
     ctx.enqueue_copy(d_x_buf, h_x_ptr)
 
     # Initialize y on device to 0
-    var h_y_zeros = alloc[Float32](rows)
+    var h_y_zeros = unsafe_alloc[Float32](rows)
     for i in range(rows):
         h_y_zeros[i] = 0.0
     ctx.enqueue_copy(d_y_buf, h_y_zeros)
-    h_y_zeros.free()
+    h_y_zeros.unsafe_free()
 
     var d_csrMatrix = CSRMatrix(
         rows,
@@ -138,8 +138,8 @@ def main() raises:
     else:
         print("CSR Kernel Test Failed!")
 
-    h_rowPtrs_ptr.free()
-    h_colIdx_ptr.free()
-    h_value_ptr.free()
-    h_x_ptr.free()
-    h_y_ptr.free()
+    h_rowPtrs_ptr.unsafe_free()
+    h_colIdx_ptr.unsafe_free()
+    h_value_ptr.unsafe_free()
+    h_x_ptr.unsafe_free()
+    h_y_ptr.unsafe_free()

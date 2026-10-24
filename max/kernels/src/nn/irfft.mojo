@@ -30,7 +30,7 @@ from _cufft.types import Type
 from _cufft.utils import check_error
 from std.complex import ComplexFloat32
 from max.gpu.host import DeviceContext
-from max.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host import CUDA
 from layout import TileTensor, coord_to_index_list
 
 
@@ -71,9 +71,7 @@ def _get_fft_workarea(
         device_ptr.unsafe_bitcast[NoneType](),
     )
 
-    return device_ptr.unsafe_bitcast[NoneType]().unsafe_origin_cast[
-        MutUntrackedOrigin
-    ]()
+    return device_ptr.unsafe_bitcast[NoneType]()
 
 
 def _get_fft_plan[

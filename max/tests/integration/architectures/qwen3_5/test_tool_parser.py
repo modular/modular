@@ -12,8 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import json
+import time
+from typing import Any
 
 import pytest
+from max import _xgrammar as xgrammar
 from max.pipelines.architectures.qwen3_5.tool_parser import Qwen3_5ToolParser
 from max.pipelines.modeling.types import (
     ParsedToolCall,
@@ -403,3 +406,345 @@ def test_reset_clears_state() -> None:
     content, tool_deltas = _split_content_and_calls(out)
     assert content == "hi"
     assert tool_deltas == []
+
+
+# --- Schema-aware argument decoding -----------------------------------------
+
+_SCHEMAS: dict[str, dict[str, Any]] = {
+    "lookup": {
+        "type": "object",
+        "$defs": {"Zip": {"type": "string"}},
+        "properties": {
+            "zip_code": {"type": "string"},
+            "ref_zip": {"$ref": "#/$defs/Zip"},
+            "count": {"type": "integer"},
+            "ratio": {"type": "number"},
+            "flag": {"type": "boolean"},
+            "note": {"type": ["string", "null"]},
+            "either": {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "version": {"const": "2.0"},
+            "level": {"enum": ["1", "2"]},
+        },
+    }
+}
+
+
+def _call(**params: str) -> str:
+    body = "".join(
+        f"<parameter={k}>\n{v}\n</parameter>\n" for k, v in params.items()
+    )
+    return f"<tool_call>\n<function=lookup>\n{body}</function>\n</tool_call>"
+
+
+def _complete_args(
+    response: str, schemas: dict[str, dict[str, Any]] | None
+) -> dict[str, Any]:
+    parser = Qwen3_5ToolParser()
+    if schemas is not None:
+        parser.set_tool_schemas(schemas)
+    (call,) = parser.parse_complete(response).tool_calls
+    args = json.loads(call.arguments)
+    assert isinstance(args, dict)
+    return args
+
+
+def _streamed_args(
+    response: str, schemas: dict[str, dict[str, Any]] | None
+) -> dict[str, Any]:
+    parser = Qwen3_5ToolParser()
+    if schemas is not None:
+        parser.set_streaming_tool_schemas(schemas)
+    pieces: list[str] = []
+    # One character at a time: the hardest chunking for the streaming path.
+    for ch in response:
+        for delta in parser.parse_delta(ch) or []:
+            if delta.arguments:
+                pieces.append(delta.arguments)
+    args = json.loads("".join(pieces))
+    assert isinstance(args, dict)
+    return args
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_string_typed_values_that_look_like_literals_stay_strings(
+    decode: Any,
+) -> None:
+    response = _call(
+        zip_code="10001", ref_zip="00501", note="None", count="7", flag="True"
+    )
+
+    assert decode(response, _SCHEMAS) == {
+        "zip_code": "10001",  # a number-looking string for a string field
+        "ref_zip": "00501",  # $ref to a string schema
+        "note": None,  # string | null: "None" is the null literal here
+        "count": 7,  # integer field: still decoded as an integer
+        "flag": True,  # boolean field: still decoded as a boolean
+    }
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_union_types_keep_a_scalar_only_when_its_type_is_allowed(
+    decode: Any,
+) -> None:
+    schemas = _SCHEMAS
+    # string | integer: "7" is a valid integer, "7.5" is not (so it is text).
+    assert decode(_call(either="7"), schemas) == {"either": 7}
+    assert decode(_call(either="7.5"), schemas) == {"either": "7.5"}
+    # string | null: a number-looking value is not null, so it stays text.
+    assert decode(_call(note="10001"), schemas) == {"note": "10001"}
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_string_value_is_returned_verbatim(decode: Any) -> None:
+    response = _call(zip_code="  padded  ")
+
+    assert decode(response, _SCHEMAS) == {"zip_code": "  padded  "}
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_container_values_are_decoded_from_json(decode: Any) -> None:
+    response = _call(tags='["a", "007", "None"]')
+
+    assert decode(response, _SCHEMAS) == {"tags": ["a", "007", "None"]}
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_without_schemas_decoding_is_best_effort(decode: Any) -> None:
+    response = _call(zip_code="10001", flag="True", note="None")
+
+    assert decode(response, None) == {
+        "zip_code": 10001,
+        "flag": True,
+        "note": None,
+    }
+
+
+def test_unknown_function_or_parameter_falls_back_to_best_effort() -> None:
+    other = {"other_tool": _SCHEMAS["lookup"]}
+    assert _complete_args(_call(zip_code="10001"), other) == {"zip_code": 10001}
+    assert _complete_args(_call(unlisted="5"), _SCHEMAS) == {"unlisted": 5}
+
+
+def test_reset_drops_schemas_from_the_previous_request() -> None:
+    parser = Qwen3_5ToolParser()
+    parser.set_tool_schemas(_SCHEMAS)
+    parser.reset()
+
+    (call,) = parser.parse_complete(_call(zip_code="10001")).tool_calls
+
+    assert json.loads(call.arguments) == {"zip_code": 10001}
+
+
+# --- Constrained-decoding grammar (``generate_tool_call_grammar``) ----------
+
+_WEATHER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        },
+    }
+]
+# One call exactly as the chat template renders it, trailing newline included.
+_WEATHER_CALL = (
+    "<tool_call>\n<function=get_weather>\n"
+    "<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>\n"
+)
+
+
+# A byte-level vocabulary: one token per byte value, plus one stop token.
+_STOP_TOKEN = 256
+_TOKENIZER_INFO = xgrammar.TokenizerInfo(
+    [bytes([i]) for i in range(256)] + [b"</s>"],
+    vocab_type=xgrammar.VocabType.RAW,
+    vocab_size=257,
+    stop_token_ids=[_STOP_TOKEN],
+)
+
+
+def _accepts(
+    tool_choice: str | dict[str, Any], text: str, **kwargs: Any
+) -> bool:
+    """Whether the grammar accepts ``text`` and could end right after it."""
+    grammar = Qwen3_5ToolParser.generate_tool_call_grammar(
+        tools=_WEATHER_TOOLS, tool_choice=tool_choice, **kwargs
+    )
+    compiled = xgrammar.GrammarCompiler(_TOKENIZER_INFO).compile_structural_tag(
+        xgrammar.StructuralTag.model_validate_json(grammar)
+    )
+    matcher = xgrammar.GrammarMatcher(compiled)
+    if not all(matcher.accept_token(byte) for byte in text.encode()):
+        return False
+    return bool(matcher.is_completed())
+
+
+def test_required_grammar_can_stop_after_a_call_with_trailing_newline() -> None:
+    # A mandatory "\n" separator read the template's trailing newline as
+    # "another call must follow", so a forced call never ended.
+    assert _accepts("required", _WEATHER_CALL)
+
+
+def test_required_grammar_allows_several_calls() -> None:
+    assert _accepts("required", _WEATHER_CALL * 2)
+
+
+def test_required_grammar_is_calls_only() -> None:
+    assert not _accepts("required", "")  # at least one call
+    assert not _accepts("required", "Sure!\n" + _WEATHER_CALL)
+    assert not _accepts("required", _WEATHER_CALL + "Thanks.")
+
+
+def test_auto_grammar_allows_plain_text_and_calls() -> None:
+    assert _accepts("auto", "Hello there.")
+    assert _accepts("auto", "Let me check.\n" + _WEATHER_CALL)
+
+
+def test_named_tool_choice_forces_exactly_that_call() -> None:
+    named = {"type": "function", "function": {"name": "get_weather"}}
+
+    # A forced call is a single tag, so the call ends at ``</tool_call>``.
+    assert _accepts(named, _WEATHER_CALL.rstrip("\n"))
+    assert not _accepts(named, "Hello there.")
+
+
+def test_required_grammar_with_response_format_accepts_either() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    }
+
+    assert _accepts("required", _WEATHER_CALL, response_format_schema=schema)
+    assert _accepts(
+        "required", '{"answer":"42"}', response_format_schema=schema
+    )
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_const_and_enum_values_take_the_type_of_the_pinned_value(
+    decode: Any,
+) -> None:
+    # Neither schema declares a ``type``, but the pinned values are strings.
+    response = _call(version="2.0", level="1")
+
+    assert decode(response, _SCHEMAS) == {"version": "2.0", "level": "1"}
+
+
+def test_self_referencing_schema_does_not_crash_and_falls_back() -> None:
+    # N = string | N: a client-supplied cycle through a union must not recurse
+    # without bound (it used to raise RecursionError and drop the tool call).
+    cyclic = {
+        "lookup": {
+            "type": "object",
+            "$defs": {
+                "N": {"anyOf": [{"type": "string"}, {"$ref": "#/$defs/N"}]}
+            },
+            "properties": {"x": {"$ref": "#/$defs/N"}},
+        }
+    }
+
+    assert _complete_args(_call(x="10001"), cyclic) == {"x": 10001}
+
+
+@pytest.mark.parametrize("keyword", ["anyOf", "oneOf", "allOf"])
+@pytest.mark.parametrize("branches", [2, 3, 5])
+def test_wide_self_referencing_schema_is_cheap(
+    keyword: str, branches: int
+) -> None:
+    # A client-supplied cycle with several branches used to be walked
+    # branches**depth times; it must stay a handful of visits.
+    cyclic = {
+        "lookup": {
+            "type": "object",
+            "$defs": {"N": {keyword: [{"$ref": "#/$defs/N"}] * branches}},
+            "properties": {"x": {"$ref": "#/$defs/N"}},
+        }
+    }
+
+    start = time.monotonic()
+    args = _complete_args(_call(x="10001"), cyclic)
+
+    assert time.monotonic() - start < 1.0
+    assert args == {"x": 10001}
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_all_of_is_an_intersection_not_a_union(decode: Any) -> None:
+    schemas = {
+        "lookup": {
+            "type": "object",
+            "properties": {
+                # One typed branch and one untyped branch: still a string.
+                "zip_code": {
+                    "allOf": [{"type": "string"}, {"minLength": 1}],
+                },
+                "n": {"allOf": [{"type": "integer"}, {"minimum": 0}]},
+            },
+        }
+    }
+
+    assert decode(_call(zip_code="10001", n="7"), schemas) == {
+        "zip_code": "10001",
+        "n": 7,
+    }
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_nullable_string_value_is_returned_verbatim(decode: Any) -> None:
+    assert decode(_call(note="  padded  "), _SCHEMAS) == {"note": "  padded  "}
+
+
+def test_grammar_rewrite_does_not_touch_user_json_schemas() -> None:
+    from max.pipelines.architectures.qwen3_5.tool_parser import (
+        _without_mandatory_call_separator,
+    )
+
+    # A user schema whose const happens to look like the node being rewritten.
+    lookalike = {"type": "tags_with_separator", "separator": "\n"}
+    node = {
+        "type": "tag",
+        "content": {"type": "json_schema", "json_schema": {"const": lookalike}},
+        "end": "</tool_call>",
+    }
+
+    assert _without_mandatory_call_separator(node) == node
+
+
+def test_required_grammar_demands_the_template_trailing_newline() -> None:
+    # Each call's end tag carries the newline the chat template writes, so a
+    # call without it is not a complete required call.
+    assert not _accepts("required", _WEATHER_CALL.rstrip("\n"))
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_long_enumeration_of_labelled_choices_is_still_typed(
+    decode: Any,
+) -> None:
+    # A country-list style ``oneOf`` of ``{const, title}`` choices is far more
+    # than a handful of nodes and must still resolve to a string type.
+    choices = [
+        {"const": f"{n:03d}", "title": f"choice {n}"} for n in range(300)
+    ]
+    schemas = {
+        "lookup": {
+            "type": "object",
+            "properties": {"code": {"oneOf": choices}},
+        }
+    }
+
+    assert decode(_call(code="042"), schemas) == {"code": "042"}
+
+
+@pytest.mark.parametrize("decode", [_complete_args, _streamed_args])
+def test_enum_and_const_values_ignore_padding_whitespace(decode: Any) -> None:
+    # The grammar allows whitespace around a bare value; for a pinned value
+    # it is formatting, not content (a free string stays verbatim).
+    response = _call(level="\t\t 1 \n\t", version="  2.0\n")
+
+    assert decode(response, _SCHEMAS) == {"level": "1", "version": "2.0"}

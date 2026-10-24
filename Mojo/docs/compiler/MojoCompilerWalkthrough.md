@@ -1279,7 +1279,6 @@ Target Level (after LowerToLLVM)
 
 | Pass                   | Description                                |
 |------------------------|--------------------------------------------|
-| `OutlineClosures`      | Extract closure bodies                     |
 | `SROA`                 | Scalar Replacement of Aggregates           |
 | `Mem2Reg`              | Promote memory to registers                |
 | `Canonicalizer`        | Apply rewrite patterns                     |
@@ -1301,7 +1300,6 @@ Target Level (after LowerToLLVM)
 | Pass                          | Description                        |
 |-------------------------------|------------------------------------|
 | `EliminateDuplicateFunctions` | Deduplicate identical functions    |
-| `ResolveCompilerPromises`     | Resolve deferred type computations |
 | `LowerArgConventions`         | Handle arg conventions             |
 | `LowerCallingConventions`     | Handle calling conventions         |
 | `AutomaticInline`             | Aggressive inlining                |

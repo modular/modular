@@ -30,6 +30,7 @@ from max.nn import LayerList, Linear
 from max.pipelines.architectures.deepseekV4.deepseekV4 import (
     DeepseekV4,
     DeepseekV4Block,
+    DeepseekV4DSpark,
     DSparkBlock,
 )
 from max.pipelines.architectures.deepseekV4.layers.moe import (
@@ -104,7 +105,6 @@ def _config() -> DeepseekV4Config:
         quant_config=quant_config,
         dspark_target_layer_ids=_DSPARK_TARGETS,
         dspark_markov_rank=128,
-        dspark_stages=True,
     )
 
 
@@ -112,109 +112,115 @@ def _shape(weight: Weight) -> tuple[int, ...]:
     return tuple(int(d) for d in weight.shape)
 
 
+# The trunk, its per-device copies, and the same for the DSpark stages.
+_Models = tuple[
+    DeepseekV4, list[DeepseekV4], DeepseekV4DSpark, list[DeepseekV4DSpark]
+]
+
+
 @pytest.fixture(scope="module")
-def models() -> Iterator[tuple[DeepseekV4, list[DeepseekV4]]]:
-    source = DeepseekV4(_config(), DeviceRef.CPU())
+def models() -> Iterator[_Models]:
+    config = _config()
+    trunk = DeepseekV4(config, DeviceRef.CPU())
+    stages = DeepseekV4DSpark(config, DeviceRef.CPU())
     # Loading names every weight by its path, which the shards' graph values
     # need to stay distinct; the values themselves are never read.
-    source.load_state_dict(source.state_dict(auto_initialize=True))
+    trunk.load_state_dict(trunk.state_dict(auto_initialize=True))
+    stages.load_state_dict(stages.state_dict(auto_initialize=True))
     devices = [DeviceRef.GPU(i) for i in range(_N_DEV)]
-    replicas = source.tensor_parallel_replicas(devices)
+    trunks = trunk.tensor_parallel_replicas(devices)
+    stage_copies = stages.tensor_parallel_replicas(devices)
     # A shard's shape is a slice of its parent's value, which needs a graph;
     # nothing is built into it.
     with Graph("deepseekV4_tp_shards"):
-        yield source, replicas
+        yield trunk, trunks, stages, stage_copies
 
 
-def _blocks(model: DeepseekV4) -> list[DeepseekV4Block]:
+def _blocks(
+    trunk: DeepseekV4, stages: DeepseekV4DSpark
+) -> list[DeepseekV4Block]:
     """The trunk's blocks, then the DSpark stages, which split the same way."""
     blocks = []
-    for layer in [*model.layers, *model.mtp]:
+    for layer in [*trunk.layers, *stages.mtp]:
         assert isinstance(layer, DeepseekV4Block)
         blocks.append(layer)
     return blocks
 
 
-def test_attention_splits_heads(
-    models: tuple[DeepseekV4, list[DeepseekV4]],
-) -> None:
-    source, replicas = models
-    for rank, replica in enumerate(replicas):
-        for src, rep in zip(_blocks(source), _blocks(replica), strict=True):
-            s, r = src.attn, rep.attn
-            assert r.n_heads == _HEADS // _N_DEV
-            assert r.o_groups == _O_GROUPS // _N_DEV
-            out, inp = _shape(s.wq_b.weight)
-            assert _shape(r.wq_b.weight) == (out // _N_DEV, inp)
-            out, inp = _shape(s.wo_a.weight)
-            assert _shape(r.wo_a.weight) == (out // _N_DEV, inp)
-            out, inp = _shape(s.wo_b.weight)
-            assert _shape(r.wo_b.weight) == (out, inp // _N_DEV)
-            assert _shape(r.attn_sink) == (_HEADS // _N_DEV,)
-            # The latent side is shared by every head.
-            assert _shape(r.wq_a.weight) == _shape(s.wq_a.weight)
-            assert _shape(r.wkv.weight) == _shape(s.wkv.weight)
-            assert r.wq_b.weight.device == DeviceRef.GPU(rank)
+def _block_pairs(
+    models: _Models,
+) -> Iterator[tuple[int, DeepseekV4Block, DeepseekV4Block]]:
+    """Each device's rank, with every source block and its copy there."""
+    trunk, trunks, stages, stage_copies = models
+    for rank, (trunk_copy, stages_copy) in enumerate(
+        zip(trunks, stage_copies, strict=True)
+    ):
+        for src, rep in zip(
+            _blocks(trunk, stages),
+            _blocks(trunk_copy, stages_copy),
+            strict=True,
+        ):
+            yield rank, src, rep
 
 
-def test_indexer_splits_heads(
-    models: tuple[DeepseekV4, list[DeepseekV4]],
-) -> None:
-    source, replicas = models
-    for replica in replicas:
-        for src, rep in zip(_blocks(source), _blocks(replica), strict=True):
-            if src.attn.indexer is None:
-                assert rep.attn.indexer is None
-                continue
-            s, r = src.attn.indexer, rep.attn.indexer
-            assert r is not None
-            assert r.n_heads == _INDEX_HEADS // _N_DEV
-            for name in ("wq_b", "weights_proj"):
-                out, inp = _shape(getattr(s, name).weight)
-                assert _shape(getattr(r, name).weight) == (out // _N_DEV, inp)
+def test_attention_splits_heads(models: _Models) -> None:
+    for rank, src, rep in _block_pairs(models):
+        s, r = src.attn, rep.attn
+        assert r.n_heads == _HEADS // _N_DEV
+        assert r.o_groups == _O_GROUPS // _N_DEV
+        out, inp = _shape(s.wq_b.weight)
+        assert _shape(r.wq_b.weight) == (out // _N_DEV, inp)
+        out, inp = _shape(s.wo_a.weight)
+        assert _shape(r.wo_a.weight) == (out // _N_DEV, inp)
+        out, inp = _shape(s.wo_b.weight)
+        assert _shape(r.wo_b.weight) == (out, inp // _N_DEV)
+        assert _shape(r.attn_sink) == (_HEADS // _N_DEV,)
+        # The latent side is shared by every head.
+        assert _shape(r.wqa_wkv.weight) == _shape(s.wqa_wkv.weight)
+        assert r.wq_b.weight.device == DeviceRef.GPU(rank)
 
 
-def test_routed_experts_split_whole_experts(
-    models: tuple[DeepseekV4, list[DeepseekV4]],
-) -> None:
-    source, replicas = models
+def test_indexer_splits_heads(models: _Models) -> None:
+    for _, src, rep in _block_pairs(models):
+        if src.attn.indexer is None:
+            assert rep.attn.indexer is None
+            continue
+        s, r = src.attn.indexer, rep.attn.indexer
+        assert r is not None
+        assert r.n_heads == _INDEX_HEADS // _N_DEV
+        for name in ("wq_b", "weights_proj"):
+            out, inp = _shape(getattr(s, name).weight)
+            assert _shape(getattr(r, name).weight) == (out // _N_DEV, inp)
+
+
+def test_routed_experts_split_whole_experts(models: _Models) -> None:
     local = _EXPERTS // _N_DEV
-    for rank, replica in enumerate(replicas):
-        for src, rep in zip(_blocks(source), _blocks(replica), strict=True):
-            assert rep.ffn.local_experts == range(
-                rank * local, (rank + 1) * local
+    for rank, src, rep in _block_pairs(models):
+        assert rep.ffn.local_experts == range(rank * local, (rank + 1) * local)
+        s, r = src.ffn.experts, rep.ffn.experts
+        assert isinstance(s, DeepseekV4RoutedExperts)
+        assert isinstance(r, DeepseekV4RoutedExperts)
+        assert r.n_experts == local
+        assert r.expert_offset == rank * local
+        for proj in ("gate_up_proj", "down_proj"):
+            for name in ("weight", "weight_scale"):
+                full = _shape(getattr(getattr(s, proj), name))
+                part = _shape(getattr(getattr(r, proj), name))
+                assert part == (full[0] // _N_DEV, *full[1:])
+        # The shared expert and the gate are replicated.
+        for name in ("w13", "w2"):
+            assert _shape(getattr(rep.ffn.shared_experts, name).weight) == (
+                _shape(getattr(src.ffn.shared_experts, name).weight)
             )
-            s, r = src.ffn.experts, rep.ffn.experts
-            assert isinstance(s, DeepseekV4RoutedExperts)
-            assert isinstance(r, DeepseekV4RoutedExperts)
-            assert r.n_experts == local
-            assert r.expert_offset == rank * local
-            for proj in ("gate_up_proj", "down_proj"):
-                for name in ("weight", "weight_scale"):
-                    full = _shape(getattr(getattr(s, proj), name))
-                    part = _shape(getattr(getattr(r, proj), name))
-                    assert part == (full[0] // _N_DEV, *full[1:])
-            # The shared expert and the gate are replicated.
-            for name in ("w1", "w2", "w3"):
-                assert _shape(
-                    getattr(rep.ffn.shared_experts, name).weight
-                ) == _shape(getattr(src.ffn.shared_experts, name).weight)
 
 
-def test_fp8_linears_keep_their_class(
-    models: tuple[DeepseekV4, list[DeepseekV4]],
-) -> None:
-    source, replicas = models
-    for replica in replicas:
-        for src, rep in zip(_blocks(source), _blocks(replica), strict=True):
-            for name in ("wq_a", "wq_b", "wkv", "wo_b"):
-                assert isinstance(getattr(src.attn, name), DeepseekV4Fp8Linear)
-                assert isinstance(getattr(rep.attn, name), DeepseekV4Fp8Linear)
-                assert getattr(rep.attn, name).weight.dtype == (
-                    DType.float8_e4m3fn
-                )
-            # ``wo_a`` is bf16 in the reference and host-dequantized.
-            assert type(rep.attn.wo_a) is Linear
+def test_fp8_linears_keep_their_class(models: _Models) -> None:
+    for _, src, rep in _block_pairs(models):
+        # ``wo_a`` is stored fp8 too and dequantized in the graph.
+        for name in ("wqa_wkv", "wq_b", "wo_a", "wo_b"):
+            assert isinstance(getattr(src.attn, name), DeepseekV4Fp8Linear)
+            assert isinstance(getattr(rep.attn, name), DeepseekV4Fp8Linear)
+            assert getattr(rep.attn, name).weight.dtype == (DType.float8_e4m3fn)
 
 
 @pytest.mark.parametrize("quantized", [True, False])
@@ -227,11 +233,7 @@ def test_expert_projection_formats(quantized: bool) -> None:
         native_routed_experts=False,
     )
     moe = DeepseekV4MoE(config, 0, DeviceRef.CPU())
-    shared = (
-        moe.shared_experts.w1,
-        moe.shared_experts.w2,
-        moe.shared_experts.w3,
-    )
+    shared = (moe.shared_experts.w13, moe.shared_experts.w2)
     for linear in shared:
         assert type(linear) is (DeepseekV4Fp8Linear if quantized else Linear)
     assert isinstance(moe.experts, LayerList)
@@ -242,14 +244,12 @@ def test_expert_projection_formats(quantized: bool) -> None:
             assert linear.weight.dtype == DType.bfloat16
 
 
-def test_dspark_ends_are_replicated(
-    models: tuple[DeepseekV4, list[DeepseekV4]],
-) -> None:
-    source, replicas = models
-    first, last = source.mtp[0], source.mtp[-1]
+def test_dspark_ends_are_replicated(models: _Models) -> None:
+    _, _, stages, stage_copies = models
+    first, last = stages.mtp[0], stages.mtp[-1]
     assert isinstance(first, DSparkBlock) and isinstance(last, DSparkBlock)
-    for rank, replica in enumerate(replicas):
-        rep_first, rep_last = replica.mtp[0], replica.mtp[-1]
+    for rank, copy in enumerate(stage_copies):
+        rep_first, rep_last = copy.mtp[0], copy.mtp[-1]
         assert isinstance(rep_first, DSparkBlock)
         assert isinstance(rep_last, DSparkBlock)
         assert isinstance(rep_first.main_proj, DeepseekV4Fp8Linear)

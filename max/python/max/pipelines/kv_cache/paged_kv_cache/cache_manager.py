@@ -204,6 +204,11 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 "PagedKVCacheManager cannot hold a recurrent state leaf; use"
                 " JengaKVCacheManager, whose slab the state shares."
             )
+        if any(leaf.group_id.is_scratch() for leaf in params.leaves().values()):
+            raise ValueError(
+                "PagedKVCacheManager cannot hold a scratch leaf; use"
+                " JengaKVCacheManager."
+            )
 
         connector_type = params.kv_connector_config.type
         if connector_type != KVConnectorType.null:
@@ -345,7 +350,9 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             block_hashes
         )
 
-    def alloc(self, ctx: TextContext) -> KVTransfer:
+    def alloc(
+        self, ctx: TextContext, *, defer_lookup: bool = False
+    ) -> KVTransfer:
         """Allocates blocks for a request.
 
         When prefix caching is enabled, some of the allocated blocks may be
@@ -355,6 +362,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         Args:
             ctx: The text generation context for the request. The request must
                 already be assigned to a replica via ``claim``.
+            defer_lookup: Unused, since this manager has no connector to ask.
 
         Returns:
             An already-complete :class:`CompletedTransfer`: this manager has no

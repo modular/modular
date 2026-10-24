@@ -26,7 +26,8 @@
 #      value types.
 #      -> test_list_append, test_dict_insert
 #   4. Collections take no negative indexes; `len(x) - 1` reaches the last
-#      element, and a slice can start at `len(x) - 2`.
+#      element, and a slice from `len(x) - 2` holds the last two elements
+#      (80, 45).
 #      -> test_end_relative_index
 #   5. `Variant` works as the element type of a collection that holds a known
 #      set of types.

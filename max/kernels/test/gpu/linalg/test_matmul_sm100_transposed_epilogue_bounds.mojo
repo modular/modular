@@ -29,6 +29,7 @@ from std.sys import size_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from internal_utils import assert_almost_equal
 from std.random import rand, seed
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -58,9 +59,9 @@ def test_transposed_epilogue_row_straddle[
     transpose_b: Bool = True,
     swapAB: Bool = True,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         t"in/out=({a_type},{b_type},{c_type}) shape=({M},{N},{K})"
@@ -85,10 +86,10 @@ def test_transposed_epilogue_row_straddle[
     var b_size = N * K if transpose_b else K * N
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[c_type]](c_size)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
@@ -109,7 +110,7 @@ def test_transposed_epilogue_row_straddle[
         _dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        c_tensor.store[width=width](idx, val.cast[c_type]())
+        c_tensor.store(idx, val.cast[c_type]())
 
     seed(1234)
     rand(a_host.as_span())
@@ -170,10 +171,10 @@ def test_transposed_epilogue_row_straddle[
 
     print("=== TEST PASSED ===")
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_host_ref_ptr.unsafe_free()
     _ = a_device^
     _ = b_device^
     _ = c_device^

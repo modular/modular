@@ -21,7 +21,7 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
-from .. import DeviceBuffer
+from max.gpu.host import DeviceBuffer
 from std.sys import size_of
 
 from std.utils import IndexList, StaticTuple

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
 from std.math import ceildiv
 from std.math.uutils import udivmod, umod
 
@@ -23,10 +22,12 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from std.memory.alloc import unsafe_alloc
 from layout import (
     Coord,
     TileTensor,
     TensorLayout,
+    TensorEngine,
     DefaultEngine,
     row_major,
     stack_allocation,
@@ -41,7 +42,6 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from linalg.utils import elementwise_epilogue_type
 
 from std.utils import StaticTuple
 from std.utils.numerics import isnan
@@ -78,26 +78,14 @@ def sgemm_warp_tiling_kernel[
     TM: Int,
     TN: Int,
     NUM_THREADS: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    *,
+    CEngine: TensorEngine,
+    AEngine: TensorEngine,
+    BEngine: TensorEngine,
 ](
-    mat_c: TileTensor[
-        c_type,
-        CLayoutType,
-        MutAnyOrigin,
-        Engine=DefaultEngine[element_width=1],
-    ],
-    mat_a: TileTensor[
-        a_type,
-        ALayoutType,
-        MutAnyOrigin,
-        Engine=DefaultEngine[element_width=1],
-    ],
-    mat_b: TileTensor[
-        b_type,
-        BLayoutType,
-        MutAnyOrigin,
-        Engine=DefaultEngine[element_width=1],
-    ],
+    mat_c: TileTensor[c_type, CLayoutType, MutAnyOrigin, Engine=CEngine],
+    mat_a: TileTensor[a_type, ALayoutType, MutAnyOrigin, Engine=AEngine],
+    mat_b: TileTensor[b_type, BLayoutType, MutAnyOrigin, Engine=BEngine],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ) where (a_type.is_numeric() and b_type.is_numeric()):
@@ -134,12 +122,14 @@ def sgemm_warp_tiling_kernel[
     )
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a._storage + c_row * BM * K
-    var bb_ptr = mat_b._storage + c_col * BN
+    var aa_ptr = mat_a.ptr.unsafe_offset(c_row * BM * K)
+    var bb_ptr = mat_b.ptr.unsafe_offset(c_col * BN)
     # Move C_ptr to warp's output tile
     var M_offset_warp = c_row * BM + warp_row * WM
     var N_offset_warp = c_col * BN + warp_col * WN
-    var cc_ptr = mat_c._storage + M_offset_warp * N + N_offset_warp
+    var cc_ptr = mat_c.ptr.unsafe_offset(M_offset_warp * N).unsafe_offset(
+        N_offset_warp
+    )
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
@@ -229,8 +219,8 @@ def sgemm_warp_tiling_kernel[
                                 reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
                                 * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
                             )
-        aa_ptr = aa_ptr + BK  # move BK columns to right
-        bb_ptr = bb_ptr + BK * N  # move BK rows down
+        aa_ptr = aa_ptr.unsafe_offset(BK)  # move BK columns to right
+        bb_ptr = bb_ptr.unsafe_offset(BK * N)  # move BK rows down
         barrier()
 
     # Write out the results.
@@ -239,7 +229,9 @@ def sgemm_warp_tiling_kernel[
             # Move C pointer to current warp sub-tile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
-            var C_interim = cc_ptr + M_offset_subtile * N + N_offset_subtile
+            var C_interim = cc_ptr.unsafe_offset(
+                M_offset_subtile * N
+            ).unsafe_offset(N_offset_subtile)
 
             comptime for res_idx_m in range(TM):
                 comptime for res_idx_n in range(0, TN, 4):
@@ -255,21 +247,11 @@ def sgemm_warp_tiling_kernel[
                         )
                     )
 
-                    var vec = alpha * result_vec + beta * C_interim.load[
+                    var vec = alpha * result_vec + beta * C_interim.unsafe_load[
                         width=4, alignment=16
                     ](c_idx)
 
-                    comptime if case .Some(epilogue) = elementwise_lambda_fn:
-                        comptime elementwise_lambda = elementwise_lambda_fn.value()
-                        elementwise_lambda[c_type, 4](
-                            (
-                                M_offset_warp + M_offset_subtile + M_offset_val,
-                                N_offset_warp + N_offset_subtile + N_offset_val,
-                            ),
-                            vec,
-                        )
-                    else:
-                        C_interim.store[alignment=16](c_idx, vec)
+                    C_interim.unsafe_store[alignment=16](c_idx, vec)
 
 
 def matmul_naive(
@@ -306,15 +288,6 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # TODO: Find best for target GPU.
     #       For A100 see below (based on siboehm repo).
     #       For MI300X we need to further autotune (below is a working version).
-    # alias K10_NUM_THREADS = 256 if ctx.target.is_amd_gpu() else 128
-    # alias K10_BN = 128
-    # alias K10_BM = 64
-    # alias K10_BK = 16
-    # alias K10_WN = 64
-    # alias K10_WM = 32
-    # alias K10_WNITER = 1
-    # alias K10_TN = 4
-    # alias K10_TM = 4
     # Settings for A6000
     comptime K10_NUM_THREADS = 256 if ctx.target.is_amd_gpu() else 128
     comptime K10_BN = 128
@@ -326,9 +299,10 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     comptime K10_TN = 4
     comptime K10_TM = 8
 
-    comptime NUM_WARPS = K10_NUM_THREADS // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime NUM_WARPS = K10_NUM_THREADS // warp_size
     comptime K10_WMITER = (K10_WM * K10_WN) // (
-        WARP_SIZE * K10_TM * K10_TN * K10_WNITER
+        warp_size * K10_TM * K10_TN * K10_WNITER
     )
 
     # Warptile in threadblocktile.
@@ -337,7 +311,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     # Threads in the warp sub-tile.
     comptime assert (K10_WM * K10_WN) % (
-        WARP_SIZE * K10_TM * K10_TN * K10_WNITER
+        warp_size * K10_TM * K10_TN * K10_WNITER
     ) == 0
 
     # Warp sub-tile in warp tile.
@@ -372,10 +346,10 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     comptime assert K10_TN % 4 == 0, "TN must be a multiple of 4"
 
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var c_host_naive = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float32](M * K)
+    var b_host = unsafe_alloc[Float32](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var c_host_naive = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = Float32(i)
@@ -422,6 +396,9 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         TM=K10_TM,
         TN=K10_TN,
         NUM_THREADS=K10_NUM_THREADS,
+        CEngine=type_of(c_buffer).Engine,
+        AEngine=type_of(a_buffer).Engine,
+        BEngine=type_of(b_buffer).Engine,
     ]
 
     @inline(.always)

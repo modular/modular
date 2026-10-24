@@ -628,7 +628,7 @@ def test_multi_device_debug_verify_replay_many_outputs() -> None:
         outputs.append(graph.inputs[1].tensor * 5 + 15)
         outputs.append(graph.inputs[1].tensor + 8)
 
-        graph.output(*outputs)
+        graph.output(outputs)
 
     session = InferenceSession(devices=[host, device0, device1])
     model = session.load(graph)

@@ -52,4 +52,9 @@ llama_arch = SupportedArchitecture(
     batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
     cascade_pipeline_factory=CommonTextGenPipeline,
+    # An EAGLE checkpoint names the Llama architecture of its one decoder layer.
+    draft_architectures={
+        "eagle": {"LlamaForCausalLM": "LlamaForCausalLMEagle"}
+    },
+    supports_spec_decode_mixed_batches=True,
 )

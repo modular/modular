@@ -39,7 +39,7 @@ from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, TensorLayout, TileTensor, row_major
+from layout import TensorLayout, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -168,32 +168,33 @@ def _pack_k_kernel[
     ](bcast_acc3, a_frag, b_frag, packed_b, bcast_a3)
 
     # Store packed acc[i] at row (4*i + lane), broadcast acc[i] same row in second buffer.
-    packed_out.store(Coord(0 * WARP_SIZE + lane, 0), packed_acc0)
-    packed_out.store(Coord(1 * WARP_SIZE + lane, 0), packed_acc1)
-    packed_out.store(Coord(2 * WARP_SIZE + lane, 0), packed_acc2)
-    packed_out.store(Coord(3 * WARP_SIZE + lane, 0), packed_acc3)
+    packed_out.store((0 * WARP_SIZE + lane, 0), packed_acc0)
+    packed_out.store((1 * WARP_SIZE + lane, 0), packed_acc1)
+    packed_out.store((2 * WARP_SIZE + lane, 0), packed_acc2)
+    packed_out.store((3 * WARP_SIZE + lane, 0), packed_acc3)
 
-    broadcast_out.store(Coord(0 * WARP_SIZE + lane, 0), bcast_acc0)
-    broadcast_out.store(Coord(1 * WARP_SIZE + lane, 0), bcast_acc1)
-    broadcast_out.store(Coord(2 * WARP_SIZE + lane, 0), bcast_acc2)
-    broadcast_out.store(Coord(3 * WARP_SIZE + lane, 0), bcast_acc3)
+    broadcast_out.store((0 * WARP_SIZE + lane, 0), bcast_acc0)
+    broadcast_out.store((1 * WARP_SIZE + lane, 0), bcast_acc1)
+    broadcast_out.store((2 * WARP_SIZE + lane, 0), bcast_acc2)
+    broadcast_out.store((3 * WARP_SIZE + lane, 0), bcast_acc3)
 
 
 def test_pack_k_byte_index(ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime num_acc_per_dispatch = 4
     comptime num_dispatches = 4
-    comptime num_values = WARP_SIZE * num_acc_per_dispatch * num_dispatches
+    comptime num_values = warp_size * num_acc_per_dispatch * num_dispatches
 
     var packed_dev = ctx.enqueue_create_buffer[.float32](num_values)
     var bcast_dev = ctx.enqueue_create_buffer[.float32](num_values)
 
     var packed_tt = TileTensor(
         packed_dev,
-        row_major[WARP_SIZE * num_dispatches, num_acc_per_dispatch](),
+        row_major[warp_size * num_dispatches, num_acc_per_dispatch](),
     )
     var bcast_tt = TileTensor(
         bcast_dev,
-        row_major[WARP_SIZE * num_dispatches, num_acc_per_dispatch](),
+        row_major[warp_size * num_dispatches, num_acc_per_dispatch](),
     )
 
     comptime kernel = _pack_k_kernel[
@@ -204,7 +205,7 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
         packed_tt.as_unsafe_any_origin(),
         bcast_tt.as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
 

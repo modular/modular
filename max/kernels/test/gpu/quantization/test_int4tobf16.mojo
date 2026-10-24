@@ -64,7 +64,9 @@ def call_int4tobf16[
     no_lop: Bool
 ](i4: Int32, out_ptr: MutPointer[BFloat16, MutAnyOrigin],):
     var v = int4tobf16[no_lop](i4)
-    out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[.int32, 4](v))
+    out_ptr.unsafe_bitcast[Int32]().unsafe_store[alignment=16](
+        0, bitcast[.int32, 4](v)
+    )
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:

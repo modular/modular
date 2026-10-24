@@ -56,7 +56,13 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
 
     InterfaceMethod<[{
       Return the metatype of the type it has one.
-    }], "Type", "getMetaType", (ins), [{}], [{ return Type(); }]>
+    }], "Type", "getMetaType", (ins), [{}], [{ return Type(); }]>,
+
+    InterfaceMethod<[{
+      Return whether a value of this type may be `#kgen.unknown`. Types that
+      return false have no unknown-value form, so a dependency on an erased
+      parameter of this type is represented as `#kgen.unbound` instead.
+    }], "bool", "supportsUnknownValue", (ins), [{}], [{ return true; }]>
   ];
 }
 

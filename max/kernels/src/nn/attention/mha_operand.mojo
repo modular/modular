@@ -18,7 +18,10 @@ TMA (tensor memory accelerator) descriptors are constructed for them.
 """
 
 from max.gpu.host import DeviceContext
-from max.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
+from max.gpu.host.nvidia.tma import (
+    TensorMapL2Promotion,
+    TensorMapSwizzle,
+)
 from kv_cache.types import (
     KVCacheT,
     PagedRowIndices,
@@ -68,6 +71,83 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     comptime page_size: Int
     comptime quantization_enabled: Bool = False
     comptime quantization_granularity: Int
+    comptime rows_indexed: Bool = False
+    """Whether each key row lives at its own address (`indexed_row_ptr`).
+
+    `False` for every operand whose keys are contiguous per tile, which the
+    AMD loaders address through `block_paged_tile`. A sparse-selection
+    operand sets it so `KVBuffer` gathers rows lane by lane instead.
+    """
+    comptime rows_predicated: Bool = False
+    """Whether an invalid indexed key is skipped rather than read.
+
+    Only meaningful with `rows_indexed`. When set, the consumer bounds its
+    keys by `indexed_valid_length`, `indexed_row` says whether a slot names
+    a row at all, and the loader zeroes the LDS of every key it skips
+    instead of reading a substitute row.
+    """
+
+    @inline(.always)
+    def indexed_row_ptr(
+        self, batch_idx: UInt32, key_idx: UInt32
+    ) -> ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+        """Returns the start of key `key_idx`'s row for `batch_idx`.
+
+        Only read when `rows_indexed` is set. The default is the dense row,
+        so a contiguous operand answers consistently if asked.
+
+        Args:
+            batch_idx: Batch entry to address.
+            key_idx: Key position within the entry.
+
+        Returns:
+            A pointer to the key's first element at head 0.
+        """
+        return self.block_paged_ptr[1](batch_idx, key_idx, 0)
+
+    @inline(.always)
+    def indexed_row(
+        self, batch_idx: UInt32, key_idx: UInt32
+    ) -> Tuple[ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin], Bool]:
+        """Returns key `key_idx`'s row start and whether its slot names a row.
+
+        Only read when `rows_predicated` is set; the caller applies
+        `indexed_valid_length` itself. The default is `indexed_row_ptr`,
+        always named.
+
+        Args:
+            batch_idx: Batch entry to address.
+            key_idx: Key position within the entry, below the stride.
+
+        Returns:
+            The row's first element at head 0, and whether to load it.
+        """
+        return (self.indexed_row_ptr(batch_idx, key_idx), True)
+
+    @inline(.always)
+    def indexed_valid_length(self, batch_idx: UInt32) -> Int:
+        """Returns the number of leading keys of `batch_idx` that are valid.
+
+        Only read when `rows_predicated` is set. The default bounds nothing.
+
+        Args:
+            batch_idx: Batch entry.
+
+        Returns:
+            The entry's valid key count.
+        """
+        return Int.MAX
+
+    @inline(.always)
+    def check_indexed_rows(self, batch_idx: UInt32):
+        """Asserts the operand's row selection is consistent for `batch_idx`.
+
+        A hook for assert-enabled builds; the default checks nothing.
+
+        Args:
+            batch_idx: Batch entry to check.
+        """
+        pass
 
     @inline(.always)
     def block_paged_storage[
@@ -93,7 +173,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    ) -> ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         ...
 
     @inline(.always)
@@ -141,7 +221,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
+    ) -> ImmPointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
         ...
 
     @inline(.always)
@@ -469,12 +549,460 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     @inline(.always)
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Float32, MutAnyOrigin]:
+    ) -> MutPointer[Float32, MutAnyOrigin]:
         """Returns the base pointer to the quantization scales tensor.
 
         Returns a null pointer for operands without quantization support.
         """
         ...
+
+
+struct SparseRowsMHAOperand[
+    base_t: MHAOperand,
+    //,
+    row_width: Int,
+    predicated: Bool = False,
+](MHAOperand, TrivialRegisterPassable):
+    """A K operand whose key rows are a top-k selection from a paged cache.
+
+    Key `j` of batch entry `b` is the cache row named by the selection's
+    `j`-th index, so an attention kernel can read the selected rows in place
+    instead of from a gathered copy. Keys at or past the entry's valid length,
+    and `-1` slots, read `zero_row`: the attention mask drops their scores, and
+    zeros keep `0 * value` finite where uninitialized cache bytes might not be.
+
+    With `predicated`, the operand serves one decode token per entry: the
+    valid length is computed in closed form from the cache length (see
+    `valid_length`) rather than read from a buffer, and invalid keys are
+    reported through `indexed_row` so the loader skips them instead of
+    reading `zero_row`.
+
+    Everything except the row addressing forwards to `base`.
+
+    Parameters:
+        base_t: The operand over the full paged cache.
+        row_width: Elements per cache row (all heads), the stride between
+            consecutive physical rows.
+        predicated: Whether invalid keys are skipped and the valid length is
+            closed-form (decode) rather than read from `valid_lengths`.
+    """
+
+    comptime dtype = Self.base_t.dtype
+    comptime scale_dtype = Self.base_t.scale_dtype
+    comptime page_size = Self.base_t.page_size
+    comptime quantization_enabled = Self.base_t.quantization_enabled
+    comptime quantization_granularity = Self.base_t.quantization_granularity
+    comptime rows_indexed = True
+    comptime rows_predicated = Self.predicated
+    comptime Engine: TensorEngine = Self.base_t.Engine
+
+    var base: Self.base_t
+    var blocks_base: ImmPointer[Scalar[Self.dtype], ImmUntrackedOrigin]
+    """Base of the cache storage that `base.get_tma_row` rows index."""
+    var zero_row: ImmPointer[Scalar[Self.dtype], ImmUntrackedOrigin]
+    """A `row_width`-element row of zeros; unused when `predicated`."""
+    var indices: ImmPointer[Int32, ImmUntrackedOrigin]
+    """Encoded physical indices, `[batch, indices_stride]`, `-1` unused."""
+    var valid_lengths: ImmPointer[UInt32, ImmUntrackedOrigin]
+    """Per-entry count of leading valid slots; unused when `predicated`."""
+    var topk_lengths: ImmPointer[Int32, ImmUntrackedOrigin]
+    """Per-entry top-k slot counts, read only when `has_topk_lengths`."""
+    var indices_stride: Int32
+    var selection_lag: Int32
+    """Positions between the token each row was selected for and the token
+    decoding now (`predicated` only)."""
+    var has_topk_lengths: Bool
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "SparseRowsMHAOperand"
+
+    def __init__(
+        out self,
+        base: Self.base_t,
+        blocks_base: Pointer[Scalar[Self.dtype], _],
+        zero_row: Pointer[Scalar[Self.dtype], _],
+        indices: Pointer[Int32, _],
+        valid_lengths: Pointer[UInt32, _],
+        indices_stride: Int,
+    ):
+        """Wraps `base` with a top-k selection and explicit valid lengths.
+
+        Args:
+            base: The operand over the full paged cache.
+            blocks_base: Base of the cache storage `base.get_tma_row` indexes.
+            zero_row: A `row_width`-element row of zeros.
+            indices: Encoded physical indices, `[batch, indices_stride]`.
+            valid_lengths: Per-entry count of leading valid slots.
+            indices_stride: Slots per batch entry.
+        """
+        comptime assert (
+            not Self.predicated
+        ), "a predicated operand takes its lengths in closed form"
+        # Per-token scales would be looked up by dense position, not by the
+        # selected row.
+        comptime assert (
+            not Self.base_t.quantization_enabled
+        ), "SparseRowsMHAOperand does not support quantized KV caches"
+        self.base = base
+        self.blocks_base = blocks_base.as_imm().unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
+        self.zero_row = zero_row.as_imm().unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
+        self.indices = indices.as_imm().unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.valid_lengths = valid_lengths.as_imm().unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
+        self.topk_lengths = ImmPointer[
+            Int32, ImmUntrackedOrigin
+        ].unsafe_dangling()
+        self.indices_stride = Int32(indices_stride)
+        self.selection_lag = 0
+        self.has_topk_lengths = False
+
+    def __init__(
+        out self,
+        base: Self.base_t,
+        blocks_base: Pointer[Scalar[Self.dtype], _],
+        indices: Pointer[Int32, _],
+        indices_stride: Int,
+        topk_lengths: Pointer[Int32, _],
+        has_topk_lengths: Bool,
+        selection_lag: Int,
+    ):
+        """Wraps `base` with a decode top-k selection (`predicated` only).
+
+        Args:
+            base: The operand over the full paged cache.
+            blocks_base: Base of the cache storage `base.get_tma_row` indexes.
+            indices: Encoded physical indices, `[batch, indices_stride]`.
+            indices_stride: Slots per batch entry.
+            topk_lengths: Per-entry top-k slot counts; not read unless
+                `has_topk_lengths`.
+            has_topk_lengths: Whether `topk_lengths` holds the counts;
+                otherwise every entry keeps `indices_stride` slots.
+            selection_lag: Positions between the token each row was
+                selected for and the token decoding now.
+        """
+        comptime assert (
+            Self.predicated
+        ), "only a predicated operand derives its lengths in closed form"
+        comptime assert (
+            not Self.base_t.quantization_enabled
+        ), "SparseRowsMHAOperand does not support quantized KV caches"
+        self.base = base
+        self.blocks_base = blocks_base.as_imm().unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
+        self.zero_row = ImmPointer[
+            Scalar[Self.dtype], ImmUntrackedOrigin
+        ].unsafe_dangling()
+        self.indices = indices.as_imm().unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.valid_lengths = ImmPointer[
+            UInt32, ImmUntrackedOrigin
+        ].unsafe_dangling()
+        self.topk_lengths = topk_lengths.as_imm().unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
+        self.indices_stride = Int32(indices_stride)
+        self.selection_lag = Int32(selection_lag)
+        self.has_topk_lengths = has_topk_lengths
+
+    @inline(.always)
+    def topk_length(self, batch_idx: UInt32) -> Int:
+        """Returns entry `batch_idx`'s top-k slot count, capped at the stride.
+
+        Args:
+            batch_idx: Batch entry.
+
+        Returns:
+            The number of slots the selection may fill.
+        """
+        var stride = Int(self.indices_stride)
+        if self.has_topk_lengths:
+            return min(max(Int(self.topk_lengths[Int(batch_idx)]), 0), stride)
+        return stride
+
+    @inline(.always)
+    def valid_length(self, batch_idx: UInt32) -> UInt32:
+        """Returns the number of leading valid slots of entry `batch_idx`.
+
+        Unpredicated, it reads `valid_lengths`. Predicated, it is the closed
+        form SM100 sparse decode and the AMD gather use: a decode token sees
+        the cached keys plus itself, and a plain top-k row holds
+        `min(top_k, visible - selection_lag)` valid slots followed by `-1`
+        padding.
+
+        Args:
+            batch_idx: Batch entry.
+
+        Returns:
+            The entry's valid slot count.
+        """
+        comptime if Self.predicated:
+            var visible = self.base.cache_length(Int(batch_idx)) + 1
+            return UInt32(
+                min(
+                    self.topk_length(batch_idx),
+                    max(visible - Int(self.selection_lag), 0),
+                )
+            )
+        else:
+            return self.valid_lengths[Int(batch_idx)]
+
+    @inline(.always)
+    def indexed_row_ptr(
+        self, batch_idx: UInt32, key_idx: UInt32
+    ) -> ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+        # Branch-free so a caller resolving many keys can issue all the index
+        # loads before using any: the slot is clamped in range, both addresses
+        # are formed, and the result is a select.
+        var slot = min(Int(key_idx), Int(self.indices_stride) - 1)
+        var encoded = self.indices[
+            Int(batch_idx) * Int(self.indices_stride) + slot
+        ]
+        var valid = (key_idx < self.valid_length(batch_idx)) & (encoded >= 0)
+        var row_ptr = self.blocks_base.unsafe_offset(
+            Int(self.base.get_tma_row(max(encoded, 0))) * Self.row_width
+        )
+        return (row_ptr if valid else self.zero_row).as_unsafe_any_origin()
+
+    @inline(.always)
+    def indexed_row(
+        self, batch_idx: UInt32, key_idx: UInt32
+    ) -> Tuple[ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin], Bool]:
+        comptime assert Self.predicated, "only a predicated operand skips rows"
+        # 32-bit slot math and a global-space load: the decode issues these
+        # on its critical path, and flat loads plus 64-bit clamps cost more
+        # issue cycles than the copies they address.
+        var slot = min(UInt32(key_idx), UInt32(self.indices_stride - 1))
+        var encoded = (
+            self.indices.unsafe_address_space_cast[.GLOBAL]()
+            .unsafe_offset(Int(batch_idx * UInt32(self.indices_stride) + slot))
+            .unsafe_load()
+        )
+        var row_ptr = self.blocks_base.unsafe_offset(
+            Int(self.base.get_tma_row(max(encoded, 0))) * Self.row_width
+        )
+        return (row_ptr.as_unsafe_any_origin(), encoded >= 0)
+
+    @inline(.always)
+    def indexed_valid_length(self, batch_idx: UInt32) -> Int:
+        return Int(self.valid_length(batch_idx))
+
+    @inline(.always)
+    def check_indexed_rows(self, batch_idx: UInt32):
+        """Asserts the closed-form valid length matches the row (predicated).
+
+        The closed form assumes the row's valid slots are a prefix ended by
+        `-1` padding. A wrong length is silent in place: a predicated load
+        skips the slot and the softmax scores whatever the LDS holds there,
+        so check the boundary. Slot `n - 1` must be valid and slot `n` (when
+        inside the top-k) must be padding.
+
+        Args:
+            batch_idx: Batch entry to check.
+        """
+        comptime if Self.predicated:
+            var n = Int(self.valid_length(batch_idx))
+            var topk_len = self.topk_length(batch_idx)
+            var row = self.indices.unsafe_offset(
+                Int(batch_idx) * Int(self.indices_stride)
+            )
+            debug_assert(
+                (n == 0 or row[n - 1] >= 0) and (n >= topk_len or row[n] < 0),
+                (
+                    "AMD sparse MLA decode: the closed-form valid length does"
+                    " not match the row's -1 padding"
+                ),
+            )
+
+    @inline(.always)
+    def block_paged_storage[
+        tile_size: Int,
+    ](
+        self,
+        batch_idx: UInt32,
+        start_tok_idx: UInt32,
+        head_idx: UInt32,
+        head_dim_idx: UInt32 = 0,
+    ) -> Self.Engine.StorageType[
+        Self.dtype, ImmutAnyOrigin, AddressSpace.GENERIC
+    ]:
+        return self.base.block_paged_storage[tile_size](
+            batch_idx, start_tok_idx, head_idx, head_dim_idx
+        )
+
+    @inline(.always)
+    def block_paged_ptr[
+        tile_size: Int,
+    ](
+        self,
+        batch_idx: UInt32,
+        start_tok_idx: UInt32,
+        head_idx: UInt32,
+        head_dim_idx: UInt32 = 0,
+    ) -> ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+        return self.base.block_paged_ptr[tile_size](
+            batch_idx, start_tok_idx, head_idx, head_dim_idx
+        )
+
+    @inline(.always)
+    def scales_block_paged_ptr(
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> ImmPointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
+        return self.base.scales_block_paged_ptr(
+            batch_idx, start_tok_idx, head_idx, head_dim_idx
+        )
+
+    @inline(.always)
+    def load_scale[
+        width: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int,
+    ) -> SIMD[Self.scale_dtype, width]:
+        return self.base.load_scale[width](
+            batch_idx, start_tok_idx, head_idx, head_dim_idx
+        )
+
+    @inline(.always)
+    def cache_length(self, batch_idx: Int) -> Int:
+        return Int(self.indices_stride)
+
+    @inline(.always)
+    def max_context_length(self) -> UInt32:
+        return UInt32(self.indices_stride)
+
+    @inline(.always)
+    def num_kv_rows(self) -> Int:
+        return self.base.num_kv_rows()
+
+    @inline(.always)
+    def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        return self.base.row_idx(batch_idx, start_tok_idx)
+
+    @inline(.always)
+    def get_tma_row(self, encoded_index: Int32) -> Int32:
+        return self.base.get_tma_row(encoded_index)
+
+    @inline(.always)
+    def create_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        depth: Int,
+        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
+        Self.dtype,
+        coord[BN, 1, BK],
+        swizzle_mode,
+    ]:
+        return self.base.create_tma_tile[
+            swizzle_mode,
+            BN=BN,
+            depth=depth,
+            BK=BK,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
+        ](ctx)
+
+    @inline(.always)
+    def create_scale_tma_tile[
+        BMN: Int
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        Self.scale_dtype,
+        coord[1, BMN],
+    ]:
+        return self.base.create_scale_tma_tile[BMN](ctx)
+
+    @inline(.always)
+    def create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
+        DType.bfloat16,
+        coord[BN, 1, BK],
+        swizzle_mode,
+    ]:
+        return self.base.create_rope_tma_tile[
+            swizzle_mode, BN=BN, BK=BK, padded_depth=padded_depth
+        ](ctx)
+
+    @inline(.always)
+    def create_gather4_tma_tile[
+        tile_width: Int,
+        tile_stride: Int = tile_width,
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+        tile_height: Int = 4,
+        tma_dtype: DType = Self.dtype,
+        l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        tma_dtype,
+        tile_shape=coord[
+            tile_height,
+            _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
+        ],
+        desc_shape=coord[
+            1, _gather4_box_width[tma_dtype, tile_width, swizzle_mode]()
+        ],
+    ]:
+        return self.base.create_gather4_tma_tile[
+            tile_width,
+            tile_stride,
+            swizzle_mode,
+            tile_height,
+            tma_dtype,
+            l2_promotion,
+        ](ctx)
+
+    @inline(.always)
+    def create_rope_gather4_tma_tile[
+        tile_width: Int,
+        padded_depth: Int,
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+        tile_height: Int = 4,
+        l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        DType.bfloat16,
+        tile_shape=coord[
+            tile_height,
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
+        ],
+        desc_shape=coord[
+            1, _gather4_box_width[.bfloat16, tile_width, swizzle_mode]()
+        ],
+    ]:
+        return self.base.create_rope_gather4_tma_tile[
+            tile_width, padded_depth, swizzle_mode, tile_height, l2_promotion
+        ](ctx)
+
+    @inline(.always)
+    def scales_raw_ptr(
+        self,
+    ) -> MutPointer[Float32, MutAnyOrigin]:
+        return self.base.scales_raw_ptr()
 
 
 struct KVCacheMHAOperand[
@@ -521,7 +1049,7 @@ struct KVCacheMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    ) -> ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         return self.cache.block_paged_ptr[tile_size](
             Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
         )
@@ -558,7 +1086,7 @@ struct KVCacheMHAOperand[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
+    ) -> ImmPointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
         return self.cache.scales_block_paged_ptr(
             batch_idx, start_tok_idx, head_idx, head_dim_idx
         )
@@ -885,9 +1413,9 @@ struct KVCacheMHAOperand[
     @inline(.always)
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Float32, MutAnyOrigin]:
+    ) -> MutPointer[Float32, MutAnyOrigin]:
         """Returns the base pointer to the quantization scales tensor."""
-        return rebind[UnsafePointer[Float32, MutAnyOrigin]](
+        return rebind[MutPointer[Float32, MutAnyOrigin]](
             self.cache.scales_raw_ptr()
         )
 
@@ -937,7 +1465,7 @@ struct KVCacheScalesMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    ) -> ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         # Forward to scales_block_paged_ptr instead of block_paged_ptr
         return self.cache.scales_block_paged_ptr(
             Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
@@ -975,10 +1503,10 @@ struct KVCacheScalesMHAOperand[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
+    ) -> ImmPointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
         # SAFETY: KVCacheScalesMHAOperand doesn't support block-paged scales;
         # callers only dereference behind comptime quantization guards.
-        return UnsafePointer[
+        return ImmPointer[
             Scalar[Self.scale_dtype], ImmutAnyOrigin
         ].unsafe_dangling()
 
@@ -1198,12 +1726,12 @@ struct KVCacheScalesMHAOperand[
     @inline(.always)
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Float32, MutAnyOrigin]:
+    ) -> MutPointer[Float32, MutAnyOrigin]:
         """Returns a dangling pointer. KVCacheScalesMHAOperand already points to the
         scales pointer."""
         # SAFETY: Callers access scales through the operand's own pointer, not
         # this raw_ptr; only used behind comptime quantization guards.
-        return UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
+        return MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
 
 
 @inline(.always)
@@ -1224,7 +1752,7 @@ def _null_scale_tile_tensor[
     ]
     return rebind[TileTensor[scale_dtype, scale_layout, ImmutAnyOrigin]](
         TileTensor[scale_dtype, NullScaleLayout, ImmutAnyOrigin](
-            ptr=UnsafePointer[
+            ptr=ImmPointer[
                 Scalar[scale_dtype], ImmutAnyOrigin
             ].unsafe_dangling(),
             layout=NullScaleLayout(),
@@ -1334,15 +1862,17 @@ struct TileTensorMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        var ret_ptr = self.buffer.ptr + self.buffer.layout[
-            linear_idx_type=type_of(self.buffer).linear_idx_type
-        ](
-            Coord(
-                Int(batch_idx),
-                Int(start_tok_idx),
-                Int(head_idx),
-                Int(head_dim_idx),
+    ) -> ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+        var ret_ptr = self.buffer.ptr.unsafe_offset(
+            self.buffer.layout[
+                linear_idx_type=type_of(self.buffer).linear_idx_type
+            ](
+                Coord(
+                    Int(batch_idx),
+                    Int(start_tok_idx),
+                    Int(head_idx),
+                    Int(head_dim_idx),
+                )
             )
         )
         return ret_ptr.as_imm().as_unsafe_any_origin()
@@ -1389,15 +1919,17 @@ struct TileTensorMHAOperand[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
-        var ret_ptr = self.scale_buffer.ptr + self.scale_buffer.layout[
-            linear_idx_type=type_of(self.scale_buffer).linear_idx_type
-        ](
-            Coord(
-                Int(batch_idx),
-                Int(start_tok_idx),
-                Int(head_idx),
-                Int(head_dim_idx // Self.quantization_granularity),
+    ) -> ImmPointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
+        var ret_ptr = self.scale_buffer.ptr.unsafe_offset(
+            self.scale_buffer.layout[
+                linear_idx_type=type_of(self.scale_buffer).linear_idx_type
+            ](
+                Coord(
+                    Int(batch_idx),
+                    Int(start_tok_idx),
+                    Int(head_idx),
+                    Int(head_dim_idx // Self.quantization_granularity),
+                )
             )
         )
         return ret_ptr.as_imm().as_unsafe_any_origin()
@@ -1508,8 +2040,7 @@ struct TileTensorMHAOperand[
                 " Driver will crash."
             ),
         )
-        var scale_tensor = TileTensor(
-            self.scale_buffer.ptr,
+        var scale_tensor = self.scale_buffer.reshape(
             row_major(Idx[1], total_elements),
         )
         return create_tensor_tile[
@@ -1604,7 +2135,7 @@ struct TileTensorMHAOperand[
             tile_stride=tile_stride,
             swizzle_mode=swizzle_mode,
             l2_promotion=l2_promotion,
-        ](ctx, self.buffer.ptr.bitcast[Scalar[tma_dtype]](), rows)
+        ](ctx, self.buffer.ptr.unsafe_bitcast[Scalar[tma_dtype]](), rows)
 
     @inline(.always)
     def create_rope_gather4_tma_tile[
@@ -1653,12 +2184,12 @@ struct TileTensorMHAOperand[
     @inline(.always)
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Float32, MutAnyOrigin]:
+    ) -> MutPointer[Float32, MutAnyOrigin]:
         """Returns a dangling pointer for unsupported raw-scale access."""
         # SAFETY: This raw-scale API is unsupported; the returned sentinel must
         # not be dereferenced. Contiguous scales are accessed through
         # scales_block_paged_ptr or load_scale.
-        return UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
+        return MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
 
 
 struct RaggedMHAOperand[
@@ -1760,7 +2291,7 @@ struct RaggedMHAOperand[
         ]
         self.scale_buffer = rebind[type_of(self.scale_buffer)](
             TileTensor[Self.scale_dtype, NullScaleLayout, ImmutAnyOrigin](
-                ptr=UnsafePointer[
+                ptr=ImmPointer[
                     Scalar[Self.scale_dtype], ImmutAnyOrigin
                 ].unsafe_dangling(),
                 layout=NullScaleLayout(),
@@ -1798,17 +2329,19 @@ struct RaggedMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    ) -> ImmPointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         var global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
-        var ret_ptr = self.buffer.ptr + self.buffer.layout[
-            linear_idx_type=type_of(self.buffer).linear_idx_type
-        ](
-            Coord(
-                global_token_idx,
-                Int(head_idx),
-                Int(head_dim_idx),
+        var ret_ptr = self.buffer.ptr.unsafe_offset(
+            self.buffer.layout[
+                linear_idx_type=type_of(self.buffer).linear_idx_type
+            ](
+                Coord(
+                    global_token_idx,
+                    Int(head_idx),
+                    Int(head_dim_idx),
+                )
             )
         )
         return ret_ptr.as_imm().as_unsafe_any_origin()
@@ -1857,10 +2390,10 @@ struct RaggedMHAOperand[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
+    ) -> ImmPointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
         # SAFETY: Ragged operands don't support quantization; callers only
         # dereference behind comptime quantization guards.
-        return UnsafePointer[
+        return ImmPointer[
             Scalar[Self.scale_dtype], ImmutAnyOrigin
         ].unsafe_dangling()
 
@@ -1968,8 +2501,7 @@ struct RaggedMHAOperand[
                     " Nvidia Driver will crash."
                 ),
             )
-            var scale_tensor = TileTensor(
-                self.scale_buffer.ptr,
+            var scale_tensor = self.scale_buffer.reshape(
                 row_major(Idx[1], total_elements),
             )
             return create_tensor_tile[
@@ -1983,8 +2515,7 @@ struct RaggedMHAOperand[
             comptime num_heads = Self.scale_layout.static_shape[0]
             var total_seq_len = Int(self.buffer.dim[1]())
 
-            var scale_tensor = TileTensor(
-                self.scale_buffer.ptr,
+            var scale_tensor = self.scale_buffer.reshape(
                 row_major(Idx[num_heads], total_seq_len),
             )
 
@@ -2087,7 +2618,7 @@ struct RaggedMHAOperand[
             tile_stride=tile_stride,
             swizzle_mode=swizzle_mode,
             l2_promotion=l2_promotion,
-        ](ctx, self.buffer.ptr.bitcast[Scalar[tma_dtype]](), rows)
+        ](ctx, self.buffer.ptr.unsafe_bitcast[Scalar[tma_dtype]](), rows)
 
     @inline(.always)
     def create_rope_gather4_tma_tile[
@@ -2118,9 +2649,9 @@ struct RaggedMHAOperand[
     @inline(.always)
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Float32, MutAnyOrigin]:
+    ) -> MutPointer[Float32, MutAnyOrigin]:
         """Returns a dangling pointer. Ragged operands do not support
         quantization."""
         # SAFETY: Ragged operands don't support quantization; callers only
         # dereference behind comptime quantization guards.
-        return UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
+        return MutPointer[Float32, MutAnyOrigin].unsafe_dangling()

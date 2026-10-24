@@ -10,21 +10,29 @@
 /.bazel* @modular/sdlc
 /bazel* @modular/sdlc
 /BUILD.bazel @modular/sdlc
-/bazel/internal/rules_rust_extra_exec_triple.patch @modular/sdlc
+/bazel/public-patches/hello_imgui.patch @modular/sdlc
+/bazel/public-patches/cufile.patch @modular/sdlc
+/bazel/public-patches/llvm-amd-relax-alloca-verifier.patch @modular/sdlc
+/bazel/public-patches/llvm-amd.patch @modular/sdlc
+/bazel/public-patches/llvm-mfma-allow-non-mai-users.patch @modular/sdlc
+/bazel/public-patches/llvm-nvptx-fsetp-no-ftz.patch @modular/sdlc
+/bazel/public-patches/llvm-revert-mfma-rewrite-disable.patch @modular/sdlc
 /bazel/public-patches/llvm-elf-extractor-local-copy.patch @modular/sdlc
 /bazel/public-patches/llvm-machinefunction-sti-ref-to-ptr.patch @modular/sdlc
 /bazel/public-patches/llvm-revert-lldb-elf-section-name-string.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0002-Increase-request-parallelism.patch @modular/sdlc
+/bazel/public-patches/mistral-evals-0003-Accept-any-200-from-the-health-endpoint.patch @modular/sdlc
+/bazel/public-patches/mistral-evals-0004-Make-request-parallelism-configurable.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-glibc-rseq.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-local-dynamic.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-numa.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-visibility.patch @modular/sdlc
+/bazel/public-patches/glfw-cc-loads.patch @modular/sdlc
 /bazel/public-patches/crashpad.patch @modular/sdlc
 /bazel/public-patches/grpc-loads.patch @modular/sdlc
 /bazel/public-patches/grpc-no-macos-x86.patch @modular/sdlc
 /bazel/public-patches/grpc-warnings.patch @modular/sdlc
-/bazel/public-patches/llvm-config-musl-select.patch @modular/sdlc
 /bazel/public-patches/llvm-flag-defaults.patch @modular/sdlc
 /bazel/public-patches/llvm-libxml2-config-setting-visibility.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc
@@ -46,63 +54,71 @@
 /bazel/public-patches/nixl-libfabric-src-addr-peer-limit.patch @modular/runtime
 /bazel/public-patches/llvm-fix-lldb-dap-console.patch @modular/mojo-tooling
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
+/bazel/public-patches/rules_mojo_bitcode_libs.patch @modular/stdlib
+/bazel/public-patches/libkineto-record-window-end-track.patch @modular/max-sdk
+/bazel/public-patches/tracy-cuda-kernel-annotations.patch @modular/max-sdk
+/bazel/public-patches/tracy-port-logging.patch @modular/max-sdk
+/bazel/public-patches/tracy-rocm-no-default-counters.patch @modular/max-sdk
+/bazel/public-patches/tracy-tls-fix.patch @modular/max-sdk
 /bazel/public-patches/xgrammar.patch @modular/max-serve
+/bazel/public-patches/llvm-mlir-timing-recycled-key.patch @modular/mojo-compiler
 /AsyncRT/ @modular/runtime
-/docs/ @modular/mojo-docs
-/docs/max/nightly-changelog.md @modular/public-repo-maintainers
+/max/docs/site/ @modular/mojo-docs
+/max/docs/site/nightly-changelog.md @modular/public-repo-maintainers
 /AI_TOOL_POLICY.md @modular/mojo-docs
+/docs/** @modular/mojo-docs
 /max/CONTRIBUTING.md @modular/mojo-docs
 /max/docs/development.md @modular/mojo-docs @modular/max-serve
-/Mojo/BUILD.bazel @modular/mojo-lang
+/Mojo/BUILD.bazel @modular/mojo-compiler
 /Mojo/AGENTS.md @modular/stdlib
 /Mojo/CLAUDE.md @modular/stdlib
 /Mojo/CONTRIBUTING.md @modular/stdlib
 /Mojo/README.md @modular/stdlib
 /Mojo/docs/site/ @modular/mojo-docs
 /Mojo/docs/site/nightly-changelog.md @modular/public-repo-maintainers
-/Mojo/docs/compiler/ @modular/mojo-lang
+/Mojo/docs/compiler/ @modular/mojo-compiler
 /Mojo/docs/stdlib/ @modular/stdlib
 /Mojo/docs/contributing/ @alisterburt @JoeLoser @dgurchenkov
 /Mojo/docs/contributing/stdlib/ @modular/stdlib
-/Mojo/docs/contributing/compiler/ @modular/mojo-lang
+/Mojo/docs/contributing/compiler/ @modular/mojo-compiler
 /Mojo/examples/ @modular/mojo-docs
-/Mojo/include/ @modular/mojo-lang
+/Mojo/include/ @modular/mojo-compiler
 /Mojo/integration-test/ @modular/stdlib
-/Mojo/lib/ @modular/mojo-lang
+/Mojo/lib/ @modular/mojo-compiler
 /Mojo/proposals/ @modular/stdlib
 /Mojo/python/ @modular/stdlib
 /Mojo/stdlib/ @modular/stdlib
-/Mojo/stdlib/std/runtime @modular/mojo-lang
-/Mojo/test/ @modular/mojo-lang
-/Mojo/test/mojo-debug/ @modular/mojo-tooling @modular/mojo-lang
+/Mojo/stdlib/std/runtime @modular/mojo-compiler
+/Mojo/test/ @modular/mojo-compiler
+/Mojo/test/mojo-debug/ @modular/mojo-tooling @modular/mojo-compiler
 /Mojo/test/mojo-jupyter/ @modular/mojo-tooling
-/Mojo/test/mojo-lsp-server/ @modular/mojo-lang
-/Mojo/test/mojo-lsp-server-node/ @modular/mojo-lang
+/Mojo/test/mojo-lsp-server/ @modular/mojo-compiler
+/Mojo/test/mojo-lsp-server-node/ @modular/mojo-compiler
 /Mojo/test/mojo-repl/ @modular/mojo-tooling
 /Mojo/test/mojo-tool/ @modular/mojo-tooling
-/Mojo/tools/ @modular/mojo-lang
+/Mojo/tools/ @modular/mojo-compiler
 /Mojo/tools/mblack/ @modular/mojo-tooling
 /Mojo/tools/mojo/ @modular/mojo-tooling
-/Mojo/tools/mojo/Build/ @modular/mojo-lang
-/Mojo/tools/mojo/Common/ @modular/mojo-lang @modular/mojo-tooling
-/Mojo/tools/mojo/Precompile/ @modular/mojo-lang
-/Mojo/tools/mojo/Run/ @modular/mojo-lang
-/Mojo/tools/mojo/mojo.cpp @modular/mojo-lang @modular/mojo-tooling
-/Mojo/tools/mojo/*.td @modular/mojo-lang @modular/mojo-tooling
-/Mojo/tools/mojo/BUILD.bazel @modular/mojo-lang @modular/mojo-tooling
+/Mojo/tools/mojo/Build/ @modular/mojo-compiler
+/Mojo/tools/mojo/Common/ @modular/mojo-compiler @modular/mojo-tooling
+/Mojo/tools/mojo/Precompile/ @modular/mojo-compiler
+/Mojo/tools/mojo/Run/ @modular/mojo-compiler
+/Mojo/tools/mojo/mojo.cpp @modular/mojo-compiler @modular/mojo-tooling
+/Mojo/tools/mojo/*.td @modular/mojo-compiler @modular/mojo-tooling
+/Mojo/tools/mojo/BUILD.bazel @modular/mojo-compiler @modular/mojo-tooling
 /Mojo/tools/mojo-jupyter-executor/ @modular/mojo-tooling
-/Mojo/tools/mojo-lsp-server/ @modular/mojo-lang
-/Mojo/tools/mojo-lsp-test-client/ @modular/mojo-lang
+/Mojo/tools/mojo-lsp-server/ @modular/mojo-compiler
+/Mojo/tools/mojo-lsp-test-client/ @modular/mojo-compiler
 /Mojo/tools/mojo-repl-entry-point/ @modular/mojo-tooling
-/Mojo/unittests @modular/mojo-lang
-/Mojo/unittests/mojo-debug/ @modular/mojo-tooling @modular/mojo-lang
+/Mojo/unittests @modular/mojo-compiler
+/Mojo/unittests/mojo-debug/ @modular/mojo-tooling @modular/mojo-compiler
 /Mojo/utils/ @modular/mojo-tooling
-/Mojo/**/Compiler @modular/mojo-lang
-/Mojo/**/ExecutionEngine @modular/mojo-lang
+/Mojo/**/Compiler @modular/mojo-compiler
+/Mojo/**/ExecutionEngine @modular/mojo-compiler
 /Mojo/**/MojoJupyter @modular/mojo-tooling
-/Mojo/**/MojoLLDB @modular/mojo-tooling @modular/mojo-lang
+/Mojo/**/MojoLLDB @modular/mojo-tooling @modular/mojo-compiler
 /Mojo/**/MojoTooling @modular/mojo-tooling
-/Mojo/**/ToolCommon @modular/mojo-lang @modular/mojo-tooling
+/Mojo/**/ToolCommon @modular/mojo-compiler @modular/mojo-tooling
 /max/BUILD.bazel @modular/sdlc
 /max/mojo/max/__init__.mojo @modular/stdlib @modular/kernels @copilot-pull-request-reviewer @modular/driver
 /max/mojo/max/_category_.json @modular/mojo-docs
@@ -111,8 +127,9 @@
 /max/mojo/max/benchmark/ @modular/stdlib @copilot-pull-request-reviewer
 /max/mojo/max/gpu/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
 /max/mojo/max/gpu/host @modular/stdlib @modular/kernels @modular/driver @copilot-pull-request-reviewer
-/max/mojo/max/runtime @modular/stdlib @modular/mojo-lang @copilot-pull-request-reviewer
+/max/mojo/max/runtime @modular/stdlib @modular/mojo-compiler @copilot-pull-request-reviewer
 /max/mojo/max/_plugin/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
+/max/mojo/max/_driver/ @modular/driver
 /max/mojo/test/atomic/ @modular/stdlib @copilot-pull-request-reviewer
 /max/mojo/test/algorithm/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
 /max/mojo/test/asyncrt/ @modular/stdlib @modular/kernels @modular/runtime @copilot-pull-request-reviewer
@@ -133,7 +150,9 @@
 /max/python/max/BUILD.bazel @modular/runtime
 /max/python/max/all_deps.bzl @modular/sdlc
 /max/python/max/_core/ @modular/max-sdk @modular/runtime
+/max/python/max/_core/driver.pyi @modular/driver
 /max/python/max/_core_types/ @modular/runtime
+/max/python/max/_artifact/ @modular/max-sdk @modular/max-serve
 /max/python/max/_eager_policy.py @modular/max-sdk
 /max/python/max/tree.py @modular/max-sdk
 /max/python/max/_interpreter.py @modular/max-sdk
@@ -157,7 +176,7 @@
 /max/python/max/mlir/ @modular/max-sdk
 /max/python/max/nn/ @modular/max-sdk
 /max/python/max/pipelines/ @modular/max-sdk @modular/max-serve
-/max/python/max/pipelines/architectures/ @modular/max-serve
+/max/python/max/pipelines/architectures/ @modular/max-serve @copilot-pull-request-reviewer
 /max/python/max/pipelines/modeling/ @modular/max-sdk
 /max/python/max/pipelines/request/ @modular/max-sdk
 /max/python/max/serve/ @modular/max-serve
@@ -166,7 +185,7 @@
 /max/tests/BUILD.bazel @modular/sdlc
 /max/tests/docstring_examples/ @modular/mojo-docs
 /max/tests/integration/accuracy/ @modular/max-serve
-/max/tests/integration/architectures/ @modular/max-serve
+/max/tests/integration/architectures/ @modular/max-serve @copilot-pull-request-reviewer
 /max/tests/integration/pipelines/ @modular/max-sdk
 /max/tests/integration/c/ @modular/max-sdk @modular/GraphExecution
 /max/tests/integration/cli/ @modular/max-serve
@@ -175,6 +194,7 @@
 /max/tests/integration/interfaces/ @modular/max-sdk
 /max/tests/integration/kv_cache/ @modular/max-serve
 /max/tests/integration/nn/ @modular/max-sdk
+/max/tests/integration/readme/ @modular/mojo-docs
 /max/tests/integration/serve/ @modular/max-serve
 /max/tests/integration/tensor @modular/max-sdk
 /max/tests/integration/unorganized/sampling @modular/max-serve
@@ -200,6 +220,7 @@
 /max/tests/tests/test_compile_pool.py @modular/max-sdk
 /max/tests/tests/test_compile_pool_gpu.py @modular/max-sdk
 /max/tests/tests/test_compile_serialization.py @modular/max-sdk
+/max/tests/tests/test_compiled_callable.py @modular/max-sdk
 /max/tests/tests/test_dim_substitute.py @modular/max-sdk
 /max/tests/tests/test_eager_cold_start_policy.py @modular/max-sdk
 /max/tests/tests/test_eager_usage_validator.py @modular/max-sdk
@@ -222,16 +243,16 @@
 /utils @modular/max-sdk
 /utils/local_transformers_setup/ @modular/max-serve
 /Support/ @modular/compiler
-/Support/**/Compiler/ @modular/mojo-lang
-/Support/**/DebugInfoDialect @modular/mojo-lang @modular/mojo-tooling
-/Support/**/MArchTarget/ @modular/mojo-lang
-/Support/**/MDialect/ @modular/mojo-lang
+/Support/**/Compiler/ @modular/mojo-compiler
+/Support/**/DebugInfoDialect @modular/mojo-compiler @modular/mojo-tooling
+/Support/**/MArchTarget/ @modular/mojo-compiler
+/Support/**/MDialect/ @modular/mojo-compiler
 /Support/**/Telemetry/ @modular/max-sdk
 /Support/tools/driver-tblgen @modular/mojo-tooling
 pixi.toml @modular/sdlc
 pyproject.toml @modular/sdlc
-/Mojo/**/CompilerProfiling* @modular/mojo-lang @modular/mojo-tooling
-/Mojo/lib/CompilerRT/Tracing.cpp @modular/mojo-lang @modular/mojo-tooling
+/Mojo/**/CompilerProfiling* @modular/mojo-compiler @modular/mojo-tooling
+/Mojo/lib/CompilerRT/Tracing.cpp @modular/mojo-compiler @modular/mojo-tooling
 /max/python/max/**/profiler* @modular/max-sdk
 /Support/**/Profiling/ @modular/mojo-tooling
 /Support/include/Support/Profiling/PluginABI.h @modular/max-sdk

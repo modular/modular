@@ -28,6 +28,9 @@
 # This runner matches its settings: agent temperature 0 and reasoning effort
 # "high", simulator temperature 0 and reasoning effort "medium", 200-step cap,
 # no request timeout, and up to 6 retries of a failed request.
+# The requests carry no max_tokens. A Mach engine caps those at its
+# --max-new-tokens (256 unless set), so serve it with that raised to the max
+# length, and front it with the model's --format-spec so tool calls parse.
 # On GLM-5.3 the chat template renders a missing effort as "Max", so an agent
 # run without one reasons longer than the harness asks for.
 #
@@ -315,10 +318,10 @@ print("\n".join(str(m.get("id")) for m in data if m.get("id")))
     cat >&2 <<MSG
 ERROR: could not auto-detect a model from $url/v1/models.
 
-       The list came back empty, which has two usual causes: the credential
-       is missing or rejected (the endpoint 401s and the list reads empty),
-       or this is a mach engine behind the Mammoth orchestrator, which never
-       populates the list. Either way, pass --model with the served name.
+       The list came back empty, which usually means the credential is
+       missing or rejected (the endpoint 401s and the list reads empty), or
+       the server does not list what it serves. Either way, pass --model with
+       the served name.
 MSG
     exit 1
   fi

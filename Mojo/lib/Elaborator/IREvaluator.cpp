@@ -150,9 +150,6 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateFnTypeIsCABIAttr(fnTypeIsCABIAttr);
   if (auto getBaseTypeNameAttr = dyn_cast<GetBaseTypeNameAttr>(attr))
     return evaluateGetBaseTypeNameAttr(getBaseTypeNameAttr);
-  if (auto compileOffloadClosureAttr =
-          dyn_cast<CompileOffloadClosureAttr>(attr))
-    return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
   if (auto compileAssemblyAttr = dyn_cast<CompileAssemblyAttr>(attr))
     return evaluateCompileAssemblyAttr(compileAssemblyAttr);
 
@@ -176,9 +173,37 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
   switch (op.getOpcode()) {
-  case POC::CurrentTarget:
+  case POC::CurrentTarget: {
     // Retrieve the contextual compilation target info.
-    return {TargetParamAttr::get(elaborator->getTarget())};
+    TargetInfoAttr target = elaborator->getTarget();
+    // `bundleCompileOffloadOp` rewrote these to generator references so their
+    // generators would be sliced in; undo that here, so a kernel reading the
+    // plugin sees the instance references it would have seen on the host.
+    if (target.getOpaquePlugin()) {
+      mlir::AttrTypeReplacer replacer;
+      bool concretizeFailed = false;
+      replacer.addReplacement(
+          [&](TypeGeneratorRefAttr genRef) -> std::pair<Attribute, WalkResult> {
+            ErrorTreeOr<TypeInstanceRefAttr> instRef =
+                elaborator->getConcreteStructTypeReference(parent, *errorLoc,
+                                                           genRef);
+            if (instRef.isError()) {
+              emitError(instRef.takeError());
+              concretizeFailed = true;
+              return {genRef, WalkResult::interrupt()};
+            }
+            return {instRef.takeValue(), WalkResult::skip()};
+          });
+      Attribute rewritten = replacer.replace(Attribute(target));
+      if (concretizeFailed) {
+        return failure();
+      }
+      if (auto newTarget = dyn_cast_or_null<TargetInfoAttr>(rewritten)) {
+        target = newTarget;
+      }
+    }
+    return {TargetParamAttr::get(target)};
+  }
   case POC::AcceleratorArch:
     return {StringAttr::get(elaborator->options.targetAccelerator,
                             StringType::get(op.getContext()))};
@@ -285,9 +310,14 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
 
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
+  SymbolConstantAttr callee =
+      extractSymbolConstantAttr(op.getOperands().front());
+  if (hasUnresolvedParamValue(callee))
+    return failure();
+
   // Attempt to concretize the function first.
-  ErrorTreeOr<FuncOp> funcOr = elaborator->getConcreteFunction(
-      parent, *errorLoc, extractSymbolConstantAttr(op.getOperands().front()));
+  ErrorTreeOr<FuncOp> funcOr =
+      elaborator->getConcreteFunction(parent, *errorLoc, callee);
   if (funcOr.isError()) {
     emitError(funcOr.takeError());
     return failure();

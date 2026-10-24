@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """The MiMo-V2.6-Flash DFlash drafter (``dflash/`` in the checkpoint)."""
 
+from .arch import dflash_mimo_v2_draft_arch
 from .context_writer import DFlashContextWriter
 from .dflash_mimo_v2 import DFlashMiMoV2
+from .drafter import DFlashMiMoV2DraftConfig, DrafterExport
 from .model_config import DFlashMiMoV2Config
 from .weight_adapters import (
     convert_safetensor_state_dict,
@@ -24,6 +26,9 @@ __all__ = [
     "DFlashContextWriter",
     "DFlashMiMoV2",
     "DFlashMiMoV2Config",
+    "DFlashMiMoV2DraftConfig",
+    "DrafterExport",
     "convert_safetensor_state_dict",
+    "dflash_mimo_v2_draft_arch",
     "load_mask_embedding",
 ]

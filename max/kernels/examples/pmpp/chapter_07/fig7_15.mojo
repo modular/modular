@@ -22,14 +22,15 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
 
 def convolution_cached_tiled_2D_const_mem_kernel(
-    N: UnsafePointer[Float32, ImmutAnyOrigin],
-    F: UnsafePointer[Float32, ImmutAnyOrigin],
-    P: UnsafePointer[Float32, MutAnyOrigin],
+    N: ImmPointer[Float32, ImmutAnyOrigin],
+    F: ImmPointer[Float32, ImmutAnyOrigin],
+    P: MutPointer[Float32, MutAnyOrigin],
     width_dev: Int32,
     height_dev: Int32,
 ):
@@ -87,8 +88,9 @@ def convolution_cached_tiled_2D_const_mem_kernel(
                     and sCol < TILE_DIM
                 ):
                     # Data is in shared memory - use it (fast!)
-                    Pvalue += F[fRow * FILTER_WIDTH + fCol] * Float32(
-                        N_s[sRow * TILE_DIM + sCol]
+                    Pvalue += (
+                        F[fRow * FILTER_WIDTH + fCol]
+                        * N_s[sRow * TILE_DIM + sCol]
                     )
                 else:
                     # Data is NOT in shared memory - fetch from global memory
@@ -108,9 +110,9 @@ def convolution_cached_tiled_2D_const_mem_kernel(
 
 
 def convolution_cached_tiled_2d_const_mem(
-    h_in: UnsafePointer[mut=False, Float32, _],
-    h_filter: UnsafePointer[mut=False, Float32, _],
-    h_out: UnsafePointer[mut=True, Float32, _],
+    h_in: ImmPointer[Float32, _],
+    h_filter: ImmPointer[Float32, _],
+    h_out: MutPointer[Float32, _],
     width: Int,
     height: Int,
     ctx: DeviceContext,
@@ -166,11 +168,11 @@ def convolution_cached_tiled_2d_const_mem(
 
 
 def cpu_2d_conv(
-    inarr: UnsafePointer[mut=False, Float32, _],
-    outarr: UnsafePointer[mut=True, Float32, _],
+    inarr: ImmPointer[Float32, _],
+    outarr: MutPointer[Float32, _],
     width: Int,
     height: Int,
-    h_filter: UnsafePointer[mut=False, Float32, _],
+    h_filter: ImmPointer[Float32, _],
     filter_width: Int,
     r: Int,
 ):
@@ -208,10 +210,10 @@ def main() raises:
     var filter_elements = filter_width * filter_width
 
     # Allocate host memory
-    var h_in = alloc[Float32](in_elements)
-    var h_filter = alloc[Float32](filter_elements)
-    var h_out = alloc[Float32](in_elements)
-    var h_ref = alloc[Float32](in_elements)
+    var h_in = unsafe_alloc[Float32](in_elements)
+    var h_filter = unsafe_alloc[Float32](filter_elements)
+    var h_out = unsafe_alloc[Float32](in_elements)
+    var h_ref = unsafe_alloc[Float32](in_elements)
 
     # Initialize input and filter with random values
     for i in range(in_elements):
@@ -254,7 +256,7 @@ def main() raises:
         print("SUCCESS: All values match!")
 
     # Cleanup
-    h_in.free()
-    h_filter.free()
-    h_out.free()
-    h_ref.free()
+    h_in.unsafe_free()
+    h_filter.unsafe_free()
+    h_out.unsafe_free()
+    h_ref.unsafe_free()

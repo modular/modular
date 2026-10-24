@@ -13,9 +13,10 @@
 
 from __future__ import annotations
 
+import gc
 import queue
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from types import ModuleType
@@ -99,11 +100,19 @@ from tests.serve.scheduler.common import (
     create_jenga_kv_cache,
 )
 
-# Window for one blocking dispatcher read over loopback ZMQ IPC (delivery is
-# ~ms). Every run_iteration burns one full window on the terminal Empty of
-# its dispatcher drain loop, so this constant dominates suite wall time.
-TIMEOUT = 0.2
+# How long a sent message may take to arrive over loopback ZMQ IPC. Only a
+# lost message waits this long.
+TIMEOUT = 30.0
 _T = TypeVar("_T")
+
+
+@pytest.fixture(autouse=True)
+def _collect_di_scheduler_cycles() -> Generator[None]:
+    yield
+    # Scheduler callbacks form cycles that retain NIXL progress threads.
+    # Rust-backed Jenga pools trigger less Python GC, so collect between tests
+    # instead of letting idle agents burn CPU throughout subsequent tests.
+    gc.collect()
 
 
 @dataclass
@@ -115,14 +124,33 @@ class DIQueues:
     cancel_queue: queue.Queue[list[RequestID]]
 
 
-def blocking_recv(fn: Callable[[], _T], timeout: float = TIMEOUT) -> _T:
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        try:
+@dataclass
+class InFlight:
+    """Messages sent one way between the test dispatchers but not yet read.
+
+    ZMQ delivers in the background, and the first message on a new dealer
+    also waits for the connect. So a nowait read can miss a message that was
+    already sent. Waiting for the sent count makes each ``run_iteration`` see
+    every message sent before it, however slow the host is.
+    """
+
+    count: int = 0
+
+    def recv(self, fn: Callable[[], _T]) -> _T:
+        """Receives one message, and waits for it only if one was sent."""
+        if self.count == 0:
             return fn()
-        except queue.Empty:
-            time.sleep(0.001)
-    raise queue.Empty()
+        # Some tests patch time.monotonic, so use a clock they leave alone.
+        deadline = time.perf_counter() + TIMEOUT
+        while time.perf_counter() < deadline:
+            try:
+                msg = fn()
+            except queue.Empty:
+                time.sleep(0.001)
+                continue
+            self.count -= 1
+            return msg
+        raise TimeoutError(f"a sent message did not arrive within {TIMEOUT}s")
 
 
 def run_until(
@@ -199,21 +227,35 @@ def is_cancelled(decode: DecodeScheduler, req_id: RequestID) -> bool:
 
 
 class BasicDispatcherServer(PrefillDispatcherServer):
-    def __init__(self, bind_addr: str):
+    def __init__(self, bind_addr: str, requests: InFlight, replies: InFlight):
         self.bind_addr = bind_addr
+        self.requests = requests
+        self.replies = replies
         super().__init__(bind_addr=bind_addr)
 
+    def send_reply_nowait(
+        self, msg: ReplyType, identity: ClientIdentity
+    ) -> None:
+        super().send_reply_nowait(msg, identity)
+        self.replies.count += 1
+
     def recv_request_nowait(self) -> tuple[RequestType, ClientIdentity]:
-        return blocking_recv(super().recv_request_nowait)
+        return self.requests.recv(super().recv_request_nowait)
 
 
 class BasicDispatcherClient(DecodeDispatcherClient):
-    def __init__(self, bind_addr: str):
+    def __init__(self, bind_addr: str, requests: InFlight, replies: InFlight):
         self.bind_addr = bind_addr
+        self.requests = requests
+        self.replies = replies
         super().__init__(bind_addr=bind_addr)
 
+    def send_request_nowait(self, request: RequestType, dest_addr: str) -> None:
+        super().send_request_nowait(request, dest_addr)
+        self.requests.count += 1
+
     def recv_reply_nowait(self) -> ReplyType:
-        return blocking_recv(super().recv_reply_nowait)
+        return self.replies.recv(super().recv_reply_nowait)
 
 
 class HintRecordingConnector(NullConnector):
@@ -435,8 +477,9 @@ def create_di_scheduler(
         kv_cache_decode = _create_decode_kv_cache()
     server_addr = generate_zmq_ipc_path()
     client_addr = generate_zmq_ipc_path()
-    dispatcher_server = BasicDispatcherServer(bind_addr=server_addr)
-    dispatcher_client = BasicDispatcherClient(bind_addr=client_addr)
+    requests, replies = InFlight(), InFlight()
+    dispatcher_server = BasicDispatcherServer(server_addr, requests, replies)
+    dispatcher_client = BasicDispatcherClient(client_addr, requests, replies)
 
     decode_pipeline = (
         FakeOverlapPipeline(
@@ -1726,35 +1769,20 @@ def test_cancel_request_before_prefill_executes() -> None:
     assert batch[req_id].is_done
     assert batch[req_id].result is None
 
-    found_cancel = False
-    for _ in range(10):
-        try:
-            msg, _ = prefill.dispatcher.recv_request_nowait()
-            if isinstance(msg, CancelRequest) and msg.id == req_id:
-                found_cancel = True
-                break
-        except queue.Empty:
-            break
-    assert found_cancel, "Expected a CancelRequest to be sent to prefill"
+    # Prefill reads the handshake, the PrefillRequest and the CancelRequest,
+    # runs CE, and drops the result because the request was cancelled.
+    with patch.object(
+        prefill, "handle_cancel_request", wraps=prefill.handle_cancel_request
+    ) as handle_cancel:
+        prefill.run_iteration()
+    handle_cancel.assert_called_once()
+    assert handle_cancel.call_args.args[0].id == req_id
 
-    # Run prefill...cancel should cause it to discard the result
-    prefill.run_iteration()
-
-    # Verify no PrefillResponse was sent back to decode.
-    try:
-        reply = blocking_recv(decode.dispatcher.recv_reply_nowait, timeout=0.1)
-        if isinstance(reply, KVTransferEngineMetadata):
-            try:
-                reply2 = blocking_recv(
-                    decode.dispatcher.recv_reply_nowait, timeout=0.1
-                )
-                assert not isinstance(reply2, PrefillResponse), (
-                    "Did not expect a PrefillResponse after cancellation"
-                )
-            except queue.Empty:
-                pass  # Valid (no PrefillResponse)
-    except queue.Empty:
-        pass  # Valid
+    # Only the engine-registration handshake comes back, no PrefillResponse.
+    reply = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(reply, KVTransferEngineMetadata)
+    with pytest.raises(queue.Empty):
+        decode.dispatcher.recv_reply_nowait()
 
 
 def test_chunked_prefill_completes_across_multiple_iterations() -> None:
@@ -1792,8 +1820,9 @@ def test_chunked_prefill_completes_across_multiple_iterations() -> None:
         f"got {prefill_progress_count}"
     )
 
-    # Decode receives the response and runs decode to completion
-    run_until(lambda: req_id in done_request_ids(q), decode, prefill)
+    # The prefill token is already done (output_len=1), so wait for the TG
+    # output too. It comes only after the KV transfer completes.
+    run_until(lambda: response_count(q, req_id) >= 2, decode, prefill)
 
     # Verify tokens
     outputs: list[TextGenerationOutput] = []

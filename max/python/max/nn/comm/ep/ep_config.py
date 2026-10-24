@@ -15,7 +15,7 @@
 
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from max.dtype import DType
 from max.nn.quant_config import QuantConfig
@@ -103,6 +103,16 @@ class EPConfig:
     fused_shared_expert: bool = False
     """Whether to fuse the shared expert computation with the routed experts."""
 
+    shared_expert_side_stream: Literal["pre", "post"] | None = None
+    """Runs the unfused shared expert of an ``nvfp4_dyn_global_scales`` model
+    on a side stream so it overlaps the EP collectives.
+
+    The per-token NVFP4 dispatch has no async split, so without this its
+    shared expert runs inline and serializes with the dispatch. ``"pre"``
+    issues it before the dispatch, ``"post"`` before the combine. Requires
+    ``nvfp4_dyn_global_scales``; the other dispatch paths already overlap it.
+    """
+
     fuse_ffn_combine_send: bool = False
     """Fuse the combine send into the MoE FFN's own epilogue.
 
@@ -151,6 +161,12 @@ class EPConfig:
 
     max_replicas: int = 1
     """Largest replica count across all (layer, logical) cells. Also the trailing dim of log2phy."""
+
+    eplb_router_folded: bool = False
+    """When true, the router's expert-indexed weights are stored in physical
+    slot order, so the router emits physical expert ids and dispatch skips
+    the EPLB remap. Only valid for a placement that is a pure permutation
+    (``max_replicas == 1``)."""
 
     eplb_phy2log_plan: Any = None
     """Optional pre-computed EPLB plan (phy2log numpy array, shape
@@ -257,6 +273,15 @@ class EPConfig:
         ):
             raise ValueError(
                 "nvfp4_dyn_global_scales requires an NVFP4 dispatch_quant_config"
+            )
+
+        if self.shared_expert_side_stream is not None and (
+            not self.nvfp4_dyn_global_scales or self.use_allreduce
+        ):
+            raise ValueError(
+                "shared_expert_side_stream requires nvfp4_dyn_global_scales"
+                " and no use_allreduce; the other EP paths already overlap"
+                " the shared expert"
             )
 
         if self.use_allreduce and self.n_nodes > 1:

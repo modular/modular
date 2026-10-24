@@ -31,6 +31,9 @@ extension for VS Code, and getting started with Mojo programming, see the
 
 ## Example subdirectories
 
+- `hello.mojo`: The smallest Mojo program. Run it from the root of the
+  repository with `./bazelw run //Mojo:mojo -- Mojo/examples/hello.mojo`.
+
 - `life/`: The
   [Get started with Mojo](https://mojolang.org/docs/manual/get-started)
   tutorial solution. A complete implementation of Conway's Game of Life cellular

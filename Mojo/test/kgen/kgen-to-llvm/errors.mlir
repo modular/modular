@@ -19,25 +19,6 @@ module {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  kgen.func @capturing_parameter_closure(%arg0: !kgen.pointer<string>) capturing -> !kgen.string {
-    %0 = pop.load %arg0 : !kgen.pointer<string>
-    hlcf.return %0 : !kgen.string
-  }
-
-  kgen.func @materializing_user() -> !kgen.generator<(!kgen.pointer<string>) capturing -> !kgen.string> {
-    // TODO: Duplicate errors are because MLIR auto-legalization stuff is the wrong
-    // thing to use for LowerKGENToLLVM.
-    // expected-error @below {{capturing closures cannot be materialized as runtime values}}
-    %struct = kgen.param.constant: struct<((!kgen.pointer<string>) capturing -> !kgen.string, index)> = <{@capturing_parameter_closure, 8}>
-    // expected-error @below {{capturing closures cannot be materialized as runtime values}}
-    %0 = kgen.struct.extract %struct[0] : !kgen.struct<((!kgen.pointer<string>) capturing -> !kgen.string, index)>
-    hlcf.return %0 : !kgen.generator<(!kgen.pointer<string>) capturing -> !kgen.string>
-  }
-}
-
-// -----
-
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
   // expected-error @below {{'"unknown_attribute"' is not defined}}
   // expected-error @below {{failed to legalize operation 'kgen.func' that was explicitly marked illegal}}

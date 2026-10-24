@@ -280,7 +280,7 @@ def s8_call_inner[
 
 # S9: kgen.conformance @"##__mojo_closure__##"{{.*}}#kgen.param_list.get<:param_list<{{.*}}> [!String, !Int]
 # S9-NEXT: kgen.witness "__call__"
-# S9-SAME: capturing -> !kgen.none>
+# S9-SAME: -> !kgen.none>
 
 
 struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):

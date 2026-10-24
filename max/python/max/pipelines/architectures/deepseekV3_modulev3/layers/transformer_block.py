@@ -25,6 +25,19 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
+from max.experimental.nn.common_layers.quant_linear import (
+    QuantizedMLP,
+    tensor_parallel_mlp,
+)
+from max.experimental.nn.common_layers.quant_mla import (
+    QuantizedLatentAttentionWithRope,
+    tensor_parallel_latent_attention_with_rope,
+)
+from max.experimental.nn.common_layers.quant_moe import (
+    ExpertParallelMoE,
+    QuantizedMoE,
+    TensorParallelMoE,
+)
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import DeviceMapping, Partial
 from max.experimental.tensor import Tensor
@@ -32,16 +45,6 @@ from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 
 from ..model_config import DeepseekV3Config
 from .moe_gate import DeepseekV3TopKRouter
-from .quant_linear import QuantizedMLP, tensor_parallel_mlp
-from .quant_mla import (
-    QuantizedLatentAttentionWithRope,
-    tensor_parallel_latent_attention_with_rope,
-)
-from .quant_moe import (
-    ExpertParallelMoE,
-    QuantizedMoE,
-    TensorParallelMoE,
-)
 
 
 def _get_mlp(
@@ -231,6 +234,30 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         return post_mlp(self.mode, self.config, h, mlp_out)
 
 
+def residual_partial_sum(x: Tensor, attn_out: Tensor) -> Tensor:
+    """Returns ``x + attn_out`` as a Partial sum of the per-device partials.
+
+    Each device holds its partial sum of ``attn_out`` (the allreduce was
+    skipped). The residual ``x`` is added on the first device only, so that
+    it isn't counted once per device after the reduction.
+    """
+
+    def add_residual_once(
+        partial_sums: list[Tensor], residuals: list[Tensor]
+    ) -> list[Tensor]:
+        return [
+            residuals[0] + partial_sums[0],
+            *partial_sums[1:],
+        ]
+
+    return F.call_on_mesh(
+        add_residual_once,
+        x.mesh,
+        x.mesh.axis_names,
+        out_specs=DeviceMapping(x.mesh, (Partial(),)),
+    )(attn_out, x)
+
+
 def post_attention(
     mode: ParallelismMode,
     config: DeepseekV3Config,
@@ -245,26 +272,10 @@ def post_attention(
                 attn_out = F.allreduce_sum(attn_out)
                 return x + attn_out
             else:
-                # Each device holds its partial sum (allreduce was
-                # skipped). Add the residual only on the first device so
-                # it isn't counted P times after the reduce-scatter.
-                def add_residual_once(
-                    partial_sums: list[Tensor], residuals: list[Tensor]
-                ) -> list[Tensor]:
-                    return [
-                        residuals[0] + partial_sums[0],
-                        *partial_sums[1:],
-                    ]
-
-                partial = F.call_on_mesh(
-                    add_residual_once,
-                    x.mesh,
-                    x.mesh.axis_names,
-                    out_specs=DeviceMapping(x.mesh, (Partial(),)),
-                )(attn_out, x)
-
                 # Partial -> Sharded(0): real reduce-scatter collective.
-                return F.reduce_scatter(partial, scatter_axis=0)
+                return F.reduce_scatter(
+                    residual_partial_sum(x, attn_out), scatter_axis=0
+                )
         case ParallelismMode.TP_TP:
             attn_out = F.allreduce_sum(attn_out)
             return x + attn_out

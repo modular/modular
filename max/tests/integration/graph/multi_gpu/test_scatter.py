@@ -110,3 +110,47 @@ def test_scatter_execution(num_gpus: int, dp_size: int) -> None:
                 f"expected {expected}, got {actual}"
             ),
         )
+
+
+@pytest.mark.parametrize("num_gpus,dp_size", [(2, 2), (4, 4)])
+def test_scatter_all_empty_chunks(num_gpus: int, dp_size: int) -> None:
+    """Tests that a scatter of only empty chunks launches nothing.
+
+    The next scatter on the same signal buffers must still deliver every
+    chunk, so the skipped call left the peers' barriers in step.
+    """
+    if (available := accelerator_count()) < num_gpus:
+        pytest.skip(f"Need {num_gpus} GPUs, have {available}")
+
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    host = CPU()
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    signal_buffers = signals.buffers()
+    session = InferenceSession(devices=[host] + devices)
+
+    empty = session.load(scatter_graph(signals, [0] * dp_size))
+    outputs = empty.execute(
+        *[
+            Buffer.from_numpy(np.zeros(0, dtype=np.uint32)).to(devices[0])
+            for _ in range(dp_size)
+        ],
+        *signal_buffers,
+    )
+    for result in outputs:
+        assert isinstance(result, Buffer)
+        assert result.to(host).to_numpy().shape == (0,)
+
+    chunks_np = [
+        np.arange(i * 100 + 1, i * 100 + 6, dtype=np.uint32)
+        for i in range(dp_size)
+    ]
+    full = session.load(scatter_graph(signals, [5] * dp_size))
+    outputs = full.execute(
+        *[Buffer.from_numpy(c).to(devices[0]) for c in chunks_np],
+        *signal_buffers,
+    )
+    for gpu_idx, result in enumerate(outputs):
+        assert isinstance(result, Buffer)
+        np.testing.assert_array_equal(
+            result.to(host).to_numpy(), chunks_np[gpu_idx]
+        )

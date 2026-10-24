@@ -236,7 +236,13 @@ class MoEQuantized(MoE):
         # `_uses_block_scaled_nv_ep_layout` in `ep_kernels`, which is what
         # produces the offsets. Ungated, AMD MXFP8 read the dispatch's 5 outputs
         # as the NVIDIA 6-tuple and never reached `BlockScaledStrategy`.
-        return self.quant_config.is_mxfp8 and accelerator_api() == "cuda"
+        # MXFP4 takes it on cuda only for local experts, whose activations the
+        # grouped quantize makes MXFP4 (W4A4): no EP dispatch emits it.
+        if self.quant_config.is_mxfp8 or (
+            self.quant_config.is_mxfp4 and self._ep_batch_manager is None
+        ):
+            return accelerator_api() == "cuda"
+        return False
 
     def _can_fuse_swiglu_mxfp8(self) -> bool:
         """Whether gemm1 folds the gated activation and the MXFP8 requantize
@@ -669,17 +675,14 @@ class MoEQuantized(MoE):
             else None
         )
 
-        gather_indices = ops.cast(
-            token_order // self.num_experts_per_token,
-            DType.int32,
-        )
         total_m = ops.shape_to_tensor(token_order.shape)[0].cast(DType.uint32)
 
         if self._uses_nvidia_block_scaled_ep_layout:
             assert scales_offset is not None
             assert isinstance(strategy, NvMxf4f8Strategy)
-            # The grouped quantize gathers rows through the permutation
-            # indices itself, so the permuted activations never materialize.
+            # The grouped quantize gathers rows through the slot order itself,
+            # dividing by the top-k in its loads, so neither the token indices
+            # nor the permuted activations materialize.
             permuted_quant, permuted_scales = strategy.grouped_quantize(
                 x,
                 self._token_group_size,
@@ -687,9 +690,14 @@ class MoEQuantized(MoE):
                 expert_start,
                 scales_offset,
                 expert_ids,
-                indices=gather_indices,
+                indices=token_order,
+                indices_divisor=self.num_experts_per_token,
             )
         else:
+            gather_indices = ops.cast(
+                token_order // self.num_experts_per_token,
+                DType.int32,
+            )
             permuted_quant, permuted_scales = strategy.quantize(
                 ops.gather(x, gather_indices, axis=0),
                 self._token_group_size,

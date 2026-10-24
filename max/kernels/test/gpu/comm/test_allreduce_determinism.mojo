@@ -43,6 +43,7 @@
 # ngpus >= 2 at comptime); the multi-GPU determinism sweep needs a >= 2 GPU
 # runner (`--config=remote-b200` / the nightly multi-GPU lane).
 
+from std.memory.alloc import unsafe_alloc
 from std.sys import size_of
 
 from comm import Signal, group_end, group_start
@@ -95,14 +96,14 @@ def hash_positive_control() raises -> None:
     runs (and gives evidence) even on a single-GPU box.
     """
     comptime n = 4096
-    var buf = alloc[Float32](n)
+    var buf = unsafe_alloc[Float32](n)
     for j in range(n):
         buf[j] = Float32(j) * 0.5 - 1024.0
 
     var h0 = hash_output(buf, n)
     # Flip the lowest bit of one element through an integer view (a true
     # single-bit change of the stored float bits), re-hash, then restore.
-    var ibuf = buf.bitcast[UInt32]()
+    var ibuf = buf.unsafe_bitcast[UInt32]()
     var saved_bits = ibuf[n // 2]
     ibuf[n // 2] = saved_bits ^ 1
     var h1 = hash_output(buf, n)
@@ -111,7 +112,7 @@ def hash_positive_control() raises -> None:
 
     assert_true(h0 != h1, "positive control FAILED: hash blind to a bit flip")
     assert_equal(h0, h2)  # restoring the bit restores the hash
-    buf.free()
+    buf.unsafe_free()
     print("hash positive control PASS (single-bit flip detected)")
 
 
@@ -146,9 +147,9 @@ def allreduce_determinism_test[
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
 
-        var h_in = alloc[Scalar[dtype]](length)
+        var h_in = unsafe_alloc[Scalar[dtype]](length)
         host_in.append(h_in)
-        host_out.append(alloc[Scalar[dtype]](length))
+        host_out.append(unsafe_alloc[Scalar[dtype]](length))
 
         # Fixed, deterministic per-rank inputs: a closed-form function of
         # (rank, index) mapped to a small bounded float so bf16 sums across up
@@ -175,9 +176,7 @@ def allreduce_determinism_test[
     ]
     var in_tensors = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: TileTensor(
-            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                in_dev[i].unsafe_ptr()
-            ),
+            in_dev[i].unsafe_ptr(),
             row_major(length),
         )
     )
@@ -269,8 +268,8 @@ def allreduce_determinism_test[
             assert_equal(run_hash, ref_hash)
 
     for i in range(ngpus):
-        host_in[i].free()
-        host_out[i].free()
+        host_in[i].unsafe_free()
+        host_out[i].unsafe_free()
 
 
 def run_determinism_sweep() raises -> None:

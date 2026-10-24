@@ -18,6 +18,7 @@ import dataclasses
 import json
 import logging
 from abc import abstractmethod
+from collections.abc import Mapping, Sequence
 from os import environ
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
@@ -34,6 +35,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.experimental.compilation import CompiledCallable
 from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
@@ -81,10 +83,11 @@ if TYPE_CHECKING:
 
 from max.pipelines.sampling import (
     FusedSamplingProcessor,
+    TopKSampler,
     apply_logits_processors,
-    token_sampler,
 )
 
+from ..graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
 from ..interfaces import (
     ModelInputs,
     ModelOutputs,
@@ -96,6 +99,52 @@ from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
+
+
+def load_sampler_graphs(
+    session: InferenceSession,
+    pipeline_config: PipelineConfig,
+    device: DeviceRef,
+    vocab_size: int | None,
+    custom_extensions: Sequence[Path] = (),
+) -> dict[str, CompiledCallable[..., Any]]:
+    """Compiles the sampler, and the bitmask sampler if constraints may fire.
+
+    The bitmask sampler compiles when ``needs_bitmask_constraints`` is set.
+
+    Args:
+        session: The session that compiles and initializes the samplers.
+        pipeline_config: The pipeline's configuration.
+        device: The device the samplers run on.
+        vocab_size: The tokenizer's token count, which bounds the ids the
+            samplers produce, or ``None`` for no bound.
+        custom_extensions: Paths to custom kernel libraries the samplers use.
+
+    Returns:
+        The compiled, initialized samplers keyed by role: the
+        :attr:`GraphRole.SAMPLER` role, and the
+        :attr:`GraphRole.SAMPLER_BITMASK` role if compiled.
+    """
+    specs: dict[str, GraphSpec] = {}
+    with CompilationTimer("sampler") as sampler_timer:
+        variants = [(GraphRole.SAMPLER, False)]
+        if pipeline_config.needs_bitmask_constraints:
+            variants.insert(0, (GraphRole.SAMPLER_BITMASK, True))
+        for role, needs_bitmask in variants:
+            sampler = TopKSampler(
+                pipeline_config.sampling,
+                device=device,
+                needs_bitmask_input=needs_bitmask,
+                unpadded_vocab_size=vocab_size,
+            )
+            specs[role] = GraphSpec(
+                sampler,
+                TopKSampler.GRAPH_NAME,
+                sampler.input_types,
+                custom_extensions=custom_extensions,
+            )
+        sampler_timer.mark_build_complete()
+        return compile_and_init_graphs(session, specs)
 
 
 @dataclasses.dataclass
@@ -120,6 +169,10 @@ class TextGenerationPipelineInterface(
     # TODO: Get rid of these fields
     _devices: list[Device]
     _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
+
+    compiled_modules: Mapping[str, CompiledCallable[..., Any]]
+    """The graphs this pipeline compiled, by role, for export: the model's,
+    then the sampler's."""
 
     @property
     @abstractmethod
@@ -294,29 +347,20 @@ class TextGenerationPipeline(
         )
         sampler_device_ref = DeviceRef.from_device(self._sampler_device)
 
-        # Load sampler. The bitmask-aware sampler is loaded when constrained
-        # decoding could fire (see ``needs_bitmask_constraints``).
-        self._sampler_with_bitmask: Model | None = None
-        self._sampler_without_bitmask: Model | None = None
-        with_bitmask_graph = None
-        with CompilationTimer("sampler") as sampler_timer:
-            if pipeline_config.needs_bitmask_constraints:
-                with_bitmask_graph = token_sampler(
-                    pipeline_config.sampling,
-                    device=sampler_device_ref,
-                    needs_bitmask_input=True,
-                    unpadded_vocab_size=self.vocab_size,
-                )
-            without_bitmask_graph = token_sampler(
-                pipeline_config.sampling,
-                device=sampler_device_ref,
-                needs_bitmask_input=False,
-                unpadded_vocab_size=self.vocab_size,
-            )
-            sampler_timer.mark_build_complete()
-            if with_bitmask_graph is not None:
-                self._sampler_with_bitmask = session.load(with_bitmask_graph)
-            self._sampler_without_bitmask = session.load(without_bitmask_graph)
+        samplers = load_sampler_graphs(
+            session, pipeline_config, sampler_device_ref, self.vocab_size
+        )
+        bitmask_sampler = samplers.get(GraphRole.SAMPLER_BITMASK)
+        self._sampler_with_bitmask: Model | None = (
+            bitmask_sampler.engine_model if bitmask_sampler else None
+        )
+        self._sampler_without_bitmask: Model | None = samplers[
+            GraphRole.SAMPLER
+        ].engine_model
+        self.compiled_modules = {
+            **self._pipeline_model.compiled_modules,
+            **samplers,
+        }
 
         # Pre-allocate pinned buffer for D2H token copies only when the
         # bitmask path is wired in. This buffer is used for async token

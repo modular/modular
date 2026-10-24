@@ -59,5 +59,5 @@ struct LayerNormOverride:
         beta: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype=dtype],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         raise Error("LAYER_NORM_OVERRIDE_FIRED")

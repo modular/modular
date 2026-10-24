@@ -14,15 +14,23 @@
 
 from __future__ import annotations
 
+import math
+
 from max._core import Operation
 from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
 
-from ..dim import Dim
+from ..dim import Dim, StaticDim
 from ..graph import Graph
 from ..shape import Shape
 from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
+from .cast import cast
+from .constant import constant
+from .elementwise import max as elementwise_max
+from .reshape import reshape
+from .shape_to_tensor import shape_to_tensor
+from .transfer_to import transfer_to
 
 
 def sum(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -98,7 +106,57 @@ def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(rmo.MoReduceMeanOp, x, axis=axis)
+    x = TensorValue(x)
+    total = sum(x, axis=axis)
+    if not x.dtype.is_float():
+        # The mean of integers is an integer.
+        return Graph.current._add_op_generated(
+            rmo.DivOp, input_x=total, input_y=_axis_length(x, axis)
+        )[0].tensor
+    # A half-precision type can't hold a long axis's length, but it holds the
+    # length's reciprocal.
+    return Graph.current._add_op_generated(
+        rmo.MulOp, input_x=total, input_y=_inverse_axis_length(x, axis)
+    )[0].tensor
+
+
+def _axis_length(x: TensorValue, axis: int) -> TensorValue:
+    """Returns the length of ``axis`` of an integer ``x`` in ``x``'s dtype.
+
+    The length is at least 1, so the mean of an empty axis is 0 instead of a
+    division by zero.
+    """
+    dim = x.shape[axis]
+    if isinstance(dim, StaticDim):
+        length = constant(int(dim) or 1, DType.int64, device=x.device)
+    else:
+        length = elementwise_max(
+            transfer_to(reshape(shape_to_tensor([dim]), []), x.device),
+            constant(1, DType.int64, device=x.device),
+        )
+    return cast(length, x.dtype)
+
+
+def _inverse_axis_length(x: TensorValue, axis: int) -> TensorValue:
+    """Returns ``1 / length`` of ``axis`` of a float ``x`` in ``x``'s dtype.
+
+    It's computed in at least float32 and rounded once. An empty axis gives
+    ``inf``, so its mean is NaN.
+    """
+    dim = x.shape[axis]
+    if isinstance(dim, StaticDim):
+        n = int(dim)
+        return constant(1.0 / n if n else math.inf, x.dtype, device=x.device)
+    wide = DType.float64 if x.dtype == DType.float64 else DType.float32
+    length = cast(
+        transfer_to(reshape(shape_to_tensor([dim]), []), x.device), wide
+    )
+    inverse = Graph.current._add_op_generated(
+        rmo.DivOp,
+        input_x=constant(1.0, wide, device=x.device),
+        input_y=length,
+    )[0].tensor
+    return cast(inverse, x.dtype)
 
 
 def min(x: TensorValueLike, axis: int = -1) -> TensorValue:

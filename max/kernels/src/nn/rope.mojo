@@ -13,7 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import gcd
-from std.sys.info import CompilationTarget, simd_width_of
+from std.sys.info import CompilationTarget, align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.complex import ComplexSIMD
@@ -74,6 +74,7 @@ def apply_rope[
     & def[width: SIMDLength, alignment: Int](
         idx: Coord, val: SIMD[dtype, width]
     ) -> None,
+    aligned_loads: Bool = False,
 ](
     x: TileTensor[dtype, ...],
     idx: Coord,
@@ -87,22 +88,26 @@ def apply_rope[
     # runtime below, which static (`ComptimeInt`) elements forbid.
     var idx_dyn = idx.make_dynamic[.int64]()
     var indices = get_safetensors_idx(
-        Int(idx[rank - 1].value()), x.static_shape[rank - 1]
+        Int(idx[rank - 1]), x.static_shape[rank - 1]
     )
     var pos_re = idx_dyn
     var pos_im = idx_dyn
     pos_re.replace_dynamic[rank - 1](Int64(indices[0]))
     pos_im.replace_dynamic[rank - 1](Int64(indices[1]))
     comptime width_2 = width // 2
+    # `aligned_loads` promises that each load starts at a whole vector.
+    comptime load_alignment = align_of[
+        SIMD[dtype, Int(width) if interleaved else width_2]
+    ]() if aligned_loads else 1
 
     var val: SIMD[dtype, width]
 
     comptime if interleaved:
-        val = x.load[width=width, alignment=1](idx_dyn)
+        val = x.load[width=width, alignment=load_alignment](idx_dyn)
     else:
         val = rebind[SIMD[dtype, width]](
-            x.load[width=width_2, alignment=1](pos_re).interleave(
-                x.load[width=width_2, alignment=1](pos_im)
+            x.load[width=width_2, alignment=load_alignment](pos_re).interleave(
+                x.load[width=width_2, alignment=load_alignment](pos_im)
             )
         )
 
@@ -181,7 +186,7 @@ def rope_ragged[
     ), "rope_ragged: rope_first partial RoPE requires interleaved layout"
 
     # Extract the position_ids raw pointer + row stride into primitive locals so
-    # they can be `@__copy_capture`'d into the device kernel closure. Capturing
+    # they can be copy-captured (`{var}`) into the device kernel closure. Capturing
     # the `OptionalReg[TileTensor]` directly does not marshal its device pointer
     # into the Metal kernel arg struct -- the closure then reads a null/stale
     # pointer, so every token reads freqs row 0 and RoPE collapses to identity
@@ -200,10 +205,30 @@ def rope_ragged[
         # position_ids rows (`section_idx * pos_ids_stride`), so use the actual
         # dim-0 stride rather than assuming a row-major-contiguous layout where
         # it happens to equal `dim[1]`.
-        pos_ids_stride = Int(pos_ids.layout.stride[0]().value())
+        pos_ids_stride = Int(pos_ids.dynamic_stride(0))
     else:
         pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_imm())
         pos_ids_stride = 0
+
+    comptime target_simd_width = (
+        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
+            target
+        ]() else simd_width_of[dtype, target=context.target]()
+    )
+    comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
+
+    # Each access starts at a multiple of the width, so vector loads are
+    # aligned exactly when every row of `x` and `freqs_cis` starts at a whole
+    # vector. Views into a larger buffer need not.
+    var aligned_loads = (
+        head_size % kernel_simd_width == 0
+        and Int(x.ptr) % align_of[SIMD[dtype, kernel_simd_width]]() == 0
+        and Int(x.dynamic_stride(0)) % kernel_simd_width == 0
+        and Int(x.dynamic_stride(1)) % kernel_simd_width == 0
+        and Int(freqs_cis.ptr) % align_of[SIMD[freq_dtype, kernel_simd_width]]()
+        == 0
+        and Int(freqs_cis.dynamic_stride(0)) % kernel_simd_width == 0
+    )
 
     @inline(.always)
     def rope_fn[width: Int, alignment: Int = 1](idx_arg: Coord) {var}:
@@ -219,77 +244,90 @@ def rope_ragged[
             )
             return
         else:
-            var global_token_idx = Int(idx_arg[0].value())
-
-            var batch_idx: Int = get_batch_from_row_offsets(
-                input_row_offsets, global_token_idx
-            )
-            var token_idx = Int(
-                UInt32(global_token_idx) - input_row_offsets[batch_idx]
-            )
-            var head_dim_idx = Int(idx_arg[2].value())
-
-            # Use position_ids if provided, otherwise fall back to cache calculation
-            var post_seq_idx = start_pos[batch_idx] + UInt32(token_idx)
-
-            var position_ids_idx = Int(post_seq_idx)
-            if has_position_ids:
-                comptime if case .Some(sections) = mrope_section:
-                    var section_idx = 0
-
-                    comptime for i in range(len(sections)):
-                        comptime val = Int(sections[i].value())
-                        if head_dim_idx < val:
-                            section_idx = i
-                            break
-                    position_ids_idx = Int(
-                        pos_ids_ptr[
-                            section_idx * pos_ids_stride + global_token_idx
-                        ]
-                    )
-                else:
-                    position_ids_idx = Int(pos_ids_ptr[global_token_idx])
-
-            # WARN assumes head_size % simd_width == 0
-            # guarded by constrained statement below
+            var head_dim_idx = Int(idx_arg[2])
             var is_unroped_region: Bool
             comptime if rope_first:
                 is_unroped_region = head_dim_idx >= rope_dim
             else:
                 is_unroped_region = head_dim_idx < unroped_dim
 
-            var f_c_temp: SIMD[freq_dtype, width]
-
-            comptime if has_nope:
+            comptime if interleaved and has_nope:
+                # Pass-through columns are a copy.
                 if is_unroped_region:
-                    f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
-                else:
-                    f_c_temp = freqs_cis.load[width=width, alignment=1](
-                        (
-                            Scalar[freqs_cis.linear_idx_type](position_ids_idx),
-                            Scalar[freqs_cis.linear_idx_type](
-                                head_dim_idx - freq_col_offset
-                            ),
+                    var idx_dyn = idx_arg.make_dynamic[.int64]()
+                    if aligned_loads:
+                        output_fn[alignment=alignment](
+                            idx_dyn,
+                            x.load[
+                                width=width,
+                                alignment=align_of[SIMD[dtype, width]](),
+                            ](idx_dyn),
                         )
-                    )
-            else:
-                f_c_temp = freqs_cis.load[width=width, alignment=1](
-                    (
-                        Scalar[freqs_cis.linear_idx_type](position_ids_idx),
-                        Scalar[freqs_cis.linear_idx_type](head_dim_idx),
-                    )
-                )
-            apply_rope[
-                interleaved=interleaved,
-                alignment=alignment,
-            ](x, idx_arg, f_c_temp, output_fn)
+                    else:
+                        output_fn[alignment=alignment](
+                            idx_dyn, x.load[width=width, alignment=1](idx_dyn)
+                        )
+                    return
 
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=context.target]()
-    )
-    comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
+            var f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
+            # Pass-through columns need no position, so they skip the ragged
+            # lookup.
+            if not (has_nope and is_unroped_region):
+                var global_token_idx = Int(idx_arg[0])
+
+                var batch_idx: Int = get_batch_from_row_offsets(
+                    input_row_offsets, global_token_idx
+                )
+                var token_idx = Int(
+                    UInt32(global_token_idx) - input_row_offsets[batch_idx]
+                )
+
+                # Use position_ids if provided, otherwise fall back to cache
+                # calculation
+                var post_seq_idx = start_pos[batch_idx] + UInt32(token_idx)
+
+                var position_ids_idx = Int(post_seq_idx)
+                if has_position_ids:
+                    comptime if case .Some(sections) = mrope_section:
+                        var section_idx = 0
+
+                        comptime for i in range(len(sections)):
+                            comptime val = Int(sections[i])
+                            if head_dim_idx < val:
+                                section_idx = i
+                                break
+                        position_ids_idx = Int(
+                            pos_ids_ptr[
+                                section_idx * pos_ids_stride + global_token_idx
+                            ]
+                        )
+                    else:
+                        position_ids_idx = Int(pos_ids_ptr[global_token_idx])
+
+                var f_idx = (
+                    Scalar[freqs_cis.linear_idx_type](position_ids_idx),
+                    Scalar[freqs_cis.linear_idx_type](
+                        head_dim_idx - freq_col_offset
+                    ),
+                )
+                if aligned_loads:
+                    f_c_temp = freqs_cis.load[
+                        width=width,
+                        alignment=align_of[SIMD[freq_dtype, width]](),
+                    ](f_idx)
+                else:
+                    f_c_temp = freqs_cis.load[width=width, alignment=1](f_idx)
+            if aligned_loads:
+                apply_rope[
+                    interleaved=interleaved,
+                    alignment=alignment,
+                    aligned_loads=True,
+                ](x, idx_arg, f_c_temp, output_fn)
+            else:
+                apply_rope[
+                    interleaved=interleaved,
+                    alignment=alignment,
+                ](x, idx_arg, f_c_temp, output_fn)
 
     comptime if case .Some(sections) = mrope_section:
         comptime for i in range(len(sections)):

@@ -154,6 +154,11 @@ fi
             "\033[31merror\033[0m: use 'bazel test' instead of 'bazel run' to run tests"
         )
 
+    # Bazel sets TEST_TMPDIR but not TMPDIR, so tempfile would use /tmp. On
+    # the remote executors /tmp is an overlayfs, where directory inode numbers
+    # can change and make shutil.rmtree fail.
+    os.environ.setdefault("TMPDIR", os.environ["TEST_TMPDIR"])
+
     __set_torch_memory_limit()
     namespace, unknown_args = __build_parser().parse_known_args(args)
     xml_file = os.environ["XML_OUTPUT_FILE"]

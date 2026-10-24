@@ -25,6 +25,7 @@ from max.experimental.cascade.interfaces.gen_ai import GenAIInterface
 from max.experimental.cascade.serve.openai_chat_pipeline import (
     OpenAIChatCompletionPipeline,
 )
+from max.experimental.cascade.telemetry import measured
 from max.serve.schemas.openai import CreateChatCompletionRequest
 
 
@@ -53,6 +54,7 @@ async def build_router(
     router = APIRouter()
 
     @router.post("/v1/chat/completions", response_model=None)
+    @measured
     async def chat_completions(
         request: CreateChatCompletionRequest,
     ) -> Response | StreamingResponse:

@@ -13,7 +13,7 @@
 
 import extensibility
 from max.gpu.host import DeviceContext
-from max.gpu.host.device_context import DeviceExternalFunction
+from max.gpu.host import DeviceExternalFunction
 from max.gpu import global_idx
 from std.math import ceildiv
 from std.os import abort, getenv
@@ -22,6 +22,7 @@ from extensibility import (
     DynamicTensor,
     VariadicTensors,
     InputTensor,
+    Tensor,
     OutputTensor,
     InputVariadicTensors,
 )
@@ -45,9 +46,9 @@ struct MyAdd:
 
 @extensibility.register_shape_function("my_add")
 def my_add_shape(
-    x: InputTensor,
-    y: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+    y: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"
 
 
@@ -64,8 +65,8 @@ struct OpWidthDeviceContext:
 
 @extensibility.register_shape_function("op_with_device_context")
 def op_with_device_context_shape(
-    x: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"
 
 
@@ -83,8 +84,8 @@ struct OpWithMultipleOutputs:
 
 @extensibility.register_shape_function("op_with_multiple_outputs")
 def op_with_multiple_outputs_shape(
-    x: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"
 
 
@@ -174,9 +175,9 @@ struct BinaryKernelWithRaises:
 
 @extensibility.register_shape_function("binary_kernel_with_raises")
 def binary_kernel_with_raises_shape(
-    x: InputTensor,
-    y: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+    y: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise "NotImplemented"
 
 

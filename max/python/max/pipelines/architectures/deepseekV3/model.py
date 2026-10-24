@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
@@ -22,14 +23,20 @@ from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, ops
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
+    GraphRole,
+    GraphSpec,
     ModelInputs,
     ModelOutputs,
+    PipelineConfig,
+    compile_and_init_graphs,
 )
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
@@ -91,27 +98,87 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         DeepseekV3BatchProcessor
     )
 
+    @classmethod
+    def build_module(
+        cls, context: ModelLoadContext
+    ) -> tuple[DeepseekV3, DeepseekV3Config]:
+        """Builds the DeepseekV3 module over the config's devices.
+
+        A caller that sized the cache passes its KV params, and one that
+        reads selected layers names them. It starts expert parallelism's
+        runtime through ``context`` before it shards the experts.
+        """
+        pipeline_config = context.pipeline_config
+        state_dict = parse_state_dict_from_weights(
+            pipeline_config, context.weights, context.adapter
+        )
+        config = cls.finalized_config(
+            pipeline_config,
+            state_dict,
+            max_seq_len=context.max_seq_len,
+            max_batch_total_tokens=context.max_batch_total_tokens,
+            return_logits=context.return_logits,
+            return_hidden_states=context.return_hidden_states,
+        )
+        if context.kv_params is not None:
+            assert isinstance(context.kv_params, KVCacheParams)
+            config.kv_params = context.kv_params
+        if context.target_layer_ids:
+            config.eagle_aux_hidden_state_layer_ids = list(
+                context.target_layer_ids
+            )
+        context.start_ep(config.ep_config)
+        module = DeepseekV3(config)
+        module.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        return module, config
+
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         """Create model configuration from huggingface config."""
-        config = self.huggingface_config
+        return self.finalized_config(
+            self.pipeline_config,
+            state_dict,
+            max_seq_len=self.max_seq_len,
+            max_batch_total_tokens=self.planned_max_batch_total_tokens,
+            return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
+        )
+
+    @classmethod
+    def finalized_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        state_dict: Mapping[str, Any],
+        *,
+        max_seq_len: int,
+        max_batch_total_tokens: int | None,
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates,
+    ) -> DeepseekV3Config:
+        """Builds the model config, finalized against ``state_dict``."""
+        config = pipeline_config.model.huggingface_config
+        num_devices = len(pipeline_config.model.device_specs)
 
         # data_parallel_degree controls the attention strategy:
         #   == num_devices  ->  DP attention  (each device owns a batch shard)
         #   == 1            ->  TP attention  (heads sharded, tokens replicated)
-        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
-        max_batch_total_tokens = self.planned_max_batch_total_tokens
+        data_parallel_degree = pipeline_config.model.data_parallel_degree
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
-        if self.pipeline_config.runtime.pipeline_role == "prefill_only":
+        if pipeline_config.runtime.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif self.pipeline_config.runtime.pipeline_role == "decode_only":
+        elif pipeline_config.runtime.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
 
-        dtype = self.dtype
+        # Initialize config with parameters from pipeline_config
+        model_config = DeepseekV3Config.initialize(
+            pipeline_config, max_seq_len=max_seq_len
+        )
+
+        dtype = model_config.dtype
         if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
             quant_config = parse_quant_config(config, state_dict, dtype)
             if quant_config is None:
@@ -125,22 +192,22 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             quant_config = None
 
         # Check if EP should be configured
-        ep_size = self.pipeline_config.runtime.ep_size
+        ep_size = pipeline_config.runtime.ep_size
         if ep_size == 1:
             ep_config = None
         else:
-            if ep_size % len(self.devices) != 0:
+            if ep_size % num_devices != 0:
                 raise ValueError(
                     f"ep_size={ep_size} is not divisible by the number of GPUs"
-                    f" on this node ({len(self.devices)}). ep_size must equal"
+                    f" on this node ({num_devices}). ep_size must equal"
                     f" n_gpus_per_node * n_nodes. For a single-node deployment"
-                    f" set ep_size={len(self.devices)}."
+                    f" set ep_size={num_devices}."
                 )
 
-            n_nodes = ep_size // len(self.devices)
+            n_nodes = ep_size // num_devices
 
             ep_max_rank_send_tokens = _ep_max_rank_send_tokens_for_pipeline(
-                self.pipeline_config
+                pipeline_config
             )
 
             ep_kwargs: dict[str, Any] = dict(
@@ -150,10 +217,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
                 max_tokens_per_rank=ep_max_rank_send_tokens,
-                n_gpus_per_node=len(self.devices),
+                n_gpus_per_node=num_devices,
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
-                use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
+                use_allreduce=pipeline_config.runtime.ep_use_allreduce,
             )
 
             if config.n_shared_experts == 1:
@@ -194,15 +261,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             correction_bias_dtype = None
 
-        # Initialize config with parameters from pipeline_config
-        model_config = DeepseekV3Config.initialize(
-            self.pipeline_config, max_seq_len=self.max_seq_len
-        )
-
         # Finalize config with state_dict-dependent parameters
         # `dtype` is downgraded to bfloat16 above when a quantized target has
-        # no resolvable quant config (BF16 draft); otherwise it equals
-        # self.dtype, so this is a no-op for the normal path.
+        # no resolvable quant config (BF16 draft); otherwise it equals the
+        # encoding's, so this is a no-op for the normal path.
         model_config.dtype = dtype
         model_config.norm_dtype = norm_dtype
         model_config.gate_dtype = gate_dtype
@@ -212,10 +274,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
-        model_config.return_logits = self.return_logits
-        model_config.return_hidden_states = self.return_hidden_states
+        model_config.return_logits = return_logits
+        model_config.return_hidden_states = return_hidden_states
 
-        num_devices = len(self.devices)
         if num_devices > 1:
             if ep_size > 1:
                 attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
@@ -259,9 +320,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             logger.info(
                 f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
             )
-        self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
-        self.ep_comm_initializer.ep_init(session)
-        # ep_init() sets node_id on the initializer's config; propagate
+        self.ep_comm_initializer = self._init_ep_comm(session, ep_alloc_config)
+        # EP init sets node_id on the initializer's config; propagate
         # it back to the model's ep_config (which may be a different
         # object when we created a copy above).
         model_config.ep_config.node_id = ep_alloc_config.node_id
@@ -270,76 +330,49 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 "EP node ID is not set. Please check if the EP initialization is successful."
             )
 
+    def _init_ep_comm(
+        self, session: InferenceSession, ep_config: EPConfig
+    ) -> EPCommInitializer:
+        """Sets up expert parallelism for ``ep_config``.
+
+        Compiles the one-time EP init graph under :attr:`GraphRole.EP_INIT`,
+        keeps it in :attr:`compiled_modules`, and runs it.
+
+        Args:
+            session: The session that compiles and runs the EP init graph.
+            ep_config: The EP configuration. EP init sets its node ID.
+
+        Returns:
+            The initialized EP communication buffers.
+        """
+        ep_comm_initializer = EPCommInitializer(ep_config)
+        init = ep_comm_initializer.init_module()
+        specs: dict[str, GraphSpec] = {
+            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
+        }
+        modules = compile_and_init_graphs(session, specs)
+        ep_comm_initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
+        self.compiled_modules = {**self.compiled_modules, **modules}
+        return ep_comm_initializer
+
     @override
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Any,
-    ) -> tuple[Graph, dict[str, Any]]:
-        del session
+    def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
+        """Returns the decoder graph."""
         assert isinstance(model_config, DeepseekV3Config)
         nn_model = DeepseekV3(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
-        weights_registry = nn_model.state_dict()
-
-        # Create the graph
-        with Graph(
-            "deepseekV3_graph",
-            input_types=nn_model.input_types(self.kv_params),
-        ) as graph:
-            (
-                tokens,
-                devices_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
-
-            variadic_args_iter = iter(variadic_args)
-            # Multi-GPU passes a signal buffer per device: unmarshal these.
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            # Unmarshal the KV cache arguments.
-            kv_inputs = self.kv_params.unflatten_kv_inputs(variadic_args_iter)
-            kv_caches_per_dev = tree.leaves(
-                kv_inputs, leaf=KVCacheInputsPerDevice
+        nn_model.load_state_dict(
+            self._weights_dict, weight_alignment=1, strict=True
+        )
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "deepseekV3_graph",
+                self._bind_graph_inputs(
+                    nn_model.input_tree(model_config.kv_params)
+                ),
+                weights=nn_model.state_dict(),
             )
-
-            # Unmarshal the batch context lengths
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            # all remaining arguments are for EP inputs
-            ep_model_inputs = list(variadic_args_iter)
-
-            # DeepseekV3.__call__ expects a per-device list for
-            # input_row_offsets
-            input_row_offsets_per_dev = list(
-                ops.distributed_broadcast(
-                    devices_input_row_offsets.tensor, signal_buffers
-                )
-            )
-            outputs = nn_model(
-                tokens.tensor,
-                signal_buffers,
-                kv_caches_per_dev,
-                return_n_logits.tensor,
-                input_row_offsets_per_dev,
-                host_input_row_offsets.tensor,
-                data_parallel_splits.tensor,
-                batch_context_lengths,
-                ep_model_inputs,
-            )
-
-            graph.output(*outputs)
-            return graph, weights_registry
+        }
 
     def execute(
         self,

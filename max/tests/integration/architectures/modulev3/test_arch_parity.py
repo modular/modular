@@ -34,6 +34,10 @@ from max.pipelines.architectures.gemma4_modulev3.arch import (
     gemma4_modulev3_arch,
     gemma4_unified_modulev3_arch,
 )
+from max.pipelines.architectures.glm5_next.arch import glm5_next_arch
+from max.pipelines.architectures.glm5_next_modulev3.arch import (
+    glm5_next_modulev3_arch,
+)
 from max.pipelines.lib import reasoning, tool_parsing
 from max.pipelines.lib.registry import SupportedArchitecture
 
@@ -52,6 +56,7 @@ from max.pipelines.lib.registry import SupportedArchitecture
             deepseekV3_2_modulev3_arch,
             id="deepseekV3_2",
         ),
+        pytest.param(glm5_next_arch, glm5_next_modulev3_arch, id="glm5_next"),
     ],
 )
 def test_request_handling_parity(
@@ -108,3 +113,27 @@ def test_deepseekv3_2_modulev3_registration_parity() -> None:
         deepseekV3_2_modulev3_arch.example_repo_ids
         == deepseekV3_2_arch.example_repo_ids
     )
+
+
+def test_glm5_next_modulev3_registration_parity() -> None:
+    """The GLM-5.3-Flash ModuleV3 arch mirrors the graph arch's contract.
+
+    Importing it here also exercises the package's import graph, which the
+    lazy registration would otherwise only reach at serve time.
+    """
+    assert (
+        glm5_next_modulev3_arch.name
+        == "Glm5NextForConditionalGeneration_ModuleV3"
+    )
+    for field in (
+        "default_encoding",
+        "supported_encodings",
+        "example_repo_ids",
+        "multi_gpu_supported",
+        "supports_empty_batches",
+        "requires_max_batch_context_length",
+        "default_structured_output_any_whitespace",
+    ):
+        assert getattr(glm5_next_modulev3_arch, field) == getattr(
+            glm5_next_arch, field
+        ), field

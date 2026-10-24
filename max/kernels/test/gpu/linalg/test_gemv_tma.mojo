@@ -222,7 +222,7 @@ def gemv_tma[
     comptime BLOCK_SIZE_M = 64
     comptime BLOCK_SIZE_K = 256
     # Number of warps per block for 128 threads.
-    comptime WARPS_PER_BLOCK = THREAD_NUM // WARP_SIZE
+    comptime WARPS_PER_BLOCK = THREAD_NUM // ctx.default_device_info.warp_size
     comptime ROWS_PER_WARP = BLOCK_SIZE_M // WARPS_PER_BLOCK
     comptime NUM_PIPELINE_STAGES = 1
 
@@ -292,9 +292,9 @@ def test_gemv_tma[
     k: KType,
     benchmark: Bool = False,
 ) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var a_shape = Coord(m, k)
     var b_shape = Coord(k)

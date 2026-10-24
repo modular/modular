@@ -1,0 +1,83 @@
+---
+title: Supported layers and mechanisms
+sidebar_label: Layer support
+pagination_label: Supported layers and mechanisms
+description: Learn which transformer mechanisms MAX provides as layers, the option to pick for each one, and how to extend a layer when your model differs.
+---
+
+Every architecture you port differs from the last one in a handful of places:
+a different rotary schedule, a norm with an offset, a fused checkpoint layout.
+Most of those differences are constructor options on a layer in
+[`max.experimental.nn`](/api/python/experimental.nn/). This page maps the common
+mechanisms to the layer that implements them, so you can find the setting before
+you write code.
+
+## Mechanisms and the built-in layers
+
+Every row in the table is a constructor option on a built-in layer. Subclassing
+is for the cases no row covers.
+
+A built-in layer runs on a device mesh without changes to the layer: its weights
+take the placement the mesh gives them, and the ops that read them plan around
+it. [Tensor parallelism](/serve/parallelism/#tensor-parallelism) covers how MAX
+splits a served model across the GPUs you name.
+
+| Mechanism                          | Layer                                                                                                                  | Option or input                              |
+|------------------------------------|------------------------------------------------------------------------------------------------------------------------|----------------------------------------------|
+| Rotary embedding                   | [`RotaryEmbedding`](/api/python/generated/max.experimental.nn.common_layers.rotary_embedding.RotaryEmbedding/)         | `theta`, `head_dim`, `max_seq_len`           |
+| Interleaved (transposed) rotary    | `RotaryEmbedding`                                                                                                      | `interleaved=True` pairs adjacent dimensions |
+| YaRN-scaled rotary                 | [`YarnRotaryEmbedding`](/api/python/generated/max.experimental.nn.common_layers.rotary_embedding.YarnRotaryEmbedding/) | `scaling_params`                             |
+| Banded scaling (Llama 3, LongRoPE) | `RotaryEmbedding` subclass                                                                                             | override `freqs_cis_base()`                  |
+| No positional encoding (NoPE)      | none                                                                                                                   | assemble attention without a rope layer      |
+| QK normalization                   | [`AttentionWithRope`](/api/python/generated/max.experimental.nn.common_layers.attention.AttentionWithRope/)            | `use_qk_norm=True`, `rms_norm_eps`           |
+| Fused QKV checkpoint               | `AttentionWithRope`                                                                                                    | `stacked_qkv=True`                           |
+| QKV clipping                       | `AttentionWithRope`                                                                                                    | `clip_qkv`, in weight units                  |
+| Attention scale                    | `AttentionWithRope`                                                                                                    | `scale`, defaulting to `1/sqrt(head_dim)`    |
+| Projection bias                    | `AttentionWithRope`                                                                                                    | `has_bias=True`                              |
+| RMS normalization                  | [`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/)                                                   | `dim`, `eps`                                 |
+| Offset RMS normalization           | [`GemmaRMSNorm`](/api/python/generated/max.experimental.nn.norm.GemmaRMSNorm/)                                         | `dim`, `eps`                                 |
+| Layer normalization                | [`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/)                                               | `dim`, `eps`                                 |
+| Quantized projection               | [`Linear`](/api/python/generated/max.experimental.nn.Linear/)                                                          | `quant_config`, static per-tensor FP8        |
+| KV cache shape                     | `AttentionWithRope`                                                                                                    | `kv_params` from `max.nn.kv_cache`           |
+| Tied input and output embedding    | model, not a layer                                                                                                     | logits computed against the embedding weight |
+
+The rotary layer builds its frequency table from `theta` and `head_dim`, and
+caches it on first use. A model with a modified frequency schedule subclasses
+the layer and overrides `freqs_cis_base()`, which leaves the rotation, the
+pairing, and the parameter names intact. See
+[`RotaryEmbedding`](/api/python/generated/max.experimental.nn.common_layers.rotary_embedding.RotaryEmbedding/)
+for the parameters that build the table.
+
+:::note
+
+`stacked_qkv=True` rejects `has_bias` and `clip_qkv`. A checkpoint that fuses
+Q/K/V and also carries projection bias needs the projections split before you
+load it, or a custom layer.
+
+:::
+
+## When no option fits
+
+A mechanism that isn't in this table becomes code. Pick the smallest change
+that carries it:
+
+- **Subclass the built-in layer** when you change one behavior inside an
+  existing layer, such as a norm that multiplies before casting. See
+  [Subclass the closest layer](/develop/layers/#subclass-the-closest-layer).
+- **Write the layer** when the mechanism is new, such as a router or a novel
+  mixer. See
+  [Define a layer from scratch](/develop/layers/#define-a-layer-from-scratch).
+- **Wrap a kernel** when the computation exists as Mojo and you need it inside
+  the module. See [Wrap a custom op](/develop/layers/#wrap-a-custom-op).
+
+Each of those keeps the module contract: named parameters, a `forward()` that
+runs eagerly, a `load_state_dict()` that reports missing and unexpected keys,
+and a `compile()` that captures the whole module as one graph.
+
+## Next steps
+
+- [Layers](/develop/layers/): how to add a layer the built-in set doesn't cover.
+- [Modules](/develop/modules/): weights, tracing, and compilation.
+- [Quantize a model](/develop/quantize/): what `quant_config` accepts.
+- [Read a model config](/develop/read-model-config/): where these options come
+  from in a Hugging Face config.

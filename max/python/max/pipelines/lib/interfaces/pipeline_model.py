@@ -17,27 +17,34 @@ from __future__ import annotations
 import logging
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections import OrderedDict
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental import functional as F
+from max.experimental.compilation import CompiledCallable
+from max.experimental.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
 from max.experimental.nn.module import Module as _ModuleV3
 from max.experimental.tensor import Tensor, default_dtype
-from max.graph import DeviceRef, Graph, Module, Value
-from max.graph.weights import Weights, WeightsAdapter
+from max.graph import DeviceRef, Graph, Value
+from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import (
+    CacheLeafParamInterface,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
+from max.nn.layer import Module as LayerModule
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContextType, LogProbabilities
 from max.pipelines.kv_cache.config import (
@@ -46,6 +53,11 @@ from max.pipelines.kv_cache.config import (
 )
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
+)
+from max.pipelines.lib.graph_specs import (
+    GraphRole,
+    GraphSpec,
+    compile_and_init_graphs,
 )
 from max.pipelines.lib.utils import (
     CompilationTimer,
@@ -59,6 +71,7 @@ from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 from max.profiler import traced
 from transformers import AutoConfig
 from typing_extensions import TypeVar
@@ -72,6 +85,51 @@ if TYPE_CHECKING:
     from .batch_processor import BatchProcessor
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _cast_to_parameter_dtypes(
+    module: Any, state_dict: dict[str, Any]
+) -> dict[str, Any]:
+    """Casts float32 and bfloat16 checkpoint weights to their parameter's dtype.
+
+    ModuleV3 models have strict dtype checks: a weight's dtype must match its
+    parameter's, so a float32 checkpoint can't load into a bfloat16 module
+    without a cast. This function converts each ``WeightData`` value whose
+    dtype and parameter dtype are both float32 or bfloat16, and returns
+    every other value unchanged. The conversion runs in the current process
+    through ``WeightData.astype()``. That lets it work inside a daemonic
+    serve worker, which can't start the child process that
+    ``compile(auto_cast=True)`` compiles in. Setting
+    ``MODULAR_AUTO_CAST_WEIGHTS=false`` turns the cast off. ``log_casts()``
+    reports all the casts in one warning.
+
+    Args:
+        module: The ModuleV3 module whose parameters set the target dtypes.
+        state_dict: The checkpoint weights, keyed by parameter name.
+
+    Returns:
+        A copy of ``state_dict`` with the cast weights, or ``state_dict``
+        itself when the cast is off.
+    """
+    if not auto_cast_weights_from_env():
+        return state_dict
+    dtypes = {name: param.dtype for name, param in module.parameters}
+    adapted = dict(state_dict)
+    casts: dict[tuple[DType, DType], int] = {}
+    for name, value in state_dict.items():
+        dtype = dtypes.get(name)
+        if (
+            isinstance(value, WeightData)
+            and dtype is not None
+            and value.dtype != dtype
+            and {value.dtype, dtype} <= _SAFE_CAST_DTYPES
+        ):
+            adapted[name] = value.astype(dtype)
+            cast = (value.dtype, dtype)
+            casts[cast] = casts.get(cast, 0) + 1
+    log_casts(casts)
+    return adapted
+
 
 ArchConfigT = TypeVar("ArchConfigT")
 _ModelConfigT = TypeVar("_ModelConfigT", default=Any)
@@ -392,6 +450,79 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         return tail
 
 
+@dataclass(frozen=True)
+class ModelLoadContext:
+    """What a pipeline model reads to build its module from a checkpoint."""
+
+    pipeline_config: PipelineConfig
+    weights: Weights
+    adapter: WeightsAdapter | None
+    memory_plan: MemoryPlan
+    return_logits: ReturnLogits
+    return_hidden_states: ReturnHiddenStates
+    target_layer_ids: tuple[int, ...] = ()
+    """Layers whose outputs ``SELECTED_LAYERS`` hidden states return."""
+    kv_params: CacheLeafParamInterface | None = None
+    """The KV params the module runs on, when the caller sized its cache.
+
+    ``None`` derives them from the config, as serving does.
+    """
+    ep_runtime: Callable[[EPConfig], None] | None = None
+    """Starts expert parallelism's runtime, for a caller that shares it
+    across the modules it builds."""
+    encodes_images: bool = True
+    """Whether the module encodes images. ``False`` builds a multimodal
+    checkpoint's language model alone."""
+
+    @classmethod
+    def from_pipeline_model(cls, model: PipelineModel[Any]) -> ModelLoadContext:
+        """Returns the context a pipeline model was constructed with."""
+        return cls(
+            pipeline_config=model.pipeline_config,
+            weights=model.weights,
+            adapter=model.adapter,
+            memory_plan=model.memory_plan,
+            return_logits=model.return_logits,
+            return_hidden_states=model.return_hidden_states,
+        )
+
+    def start_ep(self, ep_config: EPConfig | None) -> None:
+        """Starts expert parallelism's runtime for ``ep_config``.
+
+        Starting it sets the node ID ``MoE.shard`` picks each device's
+        experts by, so a module calls this before it shards them. A
+        no-op without expert parallelism, or for a caller that starts the
+        runtime itself.
+        """
+        if ep_config is not None and self.ep_runtime is not None:
+            self.ep_runtime(ep_config)
+
+    @property
+    def max_seq_len(self) -> int:
+        """The memory plan's maximum sequence length."""
+        max_length = self.memory_plan.planned_max_length
+        assert max_length is not None, (
+            "building a module requires a memory plan with a max length"
+        )
+        return max_length
+
+    @property
+    def max_batch_total_tokens(self) -> int | None:
+        """The batch token budget that sizes expert-parallel buffers."""
+        return self.memory_plan.planned_max_batch_total_tokens
+
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        """Returns the main model's HuggingFace config."""
+        config = self.pipeline_config.model.huggingface_config
+        if config is None:
+            raise ValueError(
+                "HuggingFace config is required but could not be loaded for"
+                f" '{self.pipeline_config.model.model_path}'."
+            )
+        return config
+
+
 class PipelineModel(
     ABC, Generic[BaseContextType, _ModelConfigT, _CompiledModelT]
 ):
@@ -412,6 +543,12 @@ class PipelineModel(
     #: The ModuleV3 LoRA target projections this arch wraps. Read by the base
     #: to construct ``LoRAManagerV3``; empty for non-ModuleV3-LoRA archs.
     lora_targets: ClassVar[tuple[LoRATargetModule, ...]] = ()
+    #: The graphs this model compiled, by role. Empty for a model that
+    #: compiles its graphs without registering them (see
+    #: :func:`~max.pipelines.lib.graph_specs.compile_and_init_graphs`).
+    compiled_modules: Mapping[str, CompiledCallable[..., Any]] = (
+        MappingProxyType({})
+    )
 
     def __init__(
         self,
@@ -517,6 +654,22 @@ class PipelineModel(
     def batch_processor(self) -> BatchProcessor[Any, Any] | None:
         """Returns the batch processor when configured."""
         return self._batch_processor
+
+    def _bind_graph_inputs(
+        self, input_tree: OrderedDict[str, object]
+    ) -> OrderedDict[str, object]:
+        """Binds a graph's named inputs to the batch processor.
+
+        Args:
+            input_tree: The named inputs the graph is about to be built from.
+
+        Returns:
+            ``input_tree``, to pass on as the graph's
+            :attr:`~max.pipelines.lib.graph_specs.GraphSpec.input_types`.
+        """
+        if self._batch_processor is not None:
+            self._batch_processor.bind_input_tree(input_tree)
+        return input_tree
 
     def arch_config_as(self, cls: type[ArchConfigT]) -> ArchConfigT:
         """Returns the built-once arch config, narrowed to ``cls``."""
@@ -666,6 +819,44 @@ class PipelineModel(
         """Custom-op extension paths to compile the sampler graph with."""
         return ()
 
+    @classmethod
+    def build_module(cls, context: ModelLoadContext) -> tuple[LayerModule, Any]:
+        """Builds this architecture's module and config, compiling no graph.
+
+        Both come from the checkpoint ``context`` names, with the config
+        finalized against it. A caller that builds one graph from several
+        modules builds each this way. An architecture that supports it
+        builds its own graph through the same steps, so the two load the
+        checkpoint alike.
+
+        Raises:
+            NotImplementedError: If the architecture builds its module only
+                inside its own graph.
+        """
+        del context
+        raise NotImplementedError(
+            f"{cls.__qualname__} builds its module only inside its own graph."
+        )
+
+    @classmethod
+    def build_vision_graph(
+        cls, context: ModelLoadContext
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Builds the vision encoder's graph and the weights it loads.
+
+        A caller that runs the module :meth:`build_module` builds compiles it
+        beside its own graph, and the architecture's batch processor runs it
+        on each batch's new images.
+
+        Raises:
+            NotImplementedError: If the architecture encodes no images, or
+                only inside its own pipeline model.
+        """
+        del context
+        raise NotImplementedError(
+            f"{cls.__qualname__} builds no vision graph of its own."
+        )
+
     @abstractmethod
     def execute(
         self,
@@ -721,6 +912,57 @@ class PipelineModel(
             "or set batch_processor_cls."
         )
 
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads the weights, through the weight adapter if there is one."""
+        if self.adapter:
+            return self.adapter(dict(self.weights.items()))
+        return {key: value.data() for key, value in self.weights.items()}
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
+        """Builds the model config from ``state_dict``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def graph_specs(
+        self, model_config: _ModelConfigT
+    ) -> Mapping[str, GraphSpec]:
+        """Returns the graphs this model runs, keyed by role.
+
+        Implement this to load the model with :meth:`load_graphs`.
+
+        Args:
+            model_config: The config :meth:`_create_model_config` returned.
+        """
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `graph_specs`."
+        )
+
+    @traced
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Compiles and initializes the graphs :meth:`graph_specs` returns.
+
+        Keeps each role's compiled graph as :attr:`compiled_modules`.
+
+        Args:
+            session: The session that compiles and initializes the graphs.
+
+        Returns:
+            The initialized models, keyed by role.
+        """
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        with CompilationTimer("model") as timer:
+            specs = self.graph_specs(model_config)
+            timer.mark_build_complete()
+            self.compiled_modules = compile_and_init_graphs(session, specs)
+        models = {
+            role: compiled.engine_model
+            for role, compiled in self.compiled_modules.items()
+        }
+        self._maybe_release_host_weights(*models.values())
+        return models
+
     def _wire_batch_processor(
         self, model: _CompiledModelT, model_config: _ModelConfigT
     ) -> None:
@@ -762,134 +1004,6 @@ class PipelineModel(
         """
         raise NotImplementedError(
             f"Log probabilities not implemented for {type(self)}."
-        )
-
-
-class GraphPipelineModel(PipelineModel[BaseContextType, _ModelConfigT, Model]):
-    """Graph-API pipeline model without KV cache.
-
-    Subclasses implement :meth:`_build_graph_for_compile` and optionally
-    :meth:`_create_model_config` and :meth:`_wire_batch_processor`.
-    """
-
-    state_dict: dict[str, Any]
-
-    @traced
-    def load_model(self, session: InferenceSession) -> Model:
-        """Load weights, build the graph, compile, and wire the batch processor."""
-        state_dict = self._load_state_dict()
-        model_config = self._create_model_config(state_dict)
-
-        with CompilationTimer("model") as timer:
-            graph, weights_registry = self._build_graph_for_compile(
-                session, state_dict, model_config
-            )
-            timer.mark_build_complete()
-            self.state_dict = weights_registry
-            model = session.load(graph, weights_registry=weights_registry)
-
-        self._maybe_release_host_weights(model)
-        self._wire_batch_processor(model, model_config)
-        return model
-
-    def _load_state_dict(self) -> dict[str, Any]:
-        """Load and optionally adapt weights from the configured source."""
-        if self.adapter:
-            return self.adapter(dict(self.weights.items()))
-        return {key: value.data() for key, value in self.weights.items()}
-
-    def _hf_config_for_weights(self) -> AutoConfig | None:
-        """Optional HuggingFace config override for weight loading."""
-        return None
-
-    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        """Optional hook; returns ``None`` when no arch config object is needed."""
-        del state_dict
-        return None
-
-    def _build_graph_for_compile(
-        self,
-        session: InferenceSession,
-        state_dict: dict[str, Any],
-        model_config: Any,
-    ) -> tuple[Graph, dict[str, Any]]:
-        """Build the graph and return ``(graph, weights_registry)``."""
-        raise NotImplementedError(
-            f"{type(self).__name__} must implement _build_graph_for_compile"
-        )
-
-
-class ModuleV3PipelineModel(PipelineModel[BaseContextType]):
-    """ModuleV3 pipeline model without KV cache.
-
-    Subclasses implement :meth:`_instantiate_module` and optionally
-    :meth:`_create_model_config`, :meth:`_prepare_state_dict`, and
-    :meth:`_module_default_dtype`.
-    """
-
-    @traced
-    def load_model(self) -> Callable[..., Any]:
-        """Build and compile the ModuleV3 callable."""
-        state_dict = self._load_state_dict()
-        model_config = self._create_model_config(state_dict)
-        state_dict = self._prepare_state_dict(state_dict, model_config)
-
-        with CompilationTimer("model") as timer:
-            module_default_dtype = self._module_default_dtype(
-                state_dict, model_config
-            )
-            with F.lazy(), default_dtype(module_default_dtype):
-                nn_model = self._instantiate_module(model_config)
-            compile_input_types = self._get_compile_input_types(model_config)
-            timer.mark_build_complete()
-            return nn_model.compile(*compile_input_types, weights=state_dict)
-
-    def _load_state_dict(self) -> dict[str, Any]:
-        """Load and optionally adapt weights from the configured source."""
-        if self.adapter:
-            return self.adapter(dict(self.weights.items()))
-        return {key: value.data() for key, value in self.weights.items()}
-
-    def _hf_config_for_weights(self) -> AutoConfig | None:
-        """Optional HuggingFace config override for weight loading."""
-        return None
-
-    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        """Builds model config from ``state_dict``."""
-        raise NotImplementedError(
-            f"{type(self).__qualname__} must implement `_create_model_config`."
-        )
-
-    def _prepare_state_dict(
-        self, state_dict: dict[str, Any], model_config: Any
-    ) -> dict[str, Any]:
-        """Optional hook to cast or rewrite weights before ``nn.compile``."""
-        del model_config
-        return state_dict
-
-    def _module_default_dtype(
-        self, state_dict: dict[str, Any], model_config: Any
-    ) -> DType:
-        """Default dtype for the module build context."""
-        del state_dict, model_config
-        return self.dtype
-
-    def _instantiate_module(self, model_config: Any) -> Any:
-        """Constructs and places the nn module under ``F.lazy()``."""
-        raise NotImplementedError(
-            f"{type(self).__qualname__} must implement `_instantiate_module`."
-        )
-
-    def _get_compile_input_types(self, model_config: Any) -> tuple[Any, ...]:
-        """Symbolic inputs passed to ``nn_model.compile``."""
-        del model_config
-        batch_processor = self.batch_processor
-        assert batch_processor is not None
-        return tuple(
-            batch_processor.get_symbolic_inputs(
-                kv_params=cast(KVCacheParamInterface, None),
-                device_refs=self.device_refs,
-            )
         )
 
 
@@ -991,12 +1105,28 @@ class PipelineModelWithKVCache(
     ) -> None:
         """Post-compile wiring into the batch processor (EP bind, vision and so on)."""
         del model, model_config
+        self._bind_ep_comm_initializer()
+
+    def _bind_ep_comm_initializer(self) -> None:
         batch_processor = self.batch_processor
         if batch_processor is None:
             return
         bind_ep = getattr(batch_processor, "bind_ep_comm_initializer", None)
         if bind_ep is not None:
             bind_ep(getattr(self, "ep_comm_initializer", None))
+
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the graphs, then binds the EP comm initializer.
+
+        Args:
+            session: The session that compiles and initializes the graphs.
+
+        Returns:
+            The initialized models, keyed by role.
+        """
+        models = super().load_graphs(session)
+        self._bind_ep_comm_initializer()
+        return models
 
 
 class GraphPipelineModelWithKVCache(
@@ -1007,9 +1137,6 @@ class GraphPipelineModelWithKVCache(
     Subclasses override :meth:`_build_graph_for_compile` (and optionally
     :meth:`_create_model_config`, :meth:`_init_distributed_runtime`) rather than
     duplicating weight loading, timing, and EP batch-processor wiring.
-
-    ModuleV3 models and multi-graph VLMs should inherit
-    :class:`MultiGraphPipelineModelWithKVCache` instead.
     """
 
     @traced
@@ -1063,109 +1190,6 @@ class GraphPipelineModelWithKVCache(
         )
 
 
-class MultiGraphPipelineModelWithKVCache(
-    PipelineModelWithKVCache[BaseContextType, _ModelConfigT, Model | None]
-):
-    """Graph-API VLM with unified :meth:`load_model` and per-tower hooks.
-
-    :meth:`_create_model_config` should return the full VLM config (with
-    ``.vision_config`` and ``.text_config`` / ``.llm_config`` subconfigs) and
-    assign :attr:`model_config`. Both :meth:`_build_*` hooks receive that same
-    ``model_config``.
-
-    Override :meth:`load_model` when graph capture or weight loading does not
-    fit this flow (such as Qwen2.5VL, Kimi-K2.5).
-    """
-
-    _vision_weights_dict: dict[str, Any]
-    _language_weights_dict: dict[str, Any]
-
-    @traced
-    def load_model(
-        self, session: InferenceSession
-    ) -> tuple[Model | None, Model]:
-        """Build, compile, and load vision and language graphs into ``session``."""
-        state_dict = self._load_state_dict()
-        model_config = self._create_model_config(state_dict)
-        self._init_distributed_runtime(session, model_config)
-
-        with CompilationTimer("vision + language model") as timer:
-            graph_module = Module()
-
-            vision_graph: Graph | None = None
-            vision_registry: dict[str, Any] = {}
-            if self._include_vision_graph(model_config):
-                vision_graph, vision_registry = self._build_vision_graph(
-                    model_config,
-                    self._vision_weights_dict,
-                    module=graph_module,
-                )
-
-            language_graph, language_registry = self._build_language_graph(
-                model_config,
-                self._language_weights_dict,
-                module=graph_module,
-            )
-            timer.mark_build_complete()
-
-            models = session.load_all(
-                graph_module,
-                weights_registry={**vision_registry, **language_registry},
-            )
-
-        self._maybe_release_host_weights(*models.values())
-        vision_model = (
-            models[vision_graph.name] if vision_graph is not None else None
-        )
-        language_model = models[language_graph.name]
-        self._wire_batch_processor(vision_model, model_config)
-        return vision_model, language_model
-
-    def _include_vision_graph(self, model_config: _ModelConfigT) -> bool:
-        """Whether to capture and load a vision graph (override for text-only VLMs)."""
-        del model_config
-        return True
-
-    def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
-        """Builds the full VLM config from ``state_dict``.
-
-        Should assign :attr:`model_config` and return the same object.
-        """
-        raise NotImplementedError(
-            f"{type(self).__qualname__} must implement `_create_model_config`."
-        )
-
-    def _init_distributed_runtime(
-        self,
-        session: InferenceSession,
-        model_config: _ModelConfigT,
-    ) -> None:
-        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
-        del session, model_config
-
-    def _build_vision_graph(
-        self,
-        model_config: _ModelConfigT,
-        state_dict: dict[str, Any],
-        module: Module,
-    ) -> tuple[Graph, dict[str, Any]]:
-        """Captures the vision tower graph and its ``nn.state_dict()`` registry."""
-        raise NotImplementedError(
-            f"{type(self).__qualname__} must implement `_build_vision_graph`."
-        )
-
-    def _build_language_graph(
-        self,
-        model_config: _ModelConfigT,
-        state_dict: dict[str, Any],
-        module: Module,
-    ) -> tuple[Graph, dict[str, Any]]:
-        """Captures the language tower graph and its ``nn.state_dict()`` registry."""
-        raise NotImplementedError(
-            f"{type(self).__qualname__} must implement `_build_language_graph`."
-        )
-
-
 def _driver_buffer(tensor: Tensor | None) -> Buffer | None:
     return None if tensor is None else tensor.driver_tensor
 
@@ -1179,21 +1203,18 @@ class ModuleV3PipelineModelWithKVCache(
 
     A subclass implements ``_create_model_config()``, which builds the
     architecture's config, and ``_instantiate_module()``, which constructs the
-    root module and places it on a device or device mesh. :meth:`load_model`
-    loads and adapts the checkpoint weights, builds the module under
-    ``F.lazy()``, and compiles it with those weights. A subclass can also
-    override ``_prepare_state_dict()``, ``_init_distributed_runtime()``,
+    root module and places it on a device or device mesh. :meth:`graph_specs`
+    builds the module under ``F.lazy()`` and registers it, with the adapted
+    checkpoint weights, as the decoder. A subclass can also override
+    ``_prepare_state_dict()``, ``_init_distributed_runtime()``,
     ``_module_default_dtype()``, or ``_get_compile_input_types()``.
 
-    An encoder model without a KV cache subclasses
-    :class:`ModuleV3PipelineModel`, and a vision-language model that compiles
-    several modules subclasses
+    A vision-language model that compiles several modules subclasses
     :class:`ModuleV3MultiGraphPipelineModelWithKVCache`.
-    Component models and unified speculative-decoding pipelines override
-    :meth:`load_model`.
 
-    The constructor compiles the model into :attr:`model`, and the default
-    :meth:`execute` passes it ``model_inputs.buffers``.
+    The constructor compiles the decoder through :meth:`load_graphs` on the
+    pipeline's session into :attr:`model`, and the default :meth:`execute`
+    passes it ``model_inputs.buffers``.
 
     Args:
         pipeline_config: The pipeline configuration, including the model path
@@ -1221,6 +1242,7 @@ class ModuleV3PipelineModelWithKVCache(
 
     model: Callable[..., ModuleV3Outputs]
     _modulev3_extra_input_types: list[Any]
+    _checkpoint: dict[str, Any]
 
     def __init__(
         self,
@@ -1248,7 +1270,7 @@ class ModuleV3PipelineModelWithKVCache(
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.model = self.load_model()
+        self.model = self._load_decoder(session)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Runs :attr:`model` on ``model_inputs.buffers``.
@@ -1281,12 +1303,17 @@ class ModuleV3PipelineModelWithKVCache(
             hidden_states=_driver_buffer(outputs.hidden_states),
         )
 
-    @traced
-    def load_model(self) -> Callable[..., ModuleV3Outputs]:
-        """Build and compile the ModuleV3 callable."""
-        state_dict = self._load_state_dict()
-        model_config = self._create_model_config(state_dict)
-        state_dict = self._prepare_state_dict(state_dict, model_config)
+    def graph_specs(self, model_config: _ModelConfigT) -> dict[str, GraphSpec]:
+        """Returns the decoder, built from the checkpoint weights.
+
+        Prepares the weights, initializes the distributed runtime, and
+        constructs the root module under ``F.lazy()``, wrapping it for LoRA
+        when serving adapters.
+
+        Args:
+            model_config: The config :meth:`_create_model_config` returned.
+        """
+        state_dict = self._prepare_state_dict(self._checkpoint, model_config)
         self._init_distributed_runtime(model_config)
         module_default_dtype = self._module_default_dtype(
             state_dict, model_config
@@ -1298,9 +1325,30 @@ class ModuleV3PipelineModelWithKVCache(
                 self._modulev3_extra_input_types = (
                     self._lora_manager.symbolic_inputs(self.device_refs[0])
                 )
-        compile_input_types = self._get_compile_input_types(model_config)
-        self._wire_batch_processor(nn_model, model_config)
-        return nn_model.compile(*compile_input_types, weights=state_dict)
+        state_dict = _cast_to_parameter_dtypes(nn_model, state_dict)
+        return {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                type(nn_model).__qualname__,
+                self._get_compile_input_types(model_config),
+                weights=state_dict,
+            )
+        }
+
+    def _load_decoder(
+        self, session: InferenceSession
+    ) -> Callable[..., ModuleV3Outputs]:
+        """Compiles the decoder through :meth:`load_graphs`."""
+        self.load_graphs(session)
+        # The callable keeps the weight registry; drop the other reference
+        # to the checkpoint.
+        del self._checkpoint
+        return self.compiled_modules[GraphRole.DECODER]
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads the checkpoint, and keeps it for :meth:`graph_specs`."""
+        self._checkpoint = super()._load_state_dict()
+        return self._checkpoint
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``."""
@@ -1356,37 +1404,55 @@ class ModuleV3MultiGraphPipelineModelWithKVCache(
     """ModuleV3 VLM with separate vision and language compiled callables.
 
     Subclasses implement :meth:`_load_state_dict` (tower weight prep),
-    :meth:`_create_model_config`, and :meth:`_compile_vision_model` /
-    :meth:`_compile_language_model`. The base :meth:`load_model` passes each
-    tower's ``WeightData`` dict into the matching compile hook (the vision or
-    language slice of :attr:`_vision_weights_dict` / :attr:`_language_weights_dict`,
-    not the raw checkpoint returned from :meth:`_load_state_dict`).
-
-    Graph-API VLMs should inherit :class:`MultiGraphPipelineModelWithKVCache`
-    instead.
+    :meth:`_create_model_config`, and :meth:`_vision_spec` /
+    :meth:`_language_spec`. :meth:`graph_specs` passes each tower's
+    ``WeightData`` dict into the matching spec hook (the vision or language
+    slice of :attr:`_vision_weights_dict` / :attr:`_language_weights_dict`,
+    not the raw checkpoint returned from :meth:`_load_state_dict`) and
+    registers the towers under the vision and decoder roles.
+    :meth:`_load_towers` compiles each tower on its own through
+    :meth:`load_graphs`.
     """
 
     _vision_weights_dict: dict[str, Any]
     _language_weights_dict: dict[str, Any]
 
-    @traced
-    def load_model(
-        self,
-    ) -> tuple[Callable[..., Any] | None, Callable[..., Any]]:
-        """Build and compile vision and language ModuleV3 callables."""
-        state_dict = self._load_state_dict()
-        model_config = self._create_model_config(state_dict)
-        self._init_distributed_runtime(model_config)
+    def graph_specs(self, model_config: _ModelConfigT) -> dict[str, GraphSpec]:
+        """Returns the vision tower and the language tower as the decoder.
 
-        vision_model = self._compile_vision_model(
-            model_config, self._vision_weights_dict
-        )
-        language_model = self._compile_language_model(
+        Initializes the distributed runtime first. A checkpoint without a
+        vision tower registers the decoder alone.
+
+        Args:
+            model_config: The config :meth:`_create_model_config` returned.
+        """
+        self._init_distributed_runtime(model_config)
+        specs: dict[str, GraphSpec] = {}
+        vision = self._vision_spec(model_config, self._vision_weights_dict)
+        if vision is not None:
+            specs[GraphRole.VISION] = vision
+        specs[GraphRole.DECODER] = self._language_spec(
             model_config, self._language_weights_dict
         )
+        return specs
 
-        self._wire_batch_processor(vision_model, model_config)
-        return vision_model, language_model
+    def _load_towers(
+        self, session: InferenceSession
+    ) -> tuple[Callable[..., Any] | None, Callable[..., Any]]:
+        """Compiles the towers through :meth:`load_graphs`.
+
+        Args:
+            session: The session that compiles and initializes the towers.
+
+        Returns:
+            The vision tower, or ``None`` when the checkpoint has none, and
+            the language tower.
+        """
+        self.load_graphs(session)
+        return (
+            self.compiled_modules.get(GraphRole.VISION),
+            self.compiled_modules[GraphRole.DECODER],
+        )
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``."""
@@ -1398,18 +1464,18 @@ class ModuleV3MultiGraphPipelineModelWithKVCache(
         """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
         del model_config
 
-    def _compile_vision_model(
+    def _vision_spec(
         self, model_config: _ModelConfigT, state_dict: dict[str, Any]
-    ) -> Callable[..., Any]:
-        """Builds and compiles the vision tower."""
+    ) -> GraphSpec | None:
+        """Builds the vision tower, or returns ``None`` without one."""
         raise NotImplementedError(
-            f"{type(self).__qualname__} must implement `_compile_vision_model`."
+            f"{type(self).__qualname__} must implement `_vision_spec`."
         )
 
-    def _compile_language_model(
+    def _language_spec(
         self, model_config: _ModelConfigT, state_dict: dict[str, Any]
-    ) -> Callable[..., Any]:
-        """Builds and compiles the language tower."""
+    ) -> GraphSpec:
+        """Builds the language tower."""
         raise NotImplementedError(
-            f"{type(self).__qualname__} must implement `_compile_language_model`."
+            f"{type(self).__qualname__} must implement `_language_spec`."
         )

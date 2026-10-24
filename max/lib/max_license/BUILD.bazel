@@ -1,0 +1,85 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
+load(":libmax_exports.bzl", "LIBMAX_EXPORTS")
+
+package(default_visibility = ["//max:consumers"])
+
+write_file(
+    name = "libmax_version_script",
+    out = "libmax.map",
+    content = [
+        "{",
+        "  global:",
+    ] + ["    {};".format(s) for s in LIBMAX_EXPORTS] + [
+        "  local: *;",
+        "};",
+    ],
+)
+
+write_file(
+    name = "libmax_exported_symbols_list",
+    out = "libmax.exports",
+    content = ["_" + s for s in LIBMAX_EXPORTS],
+)
+
+modular_cc_library(
+    name = "MOFDriver",
+    srcs = glob(["MOF/Driver/**/*.cpp"]),
+    hdrs = ["//max/include/max/max_license:MOFDriver.headers"],
+    deps = [
+        "//GraphCompiler",
+        "//Support:Base",
+        "//Support:Buffer",
+        "//max:CAPI.headers",
+    ],
+)
+
+modular_shared_library(
+    name = "max",
+    srcs = glob(
+        [
+            "API/c/**/*.cpp",
+            "MOF/API/**/*.cpp",
+        ],
+    ),
+    hdrs = ["//max/include/max/max_license:max.headers"],
+    additional_linker_inputs = [
+        ":libmax.exports",
+        ":libmax.map",
+    ],
+    linkopts = select({
+        "@platforms//os:linux": ["-Wl,--version-script,$(location :libmax.map)"],
+        "@platforms//os:macos": [
+            "-Wl,-exported_symbols_list,$(location :libmax.exports)",
+            # ld64.lld warns for every hidden symbol an export glob matches,
+            # and only -w, which silences all warnings, turns that off.
+            "-Wl,-w",
+        ],
+        "//conditions:default": [],
+    }),
+    visibility = [
+        "//mach:__subpackages__",
+        "//max:consumers",
+    ],
+    deps = [
+        ":MOFDriver",
+        "//:accel_registration",
+        # Profiler host glue: attaches the dlopen loader for
+        # libMAXProfilerPlugin.so to this DSO's //Support:ProfilingRanges copy, so
+        # MLRT's activatePendingTrace() (device init) and AsyncRT's thread
+        # registration inside libmax reach the profiler.
+        "//Support:ProfilerHostGlue",
+        "//GraphCompiler:FrameworkFrontend",
+        "//GraphCompiler:MEFModel",
+        "//GraphCompiler:SafeTensor",
+        "//Init",
+        "//Kernels/lib/max_license:WeightsRegistry",
+        "//Support:Context",
+        "//Support:Diagnostics",
+        "//Support:Globals",
+        "//Support:SpanGuard",
+        "//max:CAPI.headers",
+        "@llvm-project//mlir:MLIRBindingsPythonCAPIObjects",
+        "@nixl_upstream//:nixl_runtime",
+    ],
+)

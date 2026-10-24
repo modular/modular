@@ -183,7 +183,8 @@ common --@aspect_rules_ts//ts:skipLibCheck=always
 common --experimental_propagate_custom_flag=@aspect_rules_ts//ts:skipLibCheck
 
 build --remote_download_outputs=toplevel
-build --remote_download_regex='.*\.(inc|h)$'
+# Extra headers for clangd/IDEs. Not needed for CI.
+build:download-headers --remote_download_regex='.*\.(inc|h)$'
 # Required for debug info references from binaries
 build:macos --remote_download_regex='.*\.(a|lo|o|dylib)$'
 build --experimental_remote_cache_eviction_retries=3

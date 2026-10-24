@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import assert_equal
-from layout import Layout
 
 
 def lookup_fn[idx: Int](value: Int) -> Int:
@@ -20,15 +19,22 @@ def lookup_fn[idx: Int](value: Int) -> Int:
     return comptime (my_constants[idx]) * value
 
 
-def layout_size() -> Int:
-    comptime layout = Layout.row_major(16, 8)
-    var size = comptime (layout.size())
-    return size
+def scaled_count(x: Int) -> Int:
+    comptime primes: List[Int] = [2, 3, 5, 7, 11, 13]
+    var total = x * comptime (len(primes))
+    return total
+
+
+def scaled_count_named(x: Int) -> Int:
+    comptime primes: List[Int] = [2, 3, 5, 7, 11, 13]
+    comptime num_primes = len(primes)
+    var total = x * num_primes
+    return total
 
 
 def main() raises:
     var x = lookup_fn[1](4)
     assert_equal(x, 24)
 
-    var y = layout_size()
-    assert_equal(y, 128)
+    assert_equal(scaled_count(4), 24)
+    assert_equal(scaled_count_named(4), 24)

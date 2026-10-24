@@ -43,16 +43,24 @@ def align_of_simd[dtype: DType, simd_target: CompilationTarget]() -> Int:
 
 
 def run_reduce[
-    reduce_fn: def[dtype: DType, width: SIMDLength](
+    ReduceFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing[_] -> SIMD[dtype, width],
+    ) -> SIMD[dtype, width],
+    //,
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,
     cache_busting: Bool = True,
     *,
     axis: Int,
-](mut m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
+](
+    mut m: Bench,
+    shape: IndexList[rank],
+    reduce_fn: ReduceFnType,
+    ctx: DeviceContext,
+) raises:
     print("run_reduce", shape)
 
     var out_shape = shape
@@ -67,7 +75,9 @@ def run_reduce[
 
     # Allocate & initialize host data
     var expected_vals_alloc = alloc(
-        AllocLayout[Scalar[dtype], alignment=.of_bytes[align]()](count=out_size)
+        AllocLayout[Scalar[dtype], alignment=.of_bytes[align]()](
+            length=out_size
+        )
     ).into_managed()
     var expected_vals = expected_vals_alloc.unsafe_ptr()
 
@@ -91,17 +101,19 @@ def run_reduce[
     @inline(.always)
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) {var reduce_fn} -> SIMD[
+        dtype, width
+    ]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
         return reduce_fn[dtype, width](lhs, rhs)
 
-    @__copy_capture(res_device)
-    @__parameter
     def output_fn[
         _dtype: DType, width: SIMDLength
-    ](coords: Coord, val: StaticTuple[SIMD[_dtype, width], num_reductions],):
-        res_device.store[width=width, alignment=align_of[dtype]()](
+    ](coords: Coord, val: StaticTuple[SIMD[_dtype, width], num_reductions]) {
+        var res_device
+    }:
+        res_device.store[alignment=align_of[dtype]()](
             coords,
             rebind[SIMD[dtype, width]](val[0]),
         )
@@ -114,27 +126,24 @@ def run_reduce[
             row_major(Coord(shape)),
         )
 
-        @__copy_capture(input_tile)
-        @__parameter
         def input_fn[
             dtype: DType,
             width: Int,
-        ](coords: Coord) -> SIMD[dtype, width]:
+        ](coords: Coord) {var input_tile} -> SIMD[dtype, width]:
             return rebind[SIMD[dtype, width]](
                 input_tile.load[width=width, alignment=align_of[dtype]()](
                     coords
                 )
             )
 
-        reduce_launch[
-            num_reductions,
+        reduce_launch[reduce_dim=axis](
+            shape,
+            StaticTuple[_, num_reductions](init),
             input_fn,
             output_fn,
             reduce_wrapper,
-            rank,
-            dtype,
-            reduce_dim=axis,
-        ](shape, StaticTuple[_, num_reductions](init), ctx)
+            ctx,
+        )
 
     @inline(.always)
     def bench_func(mut b: Bencher) raises {imm}:
@@ -191,9 +200,10 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         comptime dims = shape
-        run_reduce[reduce_add, dtype, cache_busting=cache_busting, axis=axis](
+        run_reduce[dtype, cache_busting=cache_busting, axis=axis](
             m,
             dims,
+            reduce_add,
             ctx,
         )
 

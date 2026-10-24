@@ -17,7 +17,7 @@ from std.math import align_up
 
 from max.gpu.primitives.cluster import cluster_mask_base
 from max.gpu import block_id_in_cluster
-from max.gpu.host._tensormap import SwizzleMode
+from max.gpu.host import SwizzleMode
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
@@ -42,9 +42,7 @@ from linalg.fp4_utils import (
 
 def _create_mma_desc_k_major[
     dtype: DType, swizzle_mode: TensorMapSwizzle
-](
-    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
-) -> MMASmemDescriptor:
+](ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]) -> MMASmemDescriptor:
     """Creates an MMA descriptor for K-major layout directly from swizzle mode.
 
     Bypasses the legacy Layout pipeline by computing SBO/LBO from swizzle
@@ -127,7 +125,7 @@ def max_contiguous_tile_shape[
 def _create_mma_desc_pair[
     dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
+    ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
@@ -152,7 +150,7 @@ def smem_descriptor[
     is_k_major: Bool,
     page_dense: Bool = False,
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
+    ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     """Creates an MMASmemDescriptorPair for an SM100 MMA operand tile in shared memory.
 
@@ -384,9 +382,7 @@ struct MmaOpSM100_SS[
                 (k % sw_K_b) + (k // sw_K_b) * BN * sw_K_b
             ) * size_of[Self.b_type]()
 
-            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
-                1
-            )
+            var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 
             mma[Self.cta_group](
                 a_desc + a_offset,
@@ -399,7 +395,7 @@ struct MmaOpSM100_SS[
     @inline(.always)
     def commit(
         self,
-        ptr_mbar: UnsafePointer[address_space=.SHARED, ...],
+        ptr_mbar: Pointer[address_space=.SHARED, ...],
     ):
         comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
@@ -415,9 +411,9 @@ struct MmaOpSM100_SS[
         comptime match dtype:
             case .float32:
                 return UMMAKind.KIND_TF32
-            case .float16 | DType.bfloat16:
+            case .float16 | .bfloat16:
                 return UMMAKind.KIND_F16
-            case .float8_e4m3fn | DType.float8_e5m2:
+            case .float8_e4m3fn | .float8_e5m2:
                 return UMMAKind.KIND_F8F6F4
             case _:
                 comptime assert False, String(
@@ -456,7 +452,9 @@ struct MmaOpSM100_BlockScaled_SS[
     Parameters:
         c_type: Output accumulator element type.
         a_type: A operand element type (float8_e4m3fn or uint8 for FP4).
-        b_type: B operand element type; must match `a_type`.
+        b_type: B operand element type; matches `a_type`, except for the
+            W4A8 pair under `kind::mxf8f6f4`, where one operand is E4M3 and
+            the other nibble-packed E2M1 (`uint8`).
         sfa_dtype: Scale factor dtype for A; must match `sfb_dtype`.
         sfb_dtype: Scale factor dtype for B.
         scaling_kind: UMMA scaling kind (MXF8F6F4, MXF4, or MXF4NVF4).
@@ -555,9 +553,7 @@ struct MmaOpSM100_BlockScaled_SS[
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
         init_c: Bool,
-        sfb_tmem_adj: UInt32 = UInt32(
-            0
-        ),  # TMEM col offset for MMA_N < SF_MN_GROUP_SIZE
+        sfb_tmem_adj: UInt32 = 0,  # TMEM col offset for MMA_N < SF_MN_GROUP_SIZE
     ):
         """TileTensor overload for block-scaled MMA input tiles.
 
@@ -626,6 +622,40 @@ struct MmaOpSM100_BlockScaled_SS[
                         sf_k_tile,
                     ](sfb_smem, sfb_tmem + UInt32(sfb_k_offset))
 
+        # NVFP4 copies one scale tile per K-slice. When each tile fits one
+        # SF_MN group, the slices land in disjoint TMEM columns, so copy them
+        # all first and let the MMAs issue back to back. Wider tiles overlap
+        # the next slice's columns and keep the copy-then-MMA order.
+        comptime copy_sfb = Self.mma_shape[1] % 64 == 0 or Self.enable_small_sfb
+        comptime hoist_sf = (
+            Self.scaling_kind != UMMAKind.KIND_MXF8F6F4
+            and Self.scaling_kind != UMMAKind.KIND_MXF4
+            and Self.block_tile_shape[0] <= SF_MN_GROUP_SIZE
+            and (
+                not copy_sfb
+                or align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE)
+                <= SF_MN_GROUP_SIZE
+            )
+        )
+        comptime if hoist_sf:
+            comptime for k in range(
+                0, Self.block_tile_shape[2], Self.mma_shape[2]
+            ):
+                comptime sf_idx = k // Self.mma_shape[2]
+                self._copy_sf_to_tmem_tt[
+                    Self.sfa_dtype,
+                    sfa_smem.LayoutType,
+                    Self.block_tile_shape[0],
+                    sf_idx,
+                ](sfa_smem, sfa_tmem)
+                comptime if copy_sfb:
+                    self._copy_sf_to_tmem_tt[
+                        Self.sfb_dtype,
+                        sfb_smem.LayoutType,
+                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                        sf_idx,
+                    ](sfb_smem, sfb_tmem)
+
         # K-iteration: offset = k * sizeof (contiguous within swizzle tile).
         # Both operands span one byte per element here: the FP4 TMA copy pads
         # an E2M1 operand into shared memory (8 packed bytes then an 8-byte
@@ -634,9 +664,7 @@ struct MmaOpSM100_BlockScaled_SS[
             comptime a_offset = k * size_of[Self.a_type]()
             comptime b_offset = k * size_of[Self.b_type]()
 
-            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
-                1
-            )
+            var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 
             comptime sf_idx = k // Self.mma_shape[2]
 
@@ -682,22 +710,20 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_scale=c_scale,
                 )
             else:
-                # when scaling kind is MXFP4NVF4, four scale tiles cover the whole [BM,BK] and [MMA_N,BK] tiles so we need to load one scale tile for each k iteration.
-                self._copy_sf_to_tmem_tt[
-                    Self.sfa_dtype,
-                    sfa_smem.LayoutType,
-                    Self.block_tile_shape[0],
-                    sf_idx,
-                ](sfa_smem, sfa_tmem)
-                comptime if Self.mma_shape[
-                    1
-                ] % 64 == 0 or Self.enable_small_sfb:
+                comptime if not hoist_sf:
                     self._copy_sf_to_tmem_tt[
-                        Self.sfb_dtype,
-                        sfb_smem.LayoutType,
-                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                        Self.sfa_dtype,
+                        sfa_smem.LayoutType,
+                        Self.block_tile_shape[0],
                         sf_idx,
-                    ](sfb_smem, sfb_tmem)
+                    ](sfa_smem, sfa_tmem)
+                    comptime if copy_sfb:
+                        self._copy_sf_to_tmem_tt[
+                            Self.sfb_dtype,
+                            sfb_smem.LayoutType,
+                            align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                            sf_idx,
+                        ](sfb_smem, sfb_tmem)
 
                 mma[Self.cta_group](
                     a_desc + a_offset,
@@ -714,7 +740,7 @@ struct MmaOpSM100_BlockScaled_SS[
     @inline(.always)
     def commit(
         self,
-        ptr_mbar: UnsafePointer[address_space=.SHARED, ...],
+        ptr_mbar: Pointer[address_space=.SHARED, ...],
     ):
         comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
@@ -758,7 +784,7 @@ struct MmaOpSM100_BlockScaled_SS[
             )
             var sf_desc = MMASmemDescriptor.create[
                 8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-            ](sf_smem.ptr + sf_offset)
+            ](sf_smem.ptr.unsafe_offset(sf_offset))
             tcgen05_cp[
                 cta_group=Int32(Self.cta_group),
                 datapaths=32,

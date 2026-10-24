@@ -249,8 +249,8 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 required (compute_capability == 5)")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 required (compute_capability >= 5)")
         return
 
     # Verification on by default; `BENCH_VERIFY=0` to skip.

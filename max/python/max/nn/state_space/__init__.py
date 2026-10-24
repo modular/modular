@@ -20,6 +20,7 @@ architecture (their sole consumer) to keep ``max.nn`` from depending on
 """
 
 from .gated_delta import (
+    GatedDeltaReplayInputs,
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     gated_delta_recurrence_fwd,
@@ -30,14 +31,17 @@ from .gated_delta import (
 from .gated_group_rmsnorm import gated_group_rmsnorm
 from .kimi_delta import (
     kda_chunk,
+    kda_chunk_is_registered,
     kda_chunk_supports_head_dims,
     kda_decode,
 )
+from .mamba2_replay_fold import mamba2_replay_fold
 from .mamba2_ssd_scan import mamba2_ssd_chunk_scan_varlen_fwd_inplace
 from .short_conv_ring import short_conv_ring
 from .varlen_causal_conv1d import causal_conv1d_varlen_fwd
 
 __all__ = [
+    "GatedDeltaReplayInputs",
     "causal_conv1d_varlen_fwd",
     "gated_delta_conv1d_fwd",
     "gated_delta_conv1d_verify_fwd",
@@ -46,8 +50,10 @@ __all__ = [
     "gated_delta_state_fold",
     "gated_group_rmsnorm",
     "kda_chunk",
+    "kda_chunk_is_registered",
     "kda_chunk_supports_head_dims",
     "kda_decode",
+    "mamba2_replay_fold",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace",
     "short_conv_ring",
     "verify_width_operand",

@@ -629,7 +629,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         assert self.handle >= 0, "invalid file handle in write()"
 
-        var file = FileDescriptor(self)
+        var file = RawFileDescriptor(self)
         var buffer = _FlushingWriteBuffer(file)
 
         comptime for i in range(args.__len__()):

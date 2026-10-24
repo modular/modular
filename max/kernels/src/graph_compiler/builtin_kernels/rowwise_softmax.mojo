@@ -150,15 +150,11 @@ def softmax[
                     - log_denom.slice[width]()
                 )
                 var result = shifted.cast[dtype]()
-                output.store[width=width, alignment=alignment](
-                    idx.coord, result
-                )
+                output.store[alignment=alignment](idx.coord, result)
             else:
                 var numerator = exp(tile_accum - row_max.slice[width]())
                 var result = (numerator * recip.slice[width]()).cast[dtype]()
-                output.store[width=width, alignment=alignment](
-                    idx.coord, result
-                )
+                output.store[alignment=alignment](idx.coord, result)
 
         # `row_max`/`recip`/`log_denom`/`output` ride `write`'s capture list
         # into `elementwise`.

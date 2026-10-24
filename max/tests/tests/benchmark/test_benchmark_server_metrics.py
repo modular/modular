@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
+from max.benchmark.benchmark_shared.backend_names import Backend
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     PrefillDecodeStats,
@@ -31,6 +32,7 @@ from max.benchmark.benchmark_shared.metrics import (
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     HistogramData,
+    MissingEngineMetricsError,
     ParsedMetrics,
     _format_metric_key,
     collect_benchmark_metrics,
@@ -140,6 +142,14 @@ def test_get_metrics_url_supported_backends() -> None:
     # Test vllm backend (uses same port as base_url)
     url = get_metrics_url("vllm", "http://localhost:8000")
     assert url == "http://localhost:8000/metrics"
+
+
+def test_get_metrics_url_mach_uses_engine_metrics_port() -> None:
+    """The mach backend scrapes the engine's Prometheus endpoint, which the
+    CI launch exposes on the same dedicated port MAX Serve uses, not the
+    orchestrator's HTTP port the base URL points at."""
+    url = get_metrics_url("mach", "http://localhost:8091")
+    assert url == "http://localhost:8001/metrics"
 
 
 def test_get_metrics_url_ipv6() -> None:
@@ -483,7 +493,7 @@ class TestCollectBenchmarkMetrics:
 
 
 def test_batch_histograms_found_on_non_first_endpoint() -> None:
-    """`mean_prefill_batch_time_ms` scans across endpoints — it must find the
+    """`mean_prefill_batch_time_ms` scans across endpoints, so it must find the
     engine's MAX-serve histogram even when the orchestrator (no such
     histogram) is listed first in the mapping."""
     orchestrator = ParsedMetrics(
@@ -590,9 +600,7 @@ class TestMetricsResultOutput:
         assert sm["counters"] != by_ep["engine-0"]["counters"]
 
 
-# ---------------------------------------------------------------------------
 # Spec decode metrics parsing and statistics
-# ---------------------------------------------------------------------------
 
 
 def test_parse_spec_decode_metrics_matches_vllm_format() -> None:
@@ -1016,3 +1024,416 @@ def test_to_result_dict_omits_prefill_decode_stats_when_absent() -> None:
     d = result.to_result_dict()
     assert "prefill_stats" not in d
     assert "decode_stats" not in d
+
+
+# Per-backend metric names: MAX Serve vs the mach engine
+
+
+MACH_ENGINE_METRICS = """# HELP mach_scheduler_num_requests_queued Gauge
+# TYPE mach_scheduler_num_requests_queued gauge
+mach_scheduler_num_requests_queued 1
+# HELP mach_batch_size Rows per constructed batch
+# TYPE mach_batch_size histogram
+mach_batch_size_bucket{batch_type="prefill",le="10.0"} 3.0
+mach_batch_size_bucket{batch_type="prefill",le="+Inf"} 4.0
+mach_batch_size_sum{batch_type="prefill"} 12.0
+mach_batch_size_count{batch_type="prefill"} 4.0
+mach_batch_size_bucket{batch_type="decode",le="10.0"} 90.0
+mach_batch_size_bucket{batch_type="decode",le="+Inf"} 96.0
+mach_batch_size_sum{batch_type="decode"} 480.0
+mach_batch_size_count{batch_type="decode"} 96.0
+mach_batch_size_bucket{batch_type="mixed",le="+Inf"} 2.0
+mach_batch_size_sum{batch_type="mixed"} 8.0
+mach_batch_size_count{batch_type="mixed"} 2.0
+# HELP mach_batch_execution_time_milliseconds Forward time per batch
+# TYPE mach_batch_execution_time_milliseconds histogram
+mach_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="200.0"} 4.0
+mach_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="+Inf"} 4.0
+mach_batch_execution_time_milliseconds_sum{batch_type="prefill"} 400.0
+mach_batch_execution_time_milliseconds_count{batch_type="prefill"} 4.0
+mach_batch_execution_time_milliseconds_bucket{batch_type="decode",le="50.0"} 96.0
+mach_batch_execution_time_milliseconds_bucket{batch_type="decode",le="+Inf"} 96.0
+mach_batch_execution_time_milliseconds_sum{batch_type="decode"} 1920.0
+mach_batch_execution_time_milliseconds_count{batch_type="decode"} 96.0
+mach_batch_execution_time_milliseconds_bucket{batch_type="mixed",le="+Inf"} 2.0
+mach_batch_execution_time_milliseconds_sum{batch_type="mixed"} 60.0
+mach_batch_execution_time_milliseconds_count{batch_type="mixed"} 2.0
+# The five batch histograms mach records without a batch_type label
+# (engine-telemetry/src/metrics.rs: record_constructed / record_executed).
+# TYPE mach_batch_input_tokens histogram
+mach_batch_input_tokens_bucket{le="+Inf"} 4.0
+mach_batch_input_tokens_sum 1200.0
+mach_batch_input_tokens_count 4.0
+# TYPE mach_batch_context_tokens histogram
+mach_batch_context_tokens_bucket{le="+Inf"} 4.0
+mach_batch_context_tokens_sum 2400.0
+mach_batch_context_tokens_count 4.0
+# TYPE mach_batch_creation_time_milliseconds histogram
+mach_batch_creation_time_milliseconds_bucket{le="+Inf"} 4.0
+mach_batch_creation_time_milliseconds_sum 40.0
+mach_batch_creation_time_milliseconds_count 4.0
+# TYPE mach_batch_generation_throughput_per_second histogram
+mach_batch_generation_throughput_per_second_bucket{le="+Inf"} 96.0
+mach_batch_generation_throughput_per_second_sum 48000.0
+mach_batch_generation_throughput_per_second_count 96.0
+# TYPE mach_batch_prompt_throughput_per_second histogram
+mach_batch_prompt_throughput_per_second_bucket{le="+Inf"} 4.0
+mach_batch_prompt_throughput_per_second_sum 16000.0
+mach_batch_prompt_throughput_per_second_count 4.0
+"""
+
+MACH_SPEC_DECODE_METRICS_BEFORE = """# TYPE mach_spec_decode_acceptance_rate_per_position histogram
+mach_spec_decode_acceptance_rate_per_position_sum{position="0"} 8000.0
+mach_spec_decode_acceptance_rate_per_position_count{position="0"} 100
+mach_spec_decode_acceptance_rate_per_position_sum{position="1"} 6000.0
+mach_spec_decode_acceptance_rate_per_position_count{position="1"} 100
+# TYPE mach_spec_decode_avg_acceptance_length histogram
+mach_spec_decode_avg_acceptance_length_sum 80.0
+mach_spec_decode_avg_acceptance_length_count 40
+"""
+
+MACH_SPEC_DECODE_METRICS_AFTER = """# TYPE mach_spec_decode_acceptance_rate_per_position histogram
+mach_spec_decode_acceptance_rate_per_position_sum{position="0"} 17000.0
+mach_spec_decode_acceptance_rate_per_position_count{position="0"} 200
+mach_spec_decode_acceptance_rate_per_position_sum{position="1"} 13500.0
+mach_spec_decode_acceptance_rate_per_position_count{position="1"} 200
+# TYPE mach_spec_decode_avg_acceptance_length histogram
+mach_spec_decode_avg_acceptance_length_sum 330.0
+mach_spec_decode_avg_acceptance_length_count 90
+"""
+
+
+def _mach_endpoint() -> ParsedMetrics:
+    """Endpoint scraped from the mach engine (names/labels from metrics.rs)."""
+    pm = parse_metrics(MACH_ENGINE_METRICS)
+    pm.backend = "mach"
+    return pm
+
+
+def test_mach_engine_fills_prefill_decode_batch_time_fields() -> None:
+    """The mach engine fills the same batch-time fields MAX Serve does:
+    mach_batch_execution_time_milliseconds{batch_type="prefill"} is the CE
+    (prefill) batch-time histogram and {batch_type="decode"} the TG (decode)
+    one, so a mach run stops reporting null for every engine-side field."""
+    result = _make_metrics({"engine-0": _mach_endpoint()})
+
+    assert result.mean_prefill_batch_time_ms == pytest.approx(100.0)
+    assert result.mean_decode_batch_time_ms == pytest.approx(20.0)
+    # TODO(MAX-942): mach also emits batch_type="mixed" batches (2 in this
+    # fixture); they count toward neither phase, so 4 prefill / 96 decode,
+    # not 6 / 98.
+    assert result.prefill_batch_count == 4
+    assert result.decode_batch_count == 96
+
+    # The same values reach the serialized result (server_metrics enrichment).
+    d = result.to_result_dict()
+    sm = d["server_metrics"]
+    assert isinstance(sm, dict)
+    assert sm["prefill_batch_execution_time_ms"] == pytest.approx(100.0)
+    assert sm["prefill_batch_count"] == 4
+    assert sm["decode_batch_execution_time_ms"] == pytest.approx(20.0)
+    assert sm["decode_batch_count"] == 96
+
+
+def test_mach_unlabeled_batch_histograms_fill_nothing() -> None:
+    """Mach's unlabeled batch histograms (input/context tokens, creation
+    time, per-batch rates) cannot be attributed to prefill or decode, so the
+    PrefillDecodeStats fields stay null rather than pooling every batch
+    (mixed ones included) into one phase."""
+    result = _make_metrics({"engine-0": _mach_endpoint()})
+
+    # The stats objects exist (an endpoint was scraped) but carry no data.
+    assert result.prefill_stats is not None
+    assert result.decode_stats is not None
+    assert all(
+        v is None for v in result.prefill_stats.to_result_dict().values()
+    )
+    assert all(v is None for v in result.decode_stats.to_result_dict().values())
+
+
+def test_modular_backend_stamp_leaves_max_serve_output_unchanged() -> None:
+    """Stamping the backend on MAX Serve scrapes changes nothing: the
+    modular backend resolves to the same names and CE/TG labels that the
+    unstamped (pre-per-backend-names) lookups used."""
+
+    def _result(backend: Backend | None) -> BenchmarkResult:
+        pm = _endpoint_with_batch_histograms()
+        pm.backend = backend
+        pm.histograms[
+            'maxserve_batch_execution_time_milliseconds{batch_type="CE"}'
+        ] = _hist(400.0, 4.0)
+        pm.histograms[
+            'maxserve_batch_execution_time_milliseconds{batch_type="TG"}'
+        ] = _hist(1920.0, 96.0)
+        return _make_metrics({"server": pm})
+
+    unstamped = _result(None)
+    stamped = _result("modular")
+
+    assert unstamped.mean_prefill_batch_time_ms == pytest.approx(100.0)
+    assert stamped.mean_prefill_batch_time_ms == pytest.approx(100.0)
+    assert unstamped.to_result_dict() == stamped.to_result_dict()
+
+
+class TestMachSpecDecode:
+    """Mach's spec-decode families are the same shapes MAX Serve exposes,
+    under the mach_ prefix; the vLLM-style draft counters are unavailable."""
+
+    def test_parse_mach_histograms(self) -> None:
+        parsed = parse_spec_decode_metrics(
+            MACH_SPEC_DECODE_METRICS_AFTER, backend="mach"
+        )
+
+        assert parsed is not None
+        assert parsed.per_pos_rate_sum == {0: 17000.0, 1: 13500.0}
+        assert parsed.per_pos_rate_count == {0: 200, 1: 200}
+        assert parsed.avg_acceptance_length_sum == 330.0
+        assert parsed.avg_acceptance_length_count == 90.0
+        # Draft counters are vLLM's shape and declared unavailable for mach.
+        assert parsed.num_drafts == 0
+        assert parsed.num_draft_tokens == 0
+
+    def test_mach_names_need_mach_backend(self) -> None:
+        """backend=None keeps the MAX Serve names, so mach families are not
+        picked up without the backend stamped on the scrape."""
+        assert parse_spec_decode_metrics(MACH_SPEC_DECODE_METRICS_AFTER) is None
+
+    def test_calculate_stats_from_mach_histograms(self) -> None:
+        before = parse_spec_decode_metrics(
+            MACH_SPEC_DECODE_METRICS_BEFORE, backend="mach"
+        )
+        after = parse_spec_decode_metrics(
+            MACH_SPEC_DECODE_METRICS_AFTER, backend="mach"
+        )
+        assert before is not None and after is not None
+
+        stats = calculate_spec_decode_stats(before, after)
+
+        assert stats is not None
+        # Per-position rate deltas: (17000-8000)/(200-100)=90% and
+        # (13500-6000)/100=75%, normalized to fractions.
+        assert stats.per_position_acceptance_rates == pytest.approx([0.9, 0.75])
+        assert stats.acceptance_rate == pytest.approx(82.5)
+        assert stats.acceptance_length == pytest.approx(5.0)
+
+
+@patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+def test_collect_benchmark_metrics_stamps_backend_and_mach_url(
+    mock_fetch: MagicMock,
+) -> None:
+    """collect_benchmark_metrics stamps the backend on every scrape (so
+    downstream lookups resolve per-engine names) and derives the mach metrics
+    URL from the engine's metrics port, not the orchestrator's HTTP port."""
+    mock_fetch.return_value = MACH_ENGINE_METRICS
+
+    final = collect_benchmark_metrics(
+        urls={}, backend="mach", base_url="http://localhost:8091"
+    )
+
+    mock_fetch.assert_called_once_with("http://localhost:8001/metrics")
+    pm = final["server"]
+    assert pm.backend == "mach"
+    assert (
+        pm.get_histogram(
+            "mach_batch_execution_time_milliseconds", {"batch_type": "prefill"}
+        )
+        is not None
+    )
+
+    # The stamp survives the baseline-delta path: the final scrape minus the
+    # baseline must carry the backend too (final sum 800 - baseline 400).
+    baseline = collect_benchmark_metrics(
+        urls={}, backend="mach", base_url="http://localhost:8091"
+    )
+    mock_fetch.return_value = MACH_ENGINE_METRICS.replace("400.0", "800.0")
+    delta = collect_benchmark_metrics(
+        urls={},
+        backend="mach",
+        base_url="http://localhost:8091",
+        baseline=baseline,
+    )
+    assert delta["server"].backend == "mach"
+    delta_hist = delta["server"].get_histogram(
+        "mach_batch_execution_time_milliseconds", {"batch_type": "prefill"}
+    )
+    assert delta_hist is not None
+    assert delta_hist.sum == 400.0
+
+
+# The orchestrator's /metrics: reachable, but exposes none of the mach
+# engine's families. That is the exact shape of the wrong-endpoint bug.
+ORCHESTRATOR_METRICS = """# TYPE mammoth_requests counter
+mammoth_requests 42
+# TYPE proxy_active_requests gauge
+proxy_active_requests 1
+"""
+
+
+class TestVerifyAlwaysEmittedMetrics:
+    """A successful scrape that lacks a metric the backend always emits
+    raises; optional and unavailable families never do."""
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_missing_always_emitted_metric_raises(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Scraping the orchestrator with backend=mach succeeds but carries
+        none of the engine's metrics: the run must fail naming the metric
+        and the endpoint, not silently null every engine-side field."""
+        mock_fetch.return_value = ORCHESTRATOR_METRICS
+
+        with pytest.raises(
+            MissingEngineMetricsError,
+            match=r"mach_batch_size.*http://localhost:8001/metrics",
+        ) as excinfo:
+            collect_benchmark_metrics(
+                urls={},
+                backend="mach",
+                base_url="http://localhost:8091",
+                verify_required_metrics=True,
+            )
+        # Every always-emitted metric that is missing is named, not just the
+        # first one the validator reached.
+        assert "mach_batch_execution_time_milliseconds" in str(excinfo.value)
+        assert "backend 'mach'" in str(excinfo.value)
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_partial_absence_still_raises(self, mock_fetch: MagicMock) -> None:
+        """mach_batch_size present but the executed-batch histogram missing
+        (an engine that never executed a batch) still raises."""
+        mock_fetch.return_value = """
+# TYPE mach_batch_size histogram
+mach_batch_size_bucket{batch_type="decode",le="+Inf"} 1.0
+mach_batch_size_sum{batch_type="decode"} 1.0
+mach_batch_size_count{batch_type="decode"} 1.0
+"""
+
+        with pytest.raises(MissingEngineMetricsError) as excinfo:
+            collect_benchmark_metrics(
+                urls={},
+                backend="mach",
+                base_url="http://localhost:8091",
+                verify_required_metrics=True,
+            )
+        assert "mach_batch_execution_time_milliseconds" in str(excinfo.value)
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_missing_optional_metric_does_not_raise(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """The mach fixture carries no spec-decode families (speculative
+        decoding off): a complete engine scrape must pass untouched."""
+        mock_fetch.return_value = MACH_ENGINE_METRICS
+
+        result = collect_benchmark_metrics(
+            urls={},
+            backend="mach",
+            base_url="http://localhost:8091",
+            verify_required_metrics=True,
+        )
+
+        assert result["server"].backend == "mach"
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_baseline_scrape_is_never_verified(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Mach exports through the OpenTelemetry Prometheus exporter, which
+        omits a histogram until its first data point: a fresh idle engine has
+        no mach_batch_* families yet. The baseline collection must not raise
+        against that payload; the final one (after the benchmark ran batches)
+        must."""
+        mock_fetch.return_value = ORCHESTRATOR_METRICS.replace(
+            "mammoth_requests", "engine_started"
+        )
+
+        baseline = collect_benchmark_metrics(
+            urls={}, backend="mach", base_url="http://localhost:8091"
+        )
+        assert baseline["server"].backend == "mach"
+
+        mock_fetch.return_value = MACH_ENGINE_METRICS
+        final = collect_benchmark_metrics(
+            urls={},
+            backend="mach",
+            base_url="http://localhost:8091",
+            baseline=baseline,
+            verify_required_metrics=True,
+        )
+        assert final["server"].backend == "mach"
+
+        # Same idle payload again, but as the verified final collection: now
+        # it raises.
+        mock_fetch.return_value = ORCHESTRATOR_METRICS.replace(
+            "mammoth_requests", "engine_started"
+        )
+        with pytest.raises(MissingEngineMetricsError):
+            collect_benchmark_metrics(
+                urls={},
+                backend="mach",
+                base_url="http://localhost:8091",
+                baseline=baseline,
+                verify_required_metrics=True,
+            )
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_unavailable_metric_missing_does_not_raise(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """The five mach histograms declared UNAVAILABLE (unlabeled) are
+        absent from the payload; only the two always-emitted labeled
+        families need to be there."""
+        mock_fetch.return_value = """
+# TYPE mach_batch_size histogram
+mach_batch_size_bucket{batch_type="prefill",le="+Inf"} 1.0
+mach_batch_size_sum{batch_type="prefill"} 1.0
+mach_batch_size_count{batch_type="prefill"} 1.0
+# TYPE mach_batch_execution_time_milliseconds histogram
+mach_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="+Inf"} 1.0
+mach_batch_execution_time_milliseconds_sum{batch_type="prefill"} 10.0
+mach_batch_execution_time_milliseconds_count{batch_type="prefill"} 1.0
+"""
+
+        result = collect_benchmark_metrics(
+            urls={},
+            backend="mach",
+            base_url="http://localhost:8091",
+            verify_required_metrics=True,
+        )
+
+        assert result["server"].backend == "mach"
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_other_backends_never_enforce(self, mock_fetch: MagicMock) -> None:
+        """MAX Serve's families are not declared always-emitted, so a
+        modular scrape missing every maxserve_batch_* histogram keeps the
+        historical silent-null behavior (no run failures for other
+        backends)."""
+        mock_fetch.return_value = "# TYPE other counter\nother 1\n"
+
+        result = collect_benchmark_metrics(
+            urls={},
+            backend="modular",
+            base_url="http://localhost:8000",
+            verify_required_metrics=True,
+        )
+
+        assert result["server"].counters["other"] == 1.0
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_failed_scrape_keeps_warning_behavior(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """A scrape that fails outright is a warning plus a dropped
+        endpoint, exactly as before; the loud failure is only for scrapes
+        that succeed without the required metrics."""
+        mock_fetch.side_effect = ConnectionError("refused")
+
+        result = collect_benchmark_metrics(
+            urls={},
+            backend="mach",
+            base_url="http://localhost:8091",
+            verify_required_metrics=True,
+        )
+
+        assert result == {}

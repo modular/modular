@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -25,7 +26,7 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        "//max/python/max/experimental/nn",
         requirement("torch"),
     ],
 )
@@ -39,12 +40,20 @@ modular_py_test(
         "test_weight_adapter.py",
     ],
     imports = ["."],
+    per_test_tags = {
+        "test_deepseekv3_memory_estimation.py": ["skip-external-ci"],
+    },
+    per_test_target_compatible_with = {
+        # Needs mega_ffn.ep_fused_plan (fused EP MoE), registered only by the closed-source kernels.
+        "test_deepseekv3_memory_estimation.py": REQUIRES_INTERNAL_KERNELS,
+    },
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/architectures/deepseekV3_nextn",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",

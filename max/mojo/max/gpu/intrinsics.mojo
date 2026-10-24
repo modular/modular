@@ -48,7 +48,7 @@ from std.sys.info import (
     _is_amd_rdna3,
     _is_amd_rdna4,
 )
-from std.sys.intrinsics import llvm_intrinsic, readfirstlane
+from std.sys.intrinsics import llvm_intrinsic
 from std.math.uutils import ufloordiv, umod
 
 from std._gpu import lane_id
@@ -56,6 +56,14 @@ from std._gpu import lane_id
 from std.memory.unsafe import bitcast
 
 from max.gpu._utils import to_i32
+
+
+@__doc_inline
+from std._plugin.hip.hip_intrinsics import (
+    implicitarg_ptr,
+    readfirstlane,
+    sendmsg,
+)
 
 # ===-----------------------------------------------------------------------===#
 # CacheOperation
@@ -415,7 +423,7 @@ struct Scope(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)

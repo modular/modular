@@ -1,0 +1,68 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+name: bench_fp8_index_prefill_amd
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_fp8_index_prefill.mojo
+
+params:
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $batch_size: 2
+  $seq_len: 8192
+  $cache_len: [8192, 80000]
+  $kpool: 1
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $batch_size: 2
+  $seq_len: 8192
+  $cache_len: 80000
+  $kpool: 4
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $batch_size: 2
+  $seq_len: 8192
+  $cache_len: 80000
+  $kpool: 1
+  $window_mb: 512
+# Decode also lands on this scorer: 1 token per request on a short and a long
+# cache, a few tokens per request, and a pooled cache.
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $batch_size: [8, 64]
+  $seq_len: 1
+  $cache_len: 8192
+  $kpool: 1
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $batch_size: 8
+  $seq_len: 1
+  $cache_len: 80000
+  $kpool: 1
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $batch_size: 64
+  $seq_len: [2, 6]
+  $cache_len: 8192
+  $kpool: 1
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $batch_size: 64
+  $seq_len: 1
+  $cache_len: 8192
+  $kpool: 4

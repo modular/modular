@@ -15,13 +15,14 @@
 # All-pairs shortest path algorithm using dynamic programming
 
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 comptime INF = Float32.MAX
 
 # ========================== CPU IMPLEMENTATION ==========================
 
 
-def floyd_warshall_cpu(dist: UnsafePointer[mut=True, Float32, _], V: Int):
+def floyd_warshall_cpu(dist: MutPointer[Float32, _], V: Int):
     """CPU version of Floyd-Warshall algorithm (matches Fig 16.3 pseudo-code).
 
     Args:
@@ -47,7 +48,7 @@ def floyd_warshall_cpu(dist: UnsafePointer[mut=True, Float32, _], V: Int):
                 dist[idx_ij] = new_dist
 
 
-def initialize_dist(dist: UnsafePointer[mut=True, Float32, _], V: Int):
+def initialize_dist(dist: MutPointer[Float32, _], V: Int):
     """Initialize distance matrix to infinity.
 
     Args:
@@ -59,8 +60,8 @@ def initialize_dist(dist: UnsafePointer[mut=True, Float32, _], V: Int):
 
 
 def verify_results(
-    result: UnsafePointer[Float32, _],
-    expected: UnsafePointer[Float32, _],
+    result: Pointer[Float32, _],
+    expected: Pointer[Float32, _],
     V: Int,
 ) -> Bool:
     """Verify Floyd-Warshall results.
@@ -101,7 +102,7 @@ def test_floyd_warshall() raises:
     print("Testing Floyd-Warshall algorithm (CPU version)...")
 
     var V = 4  # Number of vertices
-    var dist = alloc[Float32](V * V)
+    var dist = unsafe_alloc[Float32](V * V)
 
     # Initialize nearest neighbors to actual distance, all others = infinity
     initialize_dist(dist, V)
@@ -133,7 +134,7 @@ def test_floyd_warshall() raises:
         print(row_str)
 
     # Verify expected results
-    var expected = alloc[Float32](V * V)
+    var expected = unsafe_alloc[Float32](V * V)
     # Expected shortest paths for the example graph
     expected[0 * V + 0] = 0.0  # 0 to 0
     expected[0 * V + 1] = 5.0  # 0 to 1 (direct)
@@ -159,8 +160,8 @@ def test_floyd_warshall() raises:
     else:
         raise Error("Tests failed!")
 
-    dist.free()
-    expected.free()
+    dist.unsafe_free()
+    expected.unsafe_free()
 
 
 def main() raises:

@@ -9,11 +9,13 @@ modular_py_library(
     deps = [
         "//max/python/max:tree",
         "//max/python/max/config",
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         requirement("pydantic"),
         requirement("typing-extensions"),

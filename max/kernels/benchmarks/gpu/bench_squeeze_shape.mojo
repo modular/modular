@@ -12,16 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """Benchmarks the GPU `mo.squeeze_shape` / `mo.unsqueeze_shape` kernels.
 
-Calls the ops through the registered `SqueezeShape.execute` /
-`UnsqueezeShape.execute` entry points, so the harness is independent of the
-private kernel signature. Every case is checked against a host reference
-before it is timed.
+Calls the `squeeze_shape_gpu` / `unsqueeze_shape_gpu` launchers that the
+registered ops call. Every case is checked against a host reference before it
+is timed.
 
 Two timings per case, both from the bench framework:
 
 - `*_gpu`: device time per launch, from `DeviceContext.execution_time`
   (GPU events around a batch of back-to-back launches).
-- `*_e2e`: host wall time of one `execute` plus `ctx.synchronize()`.
+- `*_e2e`: host wall time of one launch plus `ctx.synchronize()`.
 
 With `--nsys` the harness skips the bench framework: after verifying, it
 enqueues each case `NSYS_LAUNCHES` times in the order it prints, so a profile
@@ -31,13 +30,10 @@ of the run can be split into per-case blocks of kernel launches.
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.sys import argv
 from std.testing import assert_equal
-from std.utils import IndexList
 
-from builtin_kernels.gather_scatter import SqueezeShape, UnsqueezeShape
-from extensibility import (
-    IOSpec,
-    ManagedTensorSlice,
-    get_row_major_tensor_spec_static,
+from builtin_kernels.gather_scatter import (
+    squeeze_shape_gpu,
+    unsqueeze_shape_gpu,
 )
 from max.benchmark import bencher_iter_custom
 from max.gpu.host import DeviceContext
@@ -119,33 +115,20 @@ def run_case[
     ctx.enqueue_copy(idx_dev, idx_host)
     out_dev.enqueue_fill(-1)
 
-    comptime in_spec = get_row_major_tensor_spec_static[shape_dtype, 1, rank]()
-    comptime idx_spec = get_row_major_tensor_spec_static[
-        indices_type, 1, num_indices
-    ]()
-    comptime out_spec = get_row_major_tensor_spec_static[
-        shape_dtype, 1, out_rank
-    ]()
-    var input = ManagedTensorSlice[io_spec=IOSpec.Input, static_spec=in_spec](
-        in_dev.unsafe_ptr(), IndexList[1](rank)
-    )
-    var shape_indices = ManagedTensorSlice[
-        io_spec=IOSpec.Input, static_spec=idx_spec
-    ](idx_dev.unsafe_ptr(), IndexList[1](num_indices))
-    var output = ManagedTensorSlice[
-        io_spec=IOSpec.Output, static_spec=out_spec
-    ](out_dev.unsafe_ptr(), IndexList[1](out_rank))
+    var input = in_dev.unsafe_ptr().as_unsafe_any_origin()
+    var shape_indices = idx_dev.unsafe_ptr().as_unsafe_any_origin()
+    var output = out_dev.unsafe_ptr().as_unsafe_any_origin()
 
     @inline(.always)
     def launch(ctx: DeviceContext) raises {imm}:
         comptime if squeeze:
-            SqueezeShape.execute[
-                target="gpu", dtype=shape_dtype, indices_type=indices_type
-            ](output, input, shape_indices, ctx)
+            squeeze_shape_gpu(
+                output, 1, input, 1, shape_indices, 1, rank, num_indices, ctx
+            )
         else:
-            UnsqueezeShape.execute[
-                target="gpu", dtype=shape_dtype, indices_type=indices_type
-            ](output, input, shape_indices, ctx)
+            unsqueeze_shape_gpu(
+                output, 1, input, 1, shape_indices, 1, rank, num_indices, ctx
+            )
 
     launch(ctx)
     ctx.enqueue_copy(out_host, out_dev)

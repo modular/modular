@@ -212,6 +212,9 @@ class DFlashMiMoV2(DFlashContextWriter):
     is an untrained padding row.
     """
 
+    supports_zero_draft_rows = False
+    ctx_at_draft_cache_length = True
+
     def __init__(
         self,
         config: DFlashMiMoV2Config,
@@ -256,33 +259,49 @@ class DFlashMiMoV2(DFlashContextWriter):
             )
             self.mask_embedding_shards = self.mask_embedding.shard(devices)
 
-    def block_embeddings(
-        self, anchor_embeds: Sequence[TensorValue]
-    ) -> list[TensorValue]:
-        """Returns the block rows, ``[batch * block_size, hidden]`` per device.
+    def materialize(
+        self,
+        target_hidden: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        signal_buffers: Sequence[BufferValue],
+    ) -> None:
+        """Writes the context K/V of the target's rows into the drafter cache.
 
         Args:
-            anchor_embeds: Per device, the ``[batch, hidden]`` target
-                embeddings of each request's anchor token.
+            target_hidden: Per device, the target's taps concatenated in
+                ``target_layer_ids`` order.
+            input_row_offsets: See :meth:`write`.
+            kv_collections: See :meth:`write`.
+            signal_buffers: See :meth:`project_features`.
         """
-        hidden = self.config.hidden_size
+        self.write(
+            self.project_features(target_hidden, signal_buffers),
+            input_row_offsets,
+            kv_collections,
+        )
+
+    def mask_embeddings(
+        self, target_mask: Sequence[TensorValue]
+    ) -> list[TensorValue]:
+        """Returns the trained mask embedding, ``[1, hidden]`` per device.
+
+        Args:
+            target_mask: Per device, the target's embedding of
+                ``mask_token_id``, whose dtype the rows take.
+        """
         masks_per_device = (
             self.mask_embedding_shards
             if self._mask_values is None
             else [
-                ops.constant(self._mask_values, DType.float32, a.device)
-                for a in anchor_embeds
+                ops.constant(self._mask_values, DType.float32, t.device)
+                for t in target_mask
             ]
         )
-        out = []
-        for anchor, mask in zip(anchor_embeds, masks_per_device, strict=True):
-            masks = ops.broadcast_to(
-                ops.cast(mask, anchor.dtype).reshape((1, 1, hidden)),
-                (anchor.shape[0], self.config.block_size - 1, hidden),
-            )
-            block = ops.concat([ops.unsqueeze(anchor, 1), masks], axis=1)
-            out.append(block.reshape((-1, hidden)))
-        return out
+        return [
+            ops.cast(mask, t.dtype).reshape((1, self.config.hidden_size))
+            for mask, t in zip(masks_per_device, target_mask, strict=True)
+        ]
 
     def forward_block(
         self,
@@ -294,7 +313,9 @@ class DFlashMiMoV2(DFlashContextWriter):
         """Runs the block, whose K/V lands at the caches' lengths.
 
         Args:
-            block_embeds: Per device, :meth:`block_embeddings`'s rows.
+            block_embeds: Per device, the block's rows: each anchor's target
+                embedding, then :meth:`mask_embeddings`'s row in every mask
+                slot.
             kv_collections: Per device, the drafter cache, whose lengths are
                 the anchors' positions and whose dispatch metadata is sized
                 for the block.

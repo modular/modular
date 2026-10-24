@@ -42,7 +42,7 @@ B200-only (SM100). Single CTA, single elected thread issues the MMA.
 """
 
 from std.memory import bitcast
-from std.sys import default_accelerator, size_of
+from std.sys import size_of
 
 from max.gpu import (
     WARP_SIZE,
@@ -52,8 +52,16 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu import block_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    FuncAttribute,
+    default_accelerator,
+)
+from max.gpu.host.nvidia.tma import (
+    TensorMapSwizzle,
+    create_tma_descriptor,
+)
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
@@ -257,12 +265,12 @@ def pv_mma_kernel[
     comptime v_size = BN * BK
     comptime assert ((p_size * size_of[ab_type]()) % 128) == 0
     comptime assert ((v_size * size_of[ab_type]()) % 16) == 0
-    var v_smem = (p_smem + p_size).bitcast[Scalar[ab_type]]()
+    var v_smem = p_smem.unsafe_offset(p_size).unsafe_bitcast[Scalar[ab_type]]()
 
     var p_smem_tile = TileTensor(p_smem, p_smem_layout)
     var v_smem_tile = TileTensor(v_smem, v_smem_layout)
 
-    var ptr_tmem_addr = (v_smem + v_size).bitcast[UInt32]()
+    var ptr_tmem_addr = v_smem.unsafe_offset(v_size).unsafe_bitcast[UInt32]()
 
     comptime accum_type = get_accum_type[ab_type]()
     comptime c_frag_size = MMA_M * MMA_N // num_threads
@@ -272,8 +280,10 @@ def pv_mma_kernel[
     comptime v_expected_bytes = v_size * size_of[ab_type]()
     comptime expected_bytes = p_expected_bytes + v_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -322,8 +332,8 @@ def pv_mma_kernel[
     for i in range(num_iters):
         if elect_one_thread:
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
-            var m = Int(block_idx.y) * BM
-            var n = Int(block_idx.x) * BN
+            var m = block_idx.y * BM
+            var n = block_idx.x * BN
             var k = i * BK
             # A=P : (k, m).   B=V mn-major (transpose_b=False) : (n, k).
             p_tma_op.async_copy(p_smem_tile, tma_mbar[0], (k, m))
@@ -382,7 +392,7 @@ def pv_mma_kernel[
     comptime num_warps = num_threads // WARP_SIZE
     var warp_id = get_warp_id()
 
-    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -482,7 +492,7 @@ def run_pv_spike[
         var v_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                v_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+                v_ptr,
                 1,
                 owning=False,
             ),
@@ -565,7 +575,7 @@ def run_pv_spike[
                     o_host_ref[m, n],
                     atol=0.05,
                     rtol=0.05,
-                    msg=String(m) + "," + String(n),
+                    msg=String(t"{m},{n}"),
                 )
             except e:
                 if mismatches < 8:
@@ -583,7 +593,7 @@ def run_pv_spike[
     if mismatches == 0:
         print("  PASS")
     else:
-        print("  FAIL: " + String(mismatches) + " mismatches")
+        print(t"  FAIL: {mismatches} mismatches")
         raise Error(
             "pv_mnmajor_spike (native="
             + String(use_native_mn)

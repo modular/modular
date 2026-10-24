@@ -34,11 +34,8 @@ class MojoInflightDiag;
 /// of decls must also be checked here too. This logic is left for the caller so
 /// optimizations is possible when the struct is already known to conform to
 /// certain ancestors. On success, the `ConformanceOp` will be populated.
-LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
-                                        TraitSymbolAttr parent,
-                                        std::optional<MojoInflightDiag> &diag,
-                                        ConformanceOp op,
-                                        ASTDecl &conformanceDecl);
+LogicalResult verifyAndBuildConformance(ConformanceASTDecl &conformanceDecl,
+                                        std::optional<MojoInflightDiag> &diag);
 
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(

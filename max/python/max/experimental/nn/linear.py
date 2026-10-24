@@ -153,7 +153,8 @@ class Linear(Module[[Tensor], Tensor]):
             if y.is_distributed:
                 y = y.rebind_mapping(_matmul_mapping(x, self.weight))
             return y + self.bias
-        return x @ self.weight.T + self.bias
+        # Matmul needs one dtype; the input takes the weight's.
+        return x.cast(self.weight.dtype) @ self.weight.T + self.bias
 
 
 def _matmul_mapping(x: Tensor, weight: Tensor) -> DeviceMapping:

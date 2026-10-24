@@ -22,8 +22,10 @@ import logging
 import multiprocessing
 import os
 import signal
+import socket
 import time
 from collections.abc import Generator
+from dataclasses import dataclass
 from multiprocessing.context import SpawnProcess
 
 import httpx
@@ -32,12 +34,7 @@ import pytest_asyncio
 
 logger = logging.getLogger(__name__)
 
-PORT = 8000
-METRICS_PORT = 8001
 MODEL = "modularai/SmolLM-135M-Instruct-FP32"
-BASE_URL = f"http://127.0.0.1:{PORT}"
-HEALTH_URL = f"{BASE_URL}/health"
-CHAT_COMPLETIONS_URL = f"{BASE_URL}/v1/chat/completions"
 
 # Drain window for `test_sigterm_drains_in_flight_request`. Generous, because
 # the point of that test is that shutdown is bounded by the in-flight request
@@ -49,11 +46,11 @@ DRAIN_TIMEOUT_S = 120
 DRAIN_MAX_TOKENS = 100
 
 
-def serve_main() -> None:
+def serve_main(sock: socket.socket) -> None:
     """Entrypoint to run max serve in subprocess.
 
-    This function configures and launches the serve API server with model worker.
-    It blocks in uvloop.run(server.serve()) until the server is shut down.
+    Serves on ``sock``, a listening socket bound by the test process. It
+    blocks in uvloop.run(server.serve()) until the server is shut down.
     """
     from max._entrypoints.cli.serve.serve_api_and_model_worker import (
         serve_api_server_and_model_worker,
@@ -63,8 +60,11 @@ def serve_main() -> None:
     from max.serve.config import Settings
 
     settings = Settings(
-        port=PORT,
-        metrics_port=METRICS_PORT,
+        host="127.0.0.1",
+        port=sock.getsockname()[1],
+        # The /metrics listener is the only other port the server opens, and
+        # nothing here reads it.
+        disable_telemetry=True,
         graceful_shutdown_timeout_s=DRAIN_TIMEOUT_S,
     )
     # Configure pipeline with GGUF model for fast loading on CPU
@@ -74,7 +74,23 @@ def serve_main() -> None:
         quantization_encoding="float32",
     )
     # Launch server (blocks until shutdown)
-    serve_api_server_and_model_worker(settings, pipeline_config)
+    serve_api_server_and_model_worker(settings, pipeline_config, sockets=[sock])
+
+
+@dataclass(frozen=True)
+class RunningServer:
+    """A launched server and where to reach it."""
+
+    process: SpawnProcess
+    base_url: str
+
+    @property
+    def health_url(self) -> str:
+        return f"{self.base_url}/health"
+
+    @property
+    def chat_completions_url(self) -> str:
+        return f"{self.base_url}/v1/chat/completions"
 
 
 async def wait_for_server_ready(
@@ -84,7 +100,7 @@ async def wait_for_server_ready(
 
     Args:
         proc: Server process to monitor
-        url: Health check URL (e.g., "http://127.0.0.1:8000/health")
+        url: Health check URL
         timeout: Maximum seconds to wait for server readiness
 
     Raises:
@@ -116,16 +132,17 @@ async def wait_for_server_ready(
 
 
 @pytest.fixture(scope="module")
-def _server_processes() -> Generator[list[SpawnProcess], None, None]:
+def _servers() -> Generator[list[RunningServer], None, None]:
     """Owns every server started for this module so all of them get reaped.
 
     Yields:
         The list that each started server is appended to.
     """
-    processes: list[SpawnProcess] = []
-    yield processes
+    servers: list[RunningServer] = []
+    yield servers
 
-    for server_process in processes:
+    for server in servers:
+        server_process = server.process
         # SIGTERM first: it unwinds the serving stack, which is what reaps the
         # model worker subprocess. Going straight to SIGKILL would orphan it.
         if server_process.is_alive():
@@ -139,9 +156,7 @@ def _server_processes() -> Generator[list[SpawnProcess], None, None]:
 
 
 @pytest_asyncio.fixture
-async def max_serve_server(
-    _server_processes: list[SpawnProcess],
-) -> SpawnProcess:
+async def max_serve_server(_servers: list[RunningServer]) -> RunningServer:
     """Pytest fixture that launches max serve and waits for it to be ready.
 
     The server is started once and shared across all tests in this file for
@@ -151,28 +166,40 @@ async def max_serve_server(
     fresh one, and only that test pays for the restart.
 
     Returns:
-        The running server process, serving on ``BASE_URL``.
+        The running server and its base URL.
 
     Note:
         - Uses non-daemon Process so the server can spawn child processes
         - Timeout is generous to allow for model download and compilation
     """
-    if _server_processes and _server_processes[-1].is_alive():
-        return _server_processes[-1]
+    if _servers and _servers[-1].process.is_alive():
+        return _servers[-1]
+
+    # Let the kernel pick the port and hand the listener over: a fixed or
+    # probed-and-released port can be taken by another test on shared CI.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    sock.listen()
+    base_url = f"http://127.0.0.1:{sock.getsockname()[1]}"
 
     # Use spawn method to ensure clean process separation
     ctx = multiprocessing.get_context("spawn")
-    server_process = ctx.Process(target=serve_main)
+    server_process = ctx.Process(target=serve_main, args=(sock,))
     server_process.start()
-    _server_processes.append(server_process)
+    # The child got its own copy at start(). Ours must go, or connections keep
+    # landing in this backlog after the server is gone instead of being
+    # refused.
+    sock.close()
+    server = RunningServer(server_process, base_url)
+    _servers.append(server)
 
     # Huge timeout for model download + compile (and ASAN CI is super slow)
-    await wait_for_server_ready(server_process, HEALTH_URL, timeout=900)
-    return server_process
+    await wait_for_server_ready(server_process, server.health_url, timeout=900)
+    return server
 
 
 @pytest.mark.asyncio
-async def test_chat_completions(max_serve_server: SpawnProcess) -> None:
+async def test_chat_completions(max_serve_server: RunningServer) -> None:
     """Test basic chat completions endpoint.
 
     This test validates:
@@ -182,7 +209,7 @@ async def test_chat_completions(max_serve_server: SpawnProcess) -> None:
     """
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
-            CHAT_COMPLETIONS_URL,
+            max_serve_server.chat_completions_url,
             json={
                 "model": MODEL,
                 "messages": [{"role": "user", "content": "hello"}],
@@ -211,10 +238,10 @@ async def test_chat_completions(max_serve_server: SpawnProcess) -> None:
 
 
 @pytest.mark.asyncio
-async def test_health_endpoint(max_serve_server: SpawnProcess) -> None:
+async def test_health_endpoint(max_serve_server: RunningServer) -> None:
     """Test health check endpoint returns 200 OK."""
     async with httpx.AsyncClient(timeout=5.0) as client:
-        response = await client.get(HEALTH_URL)
+        response = await client.get(max_serve_server.health_url)
 
     assert response.status_code == 200, (
         f"Expected status 200, got {response.status_code}"
@@ -225,7 +252,7 @@ async def test_health_endpoint(max_serve_server: SpawnProcess) -> None:
 # pays for a restart.
 @pytest.mark.asyncio
 async def test_sigterm_drains_in_flight_request(
-    max_serve_server: SpawnProcess,
+    max_serve_server: RunningServer,
 ) -> None:
     """SIGTERM lets an in-flight request finish instead of cutting it off.
 
@@ -251,7 +278,7 @@ async def test_sigterm_drains_in_flight_request(
     async with httpx.AsyncClient(timeout=DRAIN_TIMEOUT_S) as client:
         try:
             async with client.stream(
-                "POST", CHAT_COMPLETIONS_URL, json=payload
+                "POST", max_serve_server.chat_completions_url, json=payload
             ) as response:
                 assert response.status_code == 200, (
                     f"Expected status 200, got {response.status_code}"
@@ -277,12 +304,11 @@ async def test_sigterm_drains_in_flight_request(
 
                     # A token has been generated, so the request is genuinely
                     # in flight and the drain has something to protect.
-                    assert max_serve_server.pid is not None
-                    os.kill(max_serve_server.pid, signal.SIGTERM)
+                    server_pid = max_serve_server.process.pid
+                    assert server_pid is not None
+                    os.kill(server_pid, signal.SIGTERM)
                     signal_sent = True
-                    logger.info(
-                        "Sent SIGTERM to server pid %d", max_serve_server.pid
-                    )
+                    logger.info("Sent SIGTERM to server pid %d", server_pid)
         except httpx.HTTPError as e:
             stream_error = e
 
@@ -306,7 +332,7 @@ async def test_sigterm_drains_in_flight_request(
 
     # Draining is an upper bound, not a floor: once the request is done the
     # server should go away on its own.
-    max_serve_server.join(timeout=30)
-    assert not max_serve_server.is_alive(), (
+    max_serve_server.process.join(timeout=30)
+    assert not max_serve_server.process.is_alive(), (
         "Server still running after draining the in-flight request"
     )

@@ -101,7 +101,7 @@ class SigmoidTopKRouter(MoEGate):
         Subclasses override this to compute the projection another way, for
         example in a wider dtype than the stored weight.
         """
-        return self.gate_score(hidden_states)
+        return self.gate_score(hidden_states.cast(self.gate_dtype))
 
     def __call__(
         self, hidden_states: TensorValue

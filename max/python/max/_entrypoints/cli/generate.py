@@ -23,6 +23,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 import requests
+from max.driver import accelerator_api
 from max.pipelines import (
     PIPELINE_REGISTRY,
     TextAndVisionTokenizer,
@@ -40,7 +41,7 @@ from max.pipelines.lib import (
     PipelineArgs,
     PipelineConfig,
 )
-from max.pipelines.lib.generate import Batch, BatchPipeline
+from max.pipelines.lib.generate import BatchPipeline, GenerateIterator
 from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -83,7 +84,9 @@ async def stream_context(
     Yields to the event loop after every step, so a SIGINT's cancellation
     lands before the next step and the batch releases the row.
     """
-    with Batch.from_contexts(pipeline, [context]) as batch:
+    with GenerateIterator.from_contexts(
+        pipeline, [context], caller="max generate"
+    ) as batch:
         while not batch.done:
             tokens = batch.step().get(0)
             if tokens:
@@ -162,14 +165,21 @@ def _with_debug_defaults(pipeline_args: PipelineArgs) -> PipelineArgs:
     """Returns ``pipeline_args`` with the generate defaults for unset fields.
 
     Like transformers, ``max generate`` runs every step normally unless the
-    caller passes ``--device-graph-capture``. It runs one prompt at a time,
-    so it plans for a batch of one, which also keeps graph capture warmup to
-    a single graph.
+    caller passes ``--device-graph-capture``. Serve compiles AMD matmuls
+    without the vendor BLAS fallback whenever it turns capture on, so on AMD
+    this also turns the fallback off, to compile the kernels serve would. It
+    runs one prompt at a time, so it plans for a batch of one, which also
+    keeps graph capture warmup to a single graph.
     """
     runtime = pipeline_args.runtime
     defaults: dict[str, object] = {}
     if runtime.device_graph_capture is None:
         defaults["device_graph_capture"] = False
+        if (
+            accelerator_api() == "hip"
+            and "disable_vendor_blas_fallback" not in runtime.model_fields_set
+        ):
+            defaults["disable_vendor_blas_fallback"] = True
     if runtime.max_batch_size is None:
         defaults["max_batch_size"] = 1
     if not defaults:

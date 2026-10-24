@@ -22,7 +22,8 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from max.benchmark.benchmark_serving import parse_tools
+from max.benchmark.benchmark_serving import parse_args
+from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 from max.benchmark.benchmark_shared.datasets.chat_judge import (
     ChatJudgeChatSamples,
 )
@@ -47,7 +48,9 @@ _TOOLS: list[dict[str, Any]] = [
 _WORDS_PER_TOOL = 4
 
 
-def _word_tokenizer(*, template_renders_tools: bool = True) -> MagicMock:
+def _word_tokenizer(
+    *, template_renders_tools: bool = True, model_max_length: int = 100_000
+) -> MagicMock:
     """A tokenizer whose tokens are whitespace-separated words.
 
     Its chat template renders each tool as ``_WORDS_PER_TOOL`` words, so the
@@ -84,6 +87,7 @@ def _word_tokenizer(*, template_renders_tools: bool = True) -> MagicMock:
     tokenizer.encode.side_effect = encode
     tokenizer.decode.side_effect = decode
     tokenizer.apply_chat_template.side_effect = apply_chat_template
+    tokenizer.model_max_length = model_max_length
     return tokenizer
 
 
@@ -234,7 +238,33 @@ def test_prompt_shorter_than_the_block_warns(
             tokenizer=_word_tokenizer(),
         )
     assert "shorter than" in caplog.text
+    assert "max context" not in caplog.text
     assert request.tools == _TOOLS
+    assert request.prompt_len == _WORDS_PER_TOOL * len(_TOOLS)
+
+
+@pytest.mark.parametrize("chat", [False, True])
+def test_grown_prompts_past_max_context_are_counted(
+    caplog: pytest.LogCaptureFixture, chat: bool
+) -> None:
+    samples: RequestSamples | ChatSamples
+    if chat:
+        session = _make_session(0)
+        _user_turns(session)[0].content = "too short"
+        _user_turns(session)[0].num_tokens = 2
+        samples = ChatSamples(chat_sessions=[session])
+    else:
+        samples = RequestSamples(requests=[_make_request("too short")])
+    with caplog.at_level(logging.WARNING):
+        augment_samples_with_tools(
+            samples,
+            tools=_TOOLS,
+            fraction=1.0,
+            # Grown to the 8-token block, either shape's total passes 20.
+            tokenizer=_word_tokenizer(model_max_length=20),
+        )
+    assert caplog.text.count("shorter than") == 1
+    assert "1 of those" in caplog.text
 
 
 def test_single_turn_requests_are_selected_and_trimmed() -> None:
@@ -329,22 +359,43 @@ def test_seed_makes_selection_reproducible() -> None:
     assert selected_with(7) != selected_with(8)
 
 
-def test_parse_tools_reads_inline_json_and_files(tmp_path: Path) -> None:
+def test_tools_flag_reads_inline_json_and_files(tmp_path: Path) -> None:
+    """Every spelling goes through the CLI parser, which wraps the token."""
     tools_file = tmp_path / "tools.json"
     tools_file.write_text(json.dumps(_TOOLS))
-    assert parse_tools(json.dumps(_TOOLS)) == _TOOLS
-    assert parse_tools(f"@{tools_file}") == _TOOLS
+    for value in (json.dumps(_TOOLS), str(tools_file)):
+        args = parse_args(["--model", "m", "--tools", value])
+        assert args.tools == _TOOLS
 
 
 @pytest.mark.parametrize(
-    ("arg", "match"),
+    ("value", "match"),
     [
-        ("[]", "empty"),
-        ("{not json", "Invalid tools"),
+        ("[]", "at least one tool definition"),
+        ("[not json", "Failed to parse tools"),
         ('[{"type": "function"}]', "Invalid tools"),
-        ("@/nonexistent/tools.json", "not found"),
+        ("/nonexistent/tools.json", "not a readable file path"),
     ],
 )
-def test_parse_tools_rejects_malformed_input(arg: str, match: str) -> None:
+def test_tools_flag_rejects_malformed_input(value: str, match: str) -> None:
     with pytest.raises(ValueError, match=match):
-        parse_tools(arg)
+        ServingBenchmarkConfig.model_validate({"model": "m", "tools": value})
+
+
+@pytest.mark.parametrize("body_tokens", [2, 8, 20])
+def test_short_chat_accounts_for_tool_block_minimum(body_tokens: int) -> None:
+    session = _make_session(0)
+    first = _user_turns(session)[0]
+    first.content = _first_turn_text(body_tokens)
+    first.num_tokens = body_tokens
+    tokenizer = _word_tokenizer()
+    augment_samples_with_tools(
+        ChatSamples(chat_sessions=[session]),
+        tools=_TOOLS,
+        fraction=1.0,
+        tokenizer=tokenizer,
+    )
+    block = _WORDS_PER_TOOL * len(_TOOLS)
+    assert first.num_tokens == max(body_tokens, block)
+    assert len(tokenizer.encode(first.content)) + block == first.num_tokens
+    assert _user_turns(session)[1].num_tokens == 2

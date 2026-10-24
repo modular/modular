@@ -132,11 +132,11 @@ def _bench_fp4_shape(
     def _run_fused() raises {imm}:
         if m >= 256:
             _launch_apple_fp4_matmul[
-                DType.float32, None, BM=128, BK=64, coalesce_scales=True
+                DType.float32, BM=128, BK=64, coalesce_scales=True
             ](out_tt, act_tt, packed_tt, scale_tt, m, n, ctx)
         else:
             _launch_apple_fp4_matmul[
-                DType.float32, None, BM=64, BK=32, coalesce_scales=False
+                DType.float32, BM=64, BK=32, coalesce_scales=False
             ](out_tt, act_tt, packed_tt, scale_tt, m, n, ctx)
 
     for _ in range(warmup):
@@ -150,13 +150,13 @@ def _bench_fp4_shape(
 
     # --- mat-alloc: materialize->dense WITH the real per-call alloc + free. ---
     for _ in range(warmup):
-        _enqueue_apple_fp4_materialize_dense[.float32, None](
+        _enqueue_apple_fp4_materialize_dense[.float32](
             out_tt, act_tt, packed_tt, scale_tt, m, n, k, ctx
         )
         ctx.synchronize()
     var t2 = perf_counter()
     for _ in range(hot):
-        _enqueue_apple_fp4_materialize_dense[.float32, None](
+        _enqueue_apple_fp4_materialize_dense[.float32](
             out_tt, act_tt, packed_tt, scale_tt, m, n, k, ctx
         )
         ctx.synchronize()
@@ -216,8 +216,8 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 required (compute_capability == 5)")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 required (compute_capability >= 5)")
         return
 
     print("== bench_apple_fp4_matmul (warmup=20, hot=20)")

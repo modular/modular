@@ -15,7 +15,8 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph.type import ConvInputLayout, FilterLayout
 from max.nn import ConvTranspose1d, WeightNormConvTranspose1d
 from test_common.numerics import pytorch_disable_tf32_dtype
 from torch import nn
@@ -329,4 +330,37 @@ def test_weight_norm_conv_transpose1d() -> None:
         equal_nan=True,
         rtol=ACCURACY_RTOL,
         atol=ACCURACY_ATOL,
+    )
+
+
+def test_conv2d_transpose_fused_epilogue() -> None:
+    """An add on the conv_transpose output fuses into it as an epilogue."""
+    device = DeviceRef.GPU()
+    shape = (1, 1, 2, 2)
+    with Graph(
+        "conv2d_transpose_fused_epilogue",
+        input_types=(
+            TensorType(DType.float32, shape, device=device),
+            TensorType(DType.float32, shape, device=device),
+        ),
+    ) as graph:
+        x, w = (value.tensor for value in graph.inputs)
+        out = ops.conv2d_transpose(
+            x,
+            w,
+            input_layout=ConvInputLayout.NCHW,
+            filter_layout=FilterLayout.CFRS,
+        )
+        graph.output(out + 1.0)
+
+    compiled = InferenceSession(devices=[Accelerator()]).load(graph)
+    result = compiled.execute(
+        torch.ones(shape, device="cuda"), torch.ones(shape, device="cuda")
+    )[0]
+    assert isinstance(result, Buffer)
+
+    # All-ones 2x2 input and 2x2 kernel overlap 1, 2, or 4 times per output.
+    expected = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dtype=np.float32)
+    np.testing.assert_array_equal(
+        result.to_numpy(), (expected + 1).reshape(1, 1, 3, 3)
     )

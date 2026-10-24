@@ -31,6 +31,15 @@ alone: at `levels=1000003` bf16 snaps values near 1e6 to multiples of 1024,
 collapsing ~1000 fp32 levels into one plateau, so no `levels` however large
 makes the bf16 set unique.
 
+`--bounds=True` passes each row's live prefix length to the kernel as a
+`RowBoundsPtr`, which models production's fused causal bound (that one
+computes the live length in-kernel from row offsets; the kernels see the same
+read traffic) -- so the dead suffix is
+never read rather than scanned past. The output is unchanged (the dead sentinel
+sits below every live score); the kernel instantiation and the `TIME_MS` are
+not, which is the point: this is the arm to compare against a bounded peer
+implementation.
+
     xcheck_topk_bitonic --rows=48 --N=107228 --K=2048 --levels=17
     xcheck_topk_bitonic --rows=48 --N=107228 --K=2048 --levels=17 \\
         --dtype=bfloat16 --deterministic=True
@@ -42,7 +51,7 @@ from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import TileTensor, row_major
 
-from nn.topk_bitonic import persistent_topk_block_split
+from nn.topk_bitonic import RowBoundsPtr, persistent_topk_block_split
 
 
 def _hash32(a: UInt32, b: UInt32) -> UInt32:
@@ -65,6 +74,7 @@ def _launch[
     N: Int,
     K: Int,
     rows: Int,
+    row_bounds: Optional[RowBoundsPtr],
 ) raises:
     persistent_topk_block_split[deterministic=deterministic](
         ctx,
@@ -73,6 +83,7 @@ def _launch[
         N,
         K,
         rows,
+        row_bounds,
     )
 
 
@@ -86,9 +97,13 @@ def _run[
     levels: Int,
     dump: Bool,
     iters: Int,
+    use_bounds: Bool = False,
 ) raises:
     var scores_buf = ctx.enqueue_create_buffer[in_dtype](rows * N)
     var idxs_buf = ctx.enqueue_create_buffer[.int32](rows * K)
+    # Allocated unconditionally: a Mojo local declared inside an `if` dies
+    # with the block, and the bounds pointer must outlive the launches below.
+    var bounds_buf = ctx.enqueue_create_buffer[.int32](rows)
 
     # Row lengths and a per-row checksum let the peer harnesses prove they
     # built the same input before any output is compared.
@@ -110,27 +125,48 @@ def _run[
                     h[r * N + c] = Float32(-3.0e38).cast[in_dtype]()
             checksum.append(cs)
 
+    var row_bounds = Optional[RowBoundsPtr]()
+    if use_bounds:
+        with bounds_buf.map_to_host() as b:
+            for r in range(rows):
+                b[r] = Int32(num_keys[r])
+        row_bounds = Optional(
+            RowBoundsPtr(
+                rebind[ImmPointer[Scalar[DType.int32], ImmutAnyOrigin]](
+                    TileTensor(bounds_buf, row_major(rows)).ptr
+                )
+            )
+        )
+
     var scores_t = TileTensor(scores_buf, row_major(rows, N))
     var idxs_t = TileTensor(idxs_buf, row_major(rows, K))
     ctx.synchronize()
 
-    _launch[in_dtype, deterministic](ctx, scores_t, idxs_t, N, K, rows)
+    _launch[in_dtype, deterministic](
+        ctx, scores_t, idxs_t, N, K, rows, row_bounds
+    )
     ctx.synchronize()
 
     # Time on this exact input so the MAX/vLLM comparison is not just
     # distribution-matched but bit-identical.
     for _ in range(20):
-        _launch[in_dtype, deterministic](ctx, scores_t, idxs_t, N, K, rows)
+        _launch[in_dtype, deterministic](
+            ctx, scores_t, idxs_t, N, K, rows, row_bounds
+        )
     ctx.synchronize()
     var t0 = perf_counter_ns()
     for _ in range(iters):
-        _launch[in_dtype, deterministic](ctx, scores_t, idxs_t, N, K, rows)
+        _launch[in_dtype, deterministic](
+            ctx, scores_t, idxs_t, N, K, rows, row_bounds
+        )
     ctx.synchronize()
     var t1 = perf_counter_ns()
     print("TIME_MS", Float64(t1 - t0) / Float64(iters) / 1.0e6)
 
     if dump:
         print("XCHECK", rows, N, K, levels)
+        if use_bounds:
+            print("BOUNDS 1")
         for r in range(rows):
             print("LEN", r, num_keys[r], checksum[r])
         with idxs_buf.map_to_host() as h:
@@ -145,6 +181,7 @@ def _run[
 
     _ = scores_buf
     _ = idxs_buf
+    _ = bounds_buf
 
 
 def main() raises:
@@ -160,6 +197,7 @@ def main() raises:
     # runs; `True` makes each arm reproducible, which is what lets a bf16-vs-f32
     # diff attribute a difference to rounding rather than to a race.
     var deterministic = arg_parse("deterministic", True)
+    var use_bounds = arg_parse("bounds", False)
 
     if dtype not in ["float32", "bfloat16"]:
         raise Error("unknown dtype: ", dtype)
@@ -167,12 +205,18 @@ def main() raises:
     with DeviceContext() as ctx:
         if dtype == "bfloat16":
             if deterministic:
-                _run[DType.bfloat16, True](ctx, rows, N, K, levels, dump, iters)
+                _run[DType.bfloat16, True](
+                    ctx, rows, N, K, levels, dump, iters, use_bounds
+                )
             else:
                 _run[DType.bfloat16, False](
-                    ctx, rows, N, K, levels, dump, iters
+                    ctx, rows, N, K, levels, dump, iters, use_bounds
                 )
         elif deterministic:
-            _run[DType.float32, True](ctx, rows, N, K, levels, dump, iters)
+            _run[DType.float32, True](
+                ctx, rows, N, K, levels, dump, iters, use_bounds
+            )
         else:
-            _run[DType.float32, False](ctx, rows, N, K, levels, dump, iters)
+            _run[DType.float32, False](
+                ctx, rows, N, K, levels, dump, iters, use_bounds
+            )

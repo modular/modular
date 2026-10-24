@@ -304,7 +304,7 @@ def run_ssd_combined[
 def test_ssd_combined_basic() raises:
     """Test basic ssd_combined."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
@@ -316,7 +316,7 @@ def test_ssd_combined_basic() raises:
 def test_ssd_combined_odd_seqlen_multi_channel() raises:
     """Odd seqlen makes rows start at unaligned element offsets."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
@@ -328,7 +328,7 @@ def test_ssd_combined_odd_seqlen_multi_channel() raises:
 def test_ssd_combined_without_D() raises:
     """Test ssd_combined without D."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=False,
         has_z=True,
@@ -340,7 +340,7 @@ def test_ssd_combined_without_D() raises:
 def test_ssd_combined_without_z() raises:
     """Test ssd_combined without z."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=False,
@@ -352,7 +352,7 @@ def test_ssd_combined_without_z() raises:
 def test_ssd_combined_without_delta_bias() raises:
     """Test ssd_combined without delta_bias."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
@@ -364,7 +364,7 @@ def test_ssd_combined_without_delta_bias() raises:
 def test_ssd_combined_with_delta_softplus() raises:
     """Test ssd_combined with delta_softplus."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
@@ -376,7 +376,7 @@ def test_ssd_combined_with_delta_softplus() raises:
 def test_ssd_combined_larger_shapes() raises:
     """Test ssd_combined with larger shapes."""
     run_ssd_combined[
-        DType.float32,
+        .float32,
         8,  # DSTATE
         has_D=True,
         has_z=True,

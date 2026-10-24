@@ -54,7 +54,7 @@ def test_vec_init[
             _ = verification_data.fill(1)
         elif init_type == InitializationType.arange:
             for i in range(length):
-                verification_data.raw_store(i, Scalar[dtype](i))
+                verification_data[i] = Scalar[dtype](i)
         for i in range(length):
             assert_equal(verification_ptr[i], out_host[i])
 

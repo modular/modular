@@ -37,6 +37,7 @@ from max.driver import DLPackArray
 from max.dtype import DType
 
 from . import ops
+from ._api_boundary import register_api_boundaries as _register_api_boundaries
 from .dim import Dim, DimLike
 from .shape import Shape, ShapeLike
 from .type import (
@@ -1239,6 +1240,10 @@ class TensorValue(Value[mo.TensorType]):
     def __matmul__(self, rhs: TensorValueLike) -> TensorValue:
         """Performs matrix multiplication.
 
+        Both operands must share a dtype, which the result keeps. Use
+        :func:`~max.graph.ops.matmul` with ``out_dtype`` to pick a different
+        result dtype.
+
         Args:
             rhs: The right-hand side operand for matrix multiplication. Must be tensor-like.
         """
@@ -1373,3 +1378,9 @@ def _is_strong_tensor_value_like(obj: Any) -> TypeGuard[StrongTensorValueLike]:
 
 def _is_tensor_value_like(obj: Any) -> TypeGuard[TensorValueLike]:
     return _is_strong_tensor_value_like(obj) or isinstance(obj, _numeric)
+
+
+# A value's operators and methods create ops (see `_api_boundary`).
+for _cls in (Value, BufferValue, TensorValue):
+    _register_api_boundaries(vars(_cls), "max.graph")
+del _cls

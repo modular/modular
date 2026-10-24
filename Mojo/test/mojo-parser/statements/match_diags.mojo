@@ -280,50 +280,17 @@ struct BoolPair:
     var b: Bool
 
 
-struct OpenColor(ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_names = ParameterList.of[
-        "red".value, "green".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, NoneType
-    ].values
+__enum OpenColor(ImplicitlyCopyable):
+    case red
+    case green
     comptime _enum_is_exhaustive = False
 
-    def __init__(out self):
-        pass
-
-    def _get_enum_discriminant(self) -> Int:
-        return 0
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
-        while True:
-            pass
-
-
-struct ParametricExhaustivityColor[
+__enum ParametricExhaustivityColor[
     is_exhaustive: Bool
-](ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_names = ParameterList.of[
-        "red".value, "green".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, NoneType
-    ].values
+](ImplicitlyCopyable):
+    case red
+    case green
     comptime _enum_is_exhaustive = Self.is_exhaustive
-
-    def __init__(out self):
-        pass
-
-    def _get_enum_discriminant(self) -> Int:
-        return 0
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
-        while True:
-            pass
 
 
 def match_open_enum_duplicate(color: OpenColor):
@@ -536,6 +503,13 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case 1:
         pass
 
+    match n:
+    case -1:
+        pass
+    # expected-warning @+1 {{case is unreachable; '-1' is already covered by a previous case}}
+    case -1:
+        pass
+
     # Or of literals covers each alternative; a later duplicate is unreachable.
     match n:
     case 0 | 1 | 2:
@@ -670,6 +644,13 @@ def match_redundant_explicit_literal_patterns(
     case _:
         pass
 
+    match value:
+    # expected-warning @+1 {{'==' is redundant when matching a literal; remove it}}
+    case == -1:
+        pass
+    case _:
+        pass
+
     match pair:
     # expected-warning @+1 {{'==' is redundant when matching a literal; remove it}}
     case (_, == "expected"):
@@ -684,6 +665,12 @@ def match_expression_patterns_require_explicit_equality(
     match value:
     # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
     case pair[0]:
+        pass
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case -value:
+        pass
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case -(1 + 0):
         pass
     case _:
         pass
@@ -710,3 +697,31 @@ def deprecated_dunder_match(value: Int):
     __match value:
     case _:
         pass
+
+
+# Positional initializer-list patterns suggest the subject's field names.
+@fieldwise_init
+struct SourceRange:
+    var start: Int
+    var end: Int
+
+    def __eq__(self, other: Self) -> Bool:
+        return True
+
+
+__enum Token:
+    case eof
+    case source_range(SourceRange)
+
+
+def print_token(tok: Token):
+    # expected-warning @+1 {{'match' is not exhaustive; missing case for 'source_range'}}
+    match tok:
+        # expected-error @+1 {{initializer-list patterns require field names}}
+        case .source_range({0,5}):
+            pass
+        # expected-error @+1 {{initializer-list patterns require field names}}
+        case .source_range({x,y}):
+            pass
+        case .eof:
+            pass

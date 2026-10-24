@@ -337,7 +337,7 @@ def _step_graph(shape_positions: int = 0) -> Graph:
             for k in range(shape_positions):
                 y = _shape_kernel(y, devices[i], shape_positions + k)
             outputs += [y, tail[i]]
-        graph.output(*outputs)
+        graph.output(outputs)
     return graph
 
 

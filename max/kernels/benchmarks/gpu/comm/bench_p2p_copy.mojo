@@ -70,14 +70,15 @@ comptime _target_address_space = (
 
 
 def _mode_name[direction: Int]() -> String:
-    comptime if direction == 0:
-        return "unidir-push"
-    elif direction == 1:
-        return "unidir-pull"
-    elif direction == 2:
-        return "bidir-push"
-    else:
-        return "bidir-pull"
+    comptime match direction:
+        case 0:
+            return "unidir-push"
+        case 1:
+            return "unidir-pull"
+        case 2:
+            return "bidir-push"
+        case _:
+            return "bidir-pull"
 
 
 @__llvm_metadata(
@@ -99,10 +100,10 @@ def p2p_copy_kernel[
 
     for idx in range(global_tid, num_vectors, stride):
         var elem_idx = idx * width
-        var data = src.address_space_cast[_target_address_space]().load[
-            width=width, alignment=vec_align
-        ](elem_idx)
-        dst.address_space_cast[_target_address_space]().store[
+        var data = src.unsafe_address_space_cast[
+            _target_address_space
+        ]().unsafe_load[width=width, alignment=vec_align](elem_idx)
+        dst.unsafe_address_space_cast[_target_address_space]().unsafe_store[
             width=width, alignment=vec_align
         ](elem_idx, data)
 
@@ -269,10 +270,10 @@ def bench_p2p[
 
         # Verify: copy back to host and check
         var host0_alloc = alloc[Scalar[dtype]](
-            {count = num_elements}
+            {length = num_elements}
         ).into_managed()
         var host1_alloc = alloc[Scalar[dtype]](
-            {count = num_elements}
+            {length = num_elements}
         ).into_managed()
         ctx0.enqueue_copy(host0_alloc.unsafe_span(), buf0_write)
         ctx1.enqueue_copy(host1_alloc.unsafe_span(), buf1_write)
@@ -301,7 +302,7 @@ def bench_p2p[
             )
             ctx0.synchronize()
             var host_alloc = alloc[Scalar[dtype]](
-                {count = num_elements}
+                {length = num_elements}
             ).into_managed()
             ctx1.enqueue_copy(host_alloc.unsafe_span(), buf1_write)
             ctx1.synchronize()
@@ -320,7 +321,7 @@ def bench_p2p[
             )
             ctx0.synchronize()
             var host_alloc = alloc[Scalar[dtype]](
-                {count = num_elements}
+                {length = num_elements}
             ).into_managed()
             ctx0.enqueue_copy(host_alloc.unsafe_span(), buf0_write)
             ctx0.synchronize()

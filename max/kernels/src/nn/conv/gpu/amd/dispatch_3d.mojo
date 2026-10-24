@@ -50,14 +50,19 @@ Mirrors the structure of `nn.conv.gpu.amd.dispatch`.
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 
@@ -70,9 +75,12 @@ from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 @__name(t"amd_4wave_3d_transpose_qrscf_to_fk_kpad_{dtype}")
 def _transpose_qrscf_to_fk_kpad[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     Q: Int32,
     R: Int32,
     S: Int32,
@@ -98,7 +106,7 @@ def _transpose_qrscf_to_fk_kpad[
     var f = tid // _K_padded
     var k = tid - f * _K_padded
     if k >= K_real:
-        dst_ptr.store(tid, Scalar[dtype](0))
+        dst_ptr.unsafe_store(tid, Scalar[dtype](0))
         return
     var q = k // (_R * _S * _C)
     var rsc = k - q * (_R * _S * _C)
@@ -106,17 +114,18 @@ def _transpose_qrscf_to_fk_kpad[
     var sc = rsc - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    # QRSCF source index: (((q*_R + r)*_S + s)*_C + c)*_F + f.
-    var qrscf_idx = (((q * _R + r) * _S + s) * _C + c) * _F + f
-    dst_ptr.store(tid, src_ptr.load(qrscf_idx))
+    dst_ptr.unsafe_store(tid, src.load((q, r, s, c, f))[0])
 
 
 @__name(t"amd_4wave_3d_transpose_fcqrs_to_fk_kpad_{dtype}")
 def _transpose_fcqrs_to_fk_kpad[
     dtype: DType,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     F: Int32,
     C: Int32,
     Q: Int32,
@@ -142,7 +151,7 @@ def _transpose_fcqrs_to_fk_kpad[
     var f = tid // _K_padded
     var k = tid - f * _K_padded
     if k >= K_real:
-        dst_ptr.store(tid, Scalar[dtype](0))
+        dst_ptr.unsafe_store(tid, Scalar[dtype](0))
         return
     var q = k // (_R * _S * _C)
     var rsc = k - q * (_R * _S * _C)
@@ -150,11 +159,7 @@ def _transpose_fcqrs_to_fk_kpad[
     var sc = rsc - r * (_S * _C)
     var s = sc // _C
     var c = sc - s * _C
-    # FCQRS source index: f*_C*_Q*_R*_S + c*_Q*_R*_S + q*_R*_S + r*_S + s.
-    var fcqrs_idx = (
-        f * _C * _Q * _R * _S + c * _Q * _R * _S + q * _R * _S + r * _S + s
-    )
-    dst_ptr.store(tid, src_ptr.load(fcqrs_idx))
+    dst_ptr.unsafe_store(tid, src.load((f, c, q, r, s))[0])
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +168,15 @@ def _transpose_fcqrs_to_fk_kpad[
 
 
 def dispatch_amd_4wave_conv3d[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
     filter_is_fcqrs: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     # Autotune-override knobs. When non-zero, override the heuristic
     # pick of (BM, BN, BK). Used by `bench_conv3d.mojo`'s kbench sweep
     # to populate a per-shape dispatch table. Default 0 = use heuristic.
@@ -183,12 +192,16 @@ def dispatch_amd_4wave_conv3d[
     symmetric_padding: IndexList[3],
     num_groups: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises -> Bool:
     """Try to dispatch a Conv3D to `amd_4wave_conv` on MI355X. Returns
     True if handled; False if the caller should fall through (typically
     to `dispatch_im2col_matmul_conv3d`).
 
     Parameters:
+        EpilogueFnType: Type of `epilogue_fn`.
+        ComputeFnType: Type of `compute_fn`.
         input_type: `DType` of the input tensor; must be
             `float8_e4m3fn`, `bfloat16`, or `float16`.
         filter_type: `DType` of the filter tensor; must equal
@@ -197,8 +210,11 @@ def dispatch_amd_4wave_conv3d[
             FP8 input, otherwise tracks `input_type`.
         filter_is_fcqrs: `True` if the filter is laid out as FCQRS
             `[F, C, Q, R, S]`; `False` if QRSCF `[Q*R*S*C, F]`.
-        elementwise_lambda_fn: Optional epilogue applied to the conv
-            output (defaults to `None`).
+        has_epilogue_fn: `True` to store each output chunk through
+            `epilogue_fn` instead of writing `output` (defaults to
+            `False`).
+        has_compute_fn: `True` to store `compute_fn` of each output
+            chunk (defaults to `False`).
         block_m_override: Override for the BM tile size, 0 uses the
             heuristic (defaults to 0).
         block_n_override: Override for the BN tile size, 0 uses the
@@ -222,6 +238,11 @@ def dispatch_amd_4wave_conv3d[
         num_groups: Convolution group count; must be 1.
         ctx: `DeviceContext` used to enqueue the transpose and
             conv kernels.
+        epilogue_fn: Stores each output chunk at a 2D coordinate
+            `(m, n)`, where `m` is the flattened NDHW output row and `n`
+            is the output channel. Used when `has_epilogue_fn` is set.
+        compute_fn: Transforms each output chunk at the same 2D
+            coordinate. Used when `has_compute_fn` is set.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
@@ -330,9 +351,9 @@ def dispatch_amd_4wave_conv3d[
         #   WAN_time_conv (C_in=192): BK=64 → 522 vs 449 = 116%
         #   WAN_upsampled_res (C_in=192): BK=64 → 559 vs 613 = 91%
         comptime _K_real = _Q * _R * _S * _C_in
-        comptime _K_padded_bk128 = ((_K_real + 255) // 256) * 256
-        comptime _K_padded_bk64 = ((_K_real + 127) // 128) * 128
-        comptime _K_padded_bk32 = ((_K_real + 63) // 64) * 64
+        comptime _K_padded_bk128 = align_up(_K_real, 256)
+        comptime _K_padded_bk64 = align_up(_K_real, 128)
+        comptime _K_padded_bk32 = align_up(_K_real, 64)
         comptime _BK_heuristic = 32 if (_C_in % 64) != 0 else 64
         # Honor the kbench-sweep override when non-zero.
         comptime _BK_chosen = (
@@ -350,8 +371,14 @@ def dispatch_amd_4wave_conv3d[
         var transpose_total = _C_out * _K_padded
         var transpose_grid = ceildiv(transpose_total, _transpose_block)
         comptime if filter_is_fcqrs:
-            ctx.enqueue_function[_transpose_fcqrs_to_fk_kpad[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_fcqrs_to_fk_kpad[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_fk_ptr,
                 Int32(_C_out),
                 Int32(_C_in),
@@ -363,8 +390,14 @@ def dispatch_amd_4wave_conv3d[
                 block_dim=_transpose_block,
             )
         else:
-            ctx.enqueue_function[_transpose_qrscf_to_fk_kpad[filter_type]](
-                filter.ptr,
+            comptime transpose_kernel = _transpose_qrscf_to_fk_kpad[
+                filter_type,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
                 filter_fk_ptr,
                 Int32(_Q),
                 Int32(_R),
@@ -473,7 +506,8 @@ def dispatch_amd_4wave_conv3d[
                     var input_ndhwc_tt = input.reshape(_ndhwc_in_layout)
                     var output_2d_tt = output.reshape(_output_2d_layout)
                     amd_4wave_conv[
-                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        has_epilogue_fn=has_epilogue_fn,
+                        has_compute_fn=has_compute_fn,
                         block_m_override=_BM_static,
                         block_n_override=_BN_static,
                         block_k_override=_BK_chosen,
@@ -498,6 +532,8 @@ def dispatch_amd_4wave_conv3d[
                         filter_fk_tt,
                         output_2d_tt,
                         ctx,
+                        epilogue_fn=epilogue_fn,
+                        compute_fn=compute_fn,
                     )
                     return True
                 return False
@@ -584,14 +620,14 @@ def dispatch_amd_4wave_conv3d[
                 var _rt_H_out = (_rt_H + 2 * pad_hw_c - _eff_R) // stride_v + 1
                 var _rt_W_out = (_rt_W + 2 * pad_hw_c - _eff_S) // stride_v + 1
                 var _rt_M_total = _rt_N * _rt_D_out * _rt_H_out * _rt_W_out
-                var _output_dims = IndexList[2](_rt_M_total, _C_out)
-                var _dyn_out_layout = row_major(Coord(_output_dims))
+                var _dyn_out_layout = row_major(Coord(_rt_M_total, _C_out))
                 var output_2d_tt = output.reshape(_dyn_out_layout)
                 # Runtime-HW shape isn't known at comptime; leave
                 # BM/BN at the launcher default (128/128 for bf16) and
                 # only set BK from the static K-padding heuristic.
                 amd_4wave_conv[
-                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     block_k_override=_BK_chosen,
                     R=_R,
                     S=_S,
@@ -609,6 +645,8 @@ def dispatch_amd_4wave_conv3d[
                     filter_fk_tt,
                     output_2d_tt,
                     ctx,
+                    epilogue_fn=epilogue_fn,
+                    compute_fn=compute_fn,
                 )
 
             if stride[0] == 1:

@@ -249,14 +249,19 @@ def generate_torch_outputs(
 
 
 def make_attention_module(
-    text_config: Gemma4TextConfig, device: Device, layer_idx: int
+    text_config: Gemma4TextConfig,
+    device: Device,
+    layer_idx: int,
+    *,
+    cache_dtype: DType = MAX_DTYPE,
 ) -> tuple[Gemma4Attention, KVCacheParams]:
     """Builds the ModuleV3 Gemma4 attention layer and its KV-cache params.
 
     ``layer_idx`` selects the layer geometry: ``layer_idx % 6 == 5`` is a
     global (full-attention, k==v, head_dim 512) layer, anything else a
-    sliding (head_dim 256) layer. The caller picks the construction context
-    (``F.lazy()`` for compilation, eager otherwise).
+    sliding (head_dim 256) layer. ``cache_dtype`` is the KV cache storage
+    dtype. The caller picks the construction context (``F.lazy()`` for
+    compilation, eager otherwise).
     """
     assert text_config.layer_types is not None
     is_sliding = text_config.layer_types[layer_idx] == "sliding_attention"
@@ -265,7 +270,7 @@ def make_attention_module(
         for layer_type in ("sliding_attention", "full_attention")
     }
     kv_params = MHAKVCacheParams(
-        dtype=MAX_DTYPE,
+        dtype=cache_dtype,
         devices=[DeviceRef.GPU()],
         n_kv_heads=(
             text_config.num_key_value_heads

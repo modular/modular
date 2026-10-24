@@ -1,0 +1,183 @@
+---
+title: Model development overview
+description: Learn the process to bring a trained model from Hugging Face to MAX.
+---
+
+MAX includes architecture implementations for a set of models. For a model
+outside that set, you write the architecture yourself with the MAX Python API
+and then serve it like any supported model. The guides here convert trained
+models from Hugging Face or PyTorch into architectures that MAX can load.
+
+MAX also supports image and video generation models. The guides here cover
+transformer-based text generation models, which follow the most stable
+implementation pattern.
+
+:::note ModuleV3 API
+
+Use ModuleV3 when porting a new model architecture to MAX. To migrate an
+existing architecture from the Graph API ([`max.graph`](/api/python/graph/) and
+[`max.nn`](/api/python/nn/)) to ModuleV3, use our
+[`/migrate-max-v2-to-v3`](https://github.com/modular/skills/blob/main/migrate-max-v2-to-v3/SKILL.md)
+skill.
+
+:::
+
+## What a custom architecture contains
+
+MAX provides the serving infrastructure, runtime, and model execution features
+required to run a model in production. When you add support for a new
+architecture, you only need to implement the architecture-specific components.
+
+To add support for a new model architecture, implement the:
+
+- **Model graph**: Define the model layers (modules), its attention pattern, and
+  data flow.
+- **Weight adapter**: Define how to map the Hugging Face checkpoint key names to
+  the corresponding weight names for each layer in your MAX model.
+- **Pipeline model**: Define the pipeline that connects the graph to the serving
+  interface.
+- **Configuration**: Translate Hugging Face's `config.json` fields into
+  parameters that MAX needs to build the graph and allocate its caches.
+- **Architecture registry**: Define how to connect all the pieces, such as the
+  model, tokenizer, weight loader, and quantization formats.
+
+Once you've integrated the model architecture into the MAX inference pipeline,
+MAX provides the following functionality for you:
+
+- **Serving**: Request scheduling, continuous batching, and an OpenAI-compatible
+  endpoint API.
+- **KV cache management**: Paged allocation, cache eviction, prefix caching,
+  and chunked prefill.
+- **[Parallelism](/serve/parallelism/)**: Data parallelism, tensor
+  parallelism, weight sharding, collective communication, and device
+  management.
+- **Tokenization**: Wrapping Hugging Face tokenizers for the serving loop.
+- **Weight loading**: Reading safetensors and GGUF files from disk or Hugging
+  Face Hub.
+- **Compilation and execution**: The graph compiler, kernel fusion, and runtime,
+  with built-in quantization support for types like FP8 and FP4.
+
+## Architecture components
+
+Each model architecture in MAX requires these components, each
+supported by a corresponding part of the MAX Python API.
+
+:::note
+
+Many models are implemented as variations of an existing architecture. If your
+model is based on an existing architecture such as Llama, Qwen, or DeepSeek, you
+can often reuse the existing implementation and override only the components
+that differ.
+
+:::
+
+### Model graph
+
+You write `Module` subclasses for the layers, and the pipeline model compiles
+the graph those modules describe.
+
+Standard architectures like Llama 3 compose mostly from built-in modules.
+`Linear`, `Embedding`, and `RMSNorm` come from `max.experimental.nn`; `MLP` and
+`AttentionWithRope` from `max.experimental.nn.common_layers`. The transformer
+block that ties them together belongs to the architecture. You need a custom
+`Module` subclass only for model-specific behavior (such as novel attention or
+custom MoE gating).
+
+Learn more in
+[Build a model graph with Module](/develop/modules/), and see [Write a
+custom layer](/develop/layers/) for components like these.
+
+### Weight adapter
+
+You need a function that renames Hugging Face checkpoint keys to match
+your `Module` hierarchy. Usually this is string replacement: the Llama 3
+adapter rewrites a `"model."` prefix to `"language_model."`. The adapter is
+registered in `SupportedArchitecture` and runs once when MAX loads the model.
+
+Learn more in [Weight adapters](/develop/weight-adapters/).
+
+### Pipeline model
+
+This is the central class that builds, compiles, and executes the model graph.
+For models with a KV cache (most LLMs), you'll create it as a subclass of
+`ModuleV3PipelineModelWithKVCache`.
+
+When instantiated, the pipeline model receives the `InferenceSession` used at
+runtime and is responsible for:
+
+- **Graph construction**: `_instantiate_module()` builds the root `Module`, and
+  `graph_specs()` builds it under `F.lazy()` and registers it as the decoder
+  with the adapted checkpoint weights.
+- **Compilation**: The constructor compiles the decoder through `load_graphs()`
+  on the session and stores the result in `model`.
+- **Input preparation**: Convert tokenized requests into graph inputs.
+- **Execution**: `execute()` passes `model_inputs.buffers` to the compiled model
+  and returns the logits.
+
+Learn more in [Model pipelines](/develop/pipelines/).
+
+### Configuration
+
+Your config class (in `model_config.py`) implements the `ArchConfig` protocol.
+Its `initialize()` class method reads the Hugging Face `config.json` and
+pipeline settings (devices, quantization, cache sizing) to produce a config
+object. The model hyperparameters pass through unchanged: your config class is
+necessary because Hugging Face configs aren't standardized across model families
+(different field names, nesting conventions, derived vs. explicit values).
+
+Learn more in [Read a model config](/develop/read-model-config/).
+
+### Architecture registry
+
+Every model architecture needs an `arch.py` file that connects all the pieces.
+It builds one or more `SupportedArchitecture` objects that register your model
+with the pipeline system. A package that `max serve` loads through
+`--custom-architectures` also exposes them as an `ARCHITECTURES` list from its
+`__init__.py`, which [Serve your custom
+model](/develop/serve-custom-model-architectures/) covers.
+
+Learn more in
+[Serve custom model architectures](/develop/serve-custom-model-architectures/).
+
+## Deploy your model
+
+After you build your model architecture in MAX, you can test it locally and
+optionally contribute it back to MAX so everybody can use it.
+
+### Test locally
+
+Use the `--custom-architectures` flag to
+[serve a model](/develop/serve-custom-model-architectures/) with your local
+architecture implementation.
+
+```bash
+max serve --model your-org/your-model \
+  --custom-architectures path/to/your/architecture
+```
+
+Once you can serve your model, you can validate its output using [logit
+comparison](/develop/logit-comparison/).
+
+### Contribute to MAX
+
+To make your architecture available to all MAX users:
+
+1. Register the architecture in `architectures/__init__.py`.
+2. Submit a pull request.
+
+After your changes are merged, users can serve compatible models by specifying
+their Hugging Face repository ID with `max serve`.
+
+For details, see
+[Contributing new model architectures](https://github.com/modular/modular/blob/main/max/docs/contributing-models.md).
+
+## Next steps
+
+With every component in place, work through the process in order:
+
+- [Model bring-up workflow](/develop/model-bringup-workflow/): the end-to-end
+  port, from package layout to serving.
+- [Bring up a model with AI agent skills](/develop/model-bringup-skills/):
+  automate the port with the MAX skills for coding agents.
+- [Serve a fine-tuned model](/develop/max-pipeline-bring-your-own-model/):
+  serve custom weights when the base architecture is already supported.

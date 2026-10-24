@@ -188,7 +188,8 @@ ParserBase::parseDecorators(ssize_t indentation) {
 static void initializeBuilderForFunctions(ASTDecl &curDeclScope,
                                           OpBuilder &builder) {
   // Special logic for functions.
-  if (auto funcOp = dyn_cast_or_null<FnOp>(curDeclScope.getIfOperation())) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&curDeclScope)) {
+    auto funcOp = defDecl->getOp();
     // The default of inserting at the end of the function isn't right,
     // because it will have an lit.endfn: insert before that instead.
     assert(isa<EndFnOp>(funcOp.getBody()->back()) &&
@@ -248,17 +249,23 @@ struct FromImportDecorators {
   bool docInline = false;
 };
 
+static OpBuilder getScopeEndBuilder(ASTDecl &decl) {
+  if (auto *functionDecl = dyn_cast<DefASTDecl>(&decl))
+    return OpBuilder::atBlockEnd(functionDecl->getOp().getBody());
+  return cast<OpASTDecl>(decl).getDeclEndBuilder();
+}
+
 struct StmtParser : public ParserBase {
   StmtParser(Lexer &lexer, ASTDecl &curDeclScope)
       : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
-        curDeclScope(&curDeclScope), builder(curDeclScope.getDeclEndBuilder()) {
+        curDeclScope(&curDeclScope), builder(getScopeEndBuilder(curDeclScope)) {
     initializeBuilderForFunctions(curDeclScope, builder);
   }
   StmtParser(Lexer &lexer, IREmitter &emitter)
       : ParserBase(emitter.shared, lexer), parentDecl(emitter.getDeclScope()),
         curDeclScope(&emitter.getDeclScope()),
         builder(emitter.builder ? emitter.builder.value()
-                                : curDeclScope->getDeclEndBuilder()) {
+                                : getScopeEndBuilder(*curDeclScope)) {
     if (!emitter.builder)
       initializeBuilderForFunctions(emitter.getDeclScope(), builder);
   }
@@ -429,13 +436,11 @@ void StmtParser::pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
 }
 
 bool StmtParser::isInTypeBody() const {
-  Operation *parent = parentDecl.getIfOperation();
-  return parent && isa<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(parent);
+  return isa<TypeScopeASTDecl>(parentDecl);
 }
 
 bool StmtParser::isInModuleScope() const {
-  Operation *parent = parentDecl.getIfOperation();
-  return isa_and_nonnull<LIT::FileModuleOp>(parent);
+  return isa<FileModuleASTDecl>(parentDecl);
 }
 
 void StmtParser::emitControlFlowNotInFunctionError(SMLoc loc,
@@ -822,9 +827,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     rejectDecorator(); // Decorators not allowed.
     return parseImportStmt();
   case Token::kw_case:
-    if (auto structOp =
-            dyn_cast_or_null<StructDeclOp>(getParentDecl().getIfOperation());
-        !structOp || !structOp.isEnum())
+    if (auto *structDecl = dyn_cast<StructASTDecl>(&getParentDecl());
+        !structDecl || !structDecl->getOp().isEnum())
       break;
     rejectDecorator(); // Decorators not allowed.
     return parseEnumCaseStmt(stmtIndent);
@@ -836,7 +840,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_var:
     // In function bodies, we parse 'var' as expressions, part of the pattern
     // grammar.  TODO: extend this to other contexts.
-    if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()))
+    if (isa<DefASTDecl>(getParentDecl()))
       break;
     return parseVarStmt(startCursor, stmtIndent);
   case Token::kw_comptime:
@@ -876,22 +880,23 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return failure();
 
   // We cannot emit general statements unless we're in a function body.
-  if (!isa_and_nonnull<FnOp, UnboundRegionOp>(
-          getParentDecl().getIfOperation())) {
+  auto *otherParent = dyn_cast<OtherOpASTDecl>(&getParentDecl());
+  if (!isa<DefASTDecl>(getParentDecl()) &&
+      !(otherParent && otherParent->isUnboundRegion())) {
     // TODO: Top level expressions will be supported in the future.
-    if (isa_and_nonnull<FileModuleOp>(parentDecl.getIfOperation())) {
+    if (isa<FileModuleASTDecl>(parentDecl)) {
       emitError(startCursor.getToken().getLoc())
           << "expressions must not appear at file scope; move this into a "
              "function body";
-    } else if (isa_and_nonnull<StructDeclOp>(parentDecl.getIfOperation())) {
+    } else if (isa<StructASTDecl>(parentDecl)) {
       emitError(startCursor.getToken().getLoc())
           << "bare expressions must not appear within structs; use 'var' for a "
              "field or move this into a method body";
-    } else if (isa_and_nonnull<TraitDeclOp>(parentDecl.getIfOperation())) {
+    } else if (isa<TraitASTDecl>(parentDecl)) {
       emitError(startCursor.getToken().getLoc())
           << "bare expressions must not appear within traits; use 'comptime' "
              "for an associated type or move this into a method body";
-    } else if (isa_and_nonnull<ExtensionDeclOp>(parentDecl.getIfOperation())) {
+    } else if (isa<ExtensionASTDecl>(parentDecl)) {
       emitError(startCursor.getToken().getLoc())
           << "bare expressions must not appear within extensions; move this "
              "into a method body";
@@ -1005,7 +1010,7 @@ ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
 
   // This is a comptime variable declaration (e.g., 'comptime x = 4').
   // Decorators on aliases are not allowed inside function bodies.
-  if (isa_and_present<FnOp>(getParentDecl().getIfOperation()))
+  if (isa<DefASTDecl>(getParentDecl()))
     rejectDecorator(/*inFunctionBody=*/true, /*isCompoundStmt=*/false);
   return parseAliasDeclStmtBody(startCursor, curIndent, kwLoc);
 }
@@ -1090,7 +1095,7 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis. First ensure we're in a function. This may be relaxed later.
-  if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+  if (!isa<DefASTDecl>(getParentDecl())) {
     emitError(kwLoc, "'comptime assert' must be inside a function; move this "
                      "into a function body");
     return success();
@@ -1159,8 +1164,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.  First ensure we're in a function.
-  auto func = dyn_cast_or_null<FnOp>(getParentDecl().getIfOperation());
-  if (!func) {
+  auto *defDecl = dyn_cast<DefASTDecl>(&getParentDecl());
+  if (!defDecl) {
     emitError(
         loc,
         "'return' must be inside a function; move this into a function body");
@@ -1168,6 +1173,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   auto emitter = getEmitter();
+  auto func = defDecl->getOp();
   FnTypeGeneratorType declSig = func.getFuncTypeGenerator();
 
   // Next check the forms: We may or may not have a result expression.  If the
@@ -1459,7 +1465,7 @@ ParseResult StmtParser::parseAssertStmt(size_t assertIndent) {
   SMLoc kwLoc = consumeToken(Token::kw_assert).getLoc();
 
   // Must be inside a function body.
-  if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+  if (!isa<DefASTDecl>(getParentDecl())) {
     emitError(
         kwLoc,
         "'assert' must be inside a function; move this into a function body");
@@ -2095,6 +2101,19 @@ void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
   }
 }
 
+/// Return whether clustering should be skipped for a leading command.
+static bool shouldSkipClustering(const PatternCommand *command) {
+  if (command->kind != PatternCommand::Kind::Equal)
+    return command->kind != PatternCommand::Kind::EnumTag;
+
+  // Non-literal value patterns (`.float16`, `Self.HOST`, `{}`) are equality
+  // tests with no literal spelling.
+  // Clustering requires a stable sort key, so emit each as its own case.
+  // Preserve case order: -0 and 0 compare equal.
+  const ExprNode *exp = command->expr;
+  return exp->getLiteralSpelling().empty() || exp->kind == ExprNode::kNeg;
+}
+
 /// Determine if some number of the specified cases can be emitted as a cluster
 /// - this is possible when they share a common leading test, and that test can
 /// be expressed as a logical "switch" statement.  This includes tests against
@@ -2106,17 +2125,8 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
   if (firstCaseCommands.empty())
     return 1;
 
-  // Only support literal equality and enum tag checks in clusters.
   const PatternCommand *firstCommand = firstCaseCommands.front();
-  if (firstCommand->kind != PatternCommand::Kind::Equal &&
-      firstCommand->kind != PatternCommand::Kind::EnumTag)
-    return 1;
-
-  // Non-literal value patterns (`.float16`, `Self.HOST`, `{}`) are equality
-  // tests with no literal spelling. Clustering requires a stable sort key, so
-  // emit each one as its own case instead.
-  if (firstCommand->kind == PatternCommand::Kind::Equal &&
-      firstCommand->expr->getLiteralSpelling().empty())
+  if (shouldSkipClustering(firstCommand))
     return 1;
 
   // Great, now we check to see how big of a cluster we can make.  Absorb as
@@ -2145,7 +2155,8 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
       break;
     const PatternCommand *nextCommand = currentCase.commandList.front();
     if (nextCommand->kind != firstCommand->kind ||
-        nextCommand->path != firstCommand->path)
+        nextCommand->path != firstCommand->path ||
+        shouldSkipClustering(nextCommand))
       break;
 
     // The cases we find are only exclusive if subsequent matches don't exist.
@@ -2627,23 +2638,20 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     emitCaseBody(caseEntry, /*inMatchCase*/ true, /*needsScope=*/false);
   }
 
-  // The match else is fallthrough when the cases are incomplete; when a
-  // concluding case covers every subject value, nothing can reach the else.
+  // Failure advances the enclosing match or falls through at top level.
+  // Exhaustive matches cannot reach the else region.
   builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
   if (matchIsConcluding)
     HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
+  else if (inMatchCase)
+    HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
   else
     HLCF::YieldOp::create(builder, emissionState.matchLocation);
   builder.setInsertionPointAfter(matchOp);
 
-  // If in a nested hlcf.match.case, failure to match is a failure of the case
-  // that encloses us — unless this nested match already concluded.
-  if (inMatchCase) {
-    if (matchIsConcluding)
-      HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
-    else
-      HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
-  }
+  // A successful nested match completes the enclosing case.
+  if (inMatchCase)
+    HLCF::MatchCompleteOp::create(builder, emissionState.matchLocation);
 }
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite
@@ -3225,9 +3233,9 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
           // Add an ASTDecl for the error name. TODO: Generalize to an
           // arbitrary pattern.
-          auto &vd = getDeclResolver().addFullyResolvedDecl(
-              DeclIRValue(errDecl), errDecl.getNameAttr(), errExpr->getLoc(),
-              curDeclScope);
+          auto &vd = cast<VarASTDecl>(getDeclResolver().addFullyResolvedDecl(
+              errDecl.getOperation(), errDecl.getNameAttr(), errExpr->getLoc(),
+              curDeclScope));
           getEmitter().shared.notifyListenerOnVariableDecl(vd,
                                                            errExpr->getLoc());
         }
@@ -3327,19 +3335,20 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //     with EXPRESSION as TARGET:
   //       SUITE
   // Into:
-  //     contextMgr = EXPRESSION
+  //     ref/var contextMgr = EXPRESSION
   //     TARGET = contextMgr.__enter__()
+  //     exc = False
   //     try {
   //       SUITE
   //     } except(errorVal : Error) {
-  //       hlcf.if (contextMgr.__exit__(errorVal)) {
-  //         hlcf.yield
+  //       exc = True
+  //       excValue = errorVal^
+  //     } finally {
+  //       if exc {
+  //         if not contextMgr.__exit__(excValue) { raise excValue^ }
   //       } else {
-  //         raise errorVal
+  //         contextMgr.__exit__()
   //       }
-  //       try.yield
-  //     } else {
-  //       contextMgr.__exit__()
   //     }
   // We elide the try and except logic when in a context that doesn't support
   // raising an error (like a non-raising fn).
@@ -3349,13 +3358,36 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   if (parseExpression(contextExp))
     return failure();
 
-  // Emit the context manager expression into a var with an inferred type.
-  VarDeclOp contextMgrDecl = getEmitter().emitVarDecl(
-      "$CONTEXTMGR", UnresolvedType::get(getContext()),
-      shared.translateLocation(contextExp->getLoc()), VarDeclKind::Synthesized);
-  ExprDest contextMgrDest(contextMgrDecl, EC_WithContextMgr);
-  if (!getEmitter().emitExpr(contextExp, contextMgrDest))
+  // For an RValue we want to create a new variable, otherwise we want to
+  // reuse the original borrowed variable instead of creating new bindings.
+  CValue contextCVal =
+      getEmitter().emitExprCValue(contextExp, EC_WithContextMgr);
+  if (!contextCVal)
     return failure();
+
+  ASTType contextRVType = contextCVal.getRValueType();
+
+  VarDeclOp contextMgrDecl;
+  if (!contextCVal.isMValue() || contextCVal.getIfRValue()) {
+    MRValue owned =
+        getEmitter().emitMRValue({contextCVal, contextExp}, EC_WithContextMgr);
+    if (!owned)
+      return failure();
+
+    contextMgrDecl = owned.getDefiningOp<VarDeclOp>();
+    if (!contextMgrDecl || !contextMgrDecl.isSynthetic()) {
+      contextMgrDecl = getEmitter().emitVarDecl(
+          "$CONTEXTMGR", contextRVType,
+          shared.translateLocation(contextExp->getLoc()),
+          VarDeclKind::Synthesized);
+      ExprDest contextMgrDest(MLValue(contextMgrDecl), EC_WithContextMgr);
+      if (!getEmitter().emitRValue({owned, contextExp}, contextMgrDest))
+        return failure();
+    }
+  }
+
+  AnyValue contextVal = contextMgrDecl ? AnyValue(MLValue(contextMgrDecl))
+                                       : AnyValue(contextCVal);
 
   // Determine if the context manager has an __exit__ method.  If not, that is
   // fine, we silently just don't call it.  This mode of supporting context
@@ -3373,7 +3405,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // The latter works because of Mojo's strong early-destruction guarantees and
   // lack of frame-objects-capturing-variables problems, but the former is more
   // familiar to Pythonistas.
-  ASTType contextRVType = MLValue(contextMgrDecl).getRValueType();
   bool hasExitMethod =
       shared.typeHasMember(contextRVType, "__exit__", contextExp->getLoc());
 
@@ -3389,12 +3420,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     if (parseExpression(targetExpr, curIndent, Precedence::kVarRefPat))
       return failure();
   }
-
-  // We are about to generate the call to __enter__ but need to decide how to
-  // pass the context expression, either as an LValue referring to the bound
-  // variable, or as a transferred RValue if it takes it owned (enabling some
-  // advanced use cases with unique context managers).
-  AnyValue contextVal = MLValue(contextMgrDecl);
 
   // If there is an explicit target specified, use it.
   ExprDest enterDest(EC_WithContextMgr);
@@ -3414,22 +3439,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   auto enterEmitter = getEmitter();
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
           contextRVType, "__enter__", enterOperands, enterEmitter)) {
-    // If there is no exit method, we can pass the argument as an RValue so the
-    // enter method can consume the value... unless __enter__ takes self 'mut'.
+    // If the with statement owns the context manager and there is no exit
+    // method, we can pass the argument as an RValue so the enter method can
+    // consume the value... unless __enter__ takes self 'mut'.
     auto sig = FnOrFnLiteralTypeGeneratorType::tryGet(enterMethod.getType());
     if (sig.has_value() && !sig->getArgConventions().empty()) {
       auto firstArgConvention = sig->getArgConventions()[0];
-      if (firstArgConvention != ArgConvention::Mut && !hasExitMethod)
-        contextVal = MRValue(contextMgrDecl);
+      assert(firstArgConvention != ArgConvention::OwnedReg &&
+             "not used by the mojo parser");
+      bool ownedSelf = firstArgConvention == ArgConvention::OwnedMem ||
+                       firstArgConvention == ArgConvention::DeinitMem;
 
       // One error that people hit is defining a context manager with both an
       // owned enter method and an exit method.  This will generate a terrible
       // error message in CheckLifetimes, so cut that off here.
-      assert(firstArgConvention != ArgConvention::OwnedReg &&
-             "not used by the mojo parser");
-      if ((firstArgConvention == ArgConvention::OwnedMem ||
-           firstArgConvention == ArgConvention::DeinitMem) &&
-          hasExitMethod) {
+      if (ownedSelf && hasExitMethod) {
         auto diag =
             emitError(contextExp->getLoc(), "context manager of type ")
             << contextRVType
@@ -3440,11 +3464,12 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
         if (ASTDecl *contextDecl = contextRVType.getDecl(shared))
           diag.attachNote(contextDecl->getLoc())
               << contextRVType << " declared here";
-
-        // Make the emission work even if the type isn't copyable.
-        contextVal = MRValue(contextMgrDecl);
       }
-      enterOperands[0].ir = contextVal;
+
+      if (contextMgrDecl &&
+          (ownedSelf ||
+           (firstArgConvention != ArgConvention::Mut && !hasExitMethod)))
+        enterOperands[0].ir = MRValue(contextMgrDecl);
     }
   }
 
@@ -3477,27 +3502,33 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   builder.createBlock(&tryOp.getTryRegion());
 
   // Check to see if we have to emit a conditional finally because there is an
-  // __exit__ method that accepts an error.  PEP343 states that the general
-  // 'with' statement corresponds to:
+  // __exit__ method that accepts an error.  We emit:
   //
-  //   contextMgr = EXPRESSION
+  //   ref/var contextMgr = EXPRESSION
   //   TARGET = contextMgr.__enter__()
-  //   exc = True
+  //   exc = False
+  //   var excValue: ErrorType
   //   try:
   //     try:
   //       SUITE
   //     except e:
-  //       exc = False
-  //       if not contextMgr.__exit__(e):
-  //         raise e
+  //       exc = True
+  //       excValue = e^
   //   finally:
   //     if exc:
+  //       if not contextMgr.__exit__(excValue):
+  //         raise excValue^
+  //     else:
   //       contextMgr.__exit__()
-  // If the context manager has no __exit__ taking an error, then we know the
-  // exit is unconditional.
+  //
+  // Unlike PEP343, both __exit__ calls are in the finally region so that
+  // __exit__ may take 'var self'.  If the context manager has no __exit__
+  // taking an error, then we know the exit is unconditional.
   Value excVar;
+  VarDeclOp excValueDecl;
   TryOp nestedTryOp;
   VarDeclOp nestedErrDecl;
+  PValue conditionalExit;
   if (inExceptRegion && hasExitMethod) {
     CallOperands exitCallOperands(CallSyntax::kMethodCall, contextExp,
                                   EC_WithExitResult);
@@ -3511,25 +3542,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     exitCallOperands.add({PValue(UnknownAttr::get(wildcardType)), contextExp});
 
     IREmitter exitEmitter = getEmitter();
-    PValue conditionalExit = OverloadSet::lookupAndResolve(
+    conditionalExit = OverloadSet::lookupAndResolve(
         contextRVType, "__exit__", exitCallOperands, exitEmitter);
 
     if (conditionalExit) {
-      // Insert the flag ahead of our try and initialize it to 'True'.
-      OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
-      builder.setInsertionPoint(tryOp);
-
-      auto boolType = SIMDType::getScalarBoolType(builder.getContext());
-      excVar = getEmitter().emitVarDecl("__with_exc__", boolType, loc,
-                                        VarDeclKind::Synthesized);
-      RefStoreOp::create(
-          builder, loc,
-          ParamConstantOp::create(
-              builder, loc,
-              SIMDAttr::getScalarBool(builder.getContext(), true)),
-          excVar);
-      builder.restoreInsertionPoint(ip);
-
       // If the __exit__ method accepts a concrete error type, impose that on
       // the error VarDecl so that throws within the region will conform to it.
       // If it is something generic, then allow the try to resolve it, and the
@@ -3545,6 +3561,26 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // to the wildcard type.  Just leave it as Unresolved if so.
       if (!sugarIsa<NameLookupArgWildcardType>(argType))
         errorType = argType;
+
+      // Insert the flag and the caught error stash ahead of our try.
+      OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
+      builder.setInsertionPoint(tryOp);
+
+      auto boolType = SIMDType::getScalarBoolType(builder.getContext());
+      excVar = getEmitter().emitVarDecl("__with_exc__", boolType, loc,
+                                        VarDeclKind::Synthesized);
+
+      auto falseValue = SIMDAttr::getScalarBool(builder.getContext(), false);
+      auto falseParam = ParamConstantOp::create(builder, loc, falseValue);
+      RefStoreOp::create(builder, loc, falseParam, excVar);
+
+      // The finally region is cloned onto every exit of the try, so we must
+      // manually mark the error value initialized/consumed for CheckLifetimes
+      // not to error.
+      excValueDecl = getEmitter().emitVarDecl("__with_exc_value__", errorType,
+                                              loc, VarDeclKind::Synthesized);
+      OwnershipMarkInitializedOp::create(builder, loc, excValueDecl);
+      builder.restoreInsertionPoint(ip);
 
       // Generate the nested try. Stub the 'else' and 'finally' regions.
       nestedErrDecl = getEmitter().emitVarDecl("__inner_error__", errorType,
@@ -3596,6 +3632,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
             shared.lookupBuiltinType("Error", getParentDecl(), smLoc))
       errorVarDecl.changeElementType(errorType);
   }
+  if (excValueDecl &&
+      isa<UnresolvedType>(excValueDecl.getType().getElementType()))
+    excValueDecl.changeElementType(nestedErrDecl.getType().getElementType());
 
   // This emits the call to the 'contextMgr.__exit__()' methods on the
   // context managers in the normal path.  If the type has no __exit__ method,
@@ -3606,6 +3645,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //     SUITE
   //   finally:
   //     lit.ownership.use(TARGET)
+  //
+  // Each __exit__ call is the last use of the context manager on its path.  The
+  // exit method may take any of "ref", "mut", or "var".  If it is "var", we
+  // pass in an RValue for it so it can consume the context manager.
+  auto getExitSelf = [&](PValue exitMethod) -> AnyValue {
+    if (!contextMgrDecl || !exitMethod)
+      return contextVal;
+    auto signature =
+        FnOrFnLiteralTypeGeneratorType::tryGet(exitMethod.getType());
+    if (signature.has_value() && !signature->getArgConventions().empty() &&
+        signature->getArgConventions()[0] != ArgConvention::Mut)
+      return MRValue(contextMgrDecl);
+    return contextVal;
+  };
+
   auto emitNormalExitLogic = [&]() {
     // If the target value has no __exit__ method, we need it to be
     // live all the way across the suite, so add an extra use so it isn't
@@ -3620,31 +3674,17 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       return;
     }
 
-    // The normal exit logic could be the last use of the context manager.  The
-    // exit method may take any of "ref", "mut", or "var".  If it is "var", we
-    // pass in an RValue for it so it can consume the context manager.
-    AnyValue contextVal = MLValue(contextMgrDecl);
     auto exitEmitter = getEmitter();
     CallOperands operands(CallSyntax::kMethodCall, contextExp,
                           EC_WithExitResult);
     operands.addSelf({contextVal, contextExp});
-    if (PValue exitMethod = OverloadSet::lookupAndResolve(
-            contextRVType, "__exit__", operands, exitEmitter)) {
-      // Pass the argument as an RValue so the exit method can consume the
-      // value... unless it takes self 'mut'.
-      auto signature =
-          FnOrFnLiteralTypeGeneratorType::tryGet(exitMethod.getType());
-      if (signature.has_value() && !signature->getArgConventions().empty())
-        if (signature->getArgConventions()[0] != ArgConvention::Mut) {
-          contextVal = MRValue(contextMgrDecl);
-        }
-    }
+    AnyValue exitSelf = getExitSelf(OverloadSet::lookupAndResolve(
+        contextRVType, "__exit__", operands, exitEmitter));
 
     // Ok, emit the call the __exit__.
     (void)getEmitter().emitNamedMethodCall(
-        "__exit__",
-        CallOperands(CallSyntax::kMethodCall, contextExp, EC_WithExitResult,
-                     {{contextVal, contextExp}}));
+        "__exit__", CallOperands(CallSyntax::kMethodCall, contextExp,
+                                 EC_WithExitResult, {{exitSelf, contextExp}}));
   };
 
   // If the body of this try can throw, then the "except" block in it needs to
@@ -3681,7 +3721,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // If we're in a non-raising region (or have no __exit__ method), then we have
   // a simple pattern to emit:
-  //   contextMgr = EXPRESSION
+  //   ref/var contextMgr = EXPRESSION
   //   TARGET = contextMgr.__enter__()
   //   try:
   //     SUITE
@@ -3696,33 +3736,42 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   }
 
   // Handle the case when we have a nested try due to an __exit__ method that
-  // takes an error.
+  // takes an error.  Its except region only records the error, the __exit__
+  // calls happen in the finally region:
+  //  except(%__inner_error__ : Error) {
+  //    __with_exc__ = True
+  //    __with_exc_value__ = %__inner_error__^
+  //  }
   if (nestedTryOp) {
-    // Set up the except region for the nested try.  Pseudo code:
-    //  except(%__inner_error__ : Error) {
-    //    %stop_rethrow = contextMgr.__exit__(%__inner_error__);
-    //    hlcf.if %stop_rethrow {
-    //      hlcf.yield
-    //    } else {
-    //      raise %inner_error
-    //    }
     builder.createBlock(&nestedTryOp.getExceptRegion());
 
-    // Set the flag to 'False'.
     RefStoreOp::create(
         builder, loc,
         ParamConstantOp::create(
-            builder, loc, SIMDAttr::getScalarBool(builder.getContext(), false)),
+            builder, loc, SIMDAttr::getScalarBool(builder.getContext(), true)),
         excVar);
 
-    // Pass the error value to the __exit__ method.
+    // Drop the placeholder initialization before moving the real error in.
+    OwnershipMarkConsumedOp::create(builder, loc, excValueDecl);
+    ExprDest stashDest(MLValue(excValueDecl), EC_RaiseValue);
+    getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, stashDest);
+    TryYieldOp::create(builder, loc);
+  }
+
+  // Now that we have seen the body of the try, we can have inferred the thrown
+  // type, so we can emit the rethrow logic in except {}
+  emitExceptBody();
+
+  // Emit the call to __exit__ that takes the stashed error, re-raising the
+  // error if it returns false.
+  auto emitErrorExitLogic = [&]() {
     // TODO: this isn't using the same convention that Python does.  We support
     // overloading though and this is going to be way better for anything real
     // that wants to implement this. We can support both styles when we need to.
     CallOperands exitOperandList(CallSyntax::kMethodCall, contextExp,
                                  EC_WithExitResult,
-                                 {{MLValue(contextMgrDecl), contextExp},
-                                  {MBValue(nestedErrDecl), contextExp}});
+                                 {{getExitSelf(conditionalExit), contextExp},
+                                  {MBValue(excValueDecl), contextExp}});
     auto emitter = getEmitter();
     CValue exitResult =
         emitter.emitNamedMethodCall("__exit__", std::move(exitOperandList));
@@ -3730,10 +3779,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
         emitter.emitScalarBool({exitResult, contextExp}, EC_WithExitResult);
     SRValue exitI1Val =
         emitter.emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
+    // On failure a diagnostic was emitted; keep the IR well formed.
     if (!exitI1Val)
-      // Fail, but non-fatal so return success to keep parsing.
-      return success();
-    // If __exit__ returns false, then re-raise the error.
+      return;
+
     HLCF::IfOp stopRethrowIf = HLCF::IfOp::create(
         *emitter.builder, loc, TypeRange{}, exitI1Val,
         [&]() -> LogicalResult {
@@ -3745,25 +3794,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           // On false, we re-raise the error. Sync the statement builder so
           // getEmitter() emits into this else region.
           builder = *emitter.builder;
-          ExprDest dest(MLValue(errDecl), EC_RaiseValue);
+          MLValue raiseSlot = getEmitter().findNearestErrorSlot();
+          ExprDest dest(raiseSlot, EC_RaiseValue);
           // If the error type is unresolved, resolve it to whatever we
           // propagate.
-          if (isa<UnresolvedType>(errDecl.getType().getElementType()))
-            dest = ExprDest(errDecl, EC_RaiseValue);
-          getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, dest);
+          if (isa<UnresolvedType>(raiseSlot.getRValueType()))
+            dest = ExprDest(cast<VarDeclOp>(raiseSlot.getDefiningOp()),
+                            EC_RaiseValue);
+          getEmitter().emitResult(MRValue(excValueDecl), contextExp, dest);
           LIT::RaiseOp::create(builder, loc);
           HLCF::YieldOp::create(builder, loc);
           return success();
         });
-    if (!stopRethrowIf)
-      return success();
-    builder.setInsertionPointAfter(stopRethrowIf);
-    TryYieldOp::create(builder, loc);
-  }
-
-  // Now that we have seen the body of the try, we can have inferred the thrown
-  // type, so we can emit the rethrow logic in except {}
-  emitExceptBody();
+    if (stopRethrowIf)
+      builder.setInsertionPointAfter(stopRethrowIf);
+  };
 
   // Emit the conditional call to __exit__.
   builder.createBlock(&tryOp.getFinallyRegion());
@@ -3773,20 +3818,22 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       return success();
     }
 
-    // Only call the no-error __exit__ when the suite completed without an
-    // exception (exc flag still true).
     Value excFlag = RefLoadOp::create(builder, loc, excVar);
     auto emitter = getEmitter();
     HLCF::IfOp excIf = HLCF::IfOp::create(
         *emitter.builder, loc, TypeRange{}, excFlag,
         [&]() -> LogicalResult {
           builder = *emitter.builder;
-          emitNormalExitLogic();
+          emitErrorExitLogic();
           HLCF::YieldOp::create(builder, loc);
           return success();
         },
         [&]() -> LogicalResult {
-          HLCF::YieldOp::create(*emitter.builder, loc);
+          builder = *emitter.builder;
+          // No error was stashed on this path, drop the placeholder.
+          OwnershipMarkConsumedOp::create(builder, loc, excValueDecl);
+          emitNormalExitLogic();
+          HLCF::YieldOp::create(builder, loc);
           return success();
         });
     if (!excIf)
@@ -4238,16 +4285,15 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
 /// control flow and is rejected. Struct, trait, and extension bodies are also
 /// rejected.
 ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
-  Operation *parent = getParentDecl().getIfOperation();
   // Module scope is always valid.
-  if (isa_and_nonnull<FileModuleOp>(parent))
+  if (isa<FileModuleASTDecl>(getParentDecl()))
     return success();
   // Within a function, walk up the region chain from the current insertion
   // point to the FnOp. Comptime control-flow ops (HLCF::ComptimeIfOp,
   // HLCF::ComptimeForOp) are transparent — we continue walking through them.
   // Any other op in between (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control
   // flow and the import is rejected.
-  if (isa_and_nonnull<FnOp>(parent)) {
+  if (isa<DefASTDecl>(getParentDecl())) {
     Block *block = builder.getInsertionBlock();
     while (block) {
       Operation *op = block->getParentOp();
@@ -4383,15 +4429,15 @@ ParseResult StmtParser::parseFromImportStmt(FromImportDecorators decorators) {
       // Resolve the module if we haven't yet.
       if (!currentResolvedModule) {
         ASTDecl *curModuleDecl = curDeclScope;
-        while (curModuleDecl &&
-               !isa_and_nonnull<FileModuleOp>(curModuleDecl->getIfOperation()))
+        while (curModuleDecl && !isa<FileModuleASTDecl>(curModuleDecl))
           curModuleDecl = curModuleDecl->getParentDecl();
 
         currentResolvedModule = &shared.importModule(
             modulePath,
-            curModuleDecl
-                ? curModuleDecl->getIfOperation()->getParentOfType<PackageOp>()
-                : PackageOp(),
+            curModuleDecl ? cast<FileModuleASTDecl>(curModuleDecl)
+                                ->getOp()
+                                ->getParentOfType<PackageOp>()
+                          : PackageOp(),
             importLoc);
       }
       return *currentResolvedModule;
@@ -4512,7 +4558,8 @@ static void buildImportChain(ParserBase &p, ASTDecl &dest, OpBuilder builder,
     // one.
     ASTDecl *node = nullptr;
     for (ASTDecl *d : scope->lookupInCurrentScope(segName)) {
-      if (isa_and_nonnull<ImportOp>(d->getIfOperation())) {
+      auto *importDecl = dyn_cast<ImportASTDecl>(d);
+      if (importDecl && importDecl->isResolved()) {
         node = d;
         break;
       }
@@ -4527,7 +4574,7 @@ static void buildImportChain(ParserBase &p, ASTDecl &dest, OpBuilder builder,
 
     // Descend so the next segment is gated as a child of this node.
     scope = node;
-    builder = scope->getDeclEndBuilder();
+    builder = cast<ImportASTDecl>(scope)->getDeclEndBuilder();
   }
 
   p.shared.notifyListenerOnModuleImport(*scope, modulePath,
@@ -4579,7 +4626,7 @@ ParseResult StmtParser::parseImportStmt() {
     // missing module is reported eagerly (this locates the module file; it does
     // not parse its body). This one call records the dep edges for both
     // binding forms below.
-    ASTDecl &module = shared.importModule(
+    ModuleASTDecl &module = shared.importModule(
         modulePath, /*currentPackage=*/nullptr, importLoc, curDeclScope);
 
     if (!boundModuleName.has_value()) {
@@ -4627,7 +4674,8 @@ StmtParser::parseImportModuleName(SharedState::ImportPath &parsedName,
 
     // Otherwise, this is importing from within a package.
     shared.notifyListenerOnImport(loc, [&]() -> ASTDecl & {
-      auto curOp = curDeclScope->getIfOperation()->getParentOfType<PackageOp>();
+      auto *packageDecl = curDeclScope->getNearestDeclOfType<PackageASTDecl>();
+      PackageOp curOp = packageDecl ? packageDecl->getOp() : nullptr;
       return shared.importModule(parsedName, curOp, loc);
     });
   };
@@ -4795,7 +4843,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 
   // Mark this function with an attribute if it's trait method with a non-empty
   // body.
-  if (isa_and_nonnull<TraitDeclOp>(curDeclScope->getIfOperation()))
+  if (isa<TraitASTDecl>(curDeclScope))
     maybeMarkDefaultedTraitMethod(fnOp);
 
   // Skip the body of this definition: go to a token at the start of the next
@@ -4813,7 +4861,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 
   // If this is a nested function, parse its body right now so captures can be
   // resolved correctly.
-  if (curDeclScope->getNearestDeclOfType<FnOp>())
+  if (curDeclScope->getNearestDeclOfType<DefASTDecl>())
     (void)getDeclResolver().resolveBody(funcDecl, loc);
   return success();
 }
@@ -4891,7 +4939,7 @@ void StmtParser::maybeMarkDefaultedTraitMethod(FnOp fnOp) {
 ///                 | "var" identifier "=" expression
 ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
                                      size_t stmtIndent) {
-  assert(!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()) &&
+  assert(!isa<DefASTDecl>(getParentDecl()) &&
          "var decls in functions are processed as expression statements");
 
   // Global var decls are allowed to have decorators, but nothing else.
@@ -4912,7 +4960,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
                       &identifierLoc, /*forbidStartOfLine=*/true))
     return failure();
 
-  if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
+  if (isa<TraitASTDecl>(getParentDecl())) {
     rejectDecorator();
     emitError(loc, "traits do not support 'var' fields; use 'comptime' to "
                    "declare associated types");
@@ -4920,9 +4968,8 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     return success();
   }
 
-  if (auto structOp =
-          dyn_cast_or_null<StructDeclOp>(getParentDecl().getIfOperation());
-      structOp && structOp.isEnum()) {
+  if (auto *structDecl = dyn_cast<StructASTDecl>(&getParentDecl());
+      structDecl && structDecl->getOp().isEnum()) {
     rejectDecorator();
     emitError(loc, "enums do not support 'var' fields; store state in a case "
                    "payload");
@@ -4935,7 +4982,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   auto unresolvedType = UnresolvedType::get(getContext());
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
-  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
+  if (isa<StructASTDecl>(getParentDecl())) {
     declOp = StructFieldOp::create(builder, loc, name, unresolvedType);
 
     // Skip the body of this definition: go to a token the starts a line at the
@@ -4953,17 +5000,17 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   // If the declaration is in a function body, we delay adding it until after
   // resolving the RHS, so that the RHS can reference any identifiers that the
   // decl is shadowing.
-  ASTDecl &decl = getDeclResolver().createUnlistedDecl(
-      declOp, smLoc, curDeclScope, startCursor, getLexer().getCursor(),
-      stmtIndent);
-  getDeclResolver().attachDeclToParentNameTable(&decl, name);
+  ASTDecl &decl =
+      getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,
+                                getLexer().getCursor(), stmtIndent);
 
-  auto varOp = dyn_cast_or_null<VarDeclOp>(decl.getIfOperation());
-  if (!varOp) {
+  auto *varDecl = dyn_cast<VarASTDecl>(&decl);
+  if (!varDecl) {
     // Parse docstrings for struct fields here.
     parseDocString(decl);
     return success();
   }
+  VarDeclOp varOp = varDecl->getOp();
 
   // Local variable declarations inside functions are lexically resolved, so
   // fully resolve the decl now. If an error occurs, skip the declaration and
@@ -5084,10 +5131,9 @@ ParseResult StmtParser::parseAliasDeclStmtBody(LexerCursor startCursor,
 
     // Reject the stmt if it is in a struct/trait, resolving them eagerly can
     // easily lead to parser cycles.
-    if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(
-            parentDecl.getIfOperation())) {
+    if (isa<StructASTDecl, TraitASTDecl>(parentDecl)) {
       emitError(kwLoc,
-                isa<StructDeclOp>(parentDecl.getIfOperation())
+                isa<StructASTDecl>(parentDecl)
                     ? "'comptime' constants inside structs must be declared "
                       "separately; break this into individual declarations"
                     : "a trait's associated types must be declared separately; "
@@ -5130,7 +5176,7 @@ ParseResult StmtParser::parseAliasDeclStmtBody(LexerCursor startCursor,
   // same indent level (or less) as the current definition.
   bool isDefaultedAlias = false;
   llvm::unique_function<bool()> defaultAliasDetector = {};
-  if (isa_and_nonnull<TraitDeclOp>(curDeclScope->getIfOperation())) {
+  if (isa<TraitASTDecl>(curDeclScope)) {
     defaultAliasDetector = [&]() -> bool {
       // if we found one `=`
       if (getToken().is(Token::equal))
@@ -5162,13 +5208,13 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
 
   // We don't support non-top level structs (yet?).
   bool nestFailure = false;
-  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
+  if (isa<StructASTDecl>(getParentDecl())) {
     emitTokenError("nested " + kind + " not supported here");
     nestFailure = true;
-  } else if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
+  } else if (isa<TraitASTDecl>(getParentDecl())) {
     emitTokenError("nested " + kind + " in a trait not supported here");
     nestFailure = true;
-  } else if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+  } else if (isa<DefASTDecl>(getParentDecl())) {
     emitTokenError(kind + " inside a function not supported here");
     nestFailure = true;
   }
@@ -5239,9 +5285,9 @@ ParseResult StmtParser::parseEnumCaseStmt(size_t stmtIndent) {
   // The decl is unlisted: a case is not itself a member but is used to
   // generate the member of its name (a `comptime` value or a static
   // constructor), which is the one that name lookup finds.
-  (void)getDeclResolver().createUnlistedDecl(
-      caseOp.getOperation(), nameLoc, curDeclScope, caseCursor,
-      getLexer().getCursor(), stmtIndent);
+  (void)getDeclResolver().addDecl(caseOp.getOperation(), nameLoc, StringAttr(),
+                                  curDeclScope, caseCursor,
+                                  getLexer().getCursor(), stmtIndent);
   // A case op is not an `ASTDeclInterface`, so set its doc string here.
   StringRef docString;
   parseDocString(docString);
@@ -5258,7 +5304,7 @@ ParseResult StmtParser::parseEnumCaseStmt(size_t stmtIndent) {
 ParseResult StmtParser::parseTraitStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   // We don't support non-top level traits (yet?).
-  if (!isa_and_nonnull<FileModuleOp>(getParentDecl().getIfOperation()))
+  if (!isa<FileModuleASTDecl>(getParentDecl()))
     emitTokenError("nested trait not supported here");
 
   consumeToken(Token::kw_trait);
@@ -5289,13 +5335,13 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
   // to enable the user to mimic implicit trait conformance. But this is not
   // that day.
   bool nestFailure = false;
-  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
+  if (isa<StructASTDecl>(getParentDecl())) {
     emitTokenError("nested extension not supported here");
     nestFailure = true;
-  } else if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
+  } else if (isa<TraitASTDecl>(getParentDecl())) {
     emitTokenError("nested extension in a trait not supported here");
     nestFailure = true;
-  } else if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+  } else if (isa<DefASTDecl>(getParentDecl())) {
     emitTokenError("extension inside a function not supported here");
     nestFailure = true;
   }

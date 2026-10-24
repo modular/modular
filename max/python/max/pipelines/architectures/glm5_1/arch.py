@@ -55,6 +55,7 @@ glm5_1_arch = SupportedArchitecture(
     memory_planner=Glm5_1MemoryPlanner,
     tool_parser="glm45",
     reasoning_parser="glm45",
+    supports_nvfp4_kv_cache=True,
     # GLM strongly prefers pretty-printed JSON: under the compact grammar its
     # content-bearing continuations are all masked at the first array decision
     # and the schema's shortest terminator wins (measured 8/8 degenerate

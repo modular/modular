@@ -198,15 +198,18 @@ def test_type_equality():
     var ps_345: PS[3, 4, 5] = PS[idInt[3], myIntAdd[2, 2], myDefaultAdd[4]]()
 
     # CHECK-NEXT: %[[PS_215:.*]] = lit.var.decl "ps_215" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>(%[[PS_215]])
+    # CHECK-NEXT: %[[PS_215_REF:[0-9]+]] = kgen.rebind %[[PS_215]]
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>(%[[PS_215_REF]])
     var ps_215: PS_21x[5] = PS[2, 1, 5]()
 
     # CHECK-NEXT: %[[PS_216:.*]] = lit.var.decl "ps_216" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 6}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 6}>(%[[PS_216]])
+    # CHECK-NEXT: %[[PS_216_REF:[0-9]+]] = kgen.rebind %[[PS_216]]
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 6}>(%[[PS_216_REF]])
     var ps_216: PS_21x[6] = PS_21xy[2, 3]()
 
     # CHECK-NEXT: %[[PS_213:.*]] = lit.var.decl "ps_213" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>(%[[PS_213]])
+    # CHECK-NEXT: %[[PS_213_REF:[0-9]+]] = kgen.rebind %[[PS_213]]
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>(%[[PS_213_REF]])
     var ps_213: PS_21x[myIntFMA[1, 3, 0]] = PS_xy3[2, 1]()
 
 

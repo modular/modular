@@ -38,6 +38,7 @@ __all__ = [
     "broadcast_per_device",
     "gather_accepted_hidden_states",
     "gather_rows_per_device",
+    "mask_padded_tail",
     "merge_tokens_and_host_offsets",
     "shift_corrected_tokens",
 ]
@@ -56,6 +57,29 @@ def broadcast_per_device(
     if n_devs == 1:
         return [value]
     return ops.distributed_broadcast(value, list(signal_buffers))
+
+
+def mask_padded_tail(
+    logits: TensorValue, vocab_size: int, unpadded_vocab_size: int | None
+) -> TensorValue:
+    """Sends the padding rows of a padded vocabulary to negative infinity.
+
+    A head padded past its tokenizer has live weights in those rows, so a
+    sampler could pick a token id no tokenizer decodes.
+    """
+    if unpadded_vocab_size is None or unpadded_vocab_size >= vocab_size:
+        return logits
+    device = logits.device
+    # Two broadcast scalars rather than a materialized row: keeps a
+    # vocab-sized fp32 constant out of the graph.
+    keep = ops.broadcast_to(
+        ops.constant(0.0, DType.float32, device=device), [unpadded_vocab_size]
+    )
+    drop = ops.broadcast_to(
+        ops.constant(float("-inf"), DType.float32, device=device),
+        [vocab_size - unpadded_vocab_size],
+    )
+    return logits + ops.cast(ops.concat([keep, drop]), logits.dtype)
 
 
 def gather_rows_per_device(

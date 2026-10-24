@@ -34,8 +34,12 @@ from max.pipelines.lib import (
     TextGenerationPipeline,
     generate_local_model_path,
 )
-from max.pipelines.lib.generate import Batch, generate
-from max.pipelines.modeling.types import RequestID, TextGenerationRequest
+from max.pipelines.lib.generate import GenerateIterator, generate
+from max.pipelines.modeling.types import (
+    RequestID,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
 
 REPO_ID = "modularai/SmolLM-135M-Instruct-FP32"
 MAX_NEW_TOKENS = 12
@@ -110,7 +114,7 @@ def test_greedy_tokens_match_golden(
         asyncio.run(pipeline.tokenizer.new_context(request))
         for request in requests
     ]
-    with Batch.from_contexts(pipeline, contexts) as batch:
+    with GenerateIterator.from_contexts(pipeline, contexts) as batch:
         while not batch.done:
             batch.step()
 
@@ -130,12 +134,47 @@ def test_greedy_tokens_match_golden(
         assert new_tokens == GOLDEN_SEQUENCES
 
 
+def test_messages_row_matches_the_tokenizer_built_row(
+    pipeline: TextGenerationPipeline[TextContext],
+) -> None:
+    messages = [
+        TextGenerationRequestMessage(
+            role="user", content="What is the capital of France?"
+        )
+    ]
+    sampling = SamplingParamsInput(max_new_tokens=MAX_NEW_TOKENS, top_k=1)
+    context = asyncio.run(
+        pipeline.tokenizer.new_context(
+            TextGenerationRequest(
+                request_id=RequestID(),
+                model_name=REPO_ID,
+                messages=messages,
+                sampling_params=SamplingParams.from_input_and_generation_config(
+                    sampling,
+                    sampling_params_defaults=pipeline.pipeline_config.model.sampling_params_defaults,
+                ),
+            )
+        )
+    )
+    with GenerateIterator.from_contexts(pipeline, [context]) as batch:
+        while not batch.done:
+            batch.step()
+
+    output = generate(
+        pipeline, messages=[messages], max_new_tokens=MAX_NEW_TOKENS, top_k=1
+    )
+
+    assert output.sequences == batch.sequences
+    assert output.prompt_lengths == batch.prompt_lengths
+    assert len(output.sequences[0]) > output.prompt_lengths[0]
+
+
 def test_serve_command_rebuilds_the_cpu_pipeline(
     pipeline: TextGenerationPipeline[TextContext], input_ids: list[list[int]]
 ) -> None:
     max_batch_size = pipeline.max_batch_size
     with pytest.raises(ValueError) as error:
-        Batch(
+        GenerateIterator(
             pipeline,
             [input_ids[0]] * (max_batch_size + 1),
             max_new_tokens=MAX_NEW_TOKENS,
@@ -175,7 +214,7 @@ def test_interrupted_batch_leaves_pipeline_reusable(
     kv_manager = pipeline.kv_manager
     with patch.object(kv_manager, "claim", wraps=kv_manager.claim) as claim:
         with pytest.raises(KeyboardInterrupt):
-            with Batch(
+            with GenerateIterator(
                 pipeline, input_ids, max_new_tokens=MAX_NEW_TOKENS, top_k=1
             ) as batch:
                 batch.step()

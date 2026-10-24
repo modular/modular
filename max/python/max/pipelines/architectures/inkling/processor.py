@@ -38,8 +38,9 @@ from .model_config import InklingVisionConfig
 
 PROCESSOR_CONFIG_FILE = "processor_config.json"
 
-# Raw pixel value the reference pads with, before normalization.
-_PAD_RAW_VALUE = -1.0 / 255.0
+# Raw pixel value the reference pads with. The vision tower rescales by 1/255,
+# so this lands on the reference's -1/255.
+_PAD_RAW_VALUE = -1
 
 # Reference class defaults (not processor_config.json): grow toward a
 # 2048-pixel long edge by at most 2x; leave larger images alone.
@@ -50,30 +51,16 @@ _MAX_UPSCALED_LONG_EDGE = 2048
 class InklingImageProcessor:
     """Turns an image into the patch block the vision tower consumes."""
 
-    def __init__(
-        self,
-        processor_config: Mapping[str, Any],
-        vision_config: InklingVisionConfig,
-    ) -> None:
-        block = processor_config.get("image_processor")
-        if not isinstance(block, Mapping):
-            raise ValueError(
-                f"{PROCESSOR_CONFIG_FILE} has no image_processor block, so the "
-                "image normalization constants are unknown"
-            )
+    def __init__(self, vision_config: InklingVisionConfig) -> None:
         self.patch_size = vision_config.patch_size
-        self.temporal_patch_size = vision_config.temporal_patch_size
-        self.image_mean = np.asarray(block["image_mean"], dtype=np.float32)
-        self.image_std = np.asarray(block["image_std"], dtype=np.float32)
-        self._pad_value = (
-            np.float32(_PAD_RAW_VALUE) - self.image_mean
-        ) / self.image_std
 
-    def __call__(self, image: Image.Image) -> npt.NDArray[np.float32]:
-        """One image to ``[num_patches, T, patch, patch, 3]``.
+    def __call__(self, image: Image.Image) -> npt.NDArray[np.int16]:
+        """One image to raw pixels ``[num_patches, patch, patch, 3]``.
 
-        The leading axis is the image's patch count, which is also the length
-        of its placeholder run in the prompt.
+        Pixels keep their 0 to 255 values and padding holds -1. The vision
+        tower normalizes them and adds the temporal axis. The leading axis is
+        the image's patch count, which is also the length of its placeholder
+        run in the prompt.
         """
         if image.mode != "RGB":
             image = image.convert("RGB")
@@ -86,24 +73,18 @@ class InklingImageProcessor:
         rows = -(-height // self.patch_size)
         # The reference always leaves one trailing column of pure padding.
         columns = width // self.patch_size + 1
-        padded = np.broadcast_to(
-            self._pad_value,
+        padded = np.full(
             (rows * self.patch_size, columns * self.patch_size, 3),
-        ).copy()
-        padded[:height, :width] = (
-            pixels.astype(np.float32) * np.float32(1.0 / 255.0)
-            - self.image_mean
-        ) / self.image_std
+            _PAD_RAW_VALUE,
+            dtype=np.int16,
+        )
+        padded[:height, :width] = pixels
 
         patches = padded.reshape(
             rows, self.patch_size, columns, self.patch_size, 3
         ).transpose(0, 2, 1, 3, 4)
-        return np.repeat(
-            patches.reshape(
-                rows * columns, 1, self.patch_size, self.patch_size, 3
-            ),
-            self.temporal_patch_size,
-            axis=1,
+        return np.ascontiguousarray(patches).reshape(
+            rows * columns, self.patch_size, self.patch_size, 3
         )
 
 
@@ -120,9 +101,7 @@ class InklingProcessor:
         vision_config: InklingVisionConfig,
     ) -> None:
         self.delegate = delegate
-        self.image_processor = InklingImageProcessor(
-            processor_config, vision_config
-        )
+        self.image_processor = InklingImageProcessor(vision_config)
         image_token = processor_config["image_token"]
         vocab = delegate.get_vocab()
         if image_token not in vocab:

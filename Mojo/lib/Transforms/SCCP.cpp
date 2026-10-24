@@ -630,7 +630,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
       break;
     }
 
-    if (isa<KGEN::StageClosureOp, CO::ExecuteOp>(op)) {
+    if (isa<CO::ExecuteOp>(op)) {
       //  TODO: Skip inter-procedural analysis for now. Mark anyone of its
       //  result as Unknown.
       for (Value result : op.getResults())

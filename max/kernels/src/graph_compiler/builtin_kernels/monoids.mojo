@@ -16,10 +16,10 @@ These are the production monoids that the rowwise kernels use. They live
 here, next to their only callers, so the graph compiler can read them from a
 package it scans for registrations.
 
-Each is registered under its MO op's name with a temporary `.tmp` suffix
-(e.g. `mo.reduce.add.tmp`), because the plain name still belongs to the
-hand-written kernel. The suffix goes away when the reduction moves to the
-graph compiler.
+Each is registered under its MO op's name. Those whose MO op still has a
+hand-written kernel carry a temporary `.tmp` suffix (e.g.
+`mo.reduce.mul.tmp`), dropped when the reduction moves to the graph
+compiler.
 """
 
 from std.math import exp
@@ -420,7 +420,7 @@ struct Welford[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.add.tmp")
+@extensibility.register("mo.reduce.add")
 struct ReduceSum[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -559,7 +559,7 @@ struct ReduceSum[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.max.tmp")
+@extensibility.register("mo.reduce.max")
 struct ReduceMax[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -688,7 +688,7 @@ struct ReduceMax[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.min.tmp")
+@extensibility.register("mo.reduce.min")
 struct ReduceMin[
     dtype: DType,
     W: Int = simd_width_of[dtype](),

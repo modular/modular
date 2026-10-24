@@ -48,12 +48,17 @@ from max.experimental.realization_context import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType, Type, ops
+from max.graph._api_boundary import (
+    register_api_boundaries as _register_api_boundaries,
+)
 
 from .collective_ops import (
     allgather,
+    allgather_rms_norm,
     allreduce_sum,
     distributed_broadcast,
     reduce_scatter,
+    reduce_scatter_rms_norm,
     transfer_to,
 )
 from .creation_ops import (
@@ -204,6 +209,7 @@ __all__ = [
     "acos",
     "add",
     "allgather",
+    "allgather_rms_norm",
     "allreduce_sum",
     "arange",
     "argmax",
@@ -299,6 +305,7 @@ __all__ = [
     "range",
     "rebind",
     "reduce_scatter",
+    "reduce_scatter_rms_norm",
     "relu",
     "repeat_interleave",
     "reshape",
@@ -393,7 +400,7 @@ def custom(
     device: Device | DeviceRef,
     values: Sequence[Any],
     out_types: Sequence[Type[Any]],
-    parameters: Mapping[str, bool | int | str | DType] | None = None,
+    parameters: Mapping[str, bool | int | float | str | DType] | None = None,
     custom_extensions: str | Path | Sequence[str | Path] | None = None,
 ) -> list[Tensor]:
     """Calls a custom op, optionally loading custom Mojo extensions first.
@@ -430,7 +437,7 @@ def inplace_custom(
     device: Device | DeviceRef,
     values: Sequence[Any],
     out_types: Sequence[Type[Any]] | None = None,
-    parameters: dict[str, bool | int | str | DType] | None = None,
+    parameters: Mapping[str, bool | int | float | str | DType] | None = None,
     custom_extensions: str | Path | Sequence[str | Path] | None = None,
 ) -> list[Tensor]:
     """Calls an in-place custom op that mutates one or more of its inputs.
@@ -462,3 +469,9 @@ def inplace_custom(
             parameters=parameters,
         )
         return [Tensor.from_graph_value(v) for v in result] if result else []
+
+
+# Each op is where a caller's code ends and MAX's begins (see
+# `max.graph._api_boundary`). An op wrapped from `max.graph.ops` keeps that
+# module's name, hence the `max` prefix.
+_register_api_boundaries(globals(), "max")

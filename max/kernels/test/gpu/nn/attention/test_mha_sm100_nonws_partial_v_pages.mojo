@@ -205,7 +205,7 @@ def main() raises:
             )
             flash_attention[ragged=True](
                 TileTensor(
-                    test_dev.unsafe_ptr() + r * qo_size,
+                    test_dev.unsafe_ptr().unsafe_offset(r * qo_size),
                     row_major(
                         Int64(valid_length), Idx[num_q_heads], Idx[head_size]
                     ),
@@ -269,7 +269,7 @@ def main() raises:
 
         print("nan_count =", nan_count, " max-abs diff =", max_abs_diff)
         if nan_count > 0:
-            raise Error("NaN x" + String(nan_count))
+            raise Error(t"NaN x{nan_count}")
         if max_abs_diff > 0.02:
-            raise Error("max-abs diff too large: " + String(max_abs_diff))
+            raise Error(t"max-abs diff too large: {max_abs_diff}")
         print("PASSED")

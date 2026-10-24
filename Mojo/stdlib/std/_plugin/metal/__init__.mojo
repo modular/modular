@@ -12,4 +12,3 @@
 # ===----------------------------------------------------------------------=== #
 
 from .metal_plugin import MetalPlugin, MetalPluginHooks
-from .metal_targets import MetalTargets

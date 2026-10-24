@@ -12,9 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Speculative-decoding adapters for a ModuleV3 GLM-5.x target and draft.
 
-Both are :class:`~max.pipelines.speculative.driver.TensorAdapter` values, so
-the driver hands them ``Tensor`` values, one per device where it holds a
-list. They build the distributed tensors the modules take from those shards.
+Both run on ``Tensor`` values: the proposer is a
+:class:`~max.pipelines.speculative.driver.TensorAdapter`, and the target's
+verify goes through :func:`~max.pipelines.speculative.driver.tensor_compat_verify`.
+The driver hands them ``Tensor`` values, one per device where it holds a
+list, and they build the distributed tensors the modules take from those
+shards.
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ from max.pipelines.speculative.driver import (
 )
 from max.pipelines.speculative.spec_target import Verified
 
+from ..deepseekV3_2.layers.sparse_mla import sparse_selection_width
 from ..deepseekV3_2_modulev3.deepseekV3_2 import (
     DeepseekV3_2,
     project_to_logits,
@@ -68,7 +72,7 @@ def _replicate(tokens: Tensor, mesh: DeviceMesh) -> Tensor:
     return tokens.to(mesh)
 
 
-class Glm5_2ModuleV3Target(TensorAdapter):
+class Glm5_2ModuleV3Target:
     """The ModuleV3 DeepSeek-V3.2 target entry point and its output layout.
 
     Verification reads VARIABLE logits and every token's normalized hidden
@@ -146,7 +150,10 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
         self.mesh = mesh
         self.hidden_dim: DimLike = draft.config.hidden_size
         self.reuse: ReuseSpec | None = ReuseSpec(
-            dim=draft.config.index_topk, split_prefix="mtp_topk"
+            dim=sparse_selection_width(
+                draft.config.mla_kv_params, draft.config.index_topk
+            ),
+            split_prefix="mtp_topk",
         )
 
     def prefill(
@@ -174,8 +181,14 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
         hidden = self.draft.shared_head_norm(
             Tensor.from_shard_values(draft_input.hidden, self._replicated)
         )
+        # Every step reuses step 0's selection, made for the token one
+        # position before step 1's.
         h, _, offsets = self._decode(
-            batch, draft_input.tokens, hidden, draft_input.reuse
+            batch,
+            draft_input.tokens,
+            hidden,
+            draft_input.reuse,
+            selection_lag=index,
         )
         last = gather_last_tokens(h, offsets)
         return Proposed(
@@ -203,6 +216,7 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
         tokens: Tensor,
         hidden: list[Tensor] | Tensor,
         reuse: list[Tensor] | None,
+        selection_lag: int = 0,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Runs the draft layer, returning its output, top-k and offsets."""
         replicated = self._replicated
@@ -253,5 +267,6 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
             if reuse is not None
             else None,
             reuse is not None,
+            selection_lag=selection_lag,
         )
         return h, topk, offsets

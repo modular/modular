@@ -19,16 +19,19 @@ from .distributed_transformer import (
     distributed_logits_postprocess,
 )
 from .transformer import (
+    DecoderOutputs,
     LogitsPostprocessMixin,
     ReturnHiddenStates,
     ReturnLogits,
     Transformer,
     TransformerBlock,
     forward_sequential_layers,
+    logits_outputs,
     logits_postprocess,
 )
 
 __all__ = [
+    "DecoderOutputs",
     "DistributedLogitsPostprocessMixin",
     "DistributedTransformer",
     "DistributedTransformerBlock",
@@ -39,5 +42,6 @@ __all__ = [
     "TransformerBlock",
     "distributed_logits_postprocess",
     "forward_sequential_layers",
+    "logits_outputs",
     "logits_postprocess",
 ]

@@ -13,11 +13,11 @@
 
 from std.sys import size_of, simd_width_of
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 from layout import (
     Coord,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from comm import Signal, group_start, group_end
@@ -33,7 +33,7 @@ from max.gpu.host import (
 )
 from std.testing import assert_almost_equal, assert_true
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 # Shared test configurations
 comptime test_lengths = (
@@ -95,7 +95,7 @@ def allreduce_test[
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
 
         # Create and initialize host buffers
-        var host_buffer = alloc[Scalar[dtype]](length)
+        var host_buffer = unsafe_alloc[Scalar[dtype]](length)
         host_buffers.append(host_buffer)
 
         # Initialize host buffer with values (i + 1).0
@@ -172,26 +172,6 @@ def allreduce_test[
     for i in range(ngpus):
         out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
-    # Custom epilogue that negates values to distinguish from default
-    @inline(.always)
-    @__parameter
-    @__copy_capture(out_tensors_capture)
-    def outputs_lambda[
-        input_index: Int,
-        _dtype: DType,
-        _width: SIMDLength,
-        *,
-        _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-        out_tensors_capture[input_index].store_linear[
-            width=_width, alignment=_alignment
-        ](
-            rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[dtype, _width]](
-                -val  # Negate to distinguish from default epilogue
-            ),
-        )
-
     # Precompute expected sum across GPUs for verification.
     var expected_sum = Scalar[dtype](0)
     for i in range(ngpus):
@@ -201,11 +181,30 @@ def allreduce_test[
 
     comptime for i in range(ngpus):
         comptime if use_custom_epilogue:
-            allreduce[
-                ngpus=ngpus,
-                output_lambda=outputs_lambda[input_index=i, ...],
-                use_multimem=use_multimem,
-            ](in_tensors, out_tensors[i].layout, rank_sigs, list_of_ctx[i])
+            # Custom epilogue that negates values to distinguish from default
+            @inline(.always)
+            def outputs_lambda[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) {
+                var out_tensors_capture
+            } -> None:
+                out_tensors_capture[i].store[width=_width, alignment=alignment](
+                    coords,
+                    rebind[SIMD[dtype, _width]](
+                        -val  # Negate to distinguish from default epilogue
+                    ),
+                )
+
+            allreduce[ngpus=ngpus, use_multimem=use_multimem](
+                in_tensors,
+                out_tensors[i].layout,
+                outputs_lambda,
+                rank_sigs,
+                list_of_ctx[i],
+            )
         else:
             allreduce[ngpus=ngpus, use_multimem=use_multimem](
                 in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i]
@@ -282,7 +281,7 @@ def allreduce_test[
 
     # Cleanup
     for i in range(ngpus):
-        host_buffers[i].free()
+        host_buffers[i].unsafe_free()
 
 
 def _get_test_str[
@@ -325,7 +324,7 @@ def allreduce_naive_test() raises -> None:
     for i in range(ngpus):
         in_dev.append(ctxs[i].enqueue_create_buffer[.float32](length))
         out_dev.append(ctxs[i].enqueue_create_buffer[.float32](length))
-        var h = alloc[Float32](length)
+        var h = unsafe_alloc[Float32](length)
         host_ptrs.append(h)
         for j in range(length):
             h[j] = Float32(i + 1)
@@ -337,7 +336,7 @@ def allreduce_naive_test() raises -> None:
     ]
     var in_tensors = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTensorType: TileTensor(
-            rebind[ImmPointer[Float32, ImmutAnyOrigin]](in_dev[i].unsafe_ptr()),
+            in_dev[i].unsafe_ptr(),
             row_major(length),
         )
     )
@@ -358,30 +357,25 @@ def allreduce_naive_test() raises -> None:
     for i in range(ngpus):
         out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
-    @inline(.always)
-    @__parameter
-    @__copy_capture(out_tensors_capture)
-    def outputs_lambda[
-        input_index: Int,
-        _dtype: DType,
-        _width: SIMDLength,
-        *,
-        _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-        out_tensors_capture[input_index].store_linear[
-            width=_width, alignment=_alignment
-        ](
-            rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[.float32, _width]](val),
-        )
-
     # Launch naive allreduce per device
     comptime for i in range(ngpus):
-        _allreduce_naive_single[
-            dtype=DType.float32,
-            ngpus=ngpus,
-            output_lambda=outputs_lambda[input_index=i, ...],
-        ](in_tensors, out_tensors[i].layout, 216, ctxs[i])
+
+        @inline(.always)
+        def outputs_lambda[
+            _dtype: DType,
+            _width: SIMDLength,
+            *,
+            alignment: Int,
+        ](coords: Coord, val: SIMD[_dtype, _width]) {
+            var out_tensors_capture
+        } -> None:
+            out_tensors_capture[i].store[width=_width, alignment=alignment](
+                coords, rebind[SIMD[.float32, _width]](val)
+            )
+
+        _allreduce_naive_single[dtype=DType.float32, ngpus=ngpus](
+            in_tensors, out_tensors[i].layout, outputs_lambda, 216, ctxs[i]
+        )
 
     # Synchronize and verify
     for i in range(ngpus):
@@ -398,7 +392,7 @@ def allreduce_naive_test() raises -> None:
             assert_almost_equal(host_ptrs[i][j], expected)
 
     for i in range(ngpus):
-        host_ptrs[i].free()
+        host_ptrs[i].unsafe_free()
 
 
 def run_allreduce_sweep[use_multimem: Bool]() raises:

@@ -146,37 +146,33 @@ def run_rms_norm_rope_gpu[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[
+        return data_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     def cos_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var cos_vals} -> SIMD[cos_sin_dtype, width]:
-        var idx = cos_vals.layout(coords)
-        return cos_vals.raw_load[
+        return cos_vals.load[
             width=width, alignment=alignment * align_of[cos_sin_dtype]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     def sin_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var sin_vals} -> SIMD[cos_sin_dtype, width]:
-        var idx = sin_vals.layout(coords)
-        return sin_vals.raw_load[
+        return sin_vals.load[
             width=width, alignment=alignment * align_of[cos_sin_dtype]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[output_dtype, width]) {var output_buf} -> None:
-        var idx = output_buf.layout(coords)
-        output_buf.raw_store[
-            width=width, alignment=alignment * align_of[output_dtype]()
-        ](idx, val)
+        output_buf.store[alignment=alignment * align_of[output_dtype]()](
+            coords, val
+        )
 
     rms_norm_rope[
         dtype,

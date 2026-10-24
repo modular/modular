@@ -26,6 +26,10 @@ from max.pipelines.kv_cache import (
     TransferReqData,
 )
 
+# Without a bound, a peer that fails during setup blocks this thread until
+# bazel times out the test.
+PEER_TIMEOUT_S = 60
+
 
 def test_send_recv_basic() -> None:
     # Queues for communication between threads
@@ -58,7 +62,7 @@ def test_send_recv_basic() -> None:
 
         # Connect with peer
         sender_md_queue.put(engine.metadata)
-        remote_md = receiver_md_queue.get()
+        remote_md = receiver_md_queue.get(timeout=PEER_TIMEOUT_S)
         engine.connect(remote_md)
 
         # Perform transfer
@@ -114,11 +118,11 @@ def test_send_recv_basic() -> None:
 
         # Connect with peer
         receiver_md_queue.put(engine.metadata)
-        remote_md = sender_md_queue.get()
+        remote_md = sender_md_queue.get(timeout=PEER_TIMEOUT_S)
         engine.connect(remote_md)
 
         # Wait for transfer to complete, with a timeout
-        transfer_req = transfer_queue.get()
+        transfer_req = transfer_queue.get(timeout=PEER_TIMEOUT_S)
         start_time = time.time()
         is_done = False
         while not is_done and time.time() - start_time < max_wait_time_s:

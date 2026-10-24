@@ -1,0 +1,55 @@
+diff --git a/mlir/lib/Support/Timing.cpp b/mlir/lib/Support/Timing.cpp
+--- a/mlir/lib/Support/Timing.cpp
++++ b/mlir/lib/Support/Timing.cpp
+@@ -247,17 +247,32 @@
+   TimerImpl *nest(const void *id, function_ref<std::string()> nameBuilder) {
+     auto tid = llvm::get_threadid();
+     if (tid == threadId)
+-      return nestTail(children[id], nameBuilder);
++      return nestTail(children, id, nameBuilder);
+     std::unique_lock<std::mutex> lock(asyncMutex);
+-    return nestTail(asyncChildren[tid][id], nameBuilder);
++    return nestTail(asyncChildren[tid], id, nameBuilder);
+   }
+ 
+   /// Tail-called from `nest()`.
+-  TimerImpl *nestTail(std::unique_ptr<TimerImpl> &child,
++  TimerImpl *nestTail(ChildrenMap &map, const void *id,
+                       function_ref<std::string()> nameBuilder) {
+-    if (!child)
++    std::unique_ptr<TimerImpl> &child = map[id];
++    if (!child) {
+       child = std::make_unique<TimerImpl>(nameBuilder(), output);
+-    return child.get();
++      return child.get();
++    }
++    // The map outlives the objects its keys point to, so a new object, such as
++    // a pass, can be allocated at a destroyed one's address. Its timer carries
++    // the old name. Keep the old timer under a key that no object can take,
++    // the address of the timer itself, and start a new timer for the new name.
++    std::string name = nameBuilder();
++    if (child->name == name)
++      return child.get();
++    std::unique_ptr<TimerImpl> old = std::move(child);
++    child = std::make_unique<TimerImpl>(std::move(name), output);
++    TimerImpl *result = child.get();
++    const void *oldKey = old.get();
++    map[oldKey] = std::move(old);
++    return result;
+   }
+ 
+   /// Finalize this timer and all its children.
+@@ -330,6 +345,13 @@
+   /// for the given unique identifier.
+   void mergeChild(const void *id, std::unique_ptr<TimerImpl> &&other) {
+     auto &into = children[id];
++    // A timer for another name at the same identifier belongs to an object at a
++    // recycled address, so keep the two timers apart. See `nestTail()`.
++    if (into && into->name != other->name) {
++      const void *otherKey = other.get();
++      mergeChild(otherKey, std::move(other));
++      return;
++    }
+     if (!into) {
+       into = std::move(other);
+       into->mergeAsyncChildren();

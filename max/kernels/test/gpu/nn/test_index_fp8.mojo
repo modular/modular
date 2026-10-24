@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from std.sys.info import _has_blackwell_tcgen05
 from nn.index_fp8 import fp8_index, fp8_index_naive
 from nn.attention.gpu.sparse_index_fp8_sm100_prefill import _FOLD_DTYPE
 from std.random import rand
@@ -239,6 +238,9 @@ def main() raises:
         test_index_fp8[num_heads=64, depth=64](2, 32, 64, ctx)
         test_index_fp8[num_heads=64, depth=64](3, 5, 33, ctx)
         test_index_fp8[num_heads=128, depth=64](2, 16, 32, ctx)
+        # A gfx950 key-tile DMA pass is 1 KiB, so depth=384 (no whole keys per
+        # pass) must leave the MFMA scorer for the scalar kernel.
+        test_index_fp8[num_heads=32, depth=384](2, 64, 200, ctx)
 
         # num_heads=32 (GLM 5.x replicated indexer): N_TOKENS=4 boundary. The
         # scalar fallback also supports 32, so these run on every target.
@@ -278,7 +280,7 @@ def main() raises:
         # TP-head-sharded indexer counts exist only on the SM100 tensor-core
         # path (the scalar fallback's [16, 8] thread layout copies nothing
         # below 16 heads), so they are compile-gated to Blackwell.
-        comptime if _has_blackwell_tcgen05():
+        comptime if ctx.target._has_blackwell_tcgen05():
             # num_heads=8 (GLM 32 heads over 4 ranks; DSv3.2 64 over 8):
             # N_TOKENS=16, cover partial tiles around the 16-token boundary.
             test_index_fp8[num_heads=8, depth=128](2, 128, 128, ctx)

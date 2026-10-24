@@ -204,9 +204,7 @@ struct EpiLoadPipeline[num_stages: Int]:
         Returns:
             Barrier pointer for TMA arrive.
         """
-        return rebind[MbarPtr](
-            self.pipeline.producer_mbar(self.pipeline.producer_stage())
-        )
+        return self.pipeline.producer_mbar(self.pipeline.producer_stage())
 
     @inline(.always)
     def producer_step(mut self):

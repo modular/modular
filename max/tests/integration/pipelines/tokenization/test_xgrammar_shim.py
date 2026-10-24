@@ -29,6 +29,12 @@ from typing import Any, Literal
 
 import numpy as np
 import pytest
+from _grammar_fill_harness import (
+    EOS,
+    assert_mask_is_exact,
+    fill_costs_along,
+    synthetic_vocab,
+)
 from max import _xgrammar as xgr
 from max._xgrammar.structural_tag import (
     AnyTextFormat,
@@ -4110,6 +4116,145 @@ def _compile_xml_arguments(
     return _qwen_compiler().compile_structural_tag(tag)
 
 
+def _compile_m3_xml_policy(
+    schema: dict[str, Any],
+    paired: bool | None,
+    *,
+    strict_mode: bool = False,
+    reject_unsupported: bool = False,
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema,
+            style="minimax_m3_xml",
+            xml_tag_prefix=_M3_PREFIX,
+            xml_require_paired_tags=paired or False,
+            strict_mode=strict_mode,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    payload = tag.model_dump()
+    if paired is None:
+        del payload["format"]["xml_require_paired_tags"]
+    return _qwen_compiler().compile_structural_tag(json.dumps(payload))
+
+
+@pytest.mark.parametrize("paired", [None, False, True])
+@pytest.mark.parametrize("strict_mode", [False, True])
+@pytest.mark.parametrize("reject_unsupported", [False, True])
+@pytest.mark.parametrize("min_properties", [0, 1])
+def test_m3_variable_keys_require_an_explicit_paired_tag_policy(
+    paired: bool | None,
+    strict_mode: bool,
+    reject_unsupported: bool,
+    min_properties: int,
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": {"type": "integer"},
+        "propertyNames": {"const": "state"},
+        "minProperties": min_properties,
+        "maxProperties": 1,
+    }
+    if paired and min_properties:
+        with pytest.raises(
+            Exception, match="variable keys whose tags cannot be paired"
+        ):
+            _compile_m3_xml_policy(
+                schema,
+                paired,
+                strict_mode=strict_mode,
+                reject_unsupported=reject_unsupported,
+            )
+        return
+    compiled = _compile_m3_xml_policy(
+        schema,
+        paired,
+        strict_mode=strict_mode,
+        reject_unsupported=reject_unsupported,
+    )
+    assert _accepts(compiled, "") == (min_properties == 0)
+    assert _accepts(compiled, _m3_state("42")) == (not paired)
+    assert not _accepts(compiled, _m3_state("wrong"))
+    assert not _accepts(compiled, _m3_state("42") * 2)
+    assert not _accepts(compiled, f"{_M3_PREFIX}<other>42{_M3_PREFIX}</other>")
+
+
+@pytest.mark.parametrize(
+    "field", ["additionalProperties", "unevaluatedProperties"]
+)
+@pytest.mark.parametrize("reject_unsupported", [False, True])
+def test_m3_legacy_min_properties_keeps_undeclared_keys(
+    field: str, reject_unsupported: bool
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {"state": {"type": "integer"}},
+        "required": ["state"],
+        "minProperties": 2,
+        field: {"type": "boolean"},
+    }
+    extra = f"{_M3_PREFIX}<extra>true{_M3_PREFIX}</extra>"
+    for paired in (None, False):
+        compiled = _compile_m3_xml_policy(
+            schema, paired, reject_unsupported=reject_unsupported
+        )
+        assert _accepts(compiled, _m3_state("42") + extra)
+        assert not _accepts(compiled, _m3_state("42"))
+        assert not _accepts(
+            compiled, _m3_state("42") + extra.replace("true", "wrong")
+        )
+    with pytest.raises(
+        Exception, match="undeclared keys whose tags cannot be paired"
+    ):
+        _compile_m3_xml_policy(
+            schema, True, reject_unsupported=reject_unsupported
+        )
+
+
+@pytest.mark.parametrize("paired", [None, False, True])
+def test_m3_json_object_leaf_requires_paired_tag_policy(
+    paired: bool | None,
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "state": {
+                "type": "object",
+                "additionalProperties": {"type": "integer"},
+                "minProperties": 1,
+                "x-modular-json-leaf": True,
+            }
+        },
+        "required": ["state"],
+        "additionalProperties": False,
+    }
+    compiled = _compile_m3_xml_policy(schema, paired, reject_unsupported=True)
+    xml = f"{_M3_PREFIX}<foo>42{_M3_PREFIX}</foo>"
+    assert _accepts(compiled, _m3_state(xml)) == (not paired)
+    assert _accepts(compiled, _m3_state('{"foo":42}')) == bool(paired)
+    assert not _accepts(compiled, _m3_state('{"foo":"wrong"}'))
+
+
+@pytest.mark.parametrize("paired", [None, False, True])
+def test_m3_untyped_xml_containers_follow_the_paired_tag_policy(
+    paired: bool | None,
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {"state": {}},
+        "required": ["state"],
+        "additionalProperties": False,
+    }
+    compiled = _compile_m3_xml_policy(schema, paired)
+    xml = f"{_M3_PREFIX}<foo>42{_M3_PREFIX}</foo>"
+    array = f"{_M3_PREFIX}<item>{xml}{_M3_PREFIX}</item>"
+    assert _accepts(compiled, _m3_state("42"))
+    assert _accepts(compiled, _m3_state(xml)) == (not paired)
+    assert _accepts(compiled, _m3_state(array)) == (not paired)
+
+
 def _one_parameter(parameter: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "object",
@@ -6216,3 +6361,348 @@ def test_varkey_pattern_properties_permissive_compiles(style: str) -> None:
             "patternProperties": {"\\wcole": {"const": "V"}},
         },
     )
+
+
+_TAIL_VOCAB = ["a", "b", "c", "d", "q", "x", "y", " ", " x", " y", "<eos>"]
+
+
+def _assert_masks_exact_along(ebnf: str, text: str) -> None:
+    # At every prefix of text, the filled mask must equal token-by-token
+    # acceptance. A wrongly exact lookahead makes the compiler accept or reject
+    # a token at compile time that the parser decides the other way.
+    info = xgr.TokenizerInfo(
+        _TAIL_VOCAB,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[len(_TAIL_VOCAB) - 1],
+    )
+    matcher = xgr.GrammarMatcher(
+        xgr.GrammarCompiler(info).compile_grammar(ebnf)
+    )
+    for i in range(len(text) + 1):
+        assert_mask_is_exact(matcher, len(_TAIL_VOCAB), f"after {text[:i]!r}")
+        if i < len(text):
+            assert matcher.accept_token(_TAIL_VOCAB.index(text[i]))
+
+
+@pytest.mark.parametrize("text", ["ac x", "bd y", "acx", "bdy"])
+def test_tail_rule_in_two_contexts_keeps_exact_mask(text: str) -> None:
+    # ws ends both p and q, which are followed by different text, so no single
+    # lookahead describes what follows ws.
+    ebnf = """
+root ::= "a" p "x" | "b" q "y"
+p ::= "c" ws
+q ::= "d" ws
+ws ::= [ ]?
+"""
+    _assert_masks_exact_along(ebnf, text)
+
+
+@pytest.mark.parametrize("text", ["abcd xq", "abcdxq"])
+def test_tail_rule_chain_keeps_exact_mask(text: str) -> None:
+    # ws, r and q each end the rule above them, so all three take p's
+    # lookahead "xq" through the chain.
+    ebnf = """
+root ::= "a" p "xq"
+p ::= "b" q
+q ::= "c" r
+r ::= "d" ws
+ws ::= [ ]?
+"""
+    _assert_masks_exact_along(ebnf, text)
+
+
+@pytest.mark.parametrize("text", ["a xq", "b xq", "axq", "bxq"])
+def test_rule_with_same_suffixes_keeps_exact_mask(text: str) -> None:
+    # Both occurrences of ws are followed by "xq", so that suffix is exactly
+    # what follows ws.
+    ebnf = """
+root ::= "a" ws "xq" | "b" ws "xq"
+ws ::= [ ]?
+"""
+    _assert_masks_exact_along(ebnf, text)
+
+
+@pytest.mark.parametrize("text", ["ac xq", "bc yq", "acxq", "bcyq"])
+def test_tail_rule_under_inexact_lookahead_keeps_exact_mask(text: str) -> None:
+    # p occurs in two contexts, so its written lookahead allows both x and y
+    # and is not exact; ws must not treat it as exact.
+    ebnf = """
+root ::= "a" p "xq" | "b" p "yq"
+p ::= "c" ws (= [xy] "q")
+ws ::= [ ]?
+"""
+    _assert_masks_exact_along(ebnf, text)
+
+
+@pytest.mark.parametrize("text", ["ac xq", "bc xq", "acxq", "bcxq"])
+def test_written_lookahead_looser_than_suffix_is_not_exact(text: str) -> None:
+    # p's two occurrences share the suffix "xq", but its written lookahead
+    # also allows y, so it does not describe what follows p exactly.
+    ebnf = """
+root ::= "a" p "xq" | "b" p "xq"
+p ::= "c" ws (= [xy] "q")
+ws ::= [ ]?
+"""
+    _assert_masks_exact_along(ebnf, text)
+
+
+@pytest.mark.parametrize("text", ["a x", "b y", "ax", "by"])
+def test_rule_with_different_suffixes_keeps_exact_mask(text: str) -> None:
+    # ws occurs twice, followed by x in one place and y in the other, so no
+    # single lookahead describes what follows it.
+    ebnf = """
+root ::= "a" ws "x" | "b" ws "y"
+ws ::= [ ]?
+"""
+    _assert_masks_exact_along(ebnf, text)
+
+
+@pytest.mark.parametrize("repeat", ["*", "{0,3}"])
+@pytest.mark.parametrize(
+    "text", ["acx", "ac x", "by", "bcy", "bc y", "bc cy", "bc c cy"]
+)
+def test_rule_in_repeat_and_sequence_keeps_exact_mask(
+    repeat: str, text: str
+) -> None:
+    # item is followed by x in the plain sequence, but by another item or y
+    # in the repeat. Neither item nor its tail ws can inherit x as exact.
+    ebnf = f"""
+root ::= "a" item "x" | "b" item{repeat} "y"
+item ::= "c" ws
+ws ::= [ ]?
+"""
+    _assert_masks_exact_along(ebnf, text)
+
+
+@pytest.mark.parametrize("text", ["a xq", "bc xq", "bc yq", "bcyq"])
+def test_tail_of_conflicting_rule_keeps_exact_mask(text: str) -> None:
+    # ws is followed by "xq" in root, but it also ends p, which is followed
+    # by "xq" in one place and "yq" in another, so ws has no single follow.
+    ebnf = """
+root ::= "a" ws "xq" | "b" p "xq" | "b" p "yq"
+p ::= "c" ws
+ws ::= [ ]?
+"""
+    _assert_masks_exact_along(ebnf, text)
+
+
+# An optional whitespace rule that occurs more than once, but is followed by
+# the same value v everywhere it occurs, so a lookahead can still describe it.
+# v accepts most tokens, so without that lookahead every space-led token is
+# re-matched on each fill instead of being decided when the grammar compiles.
+_SHARED_FOLLOW_GRAMMARS = {
+    "tail_of_two_rules": (
+        'root ::= "a" p v | "b" q v\np ::= "c" ws\nq ::= "d" ws\n'
+        'ws ::= [ ]?\nv ::= [a-z]* "x"\n',
+        ("ac ax", "bd ax"),
+    ),
+    "tail_and_followed": (
+        'root ::= "a" ws v | "b" p v\np ::= "c" ws\nws ::= [ ]?\n'
+        'v ::= [a-z]* "x"\n',
+        ("a ax", "bc ax"),
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_SHARED_FOLLOW_GRAMMARS))
+def test_shared_follow_fill_cost_does_not_scale_with_vocab(name: str) -> None:
+    ebnf, texts = _SHARED_FOLLOW_GRAMMARS[name]
+    vocab = synthetic_vocab((), 60_000)
+    ids = {token: i for i, token in enumerate(vocab)}
+    info = xgr.TokenizerInfo(
+        vocab, vocab_type=xgr.VocabType.RAW, stop_token_ids=[ids[EOS]]
+    )
+    compiled = xgr.GrammarCompiler(info).compile_grammar(ebnf)
+    for text in texts:
+        costs = fill_costs_along(
+            xgr.GrammarMatcher(compiled), len(vocab), [ids[c] for c in text]
+        )
+        # The fill where ws is live, against the fill one token later inside
+        # v. Re-matching every space-led token makes the first about 50 times
+        # the second on this vocabulary; a lookahead keeps it under 10.
+        ws_at = text.index(" ")
+        assert costs[ws_at] / costs[ws_at + 1] < 20
+
+
+# r1 and r2 are recursive, so the FSM hash skips them. e1 and e2 refer to them
+# from their start states, so both get the same partial FSM hash, which does
+# not say which rule the reference is to. A cache key must still tell the
+# lookaheads (= e1) and (= e2) apart.
+_PARTIAL_HASH_RULES = """
+e1 ::= r1 "!"
+e2 ::= r2 "!"
+r1 ::= "x" | "[" a1 "]" | "{" o1 "}"
+a1 ::= r1 ("," r1)*
+o1 ::= "k:" r1 (";" "k:" r1)*
+r2 ::= "y" | "[" a2 "]" | "{" o2 "}"
+a2 ::= r2 ("," r2)*
+o2 ::= "k:" r2 (";" "k:" r2)*
+"""
+
+_PARTIAL_HASH_GRAMMARS = {
+    # The lookaheads start with e1 and e2.
+    "different_whitespace": (
+        'root ::= "a" w1 e1 | "b" w2 e2\n'
+        "w1 ::= [ ]* (= e1)\n"
+        "w2 ::= [ \\t]* (= e2)\n" + _PARTIAL_HASH_RULES
+    ),
+    # w1 and w2 share one FSM, so only the lookahead tells their masks apart.
+    "same_whitespace": (
+        'root ::= "a" w1 e1 | "b" w2 e2\n'
+        "w1 ::= [ ]* (= e1)\n"
+        "w2 ::= [ ]* (= e2)\n" + _PARTIAL_HASH_RULES
+    ),
+    # c1 and c2 are recursive, so they get content hashes, which must not
+    # stand for e1 and e2 by their partial FSM hashes.
+    "content_hashed_lookahead": (
+        'root ::= "a" w1 c1 | "b" w2 c2\n'
+        "w1 ::= [ ]* (= c1)\n"
+        "w2 ::= [ \\t]* (= c2)\n"
+        'c1 ::= "(" e1 ")" | "(" c1 ")"\n'
+        'c2 ::= "(" e2 ")" | "(" c2 ")"\n' + _PARTIAL_HASH_RULES
+    ),
+}
+
+_PARTIAL_HASH_VOCAB = [
+    "a",
+    "b",
+    " x!",
+    " y!",
+    " (x",
+    " (y",
+    " ",
+    "x",
+    "y",
+    "!",
+    "(",
+    ")",
+    "[",
+    "]",
+    "{",
+    "}",
+    ",",
+    "k:",
+    ";",
+    "<eos>",
+]
+
+
+def _partial_hash_info() -> xgr.TokenizerInfo:
+    return xgr.TokenizerInfo(
+        _PARTIAL_HASH_VOCAB,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[len(_PARTIAL_HASH_VOCAB) - 1],
+    )
+
+
+def _allowed_tokens(matcher: xgr.GrammarMatcher) -> frozenset[int]:
+    vocab_size = len(_PARTIAL_HASH_VOCAB)
+    bitmask = xgr.allocate_token_bitmask(1, vocab_size)
+    matcher.fill_next_token_bitmask(bitmask, 0)
+    bits = np.unpackbits(bitmask[0].view(np.uint8), bitorder="little")
+    return frozenset(np.flatnonzero(bits[:vocab_size]).tolist())
+
+
+def _masks_by_prefix(
+    compiled: xgr.CompiledGrammar, depth: int = 4
+) -> dict[tuple[int, ...], frozenset[int]]:
+    # The filled mask at every token prefix the mask allows, up to depth
+    # tokens. This reaches each state that a short output can reach.
+    matcher = xgr.GrammarMatcher(compiled)
+    eos = len(_PARTIAL_HASH_VOCAB) - 1
+    masks: dict[tuple[int, ...], frozenset[int]] = {}
+
+    def walk(prefix: tuple[int, ...]) -> None:
+        masks[prefix] = _allowed_tokens(matcher)
+        if len(prefix) == depth:
+            return
+        for token in sorted(masks[prefix] - {eos}):
+            assert matcher.accept_token(token)
+            walk((*prefix, token))
+            matcher.rollback(1)
+
+    walk(())
+    return masks
+
+
+def _differing_prefixes(
+    got: dict[tuple[int, ...], frozenset[int]],
+    want: dict[tuple[int, ...], frozenset[int]],
+) -> list[str]:
+    return [
+        "".join(_PARTIAL_HASH_VOCAB[t] for t in prefix)
+        for prefix in sorted(got.keys() | want.keys())
+        if got.get(prefix) != want.get(prefix)
+    ]
+
+
+@pytest.mark.parametrize("name", sorted(_PARTIAL_HASH_GRAMMARS))
+@pytest.mark.parametrize(
+    ("cache_enabled", "max_threads"), [(True, 1), (True, 4), (False, 4)]
+)
+def test_partial_hash_masks_match_uncached_compile(
+    name: str, cache_enabled: bool, max_threads: int
+) -> None:
+    ebnf = _PARTIAL_HASH_GRAMMARS[name]
+    info = _partial_hash_info()
+    reference = _masks_by_prefix(
+        xgr.GrammarCompiler(
+            info, max_threads=1, cache_enabled=False
+        ).compile_grammar(ebnf)
+    )
+    compiled = xgr.GrammarCompiler(
+        info, max_threads=max_threads, cache_enabled=cache_enabled
+    ).compile_grammar(ebnf)
+    assert not _differing_prefixes(_masks_by_prefix(compiled), reference)
+    for branch in "ab":
+        matcher = xgr.GrammarMatcher(compiled)
+        assert matcher.accept_string(branch)
+        assert_mask_is_exact(
+            matcher, len(_PARTIAL_HASH_VOCAB), f"{name} after {branch!r}"
+        )
+
+
+@pytest.mark.parametrize("name", sorted(_PARTIAL_HASH_GRAMMARS))
+@pytest.mark.parametrize("max_threads", [1, 4])
+def test_partial_hash_value_token_allowed(name: str, max_threads: int) -> None:
+    compiled = xgr.GrammarCompiler(
+        _partial_hash_info(), max_threads=max_threads
+    ).compile_grammar(_PARTIAL_HASH_GRAMMARS[name])
+    lead = " (" if name == "content_hashed_lookahead" else " "
+    tail = "" if name == "content_hashed_lookahead" else "!"
+    for branch, value in (("a", "x"), ("b", "y")):
+        matcher = xgr.GrammarMatcher(compiled)
+        assert matcher.accept_string(branch)
+        token = _PARTIAL_HASH_VOCAB.index(lead + value + tail)
+        assert token in _allowed_tokens(matcher), f"after {branch!r}"
+
+
+# Grammars compiled earlier on the same compiler, then the grammar under test.
+# The rule-level cache outlives a compile, so an entry an earlier grammar
+# stored for w under (= e1) must not serve w under (= e2).
+_PARTIAL_HASH_WARM = {
+    "lookahead_mask": ['root ::= "a" w e1\nw ::= [ ]* (= e1)\n'],
+    "adapted_mask": [
+        'root ::= "a" w\nw ::= [ ]*\n',
+        'root ::= "a" w e1\nw ::= [ ]* (= e1)\n',
+    ],
+}
+
+
+@pytest.mark.parametrize("name", sorted(_PARTIAL_HASH_WARM))
+@pytest.mark.parametrize("max_threads", [1, 4])
+def test_partial_hash_warm_compile_matches_cold(
+    name: str, max_threads: int
+) -> None:
+    ebnf = 'root ::= "b" w e2\nw ::= [ ]* (= e2)\n' + _PARTIAL_HASH_RULES
+    info = _partial_hash_info()
+    compiler = xgr.GrammarCompiler(info, max_threads=max_threads)
+    for earlier in _PARTIAL_HASH_WARM[name]:
+        compiler.compile_grammar(earlier + _PARTIAL_HASH_RULES)
+    warm = _masks_by_prefix(compiler.compile_grammar(ebnf))
+    cold = _masks_by_prefix(
+        xgr.GrammarCompiler(
+            info, max_threads=1, cache_enabled=False
+        ).compile_grammar(ebnf)
+    )
+    assert not _differing_prefixes(warm, cold)

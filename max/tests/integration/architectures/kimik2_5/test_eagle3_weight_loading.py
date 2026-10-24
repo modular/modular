@@ -16,10 +16,9 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
-from max.pipelines.architectures.eagle3_deepseekV3.unified_eagle import (
-    Eagle3DeepseekV3Unified,
-)
+from max.pipelines.architectures.eagle3_deepseekV3 import Eagle3DeepseekV3
 
 
 def _kv_params(num_layers: int) -> KVCacheParams:
@@ -133,25 +132,26 @@ def _draft_config() -> DeepseekV3Config:
 
 def test_draft_weights_are_independent_from_target() -> None:
     """Draft norm and lm_head must be separate Weight objects from target."""
-    model = Eagle3DeepseekV3Unified(_target_config(), _draft_config())
+    target = DeepseekV3(_target_config())
+    draft = Eagle3DeepseekV3(_draft_config())
 
     # Share only embed_tokens (matching production code).
-    assert model.draft is not None
-    model.draft.embed_tokens = model.target.embed_tokens
+    draft.embed_tokens = target.embed_tokens
 
-    assert model.draft.norm is not model.target.norm
-    assert model.draft.lm_head is not model.target.lm_head
-    assert model.draft.embed_tokens is model.target.embed_tokens
+    assert draft.has_own_lm_head
+    assert draft.norm is not target.norm
+    assert draft.lm_head is not target.lm_head
+    assert draft.embed_tokens is target.embed_tokens
 
 
 def test_state_dict_namespacing() -> None:
     """Draft weights must be prefixable without colliding with target."""
-    model = Eagle3DeepseekV3Unified(_target_config(), _draft_config())
-    assert model.draft is not None
-    model.draft.embed_tokens = model.target.embed_tokens
+    target = DeepseekV3(_target_config())
+    draft = Eagle3DeepseekV3(_draft_config())
+    draft.embed_tokens = target.embed_tokens
 
-    target_keys = set(model.target.raw_state_dict().keys())
-    draft_keys = set(model.draft.raw_state_dict().keys())
+    target_keys = set(target.raw_state_dict().keys())
+    draft_keys = set(draft.raw_state_dict().keys())
 
     # norm and lm_head exist in both — they would collide without the
     # "draft." prefix added in production code.

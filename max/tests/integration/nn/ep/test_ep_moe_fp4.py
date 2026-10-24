@@ -503,7 +503,7 @@ def test_ep_moe_nvfp4(
         inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     _assert_staging_output_follows_the_send(
         str(graph), ep_config, n_devices, fuse_ffn_combine_send
@@ -752,7 +752,7 @@ def test_ep_moe_mxfp4(
         inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     # Compile and execute MoE
     compiled = session.load(graph, weights_registry=moe.state_dict())

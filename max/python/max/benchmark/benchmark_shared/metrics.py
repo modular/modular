@@ -33,6 +33,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+from max.benchmark.benchmark_shared.backend_metric_names import (
+    BatchPhase,
+    resolve_batch_metric,
+)
 from max.benchmark.benchmark_shared.percentile_metrics import (
     ConfidenceInfo,
     ConfidenceLevel,
@@ -1061,12 +1065,27 @@ class BenchmarkResult(BaseModel):
     def _find_batch_histogram(
         self, batch_type: BatchType, property_name: HistogramMetric
     ) -> HistogramData | None:
-        """First endpoint that exposes the MAX-serve batch-time histogram."""
+        """First endpoint that exposes this batch-time histogram.
+
+        Metric names and ``batch_type`` label values are resolved per
+        endpoint's backend (MAX Serve's ``CE``/``TG``, mach's
+        ``prefill``/``decode``) through ``backend_metric_names``, so both
+        engines fill the same BenchmarkResult fields. A metric the endpoint's
+        engine does not emit or does not label resolves to nothing and the
+        field stays null.
+        """
+        phase = (
+            BatchPhase.PREFILL
+            if batch_type is BatchType.CE
+            else BatchPhase.DECODE
+        )
         for pm in self.metrics_by_endpoint.values():
-            hist = pm.get_histogram(
-                property_name.value,
-                {"batch_type": batch_type.value},
+            resolved = resolve_batch_metric(
+                pm.backend, property_name.value, phase
             )
+            if resolved is None:
+                continue
+            hist = pm.get_histogram(resolved.name, dict(resolved.labels))
             if hist:
                 return hist
         return None

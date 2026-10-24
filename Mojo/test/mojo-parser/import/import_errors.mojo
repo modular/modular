@@ -308,7 +308,7 @@ def importInComptimeFor():
 # body is its own function scope.
 
 def importInNestedFn():
-    def inner() capturing:
+    def inner():
         from std.collections import Dict
     inner()
 

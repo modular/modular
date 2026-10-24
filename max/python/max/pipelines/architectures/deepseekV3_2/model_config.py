@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import ClassVar
 
 from max.dtype import DType
@@ -24,6 +24,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
+    MLAKVCacheParams,
     MultiKVCacheParams,
     spec_decode_cache_slack,
 )
@@ -39,6 +40,8 @@ from max.pipelines.modeling.config_enums import (
 from max.pipelines.speculative.config import SpeculativeMethod
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+from .layers.sparse_mla import sparse_selection_width
 
 
 def resolve_indexer_types(
@@ -161,6 +164,13 @@ class DeepseekV3_2Config(DeepseekV3Config):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
+        assert isinstance(mla_kv_params, MLAKVCacheParams)
+        mla_kv_params = replace(
+            mla_kv_params,
+            sparse_indices_stride=sparse_selection_width(
+                mla_kv_params, huggingface_config.index_topk
+            ),
+        )
 
         # Always store the indexer's K cache in float8_e4m3fn.
         indexer_cache_dtype = DType.float8_e4m3fn
@@ -207,7 +217,13 @@ class DeepseekV3_2Config(DeepseekV3Config):
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
-        assert isinstance(indexer_kv_params, KVCacheParams)
+        # No kernel reads the indexer leaf's dispatch metadata, but it is part
+        # of the composite capture key, so it must not move with the context.
+        assert isinstance(indexer_kv_params, MLAKVCacheParams)
+        indexer_kv_params = replace(
+            indexer_kv_params,
+            sparse_indices_stride=mla_kv_params.sparse_indices_stride,
+        )
         return MultiKVCacheParams.from_params(
             {"mla": mla_kv_params, "indexer": indexer_kv_params}
         )

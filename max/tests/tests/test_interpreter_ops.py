@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import ml_dtypes
 import numpy as np
 import pytest
 from max import _core, _eager_policy, engine
@@ -44,6 +45,8 @@ from max._interpreter_ops import (
 from max._interpreter_ops.handlers import (
     _handle_buffer_create,
     _handle_buffer_transfer,
+    _handle_debug_tensor_print,
+    _handle_distributed_allreduce_sum,
     _handle_gather_sum,
     _handle_index_to_tensor,
     _handle_shape_from_tensor,
@@ -68,6 +71,7 @@ from max.experimental.functional import (
 from max.experimental.functional import (
     transfer_to as df_shard,
 )
+from max.experimental.nn import Linear as ExperimentalLinear
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
     DeviceMapping,
@@ -78,6 +82,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor, realization_context
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import ops as graph_ops
+from max.graph.ops import CoordinateTransformMode, RoundMode
 
 
 @pytest.fixture(autouse=True)
@@ -1938,6 +1944,63 @@ class TestTransposeOp:
 
 class TestMatmulOp:
     """Tests for matmul Mojo op."""
+
+    @pytest.mark.parametrize(
+        "matmul", [lambda a, b: a @ b, F.matmul], ids=["operator", "functional"]
+    )
+    def test_matmul_rejects_mixed_dtypes(
+        self, matmul: Callable[[Tensor, Tensor], Tensor]
+    ) -> None:
+        """``@`` and ``F.matmul`` need one dtype; they never promote."""
+        a = Tensor.from_dlpack(np.ones((2, 3), dtype=np.float32))
+        b = Tensor.from_dlpack(np.ones((3, 2), dtype=np.float64))
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+            pytest.raises(ValueError, match="different dtypes"),
+        ):
+            matmul(a, b)
+
+    def test_linear_casts_input_to_weight_dtype(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A float64 input to a float32 ``Linear`` computes in float32."""
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+        layer = ExperimentalLinear(3, 2, bias=False)
+        x_np = np.arange(6, dtype=np.float64).reshape(2, 3)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = layer(x)
+
+        assert y.dtype == layer.weight.dtype
+        weight_np = np.from_dlpack(layer.weight)
+        expected = x_np.astype(weight_np.dtype) @ weight_np.T
+        np.testing.assert_allclose(np.from_dlpack(y), expected, rtol=1e-6)
+
+    def test_matmul_out_dtype(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An eager matmul writes ``out_dtype``, not the inputs' dtype.
+
+        The sweep covers one-dtype matmuls only, so this one compiles lazily.
+        """
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+        a_np = np.arange(12, dtype=np.float32).reshape(3, 4) % 10
+        b_np = np.arange(20, dtype=np.float32).reshape(4, 5) % 10
+        matmul = F.functional(graph_ops.matmul)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            c = matmul(a, b, out_dtype=DType.float64)
+
+        assert c.dtype == DType.float64
+        expected = np.matmul(a_np.astype(np.float64), b_np.astype(np.float64))
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
 
     @pytest.mark.parametrize("dtype", MATMUL_DTYPES)
     def test_matmul_basic(self, dtype: DType) -> None:
@@ -4656,6 +4719,28 @@ class TestGatherNdFusedModel:
         np.testing.assert_array_equal(out.to_numpy(), expected)
 
 
+class TestDebugTensorPrintOp:
+    """Tests for the debug.tensor.print interpreter handler."""
+
+    def test_debug_tensor_print_bfloat16(self, capsys: Any) -> None:
+        """NumPy can't hold bfloat16, so the handler must not crash on it."""
+        values_f32 = np.array([1.5, -2.0, 0.25], dtype=np.float32)
+        buf = Buffer.from_numpy(
+            values_f32.astype(ml_dtypes.bfloat16).view(np.uint16)
+        ).view(DType.bfloat16)
+
+        mock_op = MagicMock()
+        mock_op.label = "x"
+
+        result = _handle_debug_tensor_print(mock_op, [None, buf])
+
+        assert result == [None]
+        printed = capsys.readouterr().out
+        assert "1.5" in printed
+        assert "-2" in printed
+        assert "0.25" in printed
+
+
 class TestGatherSumOp:
     """Tests for the gather_sum interpreter handler.
 
@@ -4734,6 +4819,68 @@ class TestGatherSumOp:
         expected = gathered.sum(axis=1, keepdims=True)
         assert isinstance(result[0], Buffer)
         np.testing.assert_array_equal(result[0].to_numpy(), expected)
+
+    def test_gather_sum_bfloat16(self) -> None:
+        """NumPy can't hold bfloat16, so the handler must not crash on it.
+
+        No user-facing graph API produces ``mo.gather_sum`` (see the class
+        docstring), so this exercises the handler directly rather than
+        covering a path real callers can reach today.
+        """
+        input_f32 = np.arange(12, dtype=np.float32).reshape(4, 3)
+        input_bf16 = Buffer.from_numpy(
+            input_f32.astype(ml_dtypes.bfloat16).view(np.uint16)
+        ).view(DType.bfloat16)
+        indices_np = np.array([[0, 2], [1, 3]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_gather_sum(
+            mock_op, [input_bf16, Buffer.from_numpy(indices_np)]
+        )
+
+        assert isinstance(result[0], Buffer)
+        assert result[0].dtype == DType.bfloat16
+        gathered = np.take(input_f32, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        out_f32 = (
+            result[0]
+            .view(DType.uint16)
+            .to_numpy()
+            .view(ml_dtypes.bfloat16)
+            .astype(np.float32)
+        )
+        np.testing.assert_array_almost_equal(out_f32, expected)
+
+
+class TestDistributedAllreduceSumOp:
+    """Tests for the distributed.allreduce.sum interpreter handler on host."""
+
+    def test_allreduce_sum_leaves_host_inputs_unmodified(self) -> None:
+        """The sum must not accumulate into an input that's already on CPU."""
+        a = np.arange(4, dtype=np.float32)
+        b = 10 * np.arange(4, dtype=np.float32)
+        bufs = [Buffer.from_numpy(a.copy()), Buffer.from_numpy(b.copy())]
+
+        mock_op = MagicMock()
+        mock_op.inputs = [MagicMock(), MagicMock()]
+        mock_op.group_size = 0
+        mock_result = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result, mock_result, MagicMock()]
+
+        result = _handle_distributed_allreduce_sum(mock_op, bufs)
+
+        np.testing.assert_array_equal(bufs[0].to_numpy(), a)
+        np.testing.assert_array_equal(bufs[1].to_numpy(), b)
+        for out in result[:2]:
+            assert isinstance(out, Buffer)
+            np.testing.assert_array_equal(out.to_numpy(), a + b)
+        assert result[2] is None
 
 
 def _mock_op_on(device: DeviceRef) -> MagicMock:
@@ -6687,6 +6834,19 @@ class TestConv2dOp:
                 y = F.conv2d(x, f)
                 assert y is not None
 
+    def test_conv3d_is_refused(self) -> None:
+        """The rank-4 conv model must not execute a rank-5 convolution."""
+        x = Tensor.from_dlpack(np.ones((1, 4, 4, 4, 1), dtype=np.float32))
+        f = Tensor.from_dlpack(np.ones((2, 2, 2, 1, 1), dtype=np.float32))
+
+        with pytest.raises(UnsupportedGraphError, match="rank-4 NHWC"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.conv3d(x, f)
+                assert y is not None
+
 
 class TestConvTranspose2dOp:
     """Tests for the mo.conv_transpose (2D transposed conv) handler."""
@@ -7010,6 +7170,57 @@ class TestTileOp:
             y = F.tile(x, reps)
 
         np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+    def test_5d(self) -> None:
+        """Test tiling a 5-D tensor, the top of the precompiled sweep."""
+        x_np = np.arange(2 * 3 * 2 * 2 * 2, dtype=np.float32).reshape(
+            2, 3, 2, 2, 2
+        )
+        reps = (2, 1, 3, 2, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+    def test_6d_and_7d(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test tiling 6-D and 7-D tensors, lazily compiled past the sweep.
+
+        The warm suite forbids cold compiles (eager_py_test.bzl sets
+        MAX_EAGER_ALLOW_LAZY_COMPILE=0 on CPU lanes); this test exercises
+        the over-sweep lazy path, so it re-allows it for itself, like the
+        resize lazy test does.
+        """
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+        x_np = np.arange(2 * 1 * 3 * 2 * 2 * 2, dtype=np.float32).reshape(
+            2, 1, 3, 2, 2, 2
+        )
+        reps = (2, 1, 1, 3, 2, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.tile(x, reps)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
+
+        x7_np = x_np.reshape(2, 1, 1, 3, 2, 2, 2)
+        reps7 = (1, 2, 1, 1, 2, 3, 1)
+
+        x7 = Tensor.from_dlpack(x7_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y7 = F.tile(x7, reps7)
+
+        np.testing.assert_array_equal(np.from_dlpack(y7), np.tile(x7_np, reps7))
 
 
 class TestBandPartOp:
@@ -7633,7 +7844,11 @@ class TestRoiAlignOp:
         ids=["f32", "f16", "bf16", "f32-max", "f32-aligned"],
     )
     def test_gpu_keeps_output_resident(
-        self, dtype: DType, aligned: bool, mode: str
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        dtype: DType,
+        aligned: bool,
+        mode: str,
     ) -> None:
         """GPU eager roi_align keeps the output on the input device.
 
@@ -7641,6 +7856,10 @@ class TestRoiAlignOp:
         the input device, the four numeric scalars stay host-side. The result
         must come back GPU-resident and match the CPU reference.
         """
+        monkeypatch.setenv(
+            _eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR,
+            "1",
+        )
         device = Accelerator()
 
         if dtype == DType.bfloat16:
@@ -8921,7 +9140,11 @@ class TestResizeLinearOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -8941,7 +9164,11 @@ class TestResizeLinearOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -8961,7 +9188,11 @@ class TestResizeLinearOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=1)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ALIGN_CORNERS,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=1
@@ -8982,7 +9213,10 @@ class TestResizeLinearOp:
             realization_context(ctx),
         ):
             out = F.resize_linear(
-                x, out_shape, coordinate_transform_mode=0, antialias=True
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+                antialias=True,
             )
 
         out_np = np.from_dlpack(out)
@@ -9175,7 +9409,11 @@ class TestResizeNearestOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_nearest_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -9193,7 +9431,11 @@ class TestResizeNearestOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_nearest_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -9216,7 +9458,10 @@ class TestResizeNearestOp:
             realization_context(ctx),
         ):
             out = F.resize_nearest(
-                x, out_shape, coordinate_transform_mode=2, round_mode=2
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ASYMMETRIC,
+                round_mode=RoundMode.FLOOR,
             )
 
         ref = self._resize_nearest_ref(
@@ -9235,7 +9480,11 @@ class TestResizeNearestOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=1)
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ALIGN_CORNERS,
+            )
 
         ref = self._resize_nearest_ref(
             x_np, out_shape, coordinate_transform_mode=1
@@ -9319,7 +9568,10 @@ class TestResizeNearestOp:
             realization_context(ctx),
         ):
             out = F.resize_nearest(
-                x, out_shape, coordinate_transform_mode=0, round_mode=0
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+                round_mode=RoundMode.HALF_DOWN,
             )
 
         assert out.storage is not None
@@ -9588,8 +9840,12 @@ class TestLazyGCModelCompilation:
     def test_matmul_model_compiles_once_and_reuses(self) -> None:
         """A second call for the same (device, dtype) returns the cached model."""
         cpu = CPU()
-        first = matmul_gc.matmul_model(cpu, DType.float32)
-        second = matmul_gc.matmul_model(cpu, DType.float32)
+        first = matmul_gc.matmul_model(
+            cpu, DType.float32, DType.float32, DType.float32
+        )
+        second = matmul_gc.matmul_model(
+            cpu, DType.float32, DType.float32, DType.float32
+        )
         assert first is second
 
     def test_unary_model_compiles_once_and_reuses(self) -> None:
@@ -9631,7 +9887,9 @@ class TestLazyGCModelCompilation:
         [
             (
                 matmul_gc._FAMILY,
-                lambda: matmul_gc.matmul_model(CPU(), DType.float32),
+                lambda: matmul_gc.matmul_model(
+                    CPU(), DType.float32, DType.float32, DType.float32
+                ),
             ),
             (
                 select_gc._FAMILY,
@@ -9692,7 +9950,9 @@ class TestLazyGCModelCompilation:
             gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
         )
         monkeypatch.setattr(matmul_gc._FAMILY, "cache", {})
-        model = matmul_gc.matmul_model(CPU(), DType.float32)
+        model = matmul_gc.matmul_model(
+            CPU(), DType.float32, DType.float32, DType.float32
+        )
         assert model is not None
 
     def test_select_model_compiles_once_and_reuses(self) -> None:
@@ -9926,15 +10186,37 @@ class TestLazyGCModelCompilation:
             gc_compile.uint_view_dtype(DType.float4_e2m1fn)
 
     def test_tile_rank_over_cap_raises(self) -> None:
-        """Rank beyond an op's cap raises cleanly, not a kernel comptime assert.
+        """Rank past the sweep raises only when lazy compile is disallowed.
 
-        Uses the same KeyError "Unsupported" signal as an unsupported dtype.
+        tile is arbitrary-rank: rank 6 is outside the precompiled sweep but
+        compiles on demand. The same KeyError "Unsupported" signal as an
+        unsupported dtype fires only under MAX_EAGER_ALLOW_LAZY_COMPILE=0.
         """
-        # tile's GC kernel supports up to rank 4; rank 5 must be rejected here.
-        with pytest.raises(
-            KeyError, match="Unsupported shape-rearrange rank 5"
-        ):
-            shape_rearrange_gc.model(mo.TileOp, CPU(), DType.uint8, rank=5)
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "0")
+        try:
+            with pytest.raises(
+                KeyError, match="Unsupported shape-rearrange rank 6"
+            ):
+                shape_rearrange_gc.model(mo.TileOp, CPU(), DType.uint8, rank=6)
+        finally:
+            monkeypatch.undo()
+
+    def test_tile_rank_past_sweep_compiles_lazily(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Rank past the sweep passes the support gate in the default mode.
+
+        Checks the gate only (the model object needs the full GC stack);
+        rank 6 must not be refused when lazy compile is allowed.
+        """
+        monkeypatch.delenv("MAX_EAGER_ALLOW_LAZY_COMPILE", raising=False)
+        spec = shape_rearrange_gc._spec_for(mo.TileOp)
+        assert spec is not None and spec.arbitrary_rank
+        # The sweep itself still precompiles only 1..MAX_RANK.
+        assert shape_rearrange_gc._ranks_for(spec)[-1] == (
+            shape_rearrange_gc.MAX_RANK
+        )
 
 
 class TestDataMovementGCFamily:

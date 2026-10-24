@@ -15,14 +15,13 @@
 Follows the vLLM runtime reference (``qwen3_dflash.py`` / ``qwen3_dspark.py``
 / ``dspark/speculator.py``), which is what runs speculators-format DSpark
 checkpoints such as ``RedHatAI/gemma-4-31B-it-speculator.dspark``. This is
-NOT the dense deepseek-style drafter that ``unified_dspark_gemma4_12b``
-mirrors:
+NOT the dense deepseek-style drafter that ``dspark_gemma4`` mirrors:
 the block here is a qwen3/llama-style transformer with separate K/V GQA
 projections, per-head-dim q/k RMSNorm, plain (non-gemma) RMSNorm, and
 per-layer config-driven causality (causal sliding-window attention iff the
 layer type is ``sliding_attention``).
 
-Semantics the caller (the unified graph) must uphold:
+Semantics the caller (the fused spec-decode graph) must uphold:
 
 - Block inputs are RAW embedding rows (``embed_tokens[token]``) with NO gemma
   ``sqrt(hidden)`` scaling; slot 0 embeds the anchor/bonus token and slots
@@ -121,6 +120,11 @@ class DSparkSpeculatorsDraft(Module):
     causal/sliding mask derived from ``layer_causal``/``sliding_window``.
     """
 
+    has_own_embed_tokens = True
+    """The draft embeds through its own copy, never the target's scaled one."""
+    has_own_lm_head = True
+    """The draft scores its own pruned vocabulary."""
+
     def __init__(
         self,
         *,
@@ -137,7 +141,6 @@ class DSparkSpeculatorsDraft(Module):
         vocab_size: int,
         draft_vocab_size: int,
         markov_rank: int,
-        block_size: int,
         sample_from_anchor: bool,
         mask_token_id: int,
         num_context_features: int,
@@ -167,8 +170,6 @@ class DSparkSpeculatorsDraft(Module):
                 "DSparkSpeculatorsDraft requires a vanilla markov head"
                 f" (markov_rank > 0), got {markov_rank}."
             )
-        if block_size < 2:
-            raise ValueError(f"block_size must be >= 2, got {block_size}.")
         if not 0 <= mask_token_id < vocab_size:
             raise ValueError(
                 f"mask_token_id {mask_token_id} outside [0, {vocab_size})."
@@ -186,7 +187,6 @@ class DSparkSpeculatorsDraft(Module):
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         self.draft_vocab_size = draft_vocab_size
-        self.block_size = block_size
         self.sample_from_anchor = sample_from_anchor
         self.mask_token_id = mask_token_id
         self.num_context_features = num_context_features
@@ -276,10 +276,9 @@ class DSparkSpeculatorsDraft(Module):
             "d2t", DType.int64, shape=[draft_vocab_size], device=device
         )
 
-        # Aliased to the target's embedding by the unified pipeline at load
-        # time when sharing weights (the checkpoint ships a byte-identical
-        # frozen copy). The draft path must use the RAW rows — never the
-        # target's sqrt(hidden)-scaled embedding output.
+        # Set by the draft's pipeline model to a plain embedding loaded from
+        # the checkpoint's frozen copy of the target's. The draft path must
+        # use the RAW rows, never the target's sqrt(hidden)-scaled output.
         self.embed_tokens: Embedding | None = None
 
     def project_target_hidden(
@@ -337,8 +336,8 @@ class DSparkSpeculatorsDraft(Module):
         """Runs the draft stack over the block tokens.
 
         Returns hidden states for ALL block slots (anchor slot 0 included);
-        dropping slot 0 when ``sample_from_anchor`` is false is the unified
-        graph's job.
+        dropping slot 0 when ``sample_from_anchor`` is false is the
+        proposer's job.
         """
         h = input_embeds
         freqs_cis = self.rope.freqs_cis

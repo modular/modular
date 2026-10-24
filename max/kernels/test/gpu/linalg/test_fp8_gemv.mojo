@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unit tests for the Apple M5 weight-only FP8 (W8A16) matmul.
 
-All shapes require `compute_capability() == 5` (Apple M5, Metal 4). The FP8
+All shapes require `compute_capability() >= 5` (Apple M5, Metal 4). The FP8
 sibling of `test_apple_fp4_matmul.mojo`, exercising the two dispatch routes of
 `enqueue_apple_fp8_matmul` against an INDEPENDENT fp32 host reference (the
 dequant -> bf16-matmul chain, computed in fp32):
@@ -189,9 +189,7 @@ def _run_fp8_matmul_epilogue(
     ](idx: Coord, val: SIMD[dtype, width]) {var epi_ptr, var N}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var out = val.cast[.float32]() * 2 + 1
-        epi_ptr.unsafe_store[width=width](
-            Int(idx[0].value()) * N + Int(idx[1].value()), out
-        )
+        epi_ptr.unsafe_store[width=width](Int(idx[0]) * N + Int(idx[1]), out)
 
     enqueue_apple_fp8_matmul[c_type=.float32](out_tt, act_tt, weight_tt, ctx)
     enqueue_apple_fp8_matmul[c_type=.float32, has_epilogue_fn=True](
@@ -464,8 +462,8 @@ def test_tiled_matmul2d(ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     test_decode_gemv(ctx)
     test_multi_row_launcher(ctx)

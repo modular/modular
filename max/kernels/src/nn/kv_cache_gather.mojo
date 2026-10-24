@@ -86,14 +86,14 @@ def kv_cache_gather_rows_ragged[
     # Same closure form as `kv_cache_store_ragged`: a KV cache view cannot be
     # captured by a unified closure yet.
     def copy_row[width: Int, alignment: Int = 1](idx: Coord) {var}:
-        var r = Int(idx[0].value())
-        var j = Int(idx[1].value())
-        var d = Int(idx[2].value())
+        var r = Int(idx[0])
+        var j = Int(idx[1])
+        var d = Int(idx[2])
         var b = get_batch_from_row_offsets(row_offsets, r)
         var slot = Int(slots[r, j])
         # `dtype == cache_t.dtype` is asserted above; the two are still
         # distinct symbols to the type checker.
-        output.store[width=width, alignment=alignment](
+        output.store[alignment=alignment](
             (r, j, d),
             rebind[SIMD[dtype, width]](cache.load[width=width](b, 0, slot, d)),
         )

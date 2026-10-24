@@ -54,7 +54,6 @@ which decorators are valid on which targets.
 |-------------------------------|----------|-----------------|--------|---------|------------|-------|-------|
 | `@align`                      | yes      |                 |        |         |            |       |       |
 | `@always_inline` <sup>1</sup> |          | yes             | yes    |         |            |       |       |
-| `@__copy_capture`             |          | yes<sup>2</sup> |        |         |            |       |       |
 | `@deprecated`                 | yes      | yes             | yes    | yes     | yes        |       |       |
 | `@doc_hidden`                 | yes      | yes             | yes    |         | yes        |       | yes   |
 | `@export`                     |          | yes             |        |         |            |       |       |
@@ -62,12 +61,8 @@ which decorators are valid on which targets.
 | `@implicit`                   |          |                 | yes    |         |            |       |       |
 | `@inline`                     |          | yes             | yes    |         |            |       |       |
 | `@no_inline` <sup>1</sup>     |          | yes             | yes    |         |            |       |       |
-| `@__parameter`                |          | yes<sup>2</sup> |        |         |            |       |       |
 | `@staticmethod`               |          |                 | yes    |         |            |       |       |
 
 <sup>1</sup>Prefer `@inline` for new code.
-
-<sup>2</sup>`@__copy_capture` and `@__parameter` work only on *nested*
-functions.
 
 <!-- rumdl-enable MD033 -->

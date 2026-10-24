@@ -655,7 +655,7 @@ def _build_compiled_ep_models(
         inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     moe_model = session.load(graph, weights_registry=moe.state_dict())
 

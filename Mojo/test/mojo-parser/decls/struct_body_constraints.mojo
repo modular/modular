@@ -208,3 +208,55 @@ def use_intable_dischargeable[T: AnyType]() where conforms_to(T, Intable):
 def use_intable_unprovable[T: AnyType]():
     # expected-error @below {{lacking evidence to prove correctness}}
     var x: OnlyIntableUnprovable[T]
+
+
+##===----------------------------------------------------------------------===##
+# Auto-parameterized struct argument propagates the struct's constraints
+##===----------------------------------------------------------------------===##
+# `x: S[_]` (and bare `x: S`) declares the hole as an implicit parameter. The
+# struct's constraints over that parameter can't be written as a trailing
+# `where` clause, so they are added to the signature during
+# auto-parameterization.
+# A constraint over an explicitly bound parameter must still be proven by the
+# signature.
+
+
+def need_positive[N: Int]() where N > 0:
+    pass
+
+
+struct AutoParamPositive[N: Int](Movable where False) where N > 0:
+    def method(self):
+        pass
+
+
+def use_autoparam_hole(x: AutoParamPositive[_]):
+    need_positive[x.N]()
+    x.method()
+
+
+def use_autoparam_bare(x: AutoParamPositive):
+    need_positive[x.N]()
+    x.method()
+
+
+struct AutoParamPair[A: Int, B: Int](Movable where False) where B > 0:
+    pass
+
+
+def use_autoparam_partial(x: AutoParamPair[1, _]):
+    need_positive[x.B]()
+
+
+struct AutoParamExplicitPair[A: Int, B: Int]
+    # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
+    (Movable where False) where A > 0:
+    pass
+
+
+# expected-note @below {{add a trailing 'where' clause that requires '(K > Int(0))'}}
+def use_autoparam_partial_explicit[K: Int](
+    # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
+    x: AutoParamExplicitPair[K, _]
+):
+    pass

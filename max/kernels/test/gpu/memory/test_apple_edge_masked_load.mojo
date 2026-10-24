@@ -39,8 +39,8 @@ def _gmem_kernel(
     var lane = thread_idx.x
     var base = lane * IN_COLS
     var mask = build_edge_mask(Int32(base), Int32(0), Int32(base + IN_COLS))
-    var v = gmem_edge_masked_load[4](in_ptr + base, mask)
-    (out_ptr + lane * OUT_COLS).store(v)
+    var v = gmem_edge_masked_load[4](in_ptr.unsafe_offset(base), mask)
+    (out_ptr.unsafe_offset(lane * OUT_COLS)).unsafe_store(v)
 
 
 def _general_kernel(
@@ -50,9 +50,9 @@ def _general_kernel(
     var lane = thread_idx.x
     var base = lane * IN_COLS
     var mask = build_edge_mask(Int32(base), Int32(0), Int32(base + IN_COLS))
-    var src = (in_ptr + base).address_space_cast[.GLOBAL]()
+    var src = in_ptr.unsafe_offset(base).unsafe_address_space_cast[.GLOBAL]()
     var v = edge_masked_load[4](src, mask)
-    (out_ptr + lane * OUT_COLS).store(v)
+    (out_ptr.unsafe_offset(lane * OUT_COLS)).unsafe_store(v)
 
 
 def _check(buf: HostBuffer[.bfloat16]) raises:
@@ -66,8 +66,8 @@ def _check(buf: HostBuffer[.bfloat16]) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
 
     var in_host = ctx.enqueue_create_host_buffer[.bfloat16](ROWS * IN_COLS)

@@ -24,10 +24,14 @@ from layout import Idx, TensorLayout, TensorEngine, TileTensor
 from layout.coord import Coord
 from std.math import ceildiv
 from std.sys import size_of
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
-from ....utils import elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -80,9 +84,9 @@ def _mma8_k_block[
     comptime for mi in range(NT_M):
         var row = mi * MMA8_DIM + frow
         if INTERIOR or row_base + row < m:
-            a_runs[mi] = a_slab.load_linear[
+            a_runs[mi] = a_slab.load[
                 width=A_W, alignment=A_W * size_of[a_type]()
-            ](IndexList[2](row, kb + fcol * KW))
+            ](Coord(row, kb + fcol * KW))
         else:
             a_runs[mi] = SIMD[a_type, A_W](0)
 
@@ -92,9 +96,9 @@ def _mma8_k_block[
             comptime for e in range(FRAG8):
                 var col = ni * MMA8_DIM + fcol + e
                 if INTERIOR or col_base + col < n:
-                    b_runs[2 * ni + e] = b_slab.load_linear[
+                    b_runs[2 * ni + e] = b_slab.load[
                         width=KW, alignment=KW * size_of[b_type]()
-                    ](IndexList[2](col, kb + frow * KW))
+                    ](Coord(col, kb + frow * KW))
                 else:
                     b_runs[2 * ni + e] = SIMD[b_type, KW](0)
 
@@ -113,15 +117,13 @@ def _mma8_k_block[
                 var krow = kb + frow * KW + s
                 var col = ni * MMA8_DIM + fcol
                 if INTERIOR or col_base + col + 1 < n:
-                    bfrag[ni] = b_slab.load_linear[
+                    bfrag[ni] = b_slab.load[
                         width=FRAG8, alignment=size_of[b_type]()
-                    ](IndexList[2](krow, col))
+                    ](Coord(krow, col))
                 else:
                     var bf = SIMD[b_type, FRAG8](0)
                     if col_base + col < n:
-                        bf[0] = b_slab.load_linear[width=1](
-                            IndexList[2](krow, col)
-                        )
+                        bf[0] = b_slab.load[width=1](Coord(krow, col))
                     bfrag[ni] = bf
         comptime for mi in range(NT_M):
             comptime for ni in range(NT_N):
@@ -190,10 +192,14 @@ def _mma8_k_loop[
 @inline(.always)
 def _mma8_store[
     c_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     NT_M: Int,
     NT_N: Int,
     INTERIOR: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
 ](
     c: TileTensor[mut=True, c_type, ...],
     accum: Array[SIMD[.float32, FRAG8], NT_M * NT_N],
@@ -203,6 +209,8 @@ def _mma8_store[
     col_base: Int,
     frow: Int,
     fcol: Int,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """Stores the simdgroup's subtile, guarding each element only on edges."""
     comptime for mi in range(NT_M):
@@ -212,23 +220,37 @@ def _mma8_store[
             var col = col_base + ni * MMA8_DIM + fcol
             comptime if INTERIOR:
                 # Odd `n` allows only element alignment.
-                comptime if case .Some(ep) = elementwise_lambda_fn:
-                    ep[c_type, FRAG8, alignment=size_of[c_type]()](
+                comptime if has_compute_fn:
+                    c.store[alignment=size_of[c_type]()](
+                        Coord(row, col),
+                        compute_fn[c_type, FRAG8, alignment=size_of[c_type]()](
+                            (row, col), frag
+                        ),
+                    )
+                elif has_epilogue_fn:
+                    epilogue_fn[c_type, FRAG8, alignment=size_of[c_type]()](
                         (row, col), frag
                     )
                 else:
-                    c.store_linear[alignment=size_of[c_type]()](
-                        IndexList[2](row, col), frag
-                    )
+                    c.store[alignment=size_of[c_type]()](Coord(row, col), frag)
             else:
                 comptime for s in range(FRAG8):
                     if row < m and col + s < n:
-                        comptime if case .Some(ep) = elementwise_lambda_fn:
-                            ep[c_type, 1]((row, col + s), frag[s])
+                        var y = SIMD[c_type, 1](frag[s])
+                        comptime if has_compute_fn:
+                            c.store[alignment=size_of[c_type]()](
+                                Coord(row, col + s),
+                                compute_fn[c_type, 1, alignment=1](
+                                    (row, col + s), y
+                                ),
+                            )
+                        elif has_epilogue_fn:
+                            epilogue_fn[c_type, 1, alignment=1](
+                                (row, col + s), y
+                            )
                         else:
-                            c.store_linear[alignment=size_of[c_type]()](
-                                IndexList[2](row, col + s),
-                                SIMD[c_type, 1](frag[s]),
+                            c.store[alignment=size_of[c_type]()](
+                                Coord(row, col + s), y
                             )
 
 
@@ -241,7 +263,10 @@ def _simdgroup8x8_matmul_kernel[
     a_layout: TensorLayout,
     b_layout: TensorLayout,
     transpose_b: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
     s_type: DType,
     BLOCK_M: Int,
     BLOCK_N: Int,
@@ -254,6 +279,8 @@ def _simdgroup8x8_matmul_kernel[
     m: Int,
     n: Int,
     k: Int,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """8x8 simdgroup-matrix GEMM for M1-M4 (no neural accelerator).
 
@@ -293,15 +320,33 @@ def _simdgroup8x8_matmul_kernel[
         _mma8_k_loop[transpose_b, SG_M, SG_N, True](
             accum, a, b, m, n, k, row_base, col_base, frow, fcol
         )
-        _mma8_store[c_type, elementwise_lambda_fn, NT_M, NT_N, True](
-            c, accum, m, n, row_base, col_base, frow, fcol
+        _mma8_store[NT_M, NT_N, True, has_epilogue_fn, has_compute_fn](
+            c,
+            accum,
+            m,
+            n,
+            row_base,
+            col_base,
+            frow,
+            fcol,
+            epilogue_fn,
+            compute_fn,
         )
     else:
         _mma8_k_loop[transpose_b, SG_M, SG_N, False](
             accum, a, b, m, n, k, row_base, col_base, frow, fcol
         )
-        _mma8_store[c_type, elementwise_lambda_fn, NT_M, NT_N, False](
-            c, accum, m, n, row_base, col_base, frow, fcol
+        _mma8_store[NT_M, NT_N, False, has_epilogue_fn, has_compute_fn](
+            c,
+            accum,
+            m,
+            n,
+            row_base,
+            col_base,
+            frow,
+            fcol,
+            epilogue_fn,
+            compute_fn,
         )
 
 
@@ -320,7 +365,10 @@ def gemm_kernel_apple_8x8[
     a_engine: TensorEngine,
     b_engine: TensorEngine,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     s_type: DType = get_accum_type[c_type](),
     BLOCK_M: Int = 64,
     BLOCK_N: Int = 64,
@@ -333,8 +381,15 @@ def gemm_kernel_apple_8x8[
     m: Int32,
     n: Int32,
     k: Int32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
-    """Launchable wrapper for the 8x8 simdgroup-matrix GEMM (bench/test)."""
+    """Launchable wrapper for the 8x8 simdgroup-matrix GEMM (bench/test).
+
+    Launch with `host_args=(epilogue_fn, compute_fn)`. With
+    `has_compute_fn`, `compute_fn` maps each output before it is stored to
+    `c`; with `has_epilogue_fn`, `epilogue_fn` stores it in place of `c`.
+    """
     var _m = Int(m)
     var _n = Int(n)
     var _k = Int(k)
@@ -346,13 +401,16 @@ def gemm_kernel_apple_8x8[
         a_layout,
         b_layout,
         transpose_b,
-        elementwise_lambda_fn,
+        EpilogueFnType,
+        ComputeFnType,
+        has_epilogue_fn,
+        has_compute_fn,
         s_type,
         BLOCK_M,
         BLOCK_N,
         BLOCK_K,
         NUM_SIMDGROUPS,
-    ](c, a, b, _m, _n, _k)
+    ](c, a, b, _m, _n, _k, epilogue_fn, compute_fn)
 
 
 # TODO(MOCO-5006): thresholds were measured on a 40-core M5 Max; core-count
@@ -374,9 +432,13 @@ def _apple_8x8_block_choice(m: Int, n: Int, cores: Int) -> Int:
 
 
 def enqueue_apple_matmul_8x8[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     *,
     transpose_b: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -385,9 +447,13 @@ def enqueue_apple_matmul_8x8[
     n: Int,
     k: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Launches the 8x8 GEMM with a block chosen for the output shape.
-    Requires `k % 16 == 0`."""
+    Requires `k % 16 == 0`. With `has_compute_fn`, `compute_fn` maps each
+    output before it is stored; with `has_epilogue_fn`, `epilogue_fn` stores
+    it in place of `c`."""
     var cores: Int
     try:
         cores = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
@@ -409,7 +475,10 @@ def enqueue_apple_matmul_8x8[
                 type_of(a).Engine,
                 type_of(b).Engine,
                 transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
+                EpilogueFnType,
+                ComputeFnType,
+                has_epilogue_fn,
+                has_compute_fn,
                 BLOCK_M=BM,
                 BLOCK_N=BN,
                 BLOCK_K=16,
@@ -422,6 +491,7 @@ def enqueue_apple_matmul_8x8[
                 Int32(m),
                 Int32(n),
                 Int32(k),
+                host_args=(epilogue_fn, compute_fn),
                 grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
                 block_dim=(4 * WARP_SIZE,),
             )

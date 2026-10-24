@@ -54,6 +54,19 @@ from max.nn.quant_config import QuantFormat
 from .transforms import HadamardTransform
 
 
+def indexer_selection_width(
+    index_topk: int, index_kpool: int, always_select_tail: bool
+) -> int:
+    """Returns the width of one token's selected rows.
+
+    ``index_topk + index_kpool - 1`` when the k-pool tail is always selected,
+    ``index_topk`` otherwise.
+    """
+    if not always_select_tail or index_kpool == 1:
+        return index_topk
+    return index_topk + index_kpool - 1
+
+
 def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
     """Returns ``[0, x[0], x[0] + x[1], ...]``, one entry longer than ``x``."""
     zero = ops.constant(0, x.dtype, device=x.device).reshape([1])
@@ -194,7 +207,7 @@ class Indexer(Module, Shardable):
             out_dim=self.n_heads,
             dtype=DType.bfloat16,
             device=devices[0],
-        )  # DS casts to f32
+        )
 
         self.hadamard_transform = HadamardTransform(
             scale=self.softmax_scale, device=devices[0]
@@ -679,7 +692,10 @@ class Indexer(Module, Shardable):
                 of the top k Keys selected by the Indexer for MLA to attend to
                 (``None`` when ``write_logical`` is False), and their physical
                 rows in ``mla_collection`` (``None`` without one, or when
-                pooled).
+                pooled). For an NVFP4 ``mla_collection``, whose scales are
+                paged apart from its values, each row is ``2 * index_topk``
+                wide: the physical rows, then the selections' rows in the
+                scale pool.
         """
         if not write_logical and (
             mla_collection is None or self.index_kpool > 1
@@ -722,9 +738,11 @@ class Indexer(Module, Shardable):
         q_fp8, q_scale = act_quant(q, self.quant_config)
         k_fp8, k_scale = act_quant(k, self.quant_config)
 
+        # DeepSeek projects the scoring weights in float32.
+        proj = self.weights_proj.weight.to(x.device).cast(DType.float32)
         weights_for_scoring = (
             ops.unsqueeze(
-                self.weights_proj(x.cast(DType.float32)) * self.n_heads**-0.5,
+                (x.cast(DType.float32) @ proj.T) * self.n_heads**-0.5,
                 axis=-1,
             )
             * q_scale
@@ -816,9 +834,9 @@ class Indexer(Module, Shardable):
     def selection_width(self) -> int:
         """Output width: ``index_topk + index_kpool - 1`` = 2051 with the
         tail, ``index_topk`` without."""
-        if not self.always_select_tail or self.index_kpool == 1:
-            return self.index_topk
-        return self.index_topk + self.index_kpool - 1
+        return indexer_selection_width(
+            self.index_topk, self.index_kpool, self.always_select_tail
+        )
 
     @property
     def pooled_cache_head_dim(self) -> int:

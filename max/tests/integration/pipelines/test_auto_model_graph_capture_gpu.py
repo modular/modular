@@ -13,7 +13,8 @@
 """AutoModel with device graph capture on a real GPU model.
 
 Every decode step must replay a captured graph, and the greedy tokens and
-the logits Batch records must match an AutoModel built without capture.
+the logits GenerateIterator records must match an AutoModel built without
+capture. The basic example from the AutoModel design runs here as written.
 """
 
 from __future__ import annotations
@@ -52,6 +53,35 @@ def _load(device_graph_capture: bool) -> AutoModel:
     )
 
 
+def test_basic_example_runs_as_written() -> None:
+    tokenizer = AutoTokenizer("HuggingFaceTB/SmolLM2-135M")
+    model = AutoModel("HuggingFaceTB/SmolLM2-135M", max_batch_size=2)
+    try:
+        inputs = tokenizer(["The capital of France is", "2 + 2 ="])
+        outputs = model.generate(
+            **inputs, max_new_tokens=16, output_logits=True
+        )
+        texts = tokenizer.batch_decode(
+            outputs.sequences, skip_special_tokens=True
+        )
+        print(texts)
+        vocab_size = model.pipeline_config.model.huggingface_config.vocab_size
+    finally:
+        model.close()
+
+    for sequence, prompt_ids in zip(
+        outputs.sequences, inputs["input_ids"], strict=True
+    ):
+        assert sequence[: len(prompt_ids)] == prompt_ids
+    for text, prompt in zip(
+        texts, ["The capital of France is", "2 + 2 ="], strict=True
+    ):
+        assert text.startswith(prompt)
+    assert outputs.logits is not None
+    new_tokens = len(outputs.sequences[0]) - len(inputs["input_ids"][0])
+    assert outputs.logits[0].shape == (new_tokens, vocab_size)
+
+
 def test_graph_capture_replays_and_matches_eager(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -88,7 +118,7 @@ def test_graph_capture_replays_and_matches_eager(
         monkeypatch.setattr(runner, "replay", count_replay)
 
         steps = 0
-        with model.batch(
+        with model.generate_iter(
             input_ids,
             max_new_tokens=MAX_NEW_TOKENS,
             top_k=1,

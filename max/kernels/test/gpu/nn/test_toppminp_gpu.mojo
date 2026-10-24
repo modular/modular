@@ -19,6 +19,7 @@ from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from layout import (
+    Coord,
     Idx,
     DefaultEngine,
     TileTensor,
@@ -85,9 +86,10 @@ def fill_random[
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
+    var flat = buffer.reshape(row_major(total_elements))
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.raw_store(i, random_value.cast[dtype]())
+        flat[i] = random_value.cast[dtype]()
 
 
 def fill_iota[
@@ -113,6 +115,7 @@ def merge[
     """Merge two sorted subarrays into one sorted array."""
     var left_size = mid - start
     var right_size = end - mid
+    var flat = buf.reshape(row_major(buf.num_elements()))
 
     # Create temporary arrays
     var left_ptr = List[Scalar[dtype]](unsafe_uninit_length=left_size)
@@ -120,9 +123,9 @@ def merge[
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_ptr[i] = buf.raw_load(start + i)
+        left_ptr[i] = flat[start + i]
     for i in range(right_size):
-        right_ptr[i] = buf.raw_load(mid + i)
+        right_ptr[i] = flat[mid + i]
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -131,21 +134,21 @@ def merge[
 
     while i < left_size and j < right_size:
         if left_ptr[i] >= right_ptr[j]:  # Use >= for descending order
-            buf.raw_store(k, left_ptr[i])
+            flat[k] = left_ptr[i]
             i += 1
         else:
-            buf.raw_store(k, right_ptr[j])
+            flat[k] = right_ptr[j]
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf.raw_store(k, left_ptr[i])
+        flat[k] = left_ptr[i]
         i += 1
         k += 1
 
     while j < right_size:
-        buf.raw_store(k, right_ptr[j])
+        flat[k] = right_ptr[j]
         j += 1
         k += 1
 
@@ -198,22 +201,23 @@ def test_is_sorted_descending[
     var batch_size = buf.num_elements() // vocab_size
     var _sorted_flag = List(length=batch_size, fill=True)
     var sorted_flag = Span(_sorted_flag)
+    var flat = buf.reshape(row_major(buf.num_elements()))
 
     def process_rows(start_batch: Int, end_batch: Int) {var}:
         # Process a chunk of batches
         for batch_id in range(start_batch, end_batch):
             var offset = batch_id * vocab_size
             for i in range(vocab_size - 1):
-                if buf.raw_load(offset + i) < buf.raw_load(offset + i + 1):
+                if flat[offset + i] < flat[offset + i + 1]:
                     print(
                         "[",
                         batch_id,
                         "][",
                         i,
                         "]: ",
-                        buf.raw_load(offset + i),
+                        flat[offset + i],
                         " < ",
-                        buf.raw_load(offset + i + 1),
+                        flat[offset + i + 1],
                     )
                     sorted_flag[batch_id] = False
                     break
@@ -295,7 +299,7 @@ def test_case_sampling(
     # Fill tensors
     fill_fn(in_logits)
     for i in range(batch_size):
-        p_thresholds.raw_store(i, p_threshold)
+        p_thresholds[i] = p_threshold
 
     # Create device buffers
     var device_in_buf = ctx.enqueue_create_buffer[dtype](
@@ -325,11 +329,22 @@ def test_case_sampling(
         probs_cpu_test_ptr,
         row_major(batch_size, vocab_size),
     )
+    var in_logits_flat = in_logits.reshape(row_major(in_logits.num_elements()))
+    var in_logits_cpu_test_flat = in_logits_cpu_test.reshape(
+        row_major(in_logits_cpu_test.num_elements())
+    )
     for i in range(in_logits.num_elements()):
-        in_logits_cpu_test.raw_store(i, in_logits.raw_load(i) / temperature)
+        in_logits_cpu_test_flat[i] = in_logits_flat[i] / temperature
 
-    softmax_inline[simd_width=1, rank=rank](
-        in_logits_cpu_test,
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var in_logits_cpu_test} -> SIMD[dtype, width]:
+        return in_logits_cpu_test.load[width=width, alignment=1](coords)
+
+    softmax_inline[dtype, simd_width=1, rank=rank](
+        input_fn,
+        in_logits_cpu_test.layout.shape_coord(),
         probs_cpu_test,
         axis=1,
     )
@@ -406,19 +421,22 @@ def test_case_sampling(
     # to the softmax & sort kernels so this is a good check.
     assert_equal(test_is_sorted_descending(in_logits, vocab_size), True)
     # (More rigorous) Check if the sorted probs are the same as the cpu test
+    var probs_cpu_test_flat = probs_cpu_test.reshape(
+        row_major(probs_cpu_test.num_elements())
+    )
     for i in range(in_logits.num_elements()):
         try:
             assert_almost_equal(
-                in_logits.raw_load(i), probs_cpu_test.raw_load(i), atol=5e-3
+                in_logits_flat[i], probs_cpu_test_flat[i], atol=5e-3
             )
         except e:
             print(
                 "i: ",
                 i,
                 "in_logits: ",
-                in_logits.raw_load(i),
+                in_logits_flat[i],
                 "probs_cpu_test: ",
-                probs_cpu_test.raw_load(i),
+                probs_cpu_test_flat[i],
             )
             raise e^
 

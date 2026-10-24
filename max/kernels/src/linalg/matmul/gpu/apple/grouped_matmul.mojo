@@ -13,7 +13,7 @@
 """Apple M5 grouped (MoE) matmul for bf16 or fp16 operands: a grouped GEMV for
 decode and a grouped simdgroup-MMA GEMM for prefill.
 
-Target: Apple M5 (`compute_capability == 5`, Metal 4).
+Target: Apple M5 (`compute_capability >= 5`, Metal 4).
 
 For each expert group `z`, `C[a_offsets[z]:a_offsets[z+1]] =
 A[a_offsets[z]:a_offsets[z+1]] @ b[expert_ids[z]]^T`, with `b` the weight
@@ -52,7 +52,7 @@ from layout.tile_layout import Layout, TensorLayout, row_major
 from std.utils import IndexList
 
 from linalg.arch.apple.mma import ConvIm2colParams
-from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5
+from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5_or_newer
 from linalg.matmul.gpu.apple.matmul_kernel import (
     AppleM5MatMul,
     DenseALoader,
@@ -136,15 +136,15 @@ def grouped_gemv_kernel[
     comptime A_ALIGN = align_of[Scalar[a_type]]() * (VW if K % VW == 0 else 1)
     comptime B_ALIGN = align_of[Scalar[b_type]]() * (VW if K % VW == 0 else 1)
 
-    var group = Int(block_idx.z)
+    var group = block_idx.z
     var a_start = Int(a_offsets[group])
     var m = Int(a_offsets[group + 1]) - a_start
     if m <= 0:
         return
 
-    var sg = Int(thread_idx.x) // WARP_SIZE
+    var sg = thread_idx.x // WARP_SIZE
     var lid = Int(lane_id())
-    var n0 = (Int(block_idx.x) * num_sg + sg) * rows_per_sg
+    var n0 = (block_idx.x * num_sg + sg) * rows_per_sg
     if n0 >= N:
         return
 
@@ -185,11 +185,11 @@ def grouped_gemv_kernel[
                 var x = Array[SIMD[.float32, VW], tokens_per_pass](fill=0)
                 comptime for t in range(tokens_per_pass):
                     x[t] = a_pass.load[width=VW, alignment=A_ALIGN](
-                        Coord(t_rows[t], k0)
+                        (t_rows[t], k0)
                     ).cast[.float32]()
                 comptime for r in range(rows_per_sg):
                     var w = b_e.load[width=VW, alignment=B_ALIGN](
-                        Coord(w_rows[r], k0)
+                        (w_rows[r], k0)
                     ).cast[.float32]()
                     comptime for t in range(tokens_per_pass):
                         acc[r * tokens_per_pass + t] += (w * x[t]).reduce_add[
@@ -200,13 +200,13 @@ def grouped_gemv_kernel[
                 var kt = K_VEC + lid
                 while kt < K:
                     comptime for r in range(rows_per_sg):
-                        var w = b_e.load[width=1](Coord(w_rows[r], kt)).cast[
+                        var w = b_e.load[width=1]((w_rows[r], kt)).cast[
                             .float32
                         ]()
                         comptime for t in range(tokens_per_pass):
-                            var xv = a_pass.load[width=1](
-                                Coord(t_rows[t], kt)
-                            ).cast[.float32]()
+                            var xv = a_pass.load[width=1]((t_rows[t], kt)).cast[
+                                .float32
+                            ]()
                             acc[r * tokens_per_pass + t][0] += (w * xv)[0]
                     kt += WARP_SIZE
 
@@ -224,7 +224,7 @@ def grouped_gemv_kernel[
                 else:
                     comptime if has_compute_fn:
                         out = compute_fn[c_type, 1, alignment=1](idx, out)
-                    c_pass.store(Coord(t, n0 + lid), out)
+                    c_pass.store((t, n0 + lid), out)
         t0 += tokens_per_pass
 
 
@@ -280,7 +280,7 @@ def grouped_matmul_mma_kernel[
     """
     comptime MM = _GroupedMma[a_type, b_type, c_type, linear_idx_type]
 
-    var group = Int(first_group) + Int(block_idx.z)
+    var group = Int(first_group) + block_idx.z
     var a_start = Int(a_offsets[group])
     var m = Int(a_offsets[group + 1]) - a_start
     if m <= 0:
@@ -325,11 +325,13 @@ def grouped_matmul_mma_kernel[
         var epilogue_fn, var compute_fn, var c_ptr, var a_start
     }:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row = a_start + Int(idx[0].value())
-        var col = Int(idx[1].value())
+        var row = a_start + Int(idx[0])
+        var col = Int(idx[1])
         var row_idx = Coord(row, col)
         comptime if has_compute_fn:
-            (c_ptr + row * N + col).store[alignment=alignment](
+            c_ptr.unsafe_offset(row * N).unsafe_offset(col).unsafe_store[
+                alignment=alignment
+            ](
                 rebind[SIMD[c_type, width]](
                     compute_fn[dtype, width, alignment=alignment](row_idx, val)
                 )
@@ -349,6 +351,7 @@ def grouped_matmul_mma_kernel[
         log2_grid_m,
         log2_grid_n,
         epilogue_fn=group_epilogue_fn,
+        compute_fn=no_compute_fn,
     )
 
 
@@ -462,8 +465,7 @@ def enqueue_apple_grouped_gemv[
         b.as_imm(),
         a_offsets,
         expert_ids,
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(ceildiv(N, rows_per_sg * num_sg), 1, num_active_experts),
         block_dim=(num_sg * WARP_SIZE),
     )
@@ -570,8 +572,7 @@ def enqueue_apple_grouped_mma[
                     UInt32(g0),
                     log2_m,
                     log2_n,
-                    host_arg=epilogue_fn,
-                    host_arg2=compute_fn,
+                    host_args=(epilogue_fn, compute_fn),
                     grid_dim=((1 << Int(log2_m)) * (1 << Int(log2_n)), 1, ng),
                     block_dim=(MM.THREADS_PER_BLOCK),
                 )
@@ -606,9 +607,9 @@ def enqueue_apple_grouped_matmul[
     operand types and epilogues are those of `enqueue_apple_grouped_gemv`.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     # GEMV tilings measured best at 3072-6144-wide expert dims (M5 Max):
     # the tokens of a group share one read of the weight; more rows per

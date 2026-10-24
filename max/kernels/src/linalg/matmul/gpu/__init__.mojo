@@ -21,20 +21,16 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
-from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
+from std.sys.info import _accelerator_arch
 
 from std.algorithm.functional import tile_and_unswitch
 
 from max.algorithm.functional import elementwise
-from max.gpu import (
-    WARP_SIZE,
-    global_idx,
-    thread_idx,
-)
+from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host import DeviceContext, FuncAttribute
-from max.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
+from max.gpu.host.info import A100, B200, H100, MI355X, get_gpu_info
 from layout import (
     Coord,
     Idx,
@@ -62,9 +58,6 @@ from ...utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
     GemmShape,
-    apply_elementwise_epilogue,
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -76,7 +69,7 @@ from ...utils_gpu import (
     select_config,
     _vendor_blas_fallback_disabled,
 )
-from ..vendor.matmul import apply_compute_fn_in_place, matmul as matmul_vendor
+from ..vendor.matmul import matmul as matmul_vendor
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_kernel_compute_fn,
@@ -96,7 +89,11 @@ from .amd import (
     structured_4wave_matmul,
     SplitKWorkspace,
 )
-from .amd_rdna import gemm_kernel_rdna
+from .amd_rdna import (
+    gemm_kernel_rdna,
+    gemm_kernel_rdna_compute_fn,
+    gemm_kernel_rdna_epilogue_fn,
+)
 from .apple import enqueue_apple_matmul_8x8
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
@@ -112,12 +109,11 @@ def matmul_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c_ptr: UnsafePointer[mut=True, Scalar[c_type], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    b_ptr: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -136,9 +132,6 @@ def matmul_kernel[
         b_type: DType of the input matrix B elements.
         tile_size: Side length, in elements, of the square shared-memory
             tile loaded from A and B and written to C.
-        elementwise_lambda_fn: Optional epilogue applied to the accumulated
-            value before it is stored to C (defaults to `None`, which
-            stores the raw accumulation).
         s_type: DType used for the inner accumulation (defaults to the
             accumulator type for `c_type`).
 
@@ -219,28 +212,22 @@ def matmul_kernel[
         var a_val: Scalar[a_type]
 
         comptime if not full_tile:
-            a_val = rebind[Scalar[a_type]](a[row, offset + localCol]) if (
+            a_val = a[row, offset + localCol] if (
                 row < m and offset + localCol < k
             ) else 0.0
         else:
-            a_val = (
-                rebind[Scalar[a_type]](a[row, offset + localCol]) if row
-                < m else 0.0
-            )
+            a_val = a[row, offset + localCol] if row < m else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Scalar[b_type]
 
         comptime if not full_tile:
-            b_val = rebind[Scalar[b_type]](b[offset + localRow, col]) if (
+            b_val = b[offset + localRow, col] if (
                 col < n and offset + localRow < k
             ) else 0.0
         else:
-            b_val = (
-                rebind[Scalar[b_type]](b[offset + localRow, col]) if col
-                < n else 0.0
-            )
+            b_val = b[offset + localRow, col] if col < n else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
@@ -258,10 +245,7 @@ def matmul_kernel[
     )
 
     if row < m and col < n:
-        comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
-            elementwise_lambda[c_type, 1]((row, col), result.cast[c_type]())
-        else:
-            c[row, col] = result.cast[c_type]()
+        c[row, col] = result.cast[c_type]()
 
 
 @__name(
@@ -415,15 +399,15 @@ def _matmul_kernel_naive_impl[
     comptime if transpose_b:
         for i in range(_k):
             accum += (
-                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
-                * rebind[Scalar[b_type]](b[y, i]).cast[s_type]()
+                a.load[width=1]((x, i)).cast[s_type]()
+                * b.load[width=1]((y, i)).cast[s_type]()
             )
 
     else:
         for i in range(_k):
             accum += (
-                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
-                * rebind[Scalar[b_type]](b[i, y]).cast[s_type]()
+                a.load[width=1]((x, i)).cast[s_type]()
+                * b.load[width=1]((i, y)).cast[s_type]()
             )
     comptime if has_epilogue_fn:
         epilogue_fn[c_type, 1, alignment=1]((x, y), accum.cast[c_type]())
@@ -500,7 +484,7 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -526,7 +510,7 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -583,8 +567,9 @@ def _amdgpu_matmul_config_from_block_shape[
     var num_warp_k_partitions: Int = 1
 
     # TODO(KERN-2432): Merge these configurations into the below logic.
+    # Both need K >= 2 * BK: the AMD kernel loads two K tiles before its loop.
     if block_m == 16 and a_type.is_float8() and transpose_b:
-        if block_n == 32:
+        if block_n == 32 and K >= 2 * 256:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(16, 32, 256),
                 warp_tile_shape=Index(16, 32, 256),
@@ -593,7 +578,7 @@ def _amdgpu_matmul_config_from_block_shape[
                 num_warp_k_partitions=4,
                 pdl_level=pdl_level,
             )
-        if block_n == 64:
+        if block_n == 64 and K >= 2 * 1024:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(16, 64, 1024),
                 warp_tile_shape=Index(16, 16, 1024),
@@ -646,7 +631,7 @@ def _amdgpu_matmul_config_from_block_shape[
 
 
 def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
-    comptime sm_count = GPUInfo.default_accelerator().sm_count
+    comptime sm_count = get_gpu_info().sm_count
 
     comptime block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
     comptime len_block_sizes = len(block_sizes_alias)
@@ -700,23 +685,12 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
     return block_shape_list^
 
 
-# TODO(MOCO-4720): the Apple and RDNA kernels take only the legacy epilogue
-# lambda; `_matmul_gpu_impl` must not hand them a bare value.
-comptime _matmul_gpu_needs_legacy_epilogue = (
-    DeviceContext.target.is_apple_gpu() or has_amd_rdna_gpu_accelerator()
-)
-
-
 @inline(.always)
 def _matmul_gpu[
     *,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     use_tf32: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, ...],
@@ -732,53 +706,57 @@ def _matmul_gpu[
     only, and only for shapes the fp32 split-K GEMV supports (compile-time
     error otherwise).
     """
-    # Kernels that take epilogue values get the lambda forwarded through a
-    # value; the lambda itself still reaches the Apple and RDNA ones.
-    comptime if case .Some(compute_lambda) = elementwise_compute_lambda_fn:
+    _matmul_gpu_impl[
+        use_tensor_core=use_tensor_core,
+        transpose_b=transpose_b,
+        use_tf32=use_tf32,
+        pdl_level=pdl_level,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+    ](c, a, b, no_epilogue_fn, no_compute_fn, ctx)
 
-        def compute_fn[
-            dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-            return compute_lambda[dtype, width, alignment=alignment](idx, val)
 
-        _matmul_gpu_impl[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-            has_epilogue_fn=False,
-            has_compute_fn=True,
-        ](c, a, b, no_epilogue_fn, compute_fn, ctx)
-    elif case .Some(store_lambda) = elementwise_lambda_fn:
+def _matmul_gpu[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    use_tensor_core: Bool = False,
+    transpose_b: Bool = False,
+    use_tf32: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """GPU matmul dispatch that stores the output through `epilogue_fn`.
 
-        def epilogue_fn[
-            dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: Coord, val: SIMD[dtype, width]):
-            store_lambda[dtype, width, alignment=alignment](idx, val)
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        use_tensor_core: Whether to use tensor cores where available.
+        transpose_b: Whether `b` is stored as `(N, K)`.
+        use_tf32: Whether fp32 inputs may use TF32 tensor cores.
+        pdl_level: Programmatic dependent launch level.
 
-        _matmul_gpu_impl[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=None,
-            pdl_level=pdl_level,
-            has_epilogue_fn=True,
-            has_compute_fn=False,
-        ](c, a, b, epilogue_fn, no_compute_fn, ctx)
-    else:
-        _matmul_gpu_impl[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=None,
-            elementwise_compute_lambda_fn=None,
-            pdl_level=pdl_level,
-            has_epilogue_fn=False,
-            has_compute_fn=False,
-        ](c, a, b, no_epilogue_fn, no_compute_fn, ctx)
+    Args:
+        c: Rank-2 tensor of shape `(M, N)`. Some dispatch paths use it as
+            scratch for the product.
+        a: Rank-2 input tensor of shape `(M, K)`.
+        b: Rank-2 input tensor of shape `(K, N)`, or `(N, K)` when
+            `transpose_b` is set.
+        epilogue_fn: Stores each output index and chunk.
+        ctx: Device context used to launch the kernels.
+    """
+    _matmul_gpu_impl[
+        use_tensor_core=use_tensor_core,
+        transpose_b=transpose_b,
+        use_tf32=use_tf32,
+        pdl_level=pdl_level,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](c, a, b, epilogue_fn, no_compute_fn, ctx)
 
 
 def _matmul_gpu[
@@ -798,10 +776,6 @@ def _matmul_gpu[
 ) raises:
     """GPU matmul dispatch that stores `compute_fn(idx, a @ b)` into `c`.
 
-    The kernels apply `compute_fn` in their epilogue, except on Apple and AMD
-    RDNA GPUs: those run the matmul into `c` and then apply `compute_fn` in
-    place in a separate elementwise pass.
-
     Parameters:
         ComputeFnType: Type of `compute_fn` (inferred).
         use_tensor_core: Whether to use tensor cores where available.
@@ -817,28 +791,14 @@ def _matmul_gpu[
         compute_fn: Maps each output index and value to the value to store.
         ctx: Device context used to launch the kernels.
     """
-    comptime if _matmul_gpu_needs_legacy_epilogue:
-        # TODO(MOCO-4720): the extra pass re-reads and re-writes `c`. Pass
-        # `compute_fn` to the Apple and RDNA kernels once they take epilogue
-        # values.
-        _matmul_gpu[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-        apply_compute_fn_in_place(c, compute_fn, ctx)
-    else:
-        _matmul_gpu_impl[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=None,
-            elementwise_compute_lambda_fn=None,
-            pdl_level=pdl_level,
-            has_epilogue_fn=False,
-            has_compute_fn=True,
-        ](c, a, b, no_epilogue_fn, compute_fn, ctx)
+    _matmul_gpu_impl[
+        use_tensor_core=use_tensor_core,
+        transpose_b=transpose_b,
+        use_tf32=use_tf32,
+        pdl_level=pdl_level,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+    ](c, a, b, no_epilogue_fn, compute_fn, ctx)
 
 
 def _matmul_gpu_impl[
@@ -849,8 +809,6 @@ def _matmul_gpu_impl[
     use_tensor_core: Bool,
     transpose_b: Bool,
     use_tf32: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    elementwise_compute_lambda_fn: Optional[elementwise_compute_lambda_type],
     pdl_level: PDLLevel,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
@@ -862,17 +820,6 @@ def _matmul_gpu_impl[
     compute_fn: ComputeFnType,
     ctx: DeviceContext,
 ) raises:
-    comptime has_legacy_epilogue = Bool(elementwise_lambda_fn) or Bool(
-        elementwise_compute_lambda_fn
-    )
-    comptime assert not has_legacy_epilogue or (
-        has_epilogue_fn or has_compute_fn
-    ), "a legacy epilogue lambda must come with the value that forwards it"
-    comptime assert (
-        has_legacy_epilogue
-        or not (has_epilogue_fn or has_compute_fn)
-        or not _matmul_gpu_needs_legacy_epilogue
-    ), "the Apple and RDNA matmuls take only legacy epilogue lambdas"
     comptime assert not (
         has_epilogue_fn and has_compute_fn
     ), "pass either epilogue_fn or compute_fn, not both"
@@ -890,9 +837,7 @@ def _matmul_gpu_impl[
     # Fail loudly instead of silently ignoring the precision request on
     # targets whose fp32 matmul paths have no TF32 opt-out wired up.
     comptime assert (
-        use_tf32
-        or a_type != .float32
-        or (ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05())
+        use_tf32 or a_type != .float32 or ctx.target._has_blackwell_tcgen05()
     ), "use_tf32=False is only implemented for the SM100 matmul dispatch"
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -935,35 +880,6 @@ def _matmul_gpu_impl[
 
     comptime matmul_supported_format = matmul_supported_format_amd if ctx.target.is_amd_gpu() else matmul_supported_format_nvidia
 
-    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
-    # `DeviceBuffer`-backed tile would reach the device as a host reference.
-    var c_epilogue = c.reshape(c.layout)
-
-    # The legacy-only kernels take a store lambda, so a compute lambda is
-    # wrapped into one that stores its result.
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_epilogue)
-    def compute_lambda_wrapper[
-        _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]):
-        comptime assert (
-            coords.rank == 2
-        ), "the matmul epilogue contract is rank 2"
-        comptime if case .Some(compute_lambda) = elementwise_compute_lambda_fn:
-            var output = compute_lambda(coords, val)
-            comptime assert (
-                output.dtype == c_type
-            ), "compute epilogue lambda output and c type mismatch"
-            c_epilogue.store[alignment=alignment * size_of[c_type]()](
-                coords,
-                rebind[SIMD[c_type, _width]](output),
-            )
-
-    comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](
-        compute_lambda_wrapper
-    ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
-
     # Helper for gemv_gpu dispatch — passes TileTensor directly.
     @inline(.always)
     def _gemv_dispatch() raises {imm}:
@@ -988,10 +904,16 @@ def _matmul_gpu_impl[
         and a_type == .bfloat16
     )
     var amdgpu_matmul_cond = ctx.target.is_amd_gpu() and n % 4 == 0
-    # AMD matmul kernels require K % BK == 0 and K >= 2*BK due to the
-    # 2-deep software pipeline prologue. BK = _bk_base (128 for FP8,
-    # 64 for BF16 on AMD). Use that as the minimum alignment/size gate
-    # so unsupported K values fall through to vendor BLAS.
+    # `AMDMatmul` (bf16 with transpose_b on CDNA) zero-fills the columns past
+    # K, so it takes any even K. An odd K would read the last element of the
+    # last row as zero, because the buffer resource bound is dword-granular.
+    # Every other AMD path still needs K % BK == 0 and K >= 2 * BK.
+    var amd_k_ragged = (
+        ctx.target.is_amd_gpu()
+        and transpose_b
+        and a_type == .bfloat16
+        and k % 2 == 0
+    )
     comptime amd_bk = _bk_base[a_type, True]() if ctx.target.is_amd_gpu() else 1
     var amd_k_cond = (
         k % amd_bk == 0 and k >= 2 * amd_bk
@@ -1000,9 +922,7 @@ def _matmul_gpu_impl[
     var multi_gemm_cond = (
         (m > 1 or ctx.target.is_amd_gpu())
         and (n % 128 == 0 or h100_matmul_cond or amdgpu_matmul_cond)
-        and k % 32 == 0
-        and k >= 128
-        and amd_k_cond
+        and (amd_k_ragged or (k % 32 == 0 and k >= 128 and amd_k_cond))
     )
 
     # Static shape queries from TileTensor. -1 means dynamic.
@@ -1041,7 +961,7 @@ def _matmul_gpu_impl[
             # decode reaches this line on every matmul.
             if (
                 apple_gemv_small_batch_supported(m, k)
-                and ctx.compute_capability() == 5
+                and ctx.compute_capability() >= 5
             ):
                 logger.info("Executing: Apple M5 small-batch GEMV kernel")
                 enqueue_apple_gemv[
@@ -1062,7 +982,7 @@ def _matmul_gpu_impl[
             m > 1
             and n >= 64
             and k >= 16
-            and ctx.compute_capability() == 5
+            and ctx.compute_capability() >= 5
             and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
         ):
             logger.info("Executing: Apple M5 simdgroup-tiled MATMUL kernel")
@@ -1070,8 +990,16 @@ def _matmul_gpu_impl[
                 a_type,
                 c_type=c_type,
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](c, a, rebind[BAsAType](b), ctx)
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](
+                c,
+                a,
+                rebind[BAsAType](b),
+                ctx,
+                epilogue_fn=epilogue_fn,
+                compute_fn=compute_fn,
+            )
             return
 
         # 8x8 `simdgroup_matrix` GEMM:
@@ -1088,15 +1016,16 @@ def _matmul_gpu_impl[
                 and k >= 16
                 and k % 16 == 0
                 and (
-                    ctx.compute_capability() != 5
+                    ctx.compute_capability() < 5
                     or (f32_in and not _apple_m5_allow_lossy_f32_matmul())
                 )
             ):
                 logger.info("Executing: Apple GPU 8x8 simdgroup MATMUL kernel")
                 enqueue_apple_matmul_8x8[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ](c, a, b, m, n, k, ctx)
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](c, a, b, m, n, k, ctx, epilogue_fn, compute_fn)
                 return
 
     @inline(.always)
@@ -1112,24 +1041,24 @@ def _matmul_gpu_impl[
         logger.info("Executing: Vendor BLAS")
         return _vendor_dispatch()
 
-    comptime if (ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05()):
+    comptime if ctx.target._has_blackwell_tcgen05():
         comptime if has_epilogue_fn:
             return matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
-                pdl_level=PDLLevel.ON,
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](c, a, b, epilogue_fn, ctx)
         elif has_compute_fn:
             return matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
-                pdl_level=PDLLevel.ON,
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](c, a, b, compute_fn, ctx)
         else:
             return matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
-                pdl_level=PDLLevel.ON,
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](c, a, b, ctx)
 
     comptime if ctx.default_device_info == H100:
@@ -1398,7 +1327,6 @@ def _matmul_gpu_impl[
                                 block_m_override=block_m,
                                 block_n_override=block_n,
                                 block_k_override=block_k,
-                                elementwise_lambda_fn=elementwise_lambda_wrapper,
                             ](a, b, c, ctx, workspace=workspace)
                         _ = workspace^
 
@@ -1430,7 +1358,6 @@ def _matmul_gpu_impl[
                                 block_m_override=block_m,
                                 block_n_override=block_n,
                                 block_k_override=block_k,
-                                elementwise_lambda_fn=elementwise_lambda_wrapper,
                             ](a, b, c, ctx)
 
                     comptime if (
@@ -1886,37 +1813,101 @@ def _matmul_gpu_impl[
             WARP_TILE_N: Int,
         ]() raises {imm}:
             comptime NUM_WARPS = WARPS_M * WARPS_N
-            comptime rdna_kernel = gemm_kernel_rdna[
-                c_type,
-                a_type,
-                b_type,
-                type_of(c).LayoutType,
-                type_of(a).LayoutType,
-                type_of(b).LayoutType,
-                type_of(c).Engine,
-                type_of(a).Engine,
-                type_of(b).Engine,
-                transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-                BLOCK_K=BLOCK_K,
-                BLOCK_M=BLOCK_M,
-                BLOCK_N=BLOCK_N,
-                WARPS_M=WARPS_M,
-                WARPS_N=WARPS_N,
-                WARP_TILE_M=WARP_TILE_M,
-                WARP_TILE_N=WARP_TILE_N,
-            ]
-
-            ctx.enqueue_function[rdna_kernel](
-                c,
-                a,
-                b,
-                Int32(m),
-                Int32(n),
-                Int32(k),
-                grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
-                block_dim=(NUM_WARPS * WARP_SIZE,),
-            )
+            comptime warp_size = ctx.default_device_info.warp_size
+            comptime if has_epilogue_fn:
+                comptime rdna_kernel = gemm_kernel_rdna_epilogue_fn[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).Engine,
+                    type_of(a).Engine,
+                    type_of(b).Engine,
+                    EpilogueFnType,
+                    transpose_b,
+                    BLOCK_K=BLOCK_K,
+                    BLOCK_M=BLOCK_M,
+                    BLOCK_N=BLOCK_N,
+                    WARPS_M=WARPS_M,
+                    WARPS_N=WARPS_N,
+                    WARP_TILE_M=WARP_TILE_M,
+                    WARP_TILE_N=WARP_TILE_N,
+                ]
+                ctx.enqueue_function[rdna_kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    host_args=(epilogue_fn,),
+                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                    block_dim=(NUM_WARPS * warp_size,),
+                )
+            elif has_compute_fn:
+                comptime rdna_kernel = gemm_kernel_rdna_compute_fn[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).Engine,
+                    type_of(a).Engine,
+                    type_of(b).Engine,
+                    ComputeFnType,
+                    transpose_b,
+                    BLOCK_K=BLOCK_K,
+                    BLOCK_M=BLOCK_M,
+                    BLOCK_N=BLOCK_N,
+                    WARPS_M=WARPS_M,
+                    WARPS_N=WARPS_N,
+                    WARP_TILE_M=WARP_TILE_M,
+                    WARP_TILE_N=WARP_TILE_N,
+                ]
+                ctx.enqueue_function[rdna_kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    host_args=(compute_fn,),
+                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                    block_dim=(NUM_WARPS * warp_size,),
+                )
+            else:
+                comptime rdna_kernel = gemm_kernel_rdna[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).Engine,
+                    type_of(a).Engine,
+                    type_of(b).Engine,
+                    transpose_b,
+                    BLOCK_K=BLOCK_K,
+                    BLOCK_M=BLOCK_M,
+                    BLOCK_N=BLOCK_N,
+                    WARPS_M=WARPS_M,
+                    WARPS_N=WARPS_N,
+                    WARP_TILE_M=WARP_TILE_M,
+                    WARP_TILE_N=WARP_TILE_N,
+                ]
+                ctx.enqueue_function[rdna_kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                    block_dim=(NUM_WARPS * warp_size,),
+                )
 
         # Large transpose_b shapes with BK=64. Two A+B tiles don't fit LDS at
         # this size, so the kernel uses its single-buffer register-staged
@@ -2109,9 +2100,13 @@ def _split_k_reduce_impl[
                     c_coord,
                     out,
                 )
-            c.store[width=simd_width]((c_coord[0], c_coord[1]), out)
+            c.store((c_coord[0], c_coord[1]), out)
 
-    elementwise[simd_width, target="gpu"](_reduce, (M, N), ctx)
+    elementwise[
+        simd_width,
+        target="gpu",
+        _trace_description="matmul_split_k_reduce",
+    ](_reduce, (M, N), ctx)
 
 
 @inline(.always)
@@ -2171,7 +2166,7 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=grid,
                 block_dim=kernel_config.num_threads(),
             )
@@ -2189,7 +2184,7 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=grid,
                 block_dim=kernel_config.num_threads(),
             )
@@ -2235,7 +2230,7 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=matmul_config.grid_dim(M, N),
                 block_dim=matmul_config.block_dim(),
             )
@@ -2253,7 +2248,7 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=matmul_config.grid_dim(M, N),
                 block_dim=matmul_config.block_dim(),
             )
@@ -2332,9 +2327,8 @@ def multistage_gemm[
     ctx: DeviceContext,
 ) raises:
     """TileTensor overload of `multistage_gemm`. Dispatches to a GEMM kernel
-    over the native TileTensor operands; the device-side pipeline bridges to
-    legacy `LayoutTensorIter` views internally (the multistage pipeline is
-    iterator-driven and has no TileTensor equivalent yet).
+    over the native TileTensor operands; the device-side pipeline is driven
+    by `TileTensorIter` views.
 
     Parameters:
         c_type: DType of the output tile `c` elements (inferred).
@@ -2378,6 +2372,9 @@ def multistage_gemm[
             c_linear_idx_type=c.linear_idx_type,
             a_linear_idx_type=a.linear_idx_type,
             b_linear_idx_type=b.linear_idx_type,
+            c_engine=c.Engine,
+            a_engine=a.Engine,
+            b_engine=b.Engine,
             config=config,
         ]
         ctx.enqueue_function[gemm_kernel_type](
@@ -2452,6 +2449,9 @@ def multistage_gemm[
             c_linear_idx_type=c.linear_idx_type,
             a_linear_idx_type=a.linear_idx_type,
             b_linear_idx_type=b.linear_idx_type,
+            c_engine=c.Engine,
+            a_engine=a.Engine,
+            b_engine=b.Engine,
             config=config,
             EpilogueFnType=EpilogueFnType,
         ]
@@ -2461,7 +2461,7 @@ def multistage_gemm[
             c,
             a,
             b,
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
@@ -2529,6 +2529,9 @@ def multistage_gemm[
             c_linear_idx_type=c.linear_idx_type,
             a_linear_idx_type=a.linear_idx_type,
             b_linear_idx_type=b.linear_idx_type,
+            c_engine=c.Engine,
+            a_engine=a.Engine,
+            b_engine=b.Engine,
             config=config,
             ComputeFnType=ComputeFnType,
         ]
@@ -2538,7 +2541,7 @@ def multistage_gemm[
             c,
             a,
             b,
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
@@ -2806,6 +2809,9 @@ def _multistage_gemm_runtime_impl[
                 c_linear_idx_type=c.linear_idx_type,
                 a_linear_idx_type=a.linear_idx_type,
                 b_linear_idx_type=b.linear_idx_type,
+                c_engine=c.Engine,
+                a_engine=a.Engine,
+                b_engine=b.Engine,
                 config=config,
                 EpilogueFnType=EpilogueFnType,
             ]
@@ -2813,7 +2819,7 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
@@ -2829,6 +2835,9 @@ def _multistage_gemm_runtime_impl[
                 c_linear_idx_type=c.linear_idx_type,
                 a_linear_idx_type=a.linear_idx_type,
                 b_linear_idx_type=b.linear_idx_type,
+                c_engine=c.Engine,
+                a_engine=a.Engine,
+                b_engine=b.Engine,
                 config=config,
                 ComputeFnType=ComputeFnType,
             ]
@@ -2836,7 +2845,7 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
@@ -2852,6 +2861,9 @@ def _multistage_gemm_runtime_impl[
                 c_linear_idx_type=c.linear_idx_type,
                 a_linear_idx_type=a.linear_idx_type,
                 b_linear_idx_type=b.linear_idx_type,
+                c_engine=c.Engine,
+                a_engine=a.Engine,
+                b_engine=b.Engine,
                 config=config,
             ]
             ctx.enqueue_function[gemm_kernel_type](

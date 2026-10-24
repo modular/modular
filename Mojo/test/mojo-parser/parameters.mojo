@@ -318,26 +318,6 @@ def autoparam_of_dependent_params[dp: DependentParams]():
     pass
 
 
-# CHECK-LABEL: lit.fn @"function_autoparam
-# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["f.__origins__`"][[F_LT:.*]]: origin.set, ["g.__origins__`1"][[G_LT:.*]]: origin.set, +
-# CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
-# CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
-def function_autoparam[f: def () capturing [_] -> None, g: def () capturing [_] -> None]():
-    @__parameter
-    def function():
-        pass
-
-    # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.generator<<>!kgen.func.literal<:!lit.fn<() capturing -> !kgen.none>
-    # CHECK-SAME: function_autoparam{{.*}}<:origin.set {}, :origin.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
-    comptime bind_one = function_autoparam[function, function]
-
-
-# CHECK-LABEL: lit.fn @"nonprop_capture_set
-# CHECK-SAME: ()"<f: !lit.generator<<"g.__origins__`2x": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
-def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () thin -> None]():
-    pass
-
-
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
 # CHECK-SAME: <["f.__origins__`"]*"f.__origins__`": origin.set, {{.*}} +, f: {{.*}}, x: !lit.struct<#ParameterList{{.*}} pos_vararg>
 def autoparam_param_vararg[f: def () thin [_] -> None, *x: Int]():
@@ -737,7 +717,7 @@ def useParamVariadics():
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
-  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
+  # HECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
   # HECK-NEXT: %defLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
   # HECK-NEXT: lit.ref.store [[TMP]], %defLet
   # var defLet = fnWithVariadics
@@ -978,7 +958,7 @@ struct InferredDefaultType[dtype: DType = .uint32](Movable where False):
 
 # CHECK-LABEL: lit.fn @"test_dependent_default_param_inference()"() -> !kgen.none
 def test_dependent_default_param_inference():
-    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, 1])"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
+    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, 1]){{.*}}"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
     _ = InferredDefaultType(3)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
@@ -1052,20 +1032,6 @@ def signature_inference[dt: DType, rank: Int]():
     # CHECK-SAME: :!lit.generator<<"width": !Int>(!lit.struct<#Abstraction <:!Int rank>
     # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!SIMDLength sugar_builtin(apply(:!lit.generator<("value": !Int, |) -> !SIMDLength> @std::@builtin::@stubs::@SIMDLength::@"__init__(::SIMD[DType.int, 1])", *(0,0)), {_mlir_value = to_builtin(:scalar<index> #lit.struct.extract<:!Int *(0,0), "_mlir_value">)})>>
     implicit_signature[func]()
-
-
-struct ClosureParam[lt: Origin[mut=True], f: def () capturing [lt._mlir_origin] -> None](Movable):
-  pass
-
-
-# CHECK-LABEL: lit.fn @"infer_implicit_params
-def infer_implicit_params(var p: ClosureParam):
-    # CHECK: lit.call {{.*}}ClosureParam::@"__init__
-    # CHECK-SAME: *, "move"
-    # CHECK-SAME: <:origin<true> *"p.lt._mlir_origin``",
-    # CHECK-SAME: :!lit.generator<:{mut *"p.lt._mlir_origin``"}:() capturing -> !kgen.none> *"p.f`2">
-    var tmp = p^
-    _ = tmp^
 
 
 trait ToInt:
@@ -1693,7 +1659,7 @@ def take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
 
 # CHECK-LABEL: call_variadic_pack_with_function
 def call_variadic_pack_with_function():
-  # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
+  # CHECK: [[FP:%.*]] = kgen.create_func_ptr[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
 

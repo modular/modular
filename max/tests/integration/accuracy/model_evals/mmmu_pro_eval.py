@@ -56,9 +56,11 @@ from datasets import load_dataset
 from eval_common import (
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
+    dump_config,
     dump_score,
     make_client,
+    response_fields,
     run_parallel,
     select_rows,
     strip_think,
@@ -230,10 +232,8 @@ def infer(
 ) -> dict[str, Any]:
     """Runs and grades a single MMMU-Pro sample."""
     content, all_choices, index2ans = build_content(sample, is_vision)
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(
-            model, [{"role": "user", "content": content}], params
-        )
+    resp = chat_completion(
+        client, model, [{"role": "user", "content": content}], params
     )
     choice = resp.choices[0]
     raw = strip_think(choice.message.content)
@@ -254,6 +254,7 @@ def infer(
         "raw": raw[:800],
         "completion_tokens": completion_tokens,
         "finish_reason": finish_reason,
+        **response_fields(choice),
     }
 
 
@@ -303,6 +304,7 @@ def run_config(
     row_ids: str | None,
     params: GenParams,
     workers: int,
+    base_url: str,
 ) -> dict[str, Any]:
     """Runs one MMMU-Pro config and writes its ``results.jsonl`` + ``score.json``.
 
@@ -315,9 +317,9 @@ def run_config(
     configs for the overall stats.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    indexed_dataset = select_rows(
-        list(load_mmmu_pro(hf_config)), limit, row_ids
-    )
+    dataset = list(load_mmmu_pro(hf_config))
+    indexed_dataset = select_rows(dataset, limit, row_ids)
+    dump_config(str(out_dir), base_url, params, indexed_dataset, dataset)
     is_vision = hf_config == "vision"
 
     def fn(item: tuple[int, dict[str, Any]]) -> dict[str, Any]:
@@ -327,13 +329,13 @@ def run_config(
     def on_error(
         item: tuple[int, dict[str, Any]], exc: Exception
     ) -> dict[str, Any]:
-        idx, _ = item
-        # Count a failed/timed-out request as wrong rather than dropping it (the
-        # sentinel ground truth can never match a real answer).
+        idx, sample = item
+        # Count a failed/timed-out request as wrong rather than dropping it:
+        # an empty prediction never matches an answer letter.
         return {
             "prompt_index": idx,
             "predicted": "",
-            "ground_truth": "__ERROR__",
+            "ground_truth": sample["answer"],
             "error": str(exc),
         }
 
@@ -483,6 +485,7 @@ def main(
             row_ids,
             params,
             workers,
+            base_url,
         )
     if run_vision:
         results_by_config["vision"] = run_config(
@@ -494,6 +497,7 @@ def main(
             row_ids,
             params,
             workers,
+            base_url,
         )
 
     scores = {k: v["accuracy"] for k, v in results_by_config.items()}

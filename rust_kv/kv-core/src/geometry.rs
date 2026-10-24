@@ -23,15 +23,16 @@
 //!
 //! - A cache is its position in the input slice rather than a string id, and
 //!   every per-cache output is in input order. Python's check that
-//!   `cache_sizes` and `row_sizes` name the same caches has no counterpart:
-//!   both live in one [`CachePage`].
+//!   `cache_sizes` and `stride_alignments` name the same caches has no
+//!   counterpart: both live in one [`CachePage`].
 //! - The search bounds Python reads from `MODULAR_KV_JENGA_*` at import are
 //!   a [`SearchBounds`] argument. This crate reads no environment.
 //! - Byte counts are `u64` and block counts `usize`. A least common multiple
 //!   that would grow past `u64` is larger than any budget, which is all
 //!   Python concludes from it too.
-//! - Costs are plain `f64` arithmetic, so they can differ from Python's in
-//!   the last bit.
+//! - The padding cap is checked in plain `f64` arithmetic, so a page right at
+//!   the cap can differ from Python's in the last bit. The cost a geometry is
+//!   chosen on is whole bytes, as in Python.
 
 use std::{collections::BTreeSet, fmt};
 
@@ -46,10 +47,10 @@ const TIB: u64 = 1024 * GIB;
 /// here are the ones it falls back to when the variable is unset.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SearchBounds {
-    /// The most of a page any one cache may spend on bytes the kernel never
-    /// reads. It caps the search rather than the result: a geometry needing
-    /// more is not considered. `MODULAR_KV_JENGA_MAX_PADDING_FRACTION`, zero
-    /// by default, so a geometry is padded only when asked to.
+    /// The most of a page any one cache with a stride alignment may spend on
+    /// bytes the kernel never reads. It caps the search rather than the
+    /// result: a geometry needing more is not considered.
+    /// `MODULAR_KV_JENGA_MAX_PADDING_FRACTION`, 10% by default.
     pub max_padding_fraction: f64,
     /// The largest huge block the search considers. Past it the allocation
     /// quantum is coarse enough that stranding beats any padding it saves.
@@ -65,7 +66,7 @@ pub struct SearchBounds {
 impl Default for SearchBounds {
     fn default() -> Self {
         SearchBounds {
-            max_padding_fraction: 0.0,
+            max_padding_fraction: 0.1,
             max_huge_page_bytes: 128 * MIB,
             max_tiling_ratio: 256,
         }
@@ -77,10 +78,9 @@ impl Default for SearchBounds {
 pub struct CachePage {
     /// Bytes one page holds, before padding.
     pub data_bytes: u64,
-    /// The granularity a padded page must be a whole number of: a row,
-    /// `num_heads * head_size * dtype_size`, widened where a kernel needs more
-    /// alignment than a row gives. A leaf not addressed by row reports 1.
-    pub row_bytes: u64,
+    /// The bytes a padded page stride must be a multiple of, or `None` for a
+    /// cache that must stay packed. Python's `KVLeafRegion.stride_alignment`.
+    pub stride_alignment: Option<u64>,
 }
 
 /// A huge-block geometry every cache tiles exactly, once padded.
@@ -100,8 +100,9 @@ pub struct JengaGeometry {
     pub huge_page_bytes: u64,
     /// How many little pages of each cache one huge block holds.
     pub ratios: Vec<usize>,
-    /// Each cache's page size after padding. Every value divides
-    /// `huge_page_bytes` and is a whole number of that cache's rows.
+    /// Each cache's page stride after padding. Every value divides
+    /// `huge_page_bytes`, and is either the cache's own page size or a
+    /// multiple of its stride alignment.
     pub padded_sizes: Vec<u64>,
 }
 
@@ -127,20 +128,10 @@ pub enum GeometryError {
         /// The cache, by its position in the input.
         cache: usize,
     },
-    /// A cache's row holds no bytes.
-    ZeroRowSize {
+    /// A cache's stride alignment is zero.
+    ZeroStrideAlignment {
         /// The cache, by its position in the input.
         cache: usize,
-    },
-    /// A cache's page is not a whole number of its rows, so the kernel has no
-    /// row index for where a page starts.
-    PartialRow {
-        /// The cache, by its position in the input.
-        cache: usize,
-        /// Its page size.
-        data_bytes: u64,
-        /// Its row size.
-        row_bytes: u64,
     },
     /// The budget is zero.
     ZeroBudget,
@@ -177,18 +168,9 @@ impl fmt::Display for GeometryError {
             GeometryError::ZeroPageSize { cache } => {
                 write!(f, "cache_sizes must be positive, found 0 for cache {cache}")
             }
-            GeometryError::ZeroRowSize { cache } => {
-                write!(f, "row_sizes must be positive, found 0 for cache {cache}")
-            }
-            GeometryError::PartialRow {
-                cache,
-                data_bytes,
-                row_bytes,
-            } => write!(
+            GeometryError::ZeroStrideAlignment { cache } => write!(
                 f,
-                "cache {cache} holds {data_bytes} bytes per page, which is not a whole number \
-                 of its {row_bytes}-byte rows. A page the kernel addresses by row cannot be a \
-                 fraction of one."
+                "stride_alignments must be positive or None, found 0 for cache {cache}"
             ),
             GeometryError::ZeroBudget => write!(f, "available_bytes must be positive, found 0"),
             GeometryError::BudgetBelowExactTiling {
@@ -226,8 +208,8 @@ impl fmt::Display for GeometryError {
             } => write!(
                 f,
                 "{} is too small to build a pool from the page sizes ({}), even allowing \
-                 each page to pad by {:.0}% to tile a smaller huge block. Exact tiling would \
-                 take {} per huge block.",
+                 each page with a stride alignment to pad by {:.0}% to tile a smaller huge \
+                 block. Exact tiling would take {} per huge block.",
                 human_bytes(*available_bytes),
                 list_pages(cache_sizes),
                 max_padding_fraction * 100.0,
@@ -287,17 +269,15 @@ pub fn compute_jenga_ratios(
 
 /// Fits a byte budget to a huge-block geometry, padding pages to get there.
 ///
-/// The exact-tiling geometry [`compute_jenga_ratios`] computes is priced first
-/// and wins whenever it is competitive, so a model whose page sizes already
-/// divide each other is allocated exactly as without padding. When a coprime
-/// factor makes that least common multiple too coarse to allocate -- the case
-/// that takes a vision tower pooled with a text cache to a 23.7 GiB huge
-/// block -- the search pads each page up to a divisor of a smaller block
-/// instead, within `bounds`.
+/// Only a cache with a stride alignment is padded. The search takes the huge
+/// block with the fewest padding bytes, then the smaller block, so the exact
+/// geometry wins whenever it fits under the ceiling. The budget only rules
+/// out blocks it cannot hold two of, so pools with different budgets agree
+/// on every page stride.
 ///
 /// # Errors
-/// If there is no cache, a page, a row or the budget is zero, a page is not a
-/// whole number of its rows, or no geometry fits the budget.
+/// If there is no cache, a page, an alignment or the budget is zero, or no
+/// geometry fits the budget.
 pub fn plan_jenga_geometry(
     available_bytes: u64,
     pages: &[CachePage],
@@ -310,62 +290,49 @@ pub fn plan_jenga_geometry(
     if let Some(cache) = pages.iter().position(|page| page.data_bytes == 0) {
         return Err(GeometryError::ZeroPageSize { cache });
     }
-    if let Some(cache) = pages.iter().position(|page| page.row_bytes == 0) {
-        return Err(GeometryError::ZeroRowSize { cache });
-    }
-    if let Some((cache, page)) = pages
+    if let Some(cache) = pages
         .iter()
-        .enumerate()
-        .find(|(_, page)| !page.data_bytes.is_multiple_of(page.row_bytes))
+        .position(|page| page.stride_alignment == Some(0))
     {
-        return Err(GeometryError::PartialRow {
-            cache,
-            data_bytes: page.data_bytes,
-            row_bytes: page.row_bytes,
-        });
+        return Err(GeometryError::ZeroStrideAlignment { cache });
     }
     if available_bytes == 0 {
         return Err(GeometryError::ZeroBudget);
     }
 
     let cache_sizes: Vec<u64> = pages.iter().map(|page| page.data_bytes).collect();
-    let mut best: Option<(f64, u64, Vec<u64>)> = None;
-
+    let min_blocks = min_huge_blocks(include_null_block);
     let exact = lcm_of(cache_sizes.iter().copied());
+    let mut candidates =
+        huge_page_candidates(pages, bounds.max_huge_page_bytes, bounds.max_tiling_ratio);
     if let Some(exact) = exact
-        && let Some(cost) = geometry_cost(
-            available_bytes,
-            exact,
-            &cache_sizes,
-            &cache_sizes,
-            include_null_block,
-        )
+        && exact <= bounds.max_huge_page_bytes
     {
-        best = Some((cost, exact, cache_sizes.clone()));
+        candidates.push(exact);
     }
 
-    let ceiling = bounds.max_huge_page_bytes.min(available_bytes / 2);
-    for huge_page_bytes in huge_page_candidates(pages, ceiling, bounds.max_tiling_ratio) {
+    let data_total: u64 = cache_sizes.iter().sum();
+    let mut best: Option<(u64, u64, Vec<u64>)> = None;
+    for huge_page_bytes in candidates {
+        if available_bytes / huge_page_bytes < min_blocks {
+            continue;
+        }
         let Some(padded) = fit_huge_page(huge_page_bytes, pages, bounds.max_padding_fraction)
         else {
             continue;
         };
-        let Some(cost) = geometry_cost(
-            available_bytes,
-            huge_page_bytes,
-            &cache_sizes,
-            &padded,
-            include_null_block,
-        ) else {
-            continue;
-        };
-        // Ties go to the smaller block: same cost, finer allocation quantum.
-        if best
-            .as_ref()
-            .is_none_or(|(best_cost, ..)| cost < *best_cost)
-        {
+        let cost = padded.iter().sum::<u64>() - data_total;
+        if best.as_ref().is_none_or(|(best_cost, best_huge, _)| {
+            (cost, huge_page_bytes) < (*best_cost, *best_huge)
+        }) {
             best = Some((cost, huge_page_bytes, padded));
         }
+    }
+    if best.is_none()
+        && let Some(exact) = exact
+        && available_bytes / exact >= min_blocks
+    {
+        best = Some((0, exact, cache_sizes.clone()));
     }
 
     let Some((_cost, huge_page_bytes, padded_sizes)) = best else {
@@ -390,17 +357,25 @@ pub fn plan_jenga_geometry(
 /// Returns the smallest page holding `data_bytes` that tiles the block.
 ///
 /// A page must divide `huge_page_bytes`, so a huge block holds a whole number
-/// of them, and must be a whole number of rows, because `PagedKVCache`
-/// expresses paging as row arithmetic: `_stride()` divides the page stride by
-/// `num_heads * head_size`, and that division has to be exact.
+/// of them. One larger than the data must also be a multiple of
+/// `stride_alignment`, the strides the cache's kernels can address; a cache
+/// without one gets only its data.
 ///
 /// Searching the ratio rather than the page keeps this cheap: the ratio
 /// cannot exceed `huge_page_bytes / data_bytes`, a few hundred at the sizes
 /// pools allocate, and the largest valid ratio yields the smallest page.
-fn smallest_tiling_page(huge_page_bytes: u64, data_bytes: u64, row_bytes: u64) -> Option<u64> {
+fn smallest_tiling_page(
+    huge_page_bytes: u64,
+    data_bytes: u64,
+    stride_alignment: Option<u64>,
+) -> Option<u64> {
+    if huge_page_bytes.is_multiple_of(data_bytes) {
+        return Some(data_bytes);
+    }
+    let alignment = stride_alignment?;
     (1..=huge_page_bytes / data_bytes).rev().find_map(|ratio| {
         let page = huge_page_bytes / ratio;
-        (huge_page_bytes.is_multiple_of(ratio) && page.is_multiple_of(row_bytes)).then_some(page)
+        (huge_page_bytes.is_multiple_of(ratio) && page.is_multiple_of(alignment)).then_some(page)
     })
 }
 
@@ -416,7 +391,8 @@ fn fit_huge_page(
     pages
         .iter()
         .map(|page| {
-            let padded = smallest_tiling_page(huge_page_bytes, page.data_bytes, page.row_bytes)?;
+            let padded =
+                smallest_tiling_page(huge_page_bytes, page.data_bytes, page.stride_alignment)?;
             // Not `<=`: a NaN bound rejects nothing in Python.
             if padded as f64 / page.data_bytes as f64 - 1.0 > max_padding_fraction {
                 None
@@ -427,54 +403,22 @@ fn fit_huge_page(
         .collect()
 }
 
-/// Returns the share of the budget a geometry cannot put cache data in.
-///
-/// Two terms, and they pull against each other -- which is why the huge block
-/// is chosen on their sum rather than on padding alone. A larger block lets
-/// every page land closer above its data (less padding) but quantizes the
-/// budget more coarsely, so it strands a bigger remainder and spends more on
-/// the null block. Minimizing padding alone walks straight into the coarse end.
-///
-/// `None` when the budget cannot hold the blocks the pool needs.
-fn geometry_cost(
-    available_bytes: u64,
-    huge_page_bytes: u64,
-    cache_sizes: &[u64],
-    padded_sizes: &[u64],
-    include_null_block: bool,
-) -> Option<f64> {
-    let num_huge_blocks = available_bytes / huge_page_bytes;
-    if num_huge_blocks < min_huge_blocks(include_null_block) {
-        return None;
-    }
-
-    let padding = cache_sizes
-        .iter()
-        .zip(padded_sizes)
-        .map(|(&data, &padded)| padded as f64 / data as f64 - 1.0)
-        .sum::<f64>()
-        / cache_sizes.len() as f64;
-    // With a null block there are at least two huge blocks, so adding one back
-    // stays under the budget.
-    let mut unusable = available_bytes - num_huge_blocks * huge_page_bytes;
-    if include_null_block {
-        unusable += huge_page_bytes;
-    }
-    Some(padding + unusable as f64 / available_bytes as f64)
-}
-
 /// Returns the huge-block sizes worth pricing, smallest first.
 ///
-/// Every page is a whole number of its own rows and divides the huge block, so
-/// the block is necessarily a multiple of the rows' least common multiple --
-/// which is the grid the search runs on. On that grid the sizes that matter
+/// A packed page divides the huge block and a padded one is a multiple of its
+/// alignment, so the block is a multiple of the lcm of both -- which is the
+/// grid the search runs on. On that grid the sizes that matter
 /// are the ones where some cache tiles tightly: for each cache and each small
 /// ratio, the smallest grid point at or above `ratio * page`. That keeps the
 /// candidate set in the low thousands while still containing the optimum,
 /// since a geometry is only as good as its worst-padded leaf.
 fn huge_page_candidates(pages: &[CachePage], ceiling: u64, max_tiling_ratio: u64) -> Vec<u64> {
     // A grid past `u64::MAX` has no point under the ceiling.
-    let Some(grid) = lcm_of(pages.iter().map(|page| page.row_bytes)) else {
+    let Some(grid) = lcm_of(
+        pages
+            .iter()
+            .map(|page| page.stride_alignment.unwrap_or(page.data_bytes)),
+    ) else {
         return Vec::new();
     };
     let floor = pages.iter().map(|page| page.data_bytes).max().unwrap_or(0);

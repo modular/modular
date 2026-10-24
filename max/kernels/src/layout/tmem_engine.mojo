@@ -98,10 +98,6 @@ lane."""
 def _grid_index(addr: UInt32) -> UInt32:
     """Returns the cell `addr` encodes as a flat lane-first index on the
     grid, `col * TMEM_NUM_LANES + lane`.
-
-    The index is 32-bit like the address, so view offsets cost the same
-    32-bit adds and shifts as the hand-written address arithmetic they
-    replace.
     """
     var lane = addr >> _LANE_SHIFT
     var col = addr & ((1 << _LANE_SHIFT) - 1)
@@ -194,7 +190,7 @@ struct TMemAccessShape(EnumLike, Equatable, TrivialRegisterPassable):
         "BLOCK_16X256B".value,
     ].values
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -545,14 +541,14 @@ struct TMemEngine(TensorEngine):
         Returns:
             A handle at the cell `offset` positions after `storage`'s.
         """
-        # Sum the components at address width; a view hands over a folded
-        # `ComptimeInt` part and a runtime part, and both fit in 32 bits.
-        var grid_offset = UInt32(0)
+        # Encoding is additive while no lane sum reaches `TMEM_NUM_LANES`,
+        # which holds for non-negative components of a cell on the grid, so
+        # each component is encoded on its own: a folded `ComptimeInt` part
+        # becomes a constant, and the address is never decoded.
+        var addr = storage.addr
         comptime for i in range(offset_coord.flat_rank):
-            grid_offset += UInt32(Int(offset_coord[i].value()))
-        return type_of(storage)(
-            _encode(_grid_index(storage.addr) + grid_offset)
-        )
+            addr += _encode(UInt32(Int(offset_coord[i])))
+        return type_of(storage)(addr)
 
     @staticmethod
     def _check_copy[

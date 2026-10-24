@@ -16,7 +16,6 @@
 # An `__enum` is a struct marked `isEnum` whose cases are `lit.enum.case` ops
 # in its body, in declaration order, each with the payload types written in its
 # parentheses (none for a case without a payload) and its doc string, if any.
-# It has no fields.
 
 # CHECK-DAG: [[RED_DOC:#doc_string[0-9]*]] = #lit.doc.string<"Red.",
 # CHECK-DAG: [[RGB_DOC:#doc_string[0-9]*]] = #lit.doc.string<"\0A    A color by its components.\0A    ",
@@ -28,7 +27,6 @@
 # CHECK: lit.enum.case red : []{{$}}
 # CHECK-NEXT: lit.enum.case green : []{{$}}
 # CHECK-NEXT: lit.enum.case rgb : {{\[}}[[INT:!alias_Int[0-9]*]], [[INT]], [[INT]]]{{$}}
-# CHECK-NOT: lit.struct.field
 # CHECK: lit.fn @"is_red(
 # CHECK: lit.fn @"make()"(){{.*}}isStatic
 # CHECK: lit.alias.decl *"N`"
@@ -47,12 +45,12 @@ __enum Color:
     comptime N = 3
 
 
-# CHECK-LABEL: lit.struct.decl @Result<T: !AnyType, E: !AnyType>
+# CHECK-LABEL: lit.struct.decl @Result<
+# CHECK-SAME: T: [[BOUND:!AnyType_Deinitable_Movable]], E: [[BOUND]]>
 # CHECK-SAME: isEnum
-# CHECK: lit.enum.case success : [!kgen.param<:!AnyType T>]
-# CHECK-NEXT: lit.enum.case failure : [!kgen.param<:!AnyType E>]
-# CHECK-NOT: lit.struct.field
-__enum Result[T: AnyType, E: AnyType](Movable):
+# CHECK: lit.enum.case success : [!kgen.param<:[[BOUND]] T>]
+# CHECK-NEXT: lit.enum.case failure : [!kgen.param<:[[BOUND]] E>]
+__enum Result[T: Movable & Deinitable, E: Movable & Deinitable](Movable):
     case success(Self.T)
     case failure(Self.E)
 

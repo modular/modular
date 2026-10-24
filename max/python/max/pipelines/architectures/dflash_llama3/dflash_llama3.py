@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.nn.attention import AttentionWithRope
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.embedding import Embedding
@@ -32,6 +32,9 @@ from ..llama3.model_config import Llama3Config, create_rope_embedding
 
 class DFlashLlama3(Module):
     """DFlash draft transformer for a Llama3 target."""
+
+    supports_zero_draft_rows = True
+    ctx_at_draft_cache_length = False
 
     def __init__(
         self,
@@ -192,17 +195,21 @@ class DFlashLlama3(Module):
         self.embed_tokens: Embedding | None = None
         self.lm_head: Callable[[TensorValue], TensorValue] | None = None
 
-    def project_target_hidden(
-        self, target_hs_concat: TensorValue
-    ) -> TensorValue:
-        return self.hidden_norm(self.fc(target_hs_concat))
-
-    def materialize_kv(
+    def materialize(
         self,
-        ctx_hidden: TensorValue,
-        input_row_offsets: TensorValue,
-        kv_collection: PagedCacheValues,
+        target_hidden: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        signal_buffers: Sequence[BufferValue],
     ) -> None:
+        """Writes the context's K/V, on the draft's one device."""
+        del signal_buffers
+        (hidden,), (offsets,), (kv,) = (
+            target_hidden,
+            input_row_offsets,
+            kv_collections,
+        )
+        ctx_hidden = self.hidden_norm(self.fc(hidden))
         freqs_cis = self.rope.freqs_cis
         for layer_idx, layer in enumerate(self.layers):
             assert isinstance(layer, TransformerBlock)
@@ -213,37 +220,51 @@ class DFlashLlama3(Module):
                     layer_idx, DType.uint32, device=DeviceRef.CPU()
                 ),
                 hidden=ctx_hidden,
-                kv_collection=kv_collection,
+                kv_collection=kv,
                 freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
+                input_row_offsets=offsets,
             )
 
     def __call__(
         self,
-        input_embeds: TensorValue,
-        kv_collection: PagedCacheValues,
-        input_row_offsets: TensorValue,
-    ) -> TensorValue:
+        input_embeds: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        input_row_offsets: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
         # Alias for forward_block to satisfy the Module ABC.
         return self.forward_block(
-            input_embeds, kv_collection, input_row_offsets
+            input_embeds, kv_collections, input_row_offsets, signal_buffers
         )
+
+    def mask_embeddings(
+        self, target_mask: Sequence[TensorValue]
+    ) -> list[TensorValue]:
+        """Returns the target's embedding of the mask token, as trained."""
+        return list(target_mask)
 
     def forward_block(
         self,
-        input_embeds: TensorValue,
-        kv_collection: PagedCacheValues,
-        input_row_offsets: TensorValue,
-    ) -> TensorValue:
-        h = input_embeds
+        input_embeds: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        input_row_offsets: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Runs the block, on the draft's one device."""
+        del signal_buffers
+        (h,), (kv,), (offsets,) = (
+            input_embeds,
+            kv_collections,
+            input_row_offsets,
+        )
         freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             assert isinstance(layer, TransformerBlock)
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
-                kv_collection,
+                kv,
                 freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
+                input_row_offsets=offsets,
             )
-        return self.norm(h)
+        return [self.norm(h)]

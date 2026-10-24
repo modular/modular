@@ -17,7 +17,8 @@ from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
-from layout import TileTensor, Coord, Idx, row_major
+from std.memory.alloc import unsafe_alloc
+from layout import TileTensor, Idx, row_major
 
 comptime BLOCK_DIM = 4
 
@@ -52,14 +53,12 @@ def stencil2d(
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
         var idx = tidy * num_cols + tidx
         b.store(
-            Coord(idx),
-            Float32(coeff0) * a.load[width=1](Coord(idx - 1))
-            + Float32(coeff1) * a.load[width=1](Coord(idx))
-            + Float32(coeff2) * a.load[width=1](Coord(idx + 1))
-            + Float32(coeff3)
-            * a.load[width=1](Coord((tidy - 1) * num_cols + tidx))
-            + Float32(coeff4)
-            * a.load[width=1](Coord((tidy + 1) * num_cols + tidx)),
+            (idx,),
+            Float32(coeff0) * a[idx - 1]
+            + Float32(coeff1) * a[idx]
+            + Float32(coeff2) * a[idx + 1]
+            + Float32(coeff3) * a[(tidy - 1) * num_cols + tidx]
+            + Float32(coeff4) * a[(tidy + 1) * num_cols + tidx],
         )
 
 
@@ -103,53 +102,48 @@ def stencil2d_smem(
 
     # Each element is loaded in shared memory.
     a_shared.store(
-        Coord(lindex_y, lindex_x),
-        a.load[width=1](Coord(tidy * num_cols + tidx)),
+        (lindex_y, lindex_x),
+        a[tidy * num_cols + tidx],
     )
 
     # First column also loads elements left and right to the block.
     if thread_idx.x == 0:
         var idx = tidy * num_cols + (tidx - 1)
         a_shared.store(
-            Coord(lindex_y, Idx[0]),
-            a.load[width=1](Coord(idx)) if 0 <= idx < arr_size else 0,
+            (lindex_y, Idx[0]),
+            a[idx] if 0 <= idx < arr_size else 0,
         )
 
         idx = tidy * num_cols + tidx + BLOCK_DIM
         a_shared.store(
-            Coord(lindex_y, BLOCK_DIM + 1),
-            a.load[width=1](Coord(idx)) if 0 <= idx < arr_size else 0,
+            (lindex_y, BLOCK_DIM + 1),
+            a[idx] if 0 <= idx < arr_size else 0,
         )
 
     # First row also loads elements above and below the block.
     if thread_idx.y == 0:
         var idx = (tidy - 1) * num_cols + tidx
         a_shared.store(
-            Coord(Idx[0], lindex_x),
-            a.load[width=1](Coord(idx)) if 0 < idx < arr_size else 0,
+            (Idx[0], lindex_x),
+            a[idx] if 0 < idx < arr_size else 0,
         )
 
         idx = (tidy + BLOCK_DIM) * num_cols + tidx
         a_shared.store(
-            Coord(BLOCK_DIM + 1, lindex_x),
-            a.load[width=1](Coord(idx)) if 0 <= idx < arr_size else 0,
+            (BLOCK_DIM + 1, lindex_x),
+            a[idx] if 0 <= idx < arr_size else 0,
         )
 
     barrier()
 
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
         b.store(
-            Coord(tidy * num_cols + tidx),
-            Float32(coeff0)
-            * a_shared.load[width=1](Coord(lindex_y, lindex_x - 1))
-            + Float32(coeff1)
-            * a_shared.load[width=1](Coord(lindex_y, lindex_x))
-            + Float32(coeff2)
-            * a_shared.load[width=1](Coord(lindex_y, lindex_x + 1))
-            + Float32(coeff3)
-            * a_shared.load[width=1](Coord(lindex_y - 1, lindex_x))
-            + Float32(coeff4)
-            * a_shared.load[width=1](Coord(lindex_y + 1, lindex_x)),
+            (tidy * num_cols + tidx,),
+            Float32(coeff0) * a_shared[lindex_y, lindex_x - 1]
+            + Float32(coeff1) * a_shared[lindex_y, lindex_x]
+            + Float32(coeff2) * a_shared[lindex_y, lindex_x + 1]
+            + Float32(coeff3) * a_shared[lindex_y - 1, lindex_x]
+            + Float32(coeff4) * a_shared[lindex_y + 1, lindex_x],
         )
 
 
@@ -168,8 +162,8 @@ def run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     comptime num_rows = 8
     comptime num_cols = 8
 
-    var a_host = alloc[Float32](m)
-    var b_host = alloc[Float32](m)
+    var a_host = unsafe_alloc[Float32](m)
+    var b_host = unsafe_alloc[Float32](m)
 
     for i in range(m):
         a_host[i] = Float32(i)

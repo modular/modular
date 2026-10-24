@@ -20,6 +20,8 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
         "//max/python/max/pipelines/lib",
     ],
 )

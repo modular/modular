@@ -13,25 +13,19 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
 )
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.speculative._dflash import dflash_draft_width
 
-from ..llama3 import weight_adapters as llama3_weight_adapters
-from ..llama3.batch_processor import Llama3BatchProcessor
-from ..llama3.model_config import Llama3Config
-from .model import DFlashLlama3Model
+from ..llama3 import weight_adapters
+from .model import DFlashLlama3ArchConfig
 
-# Registers the DFlash draft model's HuggingFace architecture name
-# (``DFlashDraftModel``) with MAX's pipeline registry. The actual
-# pipeline_model is a placeholder that raises on execute — DFlash drafts
-# are only ever run through UnifiedDflashLlama3Model. This registration
-# exists so that PipelineConfig validation succeeds when the recipe YAML
-# path is used (the equivalent in-code rewrite at config.py:603-613 only
-# fires for the kwargs path, not the recipe-YAML path).
+# The DFlash draft checkpoint's architecture. It has no pipeline model: its
+# arch config builds the draft for a unified spec-decode graph, and the width
+# it was trained for comes from its checkpoint.
 dflash_llama_arch = SupportedArchitecture(
     name="DFlashDraftModel",
     example_repo_ids=[
@@ -42,18 +36,17 @@ dflash_llama_arch = SupportedArchitecture(
         "bfloat16",
         "float32",
     },
-    pipeline_model=DFlashLlama3Model,
-    batching=Llama3BatchProcessor,
+    pipeline_model=None,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=True,
+    multi_gpu_supported=False,
     weight_adapters={
-        WeightsFormat.safetensors: llama3_weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
-    config=Llama3Config,
-    memory_planner=PagedMemoryPlanner,
+    config=DFlashLlama3ArchConfig,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
+    checkpoint_draft_width=dflash_draft_width,
 )

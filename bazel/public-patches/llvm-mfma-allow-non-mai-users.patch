@@ -1,0 +1,33 @@
+diff --git a/llvm/lib/Target/AMDGPU/GCNSchedStrategy.cpp b/llvm/lib/Target/AMDGPU/GCNSchedStrategy.cpp
+index 3dd468772e9b..0e9f6cfcd8e7 100644
+--- a/llvm/lib/Target/AMDGPU/GCNSchedStrategy.cpp
++++ b/llvm/lib/Target/AMDGPU/GCNSchedStrategy.cpp
+@@ -2378,11 +2378,24 @@ bool RewriteMFMAFormStage::isRewriteCandidate(MachineInstr *MI) const {
+     return false;
+   if (AMDGPU::getAGPRFormOp(MI->getOpcode()) == -1)
+     return false;
+-  // Reject candidates whose users force an unavoidable bridge copy.
++  // Rewriting reclassifies the result register to AGPR wholesale. If that
++  // register has any non-MAI definition elsewhere -- e.g. a VALU op reusing the
++  // vreg for address scratch (post-SSA), or, for a tied accumulator, a non-MAI
++  // src2 def -- it cannot legally become AGPR and the machine verifier rejects
++  // the VALU def. Such a def cannot be bridged (it *is* the value producer), so
++  // reject the candidate. Non-MAI *users* of the result are still admitted:
++  // they are bridged by the result-copy (Case 2/3) machinery below. This
++  // replaces the #198555 reject of any non-MAI user, which also disabled the
++  // bridgeable result-escape case.
+   Register DstReg = MI->getOperand(0).getReg();
+-  for (const MachineInstr &UseMI : DAG.MRI.use_nodbg_instructions(DstReg)) {
+-    if (!TII->isMAI(UseMI) && !UseMI.isCopy())
+-      return false;
++  for (const MachineInstr &Def : DAG.MRI.def_instructions(DstReg)) {
++    if (&Def == MI || TII->isMAI(Def) || Def.isCopy())
++      continue;
++    unsigned Opc = Def.getOpcode();
++    if (Opc == AMDGPU::AV_MOV_B32_IMM_PSEUDO ||
++        Opc == AMDGPU::AV_MOV_B64_IMM_PSEUDO)
++      continue;
++    return false;
+   }
+   return true;
+ }

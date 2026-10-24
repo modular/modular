@@ -176,6 +176,7 @@ def test_load_and_mma_and_multiply_operands[
     transpose_b: Bool,
     k_group_size: Int = 1,
 ](ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime M = shape[0]
     comptime N = shape[1]
     comptime K = shape[2] * k_group_size
@@ -187,9 +188,9 @@ def test_load_and_mma_and_multiply_operands[
 
     var d_device_mma = ctx.enqueue_create_buffer[dst_dtype](M * N)
 
-    var a_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
-    var b_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
-    var c_lane_device = ctx.enqueue_create_buffer[dst_dtype](WARP_SIZE * 4)
+    var a_lane_device = ctx.enqueue_create_buffer[dtype](warp_size)
+    var b_lane_device = ctx.enqueue_create_buffer[dtype](warp_size)
+    var c_lane_device = ctx.enqueue_create_buffer[dst_dtype](warp_size * 4)
 
     comptime layout_mk = row_major[M, K]()
     comptime layout_mn = row_major[M, N]()
@@ -216,20 +217,20 @@ def test_load_and_mma_and_multiply_operands[
     var d_dev = TileTensor(d_device, row_major(Idx[M], Idx[N]))
     var d_dev_mma = TileTensor(d_device_mma, row_major(Idx[M], Idx[N]))
 
-    comptime layout_warp = row_major[WARP_SIZE]()
-    comptime layout_warp4 = row_major[WARP_SIZE, 4]()
+    comptime layout_warp = row_major[warp_size]()
+    comptime layout_warp4 = row_major[warp_size, 4]()
 
     var a_lane_host_managed = HostDeviceTileTensor[dtype](layout_warp)
     var a_lane_host = a_lane_host_managed.host_tensor()
-    var a_lane_dev = TileTensor(a_lane_device, row_major(Idx[WARP_SIZE]))
+    var a_lane_dev = TileTensor(a_lane_device, row_major(Idx[warp_size]))
     var b_lane_host_managed = HostDeviceTileTensor[dtype](layout_warp)
     var b_lane_host = b_lane_host_managed.host_tensor()
-    var b_lane_dev = TileTensor(b_lane_device, row_major(Idx[WARP_SIZE]))
+    var b_lane_dev = TileTensor(b_lane_device, row_major(Idx[warp_size]))
 
     var c_lane_host_managed = HostDeviceTileTensor[dst_dtype](layout_warp4)
     var c_lane_host = c_lane_host_managed.host_tensor()
     var c_lane_dev = TileTensor(
-        c_lane_device, row_major(Idx[WARP_SIZE], Idx[4])
+        c_lane_device, row_major(Idx[warp_size], Idx[4])
     )
 
     _arange(a_host)
@@ -260,25 +261,25 @@ def test_load_and_mma_and_multiply_operands[
         a_dev.as_unsafe_any_origin(),
         a_lane_dev.as_unsafe_any_origin(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(warp_size),
     )
 
     ctx.enqueue_function[kernel_load_b](
         b_dev.as_unsafe_any_origin(),
         b_lane_dev.as_unsafe_any_origin(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(warp_size),
     )
 
     ctx.enqueue_function[kernel_load_c](
         c_dev.as_unsafe_any_origin(),
         c_lane_dev.as_unsafe_any_origin(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(warp_size),
     )
 
     ctx.enqueue_function[kernel_store_d](
-        d_dev.as_unsafe_any_origin(), grid_dim=(1, 1), block_dim=(WARP_SIZE)
+        d_dev.as_unsafe_any_origin(), grid_dim=(1, 1), block_dim=(warp_size)
     )
 
     comptime kernel = test_mma_op[
@@ -297,7 +298,7 @@ def test_load_and_mma_and_multiply_operands[
         c_dev.as_unsafe_any_origin(),
         d_dev_mma.as_unsafe_any_origin(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(warp_size),
     )
 
     ctx.enqueue_copy(a_lane_host.ptr, a_lane_device)

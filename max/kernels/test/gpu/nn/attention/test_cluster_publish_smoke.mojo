@@ -82,7 +82,7 @@ def publish_smoke_kernel[
     # The publish mbarrier (one SharedMemBarrier = one 8-byte slot).
     var mbar = unsafe_stack_allocation[
         1, DType.int64, address_space=.SHARED, alignment=8
-    ]().bitcast[SharedMemBarrier]()
+    ]().unsafe_bitcast[SharedMemBarrier]()
 
     var me = block_rank_in_cluster()
     var tid = thread_idx.x

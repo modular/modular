@@ -226,19 +226,6 @@ kgen.generator @ref_pack_from_pointer_pack(
   hlcf.return
 }
 
-// CHECK-LABEL: lit.fn @nested_function_region
-lit.fn @nested_function_region() {
-  // CHECK-NEXT: hlcf.loop
-  hlcf.loop {
-    // CHECK-NEXT: lit.fn nested_fn()
-    lit.fn nested_fn() {
-      hlcf.return
-    }
-    hlcf.continue
-  }
-  hlcf.return
-}
-
 // -----
 
 // CHECK-LABEL: lit.struct.decl @A
@@ -618,4 +605,21 @@ lit.fn @has_body_constraints<
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
   lit.end_fn
+}
+
+// -----
+
+// CHECK-LABEL: lit.package namespace @ns {
+// CHECK-NEXT: lit.package @sub {
+lit.package namespace @ns {
+  lit.package @sub {
+  }
+}
+
+// CHECK-LABEL: lit.package @pkg {
+lit.package @pkg {
+}
+
+// CHECK-LABEL: lit.package @dependent attributes {dependencies = #kgen<link.dependencies[@pkg, @ns::@sub]>} {
+lit.package @dependent attributes {dependencies = #kgen<link.dependencies[@pkg, @ns::@sub]>} {
 }

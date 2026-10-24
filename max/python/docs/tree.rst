@@ -20,6 +20,9 @@ Declare a node
    :template: autosummary/function.rst
 
    dataclass
+   kind
+   kind_of
+   node_of_kind
 
 Flatten and rebuild
 -------------------

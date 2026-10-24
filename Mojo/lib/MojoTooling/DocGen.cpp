@@ -52,11 +52,11 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
   parserConfig.docsBasePath = config.docsBasePath;
 
   MojoParserContext parserContext(sourceManager, parserConfig);
-  MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(resolvedPath);
+  LIT::ASTDecl *moduleDecl = parserContext.parseFileOrPackage(resolvedPath);
   if (!moduleDecl || parserContext.wasErrorEmitted())
     return false;
 
-  std::unique_ptr<PublicDecl> publicDecl = moduleDecl.getDecl();
+  std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(moduleDecl);
   if (!publicDecl)
     return false;
 

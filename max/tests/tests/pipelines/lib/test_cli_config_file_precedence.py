@@ -38,8 +38,8 @@ from pytest import MonkeyPatch
 def _skip_repo_access_check() -> Iterator[None]:
     """These precedence tests use placeholder repos, so skip the HF network
     calls that ``MAXModelConfig`` construction now runs: the existence check
-    (via both the ``model_config`` and ``hf_utils`` references) and the eager
-    ``load_huggingface_config``."""
+    (via both the ``model_config`` and ``hf_utils`` references), the eager
+    ``load_huggingface_config``, and the generation config."""
     with (
         patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
         patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
@@ -48,6 +48,12 @@ def _skip_repo_access_check() -> Iterator[None]:
             side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
         ),
         patch("huggingface_hub.file_exists", return_value=False),
+        # Falls back to the default config rather than asking the hub, which
+        # warns and retries where the network is unreachable.
+        patch(
+            "max.pipelines.lib.config.model_config.GenerationConfig.from_pretrained",
+            side_effect=OSError("placeholder repo"),
+        ),
         # architectures=None keeps the architecture name undeterminable, so
         # construction-time resolution skips instead of rejecting the
         # placeholder repo as an unknown architecture.
@@ -556,7 +562,13 @@ def test_model_path_matching_recipe_does_not_warn(
             )
         )
 
-    assert caplog.records == []
+    # Other libraries may warn here, e.g. huggingface_hub retrying a download
+    # when the sandbox has no network.
+    assert [
+        rec
+        for rec in caplog.records
+        if rec.name == "max.pipelines" or rec.name.startswith("max.pipelines.")
+    ] == []
 
 
 _KV_CACHE_RECIPE = (

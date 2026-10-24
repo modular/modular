@@ -486,14 +486,15 @@ class TestReaderMigration:
             with_locs = module._to_mlir_str(source_locations=True)
             after = module.mlir_module.asm(enable_debug_info=True)
 
-            # The serialized text traces ops back to the building Python code.
-            assert ".py" in with_locs, with_locs
+            # The serialized text traces ops back to the building Python code,
+            # this script, which Python names `<string>`.
+            assert "<string>" in with_locs, with_locs
             # The flag gates it: the plain form carries no source locations.
-            assert ".py" not in module._to_mlir_str(source_locations=False)
+            assert "<string>" not in module._to_mlir_str(source_locations=False)
             # Serializing does not mutate the module: its own locations are
             # untouched and still carry no materialized Python frames.
             assert before == after
-            assert ".py" not in after
+            assert "<string>" not in after
             print("PASS")
             """,
             env_overrides={"MODULAR_DEBUG": "source-tracebacks"},

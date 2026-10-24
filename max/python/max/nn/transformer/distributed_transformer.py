@@ -34,11 +34,13 @@ from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
 from .transformer import (
+    DecoderOutputs,
     ReturnHiddenStates,
     ReturnLogits,
     extract_hs,
     forward_sequential_layers,
     forward_sharded_layers,
+    logits_outputs,
 )
 
 
@@ -63,7 +65,7 @@ def distributed_logits_postprocess(
     logits_scaling: float = 1.0,
     logit_softcapping: float | None = None,
     capture_hidden_states: list[list[TensorValue]] | None = None,
-) -> tuple[TensorValue, ...]:
+) -> DecoderOutputs:
     """Common logits postprocessing for multi-device sharded models.
 
     Handles last-token gathering, logits computation (VARIABLE/ALL/LAST_TOKEN),
@@ -87,7 +89,7 @@ def distributed_logits_postprocess(
             :func:`extract_hs`.
 
     Returns:
-        Tuple of (last_logits, [logits, offsets], [hidden_states]).
+        The named outputs; see :func:`logits_outputs`.
     """
 
     def _maybe_norm(
@@ -164,19 +166,19 @@ def distributed_logits_postprocess(
         if logits is not None:
             logits = ops.tanh(logits / logit_softcapping) * logit_softcapping
 
-    ret_val: tuple[TensorValue, ...] = (last_logits,)
-    if offsets is not None:
-        assert logits is not None
-        ret_val += (logits, offsets)
-
-    ret_val += extract_hs(
-        return_hidden_states=return_hidden_states,
-        last_token_hs_distributed=last_token_h,
-        all_hs_distributed=h,
-        normalizer=norm_shards,
-        capture_hidden_states=capture_hidden_states,
+    return logits_outputs(
+        last_logits,
+        logits,
+        offsets,
+        return_hidden_states,
+        extract_hs(
+            return_hidden_states=return_hidden_states,
+            last_token_hs_distributed=last_token_h,
+            all_hs_distributed=h,
+            normalizer=norm_shards,
+            capture_hidden_states=capture_hidden_states,
+        ),
     )
-    return ret_val
 
 
 class DistributedLogitsPostprocessMixin:
@@ -203,7 +205,7 @@ class DistributedLogitsPostprocessMixin:
         return_n_logits: TensorValue,
         signal_buffers: Sequence[BufferValue],
         capture_hidden_states: list[list[TensorValue]] | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         return distributed_logits_postprocess(
             h,
             input_row_offsets,
@@ -341,7 +343,7 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         h = self.embed_tokens(tokens, signal_buffers)
 
         freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]

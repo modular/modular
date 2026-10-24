@@ -158,7 +158,7 @@ def generate_max_outputs(
             for tp_moe_shard, input in zip(tp_moe_shards, inputs, strict=True)
         ]
         outputs = allreduce(outputs, signal_buffers)
-        graph.output(*outputs)
+        graph.output(outputs)
 
         compiled = session.load(graph, weights_registry=tp_moe.state_dict())
         return compiled.execute(input_tensor, *signals.buffers())

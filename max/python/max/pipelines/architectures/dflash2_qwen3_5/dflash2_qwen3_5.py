@@ -21,19 +21,18 @@ states, the windowed non-causal block forward — is the v1 body and is shaped
 exactly like :class:`~..dflash_llama3.DFlashLlama3`.
 
 The drafter ships no ``embed_tokens`` and no ``lm_head``: both are borrowed
-from the target, so both slots stay ``None`` until the unified pipeline wires
-them.
+from the target, so both slots stay ``None`` until the unified spec-decode
+model wires them.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.nn.attention import AttentionWithRope
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.embedding import Embedding
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, Linear
@@ -97,6 +96,9 @@ class DFlash2TransformerBlock(Module):
 
 class DFlash2Qwen3_5(Module):
     """DFlash2 draft transformer for a Qwen3.5 target."""
+
+    supports_zero_draft_rows = False
+    ctx_at_draft_cache_length = False
 
     def __init__(
         self,
@@ -282,22 +284,16 @@ class DFlash2Qwen3_5(Module):
             device=device,
         )
 
-        # Aliased to the target's modules by the unified pipeline at load
-        # time. ``lm_head`` is typed as a generic callable (rather than
-        # ``Linear``) to match the target's inferred type.
-        self.embed_tokens: Embedding | None = None
-        self.lm_head: Callable[[TensorValue], TensorValue] | None = None
+        # Aliased to the target's modules by the unified spec-decode model.
+        self.embed_tokens: Module | None = None
+        self.lm_head: Module | None = None
 
-    def project_target_hidden(
-        self, target_hs_concat: TensorValue
-    ) -> TensorValue:
-        return self.hidden_norm(self.fc(target_hs_concat))
-
-    def materialize_kv(
+    def materialize(
         self,
-        ctx_hidden: TensorValue,
-        input_row_offsets: TensorValue,
-        kv_collection: PagedCacheValues,
+        target_hidden: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        signal_buffers: Sequence[BufferValue],
     ) -> None:
         """Writes per-layer context K/V projected from the target's states.
 
@@ -308,6 +304,13 @@ class DFlash2Qwen3_5(Module):
         only K/V. Storing the context K/V therefore costs a full QKV
         projection, not a ``k_proj``/``v_proj`` pair.
         """
+        del signal_buffers
+        (hidden,), (offsets,), (kv,) = (
+            target_hidden,
+            input_row_offsets,
+            kv_collections,
+        )
+        ctx_hidden = self.hidden_norm(self.fc(hidden))
         freqs_cis = self.rope.freqs_cis
         for layer_idx, layer in enumerate(self.layers):
             assert isinstance(layer, DFlash2TransformerBlock)
@@ -316,69 +319,76 @@ class DFlash2Qwen3_5(Module):
                     layer_idx, DType.uint32, device=DeviceRef.CPU()
                 ),
                 hidden=ctx_hidden,
-                kv_collection=kv_collection,
+                kv_collection=kv,
                 freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
+                input_row_offsets=offsets,
             )
+
+    def mask_embeddings(
+        self, target_mask: Sequence[TensorValue]
+    ) -> list[TensorValue]:
+        """Returns the target's embedding of the mask token, as trained."""
+        return list(target_mask)
 
     def forward_block(
         self,
-        input_embeds: TensorValue,
-        kv_collection: PagedCacheValues,
-        input_row_offsets: TensorValue,
-    ) -> TensorValue:
+        input_embeds: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        input_row_offsets: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
         """Runs ``block_size`` query rows per sequence through the stack.
 
         ``input_embeds`` must be laid out as dense ``block_size``-row blocks,
         one per sequence: the convolution's block axis is a reshape of the
         token axis, not a function of ``input_row_offsets``.
         """
-        h = input_embeds
+        del signal_buffers
+        (h,), (kv,), (offsets,) = (
+            input_embeds,
+            kv_collections,
+            input_row_offsets,
+        )
         freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             assert isinstance(layer, DFlash2TransformerBlock)
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
-                kv_collection,
+                kv,
                 freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
+                input_row_offsets=offsets,
             )
-        return self.norm(h)
+        return [self.norm(h)]
 
     def compute_candidates(
-        self, hidden_states: TensorValue
+        self, logits: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
-        """Top-k candidate ids and their logits from the borrowed head.
+        """Top-k candidate ids and their logits.
 
         Args:
-            hidden_states: ``[batch, steps, hidden]`` mask-slot outputs.
+            logits: ``[batch, steps, vocab]`` float32 logits of the borrowed
+                head at each mask slot.
 
         Returns:
             ``(candidate_ids, unary_logits)``, both
             ``[batch, steps, selector_top_k]``.
         """
-        if self.lm_head is None:
-            raise ValueError(
-                "DFlash2Qwen3_5.lm_head is borrowed from the target and must"
-                " be wired before compute_candidates is called."
-            )
-        hidden = hidden_states.shape[-1]
-        logits = ops.cast(
-            self.lm_head(hidden_states.reshape((-1, hidden))), DType.float32
+        batch, steps = logits.shape[0], logits.shape[1]
+        unary_logits, candidate_ids = ops.top_k(
+            logits.reshape((-1, logits.shape[-1])), self.selector_top_k
         )
-        unary_logits, candidate_ids = ops.top_k(logits, self.selector_top_k)
-        batch, steps = hidden_states.shape[0], hidden_states.shape[1]
         shape = (batch, steps, self.selector_top_k)
         return candidate_ids.reshape(shape), unary_logits.reshape(shape)
 
     def __call__(
         self,
-        input_embeds: TensorValue,
-        kv_collection: PagedCacheValues,
-        input_row_offsets: TensorValue,
-    ) -> TensorValue:
+        input_embeds: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        input_row_offsets: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
         # Alias for forward_block to satisfy the Module ABC.
         return self.forward_block(
-            input_embeds, kv_collection, input_row_offsets
+            input_embeds, kv_collections, input_row_offsets, signal_buffers
         )

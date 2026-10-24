@@ -120,6 +120,8 @@ modular_py_test(
     ignore_extra_deps = [
         # Resolves SmolLM by name at runtime.
         "//max/python/max/pipelines/architectures/llama3",
+        # Renders the chat template.
+        requirement("jinja2"),
     ],
     tags = [
         "no-sandbox",
@@ -132,6 +134,7 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
     ],
 )
 

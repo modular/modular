@@ -10,105 +10,152 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Helpers for projecting dense tensor arguments to `TileTensor` views."""
+"""Helpers for projecting dense tensor arguments to `TileTensor` views.
+
+The `to_tile_tensor` free functions are deprecated: call the
+`TileTensorable.to_tile_tensor` method instead.
+"""
 
 from layout import TileTensor
+from std.builtin.rebind import downcast
+from std.reflection import reflect
 
 from .tensor_arg_traits import (
-    DenseTensor,
     MutableInput,
     Output,
+    Tensor,
     TileTensorable,
 )
 
 
-comptime _TILE_TENSOR_PROJECTION_DISABLED_MSG = (
-    "to_tile_tensor requires a TileTensorable dense argument; the graph"
-    " compiler disables the projection on targets whose storage cannot be"
-    " viewed as a TileTensor at the execute boundary"
-)
+def _not_tile_tensorable_message[TensorType: AnyType]() -> String:
+    return String(
+        t"to_tile_tensor requires a TileTensorable dense argument, but"
+        t" '{reflect[TensorType].name()}' is not"
+    )
 
 
-comptime TileProjection[
-    mut: Bool, TensorType: DenseTensor
-]: AnyType = TileTensor[
+def _require_tile_tensorable[TensorType: AnyType]() -> Bool:
+    comptime assert conforms_to(
+        TensorType, TileTensorable
+    ), _not_tile_tensorable_message[TensorType]()
+    return True
+
+
+# `_require_tile_tensorable` returns `True` or stops compilation with its
+# message, so the `Never` arm is unreachable. The arm makes `downcast` depend on
+# the check. Thus the check runs first, and its message replaces the generic
+# witness-table error that `downcast` gives for a type that does not conform.
+comptime _AsTileTensorable[TensorType: Tensor] = downcast[
+    TensorType if _require_tile_tensorable[TensorType]() else Never,
+    TileTensorable,
+]
+
+
+comptime _TileProjection[mut: Bool, TensorType: Tensor]: AnyType = TileTensor[
     mut=mut,
     TensorType.dtype,
-    LayoutType=TensorType.LayoutType,
+    LayoutType=_AsTileTensorable[TensorType].LayoutType,
     origin=UntrackedOrigin[mut=mut],
-    Engine=TensorType.Engine,
+    Engine=_AsTileTensorable[TensorType].Engine,
 ]
 
 
 @inline(.always)
 def to_tile_tensor[
-    TensorType: DenseTensor, //, *, mut: Bool = False
-](tensor: TensorType) -> TileProjection[mut, TensorType]:
-    """Projects a dense tensor argument to a `TileTensor` view.
+    TensorType: Tensor, //, *, mut: Bool = False
+](tensor: TensorType) -> _TileProjection[mut, TensorType]:
+    """Projects a tensor argument to a `TileTensor` view.
+
+    Deprecated: call `tensor.to_tile_tensor()`, the `TileTensorable` method,
+    instead. Refine a `Tensor`-bound argument with `conforms_to` first.
 
     Parameters:
-        TensorType: The dense tensor-argument type (inferred).
+        TensorType: The tensor-argument type (inferred).
         mut: Whether to project a mutable view (defaults to immutable).
 
     Args:
-        tensor: The dense tensor argument to project.
+        tensor: The tensor argument to project.
 
     Returns:
         A `TileTensor` view over the argument's storage.
+
+    Constraints:
+        `TensorType` must conform to `TileTensorable`.
     """
+    # The return type also does this check. The elaboration order of the
+    # caller decides which check fails first, so both give the same message.
     comptime assert conforms_to(
         TensorType, TileTensorable
-    ), _TILE_TENSOR_PROJECTION_DISABLED_MSG
+    ), _not_tile_tensorable_message[TensorType]()
     comptime if mut:
         comptime assert TensorType.mut
-    return rebind[TileProjection[mut, TensorType]](tensor.to_tile_tensor())
+    return rebind[_TileProjection[mut, TensorType]](
+        tensor.to_tile_tensor[mut=mut]()
+    )
 
 
 @inline(.always)
 def to_tile_tensor[
-    TensorType: Output & DenseTensor, //
-](tensor: TensorType) -> TileProjection[True, TensorType]:
-    """Projects an output dense tensor argument to a mutable `TileTensor` view.
+    TensorType: Output & Tensor, //
+](tensor: TensorType) -> _TileProjection[True, TensorType]:
+    """Projects an output tensor argument to a mutable `TileTensor` view.
+
+    Deprecated: call `tensor.to_tile_tensor()`, the `TileTensorable` method,
+    instead. Refine a `Tensor`-bound argument with `conforms_to` first.
 
     Output tensors are writable by construction, so the trait bound selects the
     mutable projection without call sites passing `mut=True`.
 
     Parameters:
-        TensorType: The output dense tensor-argument type (inferred).
+        TensorType: The output tensor-argument type (inferred).
 
     Args:
-        tensor: The output dense tensor argument to project.
+        tensor: The output tensor argument to project.
 
     Returns:
         A mutable `TileTensor` view over the argument's storage.
+
+    Constraints:
+        `TensorType` must conform to `TileTensorable`.
     """
     comptime assert conforms_to(
         TensorType, TileTensorable
-    ), _TILE_TENSOR_PROJECTION_DISABLED_MSG
+    ), _not_tile_tensorable_message[TensorType]()
     comptime assert TensorType.mut
-    return rebind[TileProjection[True, TensorType]](tensor.to_tile_tensor())
+    return rebind[_TileProjection[True, TensorType]](
+        tensor.to_tile_tensor[mut=True]()
+    )
 
 
 @inline(.always)
 def to_tile_tensor[
-    TensorType: MutableInput & DenseTensor, //
-](tensor: TensorType) -> TileProjection[True, TensorType]:
-    """Projects a mutable-input dense tensor argument to a mutable `TileTensor`.
+    TensorType: MutableInput & Tensor, //
+](tensor: TensorType) -> _TileProjection[True, TensorType]:
+    """Projects a mutable-input tensor argument to a mutable `TileTensor` view.
+
+    Deprecated: call `tensor.to_tile_tensor()`, the `TileTensorable` method,
+    instead. Refine a `Tensor`-bound argument with `conforms_to` first.
 
     Mutable inputs are read-write by construction, so the trait bound selects
     the mutable projection without call sites passing `mut=True`.
 
     Parameters:
-        TensorType: The mutable-input dense tensor-argument type (inferred).
+        TensorType: The mutable-input tensor-argument type (inferred).
 
     Args:
-        tensor: The mutable-input dense tensor argument to project.
+        tensor: The mutable-input tensor argument to project.
 
     Returns:
         A mutable `TileTensor` view over the argument's storage.
+
+    Constraints:
+        `TensorType` must conform to `TileTensorable`.
     """
     comptime assert conforms_to(
         TensorType, TileTensorable
-    ), _TILE_TENSOR_PROJECTION_DISABLED_MSG
+    ), _not_tile_tensorable_message[TensorType]()
     comptime assert TensorType.mut
-    return rebind[TileProjection[True, TensorType]](tensor.to_tile_tensor())
+    return rebind[_TileProjection[True, TensorType]](
+        tensor.to_tile_tensor[mut=True]()
+    )

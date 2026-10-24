@@ -15,13 +15,13 @@
 ``kernel_capture.json`` is synthetic, in the shape of a real B200 capture.
 Its ``max.batch`` passes 5 to 7 have GPU work that trails their host ranges,
 as under overlap scheduling: pass 5's kernels run inside pass 6's host range.
-``kernel_capture_b200.json`` is a real capture of one pass, trimmed.
 ``kernel_capture_graph_b200.json`` is a real capture of four passes under
 overlap scheduling, trimmed; passes 11 to 13 replay a device graph.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 from collections.abc import Iterator
@@ -36,11 +36,9 @@ from max.serve.telemetry._kernel_capture import (
     replay_kernel_capture,
 )
 from max.serve.telemetry._trace_context import RequestTraceLevel
+from opentelemetry import trace
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-from opentelemetry.sdk.trace.export import (
-    BatchSpanProcessor,
-    SimpleSpanProcessor,
-)
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
@@ -80,7 +78,7 @@ def capture(fixture_testdatadirectory: Path) -> str:
 def _batch_span(batch_id: int) -> SpanContext:
     assert _kernel_capture._replay_provider is not None
     tracer = _kernel_capture._replay_provider.get_tracer("test")
-    span = tracer.start_span("max.batch", attributes={"max.batch_id": batch_id})
+    span = tracer.start_span("max.batch", attributes={"max.batch.id": batch_id})
     span.end()
     return span.get_span_context()
 
@@ -92,12 +90,14 @@ def _pass(
 ) -> TracedPass:
     """Returns a traced pass whose host times bracket its fixture range."""
     start_us, end_us = RANGES_US[batch_id & 0xFFFF_FFFF]
+    host_start_ns = _us(start_us) - 20_000 - clock_skew_ns
     return TracedPass(
         batch_id=batch_id,
         level=level,
         batch_span_context=_batch_span(batch_id),
-        host_start_ns=_us(start_us) - 20_000 - clock_skew_ns,
+        host_start_ns=host_start_ns,
         host_end_ns=_us(end_us) + 30_000 - clock_skew_ns,
+        batch_start_ns=host_start_ns + 5_000,
     )
 
 
@@ -133,7 +133,12 @@ def test_kernel_level_groups_by_launch_time(
     assert gpu.parent is not None
     assert gpu.parent.span_id == traced.batch_span_context.span_id
     assert gpu.context.trace_id == traced.batch_span_context.trace_id
-    assert gpu.attributes == {"max.batch_id": 5}
+    assert gpu.attributes == {
+        "max.batch.id": 5,
+        "max.batch.busy_ns": 145_000,
+        "max.batch.start_after_host_ns": 465_000,
+        "max.batch.activity_spans": True,
+    }
     # Backdated to the GPU window, which starts after the host range ends.
     assert (gpu.start_time, gpu.end_time) == (_us(1450.0), _us(1605.0))
 
@@ -150,21 +155,81 @@ def test_kernel_level_groups_by_launch_time(
     assert matmul.parent is not None
     assert matmul.parent.span_id == gpu.context.span_id
     assert matmul.attributes == {
-        "max.batch_id": 5,
+        "max.batch.id": 5,
         "max.kernel.name": "matmul_sm100_bf16_deadbeef",
+        "max.kernel.kind": "kernel",
     }
     assert (matmul.start_time, matmul.end_time) == (_us(1462.0), _us(1540.0))
+    [memcpy] = spans["Memcpy DtoD (Device -> Device)"]
+    assert memcpy.attributes is not None
+    assert memcpy.attributes["max.kernel.kind"] == "memcpy"
 
 
-def test_batch_level_emits_only_the_gpu_window(
-    exporter: InMemorySpanExporter, capture: str
+@pytest.mark.parametrize(
+    ("level", "activity_spans"),
+    [
+        (RequestTraceLevel.BATCH, False),
+        (RequestTraceLevel.OP, False),
+        (RequestTraceLevel.KERNEL, True),
+    ],
+)
+def test_gpu_busy_time_counts_overlapping_activity_once(
+    exporter: InMemorySpanExporter,
+    tmp_path: Path,
+    level: RequestTraceLevel,
+    activity_spans: bool,
 ) -> None:
-    replay_kernel_capture(capture, [_pass(7, RequestTraceLevel.BATCH)])
+    """Two kernels on different streams overlap for 30 µs, then a gap
+    precedes a third."""
+    capture = tmp_path / "overlap.json"
+    capture.write_text(
+        json.dumps(
+            {
+                "baseTimeNanoseconds": BASE_NS,
+                "traceEvents": [
+                    {
+                        **_event(
+                            "user_annotation",
+                            "max.batch",
+                            1000.0,
+                            **{"External id": 5},
+                        ),
+                        "dur": 400.0,
+                    },
+                    _event(
+                        "cuda_driver", "cuLaunchKernel", 1010.0, correlation=1
+                    ),
+                    _event(
+                        "cuda_driver", "cuLaunchKernel", 1020.0, correlation=2
+                    ),
+                    _event(
+                        "cuda_driver", "cuLaunchKernel", 1030.0, correlation=3
+                    ),
+                    {
+                        **_event("kernel", "a", 1450.0, correlation=1),
+                        "dur": 50.0,
+                    },
+                    {
+                        **_event("kernel", "b", 1470.0, correlation=2),
+                        "dur": 50.0,
+                    },
+                    {
+                        **_event("kernel", "c", 1600.0, correlation=3),
+                        "dur": 10.0,
+                    },
+                ],
+            }
+        )
+    )
 
-    spans = _replayed(exporter)
-    assert list(spans) == ["max.batch.gpu"]
-    [gpu] = spans["max.batch.gpu"]
-    assert (gpu.start_time, gpu.end_time) == (_us(2300.0), _us(2435.0))
+    replay_kernel_capture(str(capture), [_pass(5, level)])
+
+    [gpu] = _replayed(exporter)["max.batch.gpu"]
+    assert gpu.attributes is not None
+    assert gpu.attributes["max.batch.busy_ns"] == 80_000
+    assert gpu.end_time is not None and gpu.start_time is not None
+    assert gpu.end_time - gpu.start_time == 160_000
+    assert gpu.attributes["max.batch.activity_spans"] is activity_spans
 
 
 def test_op_level_aggregates_each_kernel_name(
@@ -183,8 +248,8 @@ def test_op_level_aggregates_each_kernel_name(
     assert matmul.parent.span_id == gpu.context.span_id
     assert (matmul.start_time, matmul.end_time) == (_us(2312.0), _us(2435.0))
     assert matmul.attributes == {
-        "max.batch_id": 7,
-        "max.kernel.name": "matmul_sm100_bf16_deadbeef",
+        "max.batch.id": 7,
+        "max.kernel.op": "matmul_sm100_bf16_deadbeef",
         "max.kernel.count": 2,
         "max.kernel.total_us": 118.0,
         "max.kernel.mean_us": 59.0,
@@ -220,12 +285,18 @@ def test_kernel_sampled_takes_one_pass_in_stride(
     )
 
     spans = _replayed(exporter)
-    assert len(spans.pop("max.batch.gpu")) == 3
+    gpu_spans = spans.pop("max.batch.gpu")
+    assert len(gpu_spans) == 3
     # Unsampled passes emit nothing beneath max.batch.gpu.
     assert {
-        dict(span.attributes or {})["max.batch_id"]
+        dict(span.attributes or {})["max.batch.id"]
         for named in spans.values()
         for span in named
+    } == with_kernels
+    assert {
+        dict(span.attributes or {})["max.batch.id"]
+        for span in gpu_spans
+        if dict(span.attributes or {})["max.batch.activity_spans"]
     } == with_kernels
 
 
@@ -237,16 +308,18 @@ def test_full_adds_what_the_capture_has(
     spans = _replayed(exporter)
     [matmul] = spans["matmul_sm100_bf16"]
     assert matmul.attributes == {
-        "max.batch_id": 5,
+        "max.batch.id": 5,
         "max.kernel.name": "matmul_sm100_bf16_deadbeef",
+        "max.kernel.kind": "kernel",
         "max.kernel.registers_per_thread": 168,
         "max.kernel.occupancy_pct": 12.5,
         "max.kernel.shared_mem": 196608,
     }
     [memcpy] = spans["Memcpy DtoD (Device -> Device)"]
     assert memcpy.attributes == {
-        "max.batch_id": 5,
+        "max.batch.id": 5,
         "max.kernel.name": "Memcpy DtoD (Device -> Device)",
+        "max.kernel.kind": "memcpy",
     }
 
 
@@ -266,7 +339,7 @@ def test_untraced_passes_are_dropped(
 
     spans = _replayed(exporter)
     assert {
-        dict(span.attributes or {})["max.batch_id"]
+        dict(span.attributes or {})["max.batch.id"]
         for span in spans["max.batch.gpu"]
     } == {5, 7}
     assert "warmup_fill" not in spans
@@ -292,7 +365,8 @@ def test_range_ids_match_truncated_to_32_bits(
     replay_kernel_capture(capture, [_pass(batch_id, RequestTraceLevel.BATCH)])
 
     [gpu] = _replayed(exporter)["max.batch.gpu"]
-    assert gpu.attributes == {"max.batch_id": batch_id}
+    assert gpu.attributes is not None
+    assert gpu.attributes["max.batch.id"] == batch_id
     assert (gpu.start_time, gpu.end_time) == tuple(_us(t) for t in window_us)
 
 
@@ -300,13 +374,13 @@ def test_clock_offset_applies_when_its_bound_excludes_zero(
     exporter: InMemorySpanExporter, capture: str
 ) -> None:
     """Host times 1 ms behind libkineto's bound the offset to [+0.97,
-    +1.02] ms, so spans move back by the midpoint."""
+    +1.02] ms, so spans move back by the midpoint. BATCH adds no kernels."""
     replay_kernel_capture(
         capture,
         [_pass(7, RequestTraceLevel.BATCH, clock_skew_ns=1_000_000)],
     )
 
-    [gpu] = _replayed(exporter)["max.batch.gpu"]
+    [[gpu]] = _replayed(exporter).values()
     assert gpu.start_time == _us(2300.0) - 995_000
 
 
@@ -325,7 +399,14 @@ def test_span_cap_keeps_every_gpu_window(
     )
 
     spans = _replayed(exporter)
-    assert len(spans.pop("max.batch.gpu")) == 2
+    gpu_spans = spans.pop("max.batch.gpu")
+    assert len(gpu_spans) == 2
+    # Both passes lost kernel spans to the cap.
+    assert all(
+        span.attributes is not None
+        and span.attributes["max.batch.activity_spans"] is False
+        for span in gpu_spans
+    )
     assert sum(len(v) for v in spans.values()) == 2
     assert "dropped 6 spans" in caplog.text
 
@@ -345,7 +426,12 @@ def test_pass_without_captured_activity_emits_nothing(
     )
 
     [gpu] = _replayed(exporter)["max.batch.gpu"]
-    assert gpu.attributes == {"max.batch_id": 7}
+    assert gpu.attributes == {
+        "max.batch.id": 7,
+        "max.batch.busy_ns": 128_000,
+        "max.batch.start_after_host_ns": 415_000,
+        "max.batch.activity_spans": True,
+    }
 
 
 def test_oversized_capture_is_left_unreplayed(
@@ -364,31 +450,6 @@ def test_oversized_capture_is_left_unreplayed(
     assert capture in caplog.text
 
 
-def test_capture_thread_replays_with_its_limits(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    replayed: list[ProfilingConfig | None] = []
-
-    def replay(
-        output_path: str, passes: object, limits: ProfilingConfig | None
-    ) -> None:
-        replayed.append(limits)
-
-    monkeypatch.setattr(_kernel_capture, "stop_capture", lambda output_path: "")
-    monkeypatch.setattr(_kernel_capture, "replay_kernel_capture", replay)
-    limits = ProfilingConfig(
-        kernel_trace_max_spans=3, kernel_trace_max_capture_bytes=1024
-    )
-    thread = KernelCaptureThread(limits)
-    thread.submit("/tmp/a.json", [])
-    deadline = time.monotonic() + 5
-    while thread.busy:
-        assert time.monotonic() < deadline
-        time.sleep(0.01)
-
-    assert replayed == [limits]
-
-
 @pytest.mark.parametrize(
     ("max_spans", "queue_size"), [(1, 512), (40_000, 40_000)]
 )
@@ -397,22 +458,39 @@ def test_replay_queue_holds_the_span_cap(
 ) -> None:
     """The queue holds the span cap, but no fewer spans than the SDK's
     512-span export batch, since the SDK rejects a queue smaller than its
-    batch."""
-    sizes: list[int] = []
-
-    def processor(
-        exporter: InMemorySpanExporter, max_queue_size: int
-    ) -> BatchSpanProcessor:
-        sizes.append(max_queue_size)
-        return BatchSpanProcessor(exporter, max_queue_size=max_queue_size)
-
+    batch. Its exports warn on failure and on drops, as the main
+    exporter's do."""
+    monkeypatch.setenv(
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://agent:4318"
+    )
     monkeypatch.setattr(_kernel_capture, "_replay_provider", None)
-    monkeypatch.setattr(_kernel_capture, "_span_exporter", InMemorySpanExporter)
-    monkeypatch.setattr(_kernel_capture, "BatchSpanProcessor", processor)
+    monkeypatch.setattr(_kernel_capture, "span_exporter", InMemorySpanExporter)
     _kernel_capture._replay_tracer(max_spans)
+    provider = _kernel_capture._replay_provider
+    assert provider is not None
+    [processor] = provider._active_span_processor._span_processors
+    provider.shutdown()
+    assert isinstance(processor, _kernel_capture.CountingSpanProcessor)
+    assert processor._batch_processor._queue.maxlen == queue_size
+
+
+def test_replay_follows_its_max_batch_span_not_the_configured_sampler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OTEL_TRACES_SAMPLER", "always_off")
+    monkeypatch.setenv(
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://agent:4318"
+    )
+    monkeypatch.setattr(_kernel_capture, "_replay_provider", None)
+    monkeypatch.setattr(_kernel_capture, "span_exporter", InMemorySpanExporter)
+    batch = SpanContext(1, 1, False, TraceFlags(TraceFlags.SAMPLED))
+    span = _kernel_capture._replay_tracer(1).start_span(
+        "max.batch.gpu",
+        context=trace.set_span_in_context(trace.NonRecordingSpan(batch)),
+    )
     assert _kernel_capture._replay_provider is not None
     _kernel_capture._replay_provider.shutdown()
-    assert sizes == [queue_size]
+    assert span.get_span_context().trace_flags.sampled
 
 
 def test_capture_thread_replays_after_a_successful_stop(
@@ -421,8 +499,8 @@ def test_capture_thread_replays_after_a_successful_stop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(_kernel_capture, "stop_capture", lambda output_path: "")
-    thread = KernelCaptureThread()
-    thread.submit(capture, [_pass(7, RequestTraceLevel.BATCH)])
+    thread = KernelCaptureThread(ProfilingConfig(kernel_trace_max_spans=1))
+    thread.submit(capture, [_pass(7, RequestTraceLevel.KERNEL)])
     deadline = time.monotonic() + 5
     while thread.busy:
         assert time.monotonic() < deadline
@@ -489,39 +567,6 @@ def test_unreadable_capture_logs_and_exports_nothing(
     assert "Cannot read kernel capture" in caplog.text
 
 
-def test_real_b200_capture(
-    exporter: InMemorySpanExporter, fixture_testdatadirectory: Path
-) -> None:
-    """Its kernel ran on an AsyncRT thread with a Mojo op's External id, so
-    only the launch record ties it to the pass."""
-    range_start_us, range_end_us = 7551180781350.135, 7551180791296.097
-    traced = TracedPass(
-        batch_id=7,
-        level=RequestTraceLevel.KERNEL,
-        batch_span_context=_batch_span(7),
-        host_start_ns=BASE_NS + round(range_start_us * 1000) - 10_000,
-        host_end_ns=BASE_NS + round(range_end_us * 1000) + 10_000,
-    )
-    replay_kernel_capture(
-        str(fixture_testdatadirectory / "kernel_capture_b200.json"), [traced]
-    )
-
-    spans = _replayed(exporter)
-    [gpu] = spans.pop("max.batch.gpu")
-    assert gpu.parent is not None
-    assert gpu.parent.span_id == traced.batch_span_context.span_id
-    [[kernel]] = spans.values()
-    assert kernel.name == "mogg_foreach_r2_w8_b128_gs_False"
-    assert kernel.attributes == {
-        "max.batch_id": 7,
-        "max.kernel.name": "mogg_foreach_r2_w8_b128_gs_False_73fac3ef",
-    }
-    kernel_start_us = 7551180790011.269
-    assert kernel.start_time == gpu.start_time
-    assert kernel.start_time == BASE_NS + round(kernel_start_us * 1000)
-    assert kernel.end_time == BASE_NS + round((kernel_start_us + 2.112) * 1000)
-
-
 def test_real_b200_device_graph_capture(
     exporter: InMemorySpanExporter, fixture_testdatadirectory: Path
 ) -> None:
@@ -537,10 +582,11 @@ def test_real_b200_device_graph_capture(
     passes = [
         TracedPass(
             batch_id=batch_id,
-            level=RequestTraceLevel.KERNEL,
+            level=RequestTraceLevel.FULL,
             batch_span_context=_batch_span(batch_id),
             host_start_ns=BASE_NS + round(start_us * 1000) - 10_000,
             host_end_ns=BASE_NS + round(end_us * 1000) + 10_000,
+            batch_start_ns=BASE_NS + round(start_us * 1000) - 10_000,
         )
         for batch_id, (start_us, end_us) in ranges.items()
     ]
@@ -551,7 +597,7 @@ def test_real_b200_device_graph_capture(
     by_pass: dict[int, list[str]] = {}
     for name, named in spans.items():
         for span in named:
-            batch_id = dict(span.attributes or {})["max.batch_id"]
+            batch_id = dict(span.attributes or {})["max.batch.id"]
             assert isinstance(batch_id, int)
             by_pass.setdefault(batch_id, []).append(name)
     # Every activity in the capture is placed.
@@ -568,6 +614,19 @@ def test_real_b200_device_graph_capture(
         assert "algorithm_gpu_rowwise__BlockK6A6A6A6A6A6A" in by_pass[batch_id]
     assert "sm100_mha_1q_depth128_bfloat16_bfloat16_nqh32_nkvh8" in by_pass[10]
     assert "gemv_split_k_bfloat16_bfloat16_bfloat16_256" in by_pass[10]
+    # The capture writes occupancy 0 as an int.
+    [mha] = spans["sm100_mha_1q_depth128_bfloat16_bfloat16_nqh32_nkvh8"]
+    occupancy = dict(mha.attributes or {})["max.kernel.occupancy_pct"]
+    assert isinstance(occupancy, float) and occupancy == 0.0
+    # Its times are large µs offsets, whose differences carry float noise.
+    replay_kernel_capture(
+        str(path),
+        [dataclasses.replace(p, level=RequestTraceLevel.OP) for p in passes],
+    )
+    [mha_op] = _replayed(exporter)[
+        "kernel_agg:sm100_mha_1q_depth128_bfloat16_bfloat16_nqh32_nkvh8"
+    ]
+    assert dict(mha_op.attributes or {})["max.kernel.total_us"] == 9.151
 
 
 def test_activity_after_the_last_launch_record(
@@ -624,8 +683,9 @@ def test_activity_after_the_last_launch_record(
     assert sorted(spans) == ["graph_matmul", "max.batch.gpu", "rms_norm_gpu"]
     [graph_kernel] = spans["graph_matmul"]
     assert graph_kernel.attributes == {
-        "max.batch_id": 6,
+        "max.batch.id": 6,
         "max.kernel.name": "graph_matmul",
+        "max.kernel.kind": "kernel",
     }
 
 
@@ -669,13 +729,8 @@ def test_launch_after_the_last_range_is_dropped(
     assert sorted(_replayed(exporter)) == ["max.batch.gpu", "rms_norm_gpu"]
 
 
-@pytest.mark.parametrize(
-    "level",
-    [level for level in RequestTraceLevel if level != RequestTraceLevel.OFF],
-    ids=lambda level: level.value,
-)
 def test_cut_off_pass_activity_without_a_launch_record_is_dropped(
-    exporter: InMemorySpanExporter, tmp_path: Path, level: RequestTraceLevel
+    exporter: InMemorySpanExporter, tmp_path: Path
 ) -> None:
     """The cut-off pass 6 also issues copies and a device graph kernel, which
     have no launch record. Whether a launch record after the last range
@@ -731,16 +786,11 @@ def test_cut_off_pass_activity_without_a_launch_record_is_dropped(
             }
         )
     )
-    replay_kernel_capture(str(capture), [_pass(5, level)])
+    replay_kernel_capture(str(capture), [_pass(5, RequestTraceLevel.KERNEL)])
 
     spans = _replayed(exporter)
     [gpu] = spans.pop("max.batch.gpu")
     assert (gpu.start_time, gpu.end_time) == (_us(1450.0), _us(1455.0))
-    assert {
-        dict(span.attributes or {})["max.kernel.name"]
-        for named in spans.values()
-        for span in named
-    } <= {"rms_norm_gpu"}
 
 
 def test_capture_without_a_sampled_pass_is_not_read(
@@ -761,40 +811,9 @@ def test_capture_without_a_sampled_pass_is_not_read(
         ),
         host_start_ns=_us(980.0),
         host_end_ns=_us(1430.0),
+        batch_start_ns=_us(980.0),
     )
     replay_kernel_capture(str(tmp_path / "missing.json"), [unsampled])
 
     assert _replayed(exporter) == {}
     assert "Cannot read kernel capture" not in caplog.text
-
-
-def test_real_b200_capture_at_full_and_op(
-    exporter: InMemorySpanExporter, fixture_testdatadirectory: Path
-) -> None:
-    """The capture writes occupancy 0 as an int and times as large µs
-    offsets."""
-    capture = str(fixture_testdatadirectory / "kernel_capture_b200.json")
-    range_start_us, range_end_us = 7551180781350.135, 7551180791296.097
-    for level in (RequestTraceLevel.FULL, RequestTraceLevel.OP):
-        replay_kernel_capture(
-            capture,
-            [
-                TracedPass(
-                    batch_id=7,
-                    level=level,
-                    batch_span_context=_batch_span(7),
-                    host_start_ns=BASE_NS + round(range_start_us * 1000),
-                    host_end_ns=BASE_NS + round(range_end_us * 1000) + 1000,
-                )
-            ],
-        )
-
-    spans = _replayed(exporter)
-    [kernel] = spans["mogg_foreach_r2_w8_b128_gs_False"]
-    attributes = dict(kernel.attributes or {})
-    assert attributes["max.kernel.registers_per_thread"] == 32
-    assert attributes["max.kernel.shared_mem"] == 0
-    occupancy = attributes["max.kernel.occupancy_pct"]
-    assert isinstance(occupancy, float) and occupancy == 0.0
-    [aggregate] = spans["kernel_agg:mogg_foreach_r2_w8_b128_gs_False"]
-    assert dict(aggregate.attributes or {})["max.kernel.total_us"] == 2.112

@@ -40,8 +40,10 @@ from max.pipelines.lib import (
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
+    checked_token_ids,
     encode_dkv_cache_hint,
     open_image,
+    resolve_token_id_bound,
     run_with_default_executor,
 )
 from max.pipelines.modeling.types import (
@@ -134,6 +136,9 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
 
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
         self.enable_prefix_caching = (
@@ -593,7 +598,8 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
                     tokenizer_out["input_ids"][0], dtype=np.int64
                 )
         else:
-            encoded_prompt = np.array(list(prompt), dtype=np.int64)
+            assert not isinstance(prompt, str)
+            encoded_prompt = checked_token_ids(prompt, self._token_id_bound)
 
         # Compute token type IDs (0=text, 1=image, 2=video)
         mm_token_type_ids = np.zeros_like(encoded_prompt, dtype=np.int64)

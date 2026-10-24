@@ -214,22 +214,14 @@ def _check[
         )
     if rows > 0:
         ctx.enqueue_function[_reference[N, K]](
-            a.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            b.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            sa.unsafe_ptr()
-            .bitcast[UInt8]()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
-            sb.unsafe_ptr()
-            .bitcast[UInt8]()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
-            offsets.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            expert_ids.unsafe_ptr()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
-            reference.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
-            mag.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+            a.unsafe_ptr().as_imm(),
+            b.unsafe_ptr().as_imm(),
+            sa.unsafe_ptr().unsafe_bitcast[UInt8]().as_imm(),
+            sb.unsafe_ptr().unsafe_bitcast[UInt8]().as_imm(),
+            offsets.unsafe_ptr().as_imm(),
+            expert_ids.unsafe_ptr().as_imm(),
+            reference.unsafe_ptr(),
+            mag.unsafe_ptr(),
             Int32(rows),
             Int32(num_active),
             grid_dim=(ceildiv(rows, 16), ceildiv(N, 16)),

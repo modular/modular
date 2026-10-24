@@ -13,6 +13,7 @@
 # RUN: %mojo %s
 from max.gpu import block_dim, block_idx, global_idx
 from std.memory import Pointer, alloc
+from std.memory.alloc import unsafe_alloc
 from std.ffi import c_size_t
 from shmem import *
 from std.testing import assert_equal
@@ -41,15 +42,15 @@ def set_and_shift_kernel(
 
     if use_nbi == 1:
         shmem_put_nbi[SHMEMScope.block](
-            recv_data + block_offset,
-            send_data + block_offset,
+            recv_data.unsafe_offset(block_offset),
+            send_data.unsafe_offset(block_offset),
             c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
     else:
         shmem_put[SHMEMScope.block](
-            recv_data + block_offset,
-            send_data + block_offset,
+            recv_data.unsafe_offset(block_offset),
+            send_data.unsafe_offset(block_offset),
             c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
@@ -82,7 +83,7 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
         block_dim=threads_per_block,
     )
 
-    var host = alloc[Float32](num_elems)
+    var host = unsafe_alloc[Float32](num_elems)
     recv_data.enqueue_copy_to(host)
 
     # The completion of the non-blocking version of `shmem_put` is

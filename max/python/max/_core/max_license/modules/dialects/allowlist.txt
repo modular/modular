@@ -1,0 +1,401 @@
+# Records bound into `max._core.dialects`.
+#
+# Every op, attribute, type, interface, enum and pass a dialect declares could be
+# bound, but each one costs real binary size in the `_core` extension, and only a
+# fraction is ever named from Python. This file is that fraction: the generator
+# (`internal/mlir_nanobind/tblgen`) binds these TableGen records and skips the
+# rest. Skipping is not a hard boundary — an unbound attribute or type still
+# reaches Python, as the base `Attribute`, `Type` or `OpState` rather than as its
+# own class.
+#
+# Names are TableGen record names; the trailing comment gives the Python name.
+# Adding an op to `max.graph` means adding it here too. Dropping a line that
+# something still uses turns an
+# attribute access into an `AttributeError` and quietly weakens any `isinstance`
+# against it, so leave a line alone unless the last use is gone.
+#
+# "Uses" is wider than "names". `_set_output_param_decls` in `max/graph/graph.py`
+# reaches ops by duck-typing rather than by name, so every op implementing
+# ParamDeclarationInterface is listed whether or not Python spells it out —
+# unbound, such an op loses the accessor, the pass skips it, and the graph
+# fails to compile against an undeclared parameter much later on.
+#
+# The list has to name everything the bindings need, including what one entry
+# refers to from another — generation fails, listing the names, when it doesn't.
+# It can't be inferred at build time: generation runs once per TableGen file, and
+# a reference across dialects is only visible from the referring side.
+#
+# A handful of records cannot be bound at all, so wanting one is not enough —
+# adding these breaks the build rather than the list, and needs the generator
+# taught first:
+#
+#   Builtin_DenseResourceElementsAttr   AsmResourceBlob is not handled
+#   Builtin_SparseElementsAttr          same, via its resource-backed storage
+#   OpaqueLoc                           constructors are templatized
+#   KGEN_ParamConstantOp                BytecodeOpInterface takes internal
+#                                       payload types
+#   KGEN_ParamMaterializeOp             uses `Res<AnyType, " ", [MemAlloc]>`,
+#                                       which the generator doesn't implement
+#   KGEN_NoneAttr                       NoneAttr::get resists binding
+#   KGEN_CallOp                         CallOp::setCalleeAttr resists binding
+#   KGEN_BindParamsAttr                 these take the internal evaluation
+#   ContextuallyEvaluatedAttrInterface  context type
+#   ContextuallyEvaluatedTypeInterface
+#   DeclRefAttrInterface
+#   StructTypeInterface
+#   RMO_ConcatOp                        OptionalAttr, which tblgen generates as
+#   RMO_MOTransferOp                    a nullable mlir::Attribute where these
+#                                       bindings generate std::optional
+
+# --- builtin (mlir/IR/Builtin*.td, mlir/Transforms/Passes.td) ---
+Builtin_ArrayAttr       # ArrayAttr
+Builtin_Dialect         # required: module docstring for builtin.cpp
+Builtin_DictionaryAttr  # DictionaryAttr
+Builtin_FloatAttr       # FloatAttr
+Builtin_Function        # FunctionType
+Builtin_Index           # IndexType
+Builtin_Integer         # IntegerType
+Builtin_IntegerAttr     # IntegerAttr
+Builtin_StringAttr      # StringAttr
+Builtin_TypeAttr        # TypeAttr
+Builtin_UnitAttr        # UnitAttr
+ElementsAttrInterface   # required: ElementsAttr; graph.cpp buffer_from_constant_attr
+ModuleOp                # ModuleOp
+RemoveDeadValuesPass    # RemoveDeadValuesPass
+ShapedTypeInterface     # required: ShapedType; referenced by ElementsAttr
+TypedAttrInterface      # required: TypedAttr; referenced by kgen, mo and mosh bindings
+
+# --- kgen (KGEN/KGENDialect/*.td) ---
+DeclInterface                # DeclInterface; referenced by ParamDeclareOp
+KGENDialect                  # required: module docstring for kgen.cpp
+KGEN_ArgConvention           # required: kgen.cpp FuncTypeGeneratorType arg_convs default
+KGEN_CastFromBuiltinAttr     # CastFromBuiltinAttr
+KGEN_CastToBuiltinAttr       # CastToBuiltinAttr
+KGEN_ConstraintAttr          # ConstraintAttr; referenced by PogListAttr
+KGEN_FnEffectsImpl           # required: kgen.cpp FuncTypeGeneratorType effects default
+KGEN_GeneratorType           # required: kgen.cpp FuncTypeGeneratorType base class
+KGEN_POCAttr                 # POC, POCAttr
+KGEN_ParamDeclArrayAttr      # ParamDeclArrayAttr
+KGEN_ParamDeclAttr           # ParamDeclAttr
+KGEN_ParamDeclRefAttr        # ParamDeclRefAttr
+KGEN_ParamDeclareOp          # ParamDeclareOp
+KGEN_ParamIndexRefAttr       # ParamIndexRefAttr; referenced by PogMetadataAttr
+KGEN_ParamOperatorAttr       # ParamOperatorAttr
+KGEN_ParameterExprArrayAttr  # ParameterExprArrayAttr
+KGEN_PassingKind             # PassingKind, PassingKindAttr; referenced by PogMetadataAttr
+KGEN_PogListAttr             # PogListAttr; referenced by GeneratorType
+KGEN_PogMetadataAttr         # PogMetadataAttr; referenced by PogListAttr
+KGEN_SIMDAttr                # SIMDAttr
+KGEN_SIMDType                # SIMDType
+KGEN_VariadicKind            # VariadicKind, VariadicKindAttr; referenced by PogMetadataAttr
+
+# --- m (Support/MDialect/*.td) ---
+HasAlignedBytesInterface  # HasAlignedBytesInterface; referenced by ArrayElementsAttr
+MDialect                  # required: module docstring for m.cpp
+M_AlignedBytesType        # AlignedBytesType; referenced by HasAlignedBytesInterface
+M_ArrayElementsAttr       # required: graph.cpp array_attr return type
+M_DeviceInfoAttr          # DeviceInfoAttr
+M_DeviceRefAttr           # DeviceRefAttr
+M_PrimitiveArrayAttr      # PrimitiveArrayAttr; referenced by ArrayElementsAttr
+
+# --- mo (GraphCompiler/MODialect/**.td) ---
+MOComposite_DistributedAllGatherRMSNormOp            # CompositeDistributedAllgatherRmsNormOp
+MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op  # CompositeDistributedAllgatherRmsNormQuantMxfp8Op
+MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op  # CompositeDistributedAllgatherRmsNormQuantMxfp6Op
+MOComposite_DistributedReduceScatterRMSNormOp        # CompositeDistributedReduceScatterRmsNormOp
+MOComposite_FusedMatmulAddOp                         # CompositeMatmulAddOp; declares output params; graph.py reaches it structurally
+MOComposite_GroupedMatmulBlockScaledOp               # CompositeGroupedMatmulBlockScaledOp
+MOComposite_GroupedMatmulSwigluNvfp4Op               # CompositeGroupedMatmulSwigluNvfp4Op
+MOComposite_LayerNormRopeRaggedOp                    # CompositeLayerNormRopeRaggedOp; declares output params; graph.py reaches it structurally
+MOComposite_MaskedFlashAttentionGPUOp                # CompositeMaskedFlashAttentionGpuOp
+MOComposite_RMSNormResidualAddOp                     # CompositeRmsNormResidualAddOp; declares output params; graph.py reaches it structurally
+MOComposite_ReduceRMSNormFusedResidualAddOp          # CompositeRmsNormFusedResidualAddOp; declares output params; graph.py reaches it structurally
+MOComposite_ReduceRMSNormRoPEOp                      # CompositeRmsNormRopeOp; declares output params; graph.py reaches it structurally
+MOComposite_RopeRaggedOp                             # CompositeRopeRaggedOp
+MODialect                                            # required: module docstring for mo.cpp
+MOShape_FromTensorOp                                 # ShapeFromTensorOp
+MOShape_ToTensorOp                                   # ShapeToTensorOp
+MOStatic_BroadcastToOp                               # StaticBroadcastToOp
+MOStatic_ReshapeOp                                   # StaticReshapeOp
+MO_AbsOp                                             # AbsOp
+MO_AddOp                                             # AddOp
+MO_AllGatherOp                                       # DistributedAllgatherOp
+MO_AllReduceSumOp                                    # DistributedAllreduceSumOp
+MO_AndOp                                             # AndOp
+MO_ArgMaxOp                                          # ReduceArgMaxOp
+MO_ArgMinOp                                          # ReduceArgMinOp
+MO_ArgNonzeroOp                                      # ArgNonzeroOp
+MO_AtanhOp                                           # AtanhOp
+MO_AvgPoolCeilOp                                     # AvgPoolCeilModeTrueOp
+MO_AvgPoolOp                                         # AvgPoolOp
+MO_BandPartOp                                        # LinalgBandPartOp
+MO_BatchMatmulOp                                     # BatchMatmulOp
+MO_BottomKOp                                         # BottomKOp
+MO_BroadcastShapeOp                                  # BroadcastShapeOp
+MO_BroadcastToOp                                     # BroadcastToOp
+MO_Buffer                                            # BufferType
+MO_BufferCreateOp                                    # BufferCreateOp
+MO_BufferTransferOp                                  # BufferTransferOp
+MO_Bundle                                            # BundleType
+MO_BundledAllReduceSumOp                             # BundledAllreduceSumOp
+MO_BundledExpandOp                                   # BundledExpandOp
+MO_CallOp                                            # CallOp; declares output params; graph.py reaches it structurally
+MO_CastOp                                            # CastOp
+MO_CeilOp                                            # CeilOp
+MO_Chain                                             # ChainType
+MO_ChainCreateOp                                     # ChainCreateOp
+MO_ConcatOp                                          # ConcatOp
+MO_ConstantExternalOp                                # ConstantExternalOp
+MO_ConstantOp                                        # ConstantOp
+MO_ConstantScalarOp                                  # ConstantScalarOp
+MO_ConvOp                                            # ConvOp
+MO_ConvTransposeOp                                   # ConvTransposeOp
+MO_CoordinateTransformMode                           # CoordinateTransformMode
+MO_CoordinateTransformModeAttr                       # CoordinateTransformModeAttr
+MO_CosOp                                             # CosOp
+MO_CumSumOp                                          # CumsumOp
+MO_CustomOp                                          # CustomOp; declares output params; graph.py reaches it structurally
+MO_DTypeAttr                                         # DTypeAttr
+MO_DebugPrintOp                                      # DebugPrintOp
+MO_DebugTensorPrintOp                                # DebugTensorPrintOp
+MO_DistributedBroadcastOp                            # DistributedBroadcastOp
+MO_DistributedScatterOp                              # DistributedScatterOp
+MO_DivOp                                             # DivOp
+MO_EPCombineOp                                       # DistributedEpCombineOp
+MO_EPDispatchBlockScaledNVDynGlobalScalesOp          # DistributedEpDispatchBlockScaledNvDynGlobalScalesOp
+MO_EPDispatchBlockScaledNVOp                         # DistributedEpDispatchBlockScaledNvOp
+MO_EPDispatchFP8Op                                   # DistributedEpDispatchFp8Op
+MO_EPDispatchMXFP4Op                                 # DistributedEpDispatchMxfp4Op
+MO_EPDispatchOp                                      # DistributedEpDispatchOp
+MO_EqualOp                                           # EqualOp
+MO_ErfOp                                             # ErfOp
+MO_ExpOp                                             # ExpOp
+MO_FloorOp                                           # FloorOp
+MO_GatherNdOp                                        # GatherNdOp
+MO_GatherOp                                          # GatherOp
+MO_GatherSumOp                                       # GatherSumOp
+MO_GeluOp                                            # GeluOp
+MO_GeluQuickOp                                       # GeluQuickOp
+MO_GeluTanhOp                                        # GeluTanhOp
+MO_GraphOp                                           # GraphOp
+MO_GreaterEqualOp                                    # GreaterEqualOp
+MO_GreaterOp                                         # GreaterOp
+MO_IndexToTensorOp                                   # IndexToTensorOp
+MO_IsInfOp                                           # IsInfOp
+MO_IsNaNOp                                           # IsNanOp
+MO_LayerNormOp                                       # ReduceLayerNormOp
+MO_LayoutAttr                                        # LayoutAttr
+MO_Log1pOp                                           # Log1pOp
+MO_LogOp                                             # LogOp
+MO_LogSoftmaxOp                                      # ReduceLogsoftmaxOp
+MO_MatmulOp                                          # MatmulOp
+MO_MaxOp                                             # MaxOp
+MO_MaxPoolCeilOp                                     # MaxPoolCeilModeTrueOp
+MO_MaxPoolOp                                         # MaxPoolOp
+MO_MinOp                                             # MinOp
+MO_ModOp                                             # ModOp
+MO_MulOp                                             # MulOp
+MO_MutableLoadOp                                     # MutableLoadOp
+MO_MutableStoreOp                                    # MutableStoreOp
+MO_MutableStoreSliceOp                               # MutableStoreSliceOp
+MO_NegativeOp                                        # NegativeOp
+MO_NonMaximumSuppressionOp                           # NonMaximumSuppressionOp
+MO_NotEqualOp                                        # NotEqualOp
+MO_NotOp                                             # NotOp
+MO_Opaque                                            # OpaqueType
+MO_OrOp                                              # OrOp
+MO_OutputOp                                          # OutputOp
+MO_PadConstantOp                                     # PadConstantOp
+MO_PadReflectOp                                      # PadReflectOp
+MO_PadRepeatOp                                       # PadRepeatOp
+MO_ParallelOp                                        # ParallelOp
+MO_ParamDeclaration                                  # ParamDeclarationInterface
+MO_PowOp                                             # PowOp
+MO_RandomNormalOp                                    # RandomNormalOp
+MO_RandomUniformOp                                   # RandomUniformOp
+MO_RangeOp                                           # RangeOp
+MO_RebindOp                                          # RebindOp
+MO_ReduceAddOp                                       # ReduceAddOp
+MO_ReduceGroupNormOp                                 # ReduceGroupNormOp
+MO_ReduceMaxOp                                       # ReduceMaxOp
+MO_ReduceMinAndMaxOp                                 # ReduceReduceMinAndMaxOp; declares output params; graph.py reaches it structurally
+MO_ReduceMinOp                                       # ReduceMinOp
+MO_ReduceMulOp                                       # ReduceMulOp
+MO_ReduceRMSNormOp                                   # ReduceRmsNormOp
+MO_ReduceScatterSumOp                                # DistributedReducescatterSumOp
+MO_ReluOp                                            # ReluOp; declares output params; graph.py reaches it structurally
+MO_ReshapeOp                                         # ReshapeOp
+MO_ResizeBicubicOp                                   # ResizeBicubicOp
+MO_ResizeLinearOp                                    # ResizeLinearOp
+MO_ResizeNearestOp                                   # ResizeNearestOp
+MO_RoiAlignOp                                        # RoiAlignOp
+MO_RoundOp                                           # RoundOp
+MO_RsqrtOp                                           # RsqrtOp
+MO_Scalar                                            # ScalarType
+MO_ScatterAddOp                                      # ScatterAddOp
+MO_ScatterMaxOp                                      # ScatterMaxOp
+MO_ScatterMinOp                                      # ScatterMinOp
+MO_ScatterMulOp                                      # ScatterMulOp
+MO_ScatterNdAddOp                                    # ScatterNdAddOp
+MO_ScatterNdMaxOp                                    # ScatterNdMaxOp
+MO_ScatterNdMinOp                                    # ScatterNdMinOp
+MO_ScatterNdMulOp                                    # ScatterNdMulOp
+MO_ScatterNdOp                                       # ScatterNdOp
+MO_ScatterOp                                         # ScatterOp
+MO_SelectOp                                          # SelectOp
+MO_SequenceOp                                        # SequenceOp
+MO_ShapeOfOp                                         # ShapeOfOp
+MO_SigmoidOp                                         # SigmoidOp
+MO_SiluOp                                            # SiluOp
+MO_SinOp                                             # SinOp
+MO_SliceOp                                           # SliceOp
+MO_SoftmaxOp                                         # ReduceSoftmaxOp
+MO_SplitOp                                           # SplitOp
+MO_SqrtOp                                            # SqrtOp
+MO_SqueezeShapeOp                                    # SqueezeShapeOp
+MO_SubOp                                             # SubOp
+MO_TanhOp                                            # TanhOp
+MO_Tensor                                            # TensorType
+MO_TensorBundleOp                                    # TensorBundleOp
+MO_TensorUnbundleOp                                  # TensorUnbundleOp
+MO_TileOp                                            # TileOp
+MO_TopKOp                                            # TopKOp
+MO_TransferOp                                        # TransferOp
+MO_TransposeOp                                       # TransposeOp
+MO_TruncOp                                           # TruncOp
+MO_UnsqueezeShapeOp                                  # UnsqueezeShapeOp
+MO_XorOp                                             # XorOp
+MO_YieldOp                                           # YieldOp
+
+# --- mosh (GraphCompiler/MODialect/MOSH.td) ---
+MOSHDialect            # required: module docstring for mosh.cpp
+MOSH_ParamFromValueOp  # ParamFromValueOp
+MOSH_ParamToValueOp    # ParamToValueOp
+MOSH_ShapeAttr         # ShapeAttr
+MOSH_ShapeType         # ShapeType
+
+# --- rmo (GraphCompiler/RMODialect/**.td) ---
+LegalizeRMOOps                 # LegalizeRMOOps
+MO_MOArgMaxOp                  # MoReduceArgMaxOp
+MO_MOArgMinOp                  # MoReduceArgMinOp
+MO_MOReduceMaxOp               # MoReduceMaxOp
+MO_MOReduceMinOp               # MoReduceMinOp
+RMODialect                     # required: module docstring for rmo.cpp
+RMO_AddOp                      # AddOp
+RMO_AndOp                      # AndOp
+RMO_AvgPoolOp                  # AvgPoolOp
+RMO_BroadcastLikeOp            # BroadcastLikeOp; declares output params; graph.py reaches it structurally
+RMO_BroadcastToOp              # BroadcastToOp
+RMO_ConvOp                     # ConvOp
+RMO_ConvTransposeOp            # ConvTransposeOp
+RMO_DivOp                      # DivOp
+RMO_EqualOp                    # EqualOp
+RMO_GreaterEqualOp             # GreaterEqualOp
+RMO_GreaterOp                  # GreaterOp
+RMO_MOATanhOp                  # MoAtanhOp
+RMO_MOAbsOp                    # MoAbsOp
+RMO_MOAddOp                    # MoAddOp; declares output params; graph.py reaches it structurally
+RMO_MOAndOp                    # MoAndOp; declares output params; graph.py reaches it structurally
+RMO_MOArgNonzeroOp             # MoArgNonzeroOp
+RMO_MOAvgPoolCeilOp            # MoAvgPoolCeilModeTrueOp
+RMO_MOAvgPoolOp                # MoAvgPoolOp
+RMO_MOBandPartOp               # MoLinalgBandPartOp
+RMO_MOBottomKOp                # MoBottomKOp
+RMO_MOBroadcastShapeOp         # MoBroadcastShapeOp; declares output params; graph.py reaches it structurally
+RMO_MOBroadcastToOp            # MoBroadcastToOp
+RMO_MOCastOp                   # MoCastOp; declares output params; graph.py reaches it structurally
+RMO_MOCeilOp                   # MoCeilOp
+RMO_MOConvOp                   # MoConvOp
+RMO_MOConvTransposeOp          # MoConvTransposeOp; declares output params; graph.py reaches it structurally
+RMO_MOCosOp                    # MoCosOp
+RMO_MOCumSumOp                 # MoCumsumOp
+RMO_MODivOp                    # MoDivOp; declares output params; graph.py reaches it structurally
+RMO_MOEqualOp                  # MoEqualOp; declares output params; graph.py reaches it structurally
+RMO_MOErfOp                    # MoErfOp
+RMO_MOExpOp                    # MoExpOp
+RMO_MOFloorOp                  # MoFloorOp
+RMO_MOGatherNdOp               # MoGatherNdOp
+RMO_MOGatherOp                 # MoGatherOp
+RMO_MOGeluOp                   # MoGeluOp
+RMO_MOGeluQuickOp              # MoGeluQuickOp
+RMO_MOGeluTanhOp               # MoGeluTanhOp
+RMO_MOGreaterEqualOp           # MoGreaterEqualOp; declares output params; graph.py reaches it structurally
+RMO_MOGreaterOp                # MoGreaterOp; declares output params; graph.py reaches it structurally
+RMO_MOIsInfOp                  # MoIsInfOp
+RMO_MOIsNaNOp                  # MoIsNanOp
+RMO_MOLog1pOp                  # MoLog1pOp
+RMO_MOLogOp                    # MoLogOp
+RMO_MOLogSoftmaxOp             # MoReduceLogsoftmaxOp
+RMO_MOMaxOp                    # MoMaxOp; declares output params; graph.py reaches it structurally
+RMO_MOMaxPoolCeilOp            # MoMaxPoolCeilModeTrueOp
+RMO_MOMaxPoolOp                # MoMaxPoolOp
+RMO_MOMinOp                    # MoMinOp; declares output params; graph.py reaches it structurally
+RMO_MOModOp                    # MoModOp; declares output params; graph.py reaches it structurally
+RMO_MOMulOp                    # MoMulOp; declares output params; graph.py reaches it structurally
+RMO_MOMutableLoadOp            # MoMutableLoadOp
+RMO_MOMutableStoreOp           # MoMutableStoreOp
+RMO_MOMutableStoreSliceOp      # MoMutableStoreSliceOp
+RMO_MONegativeOp               # MoNegativeOp
+RMO_MONonMaximumSuppressionOp  # MoNonMaximumSuppressionOp
+RMO_MONotEqualOp               # MoNotEqualOp; declares output params; graph.py reaches it structurally
+RMO_MONotOp                    # MoNotOp
+RMO_MOOrOp                     # MoOrOp; declares output params; graph.py reaches it structurally
+RMO_MOPadConstantOp            # MoPadConstantOp
+RMO_MOPadReflectOp             # MoPadReflectOp
+RMO_MOPadRepeatOp              # MoPadRepeatOp
+RMO_MOPowOp                    # MoPowOp; declares output params; graph.py reaches it structurally
+RMO_MORandomNormalOp           # MoRandomNormalOp
+RMO_MORandomUniformOp          # MoRandomUniformOp
+RMO_MORangeOp                  # MoRangeOp
+RMO_MOReduceAddOp              # MoReduceAddOp
+RMO_MOReduceMulOp              # MoReduceMulOp
+RMO_MOReluOp                   # MoReluOp
+RMO_MOReshapeOp                # MoReshapeOp; declares output params; graph.py reaches it structurally
+RMO_MOResizeBicubicOp          # MoResizeBicubicOp
+RMO_MOResizeLinearOp           # MoResizeLinearOp
+RMO_MOResizeNearestOp          # MoResizeNearestOp
+RMO_MORoiAlignOp               # MoRoiAlignOp
+RMO_MORoundOp                  # MoRoundOp
+RMO_MORsqrtOp                  # MoRsqrtOp
+RMO_MOScatterAddOp             # MoScatterAddOp
+RMO_MOScatterMaxOp             # MoScatterMaxOp
+RMO_MOScatterMinOp             # MoScatterMinOp
+RMO_MOScatterMulOp             # MoScatterMulOp
+RMO_MOScatterNdAddOp           # MoScatterNdAddOp
+RMO_MOScatterNdMaxOp           # MoScatterNdMaxOp
+RMO_MOScatterNdMinOp           # MoScatterNdMinOp
+RMO_MOScatterNdMulOp           # MoScatterNdMulOp
+RMO_MOScatterNdOp              # MoScatterNdOp
+RMO_MOScatterOp                # MoScatterOp
+RMO_MOSelectOp                 # MoSelectOp; declares output params; graph.py reaches it structurally
+RMO_MOShapeOfOp                # MoShapeOfOp; declares output params; graph.py reaches it structurally
+RMO_MOSigmoidOp                # MoSigmoidOp
+RMO_MOSiluOp                   # MoSiluOp
+RMO_MOSinOp                    # MoSinOp
+RMO_MOSliceOp                  # MoSliceOp
+RMO_MOSoftmaxOp                # MoReduceSoftmaxOp
+RMO_MOSqrtOp                   # MoSqrtOp
+RMO_MOSqueezeShapeOp           # MoSqueezeShapeOp; declares output params; graph.py reaches it structurally
+RMO_MOSubOp                    # MoSubOp; declares output params; graph.py reaches it structurally
+RMO_MOTanhOp                   # MoTanhOp
+RMO_MOTileOp                   # MoTileOp
+RMO_MOTransposeOp              # MoTransposeOp
+RMO_MOTruncOp                  # MoTruncOp
+RMO_MOXorOp                    # MoXorOp; declares output params; graph.py reaches it structurally
+RMO_MatmulOp                   # MatmulOp
+RMO_MaxOp                      # MaxOp
+RMO_MaxPoolOp                  # MaxPoolOp
+RMO_MinOp                      # MinOp
+RMO_ModOp                      # ModOp
+RMO_MulOp                      # MulOp
+RMO_NotEqualOp                 # NotEqualOp
+RMO_OrOp                       # OrOp
+RMO_PowOp                      # PowOp
+RMO_RebindTensorShapeOp        # RebindTensorShapeOp
+RMO_ReshapeOp                  # ReshapeOp
+RMO_SelectOp                   # SelectOp
+RMO_ShapeToTensorOp            # ShapeToTensorOp
+RMO_SliceOp                    # SliceOp
+RMO_SubOp                      # SubOp
+RMO_TopKOp                     # TopKOp
+RMO_XorOp                      # XorOp

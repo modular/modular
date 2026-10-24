@@ -18,6 +18,7 @@ import io
 import numpy as np
 import pytest
 from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
@@ -91,3 +92,53 @@ async def test_idefics3_tokenizer_decode_accepts_token_list() -> None:
     from_list = await tokenizer.decode(tokens)
     assert from_list == await tokenizer.decode(np.array(tokens))
     assert "Hello world" in from_list
+
+
+@pytest.mark.asyncio
+async def test_idefics3_tokenizer_token_id_prompt() -> None:
+    tokenizer = _make_tokenizer()
+    text_context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID(),
+            model_name=IDEFICS3_REPO_ID,
+            prompt="What is this?",
+        )
+    )
+    token_ids = text_context.tokens.prompt.tolist()
+
+    context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID(),
+            model_name=IDEFICS3_REPO_ID,
+            prompt=token_ids,
+        )
+    )
+
+    assert context.tokens.prompt.tolist() == token_ids
+    assert context.images == []
+    assert context.max_length == text_context.max_length
+    assert context.eos_tracker == text_context.eos_tracker
+    assert (
+        context.extra_model_args.keys() == text_context.extra_model_args.keys()
+    )
+
+
+@pytest.mark.asyncio
+async def test_idefics3_tokenizer_token_id_range() -> None:
+    tokenizer = _make_tokenizer()
+    # The mocked config has no vocab size, so the bound is the tokenizer's
+    # length, which matches the checkpoint's text_config.vocab_size.
+    bound = 128259
+    assert tokenizer._token_id_bound == bound
+
+    def request(prompt: list[int]) -> TextGenerationRequest:
+        return TextGenerationRequest(
+            request_id=RequestID(), model_name=IDEFICS3_REPO_ID, prompt=prompt
+        )
+
+    context = await tokenizer.new_context(request([0, bound - 1]))
+    assert context.tokens.prompt.tolist() == [0, bound - 1]
+
+    for bad_id in (-1, bound):
+        with pytest.raises(InputError, match="out of range"):
+            await tokenizer.new_context(request([0, bad_id]))

@@ -17,6 +17,7 @@
 import logging
 import os
 import signal
+import socket
 from types import FrameType
 
 import uvloop
@@ -59,7 +60,17 @@ def _exit_on_signal(signum: int, frame: FrameType | None) -> None:
 def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_args: PipelineArgs,
+    *,
+    sockets: list[socket.socket] | None = None,
 ) -> None:
+    """Serves the API server and model worker until shutdown.
+
+    Args:
+        settings: Server settings.
+        pipeline_args: Pipeline to serve.
+        sockets: Listening sockets to serve on instead of binding
+            ``settings.host``:``settings.port``. Skips the free-port check.
+    """
     # Register custom architectures before any architecture-name lookup. Both
     # retrieve_pipeline_task and retrieve_factory below resolve by name; a custom
     # arch that overrides a built-in must be imported first, or the stale lazy
@@ -117,7 +128,8 @@ def serve_api_server_and_model_worker(
     app = fastapi_app(settings, pipeline_settings)
     config = fastapi_config(app=app, server_settings=settings)
     # If likely to fail, don't waste seconds or minutes loading models
-    validate_port_is_free(settings.port)
+    if sockets is None:
+        validate_port_is_free(settings.port)
 
     server = Server(config)
 
@@ -132,7 +144,7 @@ def serve_api_server_and_model_worker(
             async with lifespan(
                 app, settings, pipeline_settings, app.state.zmq_endpoint_base
             ):
-                await server.serve()
+                await server.serve(sockets=sockets)
         except SubprocessExit as e:
             logger.error("Worker crashed (%s), shutting down...", e)
             # quietly unwind the api-server to keep logs cleaner

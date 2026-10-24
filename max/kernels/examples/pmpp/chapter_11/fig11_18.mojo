@@ -15,6 +15,7 @@ from max.gpu import thread_idx, WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from max.gpu.primitives.id import lane_id, warp_id
 from max.gpu.primitives.warp import shuffle_up
 
@@ -97,8 +98,8 @@ def block_scan(val: Float32) -> Float32:
 def inter_block_scan(
     val: Float32,
     bid: UInt32,
-    partial_sums: UnsafePointer[Float32, MutAnyOrigin],
-    flags: UnsafePointer[UInt32, MutAnyOrigin],
+    partial_sums: MutPointer[Float32, MutAnyOrigin],
+    flags: MutPointer[UInt32, MutAnyOrigin],
 ) -> Float32:
     """Inter-block scan using atomic operations for synchronization.
 
@@ -123,7 +124,7 @@ def inter_block_scan(
             prev_block_partial_sum_s[0] = 0.0
         else:
             # Wait for previous block to pass partial sum
-            while Atomic.load(flags + Int(bid - 1)) == 0:
+            while Atomic.load(flags.unsafe_offset(Int(bid - 1))) == 0:
                 pass
 
             # Read previous block's partial sum
@@ -133,7 +134,7 @@ def inter_block_scan(
         partial_sums[Int(bid)] = prev_block_partial_sum_s[0] + val
 
         # Set this block's flag
-        _ = Atomic.fetch_add(flags + Int(bid), UInt32(1))
+        _ = Atomic.fetch_add(flags.unsafe_offset(Int(bid)), UInt32(1))
 
     barrier()
     return prev_block_partial_sum_s[0]
@@ -141,11 +142,11 @@ def inter_block_scan(
 
 # ========================== KERNEL CODE ==========================
 def scan_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    block_counter: UnsafePointer[UInt32, MutAnyOrigin],
-    partial_sums: UnsafePointer[Float32, MutAnyOrigin],
-    flags: UnsafePointer[UInt32, MutAnyOrigin],
+    input: MutPointer[Float32, MutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
+    block_counter: MutPointer[UInt32, MutAnyOrigin],
+    partial_sums: MutPointer[Float32, MutAnyOrigin],
+    flags: MutPointer[UInt32, MutAnyOrigin],
     N: UInt32,
 ):
     """Full scan kernel with coarsening, register tiling, and dynamic block assignment.
@@ -190,10 +191,10 @@ def scan_kernel(
     # Scan thread subsegment using registers
     var thread_segment = thread_idx.x * COARSE_FACTOR
     var buffer_r = StaticTuple[Float32, COARSE_FACTOR]()
-    buffer_r[0] = Float32(buffer_s[thread_segment])
+    buffer_r[0] = buffer_s[thread_segment]
 
     comptime for c in range(1, COARSE_FACTOR):
-        buffer_r[c] = Float32(buffer_s[thread_segment + c]) + buffer_r[c - 1]
+        buffer_r[c] = buffer_s[thread_segment + c] + buffer_r[c - 1]
 
     # Block-wide scan of thread sums
     var thread_sum = buffer_r[COARSE_FACTOR - 1]
@@ -234,13 +235,13 @@ def scan_kernel(
     for c in range(COARSE_FACTOR):
         var idx = block_segment + c * BLOCK_DIM + thread_idx.x
         if idx < Int(N):
-            output[idx] = Float32(buffer_s[c * BLOCK_DIM + thread_idx.x])
+            output[idx] = buffer_s[c * BLOCK_DIM + thread_idx.x]
 
 
 # ========================== TEST CODE ==========================
 def cpu_scan(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: UInt32,
 ):
     """CPU reference scan implementation.
@@ -262,9 +263,9 @@ def main() raises:
     comptime dtype = DType.float32
 
     # Allocate host memory
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](N)
-    var h_ref = alloc[Float32](N)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](N)
+    var h_ref = unsafe_alloc[Float32](N)
 
     # Initialize input
     for i in range(N):
@@ -292,15 +293,15 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Initialize block counter and flags to 0
-        var h_counter = alloc[UInt32](1)
-        var h_flags = alloc[UInt32](num_blocks)
+        var h_counter = unsafe_alloc[UInt32](1)
+        var h_flags = unsafe_alloc[UInt32](num_blocks)
         h_counter[0] = 0
         for i in range(num_blocks):
             h_flags[i] = 0
         ctx.enqueue_copy(d_block_counter, h_counter)
         ctx.enqueue_copy(d_flags, h_flags)
-        h_counter.free()
-        h_flags.free()
+        h_counter.unsafe_free()
+        h_flags.unsafe_free()
 
         # Launch kernel
         ctx.enqueue_function[scan_kernel](
@@ -337,9 +338,9 @@ def main() raises:
             errors += 1
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

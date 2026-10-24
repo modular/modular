@@ -538,12 +538,6 @@ TEST_RESOURCES = {
             "memory": 1268,
         },
     },
-    "//max/tests/tests/_core_mojo:tests": {
-        "default": {
-            "cpu": 3,
-            "memory": 625,
-        },
-    },
     "//max/tests/tests/driver:test_device": {
         "default": {
             "cpu": 2,

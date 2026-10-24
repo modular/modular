@@ -62,7 +62,6 @@ modular_py_test(
     name = "tests-pure-cpu",
     srcs = [
         "conftest.py",
-        "test_bfloat16_utils.py",
         "test_config_vision_budgets.py",
         "test_context.py",
         "test_dtype.py",
@@ -147,6 +146,16 @@ modular_py_test(
     ],
 )
 
+# Spec-decode routing imports a target's architecture package to see whether
+# it builds a module, so the tests that route a target need its package.
+_SPEC_TARGET_ARCHITECTURES = [
+    "//max/python/max/pipelines/architectures/gemma4",
+    "//max/python/max/pipelines/architectures/kimik2_5",
+    "//max/python/max/pipelines/architectures/llama3",
+    "//max/python/max/pipelines/architectures/nemotron_h",
+    "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+]
+
 modular_py_test(
     name = "tests-pure-hf",
     size = "large",
@@ -173,6 +182,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    ignore_extra_deps = _SPEC_TARGET_ARCHITECTURES,
     tags = [
         "gpu",
         "no-sandbox",
@@ -196,7 +206,7 @@ modular_py_test(
         "//max/tests/integration/test_common:registry",
         requirement("huggingface-hub"),
         requirement("transformers"),
-    ],
+    ] + _SPEC_TARGET_ARCHITECTURES,
 )
 
 # Common configuration for sampling tests (GPU required)

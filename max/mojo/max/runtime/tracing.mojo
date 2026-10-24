@@ -22,14 +22,16 @@ from std.sys.defines import get_defined_int, is_defined
 
 import std.logger.logger as logger
 
-import max.gpu.host._tracing as gpu_tracing
 from max.gpu.host import DeviceContext
-from max.gpu.host._tracing import Color
-from max.gpu.host._tracing import _end_range as _end_gpu_range
-from max.gpu.host._tracing import _is_enabled as _gpu_is_enabled
-from max.gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
-from max.gpu.host._tracing import _mark as _mark_gpu
-from max.gpu.host._tracing import _start_range as _start_gpu_range
+from max.gpu.host import Color
+from max.gpu.host import _end_range as _end_gpu_range
+from max.gpu.host import _is_enabled as _gpu_is_enabled
+from max.gpu.host import (
+    _is_enabled_details as _gpu_is_enabled_details,
+)
+from max.gpu.host import RangeID as _GPURangeID
+from max.gpu.host import _mark as _mark_gpu
+from max.gpu.host import _start_range as _start_gpu_range
 
 from std.utils import IndexList, Variant
 from std.os import abort
@@ -38,7 +40,7 @@ comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
 """Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
-def get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
+def get_safe_task_id(ctx: DeviceContext.Generic) -> OptionalReg[Int]:
     """Safely extract task_id from DeviceContext, returning None if null/invalid.
 
     Args:
@@ -108,7 +110,7 @@ struct TraceCategory(EnumLike, Equatable, Intable, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -188,7 +190,7 @@ struct TraceLevel(Comparable, EnumLike, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -928,7 +930,7 @@ struct Trace[
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
             try:
-                _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+                _end_gpu_range(_GPURangeID(self.event_id))
             except:
                 abort("GPU tracing failure")
             return

@@ -1,0 +1,32 @@
+From 18e2357c03e71d85c76dd9f4c6f4ea6199d73db6 Mon Sep 17 00:00:00 2001
+From: Kathy Wu <kathywu@modular.com>
+Date: Thu, 22 Oct 2026 13:37:45 -0400
+Subject: [PATCH] Accept any 200 from the health endpoint
+
+This allows the script to work with servers whose /health body differs from MAX's and vLLM's, such as Mach.
+---
+ eval/models.py | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/eval/models.py b/eval/models.py
+index 9e3234f..d72475b 100644
+--- a/eval/models.py
++++ b/eval/models.py
+@@ -48,11 +48,9 @@ class VLLMModel(Model):
+                     # Ignore exception
+                     pass
+                 else:
+-                    if (
+-                        req.status_code == 200
+-                        and req.content == b""
+-                        or req.json() == {"status": "OK"}
+-                    ):
++                    # Servers disagree on the body (MAX, vLLM and Mach all
++                    # differ), and a 404 body need not be JSON.
++                    if req.status_code == 200:
+                         return True
+ 
+             # Backoff
+-- 
+2.50.1 (Apple Git-155)
+

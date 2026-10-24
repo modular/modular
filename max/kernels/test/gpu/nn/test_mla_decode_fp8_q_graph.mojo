@@ -20,9 +20,8 @@ that agreed bit for bit would mean the parameter selected nothing.
 """
 
 from std.math import ceildiv, sqrt
-from std.sys import default_accelerator
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu.host.info import _is_sm10x_gpu
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -333,10 +332,10 @@ def _run_arm[
     ](batch_size, cache_len, q_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(kv_in_tt)
-    def kv_input_fn[width: Int](coords: IndexList[2]) -> SIMD[dtype, width]:
+    def kv_input_fn[
+        width: Int
+    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[dtype, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
         return kv_in_tt.load[width=width](Coord(coords))
 
@@ -345,7 +344,6 @@ def _run_arm[
         n_scale_granularity=N_SCALE_GRAN,
         k_scale_granularity=K_SCALE_GRAN,
         mask_str="causal",
-        kv_input_fn=kv_input_fn,
         target="gpu",
         sparse_mla=True,
         fp8_q=fp8_q,
@@ -364,6 +362,7 @@ def _run_arm[
         w_uv_tt,
         w_uv_scale_tt,
         scalar_args_buf_tt,
+        kv_input_fn,
         ctx,
         d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
@@ -802,10 +801,10 @@ def _run_amd_decode_arm[
     ](batch_size, max_cache_len, q_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(kv_in_tt)
-    def kv_input_fn[width: Int](coords: IndexList[2]) -> SIMD[dtype, width]:
+    def kv_input_fn[
+        width: Int
+    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[dtype, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
         return kv_in_tt.load[width=width](Coord(coords))
 
@@ -814,7 +813,6 @@ def _run_amd_decode_arm[
         n_scale_granularity=GLM_N_SCALE_GRAN,
         k_scale_granularity=GLM_K_SCALE_GRAN,
         mask_str="causal",
-        kv_input_fn=kv_input_fn,
         target="gpu",
     ](
         out_tt,
@@ -831,6 +829,7 @@ def _run_amd_decode_arm[
         w_uv_tt,
         w_uv_scale_tt,
         scalar_args_buf_tt,
+        kv_input_fn,
         ctx,
     )
     ctx.synchronize()
@@ -1228,10 +1227,10 @@ def _run_amd_prefill_arm[
         cache_offsets_device.unsafe_ptr(), row_major(batch_size + 1)
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(kv_in_tt)
-    def kv_input_fn[width: Int](coords: IndexList[2]) -> SIMD[dtype, width]:
+    def kv_input_fn[
+        width: Int
+    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[dtype, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
         return kv_in_tt.load[width=width](Coord(coords))
 
@@ -1240,7 +1239,6 @@ def _run_amd_prefill_arm[
         n_scale_granularity=GLM_N_SCALE_GRAN,
         k_scale_granularity=GLM_K_SCALE_GRAN,
         mask_str="causal",
-        kv_input_fn=kv_input_fn,
         target="gpu",
     ](
         out_tt,
@@ -1259,6 +1257,7 @@ def _run_amd_prefill_arm[
         w_k_scale_tt,
         w_uv_tt,
         w_uv_scale_tt,
+        kv_input_fn,
         ctx,
     )
     ctx.synchronize()
@@ -1502,11 +1501,11 @@ def main() raises:
             # lengths, including an exact page boundary. Prefill: a cold
             # multi-token prompt, batch>=2, at two prompt lengths.
             #
-            # `kv_input_fn` above closes over a locally-declared TileTensor;
-            # without `@__copy_capture` a `capturing` closure passed to
-            # `ctx.enqueue_function` marshals that local by reference, so the
-            # GPU dereferences a host stack address instead of the device
-            # buffer -- `@__copy_capture(kv_in_tt)` makes it pass by value.
+            # `kv_input_fn` above closes over a locally-declared TileTensor
+            # and reaches the GPU through `ctx.enqueue_function`, so it must
+            # copy that local (`{var kv_in_tt}`): a by-reference capture
+            # makes the GPU dereference a host stack address instead of the
+            # device buffer.
             _compare_amd_decode_stage[num_heads=8, page_size=128](
                 "decode_page_boundary", _cache_lens(128, 900, 4000), ctx
             )

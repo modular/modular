@@ -262,12 +262,35 @@ class DynamicRotaryEmbedding(RotaryEmbedding):
         self.original_max_seq_len = max_seq_len
         self.max_seq_len_cached = max_seq_len
 
-        # Save a copy of the original inv_freqs for restoration.
-        self.original_inv_freq = self._compute_inv_freqs()
-        self.inv_freq = self.original_inv_freq
+        # Computed on first use rather than here, so that the module can be
+        # built outside the graph it is traced into.
+        self._original_inv_freq: TensorValue | None = None
+        self._inv_freq: TensorValue | None = None
 
         # _freqs_cis is None so that freqs_cis_base() triggers recomputation.
         self._freqs_cis = None
+
+    @property
+    def original_inv_freq(self) -> TensorValue:
+        """The inverse frequencies at the original maximum sequence length.
+
+        A copy kept for restoration, computed in the current graph on first
+        access.
+        """
+        if self._original_inv_freq is None:
+            self._original_inv_freq = self._compute_inv_freqs()
+        return self._original_inv_freq
+
+    @property
+    def inv_freq(self) -> TensorValue:
+        """The inverse frequencies the frequency tensor is computed from."""
+        if self._inv_freq is None:
+            return self.original_inv_freq
+        return self._inv_freq
+
+    @inv_freq.setter
+    def inv_freq(self, value: TensorValue) -> None:
+        self._inv_freq = value
 
     def maybe_update_freqs(self, position_ids: TensorValueLike) -> None:
         """Updates the frequency buffer if the sequence length exceeds the cached maximum.

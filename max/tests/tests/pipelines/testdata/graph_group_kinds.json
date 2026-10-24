@@ -1,0 +1,14 @@
+[
+  "batch_context",
+  "conv_states",
+  "decoder_outputs",
+  "ep_payload",
+  "eplb_profile",
+  "hidden_states",
+  "logits",
+  "mrope_positions",
+  "ragged_batch",
+  "sparse_indices",
+  "tp_signals",
+  "vision_merge"
+]

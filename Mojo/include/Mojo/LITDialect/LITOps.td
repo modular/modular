@@ -62,7 +62,6 @@ def LIT_FnOp : LITOp<"fn", [
   let arguments = (ins
     OptionalAttr<SymbolNameAttr>:$sym_name,
     OptionalAttr<StrAttr>:$sym_visibility,
-    OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
     TypeAttrOf<LIT_FnTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$params,
@@ -104,7 +103,11 @@ def LIT_FnOp : LITOp<"fn", [
     DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
     DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     OptionalAttr<AnyAttr>:$thunkKey,
-    UnitAttr:$noDocRequired
+    UnitAttr:$noDocRequired,
+    // The signature with the parameters of the enclosing struct, trait or
+    // extension prepended. Set once the signature is resolved, and only for
+    // functions that have such a parent.
+    OptionalAttr<TypeAttrOf<LIT_FnTypeGeneratorType>>:$resolvedFullSignature
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -112,7 +115,6 @@ def LIT_FnOp : LITOp<"fn", [
     ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
     Block *getBody() { return &getFunctionBody().back(); }
     Region *getCallableRegion() { return &getBodyRegion(); }
-    bool isOptionalSymbol() { return getParamDecl().has_value(); }
 
     /// Returns the result type of the MLIR function (not the user defined
     /// result type).  This is guaranteed to be present.
@@ -382,11 +384,19 @@ def LIT_PackageOp : LITOp<"package", [
     If the package was precompiled it may also contain:
     - The set of link dependencies for this package, `dependencies`.
 
+    A package marked `namespace` models a namespace: plain directories
+    spanning import roots, which group the packages within them but are not a
+    package themselves.
+
     Example:
 
     ```mlir
     lit.package @foo {
       lit.file_module @bar {
+      }
+    }
+    lit.package namespace @ns {
+      lit.package @baz {
       }
     }
     ```
@@ -398,7 +408,8 @@ def LIT_PackageOp : LITOp<"package", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // References to the dependencies of this package.
     OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies,
-    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules
+    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules,
+    UnitAttr:$isNamespace
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -410,7 +421,9 @@ def LIT_PackageOp : LITOp<"package", [
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>
   ];
-  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let assemblyFormat = [{
+    (`namespace` $isNamespace^)? $sym_name attr-dict-with-keyword $bodyRegion
+  }];
   let hasVerifier = 1;
 }
 
@@ -608,6 +621,10 @@ def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
     `lit.enum.case` ops, in declaration order. `payloadTypes` lists the
     case's payload types as written, empty for a case without a payload; it
     is absent until the payload is resolved.
+
+    Of the code that consumes an enum, only the generation of its members
+    reads these ops; everything else, pattern matching included, reads the
+    generated `EnumLike` members such as `_enum_case_names`.
 
     Example:
 
@@ -2000,23 +2017,17 @@ def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"dest", "value">]>
 // MemcpyOp
 //===----------------------------------------------------------------------===//
 
-// Checks that all reference element types match.
-class EqualPointeeTypes<list<string> names> :
-    AllMatchSameOperatorTrait<
-        names, "llvm::cast<RefType>($_self.getType()).getElementType()",
-        "element types"
-    >;
-
-def LIT_MemcpyOp : LITOp<"memcpy", [EqualPointeeTypes<["src", "dst"]>]> {
+def LIT_MemcpyOp : LITOp<"memcpy"> {
   let summary = "memcpy operation";
   let description = [{
     Performs an in-memory copy operation between the source reference and
     destination reference. The source reference may either be mutable or
     immutable; the destination reference must be mutable. Unlike regular
     memcpy, this op doesn't work on bytes - it does a whole-value copy of the
-    references' element type. The two references may have differing address
-    space qualifiers. The destination is considered 'initialized' by this
-    operation.
+    references' element type. The element types must be canonically equal, so
+    they may differ in type sugar such as aliases. The two references may have
+    differing address space qualifiers. The destination is considered
+    'initialized' by this operation.
 
     Example:
 
@@ -2030,6 +2041,7 @@ def LIT_MemcpyOp : LITOp<"memcpy", [EqualPointeeTypes<["src", "dst"]>]> {
   let arguments = (ins LIT_RefType:$src, LIT_RefType:$dst);
   let results = (outs);
   let assemblyFormat = "$src `,` $dst attr-dict `:` type($src) `->` type($dst)";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -89,6 +89,6 @@ def test_swigluoai_fuses_with_its_constants() -> None:
     ir = _build_moe_graph(GatedActivation("swigluoai", alpha=1.702, limit=7.0))
     assert ir.count(_FUSED_SILU) == 1, ir
     assert 'activation = "swigluoai"' in ir, ir
-    assert 'swiglu_alpha = "1.702"' in ir, ir
-    assert 'swiglu_limit = "7.0"' in ir, ir
+    assert "swiglu_alpha = #M.dense_array<1.702000e+00> : tensor<f32>" in ir, ir
+    assert "swiglu_limit = #M.dense_array<7.000000e+00> : tensor<f32>" in ir, ir
     assert "mo.sigmoid" not in ir, ir

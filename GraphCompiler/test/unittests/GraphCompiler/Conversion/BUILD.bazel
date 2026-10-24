@@ -1,0 +1,14 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_cc_test(
+    name = "ConversionTests",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//GraphCompiler:MODialect",
+        "//GraphCompiler:RMODialect",
+        "//GraphCompiler:RMOSupport",
+        "//GraphCompiler:Support",
+    ],
+)

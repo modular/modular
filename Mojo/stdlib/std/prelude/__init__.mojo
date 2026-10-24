@@ -49,9 +49,9 @@ from std.collections.string import (
     ord,
 )
 from std.format import Writable, Writer, repr
-from std.hashlib.hash import Hashable, hash, hash_bytes
+from std.hash.hash import Hashable, hash, hash_bytes
 from std.io.file import FileHandle, open
-from std.io.file_descriptor import FileDescriptor
+from std.io.file_descriptor import RawFileDescriptor
 from std.io.io import input, print
 
 from std.builtin.anytype import (

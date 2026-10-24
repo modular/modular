@@ -51,6 +51,12 @@ from max.nn.kernels import (
     flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
 )
 from max.nn.kernels import (
+    fused_chunked_qkv_rope_store_ragged as _fused_chunked_qkv_rope_store_ragged,
+)
+from max.nn.kernels import (
+    fused_qk_ragged_rope as _fused_qk_ragged_rope,
+)
+from max.nn.kernels import (
     grouped_matmul_ragged as _grouped_matmul_ragged,
 )
 from max.nn.kernels import (
@@ -61,6 +67,9 @@ from max.nn.kernels import (
 )
 from max.nn.kernels import (
     mla_fp8_index_top_k as _mla_fp8_index_top_k,
+)
+from max.nn.kernels import (
+    mla_fp8_index_top_k_physical as _mla_fp8_index_top_k_physical,
 )
 from max.nn.kernels import (
     mla_prefill_decode_graph as _mla_prefill_decode_graph,
@@ -98,6 +107,9 @@ from max.nn.kernels import (
 from max.nn.kernels import (
     store_k_scale_cache_ragged as _store_k_scale_cache_ragged,
 )
+from max.nn.kernels import (
+    store_v_cache_ragged as _store_v_cache_ragged,
+)
 
 
 def grouped_matmul_ragged_rule(
@@ -115,8 +127,17 @@ def grouped_matmul_ragged_rule(
     sharded, matching output axis) and row-parallel (weight's contraction
     ``K`` axis sharded, together with ``hidden_states``' matching axis,
     producing a partial sum). ``expert_start_indices`` / ``expert_ids`` /
-    ``expert_usage_stats`` are small per-call metadata, always ``Replicated``.
+    ``expert_usage_stats`` are small per-call metadata, always ``Replicated``
+    under tensor parallelism.
+
+    Under expert parallelism, each device already holds its own experts
+    (``weight``'s leading axis) and the tokens dispatched to them, so
+    ``hidden_states`` and ``weight`` share a device-opaque split instead of a
+    global one; ``expert_start_indices`` / ``expert_ids`` are each device's
+    own (``Unknown``), while ``expert_usage_stats`` stays the same value on
+    every device.
     """
+    split = Sharded(0)
     return [
         AxisAssignment((R, R, R, R, R), (R,)),
         # Column-parallel: weight's N (out) axis sharded -> output's N axis.
@@ -124,6 +145,8 @@ def grouped_matmul_ragged_rule(
         # Row-parallel: weight's K (contraction) axis sharded, matched by
         # hidden_states' K axis -> partial sum.
         AxisAssignment((Sharded(1), Sharded(2), R, R, R), (P,)),
+        # Expert-parallel: each device's own tokens against its own experts.
+        AxisAssignment((split, split, Unknown(), Unknown(), R), (split,)),
     ]
 
 
@@ -196,10 +219,16 @@ mla_decode_graph = F.functional(_mla_decode_graph)
 mla_prefill_decode_graph = F.functional(_mla_prefill_decode_graph)
 hyper_connection_gates = F.functional(_hyper_connection_gates)
 mla_fp8_index_top_k = F.functional(_mla_fp8_index_top_k)
+mla_fp8_index_top_k_physical = F.functional(_mla_fp8_index_top_k_physical)
 rope_ragged = F.functional(_rope_ragged)
 quantize_dynamic_scaled_float8 = F.functional(_quantize_dynamic_scaled_float8)
 store_k_cache_ragged = F.functional(_store_k_cache_ragged)
 store_k_scale_cache_ragged = F.functional(_store_k_scale_cache_ragged)
+store_v_cache_ragged = F.functional(_store_v_cache_ragged)
+fused_qk_ragged_rope = F.functional(_fused_qk_ragged_rope)
+fused_chunked_qkv_rope_store_ragged = F.functional(
+    _fused_chunked_qkv_rope_store_ragged
+)
 
 
 def fused_silu_rule(
@@ -265,10 +294,13 @@ __all__ = [
     "flash_attention_gpu",
     "flash_attention_ragged",
     "flash_attention_ragged_gpu",
+    "fused_chunked_qkv_rope_store_ragged",
+    "fused_qk_ragged_rope",
     "fused_silu",
     "grouped_matmul_ragged",
     "hyper_connection_gates",
     "mla_fp8_index_top_k",
+    "mla_fp8_index_top_k_physical",
     "moe_create_indices",
     "moe_finalize",
     "moe_router_group_limited",
@@ -281,4 +313,5 @@ __all__ = [
     "stack_device_shards",
     "store_k_cache_ragged",
     "store_k_scale_cache_ragged",
+    "store_v_cache_ragged",
 ]

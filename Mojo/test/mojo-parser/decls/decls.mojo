@@ -890,19 +890,19 @@ def callMaybeStatic(a: Int, b: EmptyStruct):
 def initializersAsFunctions():
     # Register passable trivial.
     # CHECK-NEXT: %def_ptr1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[DType.int, 1])")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[DType.int, 1])")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr1
     var def_ptr1: def (:Int) thin -> MyInt = MyInt.__init__
 
     # Register passable non-trivial.
 
     # CHECK-NEXT: %def_ptr2 = lit.var.decl "def_ptr2"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr2
     var def_ptr2: def () thin -> StructExample = StructExample.__init__
 
     # CHECK-NEXT: %def_ptr4 = lit.var.decl "def_ptr4"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr4
     var def_ptr4: def (
         *, copy: StructExample
@@ -910,7 +910,7 @@ def initializersAsFunctions():
 
     # Memory
     # CHECK-NEXT: %def_ptr5 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[DType.int, 1])")
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[DType.int, 1])")
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr5
     var def_ptr5: def (Int) thin -> StructWithInit = StructWithInit.__init__
 
@@ -1076,80 +1076,9 @@ __async def mem_raises() raises -> Int:
     var coro = mem_raises()
 
 
-# CHECK-LABEL: lit.fn @"async_closure_capture
-def async_closure_capture(x: String):
-    @__parameter
-    # CHECK: lit.fn *"capture_it
-    __async def capture_it():
-        _ = x
-
-    # CHECK: lit.async.call[{{.*}}capture_it
-    # CHECK:  %coro = lit.var.decl{{.*}}Coroutine <{{.*}}{imm *"x`
-    var coro = capture_it()
-
-
 ##===----------------------------------------------------------------------===##
 # Nested Functions
 ##===----------------------------------------------------------------------===##
-
-
-# CHECK-LABEL: lit.fn @"topLevelFunction()"
-def topLevelFunction() -> Int:
-    var a = 0
-
-    # CHECK: lit.fn *"nestedFunction()"
-    @__parameter
-    def nestedFunction() -> Int:
-        # CHECK-NEXT: lit.ref.load %a
-        return a
-
-    # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut *"a`"}:() capturing -> !alias_Int1> = <*"nestedFunction()">
-    comptime b = nestedFunction
-    # CHECK: lit.call[!lit.generator<:{mut *"a`"}:() capturing -> !alias_Int1>: *"nestedFunction()"]()
-    return nestedFunction()
-
-
-# CHECK-LABEL: lit.struct.decl @SomeStruct
-struct SomeStruct(Movable where False):
-    # CHECK-LABEL: @"someMethod({{.*}})"
-    def someMethod(self) -> Int:
-        var a = 0
-
-        # CHECK: lit.fn *"nestedFunction()"
-        @__parameter
-        def nestedFunction() -> Int:
-            # CHECK-NEXT: lit.ref.load %a
-            return a
-
-        # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !alias_Int1> = <*"nestedFunction()">
-        comptime b = nestedFunction
-        # CHECK: lit.call[!lit.generator<:{mut [[A_LT]]}:() capturing -> !alias_Int1>: *"nestedFunction()"]()
-        return nestedFunction()
-
-
-# CHECK-LABEL: lit.fn @"closureParameter[def() capturing thin -> index]()"
-# CHECK-SAME: capturing ->
-def closureParameter[func: def () capturing -> __mlir_type.index]():
-    pass
-
-
-# CHECK-LABEL: lit.fn @"closureParameterCaptures
-# CHECK-SAME: :*(0,0):
-# CHECK-SAME: func: !lit.generator<:origins:() capturing -> !kgen.none>
-def closureParameterCaptures[
-    origins: OriginSet, //, func: def () capturing [origins] -> None
-]():
-    pass
-
-
-struct HasParam[p: Int](TrivialRegisterPassable):
-    pass
-
-
-def closureParameterInference[
-    p: Int, //, f: def () capturing -> None
-](arg: HasParam[p]):
-    pass
 
 
 struct HasLifetimeParam[p: Origin[mut=True]](TrivialRegisterPassable):
@@ -1168,97 +1097,6 @@ def inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @CapturingStruct
-struct CapturingStruct[a: Int](Movable where False):
-    @staticmethod
-    def takeClosure[
-        origins: OriginSet, //,
-        f: def () capturing [origins] -> None,
-    ]():
-        pass
-
-
-# CHECK-LABEL: lit.trait.decl @CapturingTrait
-trait CapturingTrait:
-    # CHECK: lit.fn @"takeClosure{{.*}}:*(0,0):
-    def takeClosure[
-        origins: OriginSet, //,
-        f: def () capturing [origins] -> None,
-    ](self):
-        ...
-
-
-# CHECK-LABEL: lit.struct.decl @CapturingStructTrait
-struct CapturingStructTrait(CapturingTrait, RegisterPassable):
-    # CHECK: lit.fn @"takeClosure{{.*}}:*(0,0):
-    def takeClosure[
-        origins: OriginSet, //,
-        f: def () capturing [origins] -> None,
-    ](self):
-        pass
-
-
-# CHECK-LABEL: lit.fn @"inferCaptureOrigins
-def inferCaptureOrigins[
-    lt: Origin[mut=True], param: HasLifetimeParam[lt]
-](mut x: Int, mut y: Int, arg: HasParam):
-    @__parameter
-    def bareFunc():
-        pass
-
-    @__parameter
-    def captureSomething():
-        _ = x
-
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {}),
-    # CHECK-SAME: !lit.generator<() capturing -> !kgen.none>
-    closureParameterCaptures[bareFunc]()
-    # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {mut *"x`1"}),
-    # CHECK-SAME: !lit.generator<:{mut *"x`1"}:() capturing -> !kgen.none>
-    closureParameterCaptures[captureSomething]()
-    # CHECK: call {{.*}}closureParameterInference{{.*}}<:!Int *"arg.p`{{.*}}",
-    # CHECK-SAME: rebind(:!lit.generator<:{mut *"x`1"}:{{.*}} *"captureSomething
-    closureParameterInference[captureSomething](arg)
-
-    # CHECK: lit.alias.decl *"unboundSet{{.*}}!kgen.func.literal<:!lit.fn<:*(0,0):
-    comptime unboundSet = closureParameterCaptures
-    # CHECK: lit.alias.decl *"boundSet{{.*}}!kgen.func.literal<:!lit.fn<:rebind(:origin.set {mut *"x`1"}):
-    comptime boundSet = closureParameterCaptures[captureSomething]
-
-    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}:origin<true> *(0,0)>
-    comptime unboundSingleParam = explicitLifetime
-    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}:origin<true> *"lt._mlir_origin`"
-    comptime boundSingleParam = explicitLifetime[param]
-
-    # CHECK: lit.alias.decl *"memberFunction{{.*}}!kgen.func.literal<:!lit.fn<:*(0,1):
-    comptime memberFunction = CapturingStruct.takeClosure
-
-    # CHECK: lit.fn *"captureWithClosure
-    # CHECK-SAME: :{mut *"y`{{.*}}", mut |*(0,0)|}:
-    @__parameter
-    def captureWithClosure[
-        lts: OriginSet, //, f: def () capturing [lts] -> None
-    ]():
-        _ = y
-
-    # CHECK: lit.alias.decl *"boundClosure{{.*}} !lit.generator<:{mut *"y`2", mut |rebind(:origin.set {mut *"x`1"})|}:
-    comptime boundClosure = captureWithClosure[captureSomething]
-
-
-# CHECK-LABEL: lit.fn @"testParameterCapture
-def testParameterCapture(mut x: Int, mut y: Int):
-    # CHECK: lit.fn *"capture()":{mut *"x`"}
-    @__parameter
-    def capture():
-        _ = x
-
-    # CHECK: lit.fn *"do_it()":{mut *"x`", mut *"y`
-    @__parameter
-    def do_it():
-        _ = y
-        capture()
-
-
 # CHECK-LABEL: lit.fn @"topLevelParamFn[index]()"<a_param>
 def topLevelParamFn[a_param: __mlir_type.index]():
     def nestedFunction[b_param: __mlir_type.index]():
@@ -1268,16 +1106,6 @@ def topLevelParamFn[a_param: __mlir_type.index]():
     comptime thinref = nestedFunction
     # CHECK: lit.call tail @decls::@"nestedFunction[index](){{.*}}"<2>()
     nestedFunction[Int(2).__mlir_index__()]()
-
-    var value = 0
-
-    @__copy_capture(value)
-    @__parameter
-    def capturingNestedFunction() -> Int:
-        return value
-
-    # CHECK: lit.alias.decl *"fatRef{{.*}}": !lit.generator<() capturing -> !alias_Int1> = <*"capturingNestedFunction()">
-    comptime fatRef = capturingNestedFunction
 
 
 struct SomeParamStruct[c_param: Int](Movable where False):
@@ -1562,9 +1390,10 @@ def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]() where x > 0:
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(#lit.struct.extract<:!Bool apply(:!lit.generator<("self": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"<:!DType {:dtype index}, :!SIMDLength {1}>, *"cs.a`", {:scalar<index> 0}), "_mlir_value">, ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>>>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
+# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(#lit.struct.extract<:!Bool apply(:!lit.generator<("self": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"<:!DType {:dtype index}, :!SIMDLength {1}>, *"cs.a`", {:scalar<index> 0}), "_mlir_value">, ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>>, {<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
+# CHECK: lit.call {{.*}}need_positive_int{{.*}}<:!Int *"cs.a`">
 def use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
-    pass
+    need_positive_int[cs.a]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct_in_constraint
 # CHECK-SAME: <x: !Int, {<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 1)){{.*}}>, <sugar_preserved({{.*}}ge(:scalar<index> add(#lit.struct.extract<:!Int x, "_mlir_value">, 1), 2)){{.*}}>}

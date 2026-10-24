@@ -17,7 +17,6 @@ Submodules
 .. autosummary::
    :nosignatures:
 
-   max.experimental.nn.common_layers.functional_kernels
    max.experimental.nn.norm
    max.experimental.nn.rope
 
@@ -25,7 +24,6 @@ Submodules
    :maxdepth: 1
    :hidden:
 
-   experimental.nn.common_layers.functional_kernels
    experimental.nn.norm
    experimental.nn.rope
 
@@ -41,6 +39,7 @@ Base classes
    ModuleList
    PinnedDeviceTensor
    Sequential
+   TransparentModule
 
 Linear layers
 -------------
@@ -53,6 +52,36 @@ Linear layers
    Conv2d
    Embedding
    Linear
+
+Attention and rotary embeddings
+-------------------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.experimental.nn.common_layers.attention.AttentionWithRope
+   ~max.experimental.nn.common_layers.rotary_embedding.RotaryEmbedding
+   ~max.experimental.nn.common_layers.rotary_embedding.YarnRotaryEmbedding
+
+LoRA
+----
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   LoRA
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   lora_layers
+   lora_parameters
 
 Hyper-connection
 ----------------
@@ -75,3 +104,13 @@ Functions
    as_subgraph
    module_dataclass
 
+Mesh axes
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   ~max.experimental.nn.common_layers.mesh_axis.DP
+   ~max.experimental.nn.common_layers.mesh_axis.TP

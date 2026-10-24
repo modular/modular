@@ -348,7 +348,7 @@ def _compile_max_pool_compress(
             # BF16 represents every e4m3 value exactly and there is no
             # FP8-to-integer cast, so this reads the stored bytes losslessly.
             outputs += [rows.cast(DType.bfloat16), scales]
-        graph.output(*outputs)
+        graph.output(outputs)
 
     return session.load(graph, weights_registry=indexer.state_dict())
 

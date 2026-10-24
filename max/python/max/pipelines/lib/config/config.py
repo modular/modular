@@ -32,7 +32,7 @@ from max.pipelines.lib._model_components import (
 )
 from max.pipelines.lib.arch_lookup import (
     ARCH_LOOKUP,
-    Speculator,
+    SupportedArchitecture,
     find_architecture,
     import_custom_architectures,
     select_speculator,
@@ -45,6 +45,9 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
     DISABLE_PARSER_SENTINEL,
     PipelineRuntimeConfig,
+)
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    spec_decode_architecture,
 )
 from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
@@ -336,7 +339,8 @@ def _resolve_overlap_and_device_graph_capture(
     """Returns the resolved (device_graph_capture, enable_overlap_scheduler).
 
     Device graph capture requires the overlap scheduler, so the two
-    resolve together. ``--force`` skips the auto-enables and the
+    resolve together. An explicit ``enable_overlap_scheduler=False`` keeps
+    both auto-enables off. ``--force`` skips the auto-enables and the
     overlap-compatibility validation, matching its meaning everywhere
     else in construction.
     """
@@ -353,6 +357,7 @@ def _resolve_overlap_and_device_graph_capture(
     if not runtime.force:
         if (
             device_graph_capture is None
+            and runtime.enable_overlap_scheduler is not False
             and arch is not None
             and arch.supports_device_graph_capture
             and accelerator_api() in ("cuda", "hip")
@@ -374,27 +379,32 @@ def _resolve_overlap_and_device_graph_capture(
 
     enable_overlap_scheduler = runtime.enable_overlap_scheduler
     if device_graph_capture:
-        if not enable_overlap_scheduler:
+        if enable_overlap_scheduler is False:
+            logger.warning(
+                "Device graph capture needs the overlap scheduler, so it "
+                "overrides --no-enable-overlap-scheduler."
+            )
+        elif enable_overlap_scheduler is None:
             logger.info("Enabling overlap scheduling for device graph capture.")
         enable_overlap_scheduler = True
 
     if runtime.force:
-        return device_graph_capture, enable_overlap_scheduler
+        return device_graph_capture, bool(enable_overlap_scheduler)
 
     # Automatically enable overlap scheduling for architectures that declare
     # support. New architectures opt out by setting ``supports_overlap_scheduler=False``.
-    if not enable_overlap_scheduler:
-        if (
+    if enable_overlap_scheduler is None:
+        enable_overlap_scheduler = (
             arch is not None
             and arch.supports_overlap_scheduler
             and _is_eligible_for_overlap_serve_optimizations(
                 sampling, lora, model, arch
             )
-        ):
-            enable_overlap_scheduler = True
+        )
+        if enable_overlap_scheduler:
             logger.info(
                 f"Automatically enabling overlap scheduling for {arch.name}. "
-                "You can manually disable this by setting --no-enable-overlap-scheduler --force."
+                "You can manually disable this by setting --no-enable-overlap-scheduler."
             )
 
     # Raise errors when we detect features that are not compatible with the overlap scheduler.
@@ -599,50 +609,56 @@ def _resolved_runtime_and_sampling(
 
 
 def _apply_speculative_draft_architecture(
-    speculative: SpeculativeConfig | None, draft_model: MAXModelConfig | None
+    speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
 ) -> None:
     """Rewrite the draft model's HuggingFace architecture for the method.
 
-    Runs after the models are built, since it edits the draft's loaded
-    HuggingFace config rather than any MAX config field.
+    The target's family picks the registered draft architecture. Runs after
+    the models are built, since it edits the draft's loaded HuggingFace
+    config rather than any MAX config field.
     """
     if speculative is None:
         return
-    # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
+    draft_model = models.get("draft")
+    main = models.get("main")
+    method = speculative.speculative_method
     if speculative.is_eagle() and draft_model is not None:
         if len(draft_model.huggingface_config.architectures) != 1:
             raise ValueError(
                 f"Expected exactly 1 architecture in draft model config, "
                 f"got {len(draft_model.huggingface_config.architectures)}"
             )
-        hf_arch = draft_model.huggingface_config.architectures[0]
-        if hf_arch == "LlamaForCausalLM":
-            draft_model.huggingface_config.architectures[0] = (
-                "LlamaForCausalLMEagle"
-            )
-    # DFlash drafts ship with architectures: ["DFlashDraftModel"],
-    # which isn't registered as a standalone MAX architecture (the draft
-    # is only ever invoked through UnifiedDflashLlama3). Override to
-    # LlamaForCausalLM.
-    if speculative.is_dflash() and draft_model is not None:
-        if len(draft_model.huggingface_config.architectures) != 1:
-            raise ValueError(
-                f"Expected exactly 1 architecture in draft model config, "
-                f"got {len(draft_model.huggingface_config.architectures)}"
-            )
-        hf_arch = draft_model.huggingface_config.architectures[0]
-        if hf_arch == "DFlashDraftModel":
-            draft_model.huggingface_config.architectures[0] = "LlamaForCausalLM"
+    if (
+        draft_model is not None
+        and main is not None
+        and method is not None
+        and main.huggingface_config.architectures
+        and draft_model.huggingface_config.architectures
+    ):
+        target = find_architecture(main.huggingface_config.architectures[0])
+        if target is not None:
+            draft_archs = draft_model.huggingface_config.architectures
+            draft_archs[0] = target.draft_architecture(method, draft_archs[0])
 
 
-def _select_declared_speculator(
-    speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
-) -> Speculator | None:
-    """Selects the speculator declared for the target architecture.
+def _select_spec_decode_architecture(
+    speculative: SpeculativeConfig | None,
+    models: Mapping[str, MAXModelConfig],
+    prefer_module_v3: bool = False,
+) -> SupportedArchitecture | None:
+    """Selects the architecture of the target's declared speculator.
+
+    A target's speculators keep the method and draft pairs they declare.
+    Any other pair gets the unified architecture for the target and its
+    draft, if the two pair.
+
+    ``prefer_module_v3`` keeps the speculator in lockstep with the
+    architecture variant the same flag selects.
 
     Raises:
         ValueError: If the target offers speculators but none accepts the
-            configured draft.
+            configured method and draft, and the unified model can't pair
+            them either.
     """
     if not speculative:
         return None
@@ -652,15 +668,34 @@ def _select_declared_speculator(
         return None
     target = target_archs[0]
 
-    # Keyed by target name, so a target that declares no speculators costs
-    # nothing here and never imports a spec-decode package.
-    if not ARCH_LOOKUP.speculators_for(target):
-        return None
-
     draft_model = models.get("draft")
+    draft_archs = (
+        draft_model.huggingface_config.architectures
+        if draft_model is not None
+        else None
+    )
+    # Keyed by target name, so a target that declares no speculators never
+    # imports a spec-decode package. The prefer flag keeps the lookup in
+    # lockstep with the architecture variant the same flag selects.
+    declared = ARCH_LOOKUP.speculators_for(
+        target, prefer_module_v3=prefer_module_v3
+    )
+    draft_name = draft_archs[0] if draft_archs else None
+    if not any(
+        speculator.method == speculative.speculative_method
+        and speculator.draft_arch == draft_name
+        for speculator in declared
+    ):
+        unified = spec_decode_architecture(
+            target, speculative.speculative_method, draft_name
+        )
+        # A target with speculators for other pairs only still refuses a
+        # pair nothing runs, below.
+        if unified is not None or not declared:
+            return unified
+
     draft_arch: str | None = None
     if draft_model is not None:
-        draft_archs = draft_model.huggingface_config.architectures
         if not draft_archs:
             raise ValueError(
                 "Draft model HF config has empty ``architectures=[]``,"
@@ -668,7 +703,30 @@ def _select_declared_speculator(
             )
         draft_arch = draft_archs[0]
 
-    return select_speculator(target, speculative.speculative_method, draft_arch)
+    speculator = select_speculator(
+        target,
+        speculative.speculative_method,
+        draft_arch,
+        prefer_module_v3=prefer_module_v3,
+    )
+    return None if speculator is None else speculator.derive()
+
+
+def _is_gemma4_assistant_pair(models: Mapping[str, MAXModelConfig]) -> bool:
+    """Whether the target is Gemma 4 and the draft its MTP assistant."""
+    target_archs = models["main"].huggingface_config.architectures
+    draft_model = models.get("draft")
+    draft_archs = (
+        draft_model.huggingface_config.architectures
+        if draft_model is not None
+        else None
+    )
+    return bool(
+        target_archs
+        and target_archs[0] == "Gemma4ForConditionalGeneration"
+        and draft_archs
+        and draft_archs[0] == "Gemma4AssistantForCausalLM"
+    )
 
 
 def _require_dspark(speculative: SpeculativeConfig, draft_arch: str) -> None:
@@ -686,102 +744,52 @@ def _require_dspark(speculative: SpeculativeConfig, draft_arch: str) -> None:
 
 
 def _apply_speculative_target_architecture(
-    speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
-) -> Speculator | None:
-    """Selects the fused spec-decode architecture for the target.
+    speculative: SpeculativeConfig | None,
+    models: Mapping[str, MAXModelConfig],
+    prefer_module_v3: bool = False,
+) -> SupportedArchitecture | None:
+    """Selects the unified spec-decode architecture for the target.
 
-    A target that declares a :class:`Speculator` returns it, leaving its
-    ``architectures`` untouched. The caller derives the fused architecture
-    from the one the checkpoint's own name resolves to.
+    A target that declares a :class:`Speculator`, or that pairs with its
+    draft in a unified graph, returns the unified architecture, leaving its
+    ``architectures`` untouched.
+
+    ``prefer_module_v3`` selects the speculator in lockstep with the
+    architecture variant the same flag selects.
 
     It is a no-op when speculative decoding is disabled.
     """
     if not speculative:
         return None
-    speculator = _select_declared_speculator(speculative, models)
-    if speculator is not None:
-        return speculator
+    if prefer_module_v3 and _is_gemma4_assistant_pair(models):
+        # TODO(MXSERV-698): run ModuleV3 Gemma 4 MTP through
+        # SpecDecodePipelineModel; until then it keeps its fused graph.
+        models["main"].huggingface_config.architectures[0] = (
+            "UnifiedMTPGemma4ForCausalLM"
+        )
+        return None
+    spec_arch = _select_spec_decode_architecture(
+        speculative, models, prefer_module_v3=prefer_module_v3
+    )
+    if spec_arch is not None:
+        return spec_arch
 
     draft_model = models.get("draft")
     target_archs = models["main"].huggingface_config.architectures
     if not target_archs:
         # Nothing to rewrite; the lookup below reports the real problem.
         return None
-    # The Llama and Kimi arms below name DFlash v1 and Eagle graphs, and
-    # neither can verify a DFlash2 block draft. ``is_dflash()`` is true for
-    # v2, so without this both would happily rewrite a DFlash2 pairing onto
-    # a graph that silently mismatches the drafter. A v2 target selects its
-    # own fused arch from its own arm; leaving the name alone here lets the
-    # lookup reject a pairing no arm claims.
-    v1_or_eagle = not speculative.is_dflash2()
-    if target_archs[0] == "LlamaForCausalLM" and v1_or_eagle:
-        if speculative.is_dflash():
-            target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
-        else:
-            target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-    if target_archs[0] == "KimiK25ForConditionalGeneration" and v1_or_eagle:
+    # Nemotron-H's DSpark block drafter declares architectures:
+    # ["Qwen3DSparkModel"], the dense Qwen3-style DSpark draft.
+    if target_archs[0] == "NemotronHForCausalLM":
         draft_archs = (
             draft_model.huggingface_config.architectures
             if draft_model is not None
             else None
         )
-        if speculative.is_dflash():
-            target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
-        elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
-            # MLA target + MHA (Llama-style) Eagle3 draft.
-            target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
-        else:
-            # MLA target + MLA Eagle3 draft (existing path).
-            target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
-    if target_archs[0] == "Gemma4ForConditionalGeneration":
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
-            target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
-        elif draft_archs and draft_archs[0] == "DSparkDraftModel":
-            # Speculators-format DSpark drafters (e.g.
-            # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
-            # generic architectures: ["DSparkDraftModel"].
+        if draft_archs and draft_archs[0] == "Qwen3DSparkModel":
             _require_dspark(speculative, draft_archs[0])
-            target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
-        elif (
-            speculative.is_dflash()
-            and draft_archs
-            # z-lab DFlash drafters (e.g. z-lab/gemma-4-31B-it-DFlash)
-            # declare architectures: ["DFlashDraftModel"], which
-            # ``_create_speculative_config_if_needed`` rewrites to
-            # "LlamaForCausalLM" on the CLI-kwargs path (but not the
-            # recipe path) before this runs. Accept both spellings.
-            and draft_archs[0] in ("DFlashDraftModel", "LlamaForCausalLM")
-        ):
-            target_archs[0] = "UnifiedDflashGemma4_31BForCausalLM"
-    # Gemma 4 12B ships as the "gemma4_unified" model line; its DSpark
-    # block drafter declares architectures: ["Gemma4DSparkModel"].
-    if target_archs[0] == "Gemma4UnifiedForConditionalGeneration":
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
-            _require_dspark(speculative, draft_archs[0])
-            target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
-    # Kimi K3's speculators-format DSpark drafter (
-    # RedHatAI/Kimi-K3-speculator.dspark) declares the same generic
-    # architectures: ["DSparkDraftModel"] the Gemma4 arm keys on; the
-    # verifier it names is what picks the fused graph apart.
-    if target_archs[0] == "KimiK3ForConditionalGeneration":
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if draft_archs and draft_archs[0] == "DSparkDraftModel":
-            _require_dspark(speculative, draft_archs[0])
-            target_archs[0] = "UnifiedDSparkKimiK3ForCausalLM"
+            target_archs[0] = "UnifiedDSparkNemotronHForCausalLM"
     if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
         draft_archs = (
             draft_model.huggingface_config.architectures
@@ -801,36 +809,6 @@ def _apply_speculative_target_architecture(
             target_archs[0] = (
                 "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
             )
-    if target_archs[0] == "Qwen3_5ForConditionalGeneration":
-        # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
-        # there is no separate draft model. Qwen3.5 shares the arch name
-        # but ships no head; only override when the head exists. Unlike
-        # the other in-checkpoint MTP overrides this one also waits for an
-        # explicit `--speculative-method mtp`: the fused graph it selects
-        # is served by Mach rather than MAX, so a plain `max serve` of a
-        # Qwen3.8 checkpoint must keep landing on the base architecture.
-        text_config = getattr(
-            models["main"].huggingface_config,
-            "text_config",
-            models["main"].huggingface_config,
-        )
-        has_mtp = (getattr(text_config, "mtp_num_hidden_layers", 0) or 0) > 0
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if speculative.is_mtp() and models.get("draft") is None and has_mtp:
-            target_archs[0] = "UnifiedMTPQwen3_5ForConditionalGeneration"
-        elif (
-            speculative.is_dflash2()
-            and draft_archs
-            # "DFlash2DraftModel" is a registered placeholder arch, so
-            # unlike v1's "DFlashDraftModel" it is never rewritten to
-            # "LlamaForCausalLM" and only the one spelling reaches here.
-            and draft_archs[0] == "DFlash2DraftModel"
-        ):
-            target_archs[0] = "UnifiedDflash2Qwen3_5ForConditionalGeneration"
     if target_archs[0] == "GlmMoeDsaForCausalLM":
         # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
         # there is no separate draft model. GLM-5.1 shares the arch name
@@ -845,21 +823,9 @@ def _apply_speculative_target_architecture(
         ) > 0
         if models.get("draft") is None and has_mtp:
             target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
-    if target_archs[0] == "InklingForConditionalGeneration":
-        # Inkling bakes chained MTP depths into the target checkpoint.
-        mtp_config = getattr(
-            models["main"].huggingface_config, "mtp_config", None
-        )
-        n_mtp = (
-            mtp_config.get("num_nextn_predict_layers")
-            if isinstance(mtp_config, dict)
-            else getattr(mtp_config, "num_nextn_predict_layers", None)
-        )
-        if models.get("draft") is None and (n_mtp or 0) > 0:
-            target_archs[0] = "UnifiedMTPInklingForConditionalGeneration"
 
     # The legacy branches above rewrote the name in place; there is no
-    # speculator to hand back.
+    # unified architecture to hand back.
     return None
 
 
@@ -1284,7 +1250,10 @@ class PipelineConfig(ConfigFileModel):
         25 MiB workspace with a legacy-stream ``hipMemset`` and calls
         ``exit(1)`` when that fails. Inside a capture region that memset
         returns ``hipErrorStreamCaptureImplicit``, so the model worker dies
-        instead of raising. MAX's own kernels cover the same shapes.
+        instead of raising. The shapes MAX's own kernels do not take run a
+        far slower naive kernel: fp16, an N that is not a multiple of 4, and a
+        K that is not a multiple of the K tile or is below 128, except bf16
+        with a transposed B and an even K.
         """
         return self.runtime.disable_vendor_blas_fallback or bool(
             self.runtime.device_graph_capture and accelerator_api() == "hip"
@@ -1612,15 +1581,13 @@ class PipelineConfig(ConfigFileModel):
         )
         lora = args.lora.model_copy(deep=True) if args.lora else None
 
-        _apply_speculative_draft_architecture(
-            args.speculative, models.get("draft")
-        )
+        _apply_speculative_draft_architecture(args.speculative, models)
         # Must precede the arch lookups so every consumer resolves the
         # overridden arch (#88511).
-        speculator: Speculator | None = None
+        spec_arch: SupportedArchitecture | None = None
         if args.speculative is not None and "main" in models:
-            speculator = _apply_speculative_target_architecture(
-                args.speculative, models
+            spec_arch = _apply_speculative_target_architecture(
+                args.speculative, models, args.runtime.prefer_module_v3
             )
         for model in models.values():
             model.validate_repo_access()
@@ -1656,8 +1623,8 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(f"No architecture found for {arch_name}")
             if arch is not None:
                 _validate_kv_cache_format(models["main"].kv_cache, arch)
-            if arch is not None and speculator is not None:
-                arch = speculator.derive()
+            if arch is not None and spec_arch is not None:
+                arch = spec_arch
 
         draft_arch = None
         if models.get("draft") is not None:
@@ -1670,11 +1637,15 @@ class PipelineConfig(ConfigFileModel):
                     exc_info=True,
                 )
                 draft_arch_name = None
-            # Mirrors the registry's draft lookup, which passes no task.
-            draft_arch = find_architecture(
-                draft_arch_name,
-                prefer_module_v3=runtime.prefer_module_v3,
-            )
+            # Mirrors the registry's draft lookup, which passes no task. The
+            # prefer flag is deliberately not forwarded either: it selects
+            # the target's build, while this lookup only resolves the draft's
+            # validation alias. A draft's rename target can name a real
+            # architecture with a `_ModuleV3` namesake of a different shape;
+            # forwarding the flag would reject the TP pairs the graph-API
+            # alias accepts. The drafter itself runs inside the fused model,
+            # never through this name.
+            draft_arch = find_architecture(draft_arch_name)
             if draft_arch_name is not None and draft_arch is None:
                 raise ValueError(
                     "MAX-Optimized architecture not found for `draft_model`"
@@ -1723,11 +1694,16 @@ class PipelineConfig(ConfigFileModel):
             runtime, sampling = _resolved_runtime_and_sampling(
                 runtime, sampling, lora, models["main"], arch
             )
-        elif runtime.device_graph_capture is None:
+        elif (
+            runtime.device_graph_capture is None
+            or runtime.enable_overlap_scheduler is None
+        ):
             # Overlap/DGC resolution is arch-gated; configs without a
-            # registered architecture still end with a concrete bool.
+            # registered architecture still end with concrete bools.
             runtime = _construct_from_user_fields(
-                runtime, device_graph_capture=False
+                runtime,
+                device_graph_capture=bool(runtime.device_graph_capture),
+                enable_overlap_scheduler=bool(runtime.enable_overlap_scheduler),
             )
 
         config = cls(

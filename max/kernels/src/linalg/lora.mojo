@@ -16,7 +16,7 @@
 from max.gpu.host import DeviceContext
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 
-from std.utils import Index, IndexList
+from std.utils import Index
 from layout.tensor_engine import DefaultEngine, DevicePointerEngine
 from layout import (
     Coord,
@@ -95,7 +95,7 @@ def shrink_qkv_permute_3mn_sm100(
     # write into C directly; any changes to the final C output must happen
     # exclusively via the epilogue function.
     var c = TileTensor(
-        UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
+        MutPointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
         row_major(M, N_Total),
     )
 
@@ -127,16 +127,16 @@ def shrink_qkv_permute_3mn_sm100(
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime N = c_lora.static_shape[2]
-        var i = Int(idx[0].value())
-        var j = Int(idx[1].value())
+        var i = Int(idx[0])
+        var j = Int(idx[1])
         var new_j, new_k = divmod(j, N)
         comptime assert N % width == 0, "N must be divisible by width"
         # The current index is [i, new_j, new_k] in the M x 3 x N row major
         # tensor.
         # The permdim tensor has the shape 3 x M x N, so the index is then
         # [new_j, i, new_k].
-        c_lora.store_linear[width=width, alignment=alignment](
-            IndexList[3](new_j, i, new_k), val.cast[c_type]()
+        c_lora.store[width=width, alignment=alignment](
+            Coord(new_j, i, new_k), val.cast[c_type]()
         )
 
     # Run grouped_matmul and apply permute_dim_lora as the elementwise epilogue.
@@ -170,7 +170,7 @@ def shrink_qkv_permute_3mn_sm100(
 #     against the matching plane of `P` -- the per-region operand switch, done in
 #     the load stage. Region boundaries are tile-aligned, so every output tile is
 #     single-region.
-#   - Store (route): `elementwise_lambda_fn` routes each output element
+#   - Store (route): `epilogue_fn` routes each output element
 #     `(token, out_col)` to `q_out` or the row-stacked `kv_out [2M, kv_dim]`
 #     (K -> rows [0, M), V -> rows [M, 2M)), matching `kv_cache_ragged_2m_iadd`.
 #
@@ -209,7 +209,7 @@ def expand_qkv_sm100(
     A operand. The per-region operand switch (which plane of `P`) is a load-stage
     specialization (`a_plane_splits`, shifting the activation row by `plane * M`);
     the Q/K/V output routing is an output-epilogue specialization
-    (`elementwise_lambda_fn`). K and V are row-stacked in `kv_out` (K into rows
+    (`epilogue_fn`). K and V are row-stacked in `kv_out` (K into rows
     `[0, M)`, V into rows `[M, 2M)`), matching the layout `kv_cache_ragged_2m_iadd`
     consumes downstream.
 
@@ -295,7 +295,7 @@ def expand_qkv_sm100(
     # keeps `c.static_shape[1]` static so the dispatcher reaches the SM100
     # tensor-core kernel instead of falling back to naive.
     var c = TileTensor(
-        UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
+        MutPointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
         row_major(M, Idx[D_total]),
     )
 
@@ -356,20 +356,19 @@ def expand_qkv_sm100(
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert q_dim % width == 0, "q_dim must be divisible by width"
         comptime assert kv_dim % width == 0, "kv_dim must be divisible by width"
-        var token = Int(idx[0].value())
-        var j = Int(idx[1].value())
+        var token = Int(idx[0])
+        var j = Int(idx[1])
         if j < q_dim:
-            q_out.store_linear[width=width, alignment=alignment](
-                IndexList[2](token, j), val.cast[q_type]()
+            q_out.store[width=width, alignment=alignment](
+                Coord(token, j), val.cast[q_type]()
             )
         elif j < q_dim + kv_dim:
-            kv_out.store_linear[width=width, alignment=alignment](
-                IndexList[2](token, j - q_dim), val.cast[kv_type]()
+            kv_out.store[width=width, alignment=alignment](
+                Coord(token, j - q_dim), val.cast[kv_type]()
             )
         else:
-            kv_out.store_linear[width=width, alignment=alignment](
-                IndexList[2](M + token, j - q_dim - kv_dim),
-                val.cast[kv_type](),
+            kv_out.store[width=width, alignment=alignment](
+                Coord(M + token, j - q_dim - kv_dim), val.cast[kv_type]()
             )
 
     # The SM100 tensor-core path selects the P-plane once per output-D tile, so a

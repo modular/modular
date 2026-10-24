@@ -16,6 +16,7 @@
 
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/POPDialect/POPOps.h"
+#include "Support/Compiler/DirectConversion.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
@@ -383,15 +384,65 @@ private:
 // ConvertPOPToLLVMPattern
 //===----------------------------------------------------------------------===//
 
+/// Direct-conversion analogue of mlir::ConvertOpToLLVMPattern: an eager,
+/// single-visit pattern with the LLVM type-converter helper surface.
+template <typename OpT>
+struct DirectOpToLLVMPattern : public M::DirectOpConversionPattern<OpT> {
+  explicit DirectOpToLLVMPattern(const mlir::LLVMTypeConverter &typeConverter,
+                                 mlir::PatternBenefit benefit = 1)
+      : M::DirectOpConversionPattern<OpT>(
+            typeConverter, &typeConverter.getContext(), benefit) {}
+
+  const mlir::LLVMTypeConverter *getTypeConverter() const {
+    return static_cast<const mlir::LLVMTypeConverter *>(this->typeConverter);
+  }
+
+  Type getIndexType() const { return getTypeConverter()->getIndexType(); }
+
+  Type getIntPtrType(unsigned addressSpace = 0) const {
+    return IntegerType::get(
+        &getTypeConverter()->getContext(),
+        getTypeConverter()->getPointerBitwidth(addressSpace));
+  }
+
+  Type getVoidType() const {
+    return mlir::LLVM::LLVMVoidType::get(&getTypeConverter()->getContext());
+  }
+};
+
+/// Direct-conversion analogue of mlir::OneToOneConvertToLLVMPattern: replace
+/// the source op with the target op, forwarding the converted operands and
+/// attributes.
+template <typename SourceOp, typename TargetOp>
+struct DirectOneToOnePattern : public DirectOpToLLVMPattern<SourceOp> {
+  using DirectOpToLLVMPattern<SourceOp>::DirectOpToLLVMPattern;
+  using OpAdaptor = typename SourceOp::Adaptor;
+
+  LogicalResult matchAndRewrite(SourceOp op, OpAdaptor adaptor,
+                                M::DirectRewriter &rewriter) const override {
+    SmallVector<Type> resultTypes;
+    if (failed(this->getTypeConverter()->convertTypes(op->getResultTypes(),
+                                                      resultTypes)))
+      return rewriter.notifyMatchFailure(op, "failed to convert result types");
+    mlir::OperationState state(op.getLoc(), TargetOp::getOperationName());
+    state.addTypes(resultTypes);
+    state.addOperands(adaptor.getOperands());
+    state.addAttributes(op->getAttrs());
+    mlir::Operation *newOp = rewriter.create(state);
+    rewriter.replaceOp(op, newOp->getResults());
+    return success();
+  }
+};
+
 /// This is a templated instance of the wrapper class to rewrite a specific op.
 template <typename OpT>
-struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT> {
-  using mlir::ConvertOpToLLVMPattern<OpT>::ConvertOpToLLVMPattern;
+struct ConvertPOPToLLVMPattern : public DirectOpToLLVMPattern<OpT> {
+  using DirectOpToLLVMPattern<OpT>::DirectOpToLLVMPattern;
 
   /// Get the type converter.
   const POPToLLVMTypeConverter *getTypeConverter() const {
     return static_cast<const POPToLLVMTypeConverter *>(
-        mlir::ConvertOpToLLVMPattern<OpT>::getTypeConverter());
+        DirectOpToLLVMPattern<OpT>::getTypeConverter());
   }
 
   /// Convert a type. Return null if the type conversion failed.
@@ -401,7 +452,7 @@ struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT> {
 
   /// Builds an LLVM inline-asm op (ATT dialect, no side effects).
   mlir::LLVM::InlineAsmOp
-  createInlineAsm(mlir::ConversionPatternRewriter &rewriter, mlir::Location loc,
+  createInlineAsm(M::DirectRewriter &rewriter, mlir::Location loc,
                   llvm::StringRef asmStr, llvm::StringRef asmConstraints,
                   Type resultType, llvm::SmallVector<Value> operands) const {
     const auto asmDialectAttr = mlir::LLVM::AsmDialectAttr::get(
@@ -419,23 +470,22 @@ struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT> {
 
   /// Creates a signless integer constant sized like `intType`.
   template <typename intType>
-  Value createConstant(mlir::ConversionPatternRewriter &rewriter,
-                       mlir::Location loc, uint64_t value) const {
+  Value createConstant(M::DirectRewriter &rewriter, mlir::Location loc,
+                       uint64_t value) const {
     return mlir::LLVM::ConstantOp::create(
         rewriter, loc, rewriter.getIntegerType(sizeof(intType) * 8), value);
   }
 
   /// Creates an f32 floating-point constant.
-  Value createConstant(mlir::ConversionPatternRewriter &rewriter,
-                       mlir::Location loc, llvm::APFloat value) const {
+  Value createConstant(M::DirectRewriter &rewriter, mlir::Location loc,
+                       llvm::APFloat value) const {
     return mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getF32Type(),
                                           value);
   }
 
   /// Extracts element `index` of a vector `value`.
-  Value extractElement(mlir::ConversionPatternRewriter &rewriter,
-                       mlir::Location loc, Type resType, Value value,
-                       unsigned index) const {
+  Value extractElement(M::DirectRewriter &rewriter, mlir::Location loc,
+                       Type resType, Value value, unsigned index) const {
     return mlir::LLVM::ExtractElementOp::create(
         rewriter, loc, resType, value,
         createConstant<uint32_t>(rewriter, loc, index));
@@ -472,7 +522,7 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
 
   mlir::LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
-                  mlir::ConversionPatternRewriter &rewriter) const override {
+                  M::DirectRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
     Type type = this->convertType(op.getType());
 

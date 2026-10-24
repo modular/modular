@@ -53,10 +53,11 @@ kgen.func @nested_break(%arg0: !kgen.scalar<bool>) {
 
 // CHECK-LABEL: @deeply_nested
 kgen.func @deeply_nested(%arg0: !kgen.scalar<bool>, %arg1: !kgen.scalar<bool>, %arg2: !kgen.scalar<bool>) {
-  // CHECK-NEXT: %[[A2SB:.*]] = builtin.unrealized_conversion_cast %arg2 : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT: %[[A1SB:.*]] = builtin.unrealized_conversion_cast %arg1 : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT: %[[C0:.*]] = builtin.unrealized_conversion_cast %[[A0SB]] : !kgen.scalar<bool> to i1
+  // The argument casts' emission order is not fixed.
+  // CHECK-DAG: %[[A2SB:.*]] = builtin.unrealized_conversion_cast %arg2 : i1 to !kgen.scalar<bool>
+  // CHECK-DAG: %[[A1SB:.*]] = builtin.unrealized_conversion_cast %arg1 : i1 to !kgen.scalar<bool>
+  // CHECK-DAG: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
+  // CHECK: %[[C0:.*]] = builtin.unrealized_conversion_cast %[[A0SB]] : !kgen.scalar<bool> to i1
   // CHECK-NEXT: llvm.cond_br %[[C0]], ^bb1, ^bb10
   hlcf.if %arg0 {
     // CHECK-NEXT: ^bb1:
@@ -164,8 +165,8 @@ kgen.func @multiple_return(%arg0: !kgen.scalar<bool>) -> (i1, i1) {
   hlcf.if %arg0 {
     // CHECK: ^bb1:
     // CHECK-NEXT: %[[S0:.*]] = llvm.mlir.undef
-    // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %[[B]], %[[S0]][0]
-    // CHECK-NEXT: %[[S2:.*]] = llvm.insertvalue %[[B]], %[[S1]][1]
+    // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %arg0, %[[S0]][0]
+    // CHECK-NEXT: %[[S2:.*]] = llvm.insertvalue %arg0, %[[S1]][1]
     // CHECK-NEXT: llvm.return %[[S2]]
     hlcf.return %b, %b : i1, i1
   } else {

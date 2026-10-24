@@ -37,23 +37,25 @@ static Value createEntryAlloca(ImplicitLocOpBuilder &b, LLVMPointerType ptrType,
 }
 
 /// For each original entry-block argument, add C ABI block arg(s) per
-/// `argInfos` and emit reconstruction code that converts the C ABI value(s)
+/// `sigClass` and emit reconstruction code that converts the C ABI value(s)
 /// back to the original Mojo type. Returns one reconstructed Value per
 /// original arg; the caller is responsible for replacing uses and erasing the
 /// originals.
-static SmallVector<Value> reconstructCABIArguments(
-    LLVMFunctionType newFnTy, Block *entry,
-    ArrayRef<M::KGEN::CoercionInfo> argInfos, ArrayRef<BlockArgument> origArgs,
-    M::KGEN::CoercionInfo &retInfo, ImplicitLocOpBuilder &b, MLIRContext *ctx,
-    const M::KGEN::LLVMDataLayout &dl) {
+static SmallVector<Value>
+reconstructCABIArguments(LLVMFunctionType newFnTy, Block *entry,
+                         const M::KGEN::SignatureClassification &sigClass,
+                         ArrayRef<BlockArgument> origArgs,
+                         ImplicitLocOpBuilder &b, MLIRContext *ctx,
+                         const M::KGEN::LLVMDataLayout &dl) {
   SmallVector<Value> reconstructed;
   auto ptrType = LLVMPointerType::get(ctx);
-  unsigned paramIdx = retInfo.useSRet ? 1 : 0;
-  for (auto [coercion, origArg] : llvm::zip(argInfos, origArgs)) {
+  for (auto [argIdx, coercion, origArg] :
+       llvm::enumerate(sigClass.args, origArgs)) {
     Location loc = origArg.getLoc();
     b.setLoc(loc);
     Type origType = origArg.getType();
-    auto paramTy = newFnTy.getParamType(paramIdx++);
+    unsigned paramIdx = sigClass.getLLVMParamIndex(argIdx);
+    auto paramTy = newFnTy.getParamType(paramIdx);
     if (coercion.isIdentity()) {
       // No coercion needed: add a new block arg of the same type so the
       // original can be erased uniformly below.
@@ -66,7 +68,7 @@ static SmallVector<Value> reconstructCABIArguments(
       // Two-register: add two args, pack them into a struct, store to an
       // alloca sized for origType, then reload as origType (bitcast via mem).
       Value arg1 = entry->addArgument(paramTy, loc);
-      Value arg2 = entry->addArgument(newFnTy.getParamType(paramIdx++), loc);
+      Value arg2 = entry->addArgument(newFnTy.getParamType(paramIdx + 1), loc);
       assert(arg1.getType() == coercion.coercedType && "C ABI mismatch");
       assert(arg2.getType() == coercion.coercedSecondType && "C ABI mismatch");
       Type pairTy =
@@ -142,7 +144,8 @@ static Type applyCABIReturnCoercion(LLVMFuncOp func, Block *entry,
 
 namespace M::KGEN {
 
-void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
+void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo,
+                                   bool isResultSigned) {
   Location loc = func.getLoc();
   MLIRContext *ctx = func.getContext();
   SmallVector<Type> origArgTypes = llvm::to_vector(func.getArgumentTypes());
@@ -150,53 +153,33 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
 
   // Classify the whole signature per platform C ABI rules. The arg/return
   // types are already LLVM types here.
-  SignatureClassification sigClass =
-      abiInfo.computeSignatureInfo(origArgTypes, origRetType, loc);
+  SignatureClassification sigClass = abiInfo.computeSignatureInfo(
+      origArgTypes, origRetType, loc, CABIRole::callee(isResultSigned));
   SmallVector<CoercionInfo> &argInfos = sigClass.args;
   CoercionInfo &retInfo = sigClass.ret;
 
+  // A signature that needs no coercion keeps its types, but still needs its
+  // attributes, such as the extension of a narrow integer result.
+  auto applyCABIAttrs = [&] {
+    for (auto [paramIdx, attrs] :
+         llvm::enumerate(sigClass.getParamAttrs(origArgTypes, origRetType))) {
+      for (NamedAttribute attr : attrs)
+        func.setArgAttr(paramIdx, attr.getName(), attr.getValue());
+    }
+    for (NamedAttribute attr : sigClass.getResultAttrs(ctx))
+      func.setResultAttr(0, attr.getName(), attr.getValue());
+  };
+
   bool anyArgCoercion = llvm::any_of(
       argInfos, [](const CoercionInfo &ci) { return !ci.isIdentity(); });
-  if (!anyArgCoercion && retInfo.isIdentity())
+  if (!anyArgCoercion && retInfo.isIdentity()) {
+    applyCABIAttrs();
     return;
+  }
 
   auto ptrType = LLVMPointerType::get(ctx);
-  SmallVector<Type> newParamTypes;
-  SmallVector<std::pair<unsigned, Type>> byValAttrs;
-
-  if (retInfo.useSRet)
-    newParamTypes.push_back(ptrType);
-
-  for (auto [ci, origTy] : llvm::zip(argInfos, origArgTypes)) {
-    if (ci.isIdentity()) {
-      newParamTypes.push_back(origTy);
-    } else if (ci.useIndirect) {
-      if (ci.useByval)
-        byValAttrs.push_back({newParamTypes.size(), origTy});
-      newParamTypes.push_back(ptrType);
-    } else if (ci.isTwoRegister()) {
-      newParamTypes.push_back(ci.coercedType);
-      newParamTypes.push_back(ci.coercedSecondType);
-    } else {
-      assert(ci.coercedType);
-      newParamTypes.push_back(ci.coercedType);
-    }
-  }
-
-  Type newRetType;
-  if (retInfo.useSRet) {
-    newRetType = LLVMVoidType::get(ctx);
-  } else if (retInfo.isTwoRegister()) {
-    newRetType = LLVMStructType::getLiteral(
-        ctx, {retInfo.coercedType, retInfo.coercedSecondType});
-  } else if (retInfo.coercedType) {
-    newRetType = retInfo.coercedType;
-  } else {
-    newRetType = origRetType;
-  }
-
-  auto newFnTy = LLVMFunctionType::get(newRetType, newParamTypes,
-                                       func.getFunctionType().isVarArg());
+  LLVMFunctionType newFnTy = sigClass.getFunctionType(
+      ctx, origArgTypes, origRetType, func.getFunctionType().isVarArg());
 
   if (!func.isExternal()) {
     Block *entry = &func.getBody().front();
@@ -206,8 +189,8 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
     // Step 1: Coerce arguments — replace original block args with C ABI args
     // and emit reconstruction code at the entry block top.
     SmallVector<BlockArgument> origArgs = llvm::to_vector(func.getArguments());
-    auto reconstructed = reconstructCABIArguments(
-        newFnTy, entry, argInfos, origArgs, retInfo, b, ctx, dl);
+    auto reconstructed = reconstructCABIArguments(newFnTy, entry, sigClass,
+                                                  origArgs, b, ctx, dl);
     for (auto [origArg, reconVal] : llvm::zip(origArgs, reconstructed))
       origArg.replaceAllUsesWith(reconVal);
     entry->eraseArguments(0, origArgTypes.size());
@@ -219,16 +202,7 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
   }
 
   func.setType(newFnTy);
-
-  if (retInfo.useSRet) {
-    func.setArgAttr(0, LLVMDialect::getStructRetAttrName(),
-                    mlir::TypeAttr::get(origRetType));
-  }
-
-  for (auto &[argIdx, origArgTy] : byValAttrs) {
-    func.setArgAttr(argIdx, LLVMDialect::getByValAttrName(),
-                    mlir::TypeAttr::get(origArgTy));
-  }
+  applyCABIAttrs();
 }
 
 } // namespace M::KGEN

@@ -146,12 +146,15 @@ class SupportedArchitecture:
     supported_encodings: set[SupportedEncoding]
     """A dictionary of supported quantization encodings."""
 
-    pipeline_model: PipelineModelType
+    pipeline_model: PipelineModelType | None
     """The model class that defines the graph structure and execution logic.
 
     Accepts either a :class:`PipelineModel` subclass (for LLM and other
     token-generation architectures) or a :class:`PipelineExecutor` subclass
     (for newer executor-based architectures such as diffusion pipelines).
+    ``None`` for a draft architecture that only runs beside a target, inside
+    a unified spec-decode graph: it registers for config resolution, and
+    builds its module through its config class.
     """
 
     task: PipelineTask
@@ -366,12 +369,37 @@ class SupportedArchitecture:
     Set it when the checkpoint fixes the width rather than the user.
     """
 
+    draft_architectures: Mapping[str, Mapping[str, str]] = field(
+        default_factory=dict
+    )
+    """The draft architecture registered for a draft checkpoint served beside
+    this target, by speculative method and then by the architecture name the
+    checkpoint declares.
+
+    A checkpoint may declare a name several drafts share, so the target picks
+    the draft whose module it can call. A name not listed stands for itself.
+    """
+
+    checkpoint_drafts: Mapping[str, str] = field(default_factory=dict)
+    """The draft architecture this target's own checkpoint ships, by
+    speculative method, as vLLM's ``hf_config_override`` names an MTP draft
+    from its target's model type."""
+
+    spec_decode_graph_names: Mapping[str, str] = field(default_factory=dict)
+    """The names an engine looks the fused graph up by, under the draft's
+    architecture name or the speculative method. A pairing not listed is named
+    ``unified_{method}``.
+
+    Kept for Mach, whose engine finds a fused graph in the compiled MEF by
+    these names; renaming one needs the matching change in Mach.
+    """
+
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.
 
     When ``False``, the overlap scheduler is not auto-enabled for this
-    architecture even when otherwise eligible. Users can still force-enable
-    via ``--enable-overlap-scheduler --force``.
+    architecture even when otherwise eligible. Users can still enable it
+    via ``--enable-overlap-scheduler``.
     """
 
     supports_nvfp4_kv_cache: bool = False
@@ -469,6 +497,17 @@ class SupportedArchitecture:
     :class:`~max.pipelines.lib.pipeline_variants.text_generation.TextGenerationPipeline`
     subclass (or compatible) selected in ``retrieve_factory``.
     """
+
+    def draft_architecture(self, method: str, checkpoint_name: str) -> str:
+        """Returns the registered draft architecture of a draft checkpoint.
+
+        Args:
+            method: The speculative method.
+            checkpoint_name: The architecture name the checkpoint declares.
+        """
+        return self.draft_architectures.get(method, {}).get(
+            checkpoint_name, checkpoint_name
+        )
 
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
@@ -789,20 +828,54 @@ class ArchLookup:
                 continue
             self.register(declaration)
 
-    def speculators_for(self, target: str) -> list[Speculator]:
+    def speculators_for(
+        self, target: str, prefer_module_v3: bool = False
+    ) -> list[Speculator]:
         """Returns the speculators declared against ``target``.
 
         Imports their packages, so it costs nothing until speculation is
         actually being configured. An empty result means ``target`` offers no
         speculator at all and the caller should leave the architecture alone.
 
-        Declaration order is preserved, so it is also the tie-break when two
-        speculators would accept the same draft.
+        ``prefer_module_v3`` mirrors :meth:`find`'s variant preference with
+        one difference the two-list case needs: the ``<target>_ModuleV3``
+        speculators are *offered first*, and the raw name's stay on the
+        list, rather than the first non-empty list shadowing the other. A
+        method or draft only the raw registration covers then still
+        selects; an unregistered in both, an out-of-tree speculator
+        registered against the raw name included, raises in
+        :func:`select_speculator` instead of silently switching builds.
+
+        Declaration order is preserved within each list, so it is also the
+        tie-break when two speculators would accept the same draft.
         """
-        for module, symbol, package in self._lazy_speculators.pop(target, []):
-            imported = importlib.import_module(module, package)
-            self.register(getattr(imported, symbol))
-        return list(self._speculators.get(target, []))
+        if prefer_module_v3:
+            collected: list[Speculator] = []
+            for name in (f"{target}_ModuleV3", target):
+                for module, symbol, package in self._lazy_speculators.pop(
+                    name, []
+                ):
+                    imported = importlib.import_module(module, package)
+                    self.register(getattr(imported, symbol))
+                collected.extend(self._speculators.get(name, ()))
+            return collected
+        names = [target]
+        if (
+            target not in self.architectures
+            and target not in self._lazy_architectures
+        ):
+            # Speculators are filed under their base's registered name,
+            # which for a ModuleV3-only target is "<target>_ModuleV3".
+            # Matched by name so that resolving it never imports the
+            # target.
+            names.append(f"{target}_ModuleV3")
+        for name in names:
+            for module, symbol, package in self._lazy_speculators.pop(name, []):
+                imported = importlib.import_module(module, package)
+                self.register(getattr(imported, symbol))
+            if speculators := self._speculators.get(name):
+                return list(speculators)
+        return []
 
     def import_custom_architectures(
         self, custom_architectures: list[str]
@@ -963,12 +1036,16 @@ def select_speculator(
     target: str,
     method: SpeculativeMethod | None,
     draft_arch: str | None,
+    prefer_module_v3: bool = False,
 ) -> Speculator | None:
     """Returns the speculator ``target`` declares for ``method``/``draft_arch``.
 
     ``None`` when ``target`` declares no speculators at all, which is every
     target still routed by the legacy override chain -- so a caller that
     applies the result leaves those untouched.
+
+    ``prefer_module_v3`` selects the speculator in lockstep with the
+    architecture variant the same flag selects elsewhere.
 
     Both halves have to agree. Matching the draft alone runs whichever
     mechanism the draft checkpoint happens to fit rather than the one asked
@@ -979,7 +1056,9 @@ def select_speculator(
         ValueError: If ``target`` declares speculators but none accepts this
             method and draft together.
     """
-    declared = ARCH_LOOKUP.speculators_for(target)
+    declared = ARCH_LOOKUP.speculators_for(
+        target, prefer_module_v3=prefer_module_v3
+    )
     if not declared:
         return None
     speculator = next(

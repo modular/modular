@@ -46,6 +46,7 @@ from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
     preprocess_clip,
 )
 from max.pipelines.context import (
+    GrammarEnforcementState,
     ImageMetadata,
     TokenBuffer,
 )
@@ -57,7 +58,11 @@ from max.pipelines.lib import (
     resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import encode_dkv_cache_hint
+from max.pipelines.lib.tokenizer import (
+    checked_token_ids,
+    encode_dkv_cache_hint,
+    resolve_token_id_bound,
+)
 from max.pipelines.modeling.types import (
     ImageContentPart,
     MessageContent,
@@ -470,6 +475,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
         huggingface_config = pipeline_config.model.huggingface_config
@@ -951,7 +959,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         if isinstance(prompt, str):
             tokenizer_outputs = self.delegate(text, **tokenizer_kwargs)
         else:
-            token_ids = [int(token) for token in prompt]
+            token_ids = checked_token_ids(prompt, self._token_id_bound).tolist()
             tokenizer_outputs = {
                 "input_ids": [token_ids],
                 "attention_mask": [[1] * len(token_ids)],
@@ -995,6 +1003,14 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if request.response_format
             and request.response_format.json_schema is not None
             else None
+        )
+
+        grammar = (
+            request.response_format.grammar if request.response_format else None
+        )
+
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
@@ -1161,6 +1177,8 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            grammar=grammar,
+            grammar_state=grammar_state,
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,

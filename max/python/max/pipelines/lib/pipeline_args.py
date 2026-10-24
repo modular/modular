@@ -176,6 +176,15 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    model_worker_impl: str | None = Field(
+        default=None,
+        description=(
+            "[--cascade] Import path of an alternative model worker "
+            "implementation, as ``'module.path:ClassName'``. Left unset, uses "
+            "the MAX Serve model worker."
+        ),
+    )
+
     cascade: bool = Field(
         default=False,
         description=(
@@ -489,7 +498,7 @@ class PipelineArgs(ConfigFileModel):
         # Merge YAML config file values, then clear config_file so the
         # model_validator on ConfigFileModel doesn't reload it when the
         # instance is constructed below.
-        kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
+        kwargs = cls.load_config_file(kwargs)
         kwargs.pop("config_file", None)
 
         # The CLI generates a --models flag from PipelineConfig's field, so

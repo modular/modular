@@ -96,8 +96,8 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         comptime for lane in range(a_col_size):
             comptime for col in range(kernel_cols // simd_size):
                 var b_val = (
-                    (b_ptr + col * simd_size)
-                    .load[width=simd_size]()
+                    (b_ptr.unsafe_offset(col * simd_size))
+                    .unsafe_load[width=simd_size]()
                     .cast[c_local.dtype]()
                 )
 
@@ -109,7 +109,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                     )
                     c_local[row, col] = c_val
 
-            b_ptr = b_ptr + kernel_cols
+            b_ptr = b_ptr.unsafe_offset(kernel_cols)
 
     @inline(.always)
     def __inner_matmul__[
@@ -152,10 +152,11 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 `global_bound` so boundary clipping can be skipped.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
+        comptime assert c.flat_rank == 2, "c must be rank 2"
 
         var c_stride = Int(c.dim[1]())
 
-        var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr_at_offset(Coord(global_offset.M, global_offset.N))
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
@@ -171,7 +172,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                    rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -186,7 +187,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                     b_packed,
                     acc,
                     global_offset,
-                    Index(idx_n, idx_k0),
+                    (idx_n, idx_k0),
                 )
 
             for idx_k1 in range(partition_end, tile_n_k[1]):
@@ -196,10 +197,10 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                     b_packed,
                     acc,
                     global_offset,
-                    Index(idx_n, idx_k1),
+                    (idx_n, idx_k1),
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

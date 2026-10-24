@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING
 
 import opentelemetry.trace as otel_trace
@@ -48,11 +49,10 @@ from max.serve.queue import (
 )
 from max.serve.scheduler.interface import Scheduler
 from max.serve.scheduler_result import SchedulerResult
-from max.serve.telemetry.common import (
-    _batch_id_ctx,
-    _BatchLinks,
-    batch_spans_enabled,
-)
+from max.serve.telemetry import _log_context
+from max.serve.telemetry._log_context import batch_id_ctx
+from max.serve.telemetry._tracing import batch_spans_enabled
+from max.serve.telemetry.metrics import METRICS
 from opentelemetry import propagate as otel_propagate
 from opentelemetry.context import Context as OtelContext
 
@@ -61,7 +61,7 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .dp_padding import DPBatchPadder
-from .utils import SchedulerLogger, get_cancelled_reqs
+from .utils import SchedulerLogger, _ScheduledBatch, get_cancelled_reqs
 
 if TYPE_CHECKING:
     from max.serve.telemetry._kernel_capture import KernelCapture
@@ -72,18 +72,6 @@ _tracer = otel_trace.get_tracer("max.serve")
 _DEFAULT_MAX_BATCH_LINKS: int = ProfilingConfig.model_fields[
     "kernel_trace_max_batch_links"
 ].default
-
-
-def _tracing_enabled() -> bool:
-    """Whether a real TracerProvider is configured, vs. the OTel no-op default.
-
-    The spans created below are cheap no-ops when tracing is disabled, but the
-    bookkeeping around them (set construction/diffing every batch) is not.
-    Callers use this to skip that bookkeeping entirely on the hot path.
-    """
-    return not isinstance(
-        otel_trace.get_tracer_provider(), otel_trace.ProxyTracerProvider
-    )
 
 
 def _parent_trace_context(context: TextContext) -> OtelContext | None:
@@ -99,6 +87,81 @@ def _parent_trace_context(context: TextContext) -> OtelContext | None:
     if context.trace_carrier is None:
         return None
     return otel_propagate.extract(context.trace_carrier)
+
+
+def _sampled_link(parent: OtelContext) -> otel_trace.Link | None:
+    """Returns a link to the span in ``parent``, or None when it has none or
+    it is not sampled, since an unsampled span is never exported.
+
+    Args:
+        parent: A request's context, as extracted from its trace carrier.
+    """
+    span_context = otel_trace.get_current_span(parent).get_span_context()
+    if span_context.is_valid and span_context.trace_flags.sampled:
+        return otel_trace.Link(span_context)
+    return None
+
+
+class _BatchLinks:
+    """The links from the scheduler's ``max.batch`` spans to their members'
+    sampled request spans, kept from admission until each request leaves.
+
+    Args:
+        link_every_member: Whether every member is linked, as at global level
+            ``batch`` or higher, rather than only traced members.
+        max_links: The most links one ``max.batch`` span keeps.
+    """
+
+    def __init__(self, link_every_member: bool, max_links: int) -> None:
+        self._link_every_member = link_every_member
+        self._max_links = max_links
+        self._links: dict[RequestID, otel_trace.Link] = {}
+
+    def admit(
+        self, request_id: RequestID, parent: OtelContext | None, traced: bool
+    ) -> None:
+        """Keeps a link to a new request's span if its passes link to it.
+
+        Args:
+            request_id: The request.
+            parent: The request's context, from its trace carrier.
+            traced: Whether the request is traced.
+        """
+        if parent is None or not (traced or self._link_every_member):
+            return
+        if (link := _sampled_link(parent)) is not None:
+            self._links[request_id] = link
+
+    def for_pass(
+        self,
+        batch: Sequence[TextContext],
+        is_traced: Callable[[RequestID], bool] | None,
+    ) -> list[otel_trace.Link]:
+        """Returns a pass's links, and over the cap keeps traced members'
+        first, so the requests that asked for the pass's capture can find it.
+
+        Args:
+            batch: The pass's requests.
+            is_traced: Says whether a request is traced, as the scheduler's
+                kernel capture does, or None without a capture.
+        """
+        members = [
+            ctx.request_id for ctx in batch if ctx.request_id in self._links
+        ]
+        if len(members) > self._max_links and is_traced is not None:
+            members.sort(key=lambda r: not is_traced(r))
+        return [self._links[r] for r in members[: self._max_links]]
+
+    def drop_untraced(self, request_ids: Iterable[RequestID]) -> None:
+        """Drops the links of running requests that are no longer traced,
+        which only traced requests have below global level ``batch``."""
+        if not self._link_every_member:
+            for request_id in request_ids:
+                self._links.pop(request_id, None)
+
+    def drop(self, request_id: RequestID) -> None:
+        """Drops the link of a request that has left."""
+        self._links.pop(request_id, None)
 
 
 class TokenGenerationScheduler(Scheduler):
@@ -124,7 +187,7 @@ class TokenGenerationScheduler(Scheduler):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         # The model worker configures tracing before it builds the scheduler.
-        self._tracing = _tracing_enabled()
+        self._tracing = _log_context.tracing_enabled()
 
         self.request_queue = request_queue
         self.response_queue = response_queue
@@ -209,23 +272,22 @@ class TokenGenerationScheduler(Scheduler):
             )
 
         with Tracer(f"adding_to_batch_constructor: {len(items)} items"):
-            tracing_enabled = _tracing_enabled()
             for context in items:
                 self.batch_constructor.enqueue_new_request(context)
-                if tracing_enabled:
+                if self._tracing:
                     parent = _parent_trace_context(context)
                     self._prefill_spans[context.request_id] = (
                         _tracer.start_span(
                             "max.phase.prefill",
                             context=parent,
                             attributes={
-                                "max.request_id": str(context.request_id)
+                                "max.request.id": str(context.request_id)
                             },
                         )
                     )
                     traced = (
                         self._kernel_capture is not None
-                        and self._kernel_capture.admit(context)
+                        and self._kernel_capture.admit(context, parent)
                     )
                     self._batch_links.admit(context.request_id, parent, traced)
 
@@ -271,12 +333,14 @@ class TokenGenerationScheduler(Scheduler):
             and self.pipeline.has_pending_outputs()
         )
         if not (inputs or self.support_empty_batches or has_pending_outputs):
+            self.scheduler_logger.log_idle(
+                self.batch_constructor.kv_cache,
+                self.scheduler_config.data_parallel_degree,
+            )
             return SchedulerProgress.NO_PROGRESS
 
-        # When the overlap pipeline is actually overlapping, the wall-clock
-        # time measured below reflects the previous batch's sync, not the
-        # current batch. Flag it so the logger attributes execution time and
-        # throughput to the completed-batch stats collected below.
+        # Overlap execution metrics belong to the completed batch rather than
+        # the batch being enqueued. The pipeline supplies that batch's stats.
         is_overlap_active = bool(
             getattr(self.pipeline, "overlap_active", False)
         )
@@ -285,16 +349,16 @@ class TokenGenerationScheduler(Scheduler):
         t0 = time.monotonic()
         if len(inputs.flat_batch) > 0:
             with Tracer(f"_schedule({inputs})"):
-                num_terminated_reqs = self._schedule(inputs)
+                scheduled = self._schedule(inputs, is_overlap_active)
         else:
-            num_terminated_reqs = self._schedule(inputs)
+            scheduled = self._schedule(inputs, is_overlap_active)
         t1 = time.monotonic()
-        batch_execution_time_s = t1 - t0
+        METRICS.scheduler_batch_step_time(
+            (t1 - t0) * 1000, batch_type=inputs.batch_type.value
+        )
 
-        # Log batch metrics. Under overlap scheduling the wall-clock time
-        # measured above describes the previously enqueued batch; the
-        # pipeline reports that batch's composition and timing so telemetry
-        # is attributed to the correct batch type.
+        # Overlap reports the completed batch's composition and service time;
+        # synchronous batches use the interval measured around execute().
         completed_batch_stats = (
             self.pipeline.take_completed_batch_stats()
             if hasattr(self.pipeline, "take_completed_batch_stats")
@@ -305,9 +369,14 @@ class TokenGenerationScheduler(Scheduler):
             inputs=inputs,
             kv_cache=self.batch_constructor.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
-            batch_execution_time_s=batch_execution_time_s,
+            batch_execution_time_s=0.0
+            if is_overlap_active
+            else scheduled.execution_time_s,
+            num_output_tokens=None
+            if is_overlap_active
+            else scheduled.output_tokens,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
-            num_terminated_reqs=num_terminated_reqs,
+            num_terminated_reqs=scheduled.terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
             if hasattr(self.pipeline, "batch_spec_decode_metrics")
@@ -320,6 +389,12 @@ class TokenGenerationScheduler(Scheduler):
             else None,
             overlap_active=is_overlap_active,
             completed_batch_stats=completed_batch_stats,
+            # Under overlap, a completed batch is the previous pass's.
+            batch_id=(
+                self._batch_counter - (2 if completed_batch_stats else 1)
+                if self._tracing
+                else None
+            ),
         )
 
         for cancelled_id in get_cancelled_reqs(self.cancel_queue):
@@ -333,9 +408,10 @@ class TokenGenerationScheduler(Scheduler):
 
         return SchedulerProgress.MADE_PROGRESS
 
-    def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
-        """Returns the number of terminated requests."""
-        tracing_enabled = _tracing_enabled()
+    def _schedule(
+        self, inputs: TextGenerationInputs[TextContext], lagged: bool = False
+    ) -> _ScheduledBatch:
+        """Executes a batch and returns its service time and completed counts."""
         batch_id = self._batch_counter
         self._batch_counter += 1
 
@@ -354,7 +430,7 @@ class TokenGenerationScheduler(Scheduler):
                 if not ctx._is_padding_ctx
                 and ctx.request_id not in replica.tg_reqs
             }
-            if tracing_enabled
+            if self._tracing
             else None
         )
         # With tracing off, this test and its twin after execute are all a
@@ -373,7 +449,7 @@ class TokenGenerationScheduler(Scheduler):
         # root span per forward pass escapes parent-based sampling, which is
         # too much export volume to be always-on.
         batch_span: otel_trace.Span = otel_trace.INVALID_SPAN
-        if tracing_enabled and (
+        if self._tracing and (
             traced_level is not None or self._batch_spans_enabled
         ):
             assert ce_ids_before is not None
@@ -384,9 +460,11 @@ class TokenGenerationScheduler(Scheduler):
                     capture.is_traced if capture is not None else None,
                 ),
                 attributes={
-                    "max.batch_id": batch_id,
-                    "max.ce_count": len(ce_ids_before),
-                    "max.tg_count": inputs.batch_size - len(ce_ids_before),
+                    "max.batch.id": batch_id,
+                    "max.batch.ce_count": len(ce_ids_before),
+                    "max.batch.tg_count": (
+                        inputs.batch_size - len(ce_ids_before)
+                    ),
                 },
             )
 
@@ -394,10 +472,10 @@ class TokenGenerationScheduler(Scheduler):
             # Execute the batch. C++ telemetry that opts in reads the batch id
             # set here.
             _request_context.set_batch_id(batch_id)
-            # Only the JSON log formatters read ``_batch_id_ctx``, and only
+            # Only the JSON log formatters read ``batch_id_ctx``, and only
             # with tracing on.
             batch_id_token = (
-                _batch_id_ctx.set(batch_id) if self._tracing else None
+                batch_id_ctx.set(batch_id) if self._tracing else None
             )
             # A burst-sampled step-window capture lands mostly on decode
             # steps; ask for an extra burst to start with this prefill batch.
@@ -410,12 +488,17 @@ class TokenGenerationScheduler(Scheduler):
                 else 0
             )
             try:
+                execution_start = time.monotonic()
                 responses = self.pipeline.execute(inputs)
+                execution_time_s = time.monotonic() - execution_start
+                output_tokens = sum(
+                    len(output.tokens) for output in responses.values()
+                )
             finally:
                 if range_id:
                     range_end(range_id)
                 if batch_id_token is not None:
-                    _batch_id_ctx.reset(batch_id_token)
+                    batch_id_ctx.reset(batch_id_token)
                 _request_context.clear_batch_id()
             if capture is not None:
                 # Ahead of the releases below, since releasing the last traced
@@ -445,7 +528,7 @@ class TokenGenerationScheduler(Scheduler):
                 for req_id in ce_ids_before & tg_reqs_after.keys():
                     if req_id in self._prefill_spans:
                         span = self._prefill_spans.pop(req_id)
-                        span.set_attribute("max.batch_id", batch_id)
+                        span.set_attribute("max.batch.id", batch_id)
                         span.end()
                     if req_id in self._decode_spans:
                         # Preempted back to CE and now decoding again: the
@@ -457,8 +540,8 @@ class TokenGenerationScheduler(Scheduler):
                         "max.phase.decode",
                         context=_parent_trace_context(tg_reqs_after[req_id]),
                         attributes={
-                            "max.request_id": str(req_id),
-                            "max.batch_id": batch_id,
+                            "max.request.id": str(req_id),
+                            "max.batch.id": batch_id,
                         },
                     )
 
@@ -473,17 +556,23 @@ class TokenGenerationScheduler(Scheduler):
 
             # send the responses to the API process
             if responses:
+                # Overlap's execute() returned the previous pass's outputs.
+                produced_by = batch_id - lagged
                 self.response_queue.put_nowait(
                     {
-                        req_id: SchedulerResult.create(response, batch_id)
+                        req_id: SchedulerResult.create(response, produced_by)
                         for req_id, response in responses.items()
                     }
                 )
 
             batch_span.set_attribute(
-                "max.terminated_count", num_terminated_requests
+                "max.batch.terminated_count", num_terminated_requests
             )
-            return num_terminated_requests
+            return _ScheduledBatch(
+                terminated_reqs=num_terminated_requests,
+                execution_time_s=execution_time_s,
+                output_tokens=output_tokens,
+            )
         finally:
             batch_span.end()
 

@@ -296,35 +296,18 @@ def test_pinned_concatenate() -> None:
     assert np.array_equal(pinned.to_numpy(), expected)
 
 
-@pytest.mark.parametrize("is_pinned", [True, False])
-def test_zero_copy_on_to_stream_on_same_device(is_pinned: bool) -> None:
+def test_to_device_from_another_queue_requires_after() -> None:
     gpu = Accelerator()
-    data = np.arange(24).reshape(2, 3, 4).astype(np.int32)
-    tensor = Buffer(
-        shape=data.shape,
-        dtype=DType.int32,
-        device=gpu,
-        usage=Usage.STAGING if is_pinned else Usage.DEFAULT,
-    )
-    tensor.inplace_copy_from(Buffer.from_numpy(data))
-    stream1 = tensor.stream
-    tensor1 = tensor.to(stream1)
-    assert tensor1 is tensor
-    assert tensor1.stream is stream1
-    stream2 = DeviceQueue(gpu)
-    assert stream2 != stream1
-    tensor2 = tensor.to(stream2)
-    assert tensor2 is not tensor
-    assert tensor2.rank == tensor.rank
-    assert tensor2.shape == tensor.shape
-    assert tensor2.dtype == tensor.dtype
-    assert tensor2.element_size == tensor.element_size
-    assert tensor2.is_contiguous == tensor.is_contiguous
-    assert tensor2.is_host == tensor.is_host
-    assert tensor2.device is tensor.device
-    assert tensor2.stream is stream2
-    assert tensor2.stream is not stream1
-    assert (tensor2.to_numpy() == tensor.to_numpy()).all()
+    side = DeviceQueue(gpu)
+    on_side = Buffer(DType.int32, (4,), stream=side)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to(gpu)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to([gpu])
+
+    view = on_side.to(gpu, after=side.record_event())
+    assert view.stream == gpu.default_queue
+    assert view._data_ptr() == on_side._data_ptr()
 
 
 def test_batch_inplace_copy_same_device_parity() -> None:
@@ -559,3 +542,68 @@ def test_batch_inplace_copy_pinned_poison_pill_parity() -> None:
             loop_dst.to_numpy(),
             err_msg=f"pinned-poison-pill batch vs per-copy mismatch at index {i}",
         )
+
+
+@pytest.mark.parametrize("usage", [Usage.DEFAULT, Usage.STAGING])
+def test_memset_device_slice(usage: Usage) -> None:
+    device = Accelerator()
+    buf = Buffer.zeros((3, 8), DType.uint8, device, usage=usage)
+    buf.memset(0x55)
+    row = buf[1, :]
+    row.memset(0)
+    # A staging view owns the completion of its writes; the parent's record
+    # contains only writes submitted through the parent.
+    np.testing.assert_array_equal(row.to_numpy(), np.zeros(8, dtype=np.uint8))
+    expected = np.full((3, 8), 0x55, dtype=np.uint8)
+    expected[1] = 0
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+@pytest.mark.parametrize(
+    "offset,length", [(0, 1), (1, 3), (3, 4097), (8189, 3), (0, 8192)]
+)
+def test_memset_device_unaligned_byte_ranges(offset: int, length: int) -> None:
+    host = np.full(8192, 0x55, dtype=np.uint8)
+    buf = Buffer.from_numpy(host).to(Accelerator())
+    buf[offset : offset + length].memset(0xA5)
+    expected = host.copy()
+    expected[offset : offset + length] = 0xA5
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+def test_memset_device_large_buffer() -> None:
+    # Large enough to span many memset blocks, odd so no tail is assumed away.
+    num_bytes = (64 << 20) + 3
+    buf = Buffer.zeros((num_bytes,), DType.uint8, Accelerator())
+    buf[1:].memset(0xFF)
+    data = buf.to_numpy()
+    assert data[0] == 0
+    assert (data[1:] == 0xFF).all()
+
+
+def test_memset_device_typed_buffer_is_a_byte_pattern() -> None:
+    buf = Buffer.zeros((4, 8), DType.bfloat16, Accelerator())
+    buf[2:, :].memset(0x7F)
+    raw = buf.view(DType.uint8, (4, 16)).to_numpy()
+    np.testing.assert_array_equal(raw[:2], 0)
+    np.testing.assert_array_equal(raw[2:], 0x7F)
+
+
+def test_memset_is_stream_ordered_with_copies() -> None:
+    device = Accelerator()
+    rows, cols = 4, 1 << 20
+    src = Buffer.from_numpy(np.full((rows, cols), 7, dtype=np.uint8)).to(device)
+    dst = Buffer.zeros((rows, cols), DType.uint8, device)
+    snapshot = Buffer.zeros((rows, cols), DType.uint8, device)
+    dst.inplace_copy_from(src)
+    # Lands after the copy into dst ...
+    dst[1, :].memset(0)
+    snapshot.inplace_copy_from(dst)
+    # ... and before this one, which the snapshot must not observe.
+    dst[2, :].memset(9)
+
+    expected = np.full((rows, cols), 7, dtype=np.uint8)
+    expected[1] = 0
+    np.testing.assert_array_equal(snapshot.to_numpy(), expected)
+    expected[2] = 9
+    np.testing.assert_array_equal(dst.to_numpy(), expected)

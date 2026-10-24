@@ -19,9 +19,9 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max import tree
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, Module
+from max.graph import DeviceRef
 from max.graph.weights import (
     WeightData,
     Weights,
@@ -38,13 +38,14 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,
     ModelInputs,
-    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
+    PipelineModelWithKVCache,
     UnifiedEagleOutputs,
     UnifiedSpecDecodeInputs,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
-from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -60,17 +61,15 @@ from ..gemma4.batch_vision_inputs import (
 from ..gemma4.context import Gemma4Context
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..gemma4.vision_model.vision_model import Gemma4VisionModel
-from ..gemma4.weight_adapters import (
-    convert_safetensor_vision_state_dict,
-    fuse_gemma4_projection_weights,
-    gemma4_uses_fused_projections,
-)
+from ..gemma4.weight_adapters import convert_safetensor_vision_state_dict
 from ..gemma4_assistant.gemma4_assistant import Gemma4Assistant
 from ..gemma4_assistant.model_config import Gemma4AssistantConfig
 from .batch_processor import UnifiedMTPGemma4BatchProcessor
-from .spec_adapters import GLOBAL_KV
 from .unified_mtp_gemma4 import UnifiedMTPGemma4
 from .weight_adapters import convert_unified_safetensor_state_dict
+
+# The vision and spec-decode graphs compile into one artifact.
+_COMPILE_GROUP = "gemma4_with_mtp"
 
 
 @dataclass
@@ -117,7 +116,9 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
 class UnifiedMTPGemma4Model(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    MultiGraphPipelineModelWithKVCache[Gemma4Context],
+    PipelineModelWithKVCache[
+        Gemma4Context, Gemma4ForConditionalGenerationConfig, Model | None
+    ],
 ):
     """Gemma4 with MTP: merge + target + rejection + shift in one graph."""
 
@@ -131,9 +132,7 @@ class UnifiedMTPGemma4Model(
     each step; device graph capture is disabled for this arch (see ``arch.py``:
     the eager prefill vision encoder produces variable-shape embeddings)."""
 
-    vision_model: Model | None
-    """The compiled vision encoder graph, or None for text-only checkpoints.
-    Runs eagerly during prefill (outside the captured graph)."""
+    _vision_weights_dict: dict[str, Any]
 
     def __init__(
         self,
@@ -165,7 +164,8 @@ class UnifiedMTPGemma4Model(
         # Force signal buffer initialization.
         _ = self.signal_buffers
 
-        self.vision_model, self.model = self.load_model(session)
+        self._models = self.load_graphs(session)
+        self.model = self._models[GraphRole.SPEC_DECODER]
 
         if self._batch_processor is not None:
             assert isinstance(
@@ -177,6 +177,28 @@ class UnifiedMTPGemma4Model(
     _target_state_dict: dict[str, Any]
     _draft_config: Gemma4AssistantConfig
 
+    @property
+    def vision_model(self) -> Model | None:
+        """The compiled vision encoder graph, or None for text-only
+        checkpoints.
+
+        Runs eagerly during prefill (outside the captured graph).
+        """
+        return self._models.get(GraphRole.VISION)
+
+    def graph_specs(
+        self, model_config: Gemma4ForConditionalGenerationConfig
+    ) -> dict[str, GraphSpec]:
+        """Returns the spec-decode graph, and the vision encoder unless the
+        checkpoint is text-only, in one compile group."""
+        specs: dict[str, GraphSpec] = {}
+        if self._include_vision_graph(model_config):
+            specs[GraphRole.VISION] = self._vision_spec(
+                model_config, self._vision_weights_dict
+            )
+        specs[GraphRole.SPEC_DECODER] = self._spec_decoder_spec(model_config)
+        return specs
+
     @override
     def _load_state_dict(self) -> dict[str, Any]:
         assert self.max_batch_size, "Expected max_batch_size to be set"
@@ -185,7 +207,6 @@ class UnifiedMTPGemma4Model(
         self._vision_weights_dict = convert_safetensor_vision_state_dict(
             weights_dict
         )
-        self._language_weights_dict = {}
 
         target_state_dict = parse_state_dict_from_weights(
             self.pipeline_config, self.weights, self.adapter
@@ -216,14 +237,6 @@ class UnifiedMTPGemma4Model(
         self.config = config
 
         self._target_state_dict = state_dict
-        # DISTINF-194: pre-fuse the target's gate/up and qkv/qk projections
-        # when configured (before target.*/draft.* prefixing below), so the
-        # fused keys match the target submodel's FusedMLP / stacked qkv
-        # layers. The draft submodel is not fused.
-        if gemma4_uses_fused_projections(config):
-            self._target_state_dict = fuse_gemma4_projection_weights(
-                self._target_state_dict
-            )
 
         assert self.pipeline_config.draft_model is not None
         draft_hf_config = self.pipeline_config.draft_model.huggingface_config
@@ -254,14 +267,9 @@ class UnifiedMTPGemma4Model(
     ) -> bool:
         return model_config.vision_config is not None
 
-    @override
-    def _build_language_graph(
-        self,
-        model_config: Gemma4ForConditionalGenerationConfig,
-        state_dict: dict[str, Any],
-        module: Module,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        del state_dict
+    def _spec_decoder_spec(
+        self, model_config: Gemma4ForConditionalGenerationConfig
+    ) -> GraphSpec:
         spec_cfg = self.pipeline_config.speculative
         assert spec_cfg is not None
 
@@ -280,6 +288,7 @@ class UnifiedMTPGemma4Model(
             speculative_config=spec_cfg,
             enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             use_greedy_acceptance=spec_cfg.use_greedy_acceptance,
+            kv_params=self.kv_params,
         )
 
         nn_model.target.return_logits = ReturnLogits.VARIABLE
@@ -301,45 +310,13 @@ class UnifiedMTPGemma4Model(
             weight_alignment=1,
             strict=False,
         )
-        weights_registry = nn_model.state_dict()
-
-        with Graph(
+        return GraphSpec(
+            nn_model,
             "gemma4_with_mtp_graph",
-            input_types=nn_model.input_types(self.kv_params),
-            module=module,
-        ) as graph:
-            graph_inputs = nn_model.decode_inputs(graph.inputs, self.kv_params)
-
-            outputs = nn_model(
-                tokens=graph_inputs.tokens,
-                input_row_offsets=graph_inputs.input_row_offsets,
-                vision_embeddings=graph_inputs.vision_embeddings,
-                vision_scatter_indices=graph_inputs.vision_scatter_indices,
-                draft_tokens=graph_inputs.draft_tokens,
-                signal_buffers=graph_inputs.signal_buffers,
-                # The draft cross-attends into the target's sliding cache.
-                kv_collections=graph_inputs.kv("sliding_attention"),
-                draft_kv_collections=graph_inputs.kv("sliding_attention"),
-                passthrough_kv={GLOBAL_KV: graph_inputs.kv("full_attention")},
-                return_n_logits=graph_inputs.return_n_logits,
-                host_input_row_offsets=graph_inputs.host_offsets,
-                data_parallel_splits=graph_inputs.dp_splits,
-                batch_context_lengths=graph_inputs.batch_context_lengths,
-                seed=graph_inputs.seed,
-                temperature=graph_inputs.temperature,
-                top_k=graph_inputs.top_k,
-                max_k=graph_inputs.max_k,
-                top_p=graph_inputs.top_p,
-                min_top_p=graph_inputs.min_top_p,
-                in_thinking_phase=graph_inputs.thinking_phase,
-                pinned_bitmask=graph_inputs.pinned_bitmask,
-                wait_payload=graph_inputs.wait_payload,
-                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
-            )
-
-            graph.output(*outputs)
-
-        return graph, weights_registry
+            nn_model.input_types(),
+            weights=nn_model.state_dict(),
+            group=_COMPILE_GROUP,
+        )
 
     def pack_vision_inputs(
         self,
@@ -414,13 +391,11 @@ class UnifiedMTPGemma4Model(
             next_draft_tokens=model_outputs[2],
         )
 
-    def _build_vision_graph(
+    def _vision_spec(
         self,
         config: Gemma4ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Build the vision model with our input types and graph"""
+    ) -> GraphSpec:
         vision_model = Gemma4VisionModel(
             config,
             device=DeviceRef.from_device(self.devices[0]),
@@ -431,42 +406,13 @@ class UnifiedMTPGemma4Model(
             weight_alignment=1,
             strict=True,
         )
-        with Graph(
+        return GraphSpec(
+            vision_model,
             "gemma4_vision",
-            input_types=vision_model.input_types(),
-            module=module,
-        ) as vision_graph:
-            all_inputs = vision_graph.inputs
-            n_devices = len(self.devices)
-
-            patches_flat_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            pixel_position_ids_list = [
-                inp.tensor for inp in all_inputs[:n_devices]
-            ]
-            all_inputs = all_inputs[n_devices:]
-
-            cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
-
-            pool_gather_index_list = [
-                inp.tensor for inp in all_inputs[:n_devices]
-            ]
-            all_inputs = all_inputs[n_devices:]
-
-            max_seq_len = all_inputs[0].tensor
-
-            outputs = vision_model(
-                patches_flat_list,
-                pixel_position_ids_list,
-                cu_seqlens_list,
-                pool_gather_index_list,
-                max_seq_len,
-            )
-            vision_graph.output(*outputs)
-
-        return vision_graph, vision_model.state_dict()
+            vision_model.input_types(),
+            weights=vision_model.state_dict(),
+            group=_COMPILE_GROUP,
+        )
 
     def _run_vision_encoder(self, raw: VisionRawInputs) -> list[Buffer]:
         if self.vision_model is None:

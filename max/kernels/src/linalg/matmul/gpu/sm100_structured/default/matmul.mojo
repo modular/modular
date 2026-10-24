@@ -27,7 +27,7 @@ from std.sys import size_of
 
 from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from max.gpu.host.device_attribute import DeviceAttribute
+from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
@@ -53,7 +53,7 @@ from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
     ElementwiseOutputComputeFn,
-    elementwise_epilogue_type,
+    no_compute_fn,
     no_epilogue_fn,
 )
 from ..structured_kernels.config import MatmulConfig
@@ -79,7 +79,6 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64],
@@ -104,7 +103,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     Callers must reshape rank-2 inputs to rank-3 before calling this function.
     """
 
-    def no_compute_fn[
+    def no_c_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](
         idx: Coord,
@@ -118,7 +117,6 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     _blackwell_matmul_tma_umma_warp_specialized_impl[
         transpose_b,
         config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         EpilogueLayoutType=EpilogueLayoutType,
@@ -132,7 +130,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
         b_device,
         ctx,
         no_epilogue_fn,
-        no_compute_fn,
+        no_c_compute_fn,
         epilogue_tensor,
     )
 
@@ -144,7 +142,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64],
@@ -202,12 +199,9 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
 
-    comptime assert (
-        not has_compute_fn or elementwise_lambda_fn is None
-    ), "Either the epilogue lambda or the compute epilogue can be used"
-    comptime assert not has_epilogue_fn or (
-        not has_compute_fn and elementwise_lambda_fn is None
-    ), "an elementwise epilogue value excludes the other epilogues"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "an elementwise epilogue value excludes the compute epilogue"
 
     comptime if config.cta_group == 2:
         comptime assert (
@@ -303,7 +297,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
-        elementwise_lambda_fn=elementwise_lambda_fn,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
@@ -387,7 +380,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     comptime epi_load_tma_tile_shape = coord[
         epi_load_tma_tile_rows, epi_load_tma_tile_cols
     ]
-    comptime MutPtr = UnsafePointer[Scalar[c_type], MutAnyOrigin]
+    comptime MutPtr = MutPointer[Scalar[c_type], MutAnyOrigin]
     var epi_load_tma_ptr: MutPtr
     var epi_load_tma_rows: Int
     var epi_load_tma_cols: Int
@@ -403,7 +396,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     var epi_load_2d = TileTensor(
         epi_load_tma_ptr,
-        tt_row_major(Coord(IndexList[2](epi_load_tma_rows, epi_load_tma_cols))),
+        tt_row_major(Coord(epi_load_tma_rows, epi_load_tma_cols)),
     )
     var epi_load_tma_op = create_tma_tile[
         KernelType.EpilogueLoadTileLayout,
@@ -414,7 +407,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     # 1D bias: pass raw TileTensor to kernel (cp.async.bulk, no TMA descriptor).
     # For non-1D, a placeholder dangling pointer is used (never accessed).
-    comptime ImmutPtr = UnsafePointer[Scalar[c_type], ImmutAnyOrigin]
+    comptime ImmutPtr = ImmPointer[Scalar[c_type], ImmutAnyOrigin]
     var bias_1d_ptr: ImmutPtr
     comptime if epilogue_is_1d:
         bias_1d_ptr = rebind[ImmutPtr](epilogue_tensor.value().ptr)
@@ -452,7 +445,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     var c_tma_ops: Array[type_of(c_tma_op), 1] = [c_tma_op]
     var rank_sigs: Optional[
         Array[
-            UnsafePointer[Signal, MutAnyOrigin],
+            MutPointer[Signal, MutAnyOrigin],
             KernelType.num_c_tma_descriptors,
         ]
     ] = None
@@ -467,7 +460,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             cluster_dim,
             mnk,
             workspace,
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=grid_dim,
             block_dim=KernelType.NUM_THREADS,
             shared_mem_bytes=smem_size,
@@ -496,7 +489,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
                 idx, val, c_val
             )
 
-        # `host_arg` copies the closure at host layout: the kernel is
+        # `host_args` copies the closure at host layout: the kernel is
         # compiled against its type itself, not a device encoding.
         comptime kernel = matmul_kernel.run_with_compute_fn[
             type_of(compute_with_c)
@@ -512,7 +505,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             workspace,
             rank_sigs,
             Int32(0),
-            host_arg=compute_with_c,
+            host_args=(compute_with_c,),
             grid_dim=grid_dim,
             block_dim=KernelType.NUM_THREADS,
             shared_mem_bytes=smem_size,
@@ -983,14 +976,14 @@ def blackwell_matmul_tma_umma_warp_specialized[
     # TMA descriptor; it is encoded over a null address. A pointer derived
     # from `a_device` or `b_device` would alias them in the launch call.
     var c_ptr: Optional[
-        UnsafePointer[Scalar[config.c_type], MutUntrackedOrigin]
+        MutPointer[Scalar[config.c_type], MutUntrackedOrigin]
     ] = None
     var c_shape_only = TileTensor(
         c_ptr._unsafe_nullable(),
         tt_row_major(Coord(IndexList[3](1, c_shape[0], c_shape[1]))),
     )
 
-    def no_compute_fn[
+    def no_c_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](
         idx: Coord,
@@ -1016,7 +1009,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
             _to_batched_3d(a_device),
             ctx,
             epilogue_fn,
-            no_compute_fn,
+            no_c_compute_fn,
         )
     else:
         _blackwell_matmul_tma_umma_warp_specialized_impl[
@@ -1033,7 +1026,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
             _to_batched_3d(b_device),
             ctx,
             epilogue_fn,
-            no_compute_fn,
+            no_c_compute_fn,
         )
 
 
@@ -1123,7 +1116,9 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
     if device < _SPLITK_MAX_DEVICES:
         var counts = _SPLITK_SLOT_COUNTS.get_or_create_ptr()
         var taken = Int(
-            Atomic[Int64].fetch_add(counts[].unsafe_ptr() + device, 1)
+            Atomic[Int64].fetch_add(
+                counts[].unsafe_ptr().unsafe_offset(device), 1
+            )
         )
         if taken < SPLITK_COUNTER_SLOTS:
             slot = taken
@@ -1132,11 +1127,11 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         var buf = ctx.enqueue_create_buffer[DType.uint8](
             _SPLITK_WORKSPACE_BYTES
         )
-        workspace = buf.take_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
-    var state = alloc[_SplitKContext]({count = 1}).unsafe_leak()
+        workspace = buf.take_ptr()
+    var state = alloc[_SplitKContext]({length = 1}).unsafe_leak()
     state.unsafe_write(_SplitKContext(workspace, slot))
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key), state.bitcast[NoneType]()
+        StringSlice(key), state.unsafe_bitcast[NoneType]()
     )
     return state[]
 
@@ -1351,8 +1346,10 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
 
     var workspace: Span[UInt64, MutAnyOrigin]
 
+    # The kernel indexes the workspace and locks over the launch grid, which
+    # is built from the swapped dims when AB_swapped; size them the same way.
     var output_tiles = get_num_tiles(
-        Index(M, N, K),
+        Index(M_maybe_swapped, N_maybe_swapped, K),
         Index(BM, MMA_N, BK),
         Index(cluster_shape[0], cluster_shape[1]),
     )
@@ -1360,7 +1357,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     var lock_buffer_size_bytes = get_required_locks_buffer_size_bytes[
         config.accum_type
     ](
-        Index(M, N, K),
+        Index(M_maybe_swapped, N_maybe_swapped, K),
         Index(BM, MMA_N, BK),
         Index(cluster_shape[0], cluster_shape[1]),
     )
@@ -1383,7 +1380,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     var counter_slot = -1
     # The parallel reduction stores C itself; a 32-bit row stride keeps its
     # store addressing in one register.
-    var c_row_stride = Int(c_device.layout.stride[0]().value())
+    var c_row_stride = Int(c_device.dynamic_stride(0))
     comptime if parallel:
         if c_row_stride > Int(UInt32.MAX):
             raise Error(
@@ -1467,7 +1464,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c_device.ptr),
+        rebind[MutPointer[Scalar[c_type], MutAnyOrigin]](c_device.ptr),
         UInt32(c_row_stride),
         Int32(counter_slot),
         reduction_tensor,
@@ -1506,7 +1503,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
@@ -1535,8 +1531,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
         transpose_b: Whether B is stored transposed as (N, K). Must be True.
         config: Matmul configuration holding tile shapes, dtypes, swizzle
             modes, cluster shape, and pipeline stages.
-        elementwise_lambda_fn: Optional epilogue lambda applied in the
-            epilogue phase (defaults to None).
         pdl_level: Programmatic dependent launch level for the kernel
             (defaults to PDLLevel()).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
@@ -1568,7 +1562,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=new_config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](
@@ -1582,7 +1575,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](
@@ -1606,7 +1598,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=new_config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](
@@ -1620,7 +1611,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](
@@ -1633,6 +1623,8 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
 
 
 def matmul_sm100_fallback[
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1642,8 +1634,14 @@ def matmul_sm100_fallback[
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](c: TileTensor, a: TileTensor, b: TileTensor, ctx: DeviceContext,) raises:
+    has_compute_fn: Bool = False,
+](
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    ctx: DeviceContext,
+    compute_fn: ComputeFnType = no_compute_fn,
+) raises:
     """Launches the SM100 fallback matmul kernel for unsupported shapes or dtypes.
 
     Uses a simple non-pipelined kernel without CLC/TMEM overhead, computing
@@ -1651,6 +1649,7 @@ def matmul_sm100_fallback[
     Only transposed-B, bfloat16, and float8_e4m3fn inputs are supported.
 
     Parameters:
+        ComputeFnType: Type of `compute_fn` (inferred).
         c_type: Output element dtype of the result matrix.
         a_type: Input element dtype of the LHS matrix; must be
             `bfloat16` or `float8_e4m3fn`.
@@ -1665,13 +1664,15 @@ def matmul_sm100_fallback[
             `SWIZZLE_128B`).
         b_swizzle: TMA swizzle mode for B tensor loads (defaults to
             `SWIZZLE_128B`).
-        elementwise_lambda_fn: Optional epilogue lambda applied after
-            the matmul (defaults to None).
+        has_compute_fn: Whether to apply `compute_fn` to each output value
+            before it is stored (defaults to False).
     Args:
         c: Output TileTensor of shape (M, N).
         a: LHS TileTensor of shape (M, K).
         b: RHS TileTensor of shape (N, K) (transposed).
         ctx: Device context used to create TMA descriptors and enqueue the kernel.
+        compute_fn: Element-wise epilogue applied to each output value;
+            ignored unless `has_compute_fn` is True.
     """
     comptime assert transpose_b, "Only support transposed B"
 
@@ -1705,10 +1706,8 @@ def matmul_sm100_fallback[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=block_dim,
-        elementwise_lambda_fn=elementwise_lambda_fn,
     ]
     comptime FallbackKernelType = type_of(fallback_kernel)
-    comptime kernel = fallback_kernel.run
 
     # Create TMA descriptors using kernel-derived layout types
     var a_tma_op = create_tma_tile[
@@ -1731,15 +1730,32 @@ def matmul_sm100_fallback[
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]())
 
-    ctx.enqueue_function[kernel](
-        a_tma_op,
-        b_tma_op,
-        c,
-        Int32(ceildiv(K, BK)),
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-        block_dim=(block_dim),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
-    )
+    comptime if has_compute_fn:
+        comptime kernel = fallback_kernel.run_with_compute_fn[ComputeFnType]
+        ctx.enqueue_function[kernel](
+            a_tma_op,
+            b_tma_op,
+            c,
+            Int32(ceildiv(K, BK)),
+            host_args=(compute_fn,),
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+            block_dim=(block_dim),
+            shared_mem_bytes=smem_use,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_use)
+            ),
+        )
+    else:
+        comptime kernel = fallback_kernel.run
+        ctx.enqueue_function[kernel](
+            a_tma_op,
+            b_tma_op,
+            c,
+            Int32(ceildiv(K, BK)),
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+            block_dim=(block_dim),
+            shared_mem_bytes=smem_use,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_use)
+            ),
+        )

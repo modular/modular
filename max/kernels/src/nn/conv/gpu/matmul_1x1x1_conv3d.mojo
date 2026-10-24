@@ -29,21 +29,29 @@ Covers every 1x1x1 case in the WAN VAE (`post_quant_conv`, per-block
 the QRSCF dispatch chain, before `dispatch_im2col_matmul_conv3d`.
 """
 
+from std.math import divmod
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils.index import IndexList
-from linalg.utils import elementwise_epilogue_type
-from nn.conv.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.conv_utils import (
+    ConvSimdComputeFn,
+    ConvSimdEpilogueFn,
+    no_conv_simd_compute_fn,
+    no_conv_simd_epilogue_fn,
+)
 
 
 def dispatch_1x1x1_matmul_conv3d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ConvSimdEpilogueFn = type_of(no_conv_simd_epilogue_fn),
+    ComputeFnType: ConvSimdComputeFn = type_of(no_conv_simd_compute_fn),
     //,
     filter_is_fcrs: Bool = False,
-    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
@@ -53,6 +61,8 @@ def dispatch_1x1x1_matmul_conv3d[
     symmetric_padding: IndexList[3],
     num_groups: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,
+    compute_fn: ComputeFnType = no_conv_simd_compute_fn,
 ) raises -> Bool:
     """Try to dispatch a 1x1x1 3D conv directly as a single `_matmul_gpu`.
 
@@ -67,10 +77,14 @@ def dispatch_1x1x1_matmul_conv3d[
         input_type: Element type of the input tensor (inferred).
         filter_type: Element type of the filter tensor (inferred).
         output_type: Element type of the output tensor (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: Whether the filter is in FCQRS layout (`True`) or
             QRSCF layout (`False`) (defaults to `False`).
-        maybe_epilogue_func: Optional SIMD elementwise epilogue invoked per
-            output element in 5D coordinates (defaults to `None`).
+        has_epilogue_fn: True when `epilogue_fn` stores the output instead
+            of the matmul (defaults to `False`).
+        has_compute_fn: True when the matmul stores `compute_fn` of each
+            output value (defaults to `False`).
     Args:
         input: 5D input tensor in NDHWC layout.
         filter: 5D convolution filter in FCQRS or QRSCF layout.
@@ -80,10 +94,17 @@ def dispatch_1x1x1_matmul_conv3d[
         symmetric_padding: Per-axis symmetric zero padding for (D, H, W).
         num_groups: Number of convolution groups.
         ctx: GPU device context used to launch the matmul.
+        epilogue_fn: SIMD elementwise epilogue invoked per output element
+            in 5D coordinates; used only when `has_epilogue_fn` is true.
+        compute_fn: SIMD elementwise transform of each output element in
+            5D coordinates; used only when `has_compute_fn` is true.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
     comptime assert output.flat_rank == 5, "output must be rank 5 (NDHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
 
     comptime if input_type != .bfloat16:
         return False
@@ -150,29 +171,26 @@ def dispatch_1x1x1_matmul_conv3d[
     var a_tt = input.reshape(row_major(full_M, K))
     var c_tt = output.reshape(row_major(full_M, N))
 
-    comptime if case .Some(epilogue_5d) = maybe_epilogue_func:
+    comptime if has_epilogue_fn:
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(DHW_out, HW_out, H_out, W_out)
         def _gemm_epilogue[
             _dtype: DType,
             _width: SIMDLength,
             *,
-            alignment: Int = 1,
-        ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+            alignment: Int,
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+            var DHW_out, var HW_out, var W_out, var epilogue_fn
+        }:
             comptime assert (
                 coords_2d.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var m_idx = Int(coords_2d[0].value())
-            var n_idx = Int(coords_2d[1].value())
-            var batch_idx = m_idx // DHW_out
-            var sp = m_idx - batch_idx * DHW_out
-            var d_idx = sp // HW_out
-            var rem = sp - d_idx * HW_out
-            var h_idx = rem // W_out
-            var w_idx = rem - h_idx * W_out
-            epilogue_5d(
+            var m_idx = Int(coords_2d[0])
+            var n_idx = Int(coords_2d[1])
+            var batch_idx, sp = divmod(m_idx, DHW_out)
+            var d_idx, rem = divmod(sp, HW_out)
+            var h_idx, w_idx = divmod(rem, W_out)
+            epilogue_fn(
                 (batch_idx, d_idx, h_idx, w_idx, n_idx),
                 rebind[SIMD[output_type, _width]](val),
             )
@@ -181,24 +199,56 @@ def dispatch_1x1x1_matmul_conv3d[
             # FCQRS [F, C, 1, 1, 1] -> [F, C] view. _matmul_gpu wants
             # B as [N, K] row-major when transpose_b=True.
             var b_tt = filter.reshape(row_major(N, K))
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=True,
-                elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                    _gemm_epilogue
-                ),
-            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=True](
+                c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_epilogue, ctx
+            )
         else:
             # QRSCF [1, 1, 1, C, F] -> [C, F] view. _matmul_gpu wants
             # B as [K, N] row-major when transpose_b=False.
             var b_tt = filter.reshape(row_major(K, N))
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=False,
-                elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                    _gemm_epilogue
-                ),
-            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=False](
+                c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_epilogue, ctx
+            )
+    elif has_compute_fn:
+
+        @inline(.always)
+        def _gemm_compute[
+            _dtype: DType,
+            _width: SIMDLength,
+            *,
+            alignment: Int,
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+            var DHW_out, var HW_out, var W_out, var compute_fn
+        } -> SIMD[_dtype, _width]:
+            comptime assert (
+                coords_2d.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var m_idx = Int(coords_2d[0])
+            var n_idx = Int(coords_2d[1])
+            var batch_idx, sp = divmod(m_idx, DHW_out)
+            var d_idx, rem = divmod(sp, HW_out)
+            var h_idx, w_idx = divmod(rem, W_out)
+            return rebind[SIMD[_dtype, _width]](
+                compute_fn(
+                    (batch_idx, d_idx, h_idx, w_idx, n_idx),
+                    rebind[SIMD[output_type, _width]](val),
+                )
+            )
+
+        comptime if filter_is_fcrs:
+            # FCQRS [F, C, 1, 1, 1] -> [F, C] view. _matmul_gpu wants
+            # B as [N, K] row-major when transpose_b=True.
+            var b_tt = filter.reshape(row_major(N, K))
+            _matmul_gpu[use_tensor_core=True, transpose_b=True](
+                c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_compute, ctx
+            )
+        else:
+            # QRSCF [1, 1, 1, C, F] -> [C, F] view. _matmul_gpu wants
+            # B as [K, N] row-major when transpose_b=False.
+            var b_tt = filter.reshape(row_major(K, N))
+            _matmul_gpu[use_tensor_core=True, transpose_b=False](
+                c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_compute, ctx
+            )
     else:
         comptime if filter_is_fcrs:
             var b_tt = filter.reshape(row_major(N, K))

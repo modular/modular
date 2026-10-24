@@ -57,6 +57,12 @@ SymbolConstantAttr KGEN::extractSymbolConstantAttr(TypedAttr attr) {
   return dyn_cast<SymbolConstantAttr>(attr);
 }
 
+bool KGEN::hasUnresolvedParamValue(SymbolConstantAttr symbol) {
+  return symbol && llvm::any_of(symbol.getParamValues(), [](TypedAttr value) {
+           return isa<UnboundAttr, UnknownAttr>(value);
+         });
+}
+
 ErrorTreeOr<OffloadFunc> KGEN::extractOffloadFunc(CompileOffloadOp op,
                                                   mlir::SymbolTable &symtab) {
   Location loc = op.getLoc();
@@ -368,14 +374,8 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
 
   GeneratorOp func = getGenerator(symbol.getSymbol());
 
-  // Construct the expected result type.
   MLIRContext *ctx = attr.getContext();
   Builder b(ctx);
-  auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = FuncTypeGeneratorType::get(
-      /*inputParamTypes=*/{},
-      b.getFunctionType(PointerType::get(noneType), noneType),
-      {ArgConvention::ImmReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it
@@ -410,17 +410,11 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
     handler.emitDiagnostics(
         [&](Diagnostic &diag) { emitDiagnosticToStream(os, diag); });
     // Note: return -1 to indicate an error state.
-    return {StructAttr::get({StringAttr::get(os.str(), StringType::get(ctx)),
-                             b.getIndexAttr(-1),
-                             UninitMemAttr::get(populateFnType)})};
+    return {StructAttr::get(
+        {StringAttr::get(os.str(), StringType::get(ctx)), b.getIndexAttr(-1)})};
   }
 
-  auto populate = cast<FuncOp>(closure->populateCapturesFn.release());
-  auto populateFnRef = SymbolConstantAttr::get(populate);
-  addDeferredFunction(populate);
-  return {
-      StructAttr::get({closure->contents, b.getIndexAttr(closure->numCaptures),
-                       populateFnRef})};
+  return {StructAttr::get({closure->contents, b.getIndexAttr(0)})};
 }
 
 /// Resolve the linkageName of @p gen to a concrete string for the given
@@ -613,85 +607,6 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
   if (sanitize)
     name = sanitizeSymbolToAlnum(name);
   return name;
-}
-
-FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
-    CompileOffloadClosureAttr compileOffloadClosureAttr) {
-  // Create the signature and an empty body of the populate capture for offload
-  // closures as part of elaboration step.
-  // We currently only support capturing closure as a parameter. So this closure
-  // has to be created during elaboration time as a compile time constant.
-  // However, bundling offload compilation means
-  // that the actual compilation of the offload functions will happen later
-  // once all of them are seen and collected, and the actual body of this
-  // closure will not be known until the offload function is compiled
-  // (so that we know what needs to be captured).
-  // We will generated the actual body of this closure later.
-
-  // Slice out a standalone module to re-elaborate with the new target later.
-
-  // compile_offload_closure attrs are compiler-generated; these invariants
-  // must hold.
-  auto closureSymbolForLookup =
-      extractSymbolConstantAttr(compileOffloadClosureAttr.getFunc());
-  assert(closureSymbolForLookup &&
-         "compile_offload_closure func must resolve to a SymbolConstantAttr");
-  assert(closureSymbolForLookup.getType().isFullyBound() &&
-         "compile_offload_closure func must be fully bound");
-  GeneratorOp generator = getGenerator(closureSymbolForLookup.getSymbol());
-  assert(generator &&
-         "compile_offload_closure must reference a valid GeneratorOp");
-
-  // If `generator` is a transparent thunk, mirror what `processCompileOffload`
-  // does and look through it to the wrapped function. The offload-side
-  // `writeCaptureArgs` names the populate function body after the *redirected*
-  // (user-kernel) generator, so this stub must be named the same way for the
-  // fill step to match them up.
-  if (auto thunkCallee = resolveTransparentThunkCallee(
-          generator, closureSymbolForLookup, *errorLoc)) {
-    if (thunkCallee->isError()) {
-      emitError(thunkCallee->takeError());
-      return failure();
-    }
-    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
-    if (!calleeSym)
-      return TypedAttr(); // Not ready yet — signal retry.
-    if (GeneratorOp calleeGen = getGenerator(calleeSym.getSymbol())) {
-      generator = calleeGen;
-      closureSymbolForLookup = calleeSym;
-    }
-  }
-
-  // Construct the expected result type.
-  MLIRContext *ctx = compileOffloadClosureAttr.getContext();
-  auto noneType = KGEN::NoneType::get(ctx);
-
-  // The location to use for generated code. Remove all debuginfo from it.
-  Location loc = DebugInfo::stripDebugScopesRecursively(*errorLoc);
-
-  // The expected signature is `fn(Pointer[None]) capturing -> None`.
-  ImplicitLocOpBuilder bb(loc, ctx);
-  auto nonePtr = PointerType::get(noneType);
-  auto sig = FuncType::get(bb.getFunctionType(nonePtr, noneType),
-                           ArgConvention::ImmReg, FnEffects().setCapturing());
-
-  // Use the auto-mangled sym_name (NOT @__name) for the stub name. Each
-  // distinct closure instantiation gets its own stub keyed by the pre-rename
-  // sym, even when multiple instantiations share the same @__name value
-  // (e.g. closures capturing uint32 vs uint64). writeCaptureArgs in the
-  // offload compilation path names the populate function body using the same
-  // pre-rename sym, so the fill step can match stub to body by name.
-  std::string stubBaseName =
-      mangleParameterValues(generator, closureSymbolForLookup.getParamValues());
-
-  OwningOpRef<FuncOp> populateFunc =
-      FuncOp::create(bb, bb.getStringAttr(stubBaseName + "_populate_captures"),
-                     sig, InlineLevel::Always);
-
-  auto populate = cast<FuncOp>(populateFunc.get());
-  auto populateFnRef = SymbolConstantAttr::get(populate);
-  addDeferredFunction(std::move(populateFunc));
-  return {populateFnRef};
 }
 
 /// Print a KGENDType, following the naming scheme in the Mojo DType struct.

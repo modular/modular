@@ -570,3 +570,42 @@ params:
   K_GROUP_SIZE: 2
   NUM_ACCUM_PIPELINE_STAGES: 1
   NUM_CLC_PIPELINE_STAGES: 0
+# DeepSeek-V3 fused q_a/kv_a projection at decode M. The heuristic picks the
+# same 2-SM 128x32 tile from M=32 but groups 2 k-tiles (its k_group 4 bound
+# is 64x16 blocks), and a 1-SM swapped tile below M=32. B200, M=17 to 128
+# tokens: 10.8-11.3 vs 11.4-12.2 us per call.
+- <<: *defaults
+  M: 17
+  M_END: 129
+  N: 2112
+  K: 7168
+  MMA_M: 128
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  K_GROUP_SIZE: 4
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+# Logits GEMM with fp32 output at decode M. Sixteen K splits put 144 CTAs on
+# the weight stream, and the split-K reduction replaces the vendor kernel's
+# separate reduce launch.
+- <<: *defaults
+  M: 1
+  M_END: 193
+  N: 384
+  K: 5120
+  MMA_M: 128
+  MMA_N: 64
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 16
+  NUM_PIPELINE_STAGES: 5

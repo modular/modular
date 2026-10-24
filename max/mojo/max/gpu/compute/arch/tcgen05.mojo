@@ -17,7 +17,7 @@ tensorcore 5th generation (tcgen05) instructions."""
 from std.os import abort
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
-from std.sys.info import _has_blackwell_tcgen05
+from std.sys.info import current_accelerator
 from std.memory import bitcast
 
 from max.gpu import external_memory
@@ -29,7 +29,7 @@ from max.gpu.intrinsics import _get_nvtx_register_constraint
 @inline(.nodebug)
 def check_blackwell_constraint():
     """Compile-time constraint ensuring Blackwell hardware is targeted."""
-    comptime assert _has_blackwell_tcgen05(), (
+    comptime assert current_accelerator()._has_blackwell_tcgen05(), (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
         " (sm_100a, sm_101a) hardware."
     )
@@ -52,11 +52,9 @@ struct TensorMemory(TrivialRegisterPassable):
             num_cols: The number of columns to allocate.
         """
         # Bitcast to avoid `cannot implicitly convert` error.
-        self.ptr = (
-            external_memory[UInt32, address_space=.SHARED, alignment=16]()
-            .unsafe_bitcast[UInt32]()
-            .unsafe_origin_cast[MutUntrackedOrigin]()
-        )
+        self.ptr = external_memory[
+            UInt32, address_space=.SHARED, alignment=16
+        ]().unsafe_bitcast[UInt32]()
         self.num_cols = num_cols
 
 

@@ -45,7 +45,6 @@ from std.random import random_float64, random_si64
 from layout import (
     Coord,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from comm import Signal
@@ -64,8 +63,9 @@ from internal_utils import human_readable_size
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.primitives.grid_controls import PDLLevel
 from std.memory import bitcast
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal, assert_true
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 # Sizes through the small (Lamport) regime. All must be whole 128-bit packs
 # (simd_width multiples on every target) and within
@@ -103,7 +103,9 @@ def _set_lamport_flag(sig: MutPointer[Signal, MutAnyOrigin], flag: UInt32):
     Lets a test place the counter just below the uint32 wrap without issuing
     ~2^32 real allreduces to reach it.
     """
-    sig[].lamport_state_ptr().store[volatile=True](Lamport.STATE_FLAG, flag)
+    sig[].lamport_state_ptr().unsafe_store[volatile=True](
+        Lamport.STATE_FLAG, flag
+    )
 
 
 def lamport_allreduce_test[
@@ -142,7 +144,7 @@ def lamport_allreduce_test[
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
 
-        var host_buffer = alloc[Scalar[dtype]](length)
+        var host_buffer = unsafe_alloc[Scalar[dtype]](length)
         host_buffers.append(host_buffer)
 
         # Rank i seeds value (i + 1). When seed_neg_zero, every other lane is
@@ -224,32 +226,28 @@ def lamport_allreduce_test[
         out_capture[i] = TileTensor(out_dev[i], row_major(length))
 
     for it in range(NUM_ITERS):
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(out_capture)
-        def lamport_epilogue[
-            input_index: Int,
-            _dtype: DType,
-            _width: SIMDLength,
-            *,
-            _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-            out_capture[input_index].store_linear[
-                width=_width, alignment=_alignment
-            ](
-                rebind[IndexList[1]](coord_to_index_list(coords)),
-                rebind[SIMD[dtype, _width]](val),
-            )
-
         comptime for i in range(ngpus):
+
+            @inline(.always)
+            def lamport_epilogue[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) {
+                var out_capture
+            } -> None:
+                out_capture[i].store[width=_width, alignment=alignment](
+                    coords, rebind[SIMD[dtype, _width]](val)
+                )
+
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                output_lambda=lamport_epilogue[input_index=i, ...],
                 pdl_level=PDLLevel(),
             ](
                 in_tensors,
                 out_tensors[i].layout,
+                lamport_epilogue,
                 rank_sigs,
                 lamport_cfg,
                 list_of_ctx[i],
@@ -297,7 +295,7 @@ def lamport_allreduce_test[
                     raise e^
 
     for i in range(ngpus):
-        host_buffers[i].free()
+        host_buffers[i].unsafe_free()
 
 
 def lamport_mixed_size_test[
@@ -342,7 +340,7 @@ def lamport_mixed_size_test[
     for i in range(ngpus):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](max_length))
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](max_length))
-        host.append(alloc[Scalar[dtype]](max_length))
+        host.append(unsafe_alloc[Scalar[dtype]](max_length))
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + scratch_bytes
@@ -364,23 +362,6 @@ def lamport_mixed_size_test[
     var out_capture = StaticTuple[MaxOutType, ngpus]()
     for i in range(ngpus):
         out_capture[i] = TileTensor(out_dev[i], row_major(max_length))
-
-    @inline(.always)
-    @__parameter
-    @__copy_capture(out_capture)
-    def mixed_epilogue[
-        input_index: Int,
-        _dtype: DType,
-        _width: SIMDLength,
-        *,
-        _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-        out_capture[input_index].store_linear[
-            width=_width, alignment=_alignment
-        ](
-            rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[dtype, _width]](val),
-        )
 
     # One-time init of the signal buffers (zero counters/state, sentinel region).
     for i in range(ngpus):
@@ -441,13 +422,27 @@ def lamport_mixed_size_test[
             )
 
             comptime for i in range(ngpus):
+
+                @inline(.always)
+                def mixed_epilogue[
+                    _dtype: DType,
+                    _width: SIMDLength,
+                    *,
+                    alignment: Int,
+                ](coords: Coord, val: SIMD[_dtype, _width]) {
+                    var out_capture
+                } -> None:
+                    out_capture[i].store[width=_width, alignment=alignment](
+                        coords, rebind[SIMD[dtype, _width]](val)
+                    )
+
                 _allreduce_lamport_p2p[
                     ngpus=ngpus,
-                    output_lambda=mixed_epilogue[input_index=i, ...],
                     pdl_level=PDLLevel(),
                 ](
                     in_tensors,
                     out_tensors[i].layout,
+                    mixed_epilogue,
                     rank_sigs,
                     cfg,
                     list_of_ctx[i],
@@ -491,7 +486,7 @@ def lamport_mixed_size_test[
             call_idx += 1
 
     for i in range(ngpus):
-        host[i].free()
+        host[i].unsafe_free()
 
 
 def _lamport_random_call[
@@ -521,7 +516,7 @@ def _lamport_random_call[
     for i in range(ngpus):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
-        var h = alloc[Scalar[dtype]](length)
+        var h = unsafe_alloc[Scalar[dtype]](length)
         for j in range(length):
             comptime if dtype == .float32:
                 h[j] = random_float64(min=-1.0, max=1.0).cast[dtype]()
@@ -530,7 +525,7 @@ def _lamport_random_call[
         host.append(h)
         list_of_ctx[i].enqueue_copy(in_dev[i], h)
 
-    var expected = alloc[Scalar[dtype]](length)
+    var expected = unsafe_alloc[Scalar[dtype]](length)
     for j in range(length):
         expected[j] = (
             host[0][j].cast[DType.float32]() + host[1][j].cast[DType.float32]()
@@ -594,8 +589,8 @@ def _lamport_random_call[
                 raise e^
 
     for i in range(ngpus):
-        host[i].free()
-    expected.free()
+        host[i].unsafe_free()
+    expected.unsafe_free()
 
 
 def lamport_mixed_dtype_test[
@@ -674,14 +669,14 @@ def _lamport_rmsnorm_random_call[
     var host = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
-    var gamma = alloc[Scalar[dtype]](cols)
+    var gamma = unsafe_alloc[Scalar[dtype]](cols)
     for j in range(cols):
         gamma[j] = random_float64(min=0.5, max=1.5).cast[dtype]()
     for i in range(ngpus):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         gamma_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](cols))
-        var h = alloc[Scalar[dtype]](length)
+        var h = unsafe_alloc[Scalar[dtype]](length)
         for j in range(length):
             comptime if dtype == .float32:
                 h[j] = random_float64(min=-1.0, max=1.0).cast[dtype]()
@@ -691,7 +686,7 @@ def _lamport_rmsnorm_random_call[
         list_of_ctx[i].enqueue_copy(in_dev[i], h)
         list_of_ctx[i].enqueue_copy(gamma_dev[i], gamma)
 
-    var expected = alloc[Float64](length)
+    var expected = unsafe_alloc[Float64](length)
     for r in range(rows):
         var sumsq = Float64(0)
         for c in range(cols):
@@ -755,9 +750,9 @@ def _lamport_rmsnorm_random_call[
                 raise Error("fused Lamport RMSNorm output mismatch")
 
     for i in range(ngpus):
-        host[i].free()
-    gamma.free()
-    expected.free()
+        host[i].unsafe_free()
+    gamma.unsafe_free()
+    expected.unsafe_free()
 
 
 def lamport_rmsnorm_mixed_dtype_test[
@@ -843,7 +838,7 @@ def lamport_coexist_test[
     var scratch_bytes = ngpus * large_len * size_of[dtype]()
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
-    var lfill = alloc[Scalar[dtype]](large_len)
+    var lfill = unsafe_alloc[Scalar[dtype]](large_len)
     for j in range(large_len):
         lfill[j] = Scalar[dtype](1)
 
@@ -852,7 +847,7 @@ def lamport_coexist_test[
         sout_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](small_len))
         lin_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](large_len))
         lout_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](large_len))
-        shost.append(alloc[Scalar[dtype]](small_len))
+        shost.append(unsafe_alloc[Scalar[dtype]](small_len))
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + scratch_bytes
@@ -910,23 +905,6 @@ def lamport_coexist_test[
     for i in range(ngpus):
         out_capture[i] = TileTensor(sout_dev[i], row_major(small_len))
 
-    @inline(.always)
-    @__parameter
-    @__copy_capture(out_capture)
-    def coexist_epilogue[
-        input_index: Int,
-        _dtype: DType,
-        _width: SIMDLength,
-        *,
-        _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-        out_capture[input_index].store_linear[
-            width=_width, alignment=_alignment
-        ](
-            rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[dtype, _width]](val),
-        )
-
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
@@ -959,13 +937,27 @@ def lamport_coexist_test[
             algorithm=AllReduceAlgorithm.LAMPORT,
         )
         comptime for i in range(ngpus):
+
+            @inline(.always)
+            def coexist_epilogue[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) {
+                var out_capture
+            } -> None:
+                out_capture[i].store[width=_width, alignment=alignment](
+                    coords, rebind[SIMD[dtype, _width]](val)
+                )
+
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                output_lambda=coexist_epilogue[input_index=i, ...],
                 pdl_level=PDLLevel(),
             ](
                 sin_tensors,
                 sout_tensors[i].layout,
+                coexist_epilogue,
                 rank_sigs,
                 cfg,
                 list_of_ctx[i],
@@ -1006,8 +998,8 @@ def lamport_coexist_test[
         call_idx += 1
 
     for i in range(ngpus):
-        shost[i].free()
-    lfill.free()
+        shost[i].unsafe_free()
+    lfill.unsafe_free()
 
 
 def lamport_unsynced_skew_test[
@@ -1054,7 +1046,7 @@ def lamport_unsynced_skew_test[
         # (i+1) + (it % 5): varies across calls so a stale read of another
         # generation's slice is a detectable wrong sum, and < 256 so the integer
         # sum is exact in bf16.
-        var h = alloc[Scalar[dtype]](total)
+        var h = unsafe_alloc[Scalar[dtype]](total)
         for it in range(NUM_UNSYNCED_ITERS):
             var v = Scalar[dtype](Scalar[dtype](i + 1) + Scalar[dtype](it % 5))
             for j in range(length):
@@ -1093,7 +1085,7 @@ def lamport_unsynced_skew_test[
         var in_tensors = Array[_, ngpus](
             fill_with=lambda (i: Int) -> InType: InType(
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    in_dev[i].unsafe_ptr() + base
+                    in_dev[i].unsafe_ptr().unsafe_offset(base)
                 ),
                 row_major(length),
             )
@@ -1102,26 +1094,9 @@ def lamport_unsynced_skew_test[
         for i in range(ngpus):
             out_capture[i] = OutType(
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                    out_dev[i].unsafe_ptr() + base
+                    out_dev[i].unsafe_ptr().unsafe_offset(base)
                 ),
                 row_major(length),
-            )
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(out_capture)
-        def skew_epilogue[
-            input_index: Int,
-            _dtype: DType,
-            _width: SIMDLength,
-            *,
-            _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-            out_capture[input_index].store_linear[
-                width=_width, alignment=_alignment
-            ](
-                rebind[IndexList[1]](coord_to_index_list(coords)),
-                rebind[SIMD[dtype, _width]](val),
             )
 
         var cfg = AllReduceTuningConfig(
@@ -1132,13 +1107,27 @@ def lamport_unsynced_skew_test[
             algorithm=AllReduceAlgorithm.LAMPORT,
         )
         comptime for i in range(ngpus):
+
+            @inline(.always)
+            def skew_epilogue[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) {
+                var out_capture
+            } -> None:
+                out_capture[i].store[width=_width, alignment=alignment](
+                    coords, rebind[SIMD[dtype, _width]](val)
+                )
+
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                output_lambda=skew_epilogue[input_index=i, ...],
                 pdl_level=PDLLevel(),
             ](
                 in_tensors,
                 out_capture[i].layout,
+                skew_epilogue,
                 rank_sigs,
                 cfg,
                 list_of_ctx[i],
@@ -1180,7 +1169,7 @@ def lamport_unsynced_skew_test[
                     raise e^
 
     for i in range(ngpus):
-        host[i].free()
+        host[i].unsafe_free()
 
 
 def lamport_wrap_test[
@@ -1216,7 +1205,7 @@ def lamport_wrap_test[
     for i in range(ngpus):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
-        host.append(alloc[Scalar[dtype]](length))
+        host.append(unsafe_alloc[Scalar[dtype]](length))
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + scratch_bytes
@@ -1235,23 +1224,6 @@ def lamport_wrap_test[
     var out_capture = StaticTuple[OutType, ngpus]()
     for i in range(ngpus):
         out_capture[i] = TileTensor(out_dev[i], row_major(length))
-
-    @inline(.always)
-    @__parameter
-    @__copy_capture(out_capture)
-    def wrap_epilogue[
-        input_index: Int,
-        _dtype: DType,
-        _width: SIMDLength,
-        *,
-        _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-        out_capture[input_index].store_linear[
-            width=_width, alignment=_alignment
-        ](
-            rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[dtype, _width]](val),
-        )
 
     # One-time init, then seed every rank's counter just below the wrap so all
     # ranks cross it on the same call (as they do in production).
@@ -1303,13 +1275,27 @@ def lamport_wrap_test[
             algorithm=AllReduceAlgorithm.LAMPORT,
         )
         comptime for i in range(ngpus):
+
+            @inline(.always)
+            def wrap_epilogue[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) {
+                var out_capture
+            } -> None:
+                out_capture[i].store[width=_width, alignment=alignment](
+                    coords, rebind[SIMD[dtype, _width]](val)
+                )
+
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                output_lambda=wrap_epilogue[input_index=i, ...],
                 pdl_level=PDLLevel(),
             ](
                 in_tensors,
                 out_tensors[i].layout,
+                wrap_epilogue,
                 rank_sigs,
                 cfg,
                 list_of_ctx[i],
@@ -1349,7 +1335,7 @@ def lamport_wrap_test[
                     raise e^
 
     for i in range(ngpus):
-        host[i].free()
+        host[i].unsafe_free()
 
 
 def _case_str[

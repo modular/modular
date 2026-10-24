@@ -2,13 +2,14 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("@rules_python//python:defs.bzl", "py_binary")
-load("@rules_rust_pyo3//:defs.bzl", "rust_pyo3_toolchain")
+load("@rules_rust//extensions/pyo3:defs.bzl", "rust_pyo3_toolchain")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 load(":jemalloc.bzl", "jemalloc_with_lg_page")
 load(":mojo_toolchain.bzl", "mojo_toolchain")
+load(":python_extension_name_toolchain.bzl", "python_extension_name_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -186,19 +187,16 @@ mojo_toolchain(
     implicit_deps = [],
     lld = "@llvm-project//lld:lld",
     mojo = "//Mojo/tools/mojo",
-    tags = [
-        # Manual so that even in --config=prebuilt-mojo this
-        # doesn't build, since we build this folder in the OSS CI.
-        "manual",
-        TOP_LEVEL_TAG,  # Used in oss.MODULE.bazel
-    ],
+    tags = [TOP_LEVEL_TAG],  # Used in oss.MODULE.bazel
 )
 
+# SDLC-4549: the source-built Mojo toolchain is now the only one (the prebuilt
+# nightly `@mojo_toolchains` and the `use_prebuilt_mojo_toolchain` flag are gone),
+# so it is registered unconditionally.
 # Don't split toolchains on OS, we don't care about cross compilation here.
 toolchain(
     name = "mojo_toolchain",
     tags = [TOP_LEVEL_TAG],  # Used in oss.MODULE.bazel
-    target_settings = ["//:use_prebuilt_mojo_toolchain_disabled"],
     toolchain = ":mojo_toolchain_target",
     toolchain_type = "@rules_mojo//:toolchain_type",
 )
@@ -208,6 +206,18 @@ toolchain(
     tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
     toolchain = ":_mojo_copts_toolchain",
     toolchain_type = "@rules_mojo//:copts_toolchain_type",
+)
+
+# Provides $(PYTHON_EXTENSION_NAME) for nanobind extensions (SDLC-4549: needed to
+# build the Python bindings from source in OSS). Moved here from the internal
+# //bazel/internal so both builds share one definition.
+python_extension_name_toolchain(
+    name = "python_extension_name_toolchain",
+    platform = select({
+        "@platforms//os:macos": "darwin",
+        "//:linux_x86_64": "x86_64-linux-gnu",
+        "//:linux_aarch64": "aarch64-linux-gnu",
+    }),
 )
 
 modular_py_library(
@@ -314,11 +324,12 @@ modular_cc_library(
 )
 
 # pyo3 for the max._kv_core extension (//max/python/max:_kv_core.bindings).
-# Bound to the kv-core crate universe (//rust_kv/kv-core-pyo3).
+# Bound to the //rust_kv crate universe. It also serves the tiered connector
+# extension (//rust_kv/kv-tier-connector-pyo3).
 rust_pyo3_toolchain(
     name = "pyo3_toolchain_target",
-    pyo3 = "@kv_core_crates//:pyo3",
-    pyo3_introspection = "@kv_core_crates//:pyo3-introspection",
+    pyo3 = "@rust_kv_crates//:pyo3",
+    pyo3_introspection = "@rust_kv_crates//:pyo3-introspection",
     tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
 )
 
@@ -326,8 +337,5 @@ toolchain(
     name = "pyo3_toolchain",
     tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
     toolchain = ":pyo3_toolchain_target",
-    toolchain_type = "@rules_rust_pyo3//:rust_toolchain_type",
+    toolchain_type = "@rules_rust//extensions/pyo3:rust_toolchain_type",
 )
-
-# Applied by both MODULE.bazel files' rules_rust archive_override.
-exports_files(["rules_rust_extra_exec_triple.patch"])

@@ -21,7 +21,6 @@ from std.sys.info import align_of, simd_width_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
-    Coord,
     Layout,
     RowMajorLayout,
     TileTensor,
@@ -35,9 +34,11 @@ from std.utils.index import Index, IndexList
 from . import cpu
 from ..gemv import gemv
 from ..utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
     GemmShape,
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
+    no_compute_fn,
+    no_epilogue_fn,
 )
 from .gpu import _matmul_gpu
 
@@ -47,15 +48,11 @@ def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     saturated_vnni: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
-    # Kept last so existing positional-parameter callers (e.g. the mo.matmul
-    # op) are unaffected; set it by keyword.
+    # Kept last so positional-parameter callers are unaffected; set it by
+    # keyword.
     use_tf32: Bool = True,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -76,11 +73,6 @@ def matmul[
         transpose_b: Transpose `b` before the matmul (defaults to `False`).
         b_packed: `b` is already in a CPU-friendly packed layout (CPU only;
             defaults to `False`).
-        elementwise_lambda_fn: Epilogue lambda applied to each stored tile of
-            `c` (defaults to `None`).
-        elementwise_compute_lambda_fn: Compute lambda transforming each result
-            tile before store; on CPU it is wrapped as an epilogue (defaults
-            to `None`).
         saturated_vnni: Use the saturating VNNI variant on x86 (CPU only;
             defaults to `False`).
         _trace_description: Extra string folded into the op trace label
@@ -97,6 +89,159 @@ def matmul[
         ctx: Optional `DeviceContext` required for GPU targets and used for
             CPU tracing (defaults to `None`).
     """
+    _matmul_impl[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        saturated_vnni=saturated_vnni,
+        _trace_description=_trace_description,
+        target=target,
+        use_tf32=use_tf32,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+    ](c, a, b, no_epilogue_fn, no_compute_fn, ctx)
+
+
+@inline(.always)
+def matmul[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    saturated_vnni: Bool = False,
+    _trace_description: StaticString = "",
+    target: StaticString = "cpu",
+    use_tf32: Bool = True,
+](
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
+    b: TileTensor[address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: Optional[DeviceContext] = None,
+) raises:
+    """Matmul that stores each output tile through `epilogue_fn`.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        transpose_a: Transpose `a` before the matmul (defaults to `False`);
+            currently unsupported.
+        transpose_b: Transpose `b` before the matmul (defaults to `False`).
+        b_packed: `b` is already in a CPU-friendly packed layout (CPU only;
+            defaults to `False`).
+        saturated_vnni: Use the saturating VNNI variant on x86 (CPU only;
+            defaults to `False`).
+        _trace_description: Extra string folded into the op trace label
+            (defaults to an empty string).
+        target: Target platform string such as `"cpu"` or a GPU target
+            (defaults to `"cpu"`).
+        use_tf32: On GPU, allow TF32 tensor-core truncation for fp32 inputs
+            (defaults to `True`).
+
+    Args:
+        c: Rank-2 output `TileTensor`. Some dispatch paths use it as scratch
+            for the product.
+        a: Rank-2 LHS `TileTensor` of the matmul.
+        b: Rank-2 RHS `TileTensor` of the matmul.
+        epilogue_fn: Stores each output index and tile.
+        ctx: Optional `DeviceContext` required for GPU targets and used for
+            CPU tracing (defaults to `None`).
+    """
+    _matmul_impl[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        saturated_vnni=saturated_vnni,
+        _trace_description=_trace_description,
+        target=target,
+        use_tf32=use_tf32,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](c, a, b, epilogue_fn, no_compute_fn, ctx)
+
+
+@inline(.always)
+def matmul[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    saturated_vnni: Bool = False,
+    _trace_description: StaticString = "",
+    target: StaticString = "cpu",
+    use_tf32: Bool = True,
+](
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
+    b: TileTensor[address_space=.GENERIC, ...],
+    compute_fn: ComputeFnType,
+    ctx: Optional[DeviceContext] = None,
+) raises:
+    """Matmul that stores `compute_fn(idx, a @ b)` into `c`.
+
+    Parameters:
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_a: Transpose `a` before the matmul (defaults to `False`);
+            currently unsupported.
+        transpose_b: Transpose `b` before the matmul (defaults to `False`).
+        b_packed: `b` is already in a CPU-friendly packed layout (CPU only;
+            defaults to `False`).
+        saturated_vnni: Use the saturating VNNI variant on x86 (CPU only;
+            defaults to `False`).
+        _trace_description: Extra string folded into the op trace label
+            (defaults to an empty string).
+        target: Target platform string such as `"cpu"` or a GPU target
+            (defaults to `"cpu"`).
+        use_tf32: On GPU, allow TF32 tensor-core truncation for fp32 inputs
+            (defaults to `True`).
+
+    Args:
+        c: Rank-2 output `TileTensor`.
+        a: Rank-2 LHS `TileTensor` of the matmul.
+        b: Rank-2 RHS `TileTensor` of the matmul.
+        compute_fn: Maps each output index and tile to the value to store.
+        ctx: Optional `DeviceContext` required for GPU targets and used for
+            CPU tracing (defaults to `None`).
+    """
+    _matmul_impl[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        saturated_vnni=saturated_vnni,
+        _trace_description=_trace_description,
+        target=target,
+        use_tf32=use_tf32,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+    ](c, a, b, no_epilogue_fn, compute_fn, ctx)
+
+
+@inline(.always)
+def _matmul_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+    saturated_vnni: Bool,
+    _trace_description: StaticString,
+    target: StaticString,
+    use_tf32: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
+    b: TileTensor[address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: Optional[DeviceContext],
+) raises:
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
@@ -137,13 +282,24 @@ def matmul[
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=OptionalReg(Int(ctx.value().id())),
         ):
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                use_tf32=use_tf32,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            ](c, a, b, ctx.value())
+            comptime if has_epilogue_fn:
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    use_tf32=use_tf32,
+                ](c, a, b, epilogue_fn, ctx.value())
+            elif has_compute_fn:
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    use_tf32=use_tf32,
+                ](c, a, b, compute_fn, ctx.value())
+            else:
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    use_tf32=use_tf32,
+                ](c, a, b, ctx.value())
     else:
         # CPU path: handle tracing and compute lambda wrapping, then
         # delegate to TileTensor cpu.matmul overload.
@@ -182,35 +338,23 @@ def matmul[
                 a.static_shape[0] if a.static_shape[0] > -1 else 0
             )
 
-            # The CPU version of matmul doesn't support compute lambda.
-            # Wrap it around an epilogue lambda instead.
-            @__parameter
-            @inline(.always)
-            def compute_lambda_wrapper[
-                _type: DType, _width: SIMDLength, *, alignment: Int = 1
-            ](coords: Coord, val: SIMD[_type, _width]):
-                comptime assert (
-                    coords.rank == 2
-                ), "the matmul epilogue contract is rank 2"
-                comptime if case .Some(compute) = elementwise_compute_lambda_fn:
-                    comptime compute_lambda = elementwise_compute_lambda_fn.value()
-                    var output = compute_lambda(coords, val)
-                    c.store[alignment=alignment](
-                        coords,
-                        rebind[SIMD[c.dtype, _width]](output),
-                    )
-
-            comptime elementwise_lambda_wrapper = Optional[
-                elementwise_epilogue_type
-            ](
-                compute_lambda_wrapper
-            ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
-
             var cpu_ctx = DeviceContext._map_assert_cpu_target(ctx)
 
-            cpu.matmul[
-                transpose_b=transpose_b,
-                b_packed=b_packed,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-                saturated_vnni=saturated_vnni,
-            ](c, a, b, kernel_type_m, ctx=cpu_ctx)
+            comptime if has_compute_fn:
+                cpu.matmul[
+                    transpose_b=transpose_b,
+                    b_packed=b_packed,
+                    saturated_vnni=saturated_vnni,
+                ](c, a, b, compute_fn, kernel_type_m, ctx=cpu_ctx)
+            elif has_epilogue_fn:
+                cpu.matmul[
+                    transpose_b=transpose_b,
+                    b_packed=b_packed,
+                    saturated_vnni=saturated_vnni,
+                ](c, a, b, epilogue_fn, kernel_type_m, ctx=cpu_ctx)
+            else:
+                cpu.matmul[
+                    transpose_b=transpose_b,
+                    b_packed=b_packed,
+                    saturated_vnni=saturated_vnni,
+                ](c, a, b, kernel_type_m, ctx=cpu_ctx)

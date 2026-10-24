@@ -1,0 +1,19 @@
+/// This is used as a synthetic `hip_version.h`
+/// for being able to build against HIP's headers.
+///
+/// @MAJOR@, @MINOR@, and @PATCH@ must all match the version
+/// that the HIP headers to be built against are pulled from
+
+#ifndef HIP_VERSION_H
+#define HIP_VERSION_H
+
+#define HIP_VERSION_MAJOR @MAJOR@
+#define HIP_VERSION_MINOR @MINOR@
+#define HIP_VERSION_PATCH @PATCH@
+#define HIP_VERSION (HIP_VERSION_MAJOR * 10000000 + HIP_VERSION_MINOR * 100000 + HIP_VERSION_PATCH)
+#define HIP_VERSION_GITHASH ""
+#define HIP_VERSION_BUILD_NAME ""
+#define HIP_VERSION_BUILD_ID 0
+#define __HIP_HAS_GET_PCH 0
+
+#endif

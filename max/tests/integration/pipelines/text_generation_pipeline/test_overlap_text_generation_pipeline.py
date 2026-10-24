@@ -41,10 +41,12 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     AsyncBatch,
     _host_mirror_realized_drafts,
     _should_verify_drafts,
+    in_flight_draft_placeholders,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
     _count_token_subsequence,
+    update_spec_decode_context_and_prepare_responses,
 )
 from max.pipelines.lib.registry import get_pipeline_for_task
 from max.pipelines.modeling.types import (
@@ -54,6 +56,9 @@ from max.pipelines.modeling.types import (
 )
 from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
 from max.support.math import ceildiv
+
+# Marks a request as constrained; the tests never compile it.
+_SCHEMA = '{"type": "object"}'
 
 
 @pytest.mark.parametrize(
@@ -1611,6 +1616,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=rid,
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         # curr_ctx reuses the same request_id so it is a member of the
         # producing batch -- the steady aggregated decode path.
@@ -1709,6 +1715,7 @@ class TestEnqueuePrevBitmaskCallback:
                 request_id=rid,
                 max_length=100,
                 tokens=TokenBuffer(np.array([1])),
+                json_schema=_SCHEMA,
             )
             for rid in prev_rids
         ]
@@ -1888,6 +1895,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=rid_a,
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         ctx_b = TextContext(
             request_id=rid_b,
@@ -1922,6 +1930,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=RequestID("producer"),
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         producer.update(new_token=10)
         padding = TextContext(
@@ -1949,6 +1958,75 @@ class TestEnqueuePrevBitmaskCallback:
         assert result is True
         assert mock_spec_state.has_precomputed_bitmask is True
         mock_overlap_state.enqueue_async_callback.assert_called_once()
+
+    def test_skips_callback_when_no_row_is_constrained(self) -> None:
+        """Steady decode with no grammar in either batch: no callback (its
+        host node would stall the stream), so the successor primes an
+        all-valid bitmask instead."""
+        ctx_a = TextContext(
+            request_id=RequestID("a"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx_a.update(new_token=10)
+        pipeline, mock_spec_state, mock_overlap_state = (
+            self._make_pipeline_with_spec_state([ctx_a])
+        )
+        mock_spec_state.bitmask_callback_enqueued = True
+
+        result = pipeline._enqueue_prev_bitmask_callback(
+            curr_context_batch=[ctx_a], curr_verify_width=2
+        )
+
+        assert result is False
+        mock_overlap_state.enqueue_async_callback.assert_not_called()
+        assert mock_spec_state.has_precomputed_bitmask is False
+        prev = pipeline._prev_batch
+        assert prev is not None and prev.spec_decode is not None
+        assert prev.spec_decode.fsm_advanced_by_callback is False
+        # The previous step's callback is remembered for the prime's signal.
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is True
+        assert mock_spec_state.bitmask_callback_enqueued is False
+
+    def test_records_enqueued_callback_for_next_step(self) -> None:
+        """An enqueued callback is recorded, and shifts to the previous-step
+        flag on the next call."""
+        ctx_a = TextContext(
+            request_id=RequestID("a"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
+        )
+        ctx_a.update(new_token=10)
+        pipeline, mock_spec_state, _ = self._make_pipeline_with_spec_state(
+            [ctx_a]
+        )
+        mock_spec_state.bitmask_callback_enqueued = False
+
+        with patch.object(
+            pipeline, "_build_bitmask_callback", return_value=lambda: None
+        ):
+            assert pipeline._enqueue_prev_bitmask_callback(
+                curr_context_batch=[ctx_a], curr_verify_width=2
+            )
+        assert mock_spec_state.bitmask_callback_enqueued is True
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is False
+
+        # The constrained request finished; the next batch is unconstrained.
+        ctx_b = TextContext(
+            request_id=RequestID("b"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx_b.update(new_token=11)
+        pipeline._prev_batch = self._make_prev_batch(
+            [ctx_b], num_draft_to_verify=2, next_draft_k=2
+        )
+        assert not pipeline._enqueue_prev_bitmask_callback(
+            curr_context_batch=[ctx_b], curr_verify_width=2
+        )
+        assert mock_spec_state.bitmask_callback_enqueued is False
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is True
 
 
 class TestInitializeBitmaskWithGrammar:
@@ -2530,6 +2608,76 @@ class TestAssignBitmaskInputs:
             "The synchronous fill must feed the realized host drafts."
         )
 
+    def _unconstrained_ctx(self) -> TextContext:
+        ctx = TextContext(
+            request_id=RequestID("free"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx.update(new_token=5)
+        return ctx
+
+    def test_unconstrained_cold_start_primes_all_valid(self) -> None:
+        """No constrained row and no callback ran: prime an all-valid bitmask
+        (no per-row compute) and signal the flag."""
+        pipeline, structured_output, spec_state, overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[], has_precomputed_bitmask=False
+            )
+        )
+        spec_state.prev_step_enqueued_bitmask_callback = False
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+
+        structured_output.compute_speculative_bitmasks.assert_not_called()
+        overlap_state.prime.assert_not_called()
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=True
+        )
+
+    def test_unconstrained_prime_leaves_flag_to_inflight_callback(
+        self,
+    ) -> None:
+        """The previous step enqueued a callback and its outputs are not
+        synced yet: that callback signals the flag, so the prime must not
+        (an early signal would let the previous graph read rows the callback
+        has not written)."""
+        pipeline, _, spec_state, overlap_state, _ = self._make_pipeline(
+            callback_request_ids=[], has_precomputed_bitmask=False
+        )
+        spec_state.prev_step_enqueued_bitmask_callback = True
+        prev_batch = MagicMock()
+        prev_batch._is_processed = False
+        pipeline._prev_batch = prev_batch
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=False
+        )
+
+        # Once the previous batch is synced its callback has retired.
+        overlap_state.prime_all_valid.reset_mock()
+        prev_batch._is_processed = True
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=True
+        )
+
 
 class TestHostMirrorRealizedDrafts:
     """Tests for ``_host_mirror_realized_drafts``.
@@ -2645,3 +2793,52 @@ class TestHostMirrorRealizedDrafts:
         assert np.array_equal(
             out, np.array([[80, 81, 82], [4, 5, 6], [70, 71, 72]])
         )
+
+
+def test_intermediate_chunk_in_mixed_verify_step_counts_no_drafts() -> None:
+    """An intermediate chunk in a mixed verify step counts no drafts.
+
+    The next step's cache length is ``processed_length`` plus the drafts the
+    launched step counted as cached, and only a row that sampled a token is
+    rolled back to its accepted count. The chunk row samples nothing, so it
+    must count no drafts; the decode row counts every verified draft until
+    its step syncs.
+    """
+    k = 3
+    chunked = TextContext(
+        request_id=RequestID("chunked"),
+        max_length=1000,
+        tokens=TokenBuffer(np.arange(100, 110, dtype=np.int64)),
+    )
+    chunked.tokens.chunk(4)
+    decode = TextContext(
+        request_id=RequestID("decode"),
+        max_length=1000,
+        tokens=TokenBuffer(np.array([5, 6, 7], dtype=np.int64)),
+    )
+    decode.update(8)
+    batch = [chunked, decode]
+
+    for ctx in batch:
+        ctx.update_with_future_token()
+        ctx.spec_decoding_state.maybe_accepted_draft_tokens = (
+            in_flight_draft_placeholders(ctx, k)
+        )
+    assert chunked.tokens.generated_length == 0
+    assert len(decode.spec_decoding_state.maybe_accepted_draft_tokens) == k
+
+    update_spec_decode_context_and_prepare_responses(
+        draft_tokens=np.array(
+            [[MAGIC_DRAFT_TOKEN_ID] * k, [11, 12, 13]], dtype=np.int32
+        ),
+        next_draft_tokens=np.zeros((2, k), dtype=np.int32),
+        num_accepted_draft_tokens=np.array([0, 1], dtype=np.int32),
+        next_tokens=np.array([50, 60], dtype=np.int32),
+        context_batch=batch,
+        max_seq_len=1000,
+    )
+
+    cache_length = chunked.tokens.processed_length + len(
+        chunked.spec_decoding_state.maybe_accepted_draft_tokens
+    )
+    assert cache_length == 4

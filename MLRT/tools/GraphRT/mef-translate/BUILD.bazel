@@ -1,0 +1,26 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+package(
+    default_visibility = ["//MLRT:__subpackages__"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+modular_cc_binary(
+    name = "mef-translate",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//AsyncRT:CompilerSupport",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:GraphRT/GRTDialect",
+        "//MLRT:GraphRT/MEFToMLIR",
+        "//MLRT:GraphRT/MLIRToMEF",
+        "//Support:Globals",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:QuantOps",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TranslateLib",
+    ],
+)

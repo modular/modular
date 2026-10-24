@@ -48,6 +48,7 @@ from .state_cache import (
     STATE_CACHE_KEY,
     attn_cache,
     linear_state_regions,
+    ring_len_for_window,
 )
 
 _POOL_DTYPE_MAP = {
@@ -174,11 +175,10 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
 
     ``vision_config`` normally carries two facts at once: that an encoder must
     be built, and that images can appear in a request's context. The fused
-    speculative graph separates them — it never encodes an image, because the
-    encoder ran before the tokens it verifies ever reached it, but a request
-    whose context holds one still needs 3-axis positions for every token after
-    it. Setting this keeps :attr:`Qwen3_5.mrope_enabled` true with
-    ``vision_config`` cleared."""
+    speculative graph separates them — it compiles no encoder and takes the
+    encoder's output as inputs instead, but a request whose context holds an
+    image still needs 3-axis positions for every token after it. Setting this
+    keeps :attr:`mrope_enabled` true with ``vision_config`` cleared."""
 
     image_token_id: int | None = None
     """Token ID used for image placeholders in the input sequence."""
@@ -225,6 +225,17 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         if self.declared_dtype is not None:
             return self.declared_dtype
         return self.dtype
+
+    @property
+    def mrope_enabled(self) -> bool:
+        """Whether the model takes 3-axis M-RoPE positions.
+
+        ``vision_config`` stands in for "an image can appear in context",
+        and :attr:`mrope_without_encoder` keeps them without the tower.
+        """
+        return self.mrope_section is not None and (
+            self.vision_config is not None or self.mrope_without_encoder
+        )
 
     @property
     def state_dtype(self) -> DType:
@@ -456,10 +467,12 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
     def _verify_ring_len(cls, pipeline_config: PipelineConfig) -> int:
         """Returns the verify ring length the state cache must hold, or zero.
 
-        Only an architecture whose graph folds a verify ring declares one.
+        A speculative verify records one window of ``K + 1`` tokens in it.
         """
-        del pipeline_config
-        return 0
+        speculative = pipeline_config.speculative
+        if speculative is None:
+            return 0
+        return ring_len_for_window(1 + speculative.draft_width)
 
     @classmethod
     def construct_kv_params(  # type: ignore[override]  # TODO(SERVOPT-1607)

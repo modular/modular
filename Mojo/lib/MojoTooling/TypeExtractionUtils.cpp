@@ -35,13 +35,8 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-namespace M {
-namespace KGEN {
-
-namespace TypeExtractionUtils {
-
 /// Extracts the leaf name from a symbol reference.
-std::string extractSymbolLeafName(mlir::SymbolRefAttr symbol) {
+std::string LIT::extractSymbolLeafName(mlir::SymbolRefAttr symbol) {
   if (symbol.getNestedReferences().empty()) {
     return symbol.getRootReference().getValue().str();
   }
@@ -49,11 +44,11 @@ std::string extractSymbolLeafName(mlir::SymbolRefAttr symbol) {
 }
 
 /// Gets the base type name, removing generic parameters and qualifiers.
-std::string extractBaseTypeName(const M::MojoASTTypeRef &astType,
-                                llvm::StringRef fullTypeStr) {
+std::string LIT::extractBaseTypeName(ASTType astType,
+                                     llvm::StringRef fullTypeStr) {
   // Try AST-based extraction first
   if (astType) {
-    Type mlirType = astType.getMLIRType();
+    Type mlirType = astType.mlirType;
 
     // Handle struct types
     if (auto structType = sugarDynCast<LIT::StructType>(mlirType)) {
@@ -99,29 +94,23 @@ std::string extractBaseTypeName(const M::MojoASTTypeRef &astType,
 }
 
 /// Convenience for extracting base type names when no AST info is available.
-std::string extractBaseTypeName(llvm::StringRef fullTypeStr) {
-  return extractBaseTypeName(M::MojoASTTypeRef{}, fullTypeStr);
+std::string LIT::extractBaseTypeName(llvm::StringRef fullTypeStr) {
+  return extractBaseTypeName(ASTType{}, fullTypeStr);
 }
 
 /// Extracts the fully qualified module path from an AST declaration reference.
-std::string extractModulePathFromDecl(M::MojoASTDeclRef declRef) {
+std::string LIT::extractModulePathFromDecl(ASTDecl *decl) {
   llvm::SmallVector<llvm::StringRef> pathComponents;
 
-  M::MojoASTDeclRef current = declRef;
+  ASTDecl *current = decl;
   while (current) {
-    Operation *op = current.getIfOperation();
-    if (auto fileModule = dyn_cast_or_null<FileModuleOp>(op)) {
-      // File module - add its name and continue up to get full hierarchy
-      if (auto name = current.getName()) {
-        pathComponents.push_back(*name);
-      }
-    } else if (auto packageOp = dyn_cast_or_null<PackageOp>(op)) {
-      // Package - add its name and continue up
-      if (auto name = current.getName()) {
+    if (isa<FileModuleASTDecl, PackageASTDecl>(current)) {
+      // Module or package - add its name and continue up to get full hierarchy
+      if (auto name = current->getName()) {
         pathComponents.push_back(*name);
       }
     }
-    current = current.getParent();
+    current = current->getParentDecl();
   }
 
   std::reverse(pathComponents.begin(), pathComponents.end());
@@ -137,35 +126,34 @@ std::string extractModulePathFromDecl(M::MojoASTDeclRef declRef) {
 }
 
 /// Attempts to resolve a type name (eg, "List") to its actual AST declaration.
-std::optional<M::MojoASTDeclRef>
-tryResolveTypeToDecl(llvm::StringRef typeName, SharedState &sharedState,
-                     const M::MojoASTDeclRef *contextDecl) {
+std::optional<ASTDecl *> LIT::tryResolveTypeToDecl(llvm::StringRef typeName,
+                                                   SharedState &sharedState,
+                                                   const ASTDecl *contextDecl) {
   // Strategy 1: If we have a context declaration, try looking up the type in
   // its scope and parent scopes
-  if (contextDecl && *contextDecl) {
-    M::MojoASTDeclRef current = *contextDecl;
+  if (contextDecl) {
+    const ASTDecl *current = contextDecl;
     while (current) {
       // Look for the type in the current scope
-      for (auto childEntry : current.getChildren()) {
-        if (childEntry.getName() == typeName) {
-          for (auto child : childEntry.getDecls()) {
-            Operation *childOp = child.getIfOperation();
-            if (isa_and_nonnull<StructDeclOp, TraitDeclOp, AliasDeclOp>(
-                    childOp)) {
+      for (auto [name, children] : current->getDeclsInScope()) {
+        if (name.getValue() == typeName) {
+          for (ASTDecl *child : children) {
+            if (isa_and_nonnull<StructASTDecl, TraitASTDecl, AliasASTDecl>(
+                    child)) {
               return child;
             }
           }
         }
       }
-      current = current.getParent();
+      current = current->getParentDecl();
     }
   }
 
   // Strategy 2: Try looking up builtin traits using SharedState
-  if (contextDecl && *contextDecl) {
+  if (contextDecl) {
     if (ASTDecl *builtinTraitDecl =
             sharedState.lookupBuiltinTrait(typeName, SMLoc())) {
-      return M::MojoASTDeclRef(builtinTraitDecl);
+      return builtinTraitDecl;
     }
   }
 
@@ -173,8 +161,9 @@ tryResolveTypeToDecl(llvm::StringRef typeName, SharedState &sharedState,
 }
 
 /// Generates a documentation path from module info for cross-linking.
-std::string generateDocPath(llvm::StringRef module, llvm::StringRef typeName,
-                            llvm::StringRef docsBasePath, bool isAlias) {
+std::string LIT::generateDocPath(llvm::StringRef module,
+                                 llvm::StringRef typeName,
+                                 llvm::StringRef docsBasePath, bool isAlias) {
   if (typeName.empty()) {
     return "";
   }
@@ -259,9 +248,9 @@ struct ResolvedPath {
 } // namespace
 
 /// The main function that extracts comprehensive type metadata from type names.
-TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
-                                const M::MojoASTDeclRef *currentDeclContext,
-                                SharedState *sharedState) {
+TypeMetadata LIT::extractLibraryInfo(llvm::StringRef typeStr,
+                                     const ASTDecl *currentDeclContext,
+                                     SharedState *sharedState) {
   // Cache for resolved cross-reference paths, keyed by stripped base name.
   static std::map<std::string, ResolvedPath> pathCache;
   static std::mutex cacheMutex;
@@ -292,15 +281,15 @@ TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
 
   // Try AST-based resolution if we have shared state
   if (sharedState) {
-    if (auto declRef =
+    if (auto decl =
             tryResolveTypeToDecl(baseType, *sharedState, currentDeclContext)) {
-      std::string modulePath = extractModulePathFromDecl(*declRef);
+      std::string modulePath = extractModulePathFromDecl(*decl);
       if (!modulePath.empty()) {
         std::string typeName;
         std::string docPath;
 
         // Check if this is an alias declaration
-        bool isAlias = isa<AliasASTDecl>(&**declRef);
+        bool isAlias = isa<AliasASTDecl>(*decl);
         if (isAlias) {
           // Preserve the original alias name (used to build the URL anchor)
           typeName = baseType.str();
@@ -336,12 +325,3 @@ TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
   }
   return makeMetadata(ResolvedPath{});
 }
-
-std::string stripImplicitArgParams(llvm::StringRef typeStr,
-                                   llvm::StringRef argName) {
-  return ::stripImplicitArgParams(typeStr, argName);
-}
-
-} // namespace TypeExtractionUtils
-} // namespace KGEN
-} // namespace M

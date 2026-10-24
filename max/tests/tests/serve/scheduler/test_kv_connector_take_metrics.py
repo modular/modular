@@ -45,6 +45,36 @@ def test_kv_cache_metrics_add_sums_dkv_health_fields() -> None:
     assert total.dkv_degraded
 
 
+def test_kv_cache_metrics_add_folds_the_dkv_settle_fields() -> None:
+    """The settle depth and finished count sum, the age and the halt take the max.
+
+    Two settle workers' oldest jobs are still one job's wait each, so adding
+    them would report a wait neither saw, and two halts are still one flag.
+    """
+    halted = KVCacheMetrics(
+        dkv_settle_queue_depth=3,
+        dkv_settle_queue_oldest_age_ms=250.0,
+        dkv_settle_jobs_finished=10,
+        dkv_owner_releases_halted=1,
+    )
+    draining = KVCacheMetrics(
+        dkv_settle_queue_depth=4,
+        dkv_settle_queue_oldest_age_ms=40.0,
+        dkv_settle_jobs_finished=7,
+        dkv_owner_releases_halted=0,
+    )
+
+    for total in (halted + draining, draining + halted):
+        assert total.dkv_settle_queue_depth == 7
+        assert total.dkv_settle_queue_oldest_age_ms == 250.0
+        assert total.dkv_settle_jobs_finished == 17
+        assert total.dkv_owner_releases_halted == 1
+
+    # two halts up are still one flag, not a count of them
+    assert (halted + halted).dkv_owner_releases_halted == 1
+    assert KVCacheMetrics().dkv_settle_queue_oldest_age_ms == 0.0
+
+
 def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
     """device_blocks_served and cross_replica_{blocks,bytes}_copied sum
     across replicas (CENG-845 G0/G0-DP tier-attribution counters)."""

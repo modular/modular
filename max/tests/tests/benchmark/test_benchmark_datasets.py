@@ -1067,9 +1067,11 @@ def test_resolve_constant_delay_ms() -> None:
     assert resolve_constant_delay_ms("0") == 0.0
 
 
+@pytest.mark.parametrize("max_output_len", [None, 12])
 @patch.object(InstructCoderBenchmarkDataset, "_load_pairs")
 def test_instruct_coder_multiturn_fit_distributions(
     mock_load_pairs: Mock,
+    max_output_len: int | None,
 ) -> None:
     """``fit_length_distributions`` honors turn count, lengths, and delay."""
     body = "hello world " * 80
@@ -1089,6 +1091,7 @@ def test_instruct_coder_multiturn_fit_distributions(
             num_turns="DU(3,3)",
             input_len="80",
             output_len="20",
+            max_output_len=max_output_len,
             delay_between_turns_dist="100",
             sys_prompt_ratio=0.0,
         )
@@ -1098,7 +1101,7 @@ def test_instruct_coder_multiturn_fit_distributions(
         assert len(session.messages) == 6
         for assistant in session.messages[1::2]:
             assert assistant.source == "assistant"
-            assert assistant.num_tokens == 20
+            assert assistant.num_tokens == (max_output_len or 20)
         # Each reply carries the delay before the turn that follows it; the
         # last reply has no such turn.
         assert [m.delay_until_next_message for m in session.messages[1::2]] == [
@@ -2173,3 +2176,33 @@ def test_session_message_images_can_be_populated() -> None:
         source="user", content="hi", num_tokens=1, images=[image]
     )
     assert message.images == [image]
+
+
+@pytest.mark.parametrize("max_output_len", [None, 64])
+def test_fitted_output_ceiling_precedes_context_budget(
+    max_output_len: int | None,
+) -> None:
+    tok = _FakeTokenizer(model_max_length=1000)
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=["body " * 40],
+            num_sessions=1,
+            num_turns="3",
+            input_len="50",
+            output_len="2000",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0,
+            max_num_unique_sys_prompt=1,
+            max_output_len=max_output_len,
+        )
+    if max_output_len is None:
+        assert not samples.chat_sessions
+    else:
+        assert len(samples.chat_sessions) == 1
+        outputs = [
+            message.num_tokens
+            for message in samples.chat_sessions[0].messages
+            if message.source == "assistant"
+        ]
+        assert outputs == [64, 64, 64]

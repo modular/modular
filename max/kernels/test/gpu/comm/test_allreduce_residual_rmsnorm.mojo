@@ -247,13 +247,15 @@ def test_fused_allreduce_rmsnorm_fp8[
     )
 
     comptime in_layout = row_major(Idx[rows], Idx[cols])
-    comptime InputTileType = TileTensor[
-        in_dtype, type_of(in_layout), ImmutAnyOrigin
-    ]
+    comptime InputTileType = type_of(
+        TileTensor(in_dev[0], in_layout).as_unsafe_any_origin().as_imm()
+    )
     var in_tiles = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: TileTensor(
             in_dev[i], in_layout
-        ).as_imm()
+        )
+        .as_unsafe_any_origin()
+        .as_imm()
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -267,7 +269,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
     comptime shape = IndexList[2](rows, cols)
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[.float32]()
@@ -293,14 +295,12 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     var ref_sum_ptr = ref_sum_dev.unsafe_ptr()
 
-    @__copy_capture(ref_sum_ptr)
     @inline(.always)
-    @__parameter
     def ref_input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
+    ](idx: IndexList[_rank]) {var ref_sum_ptr} -> SIMD[in_dtype, width]:
         var linear_idx = idx[0] * cols + idx[1]
-        return ref_sum_ptr.load[width=width, alignment=width](linear_idx)
+        return ref_sum_ptr.unsafe_load[width=width, alignment=width](linear_idx)
 
     var ref_fp8_tile = TileTensor(
         ref_fp8_dev,
@@ -316,8 +316,8 @@ def test_fused_allreduce_rmsnorm_fp8[
         out_dtype,
         scales_dtype,
         2,
-        ref_input_fn,
     ](
+        ref_input_fn,
         shape,
         ref_fp8_tile,
         gamma_tensor,
@@ -452,13 +452,15 @@ def test_fused_allreduce_rmsnorm_noquant[
     )
 
     comptime in_layout = row_major(Idx[rows], Idx[cols])
-    comptime InputTileType = TileTensor[
-        dtype, type_of(in_layout), ImmutAnyOrigin
-    ]
+    comptime InputTileType = type_of(
+        TileTensor(in_dev[0], in_layout).as_unsafe_any_origin().as_imm()
+    )
     var in_tiles = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: TileTensor(
             in_dev[i], in_layout
-        ).as_imm()
+        )
+        .as_unsafe_any_origin()
+        .as_imm()
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -471,7 +473,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -609,13 +611,15 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     )
 
     comptime in_layout = row_major(Idx[rows], Idx[cols])
-    comptime InputTileType = TileTensor[
-        in_dtype, type_of(in_layout), ImmutAnyOrigin
-    ]
+    comptime InputTileType = type_of(
+        TileTensor(in_dev[0], in_layout).as_unsafe_any_origin().as_imm()
+    )
     var in_tiles = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: TileTensor(
             in_dev[i], in_layout
-        ).as_imm()
+        )
+        .as_unsafe_any_origin()
+        .as_imm()
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -628,7 +632,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         gamma_host[i] = (Float64(i + cols) / Float64(cols)).cast[in_dtype]()
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[.float32]()
@@ -664,14 +668,12 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
 
     var ref_sum_ptr = ref_sum_dev.unsafe_ptr()
 
-    @__copy_capture(ref_sum_ptr)
     @inline(.always)
-    @__parameter
     def ref_input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
+    ](idx: IndexList[_rank]) {var ref_sum_ptr} -> SIMD[in_dtype, width]:
         var linear_idx = idx[0] * cols + idx[1]
-        return ref_sum_ptr.load[width=width, alignment=width](linear_idx)
+        return ref_sum_ptr.unsafe_load[width=width, alignment=width](linear_idx)
 
     comptime shape = IndexList[2](rows, cols)
     var ref_fp8_tile = TileTensor(
@@ -688,8 +690,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         out_dtype,
         DType.float32,
         2,
-        ref_input_fn,
     ](
+        ref_input_fn,
         shape,
         ref_fp8_tile,
         gamma_tensor,
@@ -877,13 +879,15 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     )
 
     comptime in_layout = row_major(Idx[rows], Idx[cols])
-    comptime InputTileType = TileTensor[
-        dtype, type_of(in_layout), ImmutAnyOrigin
-    ]
+    comptime InputTileType = type_of(
+        TileTensor(in_dev[0], in_layout).as_unsafe_any_origin().as_imm()
+    )
     var in_tiles = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: TileTensor(
             in_dev[i], in_layout
-        ).as_imm()
+        )
+        .as_unsafe_any_origin()
+        .as_imm()
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -896,7 +900,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         gamma_host[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -1069,7 +1073,7 @@ def test_fused_allreduce_rmsnorm_zero_rows[
 
     var ctx = list_of_ctx[0]
     var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
-    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var sentinel = Scalar[dtype](7.0)
     var out_dev = ctx.enqueue_create_buffer[dtype](cols)
     var res_out_dev = ctx.enqueue_create_buffer[dtype](cols)

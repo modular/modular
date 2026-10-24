@@ -176,7 +176,7 @@ def test_ep_comm(n_devices: int) -> None:
                     ep_manager.ep_combine_wait(router_weight, dev_idx)
                 )
 
-            graph.output(*outputs)
+            graph.output(outputs)
 
             return graph
 

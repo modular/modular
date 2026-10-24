@@ -52,7 +52,7 @@ from max import tree
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import load_weights
 from max.nn.comm import Signals
 from max.nn.embedding import Embedding
@@ -354,9 +354,25 @@ class _Drafter:
                 )
             )
             anchor_embeds = self.target.embed_tokens(anchors.tensor)
-            rows = self.drafter.block_embeddings(
-                [anchor_embeds.to(r) for r in self.refs]
+            mask_id = ops.constant(
+                self.config.mask_token_id, DType.int64, device=self.refs[0]
+            ).reshape((1,))
+            masks = self.drafter.mask_embeddings(
+                [self.target.embed_tokens(mask_id).to(r) for r in self.refs]
             )
+            rows = [
+                ops.concat(
+                    [
+                        ops.unsqueeze(anchor_embeds.to(r), 1),
+                        ops.broadcast_to(
+                            mask.reshape((1, 1, hidden)),
+                            (anchor_embeds.shape[0], block - 1, hidden),
+                        ),
+                    ],
+                    axis=1,
+                ).reshape((-1, hidden))
+                for r, mask in zip(self.refs, masks, strict=True)
+            ]
             h = self.drafter.forward_block(
                 rows,
                 kv,

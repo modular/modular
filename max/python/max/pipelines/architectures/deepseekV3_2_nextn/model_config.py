@@ -14,15 +14,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
-    KVCacheParams,
     KVCacheQuantizationConfig,
+    MLAKVCacheParams,
     MultiKVCacheParams,
+)
+from max.pipelines.architectures.deepseekV3.model_config import (
+    mla_kv_cache_quant_config,
+)
+from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
+    sparse_selection_width,
 )
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
@@ -72,14 +78,9 @@ class DeepseekV3_2NextNConfig(DeepseekV3_2Config):
         """
         data_parallel_degree = pipeline_config.model.data_parallel_degree
 
-        kvcache_quant_config = None
-        if cache_dtype in (
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-        ):
-            kvcache_quant_config = KVCacheQuantizationConfig(
-                scale_dtype=DType.int8, quantization_granularity=32
-            )
+        kvcache_quant_config = mla_kv_cache_quant_config(
+            cache_dtype, huggingface_config.qk_rope_head_dim
+        )
 
         mla_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -93,7 +94,13 @@ class DeepseekV3_2NextNConfig(DeepseekV3_2Config):
             num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=kvcache_quant_config,
         )
-        assert isinstance(mla_kv_params, KVCacheParams)
+        assert isinstance(mla_kv_params, MLAKVCacheParams)
+        mla_kv_params = replace(
+            mla_kv_params,
+            sparse_indices_stride=sparse_selection_width(
+                mla_kv_params, huggingface_config.index_topk
+            ),
+        )
 
         # Mirror DeepseekV3_2Config: the indexer K cache is always float8_e4m3fn
         # with per-token float32 scales.
@@ -111,7 +118,13 @@ class DeepseekV3_2NextNConfig(DeepseekV3_2Config):
             num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=indexer_kvcache_quant_config,
         )
-        assert isinstance(indexer_kv_params, KVCacheParams)
+        # No kernel reads the indexer leaf's dispatch metadata, but it is part
+        # of the composite capture key, so it must not move with the context.
+        assert isinstance(indexer_kv_params, MLAKVCacheParams)
+        indexer_kv_params = replace(
+            indexer_kv_params,
+            sparse_indices_stride=mla_kv_params.sparse_indices_stride,
+        )
 
         return MultiKVCacheParams.from_params(
             {"mla": mla_kv_params, "indexer": indexer_kv_params}

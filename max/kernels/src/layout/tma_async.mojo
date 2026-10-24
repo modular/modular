@@ -38,7 +38,7 @@ from std.sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from std.sys._assembly import inlined_assembly
 
 from max.gpu.host import DeviceBuffer, DeviceContext
-from max.gpu.host._tensormap import (
+from max.gpu.host import (
     SwizzleMode as _SwizzleMode,
     create_tensormap_im2col as _create_tensormap_im2col,
 )
@@ -52,6 +52,7 @@ from max.gpu.host.nvidia.tma import (
 from max.gpu.intrinsics import Scope
 from max.gpu.memory import (
     async_copy,
+    cp_async_bulk_prefetch_tensor,
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_global_shared_cta_elect,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -76,7 +77,6 @@ from layout import (
     CoordLike,
     ComptimeInt,
     Layout,
-    LayoutTensor,
     TileTensor,
     UNKNOWN_VALUE,
     coord,
@@ -137,7 +137,7 @@ def _coord_to_index_list[rank: Int, shape: Coord]() -> IndexList[rank]:
     ), "Coord rank must match the explicit IndexList rank"
     var result = IndexList[rank]()
     comptime for i in range(rank):
-        result[i] = Int(Coord[*shape.element_types]()[i].value())
+        result[i] = Int(Coord[*shape.element_types]()[i])
     return result
 
 
@@ -286,13 +286,13 @@ struct SharedMemBarrier(TrivialRegisterPassable):
             o: Origin of self.
         """
 
-        comptime asm = """
-        .reg .pred p;
-        .reg .b32 remAddr32;
-        setp.eq.u32 p, $2, 1;
-        @p mapa.shared::cluster.u32  remAddr32, $0, $1;
-        @p mbarrier.arrive.expect_tx.shared::cluster.b64  _, [remAddr32], $3;
-        """
+        comptime asm = """{
+            .reg .pred p;
+            .reg .b32 remAddr32;
+            setp.eq.u32 p, $2, 1;
+            @p mapa.shared::cluster.u32  remAddr32, $0, $1;
+            @p mbarrier.arrive.expect_tx.shared::cluster.b64  _, [remAddr32], $3;
+        }"""
 
         inlined_assembly[asm, NoneType, constraints="r,r,r,r"](
             Int32(Int(self.unsafe_ptr())), cta_id, pred, bytes
@@ -813,99 +813,8 @@ struct TMATensorTile[
         This method helps hide memory access latency by prefetching the descriptor
         before it's needed for actual data transfers.
         """
-        var desc_ptr = Pointer(to=self.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=self.descriptor).unsafe_bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
-
-    @inline(.always)
-    def async_copy[
-        cta_group: Int = 1,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    ](
-        self,
-        dst: LayoutTensor[mut=True, _, _, address_space=.SHARED, ...],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[Int, Int],
-    ):
-        """
-        Schedules an asynchronous copy from global memory to shared memory at specified coordinates.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
-        to the specified destination in shared memory. The transfer is tracked by the provided memory
-        barrier.
-
-        Parameters:
-            cta_group: Int
-                If the TMA is issued with cta_group == 2, only the leader CTA needs
-                to be notified upon completion.
-            eviction_policy: Optional cache eviction policy that controls how the data is handled
-                in the cache hierarchy. Defaults to EVICT_NORMAL.
-
-        Args:
-            dst: The destination tensor in shared memory where data will be copied.
-                 Must be 128-byte aligned.
-            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
-            coords: The 2D coordinates in the source tensor from which to copy data.
-
-        Constraints:
-
-            - The destination tensor must be 128-byte aligned in shared memory.
-            - The descriptor layout may be smaller than the shared memory tile shape
-              to accommodate hardware requirements.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(dst).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
-        comptime assert (
-            type_of(dst).dtype == Self.dtype
-        ), "Input tensor has a different type than the TMA op"
-
-        # The descriptor layout i.e. data per copy can be smaller than the shared memory
-        # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
-        # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
-        #
-        # dim0, dim1 are MN, K for K-major and K, MN for MN-major because our inputs are
-        # row_major(K, MN) for the latter.
-        #
-        # TODO: use layout algebra here
-        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
-        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
-        comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime mn_dim: Int = (Self.tile_shape.element_types[0].static_value)
-        comptime k_dim: Int = (Self.tile_shape.element_types[1].static_value)
-        comptime num_copies_dim0 = (
-            mn_dim // copy_dim0 if Self.is_k_major else k_dim // copy_dim0
-        )
-        comptime num_copies_dim1 = (
-            k_dim // copy_dim1 if Self.is_k_major else mn_dim // copy_dim1
-        )
-
-        comptime for i in range(num_copies_dim0):
-            comptime for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = UInt32(
-                    (i * num_copies_dim1 + j) * copy_size
-                )
-
-                comptime assert (
-                    copy_offset * UInt32(size_of[Self.dtype]())
-                ) % 128 == 0, (
-                    "TMA async_copy requires 128B-aligned copy offset (offset="
-                    + String(copy_offset)
-                    + ")"
-                )
-                cp_async_bulk_tensor_shared_cluster_global[
-                    cta_group=cta_group,
-                    eviction_policy=eviction_policy,
-                ](
-                    dst.ptr + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
-                    mem_barrier.unsafe_ptr(),
-                    Index(
-                        coords[0] + (j * copy_dim1),
-                        coords[1] + (i * copy_dim0),
-                    ),
-                )
 
     @inline(.always)
     def async_copy[
@@ -950,8 +859,8 @@ struct TMATensorTile[
                     cta_group=cta_group,
                     eviction_policy=eviction_policy,
                 ](
-                    dst.ptr + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
+                    dst.ptr.unsafe_offset(copy_offset),
+                    Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + (j * copy_dim1),
@@ -972,7 +881,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated TileTensor overload of `async_copy` (2D).
 
-        See the `LayoutTensor` overload of `async_copy_elect` for semantics.
+        See `async_copy` for semantics.
 
         Parameters:
             cta_group: If the TMA is issued with `cta_group == 2`, only the
@@ -1007,8 +916,8 @@ struct TMATensorTile[
                     cta_group=cta_group,
                     eviction_policy=eviction_policy,
                 ](
-                    dst.ptr + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
+                    dst.ptr.unsafe_offset(copy_offset),
+                    Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + (j * copy_dim1),
@@ -1016,100 +925,6 @@ struct TMATensorTile[
                     ),
                     elect,
                 )
-
-    @inline(.nodebug)
-    def async_copy_3d[
-        cta_group: Int = 1,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    ](
-        self,
-        dst: LayoutTensor[mut=True, Self.dtype, _, address_space=.SHARED, ...],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[Int, Int, Int],
-    ):
-        """
-        Schedules an asynchronous copy from global memory to shared memory at specified 3D coordinates.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
-        to the specified destination in shared memory for 3D tensors. The transfer is tracked by the
-        provided memory barrier.
-
-        Args:
-            dst: The destination tensor in shared memory where data will be copied.
-                 Must be 128-byte aligned.
-            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
-            coords: The 3D coordinates in the source tensor from which to copy data.
-
-        Parameters:
-            cta_group: If set to 2, the TMA emits `cta_group::2` PTX so the
-                mbarrier arrival routes to the leader CTA's barrier, required
-                for pair-CTA kernels that share one barrier across the pair.
-                Defaults to 1.
-            eviction_policy: Optional cache eviction policy that controls how the data is handled
-                in the cache hierarchy. Defaults to EVICT_NORMAL.
-
-        Constraints:
-
-            - The destination tensor must be 128-byte aligned in shared memory.
-            - The descriptor layout may be smaller than the shared memory tile shape
-              to accommodate hardware requirements.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(dst).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
-        # The descriptor layout i.e. data per copy can be smaller than the shared memory
-        # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
-        # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
-        #
-        # dim0, dim1 are MN, K for K-major and K, MN for MN-major because our inputs are
-        # row_major(K, MN) for the latter.
-        #
-        # TODO: use layout algebra here
-        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
-        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
-        comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
-        comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime num_copies_dim0 = ceildiv(
-            Self.tile_shape.element_types[0].static_value, copy_dim0
-        )
-        comptime num_copies_dim1 = ceildiv(
-            Self.tile_shape.element_types[1].static_value, copy_dim1
-        )
-        comptime num_copies_dim2 = ceildiv(
-            Self.tile_shape.element_types[2].static_value, copy_dim2
-        )
-
-        comptime for m in range(num_copies_dim0):
-            comptime for i in range(num_copies_dim1):
-                comptime for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = UInt32(
-                        _desc_offset[
-                            3,
-                            Index(
-                                num_copies_dim0,
-                                num_copies_dim1,
-                                num_copies_dim2,
-                            ),
-                            Self.is_k_major,
-                        ](Index(m, i, j))
-                        * copy_size
-                    )
-
-                    cp_async_bulk_tensor_shared_cluster_global[
-                        cta_group=cta_group,
-                        eviction_policy=eviction_policy,
-                    ](
-                        dst.ptr + copy_offset,
-                        Pointer(to=self.descriptor).bitcast[NoneType](),
-                        mem_barrier.unsafe_ptr(),
-                        Index(
-                            coords[0] + (j * copy_dim2),
-                            coords[1] + (i * copy_dim1),
-                            coords[2] + (m * copy_dim0),
-                        ),
-                    )
 
     @inline(.always)
     def async_copy_3d[
@@ -1173,8 +988,8 @@ struct TMATensorTile[
                         cta_group=cta_group,
                         eviction_policy=eviction_policy,
                     ](
-                        dst.ptr + copy_offset,
-                        Pointer(to=self.descriptor).bitcast[NoneType](),
+                        dst.ptr.unsafe_offset(copy_offset),
+                        Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + (j * copy_dim2),
@@ -1196,7 +1011,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated TileTensor overload of `async_copy_3d`.
 
-        See the `LayoutTensor` overload of `async_copy_3d_elect` for
+        See `async_copy_3d` for
         semantics.
 
         Parameters:
@@ -1244,8 +1059,8 @@ struct TMATensorTile[
                         cta_group=cta_group,
                         eviction_policy=eviction_policy,
                     ](
-                        dst.ptr + copy_offset,
-                        Pointer(to=self.descriptor).bitcast[NoneType](),
+                        dst.ptr.unsafe_offset(copy_offset),
+                        Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + (j * copy_dim2),
@@ -1261,97 +1076,6 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: LayoutTensor[mut=True, Self.dtype, _, address_space=.SHARED, ...],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[Int, Int, Int, Int],
-    ):
-        """
-        Schedules an asynchronous copy from global memory to shared memory at specified 4D coordinates.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
-        to the specified destination in shared memory for 4D tensors. The transfer is tracked by the
-        provided memory barrier.
-
-        Parameters:
-            cta_group: Int
-                If the TMA is issued with cta_group == 2, only the leader CTA needs
-                to be notified upon completion.
-            eviction_policy: Optional cache eviction policy that controls how the data is handled
-                in the cache hierarchy. Defaults to EVICT_NORMAL.
-
-        Args:
-            dst: The destination tensor in shared memory where data will be copied.
-                 Must be 128-byte aligned.
-            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
-            coords: The 4D coordinates in the source tensor from which to copy data.
-
-        Constraints:
-
-            - The destination tensor must be 128-byte aligned in shared memory.
-            - The descriptor layout may be smaller than the shared memory tile shape
-              to accommodate hardware requirements.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(dst).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
-        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
-        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
-        comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
-        comptime copy_dim3 = Self.desc_shape.element_types[3].static_value
-        comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime num_copies_dim0 = ceildiv(
-            Self.tile_shape.element_types[0].static_value, copy_dim0
-        )
-        comptime num_copies_dim1 = ceildiv(
-            Self.tile_shape.element_types[1].static_value, copy_dim1
-        )
-        comptime num_copies_dim2 = ceildiv(
-            Self.tile_shape.element_types[2].static_value, copy_dim2
-        )
-        comptime num_copies_dim3 = ceildiv(
-            Self.tile_shape.element_types[3].static_value, copy_dim3
-        )
-        comptime for n in range(num_copies_dim0):
-            comptime for m in range(num_copies_dim1):
-                comptime for i in range(num_copies_dim2):
-                    comptime for j in range(num_copies_dim3):
-                        comptime copy_offset: UInt32 = UInt32(
-                            _desc_offset[
-                                4,
-                                Index(
-                                    num_copies_dim0,
-                                    num_copies_dim1,
-                                    num_copies_dim2,
-                                    num_copies_dim3,
-                                ),
-                                Self.is_k_major,
-                            ](Index(n, m, i, j))
-                            * copy_size
-                        )
-
-                        cp_async_bulk_tensor_shared_cluster_global[
-                            cta_group=cta_group,
-                            eviction_policy=eviction_policy,
-                        ](
-                            dst.ptr + copy_offset,
-                            Pointer(to=self.descriptor).bitcast[NoneType](),
-                            mem_barrier.unsafe_ptr(),
-                            Index(
-                                coords[0] + (j * copy_dim3),
-                                coords[1] + (i * copy_dim2),
-                                coords[2] + (m * copy_dim1),
-                                coords[3] + (n * copy_dim0),
-                            ),
-                        )
-
-    @inline(.always)
-    def async_copy_4d[
-        cta_group: Int = 1,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    ](
-        self,
         dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int],
@@ -1359,7 +1083,7 @@ struct TMATensorTile[
         """
         Schedules an asynchronous copy from global memory to shared memory at specified 4D coordinates.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Loads into a TileTensor destination.
         Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
 
         Parameters:
@@ -1412,8 +1136,10 @@ struct TMATensorTile[
                             cta_group=cta_group,
                             eviction_policy=eviction_policy,
                         ](
-                            dst.ptr + copy_offset,
-                            Pointer(to=self.descriptor).bitcast[NoneType](),
+                            dst.ptr.unsafe_offset(copy_offset),
+                            Pointer(to=self.descriptor).unsafe_bitcast[
+                                NoneType
+                            ](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -1436,7 +1162,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated TileTensor overload of `async_copy_4d`.
 
-        See the `LayoutTensor` overload of `async_copy_4d_elect` for
+        See `async_copy_4d` for
         semantics.
 
         Parameters:
@@ -1489,8 +1215,10 @@ struct TMATensorTile[
                             cta_group=cta_group,
                             eviction_policy=eviction_policy,
                         ](
-                            dst.ptr + copy_offset,
-                            Pointer(to=self.descriptor).bitcast[NoneType](),
+                            dst.ptr.unsafe_offset(copy_offset),
+                            Pointer(to=self.descriptor).unsafe_bitcast[
+                                NoneType
+                            ](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -1514,7 +1242,7 @@ struct TMATensorTile[
         """
         Schedules an asynchronous copy from global memory to shared memory at specified 5D coordinates.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Loads into a TileTensor destination.
         Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
 
         Parameters:
@@ -1573,8 +1301,10 @@ struct TMATensorTile[
                                 cta_group=cta_group,
                                 eviction_policy=eviction_policy,
                             ](
-                                dst.ptr + copy_offset,
-                                Pointer(to=self.descriptor).bitcast[NoneType](),
+                                dst.ptr.unsafe_offset(copy_offset),
+                                Pointer(to=self.descriptor).unsafe_bitcast[
+                                    NoneType
+                                ](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
                                     coords[0] + (j * copy_dim4),
@@ -1598,7 +1328,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated TileTensor overload of `async_copy_5d`.
 
-        See the `LayoutTensor` overload of `async_copy_5d_elect` for
+        See `async_copy_5d` for
         semantics.
 
         Parameters:
@@ -1657,8 +1387,10 @@ struct TMATensorTile[
                                 cta_group=cta_group,
                                 eviction_policy=eviction_policy,
                             ](
-                                dst.ptr + copy_offset,
-                                Pointer(to=self.descriptor).bitcast[NoneType](),
+                                dst.ptr.unsafe_offset(copy_offset),
+                                Pointer(to=self.descriptor).unsafe_bitcast[
+                                    NoneType
+                                ](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
                                     coords[0] + (j * copy_dim4),
@@ -1669,71 +1401,6 @@ struct TMATensorTile[
                                 ),
                                 elect,
                             )
-
-    @inline(.nodebug)
-    def async_copy[
-        coord_rank: Int,
-        //,
-        cta_group: Int = 1,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    ](
-        self,
-        dst: LayoutTensor[mut=True, Self.dtype, _, address_space=.SHARED, ...],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: StaticTuple[UInt32, coord_rank],
-    ):
-        """Schedules an asynchronous copy from global memory to shared memory for N-dimensional tensors.
-
-        This is a generic dispatcher that selects the appropriate rank-specific async copy method
-        based on the tensor rank. It provides a unified interface for initiating TMA transfers
-        across 2D, 3D, and 4D tensors using `StaticTuple` coordinates.
-
-        Parameters:
-            coord_rank: The dimensionality of the tensor (must be 2, 3, or 4).
-            cta_group: If set to 2, only the leader CTA needs to be notified upon completion.
-                Defaults to 1.
-            eviction_policy: Optional cache eviction policy that controls how the data is handled
-                in the cache hierarchy. Defaults to EVICT_NORMAL.
-
-        Args:
-            dst: The destination tensor in shared memory where data will be copied.
-                Must be 128-byte aligned.
-            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
-            coords: The N-dimensional coordinates in the source tensor from which to copy data,
-                provided as a `StaticTuple` of `UInt32` values.
-
-        Constraints:
-            - The coord_rank must be 2, 3, or 4.
-            - The destination tensor must be 128-byte aligned in shared memory.
-        """
-        comptime assert coord_rank in (2, 3, 4)
-
-        comptime match coord_rank:
-            case 2:
-                self.async_copy[
-                    cta_group=cta_group, eviction_policy=eviction_policy
-                ](dst, mem_barrier, (Int(coords[0]), Int(coords[1])))
-            case 3:
-                self.async_copy_3d[
-                    cta_group=cta_group, eviction_policy=eviction_policy
-                ](
-                    dst,
-                    mem_barrier,
-                    (Int(coords[0]), Int(coords[1]), Int(coords[2])),
-                )
-            case 4:
-                self.async_copy_4d[
-                    cta_group=cta_group, eviction_policy=eviction_policy
-                ](
-                    dst,
-                    mem_barrier,
-                    (
-                        Int(coords[0]),
-                        Int(coords[1]),
-                        Int(coords[2]),
-                        Int(coords[3]),
-                    ),
-                )
 
     @inline(.nodebug)
     def async_copy[
@@ -1935,7 +1602,7 @@ struct TMATensorTile[
             eviction_policy=eviction_policy,
         ](
             dst.ptr,
-            Pointer(to=self.descriptor).bitcast[NoneType](),
+            Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
             mem_barrier.unsafe_ptr(),
             col_idx,
             row0,
@@ -2011,14 +1678,14 @@ struct TMATensorTile[
         comptime num_col_groups = ceildiv(tile_width, box_w)
         comptime num_4row_chunks = BN // 4
 
-        var desc_ptr = Pointer(to=self.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=self.descriptor).unsafe_bitcast[NoneType]()
         var mbar_ptr = mem_barrier.unsafe_ptr()
 
         comptime for cg in range(num_col_groups):
             comptime for c in range(num_4row_chunks):
                 var idx = start_idx + c * 4
                 var elem_off = cg * BN * box_w + c * 4 * box_w
-                var dst_ptr = smem_base + elem_off
+                var dst_ptr = smem_base.unsafe_offset(elem_off)
                 cp_async_bulk_tensor_2d_gather4[
                     cta_group=cta_group,
                     eviction_policy=eviction_policy,
@@ -2031,66 +1698,6 @@ struct TMATensorTile[
                     d_indices[idx + 1],
                     d_indices[idx + 2],
                     d_indices[idx + 3],
-                )
-
-    @inline(.always)
-    def async_store[
-        coord_rank: Int, //, cta_group: Int = 1
-    ](
-        self,
-        dst: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
-        coords: StaticTuple[UInt32, coord_rank],
-    ):
-        """Schedules an asynchronous store from shared memory to global memory for N-dimensional tensors.
-
-        This is a generic dispatcher that selects the appropriate rank-specific async store method
-        based on the tensor rank. It provides a unified interface for initiating TMA store operations
-        across 2D, 3D, 4D, and 5D tensors using `StaticTuple` coordinates.
-
-        Parameters:
-            coord_rank: The dimensionality of the tensor (must be 2, 3, 4, or 5).
-            cta_group: CTA group configuration for the store operation. Defaults to 1.
-
-        Args:
-            dst: The source tensor in shared memory from which data will be copied to global memory.
-                Must be 128-byte aligned.
-            coords: The N-dimensional coordinates in the destination global tensor where data
-                will be stored, provided as a `StaticTuple` of `UInt32` values.
-
-        Constraints:
-            - The coord_rank must be 2, 3, 4, or 5.
-            - The source tensor must be 128-byte aligned in shared memory.
-        """
-        comptime assert coord_rank in (2, 3, 4, 5)
-
-        comptime match coord_rank:
-            case 2:
-                self.async_store(dst, (Int(coords[0]), Int(coords[1])))
-            case 3:
-                self.async_store_3d(
-                    dst,
-                    (Int(coords[0]), Int(coords[1]), Int(coords[2])),
-                )
-            case 4:
-                self.async_store_4d(
-                    dst,
-                    (
-                        Int(coords[0]),
-                        Int(coords[1]),
-                        Int(coords[2]),
-                        Int(coords[3]),
-                    ),
-                )
-            case 5:
-                self.async_store_5d(
-                    dst,
-                    (
-                        Int(coords[0]),
-                        Int(coords[1]),
-                        Int(coords[2]),
-                        Int(coords[3]),
-                        Int(coords[4]),
-                    ),
                 )
 
     @inline(.always)
@@ -2148,76 +1755,6 @@ struct TMATensorTile[
 
     @inline(.always)
     def async_multicast_load[
-        cta_group: Int = 1
-    ](
-        self,
-        dst: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[Int, Int],
-        multicast_mask: UInt16,
-    ):
-        """
-        Schedules an asynchronous multicast load from global memory to multiple shared memory locations.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
-        to multiple destination locations in shared memory across different CTAs (Cooperative Thread Arrays)
-        as specified by the multicast mask.
-
-        Parameters:
-            cta_group: Int
-                If the TMA is issued with cta_group == 2, only the leader CTA needs
-                to be notified upon completion.
-
-        Args:
-            dst: LayoutTensor
-                The destination tensor in shared memory where data will be copied.
-                Must be 128-byte aligned.
-            mem_barrier: SharedMemBarrierArray
-                The memory barrier used to track and synchronize the asynchronous transfer.
-            coords: Tuple[Int, Int]
-                The 2D coordinates in the source tensor from which to copy data.
-            multicast_mask: UInt16
-                A bit mask specifying which CTAs should receive the data.
-
-        Constraints:
-            The destination tensor must be 128-byte aligned in shared memory.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(dst).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
-        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
-        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
-        comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime num_copies_dim0 = Self.tile_shape.element_types[
-            0
-        ].static_value // copy_dim0
-        comptime num_copies_dim1 = Self.tile_shape.element_types[
-            1
-        ].static_value // copy_dim1
-
-        comptime for i in range(num_copies_dim0):
-            comptime for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = UInt32(
-                    (i * num_copies_dim1 + j) * copy_size
-                )
-
-                cp_async_bulk_tensor_shared_cluster_global_multicast[
-                    cta_group=cta_group
-                ](
-                    dst.ptr.unsafe_mut_cast[True]() + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
-                    mem_barrier.unsafe_ptr(),
-                    Index(
-                        coords[0] + j * copy_dim1,
-                        coords[1] + i * copy_dim0,
-                    ),
-                    multicast_mask,
-                )
-
-    @inline(.always)
-    def async_multicast_load[
         cta_group: Int = 1,
     ](
         self,
@@ -2229,7 +1766,7 @@ struct TMATensorTile[
         """
         Schedules an asynchronous 2D multicast load from global to shared memory.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Loads into a TileTensor destination.
         Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
 
         Parameters:
@@ -2261,8 +1798,8 @@ struct TMATensorTile[
                 cp_async_bulk_tensor_shared_cluster_global_multicast[
                     cta_group=cta_group
                 ](
-                    dst.ptr + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
+                    dst.ptr.unsafe_offset(copy_offset),
+                    Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + j * copy_dim1,
@@ -2270,6 +1807,83 @@ struct TMATensorTile[
                     ),
                     multicast_mask,
                 )
+
+    @inline(.always)
+    def prefetch_l2_3d(self, coords: Tuple[Int, Int, Int]):
+        """Prefetches the 3D tile at `coords` from global memory into L2.
+
+        Covers the same boxes as a 3D load of the tile at `coords`, with no
+        shared memory destination and no barrier.
+
+        Args:
+            coords: The 3D coordinates of the tile, as for the 3D loads.
+        """
+        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
+        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
+        comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
+        comptime num_copies_dim0 = ceildiv(
+            Self.tile_shape.element_types[0].static_value, copy_dim0
+        )
+        comptime num_copies_dim1 = ceildiv(
+            Self.tile_shape.element_types[1].static_value, copy_dim1
+        )
+        comptime num_copies_dim2 = ceildiv(
+            Self.tile_shape.element_types[2].static_value, copy_dim2
+        )
+
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
+                    cp_async_bulk_prefetch_tensor(
+                        Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
+                        Index(
+                            coords[0] + j * copy_dim2,
+                            coords[1] + i * copy_dim1,
+                            coords[2] + m * copy_dim0,
+                        ),
+                    )
+
+    @inline(.always)
+    def prefetch_l2_4d(self, coords: Tuple[Int, Int, Int, Int]):
+        """Prefetches the 4D tile at `coords` from global memory into L2.
+
+        Covers the same boxes as a 4D load of the tile at `coords`, with no
+        shared memory destination and no barrier.
+
+        Args:
+            coords: The 4D coordinates of the tile, as for the 4D loads.
+        """
+        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
+        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
+        comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
+        comptime copy_dim3 = Self.desc_shape.element_types[3].static_value
+        comptime num_copies_dim0 = ceildiv(
+            Self.tile_shape.element_types[0].static_value, copy_dim0
+        )
+        comptime num_copies_dim1 = ceildiv(
+            Self.tile_shape.element_types[1].static_value, copy_dim1
+        )
+        comptime num_copies_dim2 = ceildiv(
+            Self.tile_shape.element_types[2].static_value, copy_dim2
+        )
+        comptime num_copies_dim3 = ceildiv(
+            Self.tile_shape.element_types[3].static_value, copy_dim3
+        )
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
+                        cp_async_bulk_prefetch_tensor(
+                            Pointer(to=self.descriptor).unsafe_bitcast[
+                                NoneType
+                            ](),
+                            Index(
+                                coords[0] + j * copy_dim3,
+                                coords[1] + i * copy_dim2,
+                                coords[2] + m * copy_dim1,
+                                coords[3] + n * copy_dim0,
+                            ),
+                        )
 
     @inline(.always)
     def async_multicast_load_3d[
@@ -2284,7 +1898,7 @@ struct TMATensorTile[
         """
         Schedules an asynchronous 3D multicast load from global to shared memory.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Loads into a TileTensor destination.
         Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
 
         Parameters:
@@ -2330,8 +1944,8 @@ struct TMATensorTile[
                     cp_async_bulk_tensor_shared_cluster_global_multicast[
                         cta_group=cta_group
                     ](
-                        dst.ptr + copy_offset,
-                        Pointer(to=self.descriptor).bitcast[NoneType](),
+                        dst.ptr.unsafe_offset(copy_offset),
+                        Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + j * copy_dim2,
@@ -2354,7 +1968,7 @@ struct TMATensorTile[
         """
         Schedules an asynchronous 4D multicast load from global to shared memory.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Loads into a TileTensor destination.
         Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
 
         Parameters:
@@ -2405,8 +2019,10 @@ struct TMATensorTile[
                         cp_async_bulk_tensor_shared_cluster_global_multicast[
                             cta_group=cta_group
                         ](
-                            dst.ptr + copy_offset,
-                            Pointer(to=self.descriptor).bitcast[NoneType](),
+                            dst.ptr.unsafe_offset(copy_offset),
+                            Pointer(to=self.descriptor).unsafe_bitcast[
+                                NoneType
+                            ](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -2490,41 +2106,13 @@ struct TMATensorTile[
                 )
 
                 cp_async_bulk_tensor_global_shared_cta(
-                    src + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
+                    src.unsafe_offset(copy_offset),
+                    Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     Index(
                         coords[0] + j * copy_dim1,
                         coords[1] + i * copy_dim0,
                     ),
                 )
-
-    @inline(.always)
-    def async_store(
-        self,
-        src: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
-        coords: Tuple[Int, Int],
-    ):
-        """
-        Schedules an asynchronous store from shared memory to global memory.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from shared memory
-        to global memory at the specified coordinates.
-
-        Args:
-            src: LayoutTensor
-                The source tensor in shared memory from which data will be copied.
-                Must be 128-byte aligned.
-            coords: The 2D coordinates in the destination tensor where data will be stored.
-
-        Constraints:
-            The source tensor must be 128-byte aligned in shared memory.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(src).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
-        self._async_store_2d(src.ptr, coords)
 
     @inline(.always)
     def async_store(
@@ -2582,44 +2170,14 @@ struct TMATensorTile[
                     )
 
                     cp_async_bulk_tensor_global_shared_cta(
-                        src + copy_offset,
-                        Pointer(to=self.descriptor).bitcast[NoneType](),
+                        src.unsafe_offset(copy_offset),
+                        Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                         Index(
                             coords[0] + j * copy_dim2,
                             coords[1] + i * copy_dim1,
                             coords[2] + m * copy_dim0,
                         ),
                     )
-
-    @inline(.always)
-    def async_store_3d(
-        self,
-        src: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
-        coords: Tuple[Int, Int, Int],
-    ):
-        """
-        Schedules an asynchronous store from shared memory to global memory at specified 3D coordinates.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from shared memory
-        to the specified destination in global memory for 3D tensors.
-
-        Args:
-            src: The source tensor in shared memory from which data will be copied.
-                 Must be 128-byte aligned.
-            coords: The 3D coordinates in the destination tensor where data will be stored.
-
-        Constraints:
-
-            - The source tensor must be 128-byte aligned in shared memory.
-            - The descriptor layout may be smaller than the shared memory tile shape
-              to accommodate hardware requirements.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(src).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
-        self._async_store_3d(src.ptr, coords)
 
     @inline(.always)
     def async_store_3d(
@@ -2682,8 +2240,10 @@ struct TMATensorTile[
                         )
 
                         cp_async_bulk_tensor_global_shared_cta(
-                            src + copy_offset,
-                            Pointer(to=self.descriptor).bitcast[NoneType](),
+                            src.unsafe_offset(copy_offset),
+                            Pointer(to=self.descriptor).unsafe_bitcast[
+                                NoneType
+                            ](),
                             Index(
                                 coords[0] + j * copy_dim3,
                                 coords[1] + i * copy_dim2,
@@ -2691,36 +2251,6 @@ struct TMATensorTile[
                                 coords[3] + n * copy_dim0,
                             ),
                         )
-
-    @inline(.always)
-    def async_store_4d(
-        self,
-        src: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
-        coords: Tuple[Int, Int, Int, Int],
-    ):
-        """
-        Schedules an asynchronous store from shared memory to global memory at specified 4D coordinates.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from shared memory
-        to the specified destination in global memory for 4D tensors.
-
-        Args:
-            src: The source tensor in shared memory from which data will be copied.
-                 Must be 128-byte aligned.
-            coords: The 4D coordinates in the destination tensor where data will be stored.
-
-        Constraints:
-
-            - The source tensor must be 128-byte aligned in shared memory.
-            - The descriptor layout may be smaller than the shared memory tile shape
-              to accommodate hardware requirements.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(src).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
-        self._async_store_4d(src.ptr, coords)
 
     @inline(.always)
     def async_store_4d(
@@ -2789,8 +2319,10 @@ struct TMATensorTile[
                             )
 
                             cp_async_bulk_tensor_global_shared_cta(
-                                src + copy_offset,
-                                Pointer(to=self.descriptor).bitcast[NoneType](),
+                                src.unsafe_offset(copy_offset),
+                                Pointer(to=self.descriptor).unsafe_bitcast[
+                                    NoneType
+                                ](),
                                 Index(
                                     coords[0] + j * copy_dim4,
                                     coords[1] + i * copy_dim3,
@@ -2799,36 +2331,6 @@ struct TMATensorTile[
                                     coords[4] + o * copy_dim0,
                                 ),
                             )
-
-    @inline(.always)
-    def async_store_5d(
-        self,
-        src: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
-        coords: Tuple[Int, Int, Int, Int, Int],
-    ):
-        """
-        Schedules an asynchronous store from shared memory to global memory at specified 5D coordinates.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from shared memory
-        to the specified destination in global memory for 5D tensors.
-
-        Args:
-            src: The source tensor in shared memory from which data will be copied.
-                 Must be 128-byte aligned.
-            coords: The 5D coordinates in the destination tensor where data will be stored.
-
-        Constraints:
-
-            - The source tensor must be 128-byte aligned in shared memory.
-            - The descriptor layout may be smaller than the shared memory tile shape
-              to accommodate hardware requirements.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(src).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
-        self._async_store_5d(src.ptr, coords)
 
     @inline(.always)
     def async_store_5d(
@@ -2894,12 +2396,10 @@ struct TMATensorTile[
 
         var src_desc = (
             Pointer(to=self.descriptor)
-            .bitcast[UInt8]()
-            .address_space_cast[.GLOBAL]()
+            .unsafe_bitcast[UInt8]()
+            .unsafe_address_space_cast[.GLOBAL]()
         )
-        var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]().unsafe_mut_cast[
-            True
-        ]()
+        var dst_desc = smem_tma_descriptor_ptr.unsafe_bitcast[UInt8]()
 
         comptime simd_width = simd_width_of[DType.uint8]()
         comptime src_align = align_of[SIMD[.uint8, simd_width]]()
@@ -2908,10 +2408,12 @@ struct TMATensorTile[
         comptime descriptor_bytes = 128
 
         comptime for src_idx in range(descriptor_bytes // simd_width):
-            var src_vec = (src_desc).load[
+            var src_vec = (src_desc).unsafe_load[
                 width=simd_width, alignment=src_align
             ](src_idx * simd_width)
-            dst_desc.store[alignment=dst_align](src_idx * simd_width, src_vec)
+            dst_desc.unsafe_store[alignment=dst_align](
+                src_idx * simd_width, src_vec
+            )
 
     @inline(.always)
     def replace_tensormap_global_address_in_gmem[
@@ -2942,14 +2444,14 @@ struct TMATensorTile[
             AddressSpace.GLOBAL,
         ), "src address space must be GENERIC or GLOBAL."
 
-        var desc_ptr = Pointer(to=self.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=self.descriptor).unsafe_bitcast[NoneType]()
 
         inlined_assembly[
             "tensormap.replace.tile.global_address.global.b1024.b64 [$0], $1;",
             NoneType,
             constraints="l,l",
             has_side_effect=True,
-        ](desc_ptr, src_ptr.bitcast[NoneType]())
+        ](desc_ptr, src_ptr.unsafe_bitcast[NoneType]())
 
     @inline(.always)
     def tensormap_fence_acquire(self):
@@ -2973,7 +2475,7 @@ struct TMATensorTile[
         llvm_intrinsic[
             "llvm.nvvm.fence.proxy.tensormap_generic.acquire.gpu", NoneType
         ](
-            Pointer(to=self.descriptor).bitcast[NoneType](),
+            Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
             Int32(128),
         )
 
@@ -3049,8 +2551,8 @@ struct TMATensorTile[
             constraints="r,l",
             has_side_effect=True,
         ](
-            smem_tma_descriptor_ptr.bitcast[NoneType](),
-            src_ptr.bitcast[NoneType](),
+            smem_tma_descriptor_ptr.unsafe_bitcast[NoneType](),
+            src_ptr.unsafe_bitcast[NoneType](),
         )
 
     @inline(.always)
@@ -3083,9 +2585,9 @@ struct TMATensorTile[
         """
         # This fence is needed when modifying tensormap directly in SMEM
         # NOTE: Entire warp must call this function as the instruction is aligned
-        var gmem_tma_descriptor_ptr = Pointer(to=self.descriptor).bitcast[
-            NoneType
-        ]()
+        var gmem_tma_descriptor_ptr = Pointer(
+            to=self.descriptor
+        ).unsafe_bitcast[NoneType]()
 
         inlined_assembly[
             (
@@ -3095,7 +2597,10 @@ struct TMATensorTile[
             NoneType,
             constraints="l,r",
             has_side_effect=True,
-        ](gmem_tma_descriptor_ptr, smem_tma_descriptor_ptr.bitcast[NoneType]())
+        ](
+            gmem_tma_descriptor_ptr,
+            smem_tma_descriptor_ptr.unsafe_bitcast[NoneType](),
+        )
 
     @inline(.always)
     def replace_tensormap_global_dim_strides_in_shared_mem[
@@ -3135,7 +2640,7 @@ struct TMATensorTile[
             of the changes to other threads.
         """
 
-        var desc_ptr = smem_tma_descriptor_ptr.bitcast[UInt64]()
+        var desc_ptr = smem_tma_descriptor_ptr.unsafe_bitcast[UInt64]()
 
         comptime if only_update_dim_0:
             comptime temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
@@ -3212,7 +2717,7 @@ struct TMATensorTile[
             of the changes to other threads.
         """
 
-        var desc_ptr = smem_tma_descriptor_ptr.bitcast[UInt64]()
+        var desc_ptr = smem_tma_descriptor_ptr.unsafe_bitcast[UInt64]()
 
         # Replace dimensions
 
@@ -3241,78 +2746,6 @@ struct TMATensorTile[
                 constraints="l,l",
                 has_side_effect=True,
             ](desc_ptr, dim_stride)
-
-
-@inline(.always)
-def create_tma_tile[
-    *tile_sizes: Int,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor) raises -> TMATensorTile[
-    tensor.dtype,
-    coord[tile_sizes[0], tile_sizes[1]],
-]:
-    """
-    Creates a `TMATensorTile` with specified tile dimensions and swizzle mode.
-
-    This function creates a hardware-accelerated Tensor Memory Access (TMA) descriptor
-    for efficient asynchronous data transfers between global memory and shared memory.
-    It configures the tile dimensions and memory access patterns based on the provided
-    parameters.
-
-    Parameters:
-        tile_sizes: The dimensions of the tile to be transferred. For 2D tensors, this should be
-            [height, width]. The dimensions determine the shape of data transferred in each
-            TMA operation.
-        swizzle_mode:
-            The swizzling mode to use for memory access optimization. Swizzling can improve
-            memory access patterns for specific hardware configurations.
-
-    Args:
-        ctx:
-            The CUDA device context used to create the TMA descriptor.
-        tensor:
-            The source tensor from which data will be transferred. This defines the
-            global memory layout and data type.
-
-    Returns:
-        A `TMATensorTile` configured with the specified tile dimensions and swizzle mode,
-        ready for use in asynchronous data transfer operations.
-
-    Constraints:
-
-        - The last dimension's size in bytes must not exceed the swizzle mode's byte limit
-          (32B for SWIZZLE_32B, 64B for SWIZZLE_64B, 128B for SWIZZLE_128B).
-        - Only supports 2D tensors in this overload.
-
-    Raises:
-        If TMA descriptor creation fails.
-    """
-    # the last dimension of smem shape has to be smaller or equals to the
-    # swizzle bytes.
-    comptime swizzle_rows_bytes = tile_sizes[tensor.rank - 1] * size_of[
-        tensor.dtype
-    ]()
-
-    comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-        comptime assert swizzle_rows_bytes <= swizzle_mode.bytes(), (
-            "Current swizzle bytes is "
-            + String(swizzle_rows_bytes)
-            + " which exceeds "
-            + String(swizzle_mode.bytes())
-            + "B swizzle requirement."
-        )
-
-    return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
-        DeviceBuffer(
-            ctx,
-            tensor.ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
-            1,
-            owning=False,
-        ),
-        (tensor.dim(0), tensor.dim(1)),
-        (tensor.stride(0), tensor.stride(1)),
-        (tile_sizes[0], tile_sizes[1]),
-    )
 
 
 @inline(.always)
@@ -3385,8 +2818,8 @@ def create_tma_tile[
         ),
         (Int(tensor.dim[0]()), Int(tensor.dim[1]())),
         (
-            Int(tensor.layout.stride[0]().value()),
-            Int(tensor.layout.stride[1]().value()),
+            Int(tensor.dynamic_stride(0)),
+            Int(tensor.dynamic_stride(1)),
         ),
         (tile_sizes[0], tile_sizes[1]),
     )
@@ -3589,7 +3022,7 @@ def create_tma_tile_gather4[
     return create_tma_descriptor[dtype, 2, swizzle_mode, l2_promotion](
         DeviceBuffer(
             ctx,
-            ptr.address_space_cast[.GENERIC](),
+            ptr,
             1,
             owning=False,
         ),
@@ -3621,9 +3054,6 @@ def create_tensor_tile[
 ]:
     """
     Creates a `TMATensorTile` from a TileTensor.
-
-    This overload accepts a TileTensor instead of LayoutTensor, enabling use
-    with the new coordinate-based tensor abstraction.
 
     Parameters:
         dtype: The data type of the tensor elements.
@@ -3680,51 +3110,53 @@ def create_tensor_tile[
         )
 
     comptime assert (
-        tile_shape.rank == 2 or not unpack_fp4
-    ), "packed FP4 TMA is only wired for rank 2"
+        tile_shape.rank in (2, 3) or not unpack_fp4
+    ), "packed FP4 TMA is only wired for rank 2 and 3"
 
+    # With `unpack_fp4`, the innermost extent reaches the descriptor in FP4
+    # elements, which is twice what the `uint8` view spells. Strides stay in
+    # `uint8`.
     comptime match tile_shape.rank:
         case 2:
-            # The innermost extent reaches the descriptor in FP4 elements, which
-            # is twice what the `uint8` view spells. Strides stay in `uint8`.
             return create_tma_descriptor[
                 dtype, 2, swizzle_mode, unpack_fp4=unpack_fp4
             ](
                 DeviceBuffer(
                     ctx,
-                    tensor.ptr.address_space_cast[.GENERIC](),
+                    tensor.ptr.unsafe_address_space_cast[.GENERIC](),
                     1,
                     owning=False,
                 ),
                 (
-                    Int(tensor.layout.shape[0]().value()),
-                    Int(tensor.layout.shape[1]().value())
-                    * (2 if unpack_fp4 else 1),
+                    Int(tensor.dim[0]()),
+                    Int(tensor.dim[1]()) * (2 if unpack_fp4 else 1),
                 ),
                 (
-                    Int(tensor.layout.stride[0]().value()),
-                    Int(tensor.layout.stride[1]().value()),
+                    Int(tensor.dynamic_stride(0)),
+                    Int(tensor.dynamic_stride(1)),
                 ),
                 _coord_to_index_list[2, __desc_shape](),
             )
 
         case 3:
-            return create_tma_descriptor[dtype, 3, swizzle_mode](
+            return create_tma_descriptor[
+                dtype, 3, swizzle_mode, unpack_fp4=unpack_fp4
+            ](
                 DeviceBuffer(
                     ctx,
-                    tensor.ptr.address_space_cast[.GENERIC](),
+                    tensor.ptr.unsafe_address_space_cast[.GENERIC](),
                     1,
                     owning=False,
                 ),
                 IndexList[3](
-                    Int(tensor.layout.shape[0]().value()),
-                    Int(tensor.layout.shape[1]().value()),
-                    Int(tensor.layout.shape[2]().value()),
+                    Int(tensor.dim[0]()),
+                    Int(tensor.dim[1]()),
+                    Int(tensor.dim[2]()) * (2 if unpack_fp4 else 1),
                 ),
                 IndexList[3](
-                    Int(tensor.layout.stride[0]().value()),
-                    Int(tensor.layout.stride[1]().value()),
-                    Int(tensor.layout.stride[2]().value()),
+                    Int(tensor.dynamic_stride(0)),
+                    Int(tensor.dynamic_stride(1)),
+                    Int(tensor.dynamic_stride(2)),
                 ),
                 _coord_to_index_list[3, __desc_shape](),
             )
@@ -3733,21 +3165,21 @@ def create_tensor_tile[
             return create_tma_descriptor[dtype, 4, swizzle_mode](
                 DeviceBuffer(
                     ctx,
-                    tensor.ptr.address_space_cast[.GENERIC](),
+                    tensor.ptr.unsafe_address_space_cast[.GENERIC](),
                     1,
                     owning=False,
                 ),
                 IndexList[4](
-                    Int(tensor.layout.shape[0]().value()),
-                    Int(tensor.layout.shape[1]().value()),
-                    Int(tensor.layout.shape[2]().value()),
-                    Int(tensor.layout.shape[3]().value()),
+                    Int(tensor.dim[0]()),
+                    Int(tensor.dim[1]()),
+                    Int(tensor.dim[2]()),
+                    Int(tensor.dim[3]()),
                 ),
                 IndexList[4](
-                    Int(tensor.layout.stride[0]().value()),
-                    Int(tensor.layout.stride[1]().value()),
-                    Int(tensor.layout.stride[2]().value()),
-                    Int(tensor.layout.stride[3]().value()),
+                    Int(tensor.dynamic_stride(0)),
+                    Int(tensor.dynamic_stride(1)),
+                    Int(tensor.dynamic_stride(2)),
+                    Int(tensor.dynamic_stride(3)),
                 ),
                 _coord_to_index_list[4, __desc_shape](),
             )
@@ -3756,23 +3188,23 @@ def create_tensor_tile[
             return create_tma_descriptor[dtype, 5, swizzle_mode](
                 DeviceBuffer(
                     ctx,
-                    tensor.ptr.address_space_cast[.GENERIC](),
+                    tensor.ptr.unsafe_address_space_cast[.GENERIC](),
                     1,
                     owning=False,
                 ),
                 IndexList[5](
-                    Int(tensor.layout.shape[0]().value()),
-                    Int(tensor.layout.shape[1]().value()),
-                    Int(tensor.layout.shape[2]().value()),
-                    Int(tensor.layout.shape[3]().value()),
-                    Int(tensor.layout.shape[4]().value()),
+                    Int(tensor.dim[0]()),
+                    Int(tensor.dim[1]()),
+                    Int(tensor.dim[2]()),
+                    Int(tensor.dim[3]()),
+                    Int(tensor.dim[4]()),
                 ),
                 IndexList[5](
-                    Int(tensor.layout.stride[0]().value()),
-                    Int(tensor.layout.stride[1]().value()),
-                    Int(tensor.layout.stride[2]().value()),
-                    Int(tensor.layout.stride[3]().value()),
-                    Int(tensor.layout.stride[4]().value()),
+                    Int(tensor.dynamic_stride(0)),
+                    Int(tensor.dynamic_stride(1)),
+                    Int(tensor.dynamic_stride(2)),
+                    Int(tensor.dynamic_stride(3)),
+                    Int(tensor.dynamic_stride(4)),
                 ),
                 _coord_to_index_list[5, __desc_shape](),
             )
@@ -3973,7 +3405,7 @@ def _create_split_tma_folded[
     # rank-3/4/5 `TMATensorTile` are distinct nominal types).
     var device_buf = DeviceBuffer(
         ctx,
-        ptr.address_space_cast[.GENERIC](),
+        ptr,
         1,
         owning=False,
     )
@@ -4342,8 +3774,8 @@ struct TMATensorTileArray[
             `Pointer` to the `TMATensorTile` at the specified index.
         """
         return (
-            (self.tensormaps_ptr + index * self.descriptor_bytes)
-            .bitcast[
+            (self.tensormaps_ptr.unsafe_offset(index * self.descriptor_bytes))
+            .unsafe_bitcast[
                 TMATensorTile[Self.dtype, Self.cta_tile_shape, Self.desc_shape]
             ]()
             .as_unsafe_any_origin()
@@ -4520,7 +3952,10 @@ struct RaggedTMA3DTile[
                 return Self(
                     create_tma_descriptor[Self.dtype, 5, Self.swizzle_mode](
                         DeviceBuffer(
-                            ctx, ptr - stride * Self.BM_seq, 1, owning=False
+                            ctx,
+                            ptr.unsafe_offset(-(stride * Self.BM_seq)),
+                            1,
+                            owning=False,
                         ),
                         (merged_extent, n_blocks, Self.BM_seq, Self.group, K),
                         IndexList[5](Self.group * depth, K, stride, depth, 1),
@@ -4539,7 +3974,10 @@ struct RaggedTMA3DTile[
                 return Self(
                     create_tma_descriptor[Self.dtype, 4, Self.swizzle_mode](
                         DeviceBuffer(
-                            ctx, ptr - stride * Self.BM_seq, 1, owning=False
+                            ctx,
+                            ptr.unsafe_offset(-(stride * Self.BM_seq)),
+                            1,
+                            owning=False,
                         ),
                         (merged_extent, Self.BM_seq, Self.group, depth),
                         IndexList[4](Self.group * depth, stride, depth, 1),
@@ -4568,7 +4006,10 @@ struct RaggedTMA3DTile[
                 return Self(
                     create_tma_descriptor[Self.dtype, 4, Self.swizzle_mode](
                         DeviceBuffer(
-                            ctx, ptr - stride * Self.BM, 1, owning=False
+                            ctx,
+                            ptr.unsafe_offset(-(stride * Self.BM)),
+                            1,
+                            owning=False,
                         ),
                         IndexList[4](merged_extent, n_blocks, Self.BM, K),
                         IndexList[4](depth, K, stride, 1),
@@ -4580,7 +4021,10 @@ struct RaggedTMA3DTile[
                 return Self(
                     create_tma_descriptor[Self.dtype, 3, Self.swizzle_mode](
                         DeviceBuffer(
-                            ctx, ptr - stride * Self.BM, 1, owning=False
+                            ctx,
+                            ptr.unsafe_offset(-(stride * Self.BM)),
+                            1,
+                            owning=False,
                         ),
                         IndexList[3](merged_extent, Self.BM, depth),
                         IndexList[3](depth, stride, 1),
@@ -4635,8 +4079,8 @@ struct RaggedTMA3DTile[
             cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
-                src + copy_offset,
-                Pointer(to=self.descriptor).bitcast[NoneType](),
+                src.unsafe_offset(copy_offset),
+                Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                 # dims (inner->outer): (depth, group, BM_seq, merged)
                 Index(
                     col * Self.swizzle_granularity,
@@ -4652,8 +4096,8 @@ struct RaggedTMA3DTile[
             cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
-                src + copy_offset,
-                Pointer(to=self.descriptor).bitcast[NoneType](),
+                src.unsafe_offset(copy_offset),
+                Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                 # dims (inner->outer): (depth, BM, merged)
                 Index(
                     col * Self.swizzle_granularity,
@@ -4717,8 +4161,8 @@ struct RaggedTMA3DTile[
             cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
-                src + copy_offset,
-                Pointer(to=self.descriptor).bitcast[NoneType](),
+                src.unsafe_offset(copy_offset),
+                Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                 Index(0, 0, box_idx, col_start, merged),
                 elect,
             )
@@ -4728,8 +4172,8 @@ struct RaggedTMA3DTile[
             cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
-                src + copy_offset,
-                Pointer(to=self.descriptor).bitcast[NoneType](),
+                src.unsafe_offset(copy_offset),
+                Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                 Index(0, box_idx, col_start, merged),
                 elect,
             )
@@ -4740,7 +4184,9 @@ struct RaggedTMA3DTile[
         Prefetches the TMA descriptor into cache.
         """
 
-        prefetch_tma_descriptor(Pointer(to=self.descriptor).bitcast[NoneType]())
+        prefetch_tma_descriptor(
+            Pointer(to=self.descriptor).unsafe_bitcast[NoneType]()
+        )
 
 
 struct TMATensorTileIm2col[
@@ -4865,7 +4311,7 @@ struct TMATensorTileIm2col[
     @inline(.always)
     def prefetch_descriptor(self):
         """Prefetches the TMA descriptor into cache."""
-        var desc_ptr = Pointer(to=self.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=self.descriptor).unsafe_bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
 
     @inline(.always)
@@ -4957,8 +4403,8 @@ struct TMATensorTileIm2col[
                 cp_async_bulk_tensor_shared_cluster_global_im2col[
                     cta_group=cta_group,
                 ](
-                    dst.ptr + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
+                    dst.ptr.unsafe_offset(copy_offset),
+                    Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(c, w, h, n),
                     Index(s, r),
@@ -5064,8 +4510,8 @@ struct TMATensorTileIm2col[
                 cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
                     cta_group=cta_group,
                 ](
-                    dst.ptr + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
+                    dst.ptr.unsafe_offset(copy_offset),
+                    Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(c, w, h, n),
                     Index(s, r),
@@ -5176,9 +4622,8 @@ def _build_im2col_descriptor[
 ) raises -> TMATensorTileIm2col[dtype, __tile_shape, __desc_shape]:
     """Shared implementation for building an im2col TMA descriptor.
 
-    Both the LayoutTensor and TileTensor overloads of
-    `create_tensor_tile_im2col` delegate here after extracting dimensions
-    from their respective tensor types.
+    `create_tensor_tile_im2col` delegates here after extracting the
+    dimensions from its tensor argument.
     """
     var global_buf = DeviceBuffer(
         ctx,

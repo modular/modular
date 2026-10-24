@@ -1,0 +1,826 @@
+---
+title: Model bring-up workflow
+description: Understand MAX's model architecture system and how to implement a custom architecture with max.experimental.nn by mapping config fields, translating weight names, connecting to the KV cache, and extending the module.
+---
+
+:::tip
+You can automate much of the model bring-up process with AI coding agents. See
+[Bring up a model with AI agent skills](/develop/model-bringup-skills/) for
+details.
+:::
+
+_Model bring-up_ is the process of adapting a pretrained model from Hugging
+Face or PyTorch to run in MAX.
+
+To bring a model to MAX, you must implement a _model architecture_. A model
+architecture is a Python package that defines the model's modules, maps its
+configuration, and loads its weights. Once implemented, you can [serve the
+model](/develop/serve-custom-model-architectures/) with hardware-optimized
+kernels, production batching, KV cache management, and multi-GPU distribution.
+
+Writing a custom architecture means choosing a reference
+implementation, adapting its configuration and weights, and extending its
+modules where your model differs.
+
+:::note
+
+MAX [supports models](/models/) across various modalities. This guide
+focuses on transformer-based text generation models, as they share common,
+established implementation patterns in MAX.
+
+:::
+
+## Architecture directory structure
+
+Most text-generation model architectures follow this standard directory layout,
+which the
+[OLMo 3 reference architecture](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/olmo3)
+uses:
+
+```text
+{your_model}/
+├── layers/
+├── __init__.py
+├── arch.py
+├── batch_processor.py
+├── model_config.py
+├── model.py
+├── {model_name}.py
+└── weight_adapters.py
+```
+
+Each file serves a distinct role:
+
+- `layers/`: holds custom layer implementations for components that
+  [`max.experimental.nn`](/api/python/experimental.nn/) doesn't provide.
+- `__init__.py`: exposes the `ARCHITECTURES` list that MAX reads to register
+  each entry.
+- `arch.py`: registers the architecture with MAX. It declares the architecture's
+  name, supported encodings, and the classes that implement the config, model,
+  and weight adapter. The name must match the `architectures[0]` value in the
+  model's Hugging Face `config.json`. Models that use a KV cache also set the
+  `memory_planner` field (usually
+  [`PagedMemoryPlanner`](/api/python/generated/max.pipelines.kv_cache.PagedMemoryPlanner/))
+  so MAX can size the KV cache and batch limits.
+- `batch_processor.py`: optional batch processor that prepares model inputs for
+  each scheduled batch and declares the input types your module compiles
+  against. Create one only when the model has unique batching logic. If batching
+  matches an existing family, register that family's processor through the
+  [`batching`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/#max.pipelines.lib.registry.SupportedArchitecture.batching)
+  field in `arch.py` (for example, `batching=Llama3ModuleV3BatchProcessor`). See
+  [input preparation for a batch processor](/develop/pipelines/#delegate-input-preparation-to-a-batch-processor).
+- `model_config.py`: translates Hugging Face `config.json` fields into a typed
+  configuration object that your modules read when MAX builds them.
+- `model.py`: the pipeline model class registered in `arch.py`. It subclasses
+  [`ModuleV3PipelineModelWithKVCache`](/api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/),
+  or the reference architecture's pipeline model when you build on one, and
+  overrides the parts that differ.
+- `{model_name}.py`: defines the root module and the transformer stack. Most
+  models with unique sub-layers, an encoder, or a structure that differs from
+  the generic transformer require this file.
+- `weight_adapters.py`: translates Hugging Face checkpoint weight names to the
+  parameter names of your MAX module.
+
+The following sections describe how each component works and whether it
+needs customization.
+
+## Write modules with `max.experimental.nn`
+
+Write each model component as a subclass of
+[`Module`](/api/python/generated/max.experimental.nn.Module/) from
+[`max.experimental.nn`](/api/python/experimental.nn/). A module declares its
+argument and return types in its signature, such as
+`Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]`, and
+implements
+[`forward()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.forward)
+over [`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) values.
+Operations come from
+[`max.experimental.functional`](/api/python/experimental.functional/), which you
+import as `F`.
+
+Layer constructors take shapes and options only, such as
+[`Linear(in_dim, out_dim, bias=False)`](/api/python/generated/max.experimental.nn.Linear/)
+or
+[`Embedding(vocab_size, dim=hidden_size)`](/api/python/generated/max.experimental.nn.Embedding/).
+The pipeline sets the dtype for the whole build, and your pipeline model places
+the module on a device with `.to(device)`.
+
+The pipeline model compiles your module for serving. Its base class,
+`ModuleV3PipelineModelWithKVCache` from
+[`max.pipelines.lib`](/api/python/pipelines.lib/), runs these steps while it
+builds the decoder:
+
+1. Loads the checkpoint and applies your weight adapter.
+2. Calls your `_create_model_config()` to build the config object.
+3. Calls your `_prepare_state_dict()` to cast or rewrite weights that depend
+   on the config.
+4. Calls your `_init_distributed_runtime()` to set up a distributed runtime.
+5. Builds your module inside
+   [`F.lazy()`](/api/python/experimental.functional/#max.experimental.functional.lazy)
+   with the config's dtype as the default, by calling your
+   `_instantiate_module()`. `F.lazy()` defers tensor realization while
+   `_instantiate_module()` builds the module.
+6. Traces and compiles the module with
+   [`Module.stage()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.stage),
+   which
+   [`compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile)
+   wraps. The batch processor supplies the input types, and each parameter takes
+   its value from the state dict by name.
+
+The following `model.py` from the `olmo3` reference architecture implements
+both hooks. It also sets `model_config_cls`, the config class the pipeline
+model uses to size the KV cache before the decoder is built. A
+`ModuleV3PipelineModelWithKVCache` subclass that leaves it unset raises an
+error at construction:
+
+<!-- invisible-code-block: python
+from max.pipelines.architectures.olmo3.model_config import Olmo3Config
+from max.pipelines.architectures.olmo3.olmo3 import Olmo3
+from max.pipelines.context import TextContext
+-->
+
+```python title="model.py"
+from typing import Any, ClassVar
+
+from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
+
+
+class Olmo3Model(ModuleV3PipelineModelWithKVCache[TextContext]):
+    model_config_cls: ClassVar[type[Any]] = Olmo3Config
+
+    def _create_model_config(self, state_dict):
+        model_config = Olmo3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
+        model_config.finalize(
+            huggingface_config=self.huggingface_config,
+            state_dict=state_dict,
+            return_logits=self.return_logits,
+        )
+        return model_config
+
+    def _instantiate_module(self, model_config):
+        nn_model = Olmo3(model_config, self.kv_params)
+        nn_model.to(self.devices[0])
+        return nn_model
+```
+
+<!-- invisible-code-block: python
+from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
+assert issubclass(Olmo3Model, ModuleV3PipelineModelWithKVCache)
+hooks = {"_create_model_config", "_instantiate_module"}
+assert hooks <= set(vars(Olmo3Model))
+-->
+
+During development, the same `forward()` also runs eagerly on real tensors.
+For a short example of a module and its parameters, see
+[Neural network modules](/develop/pipelines/#neural-network-modules). To learn
+the `Tensor` and `F` APIs on a small forward pass, see
+[Eager execution](/develop/eager-execution/).
+
+## Choose a reference architecture
+
+The reference architectures in MAX's codebase are complete implementations of
+this package structure. Each one is a working implementation that `max serve`
+can load. Browse the
+[reference architectures](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures)
+alongside this guide to see how the files fit together in a finished
+implementation.
+
+Most large language models are variations on a small set of transformer
+blueprints. The attention mechanism, normalization placement, and residual
+structure in your model usually match an existing reference.
+Starting from the closest one means you inherit its modules, KV cache wiring,
+and kernel choices for everything you share.
+
+Your implementation files define only what differs. `model_config.py` bridges
+the Hugging Face config fields to MAX's representation. `weight_adapters.py`
+remaps checkpoint keys to match MAX's naming. `model.py` subclasses the
+reference pipeline model, and `arch.py` registers the quantization encodings
+your checkpoint supports. If your model's structure is identical to a reference
+and only those surface details differ, those files are all you need.
+
+Choose a reference by its structural features:
+
+- [Llama 3](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama3_modulev3):
+  Use for a standard dense transformer with GQA, RoPE, pre-RMSNorm, and SwiGLU.
+  Its config also reads MuP scalars. It's the starting point for most models.
+- [OLMo 3](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/olmo3):
+  Use when your model applies QK-norm across the full projection width and mixes
+  sliding-window and full attention layers, with YaRN RoPE scaling.
+- [Gemma 3](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/gemma3_modulev3):
+  Use when your model applies QK-norm per head, places RMSNorm both before and
+  after each sublayer, and alternates local and global attention.
+- [Phi-3](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/phi3_modulev3):
+  Use when your checkpoint stores fused `qkv_proj` and `gate_up_proj` weights.
+  It subclasses the Llama 3 pipeline model and adds only a weight adapter.
+- [GPT-OSS](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/gpt_oss_modulev3):
+  Use when your model routes tokens to sparse Mixture-of-Experts (MoE) layers.
+- [DeepSeek-V2](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/deepseekV2_modulev3):
+  Use when your model uses Multi-Head Latent Attention (MLA), which compresses
+  the KV cache using low-rank projections, on a single GPU.
+- [DeepSeek-V3](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/deepseekV3_modulev3):
+  Use when your model combines MLA with MoE routing and runs across GPUs with
+  tensor, data, or expert parallelism.
+- [Nemotron-H](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/nemotron_h_modulev3):
+  Use when your model interleaves Mamba state-space layers with attention
+  layers.
+
+For vision-language models, start from `gemma3multimodal_modulev3`,
+`idefics3_modulev3`, or `kimik2_5_modulev3`. Each reference organizes its
+files differently. For example, the `llama3_modulev3` module file is
+`llama3.py`.
+
+Every LLM implementation requires
+config field mapping, weight naming, and KV cache integration. If your
+model's structure departs from the reference in a few attributes or methods,
+override the model components that differ. If the differences are structural,
+extend the module tree to implement those components from scratch. Examples
+include a different attention mechanism, custom routing, or a positional
+encoding variant that an attribute override can't express.
+
+## Map config fields
+
+MAX reads a model's Hugging Face `config.json` through a typed configuration
+object, and your modules read their sizes and options from that object. The
+general pattern is to subclass the reference config class and set the fields
+where the Hugging Face convention differs from MAX's representation. The
+**Files and versions** tab on a Hugging Face model page includes the
+`config.json` your config class needs to map. For a field-by-field guide to
+reading a config and sorting its fields into the work each implies, see
+[Read a model config](/develop/read-model-config/). Use the config to
+identify which fields your subclass must set and which MAX field names they
+correspond to:
+
+```json title="config.json"
+{
+    "architectures": ["YourModelForCausalLM"],
+    "model_type": "your_model",
+    "hidden_size": 4096,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "num_hidden_layers": 32,
+    "vocab_size": 256000,
+    "logit_scale": 0.0625
+}
+```
+
+A config class reads raw Hugging Face fields in its `initialize()` class
+method, which receives the pipeline config and a required keyword-only
+`max_seq_len`. Later, `finalize()` sets the fields that depend on the
+checkpoint, such as whether the embeddings are tied. To extend a reference
+config, call `super().initialize()` so the parent maps every field it knows,
+then set the fields that differ.
+
+The following example extends `Llama3Config` from `llama3_modulev3`. That
+config already has a `logits_scaling` field, which the Llama 3 module divides
+the logits by. This checkpoint stores the reciprocal as `logit_scale`:
+
+```python title="model_config.py"
+from dataclasses import dataclass
+
+from max.pipelines.architectures.llama3_modulev3.model_config import (
+    Llama3Config,
+)
+
+
+@dataclass(kw_only=True)
+class YourConfig(Llama3Config):
+    @classmethod
+    def initialize(cls, pipeline_config, model_config=None, *, max_seq_len):
+        config = super().initialize(
+            pipeline_config, model_config, max_seq_len=max_seq_len
+        )
+        hf_config = (model_config or pipeline_config.model).huggingface_config
+        logit_scale = getattr(hf_config, "logit_scale", 1.0)
+        config.logits_scaling = 1.0 / logit_scale  # 0.0625 → 16.0
+        return config
+```
+
+The pipeline model decides which config class to build. The `llama3_modulev3`
+pipeline model reads it from a `config_class` attribute, and sizes the KV cache
+with the class in `model_config_cls`, so your `model.py` points both
+attributes at the new class:
+
+<!-- invisible-code-block: python
+fake_module("yourpkg")
+fake_module("yourpkg.model_config", YourConfig=YourConfig)
+__name__, __package__ = "yourpkg.model", "yourpkg"
+-->
+
+```python title="model.py"
+from typing import Any, ClassVar
+
+from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
+
+from .model_config import YourConfig
+
+
+class YourModel(Llama3Model):
+    model_config_cls: ClassVar[type[Any]] = YourConfig
+    config_class = YourConfig
+```
+
+<!-- invisible-code-block: python
+fake_module("yourpkg.model", YourModel=YourModel)
+assert YourModel.config_class is YourConfig
+assert YourModel.model_config_cls is YourConfig
+-->
+
+Other reference pipeline models, such as `olmo3`, name their config class
+directly inside `_create_model_config()`. To extend one of those, override
+`_create_model_config()` in your subclass and call `YourConfig.initialize()`
+there.
+
+## Map checkpoint weights
+
+Every parameter of your MAX module has a name, a shape, and a dtype. The
+name is the parameter's attribute path from the root module. Because the
+`olmo3` root module holds its transformer as `self.language_model`, its names
+look like `language_model.layers.0.self_attn.q_proj.weight`. Checkpoint
+weights rarely match those names, so you write a weight adapter function. The
+function converts the checkpoint into the weights your module expects.
+
+To list the names your module expects, build it under `F.lazy()` and read its
+[`parameters`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.parameters):
+
+<!-- invisible-code-block: python
+config, kv_params = smol_llama3()
+from max.pipelines.architectures.llama3_modulev3.llama3 import Llama3
+YourRootModule = Llama3
+-->
+
+```python
+from max.experimental import functional as F
+
+with F.lazy():
+    model = YourRootModule(config, kv_params)
+expected = {name for name, _ in model.parameters}
+```
+
+<!-- invisible-code-block: python
+assert any("embed_tokens" in name for name in expected)
+-->
+
+`compile()` checks the adapted weights against these parameters:
+
+- A parameter with no matching entry raises a `KeyError`.
+- An entry whose shape or dtype differs from its parameter raises a
+  `ValueError`. Passing `auto_cast=True` to `compile()` permits casts between
+  `float32` and `bfloat16`.
+- A checkpoint entry that matches no parameter raises no error, and
+  `compile()` leaves it out. Compare the adapter's output keys with `expected`
+  to catch weights your module never loads.
+
+For models with tied embeddings, the module creates no `lm_head` parameter,
+and `forward()` computes the logits as `h @ self.embed_tokens.weight.T`. If the
+checkpoint still stores an `lm_head.weight` entry, the entry matches no
+parameter, and `compile()` leaves it out.
+
+Renaming is the most common transformation needed in a weight adapter. You
+might also need to cast dtypes, drop weights the module doesn't use, and
+transform tensor layouts. To learn how to implement these transformations, see
+[Write a weight adapter](/develop/weight-adapters/).
+
+:::note FP8 and FP4 checkpoints
+
+For architectures that load FP8 or FP4 checkpoints, add a
+[`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) field to your config
+class. [`QuantFormat`](/api/python/generated/max.nn.QuantFormat/) identifies the
+checkpoint's quantization scheme (such as `COMPRESSED_TENSORS_FP8`, `NVFP4`,
+or `MXFP8`). `QuantConfig` carries the per-layer scaling settings: which layers
+are quantized, the granularity and dtype of weight and activation scales, and
+the block sizes that the hardware-accelerated kernels require. The
+`deepseekV3_modulev3` reference architecture implements quantized linear, MLA,
+and MoE layers.
+
+:::
+
+## Connect to the KV cache
+
+MAX pre-allocates the KV cache at startup from values your config provides,
+before the first request arrives. The allocation depends on the number of KV
+heads, the head dimension, the number of layers, and the maximum sequence
+length. Your config class supplies these values by subclassing
+[`ArchConfigWithStoredKVParams`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams/)
+and
+[`ArchConfigWithKVCache`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithKVCache/).
+
+`ArchConfigWithStoredKVParams` returns your config's `kv_params` field from
+[`get_kv_params()`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams/#max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams.get_kv_params),
+which MAX calls to size the cache. It returns the `max_seq_len` field from
+`get_max_seq_len()`, so set that field from the `max_seq_len` argument that
+`initialize()` receives. Your `initialize()` fills `kv_params` by calling the
+[`construct_kv_params()`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams/#max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams.construct_kv_params)
+class method. The default implementation reads these Hugging Face fields:
+
+- `num_key_value_heads`: total KV heads across all devices. For grouped-query
+  attention models, this field differs from `num_attention_heads`. MAX sizes
+  the cache from `num_key_value_heads`.
+- `head_dim`, through
+  [`get_head_dim()`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams/#max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams.get_head_dim):
+  dimensionality of each attention head. When the config has no `head_dim`, it's
+  `hidden_size // num_attention_heads`.
+- `num_hidden_layers`, through
+  [`get_num_layers()`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams/#max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams.get_num_layers):
+  number of hidden layers.
+
+Override `get_head_dim()`, `get_num_layers()`, or `construct_kv_params()` when
+your Hugging Face config names these values differently. MAX sizes the cache
+with the overrides on your pipeline model's `model_config_cls`, and memory
+planning uses the `config` class in `arch.py`, so point both at your config
+class. The `kv_params` that `initialize()` stores must come from the same
+overrides. Some reference configs name the class explicitly instead of using
+`cls`: `Llama3Config.initialize()` calls `Llama3Config.construct_kv_params()`.
+If you
+subclass one of those, recompute `kv_params` in your `initialize()` after the
+`super()` call. The following example shows the shape of the default
+implementation:
+
+<!-- invisible-code-block: python
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn.kv_cache import KVCacheParamInterface
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from transformers import AutoConfig
+-->
+
+```python title="model_config.py"
+@classmethod
+def construct_kv_params(
+    cls,
+    huggingface_config: AutoConfig,
+    pipeline_config: PipelineConfig,
+    devices: list[DeviceRef],
+    kv_cache_config: KVCacheConfig,
+    cache_dtype: DType,
+    *,
+    allow_kv_head_replication: bool = False,
+) -> KVCacheParamInterface:
+    return kv_cache_config.to_params(
+        dtype=cache_dtype,
+        allow_kv_head_replication=allow_kv_head_replication,
+        n_kv_heads=huggingface_config.num_key_value_heads,
+        head_dim=cls.get_head_dim(huggingface_config),
+        num_layers=cls.get_num_layers(huggingface_config),
+        devices=devices,
+        data_parallel_degree=pipeline_config.model.data_parallel_degree,
+    )
+```
+
+Most architectures return a flat
+[`KVCacheParams`](/api/python/generated/max.nn.kv_cache.KVCacheParams/).
+Architectures with multiple or hybrid KV caches (for example, separate
+sliding-window and full-attention caches) return a
+[`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
+tree, which the cache manager consumes through the shared
+[`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
+
+### Pass the cache into the module
+
+The compiled module receives the KV cache as flat inputs after the token
+inputs. The root module's `forward()` collects them in `*variadic_args` and
+unflattens them with its `kv_params`. For a single cache, call
+`self.kv_params.unflatten_kv_inputs()`. For a sliding-window and global
+cache pair, call `unflatten_basic_kv_tree()`. The `olmo3` root module wraps
+each cache in `PagedCacheValues` from
+`max.experimental.nn.common_layers.kv_cache`:
+
+<!-- invisible-code-block: python
+from max.experimental.nn import Module
+from max.experimental.tensor import Tensor
+from max.nn.kv_cache import KVCacheParamInterface
+from max.pipelines.architectures.olmo3.model_config import Olmo3Config
+from max.pipelines.architectures.olmo3.olmo3 import (
+    Olmo3TextModel,
+    PagedCacheValues,
+)
+from max.pipelines.lib import ModuleV3Outputs
+-->
+
+```python title="olmo3.py"
+class Olmo3(Module[[Tensor, Tensor, Tensor], ModuleV3Outputs]):
+    def __init__(self, config: Olmo3Config, kv_params: KVCacheParamInterface):
+        super().__init__()
+        # ...
+        self.language_model = Olmo3TextModel(config)
+        self.kv_params = kv_params
+
+    def forward(
+        self,
+        tokens: Tensor,
+        return_n_logits: Tensor,
+        input_row_offsets: Tensor,
+        *variadic_args: Tensor,
+    ) -> ModuleV3Outputs:
+        kv_inputs = iter(x._graph_value for x in variadic_args)
+        sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(
+            kv_inputs
+        )
+        sliding_kv = PagedCacheValues.from_upstream(
+            sliding_inputs, tokens.mapping
+        )
+        global_kv = PagedCacheValues.from_upstream(
+            global_inputs, tokens.mapping
+        )
+        return self.language_model(
+            tokens, sliding_kv, global_kv, return_n_logits, input_row_offsets
+        )
+```
+
+Each attention layer stores its layer index and receives a `PagedCacheValues`.
+It calls fused kernels from
+`max.experimental.nn.common_layers.functional_kernels`:
+`rope_split_store_ragged()` applies RoPE and writes keys and values to the
+cache, and `flash_attention_ragged()` reads them back. MAX manages the paged
+memory behind the cache, using the settings in
+[`KVCacheConfig`](/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
+
+## Override model components
+
+A `model.py` that subclasses the reference pipeline model overrides only the
+components that differ. Hugging Face model implementations follow the same
+pattern: in the `transformers` library, many model classes subclass a family
+base and override only what changed.
+
+### Subclass the reference model
+
+`model.py` imports and subclasses the reference pipeline model. Override only
+the class attributes or methods that differ from the reference. The
+`llama3_modulev3` pipeline model exposes `config_class`, `norm_method`, and
+`attention_bias` as class attributes. For example, a model that matches Llama
+3 except for bias on the attention projections needs a single class
+attribute:
+
+```python title="model.py"
+from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
+
+
+class YourModel(Llama3Model):
+    attention_bias: bool = True
+```
+
+The subclass inherits `_create_model_config()`, `_instantiate_module()`, and
+the compile step from the reference architecture. Each new parameter needs a
+checkpoint entry, or `compile()` raises a `KeyError`. `compile()` leaves out a
+checkpoint key with no parameter and raises no error, so compare your adapter's
+keys with the module's parameter names.
+
+## Extend the compute graph
+
+Subclassing overrides attributes or methods within an existing module tree.
+Extending it changes the structure itself: how many normalization layers a block
+applies, whether attention and MLP share their input, which parameters are
+learnable. What those changes look like depends on your model's architecture.
+[`max.experimental.nn`](/api/python/experimental.nn/) provides the building
+blocks, such as
+[`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/),
+[`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/),
+`Linear`, and `Embedding`. Its `common_layers` package adds attention, `MLP`,
+and rotary embedding layers. You can express most structural differences by
+composing these existing layers. The examples show cases where a model's
+structure differs from the reference and requires module-level changes.
+
+**Post-norm decoder block**: The Llama 3 block normalizes each sublayer's
+input. The `olmo3` block normalizes each sublayer's output before the
+residual add:
+
+<!-- skip: next "pseudo-code: the arguments are elided" -->
+
+```python title="{model_name}.py"
+# Llama 3: pre-norm
+h = x + self.self_attn(self.input_layernorm(x), kv_collection, ...)
+out = h + self.mlp(self.post_attention_layernorm(h))
+
+# OLMo 3: post-norm
+h = x + self.post_attention_layernorm(self.self_attn(x, kv_collection, ...))
+out = h + self.post_feedforward_layernorm(self.mlp(h))
+```
+
+**Parallel decoder block**: Some architectures apply attention and MLP to the
+same normed input and add both to the residual stream in one step:
+
+<!-- skip: next "pseudo-code: a fragment of forward()" -->
+
+```python title="{model_name}.py"
+normed = self.input_layernorm(x)
+x = x + self.self_attn(normed, ...) + self.mlp(normed)
+```
+
+The parallel form requires one `input_layernorm` per block and a
+single residual add.
+
+When building any module that holds a list of layers, store them in
+[`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/).
+`ModuleList(layers)` takes one iterable and names each layer by its numeric
+index (`0`, `1`, …), so parameter names resolve to `layers.0.*`, `layers.1.*`,
+and so on.
+
+**Learnable LayerNorm**: The `llama3_modulev3` model builds
+[`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/) when
+`norm_method="layer_norm"`. By default, `LayerNorm` creates a learnable `weight`
+and `bias`. Match its parameters to your checkpoint:
+
+- If the checkpoint has a norm weight but no bias, pass `use_bias=False`.
+  Otherwise, `compile()` raises a `KeyError` for the missing bias.
+- If the checkpoint has no norm parameters, pass `elementwise_affine=False`.
+  The `olmo_modulev3` config sets this through its `norm_elementwise_affine`
+  field.
+
+<!-- invisible-code-block: python
+import types
+self = types.SimpleNamespace()
+config = types.SimpleNamespace(hidden_size=8)
+-->
+
+```python title="{model_name}.py"
+from max.experimental.nn.norm import LayerNorm
+
+self.input_layernorm = LayerNorm(config.hidden_size, use_bias=False)
+```
+
+<!-- invisible-code-block: python
+assert type(self.input_layernorm).__name__ == "LayerNorm"
+-->
+
+With `elementwise_affine=False`, a norm weight in the checkpoint matches no
+parameter, so MAX leaves it out without an error. The norm then runs with a
+constant scale of 1.
+
+When you reuse subcomponents from a reference architecture (attention layers,
+normalization, MLP), check which parameters they define. Build the
+subcomponent under `F.lazy()` and compare its `parameters` with your
+checkpoint's keys before reusing it.
+
+### Implement custom layers
+
+`layers/` holds the individual building blocks that `{model_name}.py` composes
+into the full architecture. Each file in `layers/` implements one component as
+a `Module` subclass. `{model_name}.py` describes how they connect, what the
+residual stream looks like, and how the model loops over layers.
+
+When your architecture requires multiple custom components (custom attention,
+MoE routing, a non-standard transformer block), implement each in a separate
+file in `layers/`. Keep `{model_name}.py` for the root module and the layer
+loop.
+
+A layer can call any operation in `max.experimental.functional`. For a graph op
+or kernel that takes
+[`TensorValue`](/api/python/generated/max.graph.TensorValue/) arguments,
+[`F.functional(fn)`](/api/python/experimental.functional/#max.experimental.functional.functional)
+wraps the function into one that takes and returns `Tensor` values. The
+`functional_kernels` module wraps its kernels this way.
+
+## Run on multiple GPUs
+
+A multi-GPU architecture builds its module on a
+[`DeviceMesh`](/api/python/generated/max.experimental.sharding.DeviceMesh/) in
+`_instantiate_module()`. Constructing the module inside
+[`default_device(mesh)`](/api/python/generated/max.experimental.tensor.default_device/)
+creates each weight on the mesh. `Module.to()` moves a module to one device
+only, and raises for a mesh with more than one device. The `gemma3_modulev3`
+reference architecture builds a one-axis tensor-parallel mesh:
+
+```python title="model.py"
+from max.experimental.sharding import DeviceMesh
+from max.experimental.tensor import default_device
+
+
+def _instantiate_module(self, model_config):
+    mesh = DeviceMesh(tuple(self.devices), (len(self.devices),), ("tp",))
+    with default_device(mesh):
+        return Gemma3(model_config, self.kv_params)
+```
+
+Layers declare how their weights split across the mesh axes.
+`max.experimental.nn.common_layers.linear` provides `ColumnParallelLinear` and
+`RowParallelLinear`, plus `col_parallel()` and `row_parallel()` to shard an
+existing `Linear`. `VocabParallelEmbedding` in
+`max.experimental.nn.common_layers.embedding` splits the vocabulary. The
+sharding picker inserts the collectives that these placements require. For an
+explicit collective, call
+[`F.allreduce_sum()`](/api/python/experimental.functional/#max.experimental.functional.allreduce_sum),
+[`F.allgather()`](/api/python/experimental.functional/#max.experimental.functional.allgather),
+[`F.reduce_scatter()`](/api/python/experimental.functional/#max.experimental.functional.reduce_scatter),
+or
+[`F.transfer_to()`](/api/python/experimental.functional/#max.experimental.functional.transfer_to).
+
+The [parallelism strategies](/serve/parallelism/#supported-strategies) cover how
+MAX splits a served model across several GPUs. Inside an `auto_reshard` block
+you can make each inserted collective visible, or refuse it, while you bring up
+a model.
+
+Set `multi_gpu_supported=True` in `arch.py`. For expert parallelism, the
+`deepseekV3_modulev3` pipeline model overrides `_init_distributed_runtime()`
+to set up an `EPBatchManager`. Its mesh has one axis, named `"dp"` when the
+data-parallel degree is above 1 and `"tp"` otherwise.
+
+## Expose the architecture
+
+The `arch.py` file ties the rest of the package together. It includes one or
+more
+[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
+instances that point MAX at your config class, model class, weight adapters, and
+more. Set `name` to the `architectures[0]` value from your model's
+`config.json`:
+
+<!-- invisible-code-block: python
+from max.pipelines.architectures.olmo3 import weight_adapters
+fake_module("yourpkg.weight_adapters", **vars(weight_adapters))
+__name__ = "yourpkg.arch"
+-->
+
+```python title="arch.py"
+from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.llama3_modulev3.batch_processor import (
+    Llama3ModuleV3BatchProcessor,
+)
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
+
+from . import weight_adapters
+from .model import YourModel
+from .model_config import YourConfig
+
+your_model_arch = SupportedArchitecture(
+    name="YourModelForCausalLM",
+    example_repo_ids=["your-org/your-model"],
+    task=PipelineTask.TEXT_GENERATION,
+    pipeline_model=YourModel,
+    config=YourConfig,
+    default_encoding=YourConfig.DEFAULT_ENCODING,
+    supported_encodings=YourConfig.SUPPORTED_ENCODINGS,
+    tokenizer=TextTokenizer,
+    context_type=TextContext,
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
+    # Reuse the Llama 3 family's batch processor and the paged memory planner.
+    batching=Llama3ModuleV3BatchProcessor,
+    memory_planner=PagedMemoryPlanner,
+    multi_gpu_supported=False,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
+)
+```
+
+<!-- invisible-code-block: python
+fake_module("yourpkg.arch", your_model_arch=your_model_arch)
+assert your_model_arch.pipeline_model is YourModel
+-->
+
+After you create a `SupportedArchitecture` instance, expose it through your
+package's `__init__.py` so MAX can register it when serving:
+
+<!-- invisible-code-block: python
+__name__ = "yourpkg"
+-->
+
+```python title="__init__.py"
+from .arch import your_model_arch
+
+ARCHITECTURES = [your_model_arch]
+```
+
+<!-- invisible-code-block: python
+assert ARCHITECTURES[0].name == "YourModelForCausalLM"
+-->
+
+Most packages expose a single architecture, but you can list more than one
+when:
+
+- There are multiple tasks for the same model. The registry allows entries that
+  share a name as long as their task differs (for example, a text generation
+  architecture and an embedding architecture for the same model).
+
+- There are multiple Hugging Face class names. A single package with related
+  variants whose `config.json` covers a model family might register entries for
+  several `architectures[0]` strings.
+
+## Next steps
+
+With your architecture implemented, see [Serve custom model
+architectures](/develop/serve-custom-model-architectures/) to run a
+generation, package your implementation, and load it at serve time.
+
+If your model requires a kernel that MAX doesn't provide, see
+[Custom ops](/develop/custom-ops/) for the interface, registration, and
+worked examples.
+
+Once your architecture loads and generates text, verify its forward pass
+numerically against a PyTorch reference. See
+[Logit comparison](/develop/logit-comparison/) for quick verification and
+[Layer comparison](/develop/layer-comparison/) to localize the first layer
+that diverges when the logits don't match. To run that per-layer comparison with
+an AI coding agent, use the
+[`debug-model`](/develop/model-bringup-skills/#debug-output-divergences)
+skill.
+
+Once the forward pass matches, confirm the model's task accuracy holds across a
+full benchmark with the
+[`eval-model`](https://github.com/modular/skills/blob/main/eval-model/SKILL.md)
+skill. It runs standard datasets against the served model and compares the
+scores against the original model.

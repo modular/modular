@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from max.driver import Accelerator
+from max.driver import Accelerator, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
@@ -33,6 +33,7 @@ from max.nn.layer import Module
 from max.nn.norm import RMSNorm
 from max.pipelines.architectures.glm5_next.layers.hyper_connection import (
     HyperConnection,
+    StreamMixing,
 )
 from torch_reference import mhc_mapping, mhc_write_back, rms_norm
 
@@ -248,14 +249,15 @@ def test_write_back_matches_reference(
     max_outputs: tuple[torch.Tensor, ...],
     reference_outputs: tuple[torch.Tensor, ...],
 ) -> None:
-    """``streams' = post * y + comb^T @ streams``, in bfloat16.
+    """``streams' = post * y + comb^T @ streams``, landing in bfloat16.
 
-    Both sides round three times -- the outer product, the batched matmul, and
-    their sum -- so agreeing to a fixed tolerance is only half the claim. The
-    second assertion is the load-bearing one: against the same expression
-    evaluated in float64 and rounded once, MAX is no further from the truth than
-    the reference is, which rules out a tolerance wide enough to hide a real
-    error.
+    The reference rounds three times -- the outer product, the batched matmul,
+    and their sum -- and MAX rounds once on AMD (float32 kernel) or the same
+    three times elsewhere, so agreeing to a fixed tolerance is only half the
+    claim. The second assertion is the load-bearing one: against the same
+    expression evaluated in float64 and rounded once, MAX is no further from the
+    truth than the reference is, which rules out a tolerance wide enough to hide
+    a real error.
     """
     post, comb, _, new_streams = max_outputs
     _, _, _, ref_streams = reference_outputs
@@ -273,6 +275,47 @@ def test_write_back_matches_reference(
         f"MAX write-back is {max_error:.3e} from the float64 result while the "
         f"reference is {reference_error:.3e}"
     )
+
+
+@pytest.mark.parametrize(
+    ("hc_mult", "hidden_size", "supported"),
+    [
+        (HC_MULT, HIDDEN_SIZE, True),
+        (HC_MULT, 1024, True),
+        (HC_MULT, 1536, False),
+        (3, HIDDEN_SIZE, False),
+    ],
+)
+def test_write_back_falls_back_outside_the_kernel_limits(
+    hc_mult: int, hidden_size: int, supported: bool
+) -> None:
+    """Shapes ``mhc_post`` rejects build the batched-matmul path instead."""
+    hc = HyperConnection(
+        hidden_size=hidden_size,
+        hc_mult=hc_mult,
+        dtype=DType.bfloat16,
+        sinkhorn_iters=SINKHORN_ITERS,
+        eps=HC_EPS,
+        rms_norm_eps=RMS_NORM_EPS,
+        name="hc_attn",
+    )
+    device = DeviceRef.GPU()
+    with Graph(
+        "Glm5NextWriteBackRouting",
+        input_types=(
+            TensorType(
+                DType.bfloat16, ("t", hc_mult, hidden_size), device=device
+            ),
+            TensorType(DType.bfloat16, ("t", hidden_size), device=device),
+            TensorType(DType.float32, ("t", hc_mult), device=device),
+            TensorType(DType.float32, ("t", hc_mult, hc_mult), device=device),
+        ),
+    ) as graph:
+        streams, y, post, comb = (v.tensor for v in graph.inputs)
+        mixing = StreamMixing(post=post, comb=comb, xs=y)
+        graph.output(hc.write_back(streams, y, mixing))
+    uses_kernel = supported and accelerator_api() == "hip"
+    assert ("mo.mhc.post" in str(graph)) == uses_kernel
 
 
 # `comb / (comb.sum + hc_eps)` has its fixed point at `1 / (1 + hc_eps)`, so a

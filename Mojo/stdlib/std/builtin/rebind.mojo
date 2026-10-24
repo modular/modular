@@ -77,7 +77,7 @@ def rebind[
 
 @inline(.nodebug)
 def rebind_var[
-    src_type: Movable,
+    src_type: AnyType,
     //,
     dest_type: Movable,
 ](var src: src_type, out dest: dest_type):

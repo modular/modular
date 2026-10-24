@@ -44,9 +44,8 @@ modular_py_library(
     # `imports` propagates transitively via PyInfo.
     tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
     deps = [
-        blackwell_bench_wheel("flash-attn"),
-        blackwell_bench_wheel("flashinfer"),
         blackwell_bench_wheel("deep-gemm"),
+        requirement("flashinfer-python"),
         requirement("packaging"),
         requirement("torch"),
         ":bench_decode_lib",
@@ -60,7 +59,12 @@ modular_py_library(
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/nn",
-    ],
+    ] + select({
+        # flash-attn-4 b31 resolves only in the bench lock group; the bench
+        # scripts import it optionally.
+        "//:use_bench_setting": [requirement("flash-attn-4")],
+        "//conditions:default": [],
+    }),
 )
 
 # Softmax benchmark: MAX vs PyTorch
@@ -96,10 +100,13 @@ modular_py_library(
     name = "bench_decode_lib",
     srcs = ["bench_blackwell_decode.py"],
     imports = ["."],
-    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
+    tags = ["no-pydeps"],  # :cutlass-imports is itself off the pydeps enforcer
     deps = [
         "//max/kernels/benchmarks/misc/utils:bench_utils",
-        blackwell_bench_wheel("flashinfer"),
+        # flashinfer's cute-dsl paths import the `cutlass` module, which only
+        # reaches sys.path through :cutlass-imports under Bazel.
+        "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
+        requirement("flashinfer-python"),
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/python/max/driver",
@@ -437,4 +444,41 @@ modular_py_binary(
         "//max/python/max/nn",
         requirement("torch"),
     ],
+)
+
+# MAX's MXFP8 activation quantize against vLLM's; run with
+# `--//:use_vllm=true` for the vLLM arms.
+modular_py_test(
+    name = "bench_mxfp8_quant_vllm",
+    size = "enormous",
+    srcs = ["bench_mxfp8_quant_vllm.py"],
+    env = {
+        # MAX's memory manager would otherwise take what torch needs.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "17179869184",
+    },
+    exec_properties = {"test.resources:gpu-memory": "40"},
+    gpu_constraints = ["//:b200_gpu"],
+    main = "bench_mxfp8_quant_vllm.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-mypy",
+        "no-pydeps",
+    ],
+    deps = [
+        ":gpu_telemetry",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
+    ] + select({
+        "//:use_vllm_setting": [
+            requirement("flashinfer-python"),
+            requirement("nvidia-cutlass-dsl"),
+            requirement("vllm"),
+        ],
+        "//conditions:default": [],
+    }),
 )

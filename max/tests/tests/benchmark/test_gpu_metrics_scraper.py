@@ -90,6 +90,7 @@ def test_parse_dcgm_metrics_builds_per_gpu_stats() -> None:
     gpu0 = stats["GPU-aaa"]
     assert gpu0.utilization.gpu_usage_percent == 85
     assert gpu0.utilization.memory_activity_percent == 30
+    assert gpu0.memory is not None
     assert gpu0.memory.used_bytes == 40000 * _MIB
     assert gpu0.memory.free_bytes == 41000 * _MIB
     assert gpu0.memory.total_bytes == 81000 * _MIB

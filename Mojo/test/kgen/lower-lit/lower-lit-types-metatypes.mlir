@@ -59,3 +59,28 @@ lit.fn @test_my_container() -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   hlcf.return %none : !kgen.none
 }
+
+// -----
+
+// A `!kgen.struct` with no domain is a value representation wherever it is in a
+// type value, at the root or nested under another type, and a layout in the
+// type's MLIR type.
+
+lit.struct.decl @Elem {
+  lit.struct.field x: index
+}
+
+kgen.generator @takes_type<T: type>() {
+  hlcf.return
+}
+
+// CHECK-LABEL: kgen.generator @struct_domains_in_type_values
+kgen.generator @struct_domains_in_type_values() {
+  // CHECK-NEXT: call @takes_type<:type [struct<{{\[\[}}typevalue<#kgen.genref<@Elem>>, struct<(index) memoryOnly>{{\]\]}} value>, struct<(struct<(index) memoryOnly>)>]>()
+  kgen.call @takes_type<:type !kgen.struct<[!lit.struct<@Elem>]>>() : () -> ()
+  // CHECK-NEXT: call @takes_type<:type [pointer<struct<{{\[\[}}typevalue<#kgen.genref<@Elem>>, struct<(index) memoryOnly>{{\]\]}} value>>, pointer<struct<(struct<(index) memoryOnly>)>>]>()
+  kgen.call @takes_type<:type !kgen.pointer<!kgen.struct<[!lit.struct<@Elem>]>>>() : () -> ()
+  // CHECK-NEXT: call @takes_type<:type [struct<[index, f32] value>, struct<(index, f32)>]>()
+  kgen.call @takes_type<:type !kgen.struct<[index, f32]>>() : () -> ()
+  hlcf.return
+}

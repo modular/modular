@@ -27,6 +27,7 @@ from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.collections import List
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 from graph_utils import (
     UNVISITED,
@@ -39,13 +40,13 @@ comptime BLOCK_SIZE = 256
 
 
 def bfs_kernel(
-    src_ptrs: UnsafePointer[UInt32, MutAnyOrigin],
-    dst: UnsafePointer[UInt32, MutAnyOrigin],
-    level: UnsafePointer[UInt32, MutAnyOrigin],
-    prev_frontier: UnsafePointer[UInt32, MutAnyOrigin],
-    curr_frontier: UnsafePointer[UInt32, MutAnyOrigin],
+    src_ptrs: MutPointer[UInt32, MutAnyOrigin],
+    dst: MutPointer[UInt32, MutAnyOrigin],
+    level: MutPointer[UInt32, MutAnyOrigin],
+    prev_frontier: MutPointer[UInt32, MutAnyOrigin],
+    curr_frontier: MutPointer[UInt32, MutAnyOrigin],
     num_prev_frontier_dev: Int32,
-    num_curr_frontier: UnsafePointer[UInt32, MutAnyOrigin],
+    num_curr_frontier: MutPointer[UInt32, MutAnyOrigin],
     curr_level: UInt32,
 ):
     """BFS kernel: frontier-based traversal with atomic operations."""
@@ -83,7 +84,7 @@ def main() raises:
     var num_edges = len(dst)
     print("Graph has", num_edges, "edges")
 
-    var h_level = alloc[UInt32](NUM_VERTICES)
+    var h_level = unsafe_alloc[UInt32](NUM_VERTICES)
     for i in range(NUM_VERTICES):
         h_level[i] = UNVISITED
 
@@ -98,8 +99,8 @@ def main() raises:
     var d_curr_frontier = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES * 2)
     var d_num_curr_frontier = ctx.enqueue_create_buffer[.uint32](1)
 
-    var h_src_ptrs = alloc[UInt32](NUM_VERTICES + 1)
-    var h_dst = alloc[UInt32](num_edges)
+    var h_src_ptrs = unsafe_alloc[UInt32](NUM_VERTICES + 1)
+    var h_dst = unsafe_alloc[UInt32](num_edges)
     for i in range(NUM_VERTICES + 1):
         h_src_ptrs[i] = src_ptrs[i]
     for i in range(num_edges):
@@ -109,20 +110,20 @@ def main() raises:
     ctx.enqueue_copy(d_dst, h_dst)
     ctx.enqueue_copy(d_level, h_level)
 
-    var h_frontier = alloc[UInt32](1)
+    var h_frontier = unsafe_alloc[UInt32](1)
     h_frontier[0] = UInt32(start_vertex)
     ctx.enqueue_copy(d_prev_frontier, h_frontier)
-    h_frontier.free()
+    h_frontier.unsafe_free()
 
     var num_prev_frontier = 1
     var curr_level: UInt32 = 1
 
     print("Running BFS...")
     while num_prev_frontier > 0:
-        var h_zero = alloc[UInt32](1)
+        var h_zero = unsafe_alloc[UInt32](1)
         h_zero[0] = 0
         ctx.enqueue_copy(d_num_curr_frontier, h_zero)
-        h_zero.free()
+        h_zero.unsafe_free()
 
         var grid_size = ceildiv(num_prev_frontier, BLOCK_SIZE)
         if grid_size == 0:
@@ -142,11 +143,11 @@ def main() raises:
         )
         ctx.synchronize()
 
-        var h_num = alloc[UInt32](1)
+        var h_num = unsafe_alloc[UInt32](1)
         ctx.enqueue_copy(h_num, d_num_curr_frontier)
         ctx.synchronize()
         num_prev_frontier = Int(h_num[0])
-        h_num.free()
+        h_num.unsafe_free()
 
         var temp = d_prev_frontier
         d_prev_frontier = d_curr_frontier
@@ -168,6 +169,6 @@ def main() raises:
     else:
         print("Figure 18.12 BFS Failed!")
 
-    h_level.free()
-    h_src_ptrs.free()
-    h_dst.free()
+    h_level.unsafe_free()
+    h_src_ptrs.unsafe_free()
+    h_dst.unsafe_free()

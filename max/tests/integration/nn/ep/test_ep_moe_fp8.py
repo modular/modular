@@ -229,7 +229,7 @@ def test_ep_moe_fp8(
 
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
 
-        graph.output(*outputs)
+        graph.output(outputs)
 
     # Compile and execute
     compiled = session.load(graph, weights_registry=moe.state_dict())

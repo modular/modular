@@ -124,12 +124,10 @@ def gemm_kernel[
             # Project the warp layout's row index onto A and its column index
             # onto B; `distribute` wraps the thread id modulo the layout size.
             a_reg.copy_from(
-                a_smem_warp_col.distribute[row_major[8]()](
-                    Int(thread_idx.x) // 4
-                )
+                a_smem_warp_col.distribute[row_major[8]()](thread_idx.x // 4)
             )
             b_reg.copy_from(
-                b_smem_warp_row.distribute[row_major[4]()](Int(thread_idx.x))
+                b_smem_warp_row.distribute[row_major[4]()](thread_idx.x)
             )
             outer_product_acc(c_reg, a_reg, b_reg)
 
@@ -503,15 +501,11 @@ def matmul_kernel_naive[
 
     comptime if transpose_b:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
-                Scalar[s_type]
-            ](b[y, i].cast[s_type]())
+            accum += a[x, i].cast[s_type]() * b[y, i].cast[s_type]()
 
     else:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
-                Scalar[s_type]
-            ](b[i, y].cast[s_type]())
+            accum += a[x, i].cast[s_type]() * b[i, y].cast[s_type]()
 
     comptime assert c.flat_rank >= 2
     c[x, y] = accum.cast[c.dtype]()

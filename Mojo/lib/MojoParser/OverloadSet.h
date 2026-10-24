@@ -75,8 +75,20 @@ public:
   /// The function overload set that may be called directly.
   SmallVector<ASTDecl *, 1> fnDecls;
 
-  /// Any bound parameters as well as the callExpr overall this represents.
-  ParamBindings paramBindings;
+  /// The parameters bound explicitly at the use site (e.g. `Int` in
+  /// `x.foo[Int]`) along with the binding kind, as well as the callExpr overall
+  /// this represents. Use getParamBindings() for the complete set of bindings.
+  ParamBindings explicitParamBindings;
+
+  /// The type the candidates are referenced through, e.g.,
+  ///  ```mojo
+  ///  comptime Alias[T : AnyType] = ST[T, T]
+  ///  Alias.method()
+  ///  ```
+  ///
+  /// in order to call `method` above. We need to inherited parameters from the
+  /// contextual type `Alias`.
+  ASTType contextualType;
 
   /// This is syntax how this overload set was formed.
   CallSyntax syntax;
@@ -86,7 +98,7 @@ public:
   ASTType selfResultType;
 
   /// Facts that hold at this call site but are not reachable from
-  /// `paramBindings.declScope`'s lexical assumptions. These are used as
+  /// `explicitParamBindings.declScope`'s lexical assumptions. These are used as
   /// assumptions when discharging candidates' constraints.
   SmallVector<ConstraintAttr> additionalAssumptions;
 
@@ -103,7 +115,7 @@ public:
   /// parameter bindings. The parameter bindings are taken ownership of.
   OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
               ParamBindings &&paramBindings, CallSyntax syntax,
-              bool erroneous = false);
+              ASTType contextualType = {}, bool erroneous = false);
   OverloadSet(OverloadSet &&other) = default;
 
   /// Form an OverloadSet with a lookup of a named method on the specified type,
@@ -113,6 +125,8 @@ public:
   /// On failure, this returns a null OverloadSet and invokes errorHandler if
   /// the problem hasn't already been diagnosed and it is non-null. This does
   /// not emit an error on failure.
+  ///
+  /// The result's `contextualType` is set to `type`.
   static OverloadSet lookup(ASTDecl &declScope, ASTType type,
                             StringRef methodName, const ExprNode *callExpr,
                             CallSyntax syntax,
@@ -149,10 +163,20 @@ public:
   /// lookup results when processing to find further errors.
   bool isErroneous() const { return erroneous; }
 
-  ASTDecl &getDeclScope() const { return paramBindings.declScope; }
-  SharedState &getShared() const { return paramBindings.shared; }
-  const ExprNode *getExpr() const { return paramBindings.getExpr(); }
+  ASTDecl &getDeclScope() const { return explicitParamBindings.declScope; }
+  SharedState &getShared() const { return explicitParamBindings.shared; }
+  const ExprNode *getExpr() const { return explicitParamBindings.getExpr(); }
   SMLoc getExprLoc() const;
+
+  /// Returns the type `candidate` is referenced through: `contextualType`, or
+  /// its nonmaterializable target when `candidate` is a member of that target.
+  /// Lookup also collects the target's methods, e.g. `Int` methods for an
+  /// `IntLiteral` receiver.
+  ASTType getContextualType(ASTDecl *candidate) const;
+
+  /// Return the bindings derived from `candidate`'s contextual type followed by
+  /// `explicitParamBindings`.
+  ParamBindings getParamBindings(ASTDecl *candidate) const;
 
   /// Perform substitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
@@ -263,8 +287,9 @@ public:
 
 private:
   OverloadSet(ASTDecl &declScope, const ExprNode *expr, CallSyntax syntax,
-              bool erroneous)
-      : paramBindings(declScope, expr), syntax(syntax), erroneous(erroneous) {}
+              bool erroneous, ASTType contextualType = {})
+      : explicitParamBindings(declScope, expr), contextualType(contextualType),
+        syntax(syntax), erroneous(erroneous) {}
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

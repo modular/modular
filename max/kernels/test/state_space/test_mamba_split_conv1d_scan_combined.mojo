@@ -416,7 +416,7 @@ def run_mamba_split_conv1d_scan_combined[
 def test_mamba_combined_basic() raises:
     """Test basic mamba_split_conv1d_scan_combined."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -438,7 +438,7 @@ def test_mamba_combined_basic() raises:
 def test_mamba_combined_headdim1_multi_head_D() raises:
     """With headdim == 1, D is (nheads, 0); each head needs its own D."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -460,7 +460,7 @@ def test_mamba_combined_headdim1_multi_head_D() raises:
 def test_mamba_combined_without_D() raises:
     """Test mamba_split_conv1d_scan_combined without D."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=False,
         has_rmsnorm=False,
@@ -482,7 +482,7 @@ def test_mamba_combined_without_D() raises:
 def test_mamba_combined_with_rmsnorm() raises:
     """Test mamba_split_conv1d_scan_combined with RMSNorm."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=True,
@@ -504,7 +504,7 @@ def test_mamba_combined_with_rmsnorm() raises:
 def test_mamba_combined_norm_after_gate() raises:
     """Test mamba_split_conv1d_scan_combined with norm_after_gate."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -526,7 +526,7 @@ def test_mamba_combined_norm_after_gate() raises:
 def test_mamba_combined_without_delta_softplus() raises:
     """Test mamba_split_conv1d_scan_combined without delta_softplus."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -548,7 +548,7 @@ def test_mamba_combined_without_delta_softplus() raises:
 def test_mamba_combined_larger_shapes() raises:
     """Test mamba_split_conv1d_scan_combined with larger shapes."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         8,  # DSTATE
         has_D=True,
         has_rmsnorm=False,

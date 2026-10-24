@@ -58,15 +58,16 @@ end-to-end correctness coverage.
 """
 
 from std.math import ceildiv
-from std.utils import Index
 
 from max.gpu.host import DeviceContext
 
 from layout import TileTensor
 
 from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
 )
 from linalg.matmul.gpu.amd.amd_4wave_matmul import (
     AMD4WaveMatmul,
@@ -138,21 +139,16 @@ def amd_4wave_conv[
     a_type: DType,
     b_type: DType,
     c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     enable_swizzle: Bool = True,
     block_m_override: Int = 0,
     block_n_override: Int = 0,
     block_k_override: Int = 0,
     dump_asm_path: StaticString = "",
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    # Pre-residual fused compute lambda. Fires on the post-cast
-    # `c_type` MMA output BEFORE the residual FMA. Use for bias /
-    # ReLU / SiLU / GELU fusion. Matches the SM100 reference
-    # `D = lambda(Conv(A,B)) + beta * C` semantics. Signature
-    # `(Coord, SIMD) capturing -> SIMD`.
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     # Opt-in in-kernel residual: when True, the kernel bulk-prefetches
     # `source_ptr[m, n]` into VGPRs at the start of the epilogue and
     # applies `out = mma + beta * source` before the store. Replaces
@@ -209,11 +205,13 @@ def amd_4wave_conv[
     # by the kernel only when has_residual=False — the args are then
     # dead-code-eliminated by the compiler (still in the launch packet,
     # 16 bytes overhead per launch).
-    source_ptr: UnsafePointer[Scalar[c_type], ImmutAnyOrigin] = UnsafePointer[
+    source_ptr: ImmPointer[Scalar[c_type], ImmutAnyOrigin] = ImmPointer[
         Scalar[c_type], ImmutAnyOrigin
     ].unsafe_dangling(),
     source_row_stride: Int = 0,
     beta: Float32 = 0.0,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Launches the 4-wave implicit-GEMM convolution on the device.
 
@@ -235,6 +233,8 @@ def amd_4wave_conv[
             `float8_e4m3fn`, `bfloat16`, `float16`.
         b_type: Filter element type.
         c_type: Output element type.
+        EpilogueFnType: Type of `epilogue_fn`.
+        ComputeFnType: Type of `compute_fn`.
         enable_swizzle: Enable LDS bank-conflict avoidance.
         block_m_override: If > 0, force BM (must be 64 or 128).
         block_n_override: If > 0, force BN (must be 64, 128, or 256).
@@ -242,12 +242,10 @@ def amd_4wave_conv[
             `MMA_K` (32 for bf16/fp16, 128 for FP8) and in
             {32, 64, 128}. Default 0 → auto-pick.
         dump_asm_path: If non-empty, dump compiled GCN assembly to path.
-        elementwise_lambda_fn: Optional fused epilogue lambda.
-        elementwise_compute_lambda_fn: Optional pre-residual fused
-            compute lambda. Fires on the post-cast `c_type` MMA output
-            BEFORE the residual FMA, matching the SM100
-            `D = lambda(Conv(A,B)) + beta * C` ordering. Use for
-            bias / ReLU / SiLU / GELU fusion.
+        has_epilogue_fn: Whether `epilogue_fn` stores each output chunk
+            instead of the kernel.
+        has_compute_fn: Whether `compute_fn` transforms each output
+            chunk before the residual add.
         has_residual: When True, the kernel bulk-prefetches
             `source_ptr[m, n]` into VGPRs at the start of the epilogue
             and applies `out = mma + beta * source` before the store.
@@ -304,6 +302,12 @@ def amd_4wave_conv[
             `has_residual=False`.
         beta: Residual scale factor (`D = Conv + beta * source`).
             Unused when `has_residual=False`.
+        epilogue_fn: Post-residual epilogue that stores each output
+            chunk. Used when `has_epilogue_fn` is set.
+        compute_fn: Pre-residual compute epilogue applied to the
+            post-cast `c_type` MMA output, matching the SM100
+            `D = lambda(Conv(A,B)) + beta * C` ordering. Use for bias /
+            ReLU / SiLU / GELU fusion. Used when `has_compute_fn` is set.
 
     Raises:
         An error if device enqueue fails.
@@ -369,7 +373,6 @@ def amd_4wave_conv[
             c_type,
             config,
             enable_swizzle,
-            elementwise_lambda_fn=elementwise_lambda_fn,
         ].run_conv2d[
             conv_cfg,
             a.LayoutType,
@@ -378,8 +381,11 @@ def amd_4wave_conv[
             a.Engine,
             b.Engine,
             c.Engine,
+            EpilogueFnType,
+            ComputeFnType,
             has_residual=has_residual,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ]
 
         # 1D launch grid for the HK chiplet/L2 swizzle. The kernel
@@ -394,6 +400,7 @@ def amd_4wave_conv[
                 source_ptr,
                 Int32(source_row_stride),
                 beta,
+                host_args=(epilogue_fn, compute_fn),
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )
@@ -405,6 +412,7 @@ def amd_4wave_conv[
                 source_ptr,
                 Int32(source_row_stride),
                 beta,
+                host_args=(epilogue_fn, compute_fn),
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )
@@ -431,9 +439,9 @@ def amd_4wave_conv[
             BN_o >= BM_o
         ), "block_n_override must be >= block_m_override (BN < BM is broken)"
         comptime config_override = MatmulKernelConfig(
-            block_shape=Index(BM_o, BN_o, _bk),
-            warp_shape=Index(BM_o // 2, BN_o // 2, _bk),
-            mma_shape=Index(16, 16, _mma_k),
+            block_shape=(BM_o, BN_o, _bk),
+            warp_shape=(BM_o // 2, BN_o // 2, _bk),
+            mma_shape=(16, 16, _mma_k),
         )
         run_kernel[config_override]()
         return
@@ -444,14 +452,14 @@ def amd_4wave_conv[
     # default for the prefill regime — production dispatchers should
     # pin tile shape via the overrides).
     comptime config_64 = MatmulKernelConfig(
-        block_shape=Index(64, 64, _bk),
-        warp_shape=Index(32, 32, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+        block_shape=(64, 64, _bk),
+        warp_shape=(32, 32, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
     comptime config_128 = MatmulKernelConfig(
-        block_shape=Index(128, 128, _bk),
-        warp_shape=Index(64, 64, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+        block_shape=(128, 128, _bk),
+        warp_shape=(64, 64, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
 
     comptime if _is_fp8:

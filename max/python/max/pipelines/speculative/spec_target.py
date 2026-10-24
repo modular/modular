@@ -10,29 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The target-side contract a spec-decode driver verifies through.
+"""What a spec-decode driver's verify callable returns.
 
 A target is the model being verified, so nothing here depends on how the draft
 proposes. The drafting strategy shows up in one place only: which batch type
-the driver hands :meth:`SpecDecodeTarget.verify`.
+the driver hands its verify callable.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Generic, Protocol
+from collections.abc import Callable
+from functools import partial
+from typing import Any, Generic
 
 from max import tree
-from max.graph import BufferType, TensorType, TensorValue
+from max.graph import TensorValue
 from typing_extensions import TypeVar
 
-__all__ = ["SpecDecodeTarget", "Verified"]
+__all__ = ["DistributedVerify", "Verified"]
 
 _TargetHiddenT = TypeVar("_TargetHiddenT")
 """The target's hidden-state payload, opaque to whichever driver carries it."""
-
-_BatchT = TypeVar("_BatchT", contravariant=True)
-"""The driver's batch type. Contravariant: ``verify`` only consumes it."""
 
 _LogitsT = TypeVar("_LogitsT", default=TensorValue)
 """The logits' value type: a graph value, or an experimental ``Tensor``."""
@@ -51,15 +49,22 @@ class Verified(Generic[_TargetHiddenT, _LogitsT]):
 
     logits: _LogitsT
     hidden: _TargetHiddenT
+    roll_forward: Callable[[Any], None] | None = None
+    """Lands state no cache length rewinds on the accepted prefix, for a
+    target that keeps any. The driver calls it with its batch once the
+    accepted count is set, before the draft runs."""
+    replica_logits: list[_LogitsT] | None = None
+    """The verify logits each data-parallel replica's leader holds for its own
+    rows, ``[rows * (num_steps + 1), vocab]``, for a driver that judges the
+    proposals where the rows live. ``None`` when only :attr:`logits` exists."""
 
 
-class SpecDecodeTarget(Protocol[_BatchT, _TargetHiddenT, _LogitsT]):
-    """The target model's entry point and output layout."""
+class DistributedVerify(partial[Verified[Any]]):
+    """A verify that reads the distributed inputs.
 
-    def verify(self, batch: _BatchT) -> Verified[_TargetHiddenT, _LogitsT]:
-        """Runs the target over the merged prompt + draft tokens."""
-        ...
+    Those are the host row offsets, data-parallel splits, per-device context
+    lengths and expert-parallel buffers. A fused graph declares them only
+    when its verify or its proposer reads them.
+    """
 
-    def ep_input_types(self) -> Sequence[TensorType | BufferType]:
-        """Expert-parallel input types to append to the graph signature."""
-        ...
+    takes_distributed_inputs = True

@@ -14,7 +14,6 @@
 Implements blockwise scaled FP8 matrix multiplication kernels targeting the
 NVIDIA SM100 (Blackwell) architecture using 1D A-scales and 2D B-scales.
 """
-from std.collections import Optional
 from std.math import ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of
@@ -29,6 +28,7 @@ from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord, TensorLayout, TileTensor, coord, row_major
+from layout.tensor_engine import TensorEngine
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
 )
@@ -47,7 +47,12 @@ from std.utils.static_tuple import StaticTuple
 from internal_utils.fp8_utils import cast_saturating
 
 from ....arch.sm100 import MmaOpSM100_SS
-from ....utils import elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 comptime logger = Logger()
 
@@ -56,6 +61,9 @@ comptime logger = Logger()
     t"matmul_sm100_blockwise_scaled_fp8_1d2d_{a_type}_{b_type}_{c_type}",
 )
 def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -65,6 +73,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
+    c_engine: TensorEngine,
+    b_scales_engine: TensorEngine,
     a_tile_shape: Coord,
     a_desc_shape: Coord,
     b_tile_shape: Coord,
@@ -78,21 +88,26 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     # B-scale N-direction block size; defaults to 128 to match the
     # original DeepSeek-style (n_g=k_g=128) callers. Set to a smaller
     # value (e.g. 64) when N-direction scale granularity is finer than
     # the kernel's BK.
     b_scaling_block_n: Int = 128,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
-    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[
+        b_scales_type, b_scales_layout, ImmutAnyOrigin, Engine=b_scales_engine
+    ],
     num_iters: Int32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     var _num_iters = Int(num_iters)
     comptime assert transpose_b, "Only support transposed B"
@@ -161,8 +176,10 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         (a_scales_size * size_of[a_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
-    var a_scales_smem = (b_smem + b_size).bitcast[Scalar[a_scales_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
+    var a_scales_smem = b_smem.unsafe_offset(b_size).unsafe_bitcast[
+        Scalar[a_scales_type]
+    ]()
 
     # 3D view of the same shared memory tile are used for TMA loads
     # 2D view of the same shared memory tile are used for MMA operations
@@ -197,15 +214,19 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     var a_scales_smem_tile_2D_view = a_scales_smem_tiles[0]
     var a_scales_smem_tile_3D_view = _to_batched_3d(a_scales_smem_tile_2D_view)
 
-    var ptr_tmem_addr = (a_scales_smem + a_scales_size).bitcast[UInt32]()
+    var ptr_tmem_addr = a_scales_smem.unsafe_offset(
+        a_scales_size
+    ).unsafe_bitcast[UInt32]()
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime a_scales_expected_bytes = a_scales_size * size_of[a_scales_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -298,11 +319,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         tma_mbar[0].wait(tma_phase)
         tma_phase ^= 1  # flips between 0 and 1 representing the pipeline stage
 
-        # Preload a_scales from SMEM into registers while all threads
-        # are synchronized (right after tma_mbar.wait). This eliminates
-        # the SMEM read in the scaling loop below, preventing a race
-        # where the next iteration's TMA loads could overwrite a_scales
-        # in SMEM while slower warps are still reading it.
+        # Preload a_scales into registers so the scaling loop below reads no
+        # SMEM.
         var m_offset = warp_id * 16 + ufloordiv(lane_id(), 4)
         var a_scale_0 = a_scales_smem_tile_2D_view[0, m_offset]
         var a_scale_1 = a_scales_smem_tile_2D_view[0, m_offset + 8]
@@ -319,13 +337,6 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
-
-        # Ensure all warps have finished reading a_scales from SMEM
-        # (preloaded above) before the scaling loop, where warp divergence
-        # could let the fastest warp loop back and start new TMA loads
-        # that overwrite a_scales_smem. This barrier is effectively free
-        # because all warps just converged at mma_mbar.wait().
-        barrier()
 
         comptime for ld_iter in range(total_repeat // repeat):
             c_frag_temp = tcgen05_ld[
@@ -384,6 +395,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 var result = c_pair + t_pair * scale_pair
                 c_frag[idx] = result[0]
                 c_frag[idx + 1] = result[1]
+
+        # Warp 0 issues the next TMA and MMA, and the TMEM dealloc, as soon
+        # as its own loads finish: every warp must be done reading the
+        # accumulator and A scales first.
+        barrier()
 
     if elect_one_warp:
         tcgen05_release_allocation_lock[1]()
@@ -451,9 +467,15 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                             )
                         )
 
-                        comptime if case .Some(ep) = elementwise_lambda_fn:
-                            comptime alignment = align_of[SIMD[c_type, 2]]()
-                            ep[alignment=alignment]((Int(m), Int(n)), c_mn)
+                        comptime alignment = align_of[SIMD[c_type, 2]]()
+                        comptime if has_epilogue_fn:
+                            epilogue_fn[c_type, 2, alignment=alignment](
+                                (Int(m), Int(n)), c_mn
+                            )
+                        elif has_compute_fn:
+                            c_gmem_frag[m_vec, n_vec] = compute_fn[
+                                c_type, 2, alignment=alignment
+                            ]((Int(m), Int(n)), c_mn)
                         else:
                             c_gmem_frag[m_vec, n_vec] = c_mn
 
@@ -463,7 +485,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
 @__name(
-    t"matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper_{a_type}_{b_type}_{c_type}",
+    t"matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper_{a_type}_{b_type}_{c_type}{"_epilogue_fn" if has_epilogue_fn else ""}{"_compute_fn" if has_compute_fn else ""}",
 )
 def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     a_type: DType,
@@ -475,6 +497,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
+    c_engine: TensorEngine,
+    b_scales_engine: TensorEngine,
     a_tile_shape: Coord,
     a_desc_shape: Coord,
     b_tile_shape: Coord,
@@ -488,17 +512,25 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_scaling_block_n: Int = 128,
+    *,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
-    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[
+        b_scales_type, b_scales_layout, ImmutAnyOrigin, Engine=b_scales_engine
+    ],
     num_iters: Int32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     var _num_iters2 = Int(
         num_iters
@@ -517,6 +549,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         c_layout,
         a_scales_layout,
         b_scales_layout,
+        c_engine,
+        b_scales_engine,
         a_tile_shape,
         a_desc_shape,
         b_tile_shape,
@@ -529,8 +563,9 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=num_threads,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         b_scaling_block_n=b_scaling_block_n,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
     ](
         a_tma_op,
         b_tma_op,
@@ -538,6 +573,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         a_scales_tma_op,
         b_scales,
         num_iters,
+        epilogue_fn,
+        compute_fn,
     )
 
 
@@ -548,7 +585,6 @@ def matmul_sm100_blockwise_scaled_fp8[
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor,
     a: TileTensor,
@@ -578,9 +614,6 @@ def matmul_sm100_blockwise_scaled_fp8[
             (defaults to `TensorMapSwizzle.SWIZZLE_128B`).
         b_swizzle: TMA swizzle mode applied to B shared memory loads
             (defaults to `TensorMapSwizzle.SWIZZLE_128B`).
-        elementwise_lambda_fn: Optional elementwise epilogue lambda applied
-            to each output element of `c` in place of a direct store
-            (defaults to `None`).
 
     Args:
         c: Rank-2 output `TileTensor` accumulating the scaled GEMM result.
@@ -592,6 +625,141 @@ def matmul_sm100_blockwise_scaled_fp8[
             elements and 2D scaling granularity along N and K.
         ctx: Device context used to enqueue the kernel launch.
     """
+    _matmul_sm100_blockwise_scaled_fp8_impl[
+        transpose_b=transpose_b,
+        umma_shape=umma_shape,
+        block_tile_shape=block_tile_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+    ](c, a, b, a_scales, b_scales, no_epilogue_fn, no_compute_fn, ctx)
+
+
+def matmul_sm100_blockwise_scaled_fp8[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_b: Bool,
+    umma_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+](
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Enqueues a blockwise scaled FP8 GEMM on SM100 (see the other
+    overload), delivering each output value to an epilogue closure instead
+    of writing `c`.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn`.
+        transpose_b: Whether B is loaded transposed; must be `True`.
+        umma_shape: 3D MMA instruction shape `(MMA_M, MMA_N, MMA_K)`.
+        block_tile_shape: 3D block tile shape `(BM, BN, BK)`.
+        a_swizzle: TMA swizzle mode applied to A shared memory loads.
+        b_swizzle: TMA swizzle mode applied to B shared memory loads.
+
+    Args:
+        c: Rank-2 output `TileTensor`; only its shape is read.
+        a: Rank-2 `TileTensor` of A operands with `float8_e4m3fn` elements.
+        b: Rank-2 `TileTensor` of B operands with `float8_e4m3fn` elements.
+        a_scales: Rank-2 `TileTensor` of A scale factors.
+        b_scales: Rank-2 `TileTensor` of B scale factors.
+        epilogue_fn: Stores each output value at its global `(m, n)`.
+        ctx: Device context used to enqueue the kernel launch.
+    """
+    _matmul_sm100_blockwise_scaled_fp8_impl[
+        transpose_b=transpose_b,
+        umma_shape=umma_shape,
+        block_tile_shape=block_tile_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](c, a, b, a_scales, b_scales, epilogue_fn, no_compute_fn, ctx)
+
+
+def matmul_sm100_blockwise_scaled_fp8[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool,
+    umma_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+](
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Enqueues a blockwise scaled FP8 GEMM on SM100 (see the other
+    overload), storing `compute_fn(idx, value)` into `c`.
+
+    Parameters:
+        ComputeFnType: Type of `compute_fn`.
+        transpose_b: Whether B is loaded transposed; must be `True`.
+        umma_shape: 3D MMA instruction shape `(MMA_M, MMA_N, MMA_K)`.
+        block_tile_shape: 3D block tile shape `(BM, BN, BK)`.
+        a_swizzle: TMA swizzle mode applied to A shared memory loads.
+        b_swizzle: TMA swizzle mode applied to B shared memory loads.
+
+    Args:
+        c: Rank-2 output `TileTensor` accumulating the scaled GEMM result.
+        a: Rank-2 `TileTensor` of A operands with `float8_e4m3fn` elements.
+        b: Rank-2 `TileTensor` of B operands with `float8_e4m3fn` elements.
+        a_scales: Rank-2 `TileTensor` of A scale factors.
+        b_scales: Rank-2 `TileTensor` of B scale factors.
+        compute_fn: Transforms each output value before it is stored.
+        ctx: Device context used to enqueue the kernel launch.
+    """
+    _matmul_sm100_blockwise_scaled_fp8_impl[
+        transpose_b=transpose_b,
+        umma_shape=umma_shape,
+        block_tile_shape=block_tile_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+    ](c, a, b, a_scales, b_scales, no_epilogue_fn, compute_fn, ctx)
+
+
+def _matmul_sm100_blockwise_scaled_fp8_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool,
+    umma_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either an epilogue or a compute closure, not both"
     comptime assert transpose_b, "Only support transposed B"
 
     comptime a_type = type_of(a).dtype
@@ -722,6 +890,8 @@ def matmul_sm100_blockwise_scaled_fp8[
         type_of(c_kernel).LayoutType,
         type_of(a_scales_3D).LayoutType,
         type_of(b_scales_kernel).LayoutType,
+        type_of(c_kernel).Engine,
+        type_of(b_scales_kernel).Engine,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
         type_of(b_tma_op).tile_shape,
@@ -734,7 +904,10 @@ def matmul_sm100_blockwise_scaled_fp8[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=block_dim,
-        elementwise_lambda_fn=elementwise_lambda_fn,
+        EpilogueFnType=EpilogueFnType,
+        ComputeFnType=ComputeFnType,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
     ]
 
     ctx.enqueue_function[kernel](
@@ -744,6 +917,7 @@ def matmul_sm100_blockwise_scaled_fp8[
         a_scales_tma_op,
         b_scales_kernel,
         Int32(ceildiv(Int(K), BK)),
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=(ceildiv(Int(N), BN), ceildiv(Int(M), BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

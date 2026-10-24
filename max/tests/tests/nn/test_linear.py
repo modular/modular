@@ -17,6 +17,8 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
+from max.graph.quantization import QuantizationEncoding
+from max.nn import linear as nn_linear
 from max.nn.linear import Linear
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -526,3 +528,27 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
         assert linear2.weight_scale is not None
         assert linear2.weight_scale.sharding_strategy is not None
         assert linear2.weight_scale.sharding_strategy.is_replicate
+
+
+def test_linear_out_dtype() -> None:
+    """`linear` returns `out_dtype` from an unquantized weight and refuses it
+    with a quantized one."""
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.bfloat16, (8, 64), device=DeviceRef.CPU()),
+            TensorType(DType.bfloat16, (16, 64), device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, w = (v.tensor for v in graph.inputs)
+        assert nn_linear.linear(x, w).dtype == DType.bfloat16
+        out = nn_linear.linear(x, w, out_dtype=DType.float32)
+        assert out.dtype == DType.float32
+        assert tuple(int(d) for d in out.shape) == (8, 16)
+        with pytest.raises(ValueError, match="out_dtype"):
+            nn_linear.linear(
+                x,
+                w,
+                quantization_encoding=QuantizationEncoding.Q4_0,
+                out_dtype=DType.float32,
+            )

@@ -19,13 +19,13 @@ convolution around each sublayer and a top-k candidate-path selector.
 from .arch import dflash2_qwen3_5_arch
 from .dflash2_qwen3_5 import DFlash2Qwen3_5, DFlash2TransformerBlock
 from .layers import DFlash2CandidateSelector, DFlash2GroupedConv
-from .model import DFlash2Qwen3_5Model
+from .model import DFlash2Qwen3_5ArchConfig
 
 __all__ = [
     "DFlash2CandidateSelector",
     "DFlash2GroupedConv",
     "DFlash2Qwen3_5",
-    "DFlash2Qwen3_5Model",
+    "DFlash2Qwen3_5ArchConfig",
     "DFlash2TransformerBlock",
     "dflash2_qwen3_5_arch",
 ]

@@ -24,17 +24,20 @@
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/MojoTooling/PublicASTDecl.h"
+#include "Mojo/Precompile/Precompile.h"
 #include "Mojo/Support/CLOptionUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/Support/Configuration.h"
 #include "Mojo/Support/Constants.h"
 #include "Mojo/Support/ForceLinkMLIRC.h"
+#include "Mojo/Support/MojoPrecompiledFile.h"
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "Mojo/ToolCommon/Debug.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Filesystem/Paths.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/Process.h"
@@ -48,6 +51,8 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
+
+#include <filesystem>
 
 using namespace M;
 using namespace KGEN;
@@ -425,7 +430,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     config.parserListener = &lspListener;
 
     MojoParserContext parserContext(mgr, config);
-    MojoASTDeclRef decl = parserContext.parseFileForLSP(mgr.getMainFileID());
+    LIT::ASTDecl *decl = parserContext.parseFileForLSP(mgr.getMainFileID());
     if (!decl)
       return failure(clOptions.reportError("could not parse the module"));
 
@@ -814,6 +819,85 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   return mlir::success();
 }
 
+/// Precompiles the package directory given as the input, as `mojo precompile`
+/// does. The package parses under its directory's name, and takes the name of
+/// the `.mojoc` file it is written to.
+static LogicalResult runPrecompile(CLOptions &clOptions) {
+  if (!clOptions.inputFiles.empty())
+    return failure(clOptions.reportError(
+        "precompile expects a single package directory as input"));
+  StringRef input = clOptions.inputFilename;
+  if (!Filesystem::isMojoSourcePackagePath(input.str()))
+    return failure(clOptions.reportError(
+        "'" + input + "' does not correspond to a Mojo package"));
+  std::error_code ec;
+  std::filesystem::path packagePath =
+      std::filesystem::weakly_canonical(input.str(), ec);
+  if (ec)
+    return failure(clOptions.reportError("cannot canonicalize '" + input +
+                                         "': " + ec.message()));
+  std::string sourceName = packagePath.filename().string();
+  std::filesystem::path outputPath(clOptions.outputFilename);
+  std::string outputName = outputPath.extension() == ".mojoc"
+                               ? outputPath.stem().string()
+                               : sourceName;
+
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "kgen", Init::Options().withCPUDeviceOptions(
+                  clOptions.parser.options.withCPUAffinity(false)));
+  if (ctxOr.isError())
+    return failure(clOptions.reportError(ctxOr.getError()));
+  DialectRegistry registry;
+  registerAllKGENDialects(registry);
+  registerContext(registry, *ctxOr);
+  MLIRContext context(registry, MLIRContext::Threading::DISABLED);
+
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
+  mlir::SourceMgrDiagnosticHandler diagHandler(sourceMgr, &context);
+
+  CompilationOptions options = clOptions.getCompilationOptions();
+  options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
+  options.warnOnUnstableAPIs = clOptions.warnOnUnstableAPIs;
+  options.ignoredDeprecations = clOptions.ignoredDeprecations;
+  // Precompiled packages are built to be agnostic of how their importers
+  // compile them, so match `mojo precompile`'s conservative settings.
+  options.debugLevel = CompilationOptions::kFullDebugInfo;
+  options.optimizationLevel = 0;
+
+  LIT::ParserConfig config(&context, options);
+  config.stripFilePrefix = clOptions.stripFilePrefix;
+  config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
+  config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
+
+  TimingScope ts;
+  auto [module, packageOp] = LIT::importMojoPackage(
+      *ctxOr, packagePath.string(), sourceName, sourceMgr, config, ts);
+  if (!module)
+    return failure(clOptions.reportError("could not parse the package"));
+
+  ErrorOr<OwningOpRef<ModuleOp>> built = buildPrecompiledPackage(
+      *module, packageOp, sourceName, outputName, options.bitcodeLibs);
+  if (failed(built))
+    return failure(clOptions.reportError(built.getError()));
+
+  KGENCompiler compiler(context, options);
+  if (failed(compiler.runCheckLITPipeline(*module)))
+    return failure(clOptions.reportError("errors occurred during compilation"));
+
+  bool textual = clOptions.emitTextualAsm.getValue();
+  auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/!textual);
+  if (textual) {
+    (*built)->print(outFile->os());
+    outFile->os() << "\n";
+  } else if (failed(writePrecompiledFile((*built)->getOperation(),
+                                         outFile->os()))) {
+    return failure(clOptions.reportError("failed to write the package"));
+  }
+  outFile->keep();
+  return mlir::success();
+}
+
 int main(int argc, char **argv) {
   KGEN::forceLinkMLIRC();
   M::registerCommandFlags();
@@ -916,6 +1000,10 @@ int main(int argc, char **argv) {
       }
     }
   }
+
+  // The input is a package directory, which the input setup below cannot open.
+  if (clOptions.cmd == "precompile")
+    return failed(runPrecompile(clOptions));
 
   // Set up the input file(s).
   llvm::SourceMgr sourceManager;

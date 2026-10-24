@@ -709,9 +709,9 @@ def parse_tool_calls(index: int, text: str) -> Tuple[int, Optional[str], List[Di
                 raise ValueError(f"Parameter format error: '{param_content}'")
             param_name, string, param_value = param_kv[0]
 
-            if param_name in tool_args:
-                raise ValueError(f"Duplicate parameter name: '{param_name}'")
-            tool_args[param_name] = (param_value, string)
+            # Unlike the reference decoder, which rejects a repeated name, the first
+            # value is kept, so arguments streamed as they arrive are never rewritten.
+            tool_args.setdefault(param_name, (param_value, string))
 
             index, content, stop_token = _read_until_stop(index, text, [f"<{dsml_token}parameter", f"</{dsml_token}invoke"])
             if content != ">\n":

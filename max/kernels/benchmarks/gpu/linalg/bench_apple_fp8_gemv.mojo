@@ -143,13 +143,13 @@ def _bench_fp8_shape(
     # --- materialize+dense (fp8 -> transient bf16 [N,K] -> dense bf16 MMA): the
     # M>1 narrow-N route as it dispatches today. Moves ~5*N*K bytes. ---
     for _ in range(warmup):
-        _enqueue_apple_fp8_materialize_dense[.float32, None](
+        _enqueue_apple_fp8_materialize_dense[.float32](
             out_tt, act_tt, w_fp8_tt, m, n, k, ctx
         )
         ctx.synchronize()
     var t_mat = perf_counter()
     for _ in range(hot):
-        _enqueue_apple_fp8_materialize_dense[.float32, None](
+        _enqueue_apple_fp8_materialize_dense[.float32](
             out_tt, act_tt, w_fp8_tt, m, n, k, ctx
         )
     ctx.synchronize()
@@ -229,8 +229,8 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 required (compute_capability == 5)")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 required (compute_capability >= 5)")
         return
 
     print("== bench_apple_fp8_gemv (decode M in {1, 32}; warmup=25, hot=50)")

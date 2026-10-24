@@ -682,10 +682,10 @@ comptime b_size = BN * BK
 var a_smem = external_memory[
     Scalar[a_type], address_space=.SHARED, alignment=128
 ]()
-var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
-var tma_mbar = (b_smem + b_size).bitcast[SharedMemBarrier]()
-var mma_mbar = tma_mbar + 1
-var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
+var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
+var tma_mbar = b_smem.unsafe_offset(b_size).unsafe_bitcast[SharedMemBarrier]()
+var mma_mbar = tma_mbar.unsafe_offset(1)
+var ptr_tmem_addr = mma_mbar.unsafe_offset(1).unsafe_bitcast[UInt32]()
 var a_smem_tile = TileTensor[address_space=.SHARED](a_smem, a_smem_layout)
 var b_smem_tile = TileTensor[address_space=.SHARED](b_smem, b_smem_layout)
 ```
@@ -964,7 +964,7 @@ if elect_one_warp and thread_idx.x < BN // TMA_BN:
     # Make the packed shared-memory data visible to TMA.
     fence_async_view_proxy()
     var c_tma_tile = TileTensor[address_space=.SHARED](
-        c_smem + thread_idx.x * BM * TMA_BN,
+        c_smem.unsafe_offset(thread_idx.x * BM * TMA_BN),
         row_major[BM, TMA_BN](),
     )
     c_tma_op.async_store(

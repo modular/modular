@@ -381,6 +381,9 @@ struct ASTTypePrinterContext {
       : shared(shared), selfType(selfType) {}
 };
 
+/// Returns true for `SIMD[_, 1]`.
+bool isScalarSIMDType(StructType type);
+
 } // namespace KGEN::LIT
 
 } // namespace M

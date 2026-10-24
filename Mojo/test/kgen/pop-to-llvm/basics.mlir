@@ -483,7 +483,7 @@ kgen.func @cmp_fp(%lhs: !kgen.scalar<f32>, %rhs: !kgen.scalar<f32>) {
   // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: llvm.fcmp "oeq" [[ARG0]], [[ARG1]]
   %0 = pop.cmp eq(%lhs, %rhs) : !kgen.scalar<f32>
-  // CHECK: llvm.fcmp "one"
+  // CHECK: llvm.fcmp "une"
   %1 = pop.cmp ne(%lhs, %rhs) : !kgen.scalar<f32>
   // CHECK: llvm.fcmp "olt"
   %2 = pop.cmp lt(%lhs, %rhs) : !kgen.scalar<f32>

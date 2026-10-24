@@ -64,6 +64,7 @@ from shmem.ep import (
     ep_fused_dispatch_kernel_api,
 )
 from shmem.ep_comm import (
+    EP_WARP_TOKENS_MIN_TOKENS,
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
@@ -76,7 +77,7 @@ from shmem.ep_comm import (
 )
 from linalg.mx_format import MXFormat
 from linalg.fp6_utils import FP6Format
-from linalg.swiglu_activation import comptime_atof, get_swiglu_activation
+from linalg.swiglu_activation import get_swiglu_activation
 
 comptime RT_LAYOUT_2D = type_of(row_major(Int64(1), Int64(1)))
 
@@ -235,13 +236,13 @@ struct Struct_ep_init:
         var atomic_counters_1_buf = atomic_counters_1.to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
-        var dispatch_send_p: UnsafePointer[UInt8, MutUntrackedOrigin]
-        var dispatch_recv_p: UnsafePointer[UInt8, MutUntrackedOrigin]
-        var dispatch_recv_count_p: UnsafePointer[UInt64, MutUntrackedOrigin]
+        var dispatch_send_p: MutPointer[UInt8, MutUntrackedOrigin]
+        var dispatch_recv_p: MutPointer[UInt8, MutUntrackedOrigin]
+        var dispatch_recv_count_p: MutPointer[UInt64, MutUntrackedOrigin]
 
-        var combine_send_p: Optional[UnsafePointer[UInt8, MutUntrackedOrigin]]
-        var combine_recv_p: UnsafePointer[UInt8, MutUntrackedOrigin]
-        var combine_recv_count_p: UnsafePointer[UInt64, MutUntrackedOrigin]
+        var combine_send_p: Optional[MutPointer[UInt8, MutUntrackedOrigin]]
+        var combine_recv_p: MutPointer[UInt8, MutUntrackedOrigin]
+        var combine_recv_count_p: MutPointer[UInt64, MutUntrackedOrigin]
 
         comptime if n_nodes > 1:
             # Initialize the SHMEM library for this GPU
@@ -261,8 +262,9 @@ struct Struct_ep_init:
             combine_recv_count_p = shmem_malloc[.uint64](n_experts)
 
         else:
-            if not is_p2p_enabled():
-                raise Error("P2P is not supported on this system.")
+            comptime if n_gpus_per_node > 1:
+                if not is_p2p_enabled():
+                    raise Error("P2P is not supported on this system.")
             dispatch_send_p = gpu_ctx.enqueue_create_buffer[.uint8](
                 dispatch_send_size
             ).take_ptr()
@@ -508,12 +510,12 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
         var input_scales_tensor = input_scales.to_tile_tensor[.int64]()
         comptime assert input_scales_tensor.flat_rank == 1
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(input_scales_tensor)
-        def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        def input_scales_fn[
+            dtype: DType
+        ](expert_id: Int) {var input_scales_tensor} -> Scalar[dtype]:
             # Currently only use one global input scale for all experts
-            return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
+            return input_scales_tensor[0].cast[dtype]()
 
         comptime token_fmt_type = NVBlockScaledTokenFormat[
             quant_dtype=dispatch_dtype,
@@ -530,7 +532,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
             n_gpus_per_node,
             n_nodes,
             target,
-            input_scales_wrapper=input_scales_fn,
         ](
             atomic_counters.to_tile_tensor[.int64](),
             input_tokens.to_tile_tensor[.int64]().as_imm(),
@@ -539,6 +540,7 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            input_scales_fn,
         )
 
 
@@ -1211,12 +1213,12 @@ struct Struct_ep_dispatch_block_scaled_nv:
         var input_scales_tensor = input_scales.to_tile_tensor[.int64]()
         comptime assert input_scales_tensor.flat_rank == 1
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(input_scales_tensor)
-        def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        def input_scales_fn[
+            dtype: DType
+        ](expert_id: Int) {var input_scales_tensor} -> Scalar[dtype]:
             # Currently only use one global input scale for all experts
-            return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
+            return input_scales_tensor[0].cast[dtype]()
 
         var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
             output_tokens_tensor,
@@ -1232,7 +1234,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
             n_nodes,
             fused_shared_expert,
             target,
-            input_scales_wrapper=input_scales_fn,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1247,6 +1248,7 @@ struct Struct_ep_dispatch_block_scaled_nv:
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            input_scales_fn,
         )
 
 
@@ -1534,7 +1536,7 @@ struct DistributedEPDispatchBlockScaledNV:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch.
 
         Launches the EP dispatch kernel on all devices simultaneously via
@@ -1620,11 +1622,11 @@ struct DistributedEPDispatchBlockScaledNV:
             var in_scales = input_scales[index].to_tile_tensor[.int64]()
             comptime assert in_scales.flat_rank == 1
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(in_scales)
-            def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
-                return rebind[Scalar[dtype]](in_scales[0].cast[dtype]())
+            def input_scales_fn[
+                dtype: DType
+            ](expert_id: Int) {var in_scales} -> Scalar[dtype]:
+                return in_scales[0].cast[dtype]()
 
             var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
                 out_tokens,
@@ -1640,7 +1642,12 @@ struct DistributedEPDispatchBlockScaledNV:
                 n_nodes,
                 fused_shared_expert,
                 target,
-                input_scales_wrapper=input_scales_fn,
+                # A prefill chunk's dispatch waited on the monitor's serial
+                # per-expert scan and sent one token per CTA at a time; the
+                # histogram count and the warp-per-token send keep the same
+                # bytes and receive layout (KERN-3829). Only single-node NVFP4
+                # without a fused shared expert takes them.
+                dispatch_warp_min_tokens=EP_WARP_TOKENS_MIN_TOKENS,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[.int64](),
@@ -1653,6 +1660,7 @@ struct DistributedEPDispatchBlockScaledNV:
                 recv_ptrs[index].to_tile_tensor[.int64](),
                 recv_count_ptrs[index].to_tile_tensor[.int64](),
                 gpu_ctxs[index],
+                input_scales_fn,
             )
 
         _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
@@ -1703,7 +1711,7 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch with dynamic
         global scales.
 
@@ -1863,7 +1871,7 @@ struct DistributedEPDispatchMXFP4:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism MXFP4 dispatch.
 
         Launches the EP dispatch kernel on all devices simultaneously via
@@ -2018,7 +2026,7 @@ struct DistributedEPDispatch:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism BF16 dispatch.
 
         Parameters:
@@ -2146,7 +2154,7 @@ struct DistributedEPDispatchFP8:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism FP8 dispatch.
 
         Launches the EP dispatch kernel on all devices simultaneously via
@@ -2287,7 +2295,7 @@ struct DistributedEPCombine:
             dtype=DType.int32, rank=1, ...
         ],
         dev_ctxs: DeviceContextArray,
-    ) capturing raises:
+    ) raises:
         """Multi-device fused Expert Parallelism combine with output fusion.
 
         Parameters:
@@ -2347,17 +2355,20 @@ struct DistributedEPCombine:
             ), "EP combine: output tokens shape doesn't match hidden size."
             var rw_tensor = router_weights[index].to_tile_tensor[.int64]()
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(rw_tensor)
             def router_weights_fn[
                 width: Int
-            ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+            ](token_idx: Int, topk_id: Int) {var rw_tensor} -> SIMD[
+                .float32, width
+            ]:
                 return rw_tensor.load[width=width]((token_idx, topk_id)).cast[
                     DType.float32
                 ]()
 
-            @__parameter
+            # Stores into this device's fused output. It runs on the device, so
+            # it copies the tensor.
+            var out_tensor = output_tokens[index]
+
             @inline(.always)
             def output_fn[
                 dtype: DType,
@@ -2365,8 +2376,10 @@ struct DistributedEPCombine:
                 width: SIMDLength,
                 *,
                 alignment: Int = 1,
-            ](coords: IndexList[rank], val: SIMD[dtype, width]):
-                output_tokens[index]._fused_store[
+            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
+                var out_tensor
+            }:
+                out_tensor._fused_store[
                     width=width, element_alignment=alignment
                 ](
                     coords,
@@ -2381,8 +2394,6 @@ struct DistributedEPCombine:
                 n_gpus_per_node,
                 n_nodes,
                 target,
-                output_fn,
-                router_weights_wrapper=router_weights_fn,
                 fused_shared_expert=fused_shared_expert,
             ](
                 output_tokens[index].dim_size[0](),
@@ -2393,6 +2404,8 @@ struct DistributedEPCombine:
                 recv_ptrs[index].to_tile_tensor[.int64](),
                 recv_count_ptrs[index].to_tile_tensor[.int64](),
                 gpu_ctxs[index],
+                output_fn,
+                router_weights_fn,
             )
 
         _launch_device_collective[num_devices](launch_combine, gpu_ctxs.copy())
@@ -2546,17 +2559,16 @@ struct Struct_ep_combine_wait:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        ](token_idx: Int, topk_id: Int) {var router_weights_tensor} -> SIMD[
+            .float32, width
+        ]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[.float32]()
 
-        @__parameter
         @inline(.always)
         def output_fn[
             dtype: DType,
@@ -2564,7 +2576,7 @@ struct Struct_ep_combine_wait:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2581,14 +2593,14 @@ struct Struct_ep_combine_wait:
             n_gpus_per_node,
             n_nodes,
             target,
-            output_fn,
-            router_weights_wrapper=router_weights_fn,
         ](
             output_tokens.dim_size[0](),
             atomic_counters.to_tile_tensor[.int64](),
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            output_fn,
+            router_weights_fn,
         )
 
 
@@ -2684,17 +2696,16 @@ struct Struct_ep_combine:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        ](token_idx: Int, topk_id: Int) {var router_weights_tensor} -> SIMD[
+            .float32, width
+        ]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[.float32]()
 
-        @__parameter
         @inline(.always)
         def output_fn[
             dtype: DType,
@@ -2702,7 +2713,7 @@ struct Struct_ep_combine:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2718,8 +2729,6 @@ struct Struct_ep_combine:
             n_gpus_per_node,
             n_nodes,
             target,
-            output_fn,
-            router_weights_wrapper=router_weights_fn,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
         ](
@@ -2731,6 +2740,8 @@ struct Struct_ep_combine:
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
+            output_fn,
+            router_weights_fn,
         )
 
 
@@ -2833,17 +2844,16 @@ struct Struct_ep_combine_skip_a2a:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        ](token_idx: Int, topk_id: Int) {var router_weights_tensor} -> SIMD[
+            .float32, width
+        ]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[.float32]()
 
-        @__parameter
         @inline(.always)
         def output_fn[
             dtype: DType,
@@ -2851,7 +2861,7 @@ struct Struct_ep_combine_skip_a2a:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2867,8 +2877,6 @@ struct Struct_ep_combine_skip_a2a:
             n_gpus_per_node,
             n_nodes,
             target,
-            output_fn,
-            router_weights_wrapper=router_weights_fn,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
@@ -2881,7 +2889,9 @@ struct Struct_ep_combine_skip_a2a:
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
             context,
-            topk_ids._ptr.as_imm().unsafe_origin_cast[ImmUntrackedOrigin](),
+            output_fn,
+            router_weights_fn,
+            topk_ids._ptr.as_imm(),
         )
 
 
@@ -2897,8 +2907,8 @@ struct Struct_ep_fused_silu:
         //,
         target: StaticString,
         activation: StaticString = "silu",
-        swiglu_alpha: StaticString = "0.0",
-        swiglu_limit: StaticString = "0.0",
+        swiglu_alpha: Float32 = 0.0,
+        swiglu_limit: Float32 = 0.0,
         interleaved: Bool = False,
     ](
         output: OutputTensor[dtype=output_dtype, rank=2, ...],
@@ -2918,8 +2928,7 @@ struct Struct_ep_fused_silu:
         operation on the received tokens.
 
         The gated activation is built at compile time from the `activation`,
-        `swiglu_alpha` and `swiglu_limit` parameters; the constants are
-        decimal strings because kernel parameters cannot be floats.
+        `swiglu_alpha` and `swiglu_limit` parameters.
         `interleaved` reads each input row as `[gate_0, up_0, ...]` instead
         of `[gate | up]`.
         """
@@ -2937,8 +2946,8 @@ struct Struct_ep_fused_silu:
 
         comptime act = get_swiglu_activation[
             activation,
-            comptime_atof[swiglu_alpha](),
-            comptime_atof[swiglu_limit](),
+            swiglu_alpha,
+            swiglu_limit,
         ]
 
         comptime fused_silu = fused_silu_kernel[
@@ -2992,8 +3001,8 @@ struct Struct_ep_fused_silu_mxfp4:
         *,
         max_padded_M: Int,
         activation: StaticString = "silu",
-        swiglu_alpha: StaticString = "0.0",
-        swiglu_limit: StaticString = "0.0",
+        swiglu_alpha: Float32 = 0.0,
+        swiglu_limit: Float32 = 0.0,
         # `ep.fused_silu.mxfp8` shares this body and overrides the label.
         trace_name: StaticString = "ep.fused_silu.mxfp4",
     ](
@@ -3026,8 +3035,7 @@ struct Struct_ep_fused_silu_mxfp4:
         has shape `[n_local_experts * max_padded_M, K_SCALES]`.
 
         The gated activation is built at compile time from the `activation`,
-        `swiglu_alpha` and `swiglu_limit` parameters; the constants are
-        decimal strings because kernel parameters cannot be floats.
+        `swiglu_alpha` and `swiglu_limit` parameters.
         """
         # Ensure this kernel only runs on GPU targets
         comptime assert is_gpu[target](), "EP is only supported on GPU."
@@ -3047,8 +3055,8 @@ struct Struct_ep_fused_silu_mxfp4:
 
         comptime act = get_swiglu_activation[
             activation,
-            comptime_atof[swiglu_alpha](),
-            comptime_atof[swiglu_limit](),
+            swiglu_alpha,
+            swiglu_limit,
         ]
 
         comptime fused_silu_mx = fused_silu_mx_kernel[
@@ -3106,8 +3114,8 @@ struct Struct_ep_fused_silu_mxfp8:
         *,
         max_padded_M: Int,
         activation: StaticString = "silu",
-        swiglu_alpha: StaticString = "0.0",
-        swiglu_limit: StaticString = "0.0",
+        swiglu_alpha: Float32 = 0.0,
+        swiglu_limit: Float32 = 0.0,
     ](
         output: OutputTensor[dtype=fp8_dtype, rank=2, ...],
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
@@ -3147,8 +3155,8 @@ struct Struct_ep_fused_silu_mxfp6:
         max_padded_M: Int,
         FP6_FORMAT: Int = 0,
         activation: StaticString = "silu",
-        swiglu_alpha: StaticString = "0.0",
-        swiglu_limit: StaticString = "0.0",
+        swiglu_alpha: Float32 = 0.0,
+        swiglu_limit: Float32 = 0.0,
     ](
         output: OutputTensor[dtype=.uint8, rank=2, ...],
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
@@ -3168,8 +3176,7 @@ struct Struct_ep_fused_silu_mxfp6:
         it from the bytes -- it must match what the checkpoint declares.
 
         The gated activation is built at compile time from the `activation`,
-        `swiglu_alpha` and `swiglu_limit` parameters; the constants are
-        decimal strings because kernel parameters cannot be floats.
+        `swiglu_alpha` and `swiglu_limit` parameters.
         """
         comptime assert is_gpu[target](), "EP is only supported on GPU."
         comptime assert (
@@ -3188,8 +3195,8 @@ struct Struct_ep_fused_silu_mxfp6:
 
         comptime act = get_swiglu_activation[
             activation,
-            comptime_atof[swiglu_alpha](),
-            comptime_atof[swiglu_limit](),
+            swiglu_alpha,
+            swiglu_limit,
         ]
 
         comptime fused_silu_fp6 = fused_silu_mxfp6_kernel[
@@ -3245,8 +3252,8 @@ struct Struct_ep_fused_silu_nvfp4:
         input_dtype: DType,
         target: StaticString,
         activation: StaticString = "silu",
-        swiglu_alpha: StaticString = "0.0",
-        swiglu_limit: StaticString = "0.0",
+        swiglu_alpha: Float32 = 0.0,
+        swiglu_limit: Float32 = 0.0,
     ](
         output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
         scales: OutputTensor[dtype=scales_dtype, rank=5, ...],
@@ -3269,8 +3276,7 @@ struct Struct_ep_fused_silu_nvfp4:
         will be padded and zero-filled.
 
         The gated activation is built at compile time from the `activation`,
-        `swiglu_alpha` and `swiglu_limit` parameters; the constants are
-        decimal strings because kernel parameters cannot be floats.
+        `swiglu_alpha` and `swiglu_limit` parameters.
         """
         # Ensure this kernel only runs on GPU targets
         comptime assert is_gpu[target](), "EP is only supported on GPU."
@@ -3293,8 +3299,8 @@ struct Struct_ep_fused_silu_nvfp4:
 
         comptime act = get_swiglu_activation[
             activation,
-            comptime_atof[swiglu_alpha](),
-            comptime_atof[swiglu_limit](),
+            swiglu_alpha,
+            swiglu_limit,
         ]
 
         comptime fused_silu_nvfp4 = fused_silu_nvfp4_kernel[
@@ -3310,6 +3316,12 @@ struct Struct_ep_fused_silu_nvfp4:
             hw_info.max_thread_block_size,
             hw_info.sm_count,
             activation=act,
+            OutputEngine=output_tensor.Engine,
+            ScalesEngine=scales_tensor.Engine,
+            InputEngine=input_tensor.Engine,
+            RowOffsetsEngine=row_offsets_tensor.Engine,
+            ScalesOffsetsEngine=scales_offsets_tensor.Engine,
+            InputScalesEngine=input_scales_tensor.Engine,
         ]
 
         @inline(.always)

@@ -588,7 +588,7 @@ def _layers_graph(rows_in_subgraph: bool) -> Graph:
                 else [conv_table[index], ssm_table[index]]
             )
             outputs += ops.call(sub, *common, *rows)
-        graph.output(*outputs)
+        graph.output(outputs)
     return graph
 
 

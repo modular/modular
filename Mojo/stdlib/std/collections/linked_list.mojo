@@ -23,18 +23,17 @@ from std.builtin.rebind import downcast
 from std.collections import check_bounds
 from std.reflection import call_location
 import std.format._utils as fmt
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 
-@explicit_destroy(
-    "A `Node` with a non-`Deinitable` element must be consumed with"
-    " `_into_value()`; its owning `LinkedList` manages this."
-)
 struct Node[
     T: Movable,
 ](
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "A `Node` with a non-`Deinitable` element must be consumed with"
+        " `_into_value()`; its owning `LinkedList` manages this."
+    ),
     Movable,
 ):
     """A node in a linked list data structure.
@@ -200,7 +199,7 @@ struct _LinkedListIterOwned[T: Movable & Deinitable](
                 Self.T
             ]._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -210,15 +209,14 @@ struct _LinkedListIterOwned[T: Movable & Deinitable](
         return (sz, {sz})
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `LinkedList` with"
-    " non-`Deinitable` elements"
-)
 struct LinkedList[ElementType: Movable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
-    Deinitable where conforms_to(ElementType, Deinitable),
+    Deinitable where conforms_to(ElementType, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy a `LinkedList` with"
+        " non-`Deinitable` elements"
+    ),
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     Iterable,
@@ -340,7 +338,7 @@ struct LinkedList[ElementType: Movable](
             destroy_func(nn.unsafe_take_pointee()._into_value())
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
             curr = next
@@ -456,7 +454,7 @@ struct LinkedList[ElementType: Movable](
         else:
             self._tail.value()[].next() = Self._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -498,7 +496,7 @@ struct LinkedList[ElementType: Movable](
 
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
             self._size -= 1
@@ -526,7 +524,7 @@ struct LinkedList[ElementType: Movable](
         else:
             self._tail.value()[].next() = Self._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -564,7 +562,7 @@ struct LinkedList[ElementType: Movable](
 
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
             self._size -= 1
@@ -586,7 +584,7 @@ struct LinkedList[ElementType: Movable](
             nn.unsafe_deinit_pointee()
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
 

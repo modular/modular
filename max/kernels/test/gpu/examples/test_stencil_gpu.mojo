@@ -13,7 +13,7 @@
 
 from max.algorithm.functional import stencil, stencil_gpu
 from max.gpu.host import DeviceContext
-from layout import TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tile_tensor import stack_allocation
 from std.testing import assert_almost_equal
@@ -23,8 +23,9 @@ from std.utils.numerics import min_or_neg_inf
 
 
 def fill_buffer[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
+    var buf_flat = buf.reshape(row_major(buf.num_elements()))
     for j in range(buf.num_elements()):
-        buf.raw_store(j, Scalar[dtype](j) + 1)
+        buf_flat.store((j,), Scalar[dtype](j) + 1)
 
 
 def assert_allclose[
@@ -33,8 +34,13 @@ def assert_allclose[
     h_output_ref: TileTensor[dtype, ...],
     h_output_gpu: TileTensor[dtype, ...],
 ) raises:
+    var ref_flat = h_output_ref.reshape(row_major(h_output_ref.num_elements()))
+    var gpu_flat = h_output_gpu.reshape(row_major(h_output_gpu.num_elements()))
     for i in range(h_output_ref.num_elements()):
-        assert_almost_equal(h_output_ref.raw_load(i), h_output_gpu.raw_load(i))
+        assert_almost_equal(
+            ref_flat.load[width=1]((i,)),
+            gpu_flat.load[width=1]((i,)),
+        )
 
 
 def test_stencil_avg_pool(ctx: DeviceContext) raises:
@@ -96,7 +102,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            d_input.load_linear[width=simd_width](point)
+            d_input.load[width=simd_width](Coord(point))
         )
 
     def avg_pool_compute_init_gpu[
@@ -120,7 +126,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         var d_output,
     }:
         var res = val / (pool_window_h * pool_window_w)
-        d_output.store_linear(point, res)
+        d_output.store(Coord(point), res)
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
@@ -164,7 +170,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {var h_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            h_input.load_linear[width=simd_width](point)
+            h_input.load[width=simd_width](Coord(point))
         )
 
     def avg_pool_compute_init_cpu[
@@ -188,7 +194,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         var h_output_ref,
     }:
         var res = val / (pool_window_h * pool_window_w)
-        h_output_ref.store_linear(point, res)
+        h_output_ref.store(Coord(point), res)
 
     stencil[
         rank,
@@ -278,7 +284,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            d_input.load_linear[width=simd_width](point)
+            d_input.load[width=simd_width](Coord(point))
         )
 
     def avg_pool_compute_init_gpu[
@@ -302,7 +308,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         var d_output,
     }:
         var res = val / (pool_window_h * pool_window_w)
-        d_output.store_linear(point, res)
+        d_output.store(Coord(point), res)
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
@@ -348,7 +354,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {var h_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            h_input.load_linear[width=simd_width](point)
+            h_input.load[width=simd_width](Coord(point))
         )
 
     def avg_pool_compute_init_cpu[
@@ -372,7 +378,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         var h_output_ref,
     }:
         var res = val / (pool_window_h * pool_window_w)
-        h_output_ref.store_linear(point, res)
+        h_output_ref.store(Coord(point), res)
 
     stencil[
         rank,
@@ -462,7 +468,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            d_input.load_linear[width=simd_width](point)
+            d_input.load[width=simd_width](Coord(point))
         )
 
     def avg_pool_compute_init_gpu[
@@ -486,7 +492,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         var d_output,
     }:
         var res = val / (pool_window_h * pool_window_w)
-        d_output.store_linear(point, res)
+        d_output.store(Coord(point), res)
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
@@ -533,7 +539,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {var h_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            h_input.load_linear[width=simd_width](point)
+            h_input.load[width=simd_width](Coord(point))
         )
 
     def avg_pool_compute_init_cpu[
@@ -557,7 +563,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         var h_output_ref,
     }:
         var res = val / (pool_window_h * pool_window_w)
-        h_output_ref.store_linear(point, res)
+        h_output_ref.store(Coord(point), res)
 
     stencil[
         rank,
@@ -652,7 +658,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            d_input.load_linear[width=simd_width](point)
+            d_input.load[width=simd_width](Coord(point))
         )
 
     def max_pool_compute_init_gpu[
@@ -675,7 +681,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
-        d_output.store_linear(point, val)
+        d_output.store(Coord(point), val)
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
@@ -722,7 +728,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) {var h_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            h_input.load_linear[width=simd_width](point)
+            h_input.load[width=simd_width](Coord(point))
         )
 
     def max_pool_compute_init_cpu[
@@ -745,7 +751,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
-        h_output_ref.store_linear(point, val)
+        h_output_ref.store(Coord(point), val)
 
     stencil[
         rank,

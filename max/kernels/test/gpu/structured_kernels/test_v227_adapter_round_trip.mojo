@@ -55,7 +55,7 @@ from max.gpu import lane_id, warp_id
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.sync import s_waitcnt
-from std.sys.intrinsics import readfirstlane
+from max.gpu.intrinsics import readfirstlane
 from std.testing import assert_equal
 
 from layout import ComptimeInt, Coord, MixedLayout, TileTensor

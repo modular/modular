@@ -907,20 +907,6 @@ GetWitnessAttr::simplify(ConformanceOp witnessTable,
 }
 
 //===----------------------------------------------------------------------===//
-// CompileOffloadClosureAttr
-//===----------------------------------------------------------------------===//
-
-bool CompileOffloadClosureAttr::isConstant() const { return false; }
-
-LogicalResult CompileOffloadClosureAttr::verify(
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, TypedAttr target,
-    TypedAttr func, Type type) {
-  if (!::isa<TargetType>(target.getType()))
-    return emitError() << "target operand must be of `!kgen.target` type";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // GetLinkageNameAttr
 //===----------------------------------------------------------------------===//
 
@@ -4707,6 +4693,40 @@ bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
 }
 
 ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
+  // If this is a shift by a constant amount that does not fit in the operand's
+  // bit width, produce a clear user-facing diagnostic instead of the generic
+  // "could not simplify" note.
+  auto opcode = getOpcode();
+  if (opcode == POC::Shr || opcode == POC::Shl) {
+    ArrayRef<TypedAttr> operands = getOperands();
+    if (operands.size() == 2) {
+      auto lhsType = sugarDynCast<SIMDType>(operands[0].getType());
+      auto rhs = sugarDynCast<SIMDAttr>(operands[1]);
+      if (lhsType && rhs) {
+        std::optional<KGENDType> dtype = lhsType.getResolvedDType();
+        if (dtype) {
+          int64_t width = dtype->getWidthInBits(nullptr);
+          if (width > 0) {
+            for (const DTypeValue &lane : rhs.getValues()) {
+              const APSInt &amount = lane.getData();
+              if (amount.isNegative() || amount.uge(width)) {
+                SmallVector<char, 16> amountStr;
+                amount.toString(amountStr);
+                std::string typeName =
+                    getTypeAsString(operands[0].getType()).str();
+                return Error(
+                    "shift amount " +
+                    StringRef(amountStr.data(), amountStr.size()).str() +
+                    " is outside the valid range 0.." +
+                    std::to_string(width - 1) + " for " + typeName);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // If this operator didn't fold, then it's a problem.
   // TODO: we could diagnose WHY it isn't folding more nicely now.
   return Error("could not simplify operator " + getParamAsString(*this));
@@ -4747,6 +4767,26 @@ static std::optional<bool> decideParamIdentical(IdentityOperand &lhs,
     if (lhs.hasUnknown() || rhs.hasUnknown())
       return std::nullopt;
     return true;
+  }
+
+  // We support upcast on param list too, look through those: as long as each
+  // element of a parameter list is the same, the list is identical. We need to
+  // peel off the list here since the upcast will be sunk into the constant
+  // param list during canonicalization.
+  auto lList = dyn_cast<ParamListAttr>(lhs.getCanonical());
+  auto rList = dyn_cast<ParamListAttr>(rhs.getCanonical());
+  if (lList && rList && lList.getValues().size() == rList.getValues().size()) {
+    bool allSame = true;
+    for (auto [l, r] : llvm::zip_equal(lList.getValues(), rList.getValues())) {
+      IdentityOperand lhsOperand(l), rhsOperand(r);
+      std::optional<bool> same = decideParamIdentical(lhsOperand, rhsOperand);
+      if (same && !*same)
+        return false;
+      allSame &= same.value_or(false);
+    }
+    if (allSame)
+      return true;
+    return std::nullopt;
   }
 
   // Folding to False is a lot harder:
@@ -5412,9 +5452,9 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
     if ((int)*shouldElide >= (int)kind)
       return canonical;
 
-  // We will /never/ use the type sugar in the expanded form of opaque
-  // sugar kinds, so we can strip it all away to simplify things.
-  if (kind <= SugarKind::Preserved)
+  // We want nested aliases in types to survive, but all other opaque
+  // sugar kinds can be stripped to simplify things.
+  if (kind <= SugarKind::Preserved && !isa<TypeParamAttr>(expanded))
     expanded = ParamOperatorAttr::getRebind(canonical, sugared.getType());
 
   return Base::get(sugared.getContext(), kind, memberName, sugared, expanded,
@@ -5423,6 +5463,21 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
 
 Type SugarAttr::getMemberAliasType() const {
   return ParamType::get(getSugared());
+}
+
+ParamDeclRefAttr SugarAttr::getAliasDeclRef() const {
+  switch (getKind()) {
+  case SugarKind::Alias:
+    return dyn_cast<ParamDeclRefAttr>(getSugared());
+  case SugarKind::Preserved:
+    // `BindParamsAttr::get` may rebind the application to the requested type.
+    if (auto bindParams = dyn_cast<BindParamsAttr>(
+            ParamOperatorAttr::stripRebind(getSugared())))
+      return dyn_cast<ParamDeclRefAttr>(bindParams.getGenerator());
+    return {};
+  default:
+    return {};
+  }
 }
 
 TypedAttr SugarAttr::getMemberAlias(Type type, StringAttr memberName,
@@ -5510,7 +5565,7 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     // Walking is repeated for the same value many times; cache across calls.
     using Base =
         std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
-    CanonicalCache<const void *> *cache = getCache(value.getContext());
+    ShardedCache<const void *> *cache = getCache(value.getContext());
     if (cache) {
       if (const void *hit = cache->lookup(value.getAsOpaquePointer()))
         return Base::getFromOpaquePointer(hit);
@@ -5540,7 +5595,7 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     return result;
   }
 
-  static CanonicalCache<const void *> *getCache(MLIRContext *context) {
+  static ShardedCache<const void *> *getCache(MLIRContext *context) {
     CompilerCaches *caches = CompilerCaches::get(context);
     return caches ? &caches->canonical : nullptr;
   }

@@ -70,7 +70,7 @@ def _setup_ninja_path() -> None:
             )
 
 
-def _setup_cutlass_path() -> None:
+def setup_cutlass_path() -> None:
     """Expose the ``cutlass`` package shipped by ``nvidia-cutlass-dsl-libs-*``.
 
     vLLM's CUTE kernels (the Kimi-K2.6 vision tower and the bf16x3 router GEMM
@@ -341,8 +341,8 @@ def run_text_generation(
 
     # Make the `cutlass` package importable for vLLM's CUTE flash-attention
     # path. The wheel relocates it behind a `.pth` file that Bazel does not
-    # process; see `_setup_cutlass_path` for details.
-    _setup_cutlass_path()
+    # process; see `setup_cutlass_path` for details.
+    setup_cutlass_path()
 
     # Redirect flashinfer's cubin directory to a writable mirror so it can
     # create its kernel symlinks (the bundled `flashinfer-cubin` package dir is

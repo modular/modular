@@ -14,7 +14,7 @@
 
 This module provides two simdgroup_matrix MMA shapes:
 
-- 16x16x16 (`_mma_apple`): Apple M5 only (Metal 4.0 / AIR 2.8.0), float and
+- 16x16x16 (`_mma_apple`): Apple M5 and newer (Metal 4.0 / AIR 2.8.0), float and
   integer-widening.
 - 8x8 (`_mma_apple_8x8`): all Apple GPU generations (M1-M5), float-only.
 

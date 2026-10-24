@@ -33,9 +33,7 @@ def take_thin[
 
 def wrap[
     dtype: DType,
-    input_fn: def[width: Int](SIMD[dtype, width]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int](SIMD[dtype, width]) thin -> SIMD[dtype, width],
 ]() -> SIMD[dtype, 1]:
     def unified[width: Int](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return input_fn[width](val)
@@ -45,7 +43,7 @@ def wrap[
 
 def wrap_unrelated_input_fn[
     dtype: DType,
-    input_fn: def[width: Int](SIMD[DType.float32, width]) capturing -> SIMD[
+    input_fn: def[width: Int](SIMD[DType.float32, width]) thin -> SIMD[
         DType.float32, width
     ],
 ]() -> SIMD[dtype, 1]:
@@ -57,7 +55,7 @@ def wrap_unrelated_input_fn[
 
 def ones[
     width: Int
-](val: SIMD[DType.float32, width]) capturing -> SIMD[DType.float32, width]:
+](val: SIMD[DType.float32, width]) -> SIMD[DType.float32, width]:
     return val
 
 

@@ -40,8 +40,8 @@ _ACT_DTYPE = DType.bfloat16
 
 _LOGITS_DTYPE = DType.float32
 
-_PATCH_DTYPE = DType.float32
-"""The image processor emits float32 patches."""
+_PATCH_DTYPE = DType.int16
+"""The image processor emits raw int16 pixels."""
 
 _HIDDEN_WIDTHS_PER_FORWARD_TOKEN = 96
 """Hidden-width activations one layer body holds per token, on one device.
@@ -69,21 +69,19 @@ def _peak_vision_bytes_per_patch(vision_config: InklingVisionConfig) -> int:
     act = _ACT_DTYPE.size_in_bytes
     t = vision_config.temporal_patch_size
     h = w = vision_config.patch_size
-    elements = [t * h * w * vision_config.n_channels]
+    pixels = h * w * vision_config.n_channels
+    elements = [t * pixels]
     for t_fold, hw_fold, out_dim in plan_folds(vision_config):
         t //= t_fold
         h //= hw_fold
         w //= hw_fold
         elements.append(t * h * w * out_dim)
-    # The float32 input is live into the first cast.
+    # The int16 pixels are live into the frames they expand to.
     return max(
-        elements[0] * _PATCH_DTYPE.size_in_bytes + elements[1] * act,
+        pixels * _PATCH_DTYPE.size_in_bytes + elements[0] * act,
         max(
-            (
-                (before + after) * act
-                for before, after in itertools.pairwise(elements[1:])
-            ),
-            default=0,
+            (before + after) * act
+            for before, after in itertools.pairwise(elements)
         ),
     )
 

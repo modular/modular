@@ -2,22 +2,6 @@
 
 #undef = #interp.memory_handle<8, "" string>
 
-// Check that constant are only hoisted from subprogram regions if there is no
-// debuginfo scope given.
-#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<sourceName = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-
-#loc1 = loc("foo.mlir":44:1)
-#loc2 = loc("foo.mlir":325:11)
-#loc3 = loc("bar.mlir":327:17)
-#loc4 = loc(fused<#subprogram>[#loc1])
-#loc5 = loc(fused<#subprogram1>[#loc2])
-#loc6 = loc(fused<#subprogram1>[#loc3])
-#call_loc = #debuginfo.call_loc<#loc4>
-#loc7 = loc(fused<#call_loc>[#loc2])
-#loc8 = loc(fused<#subprogram1>[#loc7])
-#loc9 = loc(fused<#call_loc>[#loc2])
-
 #sp = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #loc_lvl3 = loc(fused<#sp>["level -3":2:2])
 #loc_lvl2 = loc(callsite(#loc_lvl3 at fused<#sp>["level -2":1:1]))
@@ -47,19 +31,6 @@ kgen.generator @rebind_canonicalize<dt1: dtype, dt2: dtype, dt3: dtype>(%arg0: !
   %2 = kgen.rebind %1 : !kgen.scalar<dt3> to !kgen.scalar<si32>
   // CHECK-NEXT: return %0
   hlcf.return %2 : !kgen.scalar<si32>
-}
-
-// CHECK-LABEL: @rebind_across_scopes
-kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !kgen.scalar<dt>) {
-  kgen.param.declare dt1: dtype = <dt>
-  %0 = kgen.rebind %arg0 : !kgen.scalar<dt> to !kgen.scalar<dt1>
-  // CHECK: param.declare.region
-  kgen.param.declare.region F = <dt2: dtype>() -> !kgen.scalar<dt2> {
-    // CHECK: rebind %arg0 : !kgen.scalar<dt> to !kgen.scalar<dt2>
-    %1 = kgen.rebind %0 : !kgen.scalar<dt1> to !kgen.scalar<dt2>
-    hlcf.return %1 : !kgen.scalar<dt2>
-  }
-  hlcf.return
 }
 
 // CHECK-LABEL: @param_materialize
@@ -133,24 +104,6 @@ kgen.generator @param_declare<simd_width, unroll_factor>() -> index {
 }
 
 
-// Hoisting constants that reference parameters.
-// https://github.com/modularml/modular/issues/4518
-
-kgen.generator @callee<fn: <index>()->index>() {
-  hlcf.return
-}
-
-// CHECK-LABEL: @hoist_constant
-kgen.generator @hoist_constant() {
-  // CHECK-NEXT: kgen.param.declare.region fn
-  kgen.param.declare.region fn = <N>() -> index {
-    // CHECK-NEXT: kgen.param.constant = <N>
-    %0 = kgen.param.constant = <N>
-    hlcf.return %0 : index
-  }
-  hlcf.return
-}
-
 kgen.generator @call_me() {
   hlcf.return
 }
@@ -177,50 +130,6 @@ lit.struct.decl @Struct {
 kgen.generator @callNested() {
   // CHECK-NEXT: kgen.call @Struct::@Nested
   kgen.call_param[!lit.generator<() -> ()>: @Struct::@Nested]()
-  hlcf.return
-}
-
-// CHECK-LABEL: kgen.func @no_hoist
-kgen.func @no_hoist() {
-  // CHECK-NEXT: kgen.stage_closure = () {
-  %0 = kgen.stage_closure = () {
-    // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
-    %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
-    %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
-    pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
-    hlcf.return loc(#loc5)
-  } loc(#loc8)
-  kgen.call_indirect %0() : () -> () loc(#loc4)
-  hlcf.return loc(#loc4)
-} loc(#loc4)
-
-// COM: Callee does not have debug info, but the caller does.
-// CHECK-LABEL: kgen.func @no_hoist_nodebug_callee
-kgen.func @no_hoist_nodebug_callee() {
-  // CHECK-NEXT: kgen.stage_closure = () {
-  %0 = kgen.stage_closure = () {
-    // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
-    %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
-    %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
-    pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
-    hlcf.return loc(#loc5)
-  } loc(#loc9)
-  kgen.call_indirect %0() : () -> () loc(#loc4)
-  hlcf.return loc(#loc4)
-} loc(#loc4)
-
-// CHECK-LABEL: kgen.func @hoist
-kgen.func @hoist() {
-  // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
-  // CHECK-NEXT: kgen.stage_closure = () {
-  %0 = kgen.stage_closure = () -> () {
-    // CHECK-NOT: kgen.param.constant: array<1, index> = <[0]>
-    %array = kgen.param.constant: array<1, index> = <[0]>
-    %1 = pop.stack_allocation 1 x !pop.array<1, index>
-    pop.store %array, %1 : !kgen.pointer<array<1, index>>
-    hlcf.return
-  }
-  kgen.call_indirect %0() : () -> ()
   hlcf.return
 }
 
@@ -314,11 +223,11 @@ kgen.func @closure_callee(%arg0: index, %arg1: i32) -> i64 {
   hlcf.unreachable
 }
 
-// CHECK-LABEL: @call_create_closure
-kgen.func @call_create_closure(%arg0: index, %arg1: i32) -> i64 {
+// CHECK-LABEL: @call_create_func_ptr
+kgen.func @call_create_func_ptr(%arg0: index, %arg1: i32) -> i64 {
   // CHECK-NEXT: %0 = kgen.call @closure_callee(%arg0, %arg1)
-  %0 = kgen.create_closure[(index, i32) -> i64: @closure_callee](%arg0)
-  %1 = kgen.call_indirect %0(%arg1) : (i32) capturing -> i64
+  %0 = kgen.create_func_ptr[(index, i32) -> i64: @closure_callee]()
+  %1 = kgen.call_indirect %0(%arg0, %arg1) : (index, i32) -> i64
   // CHECK-NEXT: return %0
   hlcf.return %1 : i64
 }

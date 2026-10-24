@@ -201,13 +201,13 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         level: The minimum severity level for messages to be logged.
     """
 
-    var _fd: FileDescriptor
+    var _fd: RawFileDescriptor
     var _prefix: String
     var _source_location: Bool
 
     def __init__(
         out self,
-        fd: FileDescriptor = std.sys.stdout,
+        fd: RawFileDescriptor = std.sys.stdout,
         *,
         prefix: String = "",
         source_location: Bool = False,

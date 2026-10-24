@@ -44,11 +44,11 @@ from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
     get_seqlens,
 )
-from max.pipelines.architectures.unified_mtp_qwen3_5.arch import (
-    UnifiedMTPQwen3_5Config,
-)
 from max.pipelines.context import ImageMetadata, TokenBuffer
 from max.pipelines.lib.interfaces import arch_has_vision_tower
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    SpecDecodeArchConfig,
+)
 
 IMAGE_TOKEN_ID = 151655
 PATCH_SIZE = 16
@@ -94,16 +94,10 @@ def test_text_only_checkpoint_publishes_no_vision_cache() -> None:
     assert not arch_has_vision_tower(Qwen3_5Config, text_only)
 
 
-def test_unified_mtp_withdraws_the_vision_cache() -> None:
-    """The fused MTP graph drops the tower, so it must not reserve a cache."""
-    assert (
-        UnifiedMTPQwen3_5Config.estimate_vision_cache_entry_bytes(_hf_config())
-        == 0
-    )
-    assert (
-        UnifiedMTPQwen3_5Config.get_vision_cache_row_spec(_hf_config()) is None
-    )
-    assert not arch_has_vision_tower(UnifiedMTPQwen3_5Config, _hf_config())
+def test_a_text_only_spec_pairing_withdraws_the_vision_cache() -> None:
+    """A text-only fused graph drops the tower, so it must not reserve a
+    cache."""
+    assert not arch_has_vision_tower(SpecDecodeArchConfig, _hf_config())
 
 
 def _tokens_for(grids: list[tuple[int, int, int]]) -> npt.NDArray[np.int64]:

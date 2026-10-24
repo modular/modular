@@ -1,21 +1,23 @@
 """Define bazel dependencies common to the internal and external repos."""
 
 bazel_dep(name = "abseil-cpp", version = "20250814.2")
-bazel_dep(name = "apple_support", version = "2.3.0", repo_name = "build_bazel_apple_support")
+bazel_dep(name = "apple_support", version = "2.9.1", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")  # TODO: bump to pnpm >v9 for v3
 bazel_dep(name = "aspect_rules_ts", version = "3.7.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "curl", version = "8.12.0")
 bazel_dep(name = "fmt", version = "11.2.0")
-bazel_dep(name = "gazelle", version = "0.50.0")
+bazel_dep(name = "freetype", version = "2.14.1")
+bazel_dep(name = "gazelle", version = "0.51.3")
+bazel_dep(name = "glfw", version = "3.3.9.bcr.1")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
 bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "jemalloc", version = "5.3.0-bcr.4")
 bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
-bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
-bazel_dep(name = "rules_cc", version = "0.2.18")
+bazel_dep(name = "rules_cc", version = "0.2.26")
 bazel_dep(name = "rules_nodejs", version = "6.7.3")
 bazel_dep(name = "rules_mojo")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
@@ -23,31 +25,23 @@ bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_pycross", version = "0.8.1")
 bazel_dep(name = "rules_python", version = "1.8.5")
-bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "rules_rs", version = "0.1.0")
+bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "tcmalloc", version = "0.0.0-20250927-12f2552")
 bazel_dep(name = "tomlplusplus", version = "3.4.0")
-bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
+bazel_dep(name = "with_cfg.bzl", version = "0.12.0")
 bazel_dep(name = "xxhash", version = "0.8.3.bcr.1")
 
 # Necessary for LLVM
 bazel_dep(name = "libxml2", version = "2.15.3")
 bazel_dep(name = "xz", version = "5.4.5.bcr.9", repo_name = "llvm_xz")
-bazel_dep(name = "zlib-ng", version = "2.3.3", repo_name = "llvm_zlib")
+bazel_dep(name = "zlib-ng", version = "2.3.3.bcr.2", repo_name = "llvm_zlib")
 bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
 
 # TODO: Bump when deps go past this version
 bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
-
-archive_override(
-    module_name = "rules_cc",
-    integrity = "sha256-xPt/jPo70Y+LPhowjcTLhMxwtkZtw7QBwO969n7mWPo=",
-    strip_prefix = "rules_cc-ad214a9cb17d41e4e03199d61d436974a2261885",
-    urls = [
-        "https://github.com/bazelbuild/rules_cc/archive/ad214a9cb17d41e4e03199d61d436974a2261885.tar.gz",
-    ],
-)
 
 archive_override(
     module_name = "rules_mojo",
@@ -58,12 +52,51 @@ archive_override(
         # Also includes a toolchain change which has to be done in lockstep to the current commit
         # That piece can be removed after the 8/5 nightly.
         "//bazel/public-patches:rules_mojo_toolchain.patch",
+        # TODO(SDLC-4732): Upstream this to `rules_mojo`.
+        # Adds `bitcode_libs` to `mojo_library` so a generated `.bc` can be embedded
+        # in a package; `--bitcode-libs` in copts breaks under path mapping.
+        "//bazel/public-patches:rules_mojo_bitcode_libs.patch",
     ],
     strip_prefix = "rules_mojo-47643a3b441c20c3a351b8807e37c547338557c8",
     urls = [
         "https://github.com/modular/rules_mojo/archive/47643a3b441c20c3a351b8807e37c547338557c8.tar.gz",
     ],
 )
+
+toolchains = use_extension("@rules_rs//rs/toolchains:module_extension.bzl", "toolchains")
+toolchains.toolchain(
+    edition = "2024",
+    # The intent here is to use our CC toolchain's linker, there may be
+    # a better approach here though. The build fails without these flags.
+    extra_exec_rustc_flags = {"x86_64-unknown-linux-gnu": ["-Clink-self-contained=no"]},
+    extra_rustc_flags = {"x86_64-unknown-linux-gnu": ["-Clink-self-contained=no"]},
+    # rustfmt.toml relies on nightly-only options
+    rustfmt_version = "nightly/2026-03-05",
+    version = "1.94.0",
+)
+use_repo(toolchains, "default_rust_toolchains")
+
+# Keeps existing `@rules_rust` references working.
+rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
+use_repo(rules_rust, "rules_rust")
+
+register_toolchains(
+    "@default_rust_toolchains//...",
+    "@rules_rust//extensions/pyo3/toolchains:toolchain",
+)
+
+crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "rust_kv_crates",
+    cargo_lock = "//rust_kv:Cargo.lock",
+    cargo_toml = "//rust_kv:Cargo.toml",
+    platform_triples = [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+use_repo(crate, "rust_kv_crates")
 
 bazel_dep(name = "rules_mypy", version = "0.41.0", dev_dependency = True)
 
@@ -298,6 +331,316 @@ http_archive(
     sha256 = "b0f50edb6bd7a4a1b6c642167cbb1aab4765dbf94a96f98e48e1ae53243c6011",
     strip_prefix = "cuda_cudart-linux-sbsa-{}-archive".format(CUDART_VERSION),
     url = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/linux-sbsa/cuda_cudart-linux-sbsa-{}-archive.tar.xz".format(CUDART_VERSION),
+)
+
+http_archive(
+    name = "metal-cpp",
+    build_file = "//bazel/public-patches:metal-cpp.BUILD",
+    integrity = "sha256-sObQo5YY84BJ6RUjjqFACq6lKSFnOFrMUqFmb9BQmqs=",
+    strip_prefix = "metal-cpp-metal-cpp_26",
+    url = "https://github.com/bkaradzic/metal-cpp/archive/refs/heads/metal-cpp_26.tar.gz",
+    # Current version is metal-cpp_26.zip which has been tested with AsyncRT
+)
+
+NVPTX_COMPILER_VERSION = "13.4.92"
+
+http_archive(
+    name = "nvptxcompiler_x86_64",
+    build_file = "//bazel/public-patches:nvptxcompiler.BUILD",
+    integrity = "sha256-a0DrWDPHRVaPV1YzOB4f7Dafb6ExOz7+Pdd4PzU4Gc0=",
+    strip_prefix = "libnvptxcompiler-linux-x86_64-{}-archive".format(NVPTX_COMPILER_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/libnvptxcompiler/linux-x86_64/libnvptxcompiler-linux-x86_64-{}-archive.tar.xz".format(NVPTX_COMPILER_VERSION),
+)
+
+http_archive(
+    name = "nvptxcompiler_aarch64",
+    build_file = "//bazel/public-patches:nvptxcompiler.BUILD",
+    integrity = "sha256-4Zqotj1uapDuoI6YAefwrvDEi9gTd7PkPGBO6Ek39P4=",
+    strip_prefix = "libnvptxcompiler-linux-sbsa-{}-archive".format(NVPTX_COMPILER_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/libnvptxcompiler/linux-sbsa/libnvptxcompiler-linux-sbsa-{}-archive.tar.xz".format(NVPTX_COMPILER_VERSION),
+)
+
+CUFILE_VERSION = "1.18.0.66"
+
+http_archive(
+    name = "libcufile_x86_64",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "libcufile",
+    srcs = ["lib/libcufile_static.a"],
+    hdrs = ["include/cufile.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)""",
+    patches = [
+        "//bazel/public-patches:cufile.patch",
+    ],
+    sha256 = "be4b6376f9e407176f5bc1802c873a79ba629bc2b0b928a7b059471ef0d90081",
+    strip_prefix = "libcufile-linux-x86_64-{}-archive".format(CUFILE_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/libcufile/linux-x86_64/libcufile-linux-x86_64-{}-archive.tar.xz".format(CUFILE_VERSION),
+)
+
+http_archive(
+    name = "libcufile_aarch64",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "libcufile",
+    srcs = ["lib/libcufile_static.a"],
+    hdrs = ["include/cufile.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)""",
+    patches = [
+        "//bazel/public-patches:cufile.patch",
+    ],
+    sha256 = "197ee55e3882016106c6c3007c71a30f01393ec61a2497f1bad0bd411e2edf1a",
+    strip_prefix = "libcufile-linux-sbsa-{}-archive".format(CUFILE_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/libcufile/linux-sbsa/libcufile-linux-sbsa-{}-archive.tar.xz".format(CUFILE_VERSION),
+)
+
+# .........................CUDA Driver and NVML ...............................
+
+# Provide CUDA driver and NVML headers to projects requiring these defs.
+# NVIDIA bundles the CUDA Driver header (cuda.h) inside the cuda_cudart
+# redistributable.  Consumers (e.g. Tracy, CUPTI) may use the
+# cuda_runtime_headers target for runtime API headers; libcudart.so is NOT
+# linked directly — Tracy loads it on demand via a dlopen stub.
+
+# Note that this does NOT package CUDA artifacts into our releases. The rules
+# below are purely to make artifacts of interest available within Bazel's
+# hermetic build-paths. On target systems, our stack picks up the libcuda.so
+# preinstalled by sysadmins.
+
+# See //bazel/third-party/BUILD.bazel for selection between x86_64 and aarch64.
+
+NVML_VERSION = "13.1.115"
+
+http_archive(
+    name = "nvml_x86_64",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "nvml_headers",
+    hdrs = ["include/nvml.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "88fe69c3b2e73d414eea2101813ae5819b0f7c9a1c5e4e98fb44e1ef88748c7d",
+    strip_prefix = "cuda_nvml_dev-linux-x86_64-{}-archive".format(NVML_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvml_dev/linux-x86_64/cuda_nvml_dev-linux-x86_64-{}-archive.tar.xz".format(NVML_VERSION),
+)
+
+http_archive(
+    name = "nvml_sbsa",  # 64b ARM
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "nvml_headers",
+    hdrs = ["include/nvml.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "9e27291f5a70dbb03c102a75c94423b4748e2d05c54134a61ab638d41570d8b7",
+    strip_prefix = "cuda_nvml_dev-linux-sbsa-{}-archive".format(NVML_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvml_dev/linux-sbsa/cuda_nvml_dev-linux-sbsa-{}-archive.tar.xz".format(NVML_VERSION),
+)
+
+# .........................HIP Runtime/Driver .............................
+#
+# The HIP HAL plugin (Target/lib/HIP/) loads libamdhip64.so at runtime
+# via dlopen. We still pull in the HIP headers from source so that
+# HIPApi.h uses canonical type definitions instead of hand-maintained aliases.
+
+http_archive(
+    name = "hip_include",
+    build_file = "//bazel/public-patches:hip_include.BUILD",
+    sha256 = "8b2940b1253d49a24a9b55fee7c2638b7e1e2b364f8302a5285f71caff36a433",
+    strip_prefix = "rocm-systems-therock-7.11",
+    url = "https://github.com/ROCm/rocm-systems/archive/refs/tags/therock-7.11.tar.gz",
+)
+
+# ......................... CUDA CUPTI (Tracy GPU profiling) ..................
+#
+# Tracy's TracyCUDA.hpp includes <cupti.h> for CUDA GPU profiling support.
+# CUPTI is distributed as a separate NVIDIA redistributable package.
+
+CUPTI_VERSION = "13.1.115"
+
+http_archive(
+    name = "cuda_cupti_x86_64",
+    build_file = "//bazel/public-patches:cuda_cupti.BUILD",
+    sha256 = "c712f0181a63484d843897e39ced6bb32167e79c96181a3ca3fd33626b6a6b11",
+    strip_prefix = "cuda_cupti-linux-x86_64-{}-archive".format(CUPTI_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cupti/linux-x86_64/cuda_cupti-linux-x86_64-{}-archive.tar.xz".format(CUPTI_VERSION),
+)
+
+http_archive(
+    name = "cuda_cupti_aarch64",
+    build_file = "//bazel/public-patches:cuda_cupti.BUILD",
+    sha256 = "4d81812c493880b8cff8cb38ac858f5b3769ebec3a94f65148f1936e8282913c",
+    strip_prefix = "cuda_cupti-linux-sbsa-{}-archive".format(CUPTI_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cupti/linux-sbsa/cuda_cupti-linux-sbsa-{}-archive.tar.xz".format(CUPTI_VERSION),
+)
+
+http_archive(
+    name = "dlpack",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "dlpack",
+    hdrs = ["include/dlpack/dlpack.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "58284a3b004a48450c958a23b30274527ebaf35a061124bbd4193fffa45efbd6",
+    strip_prefix = "dlpack-1.2",
+    url = "https://github.com/dmlc/dlpack/archive/refs/tags/v1.2.tar.gz",
+)
+
+# xgrammar grammar engine (github.com/mlc-ai/xgrammar), hack-to-owned: build only
+# the torch/tvm-ffi-free C++ grammar core; bound with nanobind in _core.
+http_archive(
+    name = "xgrammar",
+    build_file = "//bazel/public-patches:xgrammar.BUILD",
+    patch_args = ["-p1"],
+    patches = ["//bazel/public-patches:xgrammar.patch"],
+    sha256 = "e0f9bd20ce66b054fe12aa2bc6c046bda9adc5243aa710e7febf25918dda7bf5",
+    strip_prefix = "xgrammar-0.2.3",
+    url = "https://github.com/mlc-ai/xgrammar/archive/refs/tags/v0.2.3.tar.gz",
+)
+
+# libkineto is the on-demand CPU+GPU profiler MAX uses to emit Chrome trace
+# JSON for HTA / Dynolog IPC capture (MXTOOLS-190). We pin to the exact SHA
+# bundled with torch==2.12.0+cu130 because the PyTorch/HTA/libkineto/Dynolog
+# compatibility chain at that pairing is empirically validated end-to-end
+# (see MXTOOLS-190 initial spike). The accompanying
+# bazel/public-patches/libkineto.BUILD wires up the CUPTI / CUDA Toolkit deps
+# and exposes the cc_library target.
+http_archive(
+    name = "libkineto",
+    build_file = "//bazel/public-patches:libkineto.BUILD",
+    patch_args = ["-p1"],
+    patches = [
+        # Emit "Record Window End" on the (-1, 0) overhead track with thread
+        # scope so it stops spawning an Unnamed SliceTrack in Perfetto. Covers
+        # daemon-written (Dynolog) traces, which bypass the post-write fixup
+        # in max/internal/profiler/lib/Range.cpp (MXTOOLS-266).
+        "//bazel/public-patches:libkineto-record-window-end-track.patch",
+    ],
+    sha256 = "7615b3c028b3148d046ba7a34b890d9bf90e5178024c7b749b5018366fc9e631",
+    strip_prefix = "kineto-b2103f78d13fde4937af010c0ef8e24313568bc5",
+    url = "https://github.com/pytorch/kineto/archive/b2103f78d13fde4937af010c0ef8e24313568bc5.tar.gz",
+)
+
+# dynolog supplies the IPC fabric headers libkineto includes under
+# ENABLE_IPC_FABRIC; bazel/public-patches/dynolog.BUILD explains why the kineto
+# tarball can't provide them. Pinned to b32376d, validated against Dynolog
+# 0.6.0 + libkineto's IPC protocol.
+http_archive(
+    name = "dynolog",
+    build_file = "//bazel/public-patches:dynolog.BUILD",
+    sha256 = "c2eadfc57dae25927f0dc2598fa2df04bc2be7660f33a818624faf714a117089",
+    strip_prefix = "dynolog-b32376ddd6affc4f53a4846152b43399e9e91cd9",
+    url = "https://github.com/facebookincubator/dynolog/archive/b32376ddd6affc4f53a4846152b43399e9e91cd9.tar.gz",
+)
+
+http_archive(
+    name = "tl_expected",
+    build_file = "//bazel/public-patches:tl_expected.BUILD",
+    sha256 = "9a04f4f472fbb5c30bf60402f1ca626c4a76987f867978d0b8a35d7ab3fb8fe7",
+    strip_prefix = "expected-1.3.1",
+    url = "https://github.com/TartanLlama/expected/archive/refs/tags/v1.3.1.tar.gz",
+)
+
+single_version_override(
+    module_name = "glfw",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:glfw-cc-loads.patch",
+    ],
+    version = "3.3.9.bcr.1",
+)
+
+http_archive(
+    name = "tracy",
+    build_file = "//bazel/public-patches:tracy.BUILD",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:tracy-tls-fix.patch",
+        "//bazel/public-patches:tracy-port-logging.patch",
+        # CUDA kernel annotations; patches EmitGpuZone — revisit on Tracy upgrade.
+        "//bazel/public-patches:tracy-cuda-kernel-annotations.patch",
+        "//bazel/public-patches:tracy-rocm-no-default-counters.patch",
+    ],
+    sha256 = "a932cf2a90adbf63f87b449fa4374a52f18a36c4a3858d4d69d3e75d62fa5f6a",
+    strip_prefix = "tracy-0.14.0",
+    url = "https://github.com/wolfpld/tracy/archive/refs/tags/v0.14.0.tar.gz",
+)
+
+http_archive(
+    name = "ppqsort",
+    build_file = "//bazel/public-patches:ppqsort.BUILD",
+    sha256 = "12d9c05363fa3d36f4916a78f1c7e237748dfe111ef44b8b7a7ca0f3edad44da",
+    strip_prefix = "PPQSort-1.0.6",
+    url = "https://github.com/GabTux/PPQSort/archive/refs/tags/v1.0.6.tar.gz",
+)
+
+http_archive(
+    name = "capstone",
+    build_file = "//bazel/public-patches:capstone.BUILD",
+    sha256 = "a909a0ea9cd9da5a55fb498b4bd54507469dafe80eadc2e1928c80c8773ed7c5",
+    strip_prefix = "capstone-6.0.0-Alpha5",
+    url = "https://github.com/capstone-engine/capstone/archive/refs/tags/6.0.0-Alpha5.tar.gz",
+)
+
+http_archive(
+    name = "imgui_docking",
+    build_file = "//bazel/public-patches:imgui_docking.BUILD",
+    integrity = "sha256-1aRgd+5uSgLb3kgXhgkPMBukevRDsuy2KD1wb5vQvxM=",
+    strip_prefix = "imgui-5a76f2adf1b0403b86a45010121fb32a6bff8680",
+    urls = ["https://github.com/ocornut/imgui/archive/5a76f2adf1b0403b86a45010121fb32a6bff8680.tar.gz"],
+)
+
+http_archive(
+    name = "hello_imgui",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "hello_imgui",
+    hdrs = ["src/hello_imgui/imgui_theme.h"],
+    srcs = ["src/hello_imgui/impl/imgui_theme.cpp"],
+    includes = ["./src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@imgui_docking//:imgui_docking",
+        "@imgui_docking//:platform-glfw",
+        "@imgui_docking//:renderer-opengl3",
+    ],
+)""",
+    integrity = "sha256-C2++9JquYHm0fRc4v4UcajMDM55k8U0e4WN0GFETrYY=",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:hello_imgui.patch",
+    ],
+    strip_prefix = "hello_imgui-1.92.3",
+    url = "https://github.com/pthom/hello_imgui/archive/refs/tags/v1.92.3.zip",
+)
+
+http_archive(
+    name = "portable_file_dialogs",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "portable_file_dialogs",
+    hdrs = ["portable-file-dialogs.h"],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)""",
+    integrity = "sha256-aQALHcAcgYwGpy3UKLQ366LRks0MfRfMjRK9bKQNgpc=",
+    strip_prefix = "portable-file-dialogs-7f852d88a480020d7f91957cbcefe514fc95000c",
+    urls = ["https://github.com/samhocevar/portable-file-dialogs/archive/7f852d88a480020d7f91957cbcefe514fc95000c.tar.gz"],
 )
 
 # asio: async I/O library used by @nixl_upstream and MLRT.
@@ -586,6 +929,8 @@ http_archive(
     patches = [
         "//bazel/public-patches:mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch",
         "//bazel/public-patches:mistral-evals-0002-Increase-request-parallelism.patch",
+        "//bazel/public-patches:mistral-evals-0003-Accept-any-200-from-the-health-endpoint.patch",
+        "//bazel/public-patches:mistral-evals-0004-Make-request-parallelism-configurable.patch",
     ],
     sha256 = "d34c715e7a625a7acb392ffebca23da30693a992979d7c58f3c13e6000e9adc5",
     strip_prefix = "mistral-evals-02bbf53fea669323010bba74f1b9874472d0d47c",
@@ -593,10 +938,14 @@ http_archive(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/mistral-evals/02bbf53fea669323010bba74f1b9874472d0d47c/d34c715e7a625a7acb392ffebca23da30693a992979d7c58f3c13e6000e9adc5/mistral-evals-02bbf53fea669323010bba74f1b9874472d0d47c.tar.gz",
 )
 
-# Blackwell (SM100) benchmark wheel dependencies for external baselines (DeepGEMM, FlashInfer, flash-attention).
-# These wheels are pre-built on a B200 machine and uploaded via:
+# Blackwell (SM100) benchmark wheel dependency for the DeepGEMM baseline.
+# FlashInfer and FlashAttention are no longer mirrored here: upstream publishes
+# both as pure-Python JIT wheels, so they come from the pip lock instead
+# (`flashinfer-python`, `flash-attn-4`).
+# This wheel is pre-built on a B200 machine and uploaded via:
 #   ./utils/upload-public-bazel-artifact.sh <name> sm100 <wheel_path>
-# To rebuild wheels, use: python Kernels/utils/setup_bench_env.py --build-wheels
+# To rebuild it, run --build-wheels on
+# max/kernels/benchmarks/misc/comparison/setup_bench_env.py
 # NOTE: Filename has '+' replaced with '_' to avoid S3 URL encoding issues.
 # The '+' in PEP 440 local versions (e.g., 2.2.0+38f8ef7) requires URL encoding
 # as %2B, but Bazel's http_file doesn't encode, causing 403 errors.
@@ -608,22 +957,8 @@ http_file(
     urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/deep_gemm/sm100/91a898b8704b91726646e98403f6028b1e601603b2d34f8e4530370072e474cf/deep_gemm-2.2.0_38f8ef7-cp312-cp312-linux_x86_64.whl"],
 )
 
-http_file(
-    name = "flashinfer_sm100_wheel",
-    downloaded_file_path = "flashinfer_python-0.5.2-py3-none-any.whl",
-    sha256 = "0afdb8f536a3a101ac7f653d66a5f4f63991f820352daf64950dab89f9806c1c",
-    urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/flashinfer/sm100/0afdb8f536a3a101ac7f653d66a5f4f63991f820352daf64950dab89f9806c1c/flashinfer_python-0.5.2-py3-none-any.whl"],
-)
-
-http_file(
-    name = "flash_attn_sm100_wheel",
-    downloaded_file_path = "flash_attn-2.8.3-py3-none-any.whl",
-    sha256 = "3f4db99ab00437fb50c61da11d0647e5ab7aeab1b0b7337ae048dd8ee1b308b2",
-    urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/flash_attn/sm100/3f4db99ab00437fb50c61da11d0647e5ab7aeab1b0b7337ae048dd8ee1b308b2/flash_attn-2.8.3-py3-none-any.whl"],
-)
-
 # aiter (AMD AI Tensor Engine for ROCm) for AMD GPU benchmarks. Built from
-# AMD's aiter source (v0.1.12); not on PyPI, so hosted like flash_attn above.
+# AMD's aiter source (v0.1.12); not on PyPI, so hosted like deep_gemm above.
 # cp313 binary wheel with prebuilt gfx950 .so kernels; the excluded mha ops
 # JIT-compile at first use. Carries the MLA and MXFP4 ops the PyPI wheel lacks.
 http_file(

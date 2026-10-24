@@ -24,7 +24,6 @@
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DeclResolver.h"
-#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "llvm/ADT/STLExtras.h"
 
 using namespace M;

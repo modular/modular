@@ -352,12 +352,24 @@ class NVMLContext:
         # actually more complicated -- see
         # https://github.com/NVIDIA/nvidia-settings/issues/78#issuecomment-1012837988
         mem.version = ctypes.sizeof(_nvmlMemory_v2_t) | (2 << 24)
-        _check_nvml_return(
-            self._library,
-            self._library.nvmlDeviceGetMemoryInfo_v2(
-                device, _bindtools.byref(mem)
-            ),
-        )
+        try:
+            _check_nvml_return(
+                self._library,
+                self._library.nvmlDeviceGetMemoryInfo_v2(
+                    device, _bindtools.byref(mem)
+                ),
+            )
+        except NotSupportedError:
+            # Some drivers (for example, on the GB10 in DGX Spark) don't
+            # support memory info even though utilization and clocks work.
+            memory = None
+        else:
+            memory = MemoryStats(
+                total_bytes=mem.total,
+                free_bytes=mem.free,
+                used_bytes=mem.used,
+                reserved_bytes=mem.reserved,
+            )
         util = _nvmlUtilization_t()
         _check_nvml_return(
             self._library,
@@ -366,12 +378,7 @@ class NVMLContext:
             ),
         )
         return GPUStats(
-            memory=MemoryStats(
-                total_bytes=mem.total,
-                free_bytes=mem.free,
-                used_bytes=mem.used,
-                reserved_bytes=mem.reserved,
-            ),
+            memory=memory,
             utilization=UtilizationStats(
                 gpu_usage_percent=util.gpu,
                 memory_activity_percent=util.memory,

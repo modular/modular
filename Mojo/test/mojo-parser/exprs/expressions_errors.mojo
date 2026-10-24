@@ -201,14 +201,14 @@ def test_func_type():
     comptime float3: def[a: Int](var Int) thin -> MemType = test_func_type
     # expected-error @below {{def[a: Int](mut *Int) thin -> None}}
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
-    # expected-error @below {{'def(*MemType) raises capturing thin -> None'}}
-    comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing thin -> None'}}
-    comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing thin -> None'}}
-    comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) capturing thin -> None'}}
-    comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
+    # expected-error @below {{'def(*MemType) raises -> None'}}
+    comptime float5: def(*MemType) raises -> None = test_func_type
+    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) -> None'}}
+    comptime float6: def[*Ts: AnyType](var* *Ts) -> None = test_func_type
+    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) -> None'}}
+    comptime float6a: def[*Ts: AnyType](var* *Ts) -> None = test_func_type
+    # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) -> None'}}
+    comptime float7: def[T: TrivialRegisterPassable](mut *T) -> None = test_func_type
     # expected-error @below {{'def(var **args: Int) -> None'}}
     comptime float8: def(var **args: Int) = test_func_type
 
@@ -235,7 +235,7 @@ def test_func_type():
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
     comptime f3: def (*, Int) thin -> Int
     # expected-error @below {{unnamed argument must be positional-only}}
-    comptime f4 = def (Int, b: Int) capturing -> Int
+    comptime f4 = def (Int, b: Int) -> Int
 
     # expected-error @below {{unnamed parameter cannot follow named parameter}}
     comptime f5: def [a: Int, Int]() thin -> Int
@@ -244,7 +244,7 @@ def test_func_type():
     # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
     comptime f7: def [*, Int] thin -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
-    comptime f8 = def [Int, b: Int] capturing -> Int
+    comptime f8 = def [Int, b: Int] -> Int
     # expected-error @below {{'def throws_int() raises Int thin -> None' value to 'def() raises String thin -> None'}}
     # expected-note @below {{error type of the first type is 'Int' but the second type is 'String'}}
     comptime f9: def () thin raises String = throws_int

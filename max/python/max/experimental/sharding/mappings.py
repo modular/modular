@@ -31,7 +31,11 @@ from .placements import (
 
 
 class ConversionError(Exception):
-    """Raised when a sharding spec conversion would lose information."""
+    """Raised when a named spec cannot be represented on its mesh.
+
+    That is, when one mesh axis shards more than one tensor dimension, or an
+    axis appears as both unreduced and sharded.
+    """
 
 
 SpecEntry = str | tuple[str, ...] | None
@@ -74,11 +78,18 @@ class DeviceMapping:
     def check_shape(self, shape: Sized) -> None:
         """Raises if this mapping shards an axis ``shape`` does not have.
 
+        A negative axis counts from the end of ``shape``, so ``Sharded(-1)``
+        names the last axis, matching how the rest of the sharding code
+        normalizes axes. This checks range only: an axis that would split into
+        empty shards passes here, and
+        :func:`~max.experimental.functional.transfer_to` refuses it later.
+
         Args:
             shape: The global shape to check against.
 
         Raises:
-            ValueError: If a :class:`Sharded` axis is out of range.
+            ValueError: If a :class:`Sharded` axis is below ``-len(shape)``
+                or at least ``len(shape)``.
         """
         for placement in self.placements:
             if isinstance(placement, Sharded) and not (
@@ -105,7 +116,8 @@ def as_device_mapping(
     """Coerces any way of naming where a value sits into a mapping.
 
     Args:
-        device: A single device, a mesh to replicate over, or a mapping.
+        device: A single device, a ``DeviceRef``, a mesh to replicate over,
+            or a mapping.
 
     Returns:
         The equivalent :class:`DeviceMapping`.
@@ -134,8 +146,11 @@ class NamedMapping(DeviceMapping):
     axis that shards it (or ``None`` for replicated). Mesh-axis names
     not present on the target mesh resolve to :class:`Replicated`.
     ``unreduced`` names mesh axes carrying a pending reduction; each
-    becomes a :class:`Partial` placement. After construction this is
-    a regular :class:`DeviceMapping`; the spec is forgotten.
+    becomes a :class:`Partial` placement.
+
+    The resolved placements are stored on the instance, so it behaves as a
+    regular :class:`DeviceMapping`. It also keeps the original spec, which
+    ``_resolve`` uses to rebuild the mapping on another mesh.
 
     Args:
         mesh: The target device mesh, or :obj:`None` to take the one set by
@@ -147,6 +162,9 @@ class NamedMapping(DeviceMapping):
         ValueError: If ``mesh`` is :obj:`None` and no
             :func:`~max.experimental.tensor.default_device` is active, leaving
             the spec with nothing to resolve against.
+        ConversionError: If one mesh axis is named for more than one tensor
+            dimension, or if an axis appears in both ``spec`` and
+            ``unreduced``.
     """
 
     # Kept so :meth:`_resolve` can rebind the spec against another mesh.
@@ -176,11 +194,13 @@ class NamedMapping(DeviceMapping):
     def _resolve(self, mesh: DeviceMesh) -> NamedMapping:
         """Rebinds this mapping's original spec against ``mesh``.
 
-        Axis names in the spec that are not present in ``mesh`` are
-        treated as :class:`Replicated`, matching the construction-time
-        graceful-degradation behavior. Use this when a tensor with a
-        stub-mesh :class:`NamedMapping` is being moved onto its real
+        Axis names in the spec that are not present in ``mesh`` become
+        ``Replicated``, as they do at construction. Use this when you move a
+        tensor off the placeholder mesh it was declared on and onto its real
         target mesh.
+
+        Args:
+            mesh: The mesh to resolve the spec against.
         """
         return NamedMapping(
             mesh, self._original_spec, unreduced=self._original_unreduced

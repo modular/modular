@@ -38,6 +38,7 @@ Graph construction
    :template: autosummary/class.rst
 
    Graph
+   GraphOutputs
    KernelLibrary
    Module
 

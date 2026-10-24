@@ -21,6 +21,9 @@ Neither test needs a dequant reference. Each runs the launch twice over the
 same inputs, once plain and once with an epilogue, so the plain arm's stored
 output IS the value the epilogue must have seen; matmul correctness itself
 belongs to `test_mxfp{4,8}_matmul_amd.mojo`.
+
+Every epilogue check runs for both the epilogue and compute closure entry
+points.
 """
 
 from std.atomic import Atomic
@@ -31,17 +34,20 @@ from std.testing import assert_equal, assert_true
 
 from layout import Coord, TileTensor
 from layout.tile_layout import row_major
+from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE, MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     _launch_block_scaled_split_k,
+    _launch_block_scaled_split_k_impl,
     block_scaled_matmul_amd,
 )
+from linalg.utils import no_compute_fn
 
 comptime MXFP4_LANE_BYTES = 16
 comptime MXFP8_LANE_BYTES = 32
 
 # `c` is pre-filled with this: a reduce carrying an epilogue routes every
-# element through the lambda and never stores, so the sentinel must survive.
+# element through the epilogue and never stores, so the sentinel must survive.
 comptime SENTINEL = Float32(-98765.0)
 
 
@@ -117,7 +123,7 @@ def test_split_k_epilogue[
     WM: Int = 64,
     WN: Int = 32,
 ](ctx: DeviceContext) raises:
-    """Split-K carrying an `elementwise_lambda_fn`.
+    """Split-K carrying an epilogue closure.
 
     The epilogue must see each cell exactly once, holding the SUMMED value.
     The affine `2*val + 1` separates the failures: per-split accumulation
@@ -135,6 +141,9 @@ def test_split_k_epilogue[
     comptime K_BYTES = K_static // (2 if is_fp4 else 1)
     comptime K_SCALES = K_static // SF_VECTOR_SIZE
     comptime N_ELEMS = M_static * N_static
+    comptime _fmt = (
+        CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if is_fp4 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
+    )
 
     print(
         "   MXFP",
@@ -203,22 +212,32 @@ def test_split_k_epilogue[
     var fire_ptr = fire_d.unsafe_ptr()
     var wide_ptr = wide_d.unsafe_ptr()
 
-    @__parameter
-    @__copy_capture(epi_ptr, fire_ptr, wide_ptr)
     @inline(.always)
-    def record[
-        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[_dtype, width]):
+    def record_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {
+        var epi_ptr, var fire_ptr, var wide_ptr
+    }:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        # Routing oracle: the reduce hands one scalar per cell, the in-tile
-        # `RegTileEpilogue` hands `chunk_width` contiguous columns, so width
-        # > 1 can only be a non-split launch.
         comptime if width > 1:
             wide_ptr[0] = Int32(1)
-        var base = Int(idx[0].value()) * N_static + Int(idx[1].value())
+        var base = Int(idx[0]) * N_static + Int(idx[1])
         comptime for w in range(width):
             epi_ptr[base + w] = val[w].cast[.float32]() * 2.0 + 1.0
-            _ = Atomic[Int32].fetch_add(fire_ptr + base + w, Int32(1))
+            _ = Atomic[Int32].fetch_add(
+                fire_ptr.unsafe_offset(base).unsafe_offset(w), Int32(1)
+            )
+
+    @inline(.always)
+    def affine_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var wide_ptr} -> SIMD[
+        _dtype, width
+    ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        comptime if width > 1:
+            wide_ptr[0] = Int32(1)
+        return val * 2 + 1
 
     var c_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
     var reduced_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
@@ -243,16 +262,27 @@ def test_split_k_epilogue[
         lane_bytes=lane_bytes,
     ](reduced_tt, a_tt, b_tt, sfa_tt, sfb_tt, M_static, ctx)
 
-    _launch_block_scaled_split_k[
+    _launch_block_scaled_split_k_impl[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
         WM=WM,
         WN=WN,
         num_splits=num_splits,
-        lane_bytes=lane_bytes,
-        elementwise_lambda_fn=record,
-    ](c_tt, a_tt, b_tt, sfa_tt, sfb_tt, M_static, ctx)
+        matrix_format=_fmt,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](
+        c_tt,
+        a_tt,
+        b_tt,
+        sfa_tt,
+        sfb_tt,
+        M_static,
+        record_fn,
+        no_compute_fn,
+        ctx,
+    )
 
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(reduced_h, reduced_d)
@@ -268,13 +298,13 @@ def test_split_k_epilogue[
         c_h.unsafe_ptr(),
         Int(wide_out_h[0]),
         N_ELEMS,
-        "direct launch",
+        "direct launch, epilogue closure",
     )
 
     # Same pair through the PUBLIC entry point, which proves the dispatcher
     # can instantiate split-K + epilogue at all. Routing does not depend on
-    # the lambda, so the plain call picks the same split factor and the value
-    # check stays exact.
+    # the epilogue, so the plain call picks the same split factor and the
+    # value check stays exact.
     ctx.enqueue_copy(c_d, c_init_h)
     ctx.enqueue_copy(epi_d, epi_h)
     ctx.enqueue_copy(fire_d, fire_h)
@@ -283,9 +313,9 @@ def test_split_k_epilogue[
     block_scaled_matmul_amd[lane_bytes=lane_bytes](
         reduced_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx
     )
-    block_scaled_matmul_amd[
-        lane_bytes=lane_bytes, elementwise_lambda_fn=record
-    ](c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
+    block_scaled_matmul_amd[lane_bytes=lane_bytes](
+        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, record_fn, ctx
+    )
 
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(reduced_h, reduced_d)
@@ -301,8 +331,32 @@ def test_split_k_epilogue[
         c_h.unsafe_ptr(),
         Int(wide_out_h[0]),
         N_ELEMS,
-        "dispatch",
+        "dispatch, epilogue closure",
     )
+
+    # The compute closure stores `2*sum + 1` into `c` itself.
+    ctx.enqueue_copy(c_d, c_init_h)
+    ctx.enqueue_copy(wide_d, wide_h)
+
+    block_scaled_matmul_amd[lane_bytes=lane_bytes](
+        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, affine_fn, ctx
+    )
+
+    ctx.enqueue_copy(c_h, c_d)
+    ctx.enqueue_copy(wide_out_h, wide_d)
+    ctx.synchronize()
+
+    assert_equal(
+        Int(wide_out_h[0]),
+        0,
+        msg="compute closure ran at width > 1, so split-K did not",
+    )
+    for i in range(N_ELEMS):
+        assert_equal(
+            c_h[i],
+            reduced_h[i] * 2.0 + 1.0,
+            msg=String("dispatch, compute closure: value mismatch at ", i),
+        )
     print("      OK")
 
 
@@ -382,39 +436,43 @@ def test_dispatch_workspace_cap[
     var seen_ptr = seen_d.unsafe_ptr()
     var wide_ptr = wide_d.unsafe_ptr()
 
-    @__parameter
-    @__copy_capture(seen_ptr, wide_ptr)
     @inline(.always)
-    def probe[
-        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[_dtype, width]):
+    def probe_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var seen_ptr, var wide_ptr}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime if width > 1:
             wide_ptr[0] = Int32(1)
-        # Count elements, not calls: the split arm's reduce hands one scalar per
-        # cell and the non-split arm hands `width` at a time, so the total is
-        # M*N either way. Without this, `wide == 0` on the split arm is the
-        # absence of evidence -- an epilogue that never fired reads the same.
         _ = Atomic[Int32].fetch_add(seen_ptr, Int32(width))
-
-    block_scaled_matmul_amd[lane_bytes=lane_bytes, elementwise_lambda_fn=probe](
-        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx
-    )
 
     var wide_out_h = ctx.enqueue_create_host_buffer[.int32](1)
     var seen_out_h = ctx.enqueue_create_host_buffer[.int32](1)
+
+    block_scaled_matmul_amd[lane_bytes=lane_bytes](
+        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, probe_fn, ctx
+    )
     ctx.enqueue_copy(wide_out_h, wide_d)
     ctx.enqueue_copy(seen_out_h, seen_d)
     ctx.synchronize()
+    _assert_routing[expect_split_k](
+        Int(seen_out_h[0]), Int(wide_out_h[0]), M_static, N_static
+    )
+    print("      OK")
+
+
+def _assert_routing[
+    expect_split_k: Bool
+](seen: Int, wide: Int, M_static: Int, N_static: Int) raises:
+    """Checks the routing probe's element count and call width."""
 
     # Liveness first: both M values here are multiples of their branch's BM, so
     # no OOB row fires and the count is exactly M*N.
     assert_equal(
-        Int(seen_out_h[0]),
+        seen,
         M_static * N_static,
         msg=String(
             "epilogue covered ",
-            Int(seen_out_h[0]),
+            seen,
             " of ",
             M_static * N_static,
             " elements at M=",
@@ -422,7 +480,7 @@ def test_dispatch_workspace_cap[
         ),
     )
     assert_equal(
-        Int(wide_out_h[0]),
+        wide,
         0 if expect_split_k else 1,
         msg=String(
             "routing changed: expected ",
@@ -431,18 +489,17 @@ def test_dispatch_workspace_cap[
             M_static,
         ),
     )
-    print("      OK")
 
 
 def main() raises:
     with DeviceContext() as ctx:
         print("===> MX split-K epilogue (MXFP4 + MXFP8)")
 
-        print("\n--- SK + epilogue: the lambda rides the reduce ---")
+        print("\n--- SK + epilogue: the epilogue rides the reduce ---")
 
         # M3's fused QKV+IndexQK GEMM at TP4: N = 2048 (Q) + 128 (K) + 128 (V)
         # + 128 (IndexQ) + 128 (IndexK) = 2560, K = hidden 6144. Its K/V and
-        # IndexK scatter IS the `elementwise_lambda_fn`. Both formats reach the
+        # IndexK scatter IS the epilogue. Both formats reach the
         # same 12-way split there, so one `num_splits` serves both arms.
         comptime for lane_bytes in [MXFP4_LANE_BYTES, MXFP8_LANE_BYTES]:
             # These params match what dispatch picks at MXFP4; at MXFP8 it now

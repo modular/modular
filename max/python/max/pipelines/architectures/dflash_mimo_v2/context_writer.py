@@ -320,19 +320,38 @@ class DFlashContextWriter(Module):
             The context projection, ``[rows, hidden]`` per device.
         """
         num_taps = len(self.config.target_layer_ids)
-        partials = []
-        start = 0
-        for device_taps, fc in zip(taps, self.fc_shards, strict=True):
+        for device_taps in taps:
             if len(device_taps) != num_taps:
                 raise ValueError(
                     f"DFlash MiMo-V2: expected {num_taps} taps per device, got"
                     f" {len(device_taps)}."
                 )
+        return self.project_features(
+            [ops.concat(list(device_taps), axis=-1) for device_taps in taps],
+            signal_buffers,
+        )
+
+    def project_features(
+        self,
+        features: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue] | None = None,
+    ) -> list[TensorValue]:
+        """Returns ``fc(features)`` on every device, before ``hidden_norm``.
+
+        Args:
+            features: Per device, the taps concatenated in
+                ``target_layer_ids`` order, replicated.
+            signal_buffers: The allreduce buffers; needed on more than one
+                device.
+
+        Returns:
+            The context projection, ``[rows, hidden]`` per device.
+        """
+        partials = []
+        start = 0
+        for device_features, fc in zip(features, self.fc_shards, strict=True):
             width = int(fc.weight.shape[1])
-            features = ops.concat(device_taps, axis=-1)[
-                :, start : start + width
-            ]
-            partials.append(fc(features))
+            partials.append(fc(device_features[:, start : start + width]))
             start += width
         if len(partials) == 1:
             return partials

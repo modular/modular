@@ -2,11 +2,12 @@ load("//bazel:api.bzl", "mojo_library", "pkg_files")
 
 package(default_visibility = ["//max:consumers"])
 
-# Also the base of the HAL overlay in //max/driver/src/mcl:max_srcs_hal,
-# which the `//max:max_mojo` alias selects under --config=hal-device-context.
+# Also the base of the HAL overlay in
+# //max/mojo/max/_driver/max_license:max_srcs_hal, which the `//max:max_mojo`
+# alias selects under --config=hal-device-context.
 filegroup(
     name = "max_srcs",
-    srcs = glob(["**/*.mojo"]),
+    srcs = glob(["**/*.mojo"]) + ["//max/mojo/max/_driver/max_license:srcs"],
     visibility = ["//visibility:public"],
 )
 

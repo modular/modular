@@ -24,30 +24,31 @@ candidate reports index 0.
 
 The `test_arg*_splitk_*` cases cover the same index contract through
 `algorithm.cpu.rowwise`'s split-axis tier, where a large row fans out
-across multiple workers and their partials are merged.
+across multiple workers and their partials are merged. The
+`test_arg*_wide_*` cases cover ties on the cooperative tier's
+wide-accumulator path, which a long row takes.
 """
 
-from algorithm.cpu.rowwise import _CPU_SPLITK_MIN_AXIS
+from algorithm.cpu.rowwise import _CPU_SPLITK_MIN_AXIS, _CPU_WIDE_ACC_MIN_ROW
 from builtin_kernels.monoids import ArgMax, ArgMin
 from builtin_kernels.rowwise_reductions import reduce_argmax, reduce_argmin
 from max.algorithm.backend.cpu.parallelize import _get_num_workers
 from std.testing import TestSuite, assert_equal, assert_true
 from std.utils.coord import Coord
-from std.utils.index import Index
 from std.utils.numerics import nan
 
 
 def _argmax_index(values: List[Float32]) -> Int:
     var acc = ArgMax[.float32, 1]()
     for i in range(len(values)):
-        acc.accumulate[.float32, 1](Float32(values[i]), Int64(i))
+        acc.accumulate[.float32, 1](values[i], Int64(i))
     return Int(acc.reduce().acc_indices[0])
 
 
 def _argmin_index(values: List[Float32]) -> Int:
     var acc = ArgMin[.float32, 1]()
     for i in range(len(values)):
-        acc.accumulate[.float32, 1](Float32(values[i]), Int64(i))
+        acc.accumulate[.float32, 1](values[i], Int64(i))
     return Int(acc.reduce().acc_indices[0])
 
 
@@ -55,8 +56,6 @@ comptime _SPLITK_AXIS_SIZE = 1 << 21
 """Clears `_CPU_SPLITK_MIN_AXIS`, so a single row this long fans out across
 multiple CPU workers (`algorithm.cpu.rowwise`'s split-K tier) whenever the
 host has at least 4 logical cores."""
-
-comptime _SPLITK_ROW_SHAPE = Index(1, _SPLITK_AXIS_SIZE)
 
 comptime _SPLITK_WINNER_IDX = 1_000_000
 """Split-K requires >= 4 workers to fire at all (`num_outputs * 4 <=
@@ -81,8 +80,8 @@ def _assert_reaches_splitk_tier() raises:
     )
 
 
-def _run_splitk_arg[
-    is_max: Bool, dtype: DType = DType.float32
+def _run_arg[
+    is_max: Bool, dtype: DType = .float32
 ](mut row: List[Scalar[dtype]]) raises -> Int:
     """Drives `reduce_argmax` (`is_max`) or `reduce_argmin` over `row` as a
     single `[1, len(row)]` row. `input_fn`/`output_fn` read/write straight
@@ -96,7 +95,7 @@ def _run_splitk_arg[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {input_ptr} -> SIMD[dtype, width]:
-        return input_ptr.unsafe_load[width=width](Int(coords[1].value()))
+        return input_ptr.unsafe_load[width=width](Int(coords[1]))
 
     @inline(.always)
     def output_fn[
@@ -106,11 +105,11 @@ def _run_splitk_arg[
 
     comptime if is_max:
         reduce_argmax[dtype, target="cpu", reduce_dim=1](
-            input_fn, output_fn, Coord(_SPLITK_ROW_SHAPE)
+            input_fn, output_fn, Coord(1, len(row))
         )
     else:
         reduce_argmin[dtype, target="cpu", reduce_dim=1](
-            input_fn, output_fn, Coord(_SPLITK_ROW_SHAPE)
+            input_fn, output_fn, Coord(1, len(row))
         )
     return Int(output_row[0])
 
@@ -157,7 +156,7 @@ def test_argmax_splitk_winner_in_non_first_split() raises:
     _assert_reaches_splitk_tier()
     var row = List(length=_SPLITK_AXIS_SIZE, fill=Float32(0))
     row[_SPLITK_WINNER_IDX] = 1.0
-    assert_equal(_run_splitk_arg[is_max=True](row), _SPLITK_WINNER_IDX)
+    assert_equal(_run_arg[is_max=True](row), _SPLITK_WINNER_IDX)
 
 
 def test_argmin_splitk_winner_in_non_first_split() raises:
@@ -165,7 +164,31 @@ def test_argmin_splitk_winner_in_non_first_split() raises:
     _assert_reaches_splitk_tier()
     var row = List(length=_SPLITK_AXIS_SIZE, fill=Float32(0))
     row[_SPLITK_WINNER_IDX] = -1.0
-    assert_equal(_run_splitk_arg[is_max=False](row), _SPLITK_WINNER_IDX)
+    assert_equal(_run_arg[is_max=False](row), _SPLITK_WINNER_IDX)
+
+
+comptime _WIDE_AXIS_SIZE = 4096
+"""Long enough for the wide-accumulator path, short of split-K."""
+
+
+def test_argmax_wide_ties_keep_lowest_index() raises:
+    """Ties land in different lanes of the wide accumulator, so only the
+    cross-lane tie-break picks the lower index."""
+    comptime assert (
+        _CPU_WIDE_ACC_MIN_ROW <= _WIDE_AXIS_SIZE < _CPU_SPLITK_MIN_AXIS
+    ), "_WIDE_AXIS_SIZE must take the wide-accumulator path"
+    var row = List(length=_WIDE_AXIS_SIZE, fill=Float32(0))
+    row[1031] = 1.0
+    row[3001] = 1.0
+    assert_equal(_run_arg[is_max=True](row), 1031)
+
+
+def test_argmin_wide_ties_keep_lowest_index() raises:
+    """See `test_argmax_wide_ties_keep_lowest_index`."""
+    var row = List(length=_WIDE_AXIS_SIZE, fill=Float32(0))
+    row[1031] = -1.0
+    row[3001] = -1.0
+    assert_equal(_run_arg[is_max=False](row), 1031)
 
 
 def main() raises:

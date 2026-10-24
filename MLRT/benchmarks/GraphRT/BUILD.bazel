@@ -1,0 +1,48 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+# gazelle:default_visibility //visibility:private
+
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+# Generate MEF files from MLIR at build time using mef-translate
+[
+    genrule(
+        name = src.replace(".mlir", "_mef"),
+        srcs = [src],
+        outs = [src.replace(".mlir", ".mef")],
+        cmd = "MODULAR_HOME=. $(location //MLRT/tools/GraphRT/mef-translate) " +
+              "-export-mef -allow-unregistered-dialect $< -o $@",
+        tools = ["//MLRT/tools/GraphRT/mef-translate"],
+    )
+    for src in glob(["*.mlir"])
+]
+
+modular_cc_test(
+    name = "MEFExecutorBenchmark",
+    srcs = ["MEFExecutorBenchmark.cpp"],
+    data = [
+        ":bench_control_flow.mef",
+        ":bench_dataflow.mef",
+        ":bench_invokable.mef",
+        ":bench_primitives.mef",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:GraphRT/GRTRuntime",
+        "//MLRT:GraphRT/MEFExecutor",
+        "//MLRT:GraphRT/Primitives",
+        "//Support:Globals",
+        "//Support:ML",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@google_benchmark//:benchmark_main",
+        "@llvm-project//llvm:Support",
+    ],
+)

@@ -215,6 +215,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
         tools: Sequence[ToolConfig] | None = None,
         agentic_rounds_per_turn: DistributionParameter | None = None,
         min_output_len: int = 1,
+        max_output_len: int | None = None,
     ) -> ChatSamples:
         """Generate multi-turn chat sessions from InstructCoder entries.
 
@@ -245,6 +246,8 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
             max_num_unique_sys_prompt: Number of system-prefix variants to cycle.
             min_input_len: Floor for sampled input lengths.
             min_output_len: Floor for sampled output lengths.
+            max_output_len: Optional ceiling that fitted output lengths are
+                clamped to.
 
         Returns:
             ChatSamples containing the generated sessions.
@@ -281,6 +284,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 max_num_unique_sys_prompt=max_num_unique_sys_prompt,
                 min_input_len=min_input_len,
                 min_output_len=min_output_len,
+                max_output_len=max_output_len,
                 tools=tools,
                 agentic_rounds_per_turn=agentic_rounds_per_turn,
             )
@@ -350,6 +354,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
         max_num_unique_sys_prompt: int,
         min_input_len: int,
         min_output_len: int,
+        max_output_len: int | None,
         tools: Sequence[ToolConfig] | None,
         agentic_rounds_per_turn: DistributionParameter | None,
     ) -> ChatSamples:
@@ -366,6 +371,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
             max_num_unique_sys_prompt=max_num_unique_sys_prompt,
             min_input_len=min_input_len,
             min_output_len=min_output_len,
+            max_output_len=max_output_len,
             shuffle_pool=False,
             tools=tools,
             agentic_rounds_per_turn=agentic_rounds_per_turn,

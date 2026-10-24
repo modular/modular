@@ -17,19 +17,15 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
-from std.math import min, max
-
-
-def ceildiv(a: Int, b: Int) -> Int:
-    """Ceiling division."""
-    return (a + b - 1) // b
+from std.memory.alloc import unsafe_alloc
+from std.math import ceildiv, min, max
 
 
 def co_rank(
     k: Int,
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
 ) -> Int:
     """Find the co-rank of k in the merged sequence of A and B.
@@ -67,9 +63,9 @@ def co_rank(
 
 def co_rank_shared(
     k: Int,
-    A: UnsafePointer[Int32, _, address_space=.SHARED],
+    A: Pointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=.SHARED],
+    B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
 ) -> Int:
     """Find the co-rank for shared memory arrays.
@@ -91,12 +87,12 @@ def co_rank_shared(
     var delta: Int
 
     while True:
-        if i > 0 and j < n and Int32(A[i - 1]) > Int32(B[j]):
+        if i > 0 and j < n and A[i - 1] > B[j]:
             delta = ceildiv(i - i_low, 2)
             j_low = j
             j = j + delta
             i = i - delta
-        elif j > 0 and i < m and Int32(B[j - 1]) >= Int32(A[i]):
+        elif j > 0 and i < m and B[j - 1] >= A[i]:
             delta = ceildiv(j - j_low, 2)
             i_low = i
             i = i + delta
@@ -106,11 +102,11 @@ def co_rank_shared(
 
 
 def merge_sequential(
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
 ):
     """Sequential merge of two sorted arrays.
 
@@ -147,11 +143,11 @@ def merge_sequential(
 
 
 def merge_sequential_shared(
-    A: UnsafePointer[Int32, _, address_space=.SHARED],
+    A: Pointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=.SHARED],
+    B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
 ):
     """Sequential merge of two sorted arrays from shared memory.
 
@@ -167,32 +163,32 @@ def merge_sequential_shared(
     var k = 0
 
     while i < m and j < n:
-        if Int32(A[i]) <= Int32(B[j]):
-            C[k] = Int32(A[i])
+        if A[i] <= B[j]:
+            C[k] = A[i]
             k += 1
             i += 1
         else:
-            C[k] = Int32(B[j])
+            C[k] = B[j]
             k += 1
             j += 1
 
     while i < m:
-        C[k] = Int32(A[i])
+        C[k] = A[i]
         k += 1
         i += 1
 
     while j < n:
-        C[k] = Int32(B[j])
+        C[k] = B[j]
         k += 1
         j += 1
 
 
 def merge_tiled_kernel(
-    A: UnsafePointer[Int32, ImmutAnyOrigin],
+    A: ImmPointer[Int32, ImmutAnyOrigin],
     m_dev: Int32,
-    B: UnsafePointer[Int32, ImmutAnyOrigin],
+    B: ImmPointer[Int32, ImmutAnyOrigin],
     n_dev: Int32,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
     tile_size_dev: Int32,
 ):
     """Tiled merge kernel using shared memory.
@@ -222,10 +218,8 @@ def merge_tiled_kernel(
     ]()
 
     # Figure 13.11: Part 1 - Block-level co-rank
-    var C_curr = block_idx.x * ceildiv(
-        m + n, Int(16)
-    )  # 16 blocks hardcoded for now
-    var C_next = min((block_idx.x + 1) * ceildiv(m + n, Int(16)), m + n)
+    var C_curr = block_idx.x * ceildiv(m + n, 16)  # 16 blocks hardcoded for now
+    var C_next = min((block_idx.x + 1) * ceildiv(m + n, 16), m + n)
 
     if thread_idx.x == 0:
         # Store co-rank values in first two elements of A_S
@@ -234,8 +228,8 @@ def merge_tiled_kernel(
 
     barrier()
 
-    var A_curr = Int32(A_S[0])
-    var A_next = Int32(A_S[1])
+    var A_curr = A_S[0]
+    var A_next = A_S[1]
     var B_curr = C_curr - Int(A_curr)
     var B_next = C_next - Int(A_next)
 
@@ -257,13 +251,13 @@ def merge_tiled_kernel(
         var leftover_B = B_length - B_consumed
         var leftover_A = A_length - A_consumed
 
-        for i in range(0, tile_size, Int(128)):  # blockDim.x = 128
+        for i in range(0, tile_size, 128):  # blockDim.x = 128
             if i + thread_idx.x < leftover_A:
                 A_S[i + thread_idx.x] = Int32(
                     A[Int(A_curr) + A_consumed + i + thread_idx.x]
                 )
 
-        for i in range(0, tile_size, Int(128)):  # blockDim.x = 128
+        for i in range(0, tile_size, 128):  # blockDim.x = 128
             if i + thread_idx.x < leftover_B:
                 B_S[i + thread_idx.x] = Int32(
                     B[B_curr + B_consumed + i + thread_idx.x]
@@ -272,8 +266,8 @@ def merge_tiled_kernel(
         barrier()
 
         # Figure 13.13: Part 3 - All threads merge their individual subarrays
-        var c_curr = thread_idx.x * (tile_size // Int(128))  # blockDim.x = 128
-        var c_next = (thread_idx.x + 1) * (tile_size // Int(128))
+        var c_curr = thread_idx.x * (tile_size // 128)  # blockDim.x = 128
+        var c_next = (thread_idx.x + 1) * (tile_size // 128)
         var leftover_c = C_length - C_completed
 
         c_curr = min(c_curr, leftover_c)
@@ -299,11 +293,13 @@ def merge_tiled_kernel(
 
         # All threads call the sequential merge function
         merge_sequential_shared(
-            A_S + a_curr,
+            A_S.unsafe_offset(a_curr),
             a_next - a_curr,
-            B_S + b_curr,
+            B_S.unsafe_offset(b_curr),
             b_next - b_curr,
-            C + C_curr + C_completed + c_curr,
+            C.unsafe_offset(C_curr)
+            .unsafe_offset(C_completed)
+            .unsafe_offset(c_curr),
         )
 
         # Update the number of A and B elements that have been consumed thus far
@@ -324,11 +320,11 @@ def merge_tiled_kernel(
 
 
 def cpu_merge(
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
-    C: UnsafePointer[mut=True, Int32, _],
+    C: MutPointer[Int32, _],
 ):
     """CPU reference implementation of merge.
 
@@ -370,10 +366,10 @@ def main() raises:
     var total = m + n
 
     # Allocate host memory
-    var h_A = alloc[Int32](m)
-    var h_B = alloc[Int32](n)
-    var h_C = alloc[Int32](total)
-    var h_ref = alloc[Int32](total)
+    var h_A = unsafe_alloc[Int32](m)
+    var h_B = unsafe_alloc[Int32](n)
+    var h_C = unsafe_alloc[Int32](total)
+    var h_ref = unsafe_alloc[Int32](total)
 
     # Initialize sorted arrays
     for i in range(m):
@@ -439,10 +435,10 @@ def main() raises:
             errors += 1
 
     # Free memory
-    h_A.free()
-    h_B.free()
-    h_C.free()
-    h_ref.free()
+    h_A.unsafe_free()
+    h_B.unsafe_free()
+    h_C.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

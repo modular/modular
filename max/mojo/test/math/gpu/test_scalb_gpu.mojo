@@ -16,19 +16,13 @@
 # flushes subnormal operands (Apple GPUs in float32). Results are bit-exact,
 # including subnormal results on Apple GPUs.
 
-from std.ffi import _external_call_const
-from std.math import align_up, inf, isinf, isnan, nan, scalb, trunc
-from std.sys import (
-    CompilationTarget,
-    default_accelerator,
-    simd_width_of,
-    size_of,
-)
-from std.utils.numerics import FPUtils, max_finite
+from std.math import align_up, inf, isnan, scalb
+from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from std.testing import TestSuite, assert_true
+from test_utils.math import PairMode, libm_scalb, pair_inputs, scalb_specials
 
 from std.utils.coord import Coord
 
@@ -40,47 +34,6 @@ comptime UnaryFn = def[fn_dtype: DType, fn_width: SIMDLength](
 
 comptime f32_min = Float32(from_bits=UInt32(1))  # 2^-149
 comptime f32_max_sub = Float32(from_bits=UInt32(0x007FFFFF))
-
-
-def _scalb_ref[
-    dtype: DType
-](x: Scalar[dtype], y: Scalar[dtype]) -> Scalar[dtype]:
-    """Returns fdlibm `scalb` built on libm `ldexp`, for hosts without `scalbf`.
-
-    Scaling a float32 or narrower value is exact in float64, so the rounded
-    `ldexp` result is correct. Narrower types round through float32 like
-    `scalbf`.
-    """
-    var x64 = x.cast[.float64]()
-    var y64 = y.cast[.float64]()
-    var r: Float64
-    if isnan(x64) or isnan(y64):
-        r = x64 * y64
-    elif isinf(y64):
-        r = x64 * y64 if y64 > 0 else x64 / -y64
-    elif trunc(y64) != y64:
-        r = nan[.float64]()
-    else:
-        # Clamping this far out saturates `ldexp` for every dtype without
-        # overflowing `Int32`.
-        var n = Int32(y64.clamp(-65000.0, 65000.0))
-        r = _external_call_const["ldexp", Float64](x64, n)
-    comptime if size_of[dtype]() < size_of[DType.float32]():
-        return r.cast[.float32]().cast[dtype]()
-    return r.cast[dtype]()
-
-
-def _libm[dtype: DType](x: Scalar[dtype], y: Scalar[dtype]) -> Scalar[dtype]:
-    """Calls host libm directly; f16/bf16 round the f32 libm result."""
-    comptime if not CompilationTarget.is_linux():
-        return _scalb_ref(x, y)
-    comptime if dtype == .float64:
-        return _external_call_const["scalb", Scalar[dtype]](x, y)
-    comptime if dtype == .float32:
-        return _external_call_const["scalbf", Scalar[dtype]](x, y)
-    return _external_call_const["scalbf", Float32](
-        x.cast[.float32](), y.cast[.float32]()
-    ).cast[dtype]()
 
 
 def _check_exact[
@@ -124,7 +77,7 @@ def run_scalb[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var x_buffer, var y_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var a = x_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var b = y_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, scalb(a, b))
@@ -135,67 +88,10 @@ def run_scalb[
         for i in range(length):
             var x = x_host[i]
             var y = y_host[i]
-            var expected = _libm(x, y)
+            var expected = libm_scalb(x, y)
             _check_exact(out_host[i], expected, x, y, "gpu", i)
             _check_exact(scalb(x, y), expected, x, y, "host", i)
     print(t"scalb {dtype}: gpu and host match libm")
-
-
-struct _Rng:
-    var state: UInt64
-
-    def __init__(out self, seed: UInt64):
-        self.state = seed
-
-    def next(mut self) -> UInt64:
-        # splitmix64
-        self.state += 0x9E3779B97F4A7C15
-        var z = self.state
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EB
-        return z ^ (z >> 31)
-
-    def bits[dtype: DType](mut self) -> Scalar[dtype]:
-        """Returns a uniformly random bit pattern of `dtype`."""
-        comptime nbits = 8 * size_of[dtype]()
-        var v = self.next() >> UInt64(64 - nbits)
-        return Scalar[dtype](from_bits=v.cast[FPUtils[dtype].integral_type]())
-
-    def uniform(mut self) -> Float64:
-        return Float64(self.next() >> 11) / Float64(1 << 53)
-
-
-def _specials[dtype: DType]() -> List[Scalar[dtype]]:
-    var big = max_finite[dtype]()
-    var tiny = Scalar[dtype](from_bits=Scalar[FPUtils[dtype].integral_type](1))
-    var min_normal = Scalar[dtype](
-        from_bits=Scalar[FPUtils[dtype].integral_type](
-            1 << FPUtils[dtype].mantissa_width()
-        )
-    )
-    return [
-        0,
-        -0.0,
-        1,
-        -1,
-        0.5,
-        1.5,
-        2.5,
-        -2.5,
-        3,
-        -7,
-        0.75,
-        10,
-        big,
-        -big,
-        tiny,
-        -tiny,
-        min_normal,
-        -min_normal,
-        inf[dtype](),
-        -inf[dtype](),
-        nan[dtype](),
-    ]
 
 
 def _fill_pairs[
@@ -203,55 +99,26 @@ def _fill_pairs[
 ](
     x_device: DeviceBuffer[dtype],
     y_device: DeviceBuffer[dtype],
-    mode: Int,
+    mode: PairMode,
     seed: UInt64,
-) raises:
-    """Fills x and y with special-value pairs, then `mode`-specific inputs.
-
-    mode 0: random bit patterns for both operands.
-    mode 1: x random bits, y a small integer (some non-integral, some huge).
-    """
-    var rng = _Rng(seed)
-    var sp = _specials[dtype]()
+) raises where dtype.is_floating_point():
+    """Fills x and y with the `pair_inputs` for `mode`."""
+    var pairs = pair_inputs(scalb_specials[dtype](), mode, seed, length)
     with x_device.map_to_host() as x_host, y_device.map_to_host() as y_host:
-        var i = 0
-        for a in sp:
-            for b in sp:
-                x_host[i] = a
-                y_host[i] = b
-                i += 1
-        while i < length:
-            var x = rng.bits[dtype]()
-            var y: Scalar[dtype]
-            if mode == 0:
-                y = rng.bits[dtype]()
-            else:
-                var r = rng.uniform()
-                comptime span = 2 * (
-                    FPUtils[dtype].exponent_bias()
-                    + FPUtils[dtype].mantissa_width()
-                    + 4
-                )
-                var n = Float64(Int(r * Float64(span)) - span // 2)
-                if i % 17 == 0:
-                    n += 0.5
-                elif i % 29 == 0:
-                    n *= 1e6
-                y = Scalar[dtype](n)
-            x_host[i] = x
-            y_host[i] = y
-            i += 1
+        for i in range(length):
+            x_host[i] = pairs[0][i]
+            y_host[i] = pairs[1][i]
 
 
 def _run_all[
     dtype: DType
 ](ctx: DeviceContext) raises where dtype.is_floating_point():
-    comptime num_fill_modes = 2
     comptime seed = 1234
     var x = ctx.enqueue_create_buffer[dtype](length)
     var y = ctx.enqueue_create_buffer[dtype](length)
-    for mode in range(num_fill_modes):
-        _fill_pairs(x, y, mode, UInt64(seed + mode))
+    var modes: List[PairMode] = [.random_bits, .integer_y]
+    for i, mode in enumerate(modes):
+        _fill_pairs(x, y, mode, UInt64(seed + i))
         run_scalb(ctx, x, y)
 
 
@@ -286,7 +153,7 @@ def _run[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, math_fn(val)

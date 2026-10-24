@@ -14,8 +14,7 @@
 """A NaN in a row must be skipped, not allowed to hide the row's real maximum.
 
 `TopK_2.insert` folds with a strict `>`, so a NaN never wins -- the contract
-`test_argmax_streaming_gpu.mojo` documents ("NaN is skipped rather than
-propagated"). `TopKHeap`, the register heap the two-stage `topk_gpu` uses for
+`test_argmax_with_bias.mojo` documents ("NaN never wins"). `TopKHeap`, the register heap the two-stage `topk_gpu` uses for
 its per-thread scan, has to agree, because a greedy request (`top_k == 1`)
 takes that path rather than the fused `topk_fi` one.
 
@@ -27,10 +26,9 @@ is full. Any NaN-unaware eviction rule silently drops the maximum there.
 """
 
 from max.gpu import WARP_SIZE
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from layout import TileTensor, row_major
 from nn.topk import topk_gpu
-from std.sys.info import default_accelerator
 from std.testing import assert_equal
 from std.utils.numerics import nan
 

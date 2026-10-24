@@ -45,7 +45,7 @@ def test_accumulate[
     var a = Array[Scalar[type], 2 * num_rows * length](fill={})
     var a_base_ptr: MutPointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
     for i in range(2 * num_rows):
-        var a_ptr = a_base_ptr + i * length
+        var a_ptr = a_base_ptr.unsafe_offset(i * length)
         a_ptr[0] = Scalar[type](i)
         a_ptr[1] = Scalar[type](i)
 
@@ -58,10 +58,12 @@ def test_accumulate[
     var b_base_ptr: MutPointer[Scalar[type], origin_of(b)] = b.unsafe_ptr()
 
     for i in range(2 * length):
-        var b_ptr = b_base_ptr + i * num_cols * simd_size
+        var b_ptr = b_base_ptr.unsafe_offset(i * num_cols * simd_size)
 
         comptime for j in range(num_cols):
-            (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
+            b_ptr.unsafe_offset(j * simd_size).unsafe_store(
+                SIMD[type, simd_size](i)
+            )
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
     acc.init(0)
@@ -85,7 +87,7 @@ def test_accumulate[
         length,
         a.unsafe_ptr(),
         2 * length,
-        b_base_ptr + kernel_width,
+        b_base_ptr.unsafe_offset(kernel_width),
         kernel_width,
     )
 
@@ -105,9 +107,9 @@ def test_accumulate[
 
     acc.accumulate(
         length,
-        a_base_ptr + length,
+        a_base_ptr.unsafe_offset(length),
         2 * length,
-        b_base_ptr + kernel_width,
+        b_base_ptr.unsafe_offset(kernel_width),
         2 * kernel_width,
     )
 
@@ -138,7 +140,7 @@ def test_accumulate_with_offsets[
     var a = Array[Scalar[type], 2 * num_rows * length](fill={})
     var a_base_ptr: MutPointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
     for i in range(2 * num_rows):
-        var a_ptr = a_base_ptr + i * length
+        var a_ptr = a_base_ptr.unsafe_offset(i * length)
         a_ptr[0] = Scalar[type](i)
         a_ptr[1] = Scalar[type](i)
 
@@ -151,10 +153,12 @@ def test_accumulate_with_offsets[
     var b_base_ptr: MutPointer[Scalar[type], origin_of(b)] = b.unsafe_ptr()
 
     for i in range(2 * length):
-        var b_ptr = b_base_ptr + i * num_cols * simd_size
+        var b_ptr = b_base_ptr.unsafe_offset(i * num_cols * simd_size)
 
         comptime for j in range(num_cols):
-            (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
+            b_ptr.unsafe_offset(j * simd_size).unsafe_store(
+                SIMD[type, simd_size](i)
+            )
 
     var a_base_stack = Array[Int32, num_rows](
         fill_with=lambda (i: Int) -> Int32: Int32(i * length)
@@ -190,7 +194,7 @@ def test_accumulate_with_offsets[
         a.unsafe_ptr(),
         a_base_offsets,
         0,
-        b_base_ptr + kernel_width,
+        b_base_ptr.unsafe_offset(kernel_width),
         kernel_width,
     )
 
@@ -218,7 +222,7 @@ def test_accumulate_with_offsets[
         a.unsafe_ptr(),
         a_base_offsets,
         0,
-        b_base_ptr + kernel_width,
+        b_base_ptr.unsafe_offset(kernel_width),
         2 * kernel_width,
     )
 
@@ -256,12 +260,12 @@ def test_load_store[
     #     [ 4x1.0, 4x2.0, -1.0]]
     comptime for i in range(num_rows):
         comptime for j in range(num_cols):
-            a_ptr.store(
+            a_ptr.unsafe_store(
                 i * row_size + j * simd_size,
                 SIMD[type, simd_size](i + j),
             )
 
-        a_ptr.store(
+        a_ptr.unsafe_store(
             i * row_size + num_cols * simd_size,
             SIMD[type, residual](-1.0),
         )
@@ -320,9 +324,11 @@ def test_load_store[
     #            [ 4x1.0, 4x1.0, -2.0]]
     tile1.store[partial_store=True](a.unsafe_ptr(), row_size, residual)
 
-    assert_equal(a_ptr.load[width=residual](row_size - residual), residual_vec1)
     assert_equal(
-        a_ptr.load[width=residual](2 * row_size - residual),
+        a_ptr.unsafe_load[width=residual](row_size - residual), residual_vec1
+    )
+    assert_equal(
+        a_ptr.unsafe_load[width=residual](2 * row_size - residual),
         residual_vec1,
     )
 

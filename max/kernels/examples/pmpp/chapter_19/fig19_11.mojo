@@ -30,6 +30,7 @@ from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 from conv_utils import idx_x, idx_y, conv_cpu, init_data, verify_results
 from std.math import ceildiv
@@ -44,9 +45,9 @@ def conv_layer_mm_kernel(
     W_dev: Int32,
     K_dev: Int32,
     N_batch_dev: Int32,
-    F: UnsafePointer[Float32, ImmutAnyOrigin],
-    X: UnsafePointer[Float32, ImmutAnyOrigin],
-    Y: UnsafePointer[Float32, MutAnyOrigin],
+    F: ImmPointer[Float32, ImmutAnyOrigin],
+    X: ImmPointer[Float32, ImmutAnyOrigin],
+    Y: MutPointer[Float32, MutAnyOrigin],
 ):
     """Tiled matrix multiplication kernel for convolution.
 
@@ -185,10 +186,10 @@ def main() raises:
     var size_Y = N * M * H_out * W_out
 
     # Allocate host memory
-    var h_X = alloc[Float32](size_X)
-    var h_F = alloc[Float32](size_F)
-    var h_Y_cpu = alloc[Float32](size_Y)
-    var h_Y_gpu = alloc[Float32](size_Y)
+    var h_X = unsafe_alloc[Float32](size_X)
+    var h_F = unsafe_alloc[Float32](size_F)
+    var h_Y_cpu = unsafe_alloc[Float32](size_Y)
+    var h_Y_gpu = unsafe_alloc[Float32](size_Y)
 
     # Initialize data
     init_data(h_X, size_X)
@@ -249,7 +250,7 @@ def main() raises:
         print("Figure 19.11 Kernel Failed!")
 
     # Cleanup
-    h_X.free()
-    h_F.free()
-    h_Y_cpu.free()
-    h_Y_gpu.free()
+    h_X.unsafe_free()
+    h_F.unsafe_free()
+    h_Y_cpu.unsafe_free()
+    h_Y_gpu.unsafe_free()

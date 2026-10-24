@@ -83,11 +83,11 @@ _BOTH_DEVICES = ("cpu", "gpu")
 # Inner-axis matrix: precision-sensitive ops in both dtypes; exact
 # selection/compare ops (max/min_and_max/arg) in bfloat16 only.
 #
-# reduce_min/reduce_mean/logsoftmax/argmin are deliberately absent: each is
-# redundant with a sibling already in this matrix (reduce_max, reduce_sum,
-# softmax, argmax respectively) -- same monoid/combine mechanics, differing
-# only in comparison direction or a trivial final step (a divide, or the
-# elementwise map after the shared OnlineLogSumExp reduce). A bug in the
+# reduce_min/logsoftmax/argmin are deliberately absent: each is redundant with
+# a sibling already in this matrix (reduce_max, softmax, argmax respectively)
+# -- same monoid/combine mechanics, differing only in comparison direction or
+# the elementwise map after the shared OnlineLogSumExp reduce. reduce_mean
+# stays: it is a sum with a division by the symbolic axis length fused in. A bug in the
 # shared scaffolder path shows up in the sibling that's still tested; the two
 # confirmed bugs that genuinely needed both directions tested (the bool
 # subword-state crash, the split-K join_parallel bug) have their own narrow
@@ -95,6 +95,7 @@ _BOTH_DEVICES = ("cpu", "gpu")
 # exercises both regardless of this trim.
 _INNER_BOTH = [
     "reduce_sum",
+    "reduce_mean",
     "reduce_product",
     "softmax",
     "layer_norm",
@@ -120,8 +121,8 @@ INNER_SPECS = [
 
 # Non-inner (reduce over axis 0): the pure arbitrary-axis reductions. Precision-
 # sensitive sum in both dtypes; the rest in bfloat16 only. See the inner-axis
-# matrix above for why reduce_min/reduce_mean/argmin are absent (redundant
-# with reduce_max/reduce_sum/argmax).
+# matrix above for why reduce_min/argmin are absent (redundant with
+# reduce_max/argmax).
 _NONINNER_CASES = [
     (op, DType.bfloat16)
     for op in [

@@ -765,12 +765,26 @@ cc_import(
 # headers-only on macOS/aarch64 (the Linux-only targets enter the graph only via
 # the linux_x86_64 select arm) so downstream targets like libmax still build
 # there. This replaces the former //MLRT:Driver/NIXL wrapper.
+filegroup(name = "_empty")
+
+# The CUDA libfabric plugin links the CUDA build of libfabric, which hard-needs
+# libcudart/libcuda. AMD hosts never load it (NIXL_PLUGIN_DIR points at rocm/),
+# so leave it out of AMD builds: carried here it reaches Mojo links of every
+# max consumer and makes them unloadable without the CUDA runtime.
+alias(
+    name = "_cuda_libfabric_plugin_unless_amd",
+    actual = select({
+        "@@//:amd_gpu": ":_empty",
+        "//conditions:default": ":cuda/libplugin_LIBFABRIC.so",
+    }),
+)
+
 cc_library(
     name = "nixl_runtime",
     data = select({
         "@@//:linux_x86_64": [
+            ":_cuda_libfabric_plugin_unless_amd",
             ":cuda-verbs/libplugin_UCX.so",
-            ":cuda/libplugin_LIBFABRIC.so",
             ":cuda/libplugin_UCX.so",
             ":rocm-verbs/libplugin_UCX.so",
             ":rocm/libplugin_UCX.so",

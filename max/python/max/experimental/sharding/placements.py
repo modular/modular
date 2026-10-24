@@ -50,7 +50,13 @@ class Collective(Enum):
 
 
 class ShardingError(RuntimeError):
-    """Raised when a sharding constraint cannot be satisfied."""
+    """Raised when a sharding rule cannot place a call.
+
+    Covers a rule that declines every placement, operands on different
+    meshes, a malformed rule declaration, a target that would split a
+    size-1 axis, a transfer that would change an :class:`Unknown` placement,
+    and an op the active :func:`auto_reshard` policy refuses to move.
+    """
 
 
 Transition = tuple[type["Placement"], type["Placement"]]
@@ -70,6 +76,11 @@ def even_shard_sizes(global_size: int, num_shards: int) -> list[int]:
     reduce-scatter kernel orders them, so slicing a copy gives the same
     pieces as a reduce-scatter. For example, ``even_shard_sizes(10, 4)`` is
     ``[3, 3, 2, 2]``.
+
+    A ``global_size`` below ``num_shards`` leaves the trailing pieces at 0,
+    as ``even_shard_sizes(2, 4)`` is ``[1, 1, 0, 0]``. Check the axis size
+    before assuming every piece holds data; a tensor cannot be created with
+    an empty shard.
 
     Args:
         global_size: The size to split. A ``-1`` reshape wildcard stays
@@ -102,7 +113,18 @@ class Placement(ABC):
         return None
 
     def transition_to(self, other: Placement) -> Collective:
-        """Returns the :class:`Collective` for ``self -> other``."""
+        """Returns the :class:`Collective` for the move ``self -> other``.
+
+        The base returns :attr:`Collective.NOOP` when the two placements are
+        equal and :attr:`Collective.INFEASIBLE` otherwise, so a placement
+        subclass that does not override this can never be moved by the picker.
+
+        Args:
+            other: The placement this one moves to.
+
+        Returns:
+            The :class:`Collective` that performs the move.
+        """
         return Collective.NOOP if self == other else Collective.INFEASIBLE
 
     def local_dim(
@@ -123,9 +145,9 @@ class Placement(ABC):
             mesh: The device mesh.
             mesh_axis: The mesh axis that splits ``parent``, or every mesh
                 axis that splits it.
-            allow_symbolic_mint: When ``False``, refuse to mint fresh
-                per-shard symbols from a bare :class:`SymbolicDim`. Reshape
-                propagation passes ``False``.
+            allow_symbolic_mint: When ``False``, a bare :class:`SymbolicDim`
+                raises :class:`ShardingError` instead of minting one symbol per
+                shard. MAX callers use the default.
         """
         return Dim(parent)
 
@@ -138,9 +160,16 @@ class Replicated(Placement):
         return "Replicated()"
 
     def transition_to(self, other: Placement) -> Collective:
-        """Replicated-to-Sharded is a free local split.
+        """Returns the :class:`Collective` for the move to another placement.
 
-        Replicated-to-Partial keeps one copy and zeros the others.
+        :class:`Sharded` is a free local split, and :class:`Partial` keeps one
+        copy and zeros the others.
+
+        Args:
+            other: The placement this one moves to.
+
+        Returns:
+            The :class:`Collective` that performs the move.
         """
         if self == other:
             return Collective.NOOP
@@ -183,7 +212,20 @@ class Sharded(Placement):
         return self.axis
 
     def transition_to(self, other: Placement) -> Collective:
-        """Sharded-to-Replicated is allgather; Sharded-to-Sharded is all-to-all."""
+        """Returns the :class:`Collective` for the move to another placement.
+
+        :class:`Replicated` takes an allgather. A different :class:`Sharded`
+        axis returns :attr:`Collective.ALL_TO_ALL`, a cost and not a kernel:
+        :func:`transfer_to` allgathers and then splits locally, so the whole
+        tensor crosses the mesh. :class:`Partial` has no redistribution and
+        reports :attr:`Collective.INFEASIBLE`.
+
+        Args:
+            other: The placement this one moves to.
+
+        Returns:
+            The :class:`Collective` that performs the move.
+        """
         if self == other:
             return Collective.NOOP
         if isinstance(other, Replicated):
@@ -202,16 +244,32 @@ class Sharded(Placement):
     ) -> Dim:
         """Splits ``parent`` along ``mesh_axis`` into per-shard cells.
 
-        With several mesh axes, ``parent`` is split once into one piece per
-        device they span, in row-major device order. For example, 10 rows
-        split over both axes of a 2x2 mesh give devices 0 to 3 sizes 3, 3,
-        2, and 2.
+        ``parent`` is split once into ``mesh.axis_size(mesh_axis)`` balanced
+        pieces, and the result holds one cell per device of the mesh, in
+        row-major device order. A mesh axis that does not span the whole mesh
+        gives the same piece to every device that shares its coordinate along
+        the splitting axes, and ``make_per_shard_dim`` collapses equal cells to
+        a plain dim. For example, 10 rows split over both axes of a 2x2 mesh
+        give devices 0 to 3 sizes 3, 3, 2, and 2.
 
         ``StaticDim`` parents use uneven divmod; ``SymbolicDim`` parents
         mint fresh per-shard cells; ``AlgebraicDim`` parents raise.
         Wrapper parents pass through verbatim. When
         ``allow_symbolic_mint`` is ``False``, a bare ``SymbolicDim``
         raises instead of minting.
+
+        Args:
+            parent: The global dim to localize.
+            mesh: The device mesh.
+            mesh_axis: The mesh axis that splits ``parent``, or every mesh
+                axis that splits it.
+            allow_symbolic_mint: When ``False``, a bare ``SymbolicDim``
+                raises instead of minting per-shard cells. Defaults to
+                ``True``.
+
+        Raises:
+            ShardingError: If ``parent`` is an ``AlgebraicDim``, or a bare
+                ``SymbolicDim`` while ``allow_symbolic_mint`` is ``False``.
         """
         if is_per_shard_dim(parent):
             assert isinstance(parent, Dim)
@@ -266,7 +324,17 @@ class Partial(Placement):
         return "Partial()"
 
     def transition_to(self, other: Placement) -> Collective:
-        """Partial-to-Replicated is allreduce; Partial-to-Sharded is reduce-scatter."""
+        """Returns the :class:`Collective` that resolves the partial sum.
+
+        :class:`Replicated` takes the allreduce, and :class:`Sharded` takes
+        the reduce-scatter.
+
+        Args:
+            other: The placement this one moves to.
+
+        Returns:
+            The :class:`Collective` that performs the move.
+        """
         if self == other:
             return Collective.NOOP
         if isinstance(other, Replicated):
@@ -281,10 +349,21 @@ def local_shard_shape_from_global(
     mesh: DeviceMesh,
     placements: Sequence[Placement],
 ) -> list[Shape]:
-    """One :class:`Shape` per device, in row-major mesh order.
+    """Returns one :class:`Shape` per device, in row-major mesh order.
 
     Calls :meth:`Placement.local_dim` once per tensor axis, with every mesh
-    axis that splits it, then takes each device's size.
+    axis that splits it, then takes each device's size. An axis whose static
+    extent is smaller than the mesh axes splitting it yields shapes with a 0
+    extent; creating a tensor with such a mapping raises
+    :class:`ShardingError`, so check the extent first.
+
+    Args:
+        global_shape: The global shape to split, one entry per tensor axis.
+        mesh: The device mesh.
+        placements: One placement per mesh axis.
+
+    Returns:
+        One local shape per device, in mesh row-major order.
 
     Raises:
         ValueError: If ``placements`` length differs from ``mesh.ndim`` or

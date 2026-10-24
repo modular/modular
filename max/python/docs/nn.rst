@@ -18,6 +18,8 @@ Submodules
    :nosignatures:
 
    max.nn.attention
+   max.nn.comm
+   max.nn.graph_groups
    max.nn.kernels
    max.nn.kv_cache
    max.nn.moe
@@ -29,6 +31,8 @@ Submodules
    :hidden:
 
    nn.attention
+   nn.comm
+   nn.graph_groups
    nn.kernels
    nn.kv_cache
    nn.moe
@@ -46,6 +50,7 @@ Base classes
    Identity
    Layer
    LayerList
+   MissingLayer
    Module
    Sequential
    Shardable
@@ -113,6 +118,18 @@ Transformer
    ReturnLogits
    Transformer
    TransformerBlock
+   ~max.nn.transformer.DistributedLogitsPostprocessMixin
+   ~max.nn.transformer.LogitsPostprocessMixin
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.nn.transformer.distributed_logits_postprocess
+   ~max.nn.transformer.forward_sequential_layers
+   ~max.nn.transformer.logits_outputs
+   ~max.nn.transformer.logits_postprocess
 
 Convolution
 -----------
@@ -142,6 +159,16 @@ Mixture of experts
    MoEGate
    MoEQuantized
 
+Parallelism
+-----------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.nn.parallel.ParallelArrayOps
+
 Sampling
 --------
 
@@ -164,6 +191,7 @@ Quantization
 
    QuantConfig
    QuantFormat
+   WeightSource
    InputScaleSpec
    ScaleGranularity
    ScaleOrigin
@@ -179,6 +207,14 @@ Hooks
 
    ~max.nn.hooks.PrintHook
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.nn.layer.add_layer_hook
+   ~max.nn.layer.clear_hooks
+
 Functions
 ---------
 
@@ -192,4 +228,3 @@ Functions
    forward_moe_sharded_layers
    split_batch
    split_batch_replicated
-

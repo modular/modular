@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.pipelines.lib import MemoryPlan, PipelineConfig
+from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
 
 
 @dataclass
@@ -82,6 +83,10 @@ class TokenGenerationSchedulerConfig:
 
     If speculative decoding is disabled, this should be 0.
     """
+
+    spec_decode_mixed_verify_width: int = 0
+    """Most drafts a decode row verifies on a mixed prefill+decode step,
+    which the batch constructor reserves before it admits prompt tokens."""
 
     decode_stall_timeout_s: float | None = None
     """Seconds of no-batch-activity after which the decode worker exits to trigger a pod restart. None disables the watchdog."""
@@ -197,6 +202,20 @@ class TokenGenerationSchedulerConfig:
         budget; ``None`` only for pipelines sized without a plan (test echoes).
         """
         assert pipeline_config.model is not None
+        speculative = pipeline_config.speculative
+        num_speculative_tokens = (
+            speculative.num_speculative_tokens or 0
+            if speculative is not None
+            else 0
+        )
+        spec_width_policy = SpecWidthPolicy.from_config(
+            speculative,
+            num_speculative_tokens,
+            max_batch_size,
+            mixed_steps_verify=(
+                pipeline_config.runtime.enable_spec_decode_mixed_batches
+            ),
+        )
 
         return cls(
             max_batch_size=max_batch_size,
@@ -230,9 +249,6 @@ class TokenGenerationSchedulerConfig:
             dp_ce_balance_timeout_ms=pipeline_config.runtime.dp_ce_balance_timeout_ms,
             dp_ce_balance_threshold=pipeline_config.runtime.dp_ce_balance_threshold,
             dp_ce_balance_enable_dynamic_chunk_size=pipeline_config.runtime.dp_ce_balance_enable_dynamic_chunk_size,
-            num_speculative_tokens=(
-                pipeline_config.speculative.num_speculative_tokens or 0
-            )
-            if pipeline_config.speculative is not None
-            else 0,
+            num_speculative_tokens=num_speculative_tokens,
+            spec_decode_mixed_verify_width=spec_width_policy.max_mixed_width,
         )

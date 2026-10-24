@@ -25,7 +25,7 @@ Both layouts map physical row `= lane_id & (BM-1)` to `(q_local, head_local)`
 via `q_local = row // num_heads`, so a 32-lane warp covers MULTIPLE q_local
 values whenever `num_heads < 32` -- e.g. num_heads=16 packs 2 query tokens
 per warp. Their online-softmax lazy-rescale gate
-(`if _vote_nvidia_helper(diff < rescale_threshold) != 0:`) is a warp-wide
+(`if vote[.uint32](diff < rescale_threshold) != 0:`) is a warp-wide
 ANY-ballot over this per-thread predicate, exactly the pattern fixed for the
 SM100 FA4 dense-GQA kernel in `softmax_warp.mojo` (PR #98402): one row's
 `diff` can force every row physically sharing its warp onto the adopt

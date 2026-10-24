@@ -201,7 +201,7 @@ lit.fn @unbound_region() {
 
 // -----
 
-// expected-error@below {{expected only `lit.file_module`, `lit.package`, `lit.unresolved_import`, or `lit.unresolved_wildcard_import` in its body}}
+// expected-error@below {{expected only `lit.file_module` or `lit.package` in its body}}
 lit.package @MyPackage {
   // expected-note @below {{see operation defined here}}
   hlcf.unreachable
@@ -301,7 +301,7 @@ lit.fn @ref_from_kgen_ptr_address_space_mismatch<life: origin<false>>(
 // -----
 
 lit.fn @invalid_memcpy<out: origin<true>, in: origin<false>>(%dst: !lit.ref<f32, mut out>, %src: !lit.ref<index, imm in>) {
-  // expected-error @below {{'lit.memcpy' op failed to verify that all of {src, dst} have same element types}}
+  // expected-error @below {{'lit.memcpy' op source and destination element types must match, got 'index' and 'f32'}}
   lit.memcpy %src, %dst : !lit.ref<index, imm in>-> !lit.ref<f32, mut out>
   lit.end_fn
 }

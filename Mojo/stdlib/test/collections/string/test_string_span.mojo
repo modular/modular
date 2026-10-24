@@ -23,6 +23,7 @@ from std.sys.info import size_of, simd_width_of
 
 from std.testing import assert_equal, assert_false, assert_true
 from std.testing import TestSuite
+from test_utils import check_niches
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
@@ -1339,6 +1340,23 @@ def test_immutable_string_span_compatibility_aliases() raises:
     # Both names work with mutable and immutable data.
     assert_equal(byte_sum(mutable_data), 294)
     assert_equal(byte_sum_compat(immutable_data), 294)
+
+
+def test_string_span_niche() raises:
+    assert_equal(StaticString.niche_count(), Int.MAX)
+    assert_equal(size_of[Optional[StaticString]](), size_of[StaticString]())
+    check_niches[StaticString]()
+
+    var some = Optional(StaticString("hello"))
+    assert_true(some)
+    assert_equal(some.value(), "hello")
+
+    var empty = Optional(StaticString())
+    assert_true(empty)
+    assert_equal(empty.value(), "")
+
+    var none = Optional[StaticString](None)
+    assert_false(none)
 
 
 def main() raises:

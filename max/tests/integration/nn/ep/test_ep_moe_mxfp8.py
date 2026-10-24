@@ -268,7 +268,7 @@ def test_ep_moe_mxfp8_nvidia(
         inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     compiled = session.load(graph, weights_registry=moe.state_dict())
     result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())

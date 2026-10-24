@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s --check-prefix=CLOSURE
 
 
 struct MemExample(Movable where False):
@@ -78,9 +79,9 @@ def test_nested_var_origin_mangling[x: Int](c: Bool):
         # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`">
         var y = x
 
-    # CHECK: lit.fn *"nested()"
-    def nested() capturing:
-        # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`2x">
+    # CLOSURE: lit.fn @"nested()`"
+    def nested() {imm}:
+        # CLOSURE: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`2x">
         var y = x
 
 

@@ -67,7 +67,10 @@ CoercionInfo SystemVABIInfo::classifyStructType(mlir::Type type,
   // Only LLVM struct types need C ABI classification
   auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type);
   if (!structType) {
-    return CoercionInfo{}; // Non-struct types pass through
+    // The psABI leaves the upper bits of a narrow integer unspecified, but
+    // clang extends at the producer and relies on it at the consumer, so
+    // match clang.
+    return CabiUtils::classifyExtendedScalar(type);
   }
 
   int64_t size = CabiUtils::getStructSize(structType, dataLayout);
@@ -312,9 +315,9 @@ SystemVABIInfo::argRegisterUsage(const CoercionInfo &info,
 }
 
 SignatureClassification
-SystemVABIInfo::computeSignatureInfo(mlir::TypeRange argTypes,
-                                     mlir::Type retType, mlir::Location loc,
-                                     size_t numFixedArgs) const {
+SystemVABIInfo::classifySignature(mlir::TypeRange argTypes, mlir::Type retType,
+                                  mlir::Location loc,
+                                  size_t numFixedArgs) const {
   SignatureClassification result;
   if (retType)
     result.ret = classifyReturnType(retType, loc);

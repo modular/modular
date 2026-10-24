@@ -517,8 +517,8 @@ private:
 class KGENOptions : public KGENCommonOptions, public CommonOptions {
 public:
   /// Canonical command string: "elaborate[=<mode>]", "emit=<kind>",
-  /// "execute", or "lsp[=no-dump]". Bare "emit" is canonicalized to
-  /// "emit=object".
+  /// "execute", "lsp[=no-dump]", or "precompile". Bare "emit" is
+  /// canonicalized to "emit=object".
   std::string cmd;
   llvm::SmallVector<CommandLineFunc> funcs{};
   std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {

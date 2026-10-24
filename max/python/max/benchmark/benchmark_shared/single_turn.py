@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
+from typing import Any
 
 try:
     from asyncio import TaskGroup  # type: ignore[attr-defined]  # added in 3.11
@@ -331,6 +333,39 @@ async def run_single_turn_benchmark(
     return outputs
 
 
+# A --tools run has at most two (with and without); far more means the dataset
+# attaches its own tools per request.
+_MAX_EXPECTED_TOOL_VARIANTS = 8
+
+
+def _warmup_tool_variants(
+    samples: Samples, api_url: str
+) -> list[list[dict[str, Any]] | None]:
+    """Distinct tool lists the measured requests send, tool-free included.
+
+    Chat templates render tools ahead of the user message, so a prefix seeded
+    without them misses for every tool-bearing request. Only the chat driver
+    sends tools; elsewhere every variant would be the same request.
+    """
+    if not api_url.endswith("chat/completions"):
+        return [None]
+    if isinstance(samples, ChatSamples):
+        tool_lists: Iterable[list[dict[str, Any]] | None] = (
+            message.tools
+            for session in samples.chat_sessions
+            for message in session.messages
+            if message.source == "user"
+        )
+    else:
+        tool_lists = (request.tools for request in samples.requests)
+    # The driver sends an empty list as no tools, so the two are one variant.
+    variants = {
+        json.dumps(tools or None, sort_keys=True): tools or None
+        for tools in tool_lists
+    }
+    return list(variants.values()) or [None]
+
+
 async def prime_shared_contexts(
     model_id: str,
     api_url: str,
@@ -355,14 +390,27 @@ async def prime_shared_contexts(
         )
         return
 
-    logger.info(
-        f"Warming prefix cache with {len(warmup_entries)}"
-        " unique shared context(s)..."
-    )
-
     is_chat = isinstance(samples, ChatSamples)
+    tool_variants = _warmup_tool_variants(samples, api_url)
+    num_warmups = len(warmup_entries) * len(tool_variants)
+    logger.info(
+        "Warming prefix cache with %d unique shared context(s) x %d tool"
+        " variant(s) (%d requests)...",
+        len(warmup_entries),
+        len(tool_variants),
+        num_warmups,
+    )
+    if len(tool_variants) > _MAX_EXPECTED_TOOL_VARIANTS:
+        logger.warning(
+            "Prefix-cache warmup: the workload sends %d distinct tool lists,"
+            " and each shared context is seeded once per list, so the warmup"
+            " grows with the number of lists.",
+            len(tool_variants),
+        )
+
     warmup_inputs: list[RequestFuncInput] = []
-    for entry in warmup_entries:
+    warmup_labels: list[tuple[int, int]] = []
+    for entry_idx, entry in enumerate(warmup_entries):
         warmup_prompt: str | list[ChatMessage]
         if is_chat:
             warmup_prompt = [
@@ -379,19 +427,23 @@ async def prime_shared_contexts(
                 warmup_prompt, run_prefix
             )
 
-        warmup_inputs.append(
-            RequestFuncInput(
-                model=model_id,
-                session_id=None,
-                sampling=sampling,
-                prompt=warmup_prompt,
-                images=[],
-                api_url=api_url,
-                prompt_len=entry.num_tokens + run_prefix_len,
-                max_tokens=1,
-                ignore_eos=True,
+        for variant_idx, tools in enumerate(tool_variants):
+            warmup_labels.append((entry_idx, variant_idx))
+            warmup_inputs.append(
+                RequestFuncInput(
+                    model=model_id,
+                    session_id=None,
+                    sampling=sampling,
+                    prompt=warmup_prompt,
+                    images=[],
+                    api_url=api_url,
+                    prompt_len=entry.num_tokens + run_prefix_len,
+                    max_tokens=1,
+                    ignore_eos=True,
+                    tools=tools,
+                    is_cache_warmup=True,
+                )
             )
-        )
 
     warmup_results: list[BaseRequestFuncOutput | None] = [None] * len(
         warmup_inputs
@@ -422,8 +474,11 @@ async def prime_shared_contexts(
                 f"Warmup task {sys_idx} did not produce a result (this is a bug)"
             )
         if not result.success:
+            entry_idx, variant_idx = warmup_labels[sys_idx]
+            num_tools = len(inp.tools) if inp.tools else 0
             raise ValueError(
-                f"Shared context warmup request failed at index {sys_idx}:"
+                f"Shared context warmup request failed for context"
+                f" {entry_idx}, tool variant {variant_idx} ({num_tools} tools):"
                 f" (prompt: (SKIPPED), prompt_len: {inp.prompt_len}),"
                 f" error: {result.error}"
             )

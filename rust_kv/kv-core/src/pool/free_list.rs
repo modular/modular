@@ -10,7 +10,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //===----------------------------------------------------------------------===//
-//! The intrusive free list every block pool allocates from.
+//! The free lists every block pool allocates from.
 //!
 //! A port of `_FreeKVCacheBlockQueue` in
 //! `max/python/max/pipelines/kv_cache/paged_kv_cache/block_utils.py`: a doubly
@@ -34,6 +34,10 @@
 //! The links live on the blocks, as they do in Python, but over a dense `bid`
 //! rather than object references: a list is `head`/`tail` ids into the array
 //! its blocks live in, and every operation takes that array.
+
+use std::collections::BTreeMap;
+
+use crate::pool::block::LittleBlock;
 
 /// A block's place in a free list -- Python's `prev_free_block` and
 /// `next_free_block`, plus the membership its queue keeps in a set.
@@ -158,16 +162,131 @@ impl FreeList {
     }
 }
 
+/// The stamps that order every [`FreeQueue`] over one pool's little blocks.
+///
+/// Front stamps count down and back stamps count up, so popping the smallest
+/// stamp keeps [`FreeList`]'s order: the newest block appended to the front,
+/// then the oldest appended to the back.
+#[derive(Debug)]
+pub struct Stamps {
+    front: u64,
+    back: u64,
+}
+
+impl Default for Stamps {
+    fn default() -> Self {
+        Stamps {
+            front: 1 << 63,
+            back: 1 << 63,
+        }
+    }
+}
+
+/// A free list of little blocks that keeps each block's turn when it moves to
+/// another queue.
+///
+/// A pool moves a huge block's free pages between two queues when the huge
+/// block parks or is claimed back. A [`FreeList`] would put them at an end and
+/// lose the order requests released them in, which keeps the tail of a prefix
+/// evicted before its head. Here each block carries the stamp it was appended
+/// with, so the move keeps its place. O(log n) per operation.
+#[derive(Debug, Default)]
+pub struct FreeQueue {
+    order: BTreeMap<u64, usize>,
+}
+
+impl FreeQueue {
+    pub fn len(&self) -> usize {
+        self.order.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.order.is_empty()
+    }
+
+    /// Whether `id` is on this queue rather than another.
+    pub fn contains<H>(&self, nodes: &[LittleBlock<H>], id: usize) -> bool {
+        nodes[id]
+            .free
+            .is_some_and(|stamp| self.order.get(&stamp) == Some(&id))
+    }
+
+    /// Puts a block where it is popped next.
+    ///
+    /// # Panics
+    /// If the block is already on a queue.
+    pub fn append_front<H>(
+        &mut self,
+        stamps: &mut Stamps,
+        nodes: &mut [LittleBlock<H>],
+        id: usize,
+    ) {
+        stamps.front -= 1;
+        self.insert(nodes, id, stamps.front);
+    }
+
+    /// Puts a block where it is popped last.
+    ///
+    /// # Panics
+    /// If the block is already on a queue.
+    pub fn append_back<H>(&mut self, stamps: &mut Stamps, nodes: &mut [LittleBlock<H>], id: usize) {
+        stamps.back += 1;
+        self.insert(nodes, id, stamps.back);
+    }
+
+    fn insert<H>(&mut self, nodes: &mut [LittleBlock<H>], id: usize, stamp: u64) {
+        assert!(!nodes[id].is_free(), "block {id} is already free");
+        nodes[id].free = Some(stamp);
+        self.order.insert(stamp, id);
+    }
+
+    /// Unlinks a block from anywhere in the queue.
+    ///
+    /// # Panics
+    /// If the block is not on this queue.
+    pub fn remove<H>(&mut self, nodes: &mut [LittleBlock<H>], id: usize) {
+        let stamp = nodes[id].free.take().expect("block is not free");
+        assert_eq!(
+            self.order.remove(&stamp),
+            Some(id),
+            "block {id} is on another queue"
+        );
+    }
+
+    /// Moves a block onto `to`, keeping its turn.
+    ///
+    /// # Panics
+    /// If the block is not on this queue.
+    pub fn move_to<H>(&mut self, to: &mut FreeQueue, nodes: &[LittleBlock<H>], id: usize) {
+        let stamp = nodes[id].free.expect("block is not free");
+        assert_eq!(
+            self.order.remove(&stamp),
+            Some(id),
+            "block {id} is on another queue"
+        );
+        to.order.insert(stamp, id);
+    }
+
+    pub fn pop_front<H>(&mut self, nodes: &mut [LittleBlock<H>]) -> Option<usize> {
+        let id = self.peek_front()?;
+        self.remove(nodes, id);
+        Some(id)
+    }
+
+    pub fn peek_front(&self) -> Option<usize> {
+        self.order.first_key_value().map(|(_, &id)| id)
+    }
+}
+
 // Ports `test_block_utils.py`, whose cases cover `test_free_block_queue.py`'s,
 // from `max/tests/integration/kv_cache/jenga/` case for case. Python's
 // `append` and `appendleft` are `append_back` and `append_front` here.
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pool::block::LittleBlock;
+    use crate::pool::block::HugeBlock;
 
-    /// The free list never looks at a block's hash.
-    type Block = LittleBlock<()>;
+    type Block = HugeBlock;
 
     /// Walks the list head to tail, checking it against the list's own state.
     ///

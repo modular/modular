@@ -19,10 +19,12 @@ from .layer import (
     clear_hooks,
 )
 from .layer_list import LayerList
+from .missing_layer import MissingLayer
 
 __all__ = [
     "Layer",
     "LayerList",
+    "MissingLayer",
     "Module",
     "Shardable",
     "add_layer_hook",

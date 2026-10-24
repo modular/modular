@@ -235,17 +235,10 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     });
     cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
 
-    // At this point, the only nested ops that declares parameters in their
-    // scope are ParamDeclareRegionOp and HLCF::ComptimeForOp, whose
-    // declarations need special treatment.
+    // At this point, the only nested op that declares parameters in its scope
+    // is HLCF::ComptimeForOp, whose declaration needs special treatment.
     if (needsMangling) {
-      if (auto regionDecl = dyn_cast<ParamDeclareRegionOp>(cloned)) {
-        SmallVector<ParamDeclAttr> newInputDecls;
-        for (ParamDeclAttr decl : regionDecl.getInputParams())
-          newInputDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
-        regionDecl.setInputParams(newInputDecls);
-        newDecls.append(newInputDecls);
-      } else if (auto paramFor = dyn_cast<HLCF::ComptimeForOp>(cloned)) {
+      if (auto paramFor = dyn_cast<HLCF::ComptimeForOp>(cloned)) {
         ParamDeclAttr newDecl =
             mangler.mangleDecl(paramFor.getParamDecl(), needsMangling);
         paramFor.setParamDeclAttr(newDecl);

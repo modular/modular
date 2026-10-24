@@ -1,0 +1,28 @@
+load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
+load("//bazel:api.bzl", "modular_cc_binary")
+load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//GraphCompiler:__subpackages__",
+])
+
+modular_cc_binary(
+    name = "mt",
+    srcs = glob(["*.cpp"]),
+    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
+    mojo_deps = [
+        "//max:builtin_kernels",
+        "//max:builtin_primitives",
+    ] + INTERNAL_KERNEL_MOJOPKGS,
+    deps = [
+        "//GraphCompiler:CommonDriver",
+        "//GraphCompiler:ExecutionDriver",
+        "//GraphCompiler:FrameworkFrontend",
+        "//GraphCompiler:MEFModel",
+        "//Init",
+        "//Support:Context",
+        "//Support:Globals",
+        "//Support:ML",
+    ],
+)

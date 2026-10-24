@@ -766,8 +766,7 @@ def test_text_model_execution_matches_torch(seq_len: int) -> None:
                 ops.constant(create_empty_indices([device])[0])
             ],
         )
-        # ReturnLogits.ALL returns (last_logits, all_logits, offsets).
-        graph.output(results[1])
+        graph.output(results.logits["logits"])
 
     compiled = session.load(graph, weights_registry=max_model.state_dict())
 
@@ -883,9 +882,8 @@ def test_text_model_selected_layer_hidden_states() -> None:
                 ops.constant(create_empty_indices([device])[0])
             ],
         )
-        # LAST_TOKEN logits + SELECTED_LAYERS returns
-        # (last_logits, *per_layer_taps), one tap per target layer.
-        graph.output(*results[1:])
+        # One tap per target layer.
+        graph.output(*results.hidden_states["selected_layers"])
 
     compiled = session.load(graph, weights_registry=max_model.state_dict())
 

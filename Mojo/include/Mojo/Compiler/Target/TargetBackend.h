@@ -60,6 +60,8 @@ namespace M::KGEN {
 // Forward-declared for `OffloadEmitContext`'s non-owning pointer, so the
 // pass-manager headers stay out of this widely-included header.
 struct PassManagerConfigOptions;
+class GeneratorOp;
+class SymbolConstantAttr;
 } // namespace M::KGEN
 
 namespace M::Cache {
@@ -168,6 +170,14 @@ public:
   virtual const TargetBackend *resolve(const llvm::Triple &triple) const {
     return matches(triple) ? this : nullptr;
   }
+
+  /// Rewrite the standalone module sliced for a kernel before it is
+  /// elaborated. `source` is the generator the kernel was requested from; its
+  /// `sourceFuncTypeGenerator` still carries the signature the offload ABI
+  /// erased. The default does nothing.
+  virtual void preprocessGenerator(GeneratorOp entry, GeneratorOp source,
+                                   SymbolConstantAttr symbol,
+                                   mlir::ModuleOp module) const;
 
   virtual SplitStrategy
   splitStrategy(const CompilationOptions &options) const = 0;

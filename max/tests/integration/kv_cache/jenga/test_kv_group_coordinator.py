@@ -133,6 +133,118 @@ def bids(blocks: Sequence[LittleKVCacheBlock]) -> list[int]:
     return [block.bid for block in blocks]
 
 
+def test_trimmed_swa_never_publishes_holes_and_advances_cursor() -> None:
+    pool = make_pool()
+    group = sliding_group(pool)
+    assert isinstance(group, SlidingWindowKVGroupCoordinator)
+    req_id = RequestID()
+    group.claim(req_id)
+    group.grow(req_id, 6, 0)
+    keys = block_keys(6)
+
+    group.record_write_range(req_id, 9, 23)
+    group.commit(req_id, keys, 5, 0)
+    assert set(pool.prefix_caches[VALUES]) == set(keys[3:5])
+    assert group._commit_from[req_id] >= 3
+
+    # The final partial page remains eligible for the following short chunk.
+    group.record_write_range(req_id, 23, 24)
+    group.commit(req_id, keys, 6, 0)
+    assert set(pool.prefix_caches[VALUES]) == set(keys[3:6])
+
+
+def test_trimmed_swa_short_chunks_join_but_a_gap_does_not() -> None:
+    pool = make_pool()
+    group = sliding_group(pool)
+    assert isinstance(group, SlidingWindowKVGroupCoordinator)
+    req_id = RequestID()
+    group.claim(req_id)
+    group.grow(req_id, 5, 0)
+    keys = block_keys(5)
+
+    group.record_write_range(req_id, 2, 7)
+    group.commit(req_id, keys, 1, 0)
+    assert not pool.prefix_caches[VALUES]
+    group.record_write_range(req_id, 7, 8)
+    group.commit(req_id, keys, 2, 0)
+    assert set(pool.prefix_caches[VALUES]) == {keys[1]}
+    group.record_write_range(req_id, 8, 9)
+    group.commit(req_id, keys, 2, 0)
+    group.record_write_range(req_id, 11, 20)
+    group.commit(req_id, keys, 5, 0)
+    assert set(pool.prefix_caches[VALUES]) == {keys[1], keys[3], keys[4]}
+    assert group._commit_from[req_id] >= 3
+
+
+def test_trimmed_swa_release_and_request_id_reuse_drop_coverage() -> None:
+    pool = make_pool()
+    group = sliding_group(pool)
+    assert isinstance(group, SlidingWindowKVGroupCoordinator)
+    req_id = RequestID()
+    keys = block_keys(3)
+    group.claim(req_id)
+    group.grow(req_id, 3, 0)
+    group.record_write_range(req_id, 9, 12)
+    group.commit(req_id, keys, 3, 0)
+    assert not pool.prefix_caches[VALUES]
+    group.release(req_id, 0)
+
+    group.claim(req_id)
+    group.grow(req_id, 3, 0)
+    group.commit(req_id, keys, 3, 0)
+    assert set(pool.prefix_caches[VALUES]) == set(keys)
+
+
+def test_first_trim_preserves_a_previous_full_write_partial_page() -> None:
+    pool = make_pool()
+    group = sliding_group(pool)
+    assert isinstance(group, SlidingWindowKVGroupCoordinator)
+    req_id = RequestID()
+    keys = block_keys(2)
+    group.claim(req_id)
+    group.grow(req_id, 2, 0)
+    group.record_full_write(req_id, 3)
+    group.commit(req_id, keys, 0, 0)
+    group.record_write_range(req_id, 3, 5)
+    group.commit(req_id, keys, 1, 0)
+    assert set(pool.prefix_caches[VALUES]) == {keys[0]}
+    group.record_write_range(req_id, 5, 8)
+    group.commit(req_id, keys, 2, 0)
+    assert set(pool.prefix_caches[VALUES]) == set(keys)
+
+
+def test_trimmed_swa_recovers_only_published_prefix_hit_window() -> None:
+    pool = make_pool()
+    group = sliding_group(pool, window=5)
+    assert isinstance(group, SlidingWindowKVGroupCoordinator)
+    req_id = RequestID()
+    keys = block_keys(5)
+    # Only this published page proves valid data; the row's null head does not.
+    commit(pool, [VALUES], keys[3:4])
+    group.claim(req_id)
+    hit = group.claim_hit_blocks(keys[:4], 0)
+    group.extend(req_id, hit, {}, 0)
+    group.grow(req_id, 5, 0)
+    group.record_write_range(req_id, 16, 19)
+    group.commit(req_id, keys, 4, 0)
+    assert set(pool.prefix_caches[VALUES]) == {keys[3]}
+    group.record_write_range(req_id, 19, 20)
+    group.commit(req_id, keys, 5, 0)
+    assert set(pool.prefix_caches[VALUES]) == {keys[3], keys[4]}
+
+
+@pytest.mark.parametrize("is_sliding", [False, True])
+def test_untrimmed_leaves_keep_publishing_full_pages(is_sliding: bool) -> None:
+    pool = make_pool()
+    group = sliding_group(pool) if is_sliding else full_group(pool)
+    req_id = RequestID()
+    keys = block_keys(4)
+    group.claim(req_id)
+    group.grow(req_id, 4, 0)
+    group.commit(req_id, keys, 4, 0)
+    assert set(pool.prefix_caches[VALUES]) == set(keys)
+
+
 def test_dispatch_matches_the_attention_pattern() -> None:
     pool = make_pool()
     assert isinstance(full_group(pool), FullKVGroupCoordinator)

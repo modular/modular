@@ -19,13 +19,14 @@ from std.math import ceildiv
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
 
 def stencil_kernel(
-    in_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    in_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
     n_dim: Int32,
     c0: Float32,
     c1: Float32,
@@ -76,8 +77,8 @@ def stencil_kernel(
 
 
 def stencil_3d(
-    h_in: UnsafePointer[mut=False, Float32, _],
-    h_out: UnsafePointer[mut=True, Float32, _],
+    h_in: ImmPointer[Float32, _],
+    h_out: MutPointer[Float32, _],
     N: Int,
     c0: Float32,
     c1: Float32,
@@ -145,8 +146,8 @@ def stencil_3d(
 
 
 def cpu_3d_stencil(
-    in_ptr: UnsafePointer[mut=False, Float32, _],
-    out_ptr: UnsafePointer[mut=True, Float32, _],
+    in_ptr: ImmPointer[Float32, _],
+    out_ptr: MutPointer[Float32, _],
     N: Int,
     c0: Float32,
     c1: Float32,
@@ -201,9 +202,9 @@ def main() raises:
     var c6 = Float32(1.0)
 
     # Allocate host memory
-    var h_in = alloc[Float32](total_elements)
-    var h_out = alloc[Float32](total_elements)
-    var h_ref = alloc[Float32](total_elements)
+    var h_in = unsafe_alloc[Float32](total_elements)
+    var h_out = unsafe_alloc[Float32](total_elements)
+    var h_ref = unsafe_alloc[Float32](total_elements)
 
     # Initialize input with random values
     for i in range(total_elements):
@@ -251,6 +252,6 @@ def main() raises:
         print("SUCCESS: All values match!")
 
     # Cleanup
-    h_in.free()
-    h_out.free()
-    h_ref.free()
+    h_in.unsafe_free()
+    h_out.unsafe_free()
+    h_ref.unsafe_free()

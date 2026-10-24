@@ -1,0 +1,48 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "mimo_v2_modulev3",
+    srcs = glob(["**/*.py"]),
+    # The experimental namespace re-exports these through
+    # //max/python/max/experimental/nn, which static import analysis cannot
+    # follow.
+    ignore_unresolved_imports = [
+        "max.experimental.tensor.default_device",
+        "max.experimental.tensor.Tensor",
+        "max.experimental.functional",
+        "max.experimental.sharding.Partial",
+        "max.experimental.sharding.NamedMapping",
+        "max.experimental.sharding.DeviceMapping",
+        "max.experimental.sharding.DeviceMesh",
+        "max.experimental.sharding.Replicated",
+        "max.experimental.sharding.Sharded",
+        "max.experimental.realization_context.ensure_context",
+    ],
+    deps = [
+        requirement("numpy"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        # The EP memory planner formats its reservation estimate.
+        "//max/python/max/support",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        # KV cache parameter types stay in max.nn; the module itself is V3.
+        "//max/python/max/nn",
+        # Config, quantization scheme and checkpoint naming are shared with
+        # the graph-API architecture.
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/gpt_oss",
+        # The DP-attention forward reuses the ModuleV3 batch-split helpers.
+        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+    ],
+)

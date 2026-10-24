@@ -34,6 +34,8 @@
 namespace M {
 namespace KGEN {
 namespace LIT {
+class ASTDecl;
+class FnSignatureASTDecl;
 class SharedState;
 } // namespace LIT
 
@@ -50,16 +52,46 @@ enum class ArgumentConvention {
 
 /// Everything needed to render one parameter of a Mojo signature.
 struct ParameterInfo {
+  ParameterInfo() = default;
+  ParameterInfo(LIT::ASTDecl &decl);
+
+  StringRef getName() const { return name; }
+  StringRef getDescription() const { return description; }
+  void setDescription(StringRef newDescription) {
+    description = newDescription;
+  }
+  std::string getMarkdownDocString() const;
+  LIT::ASTDecl &getDecl() const {
+    assert(decl && "ParameterInfo requires an AST declaration");
+    return *decl;
+  }
+  void setDecl(LIT::ASTDecl &newDecl) { decl = &newDecl; }
+
   StringRef name;
   std::string type;
-  PassingKind passingKind;
-  VariadicKind variadicKind;
+  PassingKind passingKind = PassingKind::PosOrKw;
+  VariadicKind variadicKind = VariadicKind::None;
   mlir::TypedAttr defaultValue;
   std::string constraints;
+  std::string description;
+
+private:
+  LIT::ASTDecl *decl = nullptr;
 };
 
 /// Everything needed to render one argument of a Mojo signature.
 struct ArgumentInfo {
+  ArgumentInfo() = default;
+
+  StringRef getName() const { return name; }
+  static std::string getMarkdownDocString(LIT::ASTDecl &decl);
+  std::string getMarkdownDocString() const;
+  LIT::ASTDecl &getDecl() const {
+    assert(decl && "ArgumentInfo requires an AST declaration");
+    return *decl;
+  }
+  void setDecl(LIT::ASTDecl &newDecl) { decl = &newDecl; }
+
   StringRef name;
   std::string prefix; // e.g. `[origin]` for ref args
   std::string type;
@@ -68,6 +100,9 @@ struct ArgumentInfo {
   mlir::TypedAttr defaultValue;
   ArgumentConvention convention;
   bool isSelf;
+
+private:
+  LIT::ASTDecl *decl = nullptr;
 };
 
 //===----------------------------------------------------------------------===//
@@ -79,22 +114,26 @@ struct ArgumentInfo {
 /// index -> name bindings so callers can also rebind argument-side attributes.
 /// `selfType` is honored only by the function path - struct/alias parameters
 /// don't get "Self"-substitution.
-ParameterEvaluator populateParameterInfos(
-    LIT::SharedState &shared, ArrayRef<mlir::Type> paramTypes,
-    PogListAttr paramListAttr, SmallVectorImpl<ParameterInfo> &params,
-    std::optional<LIT::ASTType> selfType = std::nullopt);
+ParameterEvaluator
+populateParameterInfos(LIT::ASTDecl &decl, ArrayRef<mlir::Type> paramTypes,
+                       PogListAttr paramListAttr,
+                       SmallVectorImpl<ParameterInfo> &params,
+                       std::optional<LIT::ASTType> selfType = std::nullopt);
 
-/// Populate `args` from a function signature. `selfResultFn`, when non-null
-/// and returning true, signals that the function's by-ref result represents
-/// `self` (the `__init__`/`__copyinit__`/`__moveinit__` family); the relevant
-/// out-arg is marked `isSelf`. Otherwise the first arg is treated as `self`.
-void populateArgumentInfos(LIT::SharedState &shared,
-                           LIT::FnTypeGeneratorType signature,
-                           ArrayRef<mlir::Type> userArgTypes,
-                           std::optional<LIT::ASTType> selfType,
-                           ParameterEvaluator &evaluator,
-                           function_ref<bool()> hasSelfResultFn,
-                           SmallVectorImpl<ArgumentInfo> &args);
+/// Populate user-visible parameters for a function signature declaration.
+/// Associates each rendered parameter with its corresponding AST declaration.
+ParameterEvaluator
+populateParameterInfos(LIT::FnSignatureASTDecl &decl,
+                       SmallVectorImpl<ParameterInfo> &params,
+                       std::optional<LIT::ASTType> selfType = std::nullopt);
+
+/// Return user-visible arguments for a function signature declaration. Each
+/// entry is associated with its corresponding AST declaration.
+SmallVector<ArgumentInfo, 2>
+getArgumentInfos(LIT::FnSignatureASTDecl &decl, ParameterEvaluator &evaluator,
+                 std::optional<LIT::ASTType> selfType = std::nullopt);
+SmallVector<ArgumentInfo, 2> getArgumentInfos(LIT::FnSignatureASTDecl &decl);
+std::optional<ArgumentInfo> getArgumentInfo(LIT::ASTDecl &decl);
 
 //===----------------------------------------------------------------------===//
 // Constraint merging

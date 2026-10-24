@@ -73,7 +73,7 @@ class KVCacheMetrics:
     inflight_disk_ops: int = 0
     """Number of in-flight disk operations."""
     connector_loads_refused: int = 0
-    """Number of loads the connector's host and disk tiers refused.
+    """Number of loads the connector refused: its host and disk tiers, or dKV.
 
     A refused load is served by recomputing its blocks, so a steady rate of
     these is hit rate the tiers reported and then could not deliver.
@@ -154,6 +154,31 @@ class KVCacheMetrics:
     leaves would multiply a four-leaf deployment's reading by four.
     """
 
+    # The dKV settle worker and the owner release halt. Every leaf client runs
+    # its own worker, so these fold over leaf clients as well as replicas. The
+    # depth, the age and the halt are levels the connector reads fresh on every
+    # snapshot, so take_metrics leaves them in place like the health keys
+    # above. settle_jobs_finished is a per-window delta that take_metrics
+    # clears.
+    dkv_settle_queue_depth: int = 0
+    """Settle jobs queued and not yet finished, summed over every leaf client."""
+    dkv_settle_queue_oldest_age_ms: float = 0.0
+    """How long the oldest unfinished settle job has waited, in milliseconds.
+
+    The max over every leaf client, and zero when none is queued. Read it
+    against ``dkv_settle_jobs_finished``. A head stuck on an RPC or a reconnect
+    ages at wall-clock rate while that count stays flat, and a worker that is
+    only behind under load ages more slowly while the count keeps rising.
+    """
+    dkv_settle_jobs_finished: int = 0
+    """Settle jobs the workers finished or dropped this window, summed."""
+    dkv_owner_releases_halted: int = 0
+    """1 while any leaf client's owner release halt is up, else 0.
+
+    While it is up, the owner's failing cleanups wait on the orphan queue and
+    its drain backs off.
+    """
+
     # Cross-node pull. Per-window deltas like nixl_read_blocks and the latency
     # pairs, so they sum and take_metrics clears them, unlike the three dKV
     # health keys above. The connector's ConnectorMetrics is the canonical
@@ -181,10 +206,37 @@ class KVCacheMetrics:
     dead peer charges roughly one failure per window however many requests it
     affects.
     """
+    dkv_peer_transfer_failures: int = 0
+    """Hint-routed peer leases whose NIXL read failed to build or post.
+
+    Charged to the peer, which is skipped for the failure memo window and
+    marked stale for a metadata refresh, rather than degrading the connector.
+    """
+    dkv_peer_metadata_refreshes: int = 0
+    """Stale peers whose NIXL metadata the connector reloaded in place."""
+    dkv_peer_metadata_refresh_failures: int = 0
+    """In-place peer metadata reloads that NIXL refused.
+
+    Each strands its peer: the connector never routes to or dials it again for
+    the life of the process.
+    """
     dkv_hints_rejected: int = 0
     """Cache hints that were present but the connector could not use."""
     dkv_hints_rejected_by_reason: dict[str, int] = field(default_factory=dict)
     """``dkv_hints_rejected`` split by why each hint went unused."""
+    dkv_touches_deduplicated: int = 0
+    """Recency touches the client dropped because a touch it sent within the
+    last second already covered their keys, each an RPC the store was spared."""
+
+    # dKV fail-opens: loads answered as misses without a transfer. Per-window
+    # deltas like the peer counters, so a tier serving every load as a miss
+    # reads as one rather than as a cold cache.
+    dkv_prepare_load_degraded: int = 0
+    """Lookups that found the connector degraded and planned nothing."""
+    dkv_load_with_plan_degraded: int = 0
+    """Loads whose connector degraded between the lookup and the post."""
+    dkv_load_with_plan_expired: int = 0
+    """Leases that aged past their deadline before the load posted them."""
 
     # Per-call dKV client counters, per-window deltas keyed by RPC (or, for the
     # lock waits, by connector entry point). Time over calls is the per-call
@@ -199,6 +251,12 @@ class KVCacheMetrics:
     """Times each connector entry point took the connector lock."""
     dkv_lock_wait_ms: dict[str, float] = field(default_factory=dict)
     """Milliseconds each entry point waited for the connector lock."""
+    dkv_blocked_calls: dict[str, int] = field(default_factory=dict)
+    """Calls into each connector entry point."""
+    dkv_blocked_ms: dict[str, float] = field(default_factory=dict)
+    """Milliseconds the calling thread spent inside each entry point, lock
+    wait and any RPC included. Near zero for an entry that returns at once,
+    which is how the scheduler thread is shown to have stopped waiting."""
 
     @property
     def prompt_tokens(self) -> int:
@@ -344,6 +402,20 @@ class KVCacheMetrics:
             dkv_total_clients=self.dkv_total_clients + other.dkv_total_clients,
             dkv_reconnect_attempts=self.dkv_reconnect_attempts
             + other.dkv_reconnect_attempts,
+            dkv_settle_queue_depth=self.dkv_settle_queue_depth
+            + other.dkv_settle_queue_depth,
+            # A max, not a sum, for the same reason as the read latency peak:
+            # the oldest job across two workers is still one job's wait.
+            dkv_settle_queue_oldest_age_ms=max(
+                self.dkv_settle_queue_oldest_age_ms,
+                other.dkv_settle_queue_oldest_age_ms,
+            ),
+            dkv_settle_jobs_finished=self.dkv_settle_jobs_finished
+            + other.dkv_settle_jobs_finished,
+            # Up when either side's is, and still 1 rather than a count.
+            dkv_owner_releases_halted=max(
+                self.dkv_owner_releases_halted, other.dkv_owner_releases_halted
+            ),
             dkv_peer_attaches=self.dkv_peer_attaches + other.dkv_peer_attaches,
             dkv_peer_attach_failures=self.dkv_peer_attach_failures
             + other.dkv_peer_attach_failures,
@@ -351,12 +423,26 @@ class KVCacheMetrics:
             dkv_peer_loads=self.dkv_peer_loads + other.dkv_peer_loads,
             dkv_peer_load_failures=self.dkv_peer_load_failures
             + other.dkv_peer_load_failures,
+            dkv_peer_transfer_failures=self.dkv_peer_transfer_failures
+            + other.dkv_peer_transfer_failures,
+            dkv_peer_metadata_refreshes=self.dkv_peer_metadata_refreshes
+            + other.dkv_peer_metadata_refreshes,
+            dkv_peer_metadata_refresh_failures=self.dkv_peer_metadata_refresh_failures
+            + other.dkv_peer_metadata_refresh_failures,
             dkv_hints_rejected=self.dkv_hints_rejected
             + other.dkv_hints_rejected,
             dkv_hints_rejected_by_reason=_add_by_key(
                 self.dkv_hints_rejected_by_reason,
                 other.dkv_hints_rejected_by_reason,
             ),
+            dkv_touches_deduplicated=self.dkv_touches_deduplicated
+            + other.dkv_touches_deduplicated,
+            dkv_prepare_load_degraded=self.dkv_prepare_load_degraded
+            + other.dkv_prepare_load_degraded,
+            dkv_load_with_plan_degraded=self.dkv_load_with_plan_degraded
+            + other.dkv_load_with_plan_degraded,
+            dkv_load_with_plan_expired=self.dkv_load_with_plan_expired
+            + other.dkv_load_with_plan_expired,
             dkv_rpc_calls=_add_by_key(self.dkv_rpc_calls, other.dkv_rpc_calls),
             dkv_rpc_time_ms=_add_by_key(
                 self.dkv_rpc_time_ms, other.dkv_rpc_time_ms
@@ -369,5 +455,11 @@ class KVCacheMetrics:
             ),
             dkv_lock_wait_ms=_add_by_key(
                 self.dkv_lock_wait_ms, other.dkv_lock_wait_ms
+            ),
+            dkv_blocked_calls=_add_by_key(
+                self.dkv_blocked_calls, other.dkv_blocked_calls
+            ),
+            dkv_blocked_ms=_add_by_key(
+                self.dkv_blocked_ms, other.dkv_blocked_ms
             ),
         )

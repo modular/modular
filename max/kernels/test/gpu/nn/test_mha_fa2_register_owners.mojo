@@ -35,10 +35,10 @@ def _fa2_kernel[
     keys: Int,
     query_rows: Int,
 ](
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    q: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     # Keep platform-width Int values inside the GPU, not in its launch ABI.
     mha_single_batch[config=config](

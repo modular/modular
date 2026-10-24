@@ -22,8 +22,8 @@ stream) and `normed_out` (its RMSNorm). Inherently `multiply_before_cast=True`.
 
 Factored from the 2-stage AR kernel (`allreduce_residual_rmsnorm.mojo`); keep
 the reduce/norm math in sync with it -- but NOT the barrier structure: this
-kernel closes with an end barrier, which the AR+norm kernels do not (their
-`is_start=False` barrier is an intermediate stage fence).
+kernel closes with an end barrier, whereas the 2-stage AR+norm kernel's
+`is_start=False` barrier is an intermediate stage fence.
 """
 
 from std.collections import Array
@@ -37,7 +37,6 @@ from std.sys import (
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
@@ -173,7 +172,7 @@ def _reducescatter_rmsnorm_kernel[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(col_idx)).cast[
+            gamma.load[width=simd_width, alignment=align]((col_idx,)).cast[
                 accum_type
             ]()
             + weight_offset.cast[accum_type]()
@@ -201,8 +200,8 @@ def _reducescatter_rmsnorm_kernel[
             comptime for gpu_idx in range(ngpus):
                 accum += (
                     ptrs[gpu_idx]
-                    .address_space_cast[_target_address_space]()
-                    .load[
+                    .unsafe_address_space_cast[_target_address_space]()
+                    .unsafe_load[
                         width=simd_width,
                         alignment=align,
                         invariant=True,
@@ -223,15 +222,13 @@ def _reducescatter_rmsnorm_kernel[
                 reduced = (
                     reduced.cast[accum_type]()
                     + residual[]
-                    .load[width=simd_width, alignment=align](
-                        Coord(row, col_idx)
-                    )
+                    .load[width=simd_width, alignment=align]((row, col_idx))
                     .cast[accum_type]()
                 ).cast[in_dtype]()
         var reduced_f = reduced.cast[accum_type]()
         if is_valid:
             # `reduced` == the standalone reduce-scatter shard (residual stream).
-            sum_out.store[width=simd_width](Coord(local_row, col_idx), reduced)
+            sum_out.store((local_row, col_idx), reduced)
 
         # Mean-square over the full row. Divide by `cols` (full H) FIRST, add
         # epsilon SECOND (not the shard count; epsilon outside the division).
@@ -246,9 +243,7 @@ def _reducescatter_rmsnorm_kernel[
         if is_valid:
             # (x * norm) * gamma in f32, cast to in_dtype last: mbc=True.
             var normalized = (reduced_f * norm_factor) * gamma_vec
-            normed_out.store[width=simd_width](
-                Coord(local_row, col_idx), normalized.cast[in_dtype]()
-            )
+            normed_out.store((local_row, col_idx), normalized.cast[in_dtype]())
 
     # End barrier: peers P2P-read this rank's `src_ptrs`, so they must not be
     # reused until every peer is done. Deferring to the next collective's start
@@ -534,10 +529,13 @@ def reducescatter_rmsnorm[
     # Each thread owns `simd_width` cols; H=6144 fits the base width
     # (64*8*16=8192) on all targets (no AR two-width dispatch). Assert fit +
     # divisibility below.
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime threads_per_block = max_warps_per_block * warp_size
     comptime simd_width = simd_width_of[in_dtype, target=ctx.target]()
-    comptime max_supported_cols = WARP_SIZE * simd_width * max_warps_per_block
+    comptime max_supported_cols = warp_size * simd_width * max_warps_per_block
     if cols > max_supported_cols:
         raise Error(
             String(

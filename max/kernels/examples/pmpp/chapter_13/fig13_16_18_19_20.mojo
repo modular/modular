@@ -17,19 +17,15 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
-from std.math import min, max
-
-
-def ceildiv(a: Int, b: Int) -> Int:
-    """Ceiling division."""
-    return (a + b - 1) // b
+from std.memory.alloc import unsafe_alloc
+from std.math import ceildiv, min, max
 
 
 def co_rank(
     k: Int,
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
 ) -> Int:
     """Find the co-rank of k in the merged sequence of A and B.
@@ -67,9 +63,9 @@ def co_rank(
 
 def co_rank_circular(
     k: Int,
-    A: UnsafePointer[Int32, _, address_space=.SHARED],
+    A: Pointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=.SHARED],
+    B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
     A_S_start: Int,
     B_S_start: Int,
@@ -103,12 +99,12 @@ def co_rank_circular(
         var j_cir = (B_S_start + j) % tile_size
         var j_m_1_cir = (B_S_start + j - 1) % tile_size
 
-        if i > 0 and j < n and Int32(A[i_m_1_cir]) > Int32(B[j_cir]):
+        if i > 0 and j < n and A[i_m_1_cir] > B[j_cir]:
             delta = (i - i_low + 1) >> 1  # ceil((i - i_low) / 2)
             j_low = j
             i = i - delta
             j = j + delta
-        elif j > 0 and i < m and Int32(B[j_m_1_cir]) >= Int32(A[i_cir]):
+        elif j > 0 and i < m and B[j_m_1_cir] >= A[i_cir]:
             delta = (j - j_low + 1) >> 1
             i_low = i
             i = i + delta
@@ -120,11 +116,11 @@ def co_rank_circular(
 
 
 def merge_sequential_circular(
-    A: UnsafePointer[Int32, _, address_space=.SHARED],
+    A: Pointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=.SHARED],
+    B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
     A_S_start: Int,
     B_S_start: Int,
     tile_size: Int,
@@ -148,35 +144,35 @@ def merge_sequential_circular(
     while i < m and j < n:
         var i_cir = (A_S_start + i) % tile_size
         var j_cir = (B_S_start + j) % tile_size
-        if Int32(A[i_cir]) <= Int32(B[j_cir]):
-            C[k] = Int32(A[i_cir])
+        if A[i_cir] <= B[j_cir]:
+            C[k] = A[i_cir]
             k += 1
             i += 1
         else:
-            C[k] = Int32(B[j_cir])
+            C[k] = B[j_cir]
             k += 1
             j += 1
 
     if i == m:  # done with A[], handle remaining B[]
         while j < n:
             var j_cir = (B_S_start + j) % tile_size
-            C[k] = Int32(B[j_cir])
+            C[k] = B[j_cir]
             k += 1
             j += 1
     else:  # done with B[], handle remaining A[]
         while i < m:
             var i_cir = (A_S_start + i) % tile_size
-            C[k] = Int32(A[i_cir])
+            C[k] = A[i_cir]
             k += 1
             i += 1
 
 
 def merge_circular_buffer_kernel(
-    A: UnsafePointer[Int32, ImmutAnyOrigin],
+    A: ImmPointer[Int32, ImmutAnyOrigin],
     m_dev: Int32,
-    B: UnsafePointer[Int32, ImmutAnyOrigin],
+    B: ImmPointer[Int32, ImmutAnyOrigin],
     n_dev: Int32,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutAnyOrigin],
     tile_size_dev: Int32,
 ):
     """Figures 13.16, 13.18, 13.19, 13.20: Circular buffer merge kernel.
@@ -217,8 +213,8 @@ def merge_circular_buffer_kernel(
 
     barrier()
 
-    var A_curr = Int32(A_S[0])
-    var A_next = Int32(A_S[1])
+    var A_curr = A_S[0]
+    var A_next = A_S[1]
     var B_curr = C_curr - Int(A_curr)
     var B_next = C_next - Int(A_next)
 
@@ -243,7 +239,7 @@ def merge_circular_buffer_kernel(
     while counter < total_iteration:
         # Figure 13.16: Part 2 - Loading A_S_consumed and B_S_consumed elements
         # into A_S and B_S using circular buffer indexing
-        for i in range(0, A_S_consumed, Int(128)):  # blockDim.x = 128
+        for i in range(0, A_S_consumed, 128):  # blockDim.x = 128
             if (
                 i + thread_idx.x < A_length - A_consumed
                 and i + thread_idx.x < A_S_consumed
@@ -251,10 +247,10 @@ def merge_circular_buffer_kernel(
                 A_S[
                     (A_S_start + (tile_size - A_S_consumed) + i + thread_idx.x)
                     % tile_size
-                ] = Int32(A[Int(A_curr) + A_consumed + i + thread_idx.x])
+                ] = A[Int(A_curr) + A_consumed + i + thread_idx.x]
 
         # Loading B_S_consumed elements into B_S
-        for i in range(0, B_S_consumed, Int(128)):  # blockDim.x = 128
+        for i in range(0, B_S_consumed, 128):  # blockDim.x = 128
             if (
                 i + thread_idx.x < B_length - B_consumed
                 and i + thread_idx.x < B_S_consumed
@@ -262,13 +258,13 @@ def merge_circular_buffer_kernel(
                 B_S[
                     (B_S_start + (tile_size - B_S_consumed) + i + thread_idx.x)
                     % tile_size
-                ] = Int32(B[B_curr + B_consumed + i + thread_idx.x])
+                ] = B[B_curr + B_consumed + i + thread_idx.x]
 
         barrier()
 
         # Figure 13.18: Part 3 - Thread-level merge
-        var c_curr = thread_idx.x * (tile_size // Int(128))  # blockDim.x = 128
-        var c_next = (thread_idx.x + 1) * (tile_size // Int(128))
+        var c_curr = thread_idx.x * (tile_size // 128)  # blockDim.x = 128
+        var c_next = (thread_idx.x + 1) * (tile_size // 128)
 
         c_curr = min(c_curr, C_length - C_completed)
         c_next = min(c_next, C_length - C_completed)
@@ -303,7 +299,9 @@ def merge_circular_buffer_kernel(
             a_next - a_curr,
             B_S,
             b_next - b_curr,
-            C + C_curr + C_completed + c_curr,
+            C.unsafe_offset(C_curr)
+            .unsafe_offset(C_completed)
+            .unsafe_offset(c_curr),
             A_S_start + a_curr,
             B_S_start + b_curr,
             tile_size,
@@ -334,11 +332,11 @@ def merge_circular_buffer_kernel(
 
 
 def cpu_merge(
-    A: UnsafePointer[Int32, _],
+    A: Pointer[Int32, _],
     m: Int,
-    B: UnsafePointer[Int32, _],
+    B: Pointer[Int32, _],
     n: Int,
-    C: UnsafePointer[mut=True, Int32, _],
+    C: MutPointer[Int32, _],
 ):
     """CPU reference implementation of merge.
 
@@ -380,10 +378,10 @@ def main() raises:
     var total = m + n
 
     # Allocate host memory
-    var h_A = alloc[Int32](m)
-    var h_B = alloc[Int32](n)
-    var h_C = alloc[Int32](total)
-    var h_ref = alloc[Int32](total)
+    var h_A = unsafe_alloc[Int32](m)
+    var h_B = unsafe_alloc[Int32](n)
+    var h_C = unsafe_alloc[Int32](total)
+    var h_ref = unsafe_alloc[Int32](total)
 
     # Initialize sorted arrays
     for i in range(m):
@@ -469,10 +467,10 @@ def main() raises:
         print("No differences found!")
 
     # Free memory
-    h_A.free()
-    h_B.free()
-    h_C.free()
-    h_ref.free()
+    h_A.unsafe_free()
+    h_B.unsafe_free()
+    h_C.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

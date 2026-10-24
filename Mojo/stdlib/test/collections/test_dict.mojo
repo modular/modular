@@ -20,7 +20,7 @@ from std.collections.dict import (
 )
 from std.collections._swisstable import GROUP_WIDTH
 
-from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
+from std.hash import Hasher, default_comp_time_hasher, default_hasher
 
 from test_utils import (
     CopyCounter,

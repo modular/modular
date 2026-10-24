@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -249,13 +249,16 @@ def _create_with_driver_staging_on_hip(
     check with ``host_staging_alloc='driver'`` on a stubbed HIP device.
 
     An empty ``replica_kv_memory`` skips the preceding CPU-device check, and
-    a stubbed ``_native_connector_class`` skips importing the real
-    `kv_tier_connector`/`kv_tier_mojo` extension this CPU-only test target
-    doesn't depend on, so this never needs a GPU.
+    ``create`` resolves the native class before any other check, so the
+    stubbed ``_native_connector_class`` stands in for the `kv_tier_connector`
+    extension this CPU-only test target doesn't depend on, and this never
+    needs a GPU.
     """
     monkeypatch.setattr(tier_connector, "accelerator_api", lambda: "hip")
     monkeypatch.setattr(
-        tier_connector, "_native_connector_class", lambda connector_type: object
+        tier_connector,
+        "_native_connector_class",
+        lambda: object,
     )
     cfg = SimpleNamespace(
         type=KVConnectorType.rust_tiered,
@@ -335,16 +338,16 @@ def test_connector_config_defaults_disk_io_to_buffered() -> None:
     assert KVConnectorConfig(use_disk_direct_io=True).use_disk_direct_io is True
 
 
-def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
-    monkeypatch: pytest.MonkeyPatch,
+def _create_with_unaligned_direct_io(
+    monkeypatch: pytest.MonkeyPatch, host_staging_mlock: bool = False
 ) -> None:
-    """Every leaf whose block width is not a 4 KiB multiple must be named in
-    one error before anything is allocated, since no buffered fallback
-    exists and a single unaligned leaf makes every one of its blocks unable
-    to take the direct path."""
+    """Drives ``TierConnector.create`` with registered staging on CUDA up to
+    its direct-I/O alignment check, which raises."""
     monkeypatch.setattr(tier_connector, "accelerator_api", lambda: "cuda")
     monkeypatch.setattr(
-        tier_connector, "_native_connector_class", lambda connector_type: object
+        tier_connector,
+        "_native_connector_class",
+        lambda: object,
     )
     # A leaf of 4096+16 bytes: a token-scaled geometry can produce this with
     # a small page size; the check must fire before the staging region.
@@ -357,7 +360,7 @@ def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
         type=KVConnectorType.rust_tiered,
         host_staging_alloc="registered",
         use_disk_direct_io=True,
-        host_staging_mlock=False,
+        host_staging_mlock=host_staging_mlock,
         host_offload_max_gb=None,
         disk_offload_max_gb=1.0,
         disk_offload_dir=None,
@@ -373,6 +376,42 @@ def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
             params=SimpleNamespace(kv_connector_config=cfg),
             device_memory_bytes=0,
         )
+
+
+def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every leaf whose block width is not a 4 KiB multiple must be named in
+    one error before anything is allocated, since no buffered fallback
+    exists and a single unaligned leaf makes every one of its blocks unable
+    to take the direct path."""
+    _create_with_unaligned_direct_io(monkeypatch)
+
+
+@pytest.mark.parametrize(
+    ("sysctl", "warns"),
+    [("allowed", True), ("disallowed", False), ("missing", False)],
+)
+def test_create_warns_on_mlock_only_when_compaction_migrates_locked_pages(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    sysctl: str,
+    warns: bool,
+) -> None:
+    (tmp_path / "allowed").write_text("1\n")
+    (tmp_path / "disallowed").write_text("0\n")
+    path = tmp_path / sysctl
+    read_sysctl = tier_connector._compact_unevictable_allowed
+    monkeypatch.setattr(
+        tier_connector,
+        "_compact_unevictable_allowed",
+        lambda: read_sysctl(str(path)),
+    )
+
+    _create_with_unaligned_direct_io(monkeypatch, host_staging_mlock=True)
+
+    assert ("vm.compact_unevictable_allowed=1" in caplog.text) is warns
 
 
 @pytest.mark.parametrize(
@@ -447,9 +486,73 @@ def test_compact_unevictable_allowed_reads_the_sysctl(
     assert tier_connector._compact_unevictable_allowed(str(path)) is expected
 
 
-def test_compact_unevictable_allowed_is_unknown_when_unreadable(
+def test_compact_unevictable_allowed_is_false_when_unreadable(
     tmp_path: Path,
 ) -> None:
     missing = str(tmp_path / "missing")
 
-    assert tier_connector._compact_unevictable_allowed(missing) is None
+    assert tier_connector._compact_unevictable_allowed(missing) is False
+
+
+@pytest.fixture
+def fresh_native_class_cache() -> Iterator[None]:
+    """Clears the cached native-class lookup around a test that stubs the import."""
+    tier_connector._native_connector_class.cache_clear()
+    yield
+    tier_connector._native_connector_class.cache_clear()
+
+
+def _stub_import_module(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    def import_module(name: str) -> object:
+        raise error
+
+    monkeypatch.setattr(
+        tier_connector.importlib, "import_module", import_module
+    )
+
+
+@pytest.mark.usefixtures("fresh_native_class_cache")
+def test_create_fails_on_missing_extension_before_acquiring_anything(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A build without the extension must fail before the offload directory is
+    acquired or any capacity is checked, so nothing is left to release."""
+    _stub_import_module(
+        monkeypatch,
+        ModuleNotFoundError(
+            "No module named 'kv_tier_connector'", name="kv_tier_connector"
+        ),
+    )
+
+    def acquire_offload_dir(*args: object, **kwargs: object) -> None:
+        raise AssertionError("acquire_offload_dir ran before the class check")
+
+    monkeypatch.setattr(
+        tier_connector, "acquire_offload_dir", acquire_offload_dir
+    )
+    cfg = SimpleNamespace(type=KVConnectorType.rust_tiered)
+
+    with pytest.raises(ValueError, match="does not ship") as exc_info:
+        tier_connector.TierConnector.create(
+            leaves={"full": KVCacheGroupId.full()},
+            replica_kv_memory=[],
+            params=SimpleNamespace(kv_connector_config=cfg),
+            device_memory_bytes=0,
+        )
+    assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)
+
+
+@pytest.mark.usefixtures("fresh_native_class_cache")
+def test_native_class_propagates_a_broken_extension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the extension itself being absent is the "not shipped" error; a
+    missing dependency inside it is a broken install and must surface."""
+    _stub_import_module(
+        monkeypatch, ModuleNotFoundError("No module named 'dep'", name="dep")
+    )
+
+    with pytest.raises(ModuleNotFoundError, match="dep"):
+        tier_connector._native_connector_class()

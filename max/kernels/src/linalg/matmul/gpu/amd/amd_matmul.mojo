@@ -21,11 +21,11 @@ Entry point: AMDMatmul.run()
 
 from std.bit import log2_floor
 from std.collections import Optional
+from std.math import iota
 from std.sys import align_of, simd_width_of
 
 from .._multistage_gemm_gpu import (
     warp_split_k_reduction,
-    WarpSplitKReductionSMem,
 )
 
 from max.gpu import (
@@ -33,6 +33,7 @@ from max.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
+    thread_idx,
     warp_id,
 )
 from max.gpu.sync import barrier
@@ -41,19 +42,17 @@ from max.gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
-from layout import TensorEngine, TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    apply_elementwise_epilogue,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -75,18 +74,28 @@ comptime SCHED_MASK_VMEM_READ = 2
 comptime SCHED_MASK_MFMA = 3
 
 
+@inline(.always)
+def _zero_from[
+    width: Int
+](reg: TileTensor[mut=True, _, _, _, address_space=.LOCAL, ...], n_valid: Int):
+    """Zeroes all but the first `n_valid` lanes of every `width`-wide vector."""
+    var keep = iota[DType.int, width]().lt(Scalar[DType.int](n_valid))
+    comptime for v in range(type_of(reg).static_shape[1] // width):
+        var coord = Coord(0, v * width)
+        reg.store(coord, keep.select(reg.load[width=width](coord), 0))
+
+
 struct AMDMatmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Pure TileTensor structured matmul for AMD GPUs.
 
     Schedule-driven single-buffer pipeline. All data movement uses
-    TileTensor: no LayoutTensor anywhere.
+    TileTensor.
 
     Parameters:
         a_type: Element type of the A input matrix.
@@ -96,8 +105,6 @@ struct AMDMatmul[
             `True`.
         config: Tile and warp shapes, MMA shape, and thread count for the
             kernel.
-        elementwise_lambda_fn: Optional epilogue applied elementwise to the
-            output (defaults to `None`).
     """
 
     comptime accum_type = get_accum_type[Self.a_type]()
@@ -219,8 +226,7 @@ struct AMDMatmul[
     ):
         """Same as `run`, storing the output through `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             c_layout: Tensor layout of the output C tile.
@@ -237,10 +243,6 @@ struct AMDMatmul[
             b: Input B tile of shape `[N, K]`.
             epilogue_fn: Stores each output element.
         """
-        comptime assert not Self.elementwise_lambda_fn, (
-            "run_with_epilogue_fn takes the epilogue as a value; leave"
-            " elementwise_lambda_fn unset"
-        )
         Self._run_at_tile_impl[has_epilogue_fn=True, has_compute_fn=False](
             c, a, b, block_idx.y, block_idx.x, epilogue_fn, no_compute_fn
         )
@@ -270,8 +272,7 @@ struct AMDMatmul[
     ):
         """Same as `run`, storing `compute_fn(idx, value)` into `c`.
 
-        Launch with `host_arg=compute_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             c_layout: Tensor layout of the output C tile.
@@ -289,10 +290,6 @@ struct AMDMatmul[
             compute_fn: Maps each output index and value to the value to
                 store.
         """
-        comptime assert not Self.elementwise_lambda_fn, (
-            "run_with_compute_fn takes the epilogue as a value; leave"
-            " elementwise_lambda_fn unset"
-        )
         Self._run_at_tile_impl[has_epilogue_fn=False, has_compute_fn=True](
             c, a, b, block_idx.y, block_idx.x, no_epilogue_fn, compute_fn
         )
@@ -429,12 +426,23 @@ struct AMDMatmul[
         # === Helpers ===
         var k_counter = 0
 
+        # Every vector a thread loads shares one tile column, so the K tail is
+        # masked with a single per-thread count of valid leading elements.
+        var tile_col = (thread_idx.x % load_thread_cols) * simd_width
+
+        # The DRAM loads read whole 16-byte vectors along a row, so columns
+        # past K in the last tile hold the next row's data, not zeros. They
+        # must be zeroed in both operands before they reach the MMA.
         @inline(.always)
-        def load_tiles_from_dram() {mut k_counter, imm}:
+        def load_tiles_from_dram[masked: Bool]() {mut k_counter, imm}:
             var a_block = a_blockrow.tile[BM, BK](0, k_counter)
             var b_block = b_blockrow.tile[BN, BK](0, k_counter)
             a_loader.load(a_load_reg, a_block.vectorize[1, simd_width]())
             b_loader.load(b_load_reg, b_block.vectorize[1, simd_width]())
+            comptime if masked:
+                var n_valid = K - k_counter * BK - tile_col
+                _zero_from[simd_width](a_load_reg, n_valid)
+                _zero_from[simd_width](b_load_reg, n_valid)
             k_counter += 1
 
         @inline(.always)
@@ -477,11 +485,11 @@ struct AMDMatmul[
         ]()
 
         @inline(.always)
-        def _bind[entry: ScheduleEntry]() {imm}:
+        def _bind[entry: ScheduleEntry, masked: Bool = False]() {imm}:
             comptime op = DefaultMatmulOps(entry.op.tag)
             comptime match op:
                 case .LOAD_DRAM:
-                    load_tiles_from_dram()
+                    load_tiles_from_dram[masked]()
                 case .STORE_SMEM:
                     copy_tiles_to_smem()
                 case .LOAD_FRAG:
@@ -490,11 +498,15 @@ struct AMDMatmul[
                     # Offset is in blocked-product element order, not row-major.
                     comptime k = entry.op.subtile
                     var a_blk = TileTensor(
-                        a_smem.ptr + a_warp_k_off + k * BM * k_tile_size,
+                        a_smem.ptr.unsafe_offset(a_warp_k_off).unsafe_offset(
+                            k * BM * k_tile_size
+                        ),
                         row_major[BM, k_tile_size](),
                     )
                     var b_blk = TileTensor(
-                        b_smem.ptr + b_warp_k_off + k * BN * k_tile_size,
+                        b_smem.ptr.unsafe_offset(b_warp_k_off).unsafe_offset(
+                            k * BN * k_tile_size
+                        ),
                         row_major[BN, k_tile_size](),
                     )
                     mma_op.load_frag[k](
@@ -528,14 +540,25 @@ struct AMDMatmul[
                                 AMDScheduleBarrierMask.MFMA, Int32(wait), 0
                             )
 
+        # The pipeline always consumes at least two K tiles. When K is shorter
+        # than that, or ends in a partial tile, the loads of those tiles zero
+        # the columns past K. Only the iterations that touch such a tile pay
+        # for it, so the main loop stays unmasked.
+        comptime masked_prologue = K < 2 * BK
+
         # Prologue.
         comptime for i in range(len(schedule.prologue)):
-            _bind[schedule.prologue[i]]()
+            _bind[schedule.prologue[i], masked_prologue]()
 
         # Main K-loop.
         for _ in range(2, K // BK):
             comptime for i in range(len(schedule.kernel)):
                 _bind[schedule.kernel[i]]()
+
+        # The iteration that prefetches the partial last tile.
+        comptime if K % BK != 0 and K // BK >= 2:
+            comptime for i in range(len(schedule.kernel)):
+                _bind[schedule.kernel[i], True]()
 
         # Epilogue.
         comptime for i in range(len(schedule.epilogue)):
@@ -548,9 +571,9 @@ struct AMDMatmul[
         var c_reg = mma_op.accum_tile()
 
         comptime if Self.num_warps_k > 1:
-            var reduction_smem = WarpSplitKReductionSMem[
-                Self.accum_type, BM, BN, Self.num_warps_k
-            ].stack_allocation()
+            var reduction_smem = stack_allocation[
+                dtype=Self.accum_type, address_space=.SHARED
+            ](row_major[1, BM * BN * (Self.num_warps_k // 2)]())
             warp_split_k_reduction[
                 BM, BN, num_threads // Self.num_warps_k, Self.num_warps_k
             ](warp_k, c_reg, reduction_smem.ptr)
@@ -559,11 +582,7 @@ struct AMDMatmul[
                 return
 
         # === Output ===
-        comptime if (
-            Bool(Self.elementwise_lambda_fn)
-            or has_epilogue_fn
-            or has_compute_fn
-        ):
+        comptime if has_epilogue_fn or has_compute_fn:
             # Epilogue path with OOB masking. Rows are only scalar-aligned
             # when N % BN != 0, so compute-mode stores use scalar alignment.
             comptime scalar_align = align_of[Scalar[Self.c_type]]()
@@ -576,13 +595,10 @@ struct AMDMatmul[
                     var m = warp_tile_m + m_mma * MMA_M + thread_m
 
                     if m < M:
-                        comptime src_off = (
-                            m_mma * num_n_mmas * c_frag_size
-                            + n_mma * c_frag_size
-                        )
-                        var v = c_reg.raw_load[width=c_frag_size](src_off).cast[
-                            Self.c_type
-                        ]()
+                        var v = c_reg.load[
+                            width=c_frag_size,
+                            alignment=align_of[Self.accum_type](),
+                        ](Coord(m_mma, n_mma * c_frag_size)).cast[Self.c_type]()
 
                         comptime if MMA_M == 32:
                             for e in range(c_frag_size):
@@ -595,8 +611,8 @@ struct AMDMatmul[
                                 )
                                 if col < N:
                                     comptime if has_compute_fn:
-                                        c.store_linear[alignment=scalar_align](
-                                            IndexList[2](m, col),
+                                        c.store[alignment=scalar_align](
+                                            Coord(m, col),
                                             compute_fn[
                                                 Self.c_type, 1, alignment=1
                                             ](
@@ -605,11 +621,11 @@ struct AMDMatmul[
                                             ),
                                         )
                                     else:
-                                        apply_elementwise_epilogue[
-                                            Self.elementwise_lambda_fn,
+                                        epilogue_fn[
+                                            Self.c_type,
+                                            1,
                                             alignment=scalar_align,
                                         ](
-                                            epilogue_fn,
                                             (m, col),
                                             SIMD[Self.c_type, 1](v[e]),
                                         )
@@ -621,8 +637,8 @@ struct AMDMatmul[
                             )
                             if n < N:
                                 comptime if has_compute_fn:
-                                    c.store_linear[alignment=scalar_align](
-                                        IndexList[2](m, n),
+                                    c.store[alignment=scalar_align](
+                                        Coord(m, n),
                                         compute_fn[
                                             Self.c_type,
                                             c_frag_size,
@@ -630,12 +646,13 @@ struct AMDMatmul[
                                         ]((m, n), v),
                                     )
                                 else:
-                                    apply_elementwise_epilogue[
-                                        Self.elementwise_lambda_fn,
+                                    epilogue_fn[
+                                        Self.c_type,
+                                        c_frag_size,
                                         alignment=align_of[
                                             SIMD[Self.c_type, c_frag_size]
                                         ](),
-                                    ](epilogue_fn, (m, n), v)
+                                    ]((m, n), v)
         elif N % BN != 0:
             # Boundary path: N not block-aligned, per-element OOB store.
             var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)
@@ -647,13 +664,10 @@ struct AMDMatmul[
                     var m = warp_tile_m + m_mma * MMA_M + thread_m
 
                     if m < M:
-                        comptime src_off = (
-                            m_mma * num_n_mmas * c_frag_size
-                            + n_mma * c_frag_size
-                        )
-                        var v = c_reg.raw_load[width=c_frag_size](src_off).cast[
-                            Self.c_type
-                        ]()
+                        var v = c_reg.load[
+                            width=c_frag_size,
+                            alignment=align_of[Self.accum_type](),
+                        ](Coord(m_mma, n_mma * c_frag_size)).cast[Self.c_type]()
 
                         comptime if MMA_M == 32:
                             for e in range(c_frag_size):
@@ -665,7 +679,7 @@ struct AMDMatmul[
                                     + (e % 4)
                                 )
                                 if col < N:
-                                    c.raw_store(m * N + col, v[e])
+                                    c.store((m, col), v[e])
                         else:
                             var n = (
                                 warp_tile_n
@@ -673,7 +687,9 @@ struct AMDMatmul[
                                 + lane_group * c_frag_size
                             )
                             if n < N:
-                                c.raw_store[width=c_frag_size](m * N + n, v)
+                                c.store[alignment=align_of[Self.c_type]()](
+                                    Coord(m, n), v
+                                )
         else:
             # Fast path: N is block-aligned, no OOB checks needed.
             var c_block = c.tile[BM, BN](block_m, block_n)

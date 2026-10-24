@@ -6,12 +6,13 @@ package(default_visibility = ["//max:consumers"])
 _GPU_MEMORY = {
     "test_batch_kv_cache_flash_attention.mojo": "2",
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": "2",
-    "test_fused_qkv_index_matmul_scale_mxfp6.mojo": "5",
+    "test_fused_qkv_index_matmul_scale_mxfp6.mojo": "3",
     "test_kv_cache_2m_iadd.mojo": "3",
     "test_kv_cache_matmul.mojo": "4",
     "test_kv_cache_radd.mojo": "3",
     "test_kv_cache_ragged_matmul_scale.mojo": "3",
     "test_kv_cache_store_ragged.mojo": "3",
+    "test_mha_decode_sink_seed.mojo": "2",
     "test_mha_decoding_vs_naive.mojo": "2",
     "test_mha_mixed_ce_tg.mojo": "2",
     "test_paged_sparse_kv_index_remap.mojo": "2",
@@ -28,6 +29,15 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_ragged_matmul_scale.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2318
+    # SM100 FA4 short-query routes over a >2^30-row paged pool.
+    "test_mha_paged_fuzz_pool_geometry.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mha_paged_oob_fill_large_pool.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_fused_qkv_index_matmul_scale_mxfp6.mojo": select({
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -41,6 +51,11 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_radd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_mha_paged_decode_d64_gqa8_32k.mojo": select({
+        # Covers the SM100 FA4 workspace split-K combine.
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     # AMD: gfx950 AGPR-Copy-MFMA regression. B200: the ragged entry point
     # compiles sink=True kernels for this sink-less d512 caller.
@@ -108,7 +123,6 @@ _EXTRA_DEPS = {
                 "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention_causal_mask.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
-                "test_mha_gemma4_sink_repro.mojo",  # gfx950: ASSERT=all inflates VGPR pressure enough to re-trip the AGPR-Copy-MFMA pass that this test reproduces (commit 0da7baf2baf already chunks the K reg tile down to BK)
                 # test_mha_gemma4_shapes.mojo: split into per-(page_size, mask_kind) targets below; assertions handled per-target.
             ],
         }),
@@ -158,7 +172,7 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
             "FOLD_FP8=True",
         ],
         ["//:amd_gpu"],
-        "5",
+        "2",
     ),
 ]
 
@@ -172,6 +186,7 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
         ],
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS + copts,
         enable_assertions = select({
+            "//:amd_gpu": True,
             "//:b200_gpu": True,
             "//conditions:default": False,  # KERN-2339: bounds check reveals flash attention kernel bug
         }),
@@ -211,8 +226,9 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
             "test_kernel={}".format(test_kernel),
         ],
         enable_assertions = select({
+            "//:amd_gpu": True,
             "//:b200_gpu": True,
-            "//conditions:default": False,  # MSTDL-1147: fails with asserts on H100/AMD
+            "//conditions:default": False,  # MOCO-1593: fails with asserts on H100
         }),
         exec_properties = {
             "test.resources:gpu-memory": "5",
@@ -257,7 +273,7 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
 _PAGED_FA_GPU_MEMORY = {
     ("16", "256"): "6",
     ("16", "512"): "6",
-    ("256", "80"): "6",
+    ("256", "80"): "2",
     ("64", "256"): "6",
     ("64", "512"): "6",
 }
@@ -521,7 +537,7 @@ _GEMMA4_SHAPES_CONFIGS = [
         "256",
         "0",
         ["//:amd_gpu"],
-        False,
+        True,
     ),
     ("ps64_causal", "64", "0", _GEMMA4_SHAPES_B200_ONLY, True),
     ("ps64_sliding_1024", "64", "1", _GEMMA4_SHAPES_B200_ONLY, True),

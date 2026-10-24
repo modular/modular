@@ -24,11 +24,15 @@ import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatMessage,
+    ChatSamples,
     ChatSession,
     ImageContentBlock,
     OpenAIImage,
+    RequestSamples,
     ResponseFormat,
+    SampledRequest,
     SessionMessage,
+    SharedContext,
     TextContentBlock,
 )
 from max.benchmark.benchmark_shared.multi_turn import (
@@ -47,6 +51,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncOutput,
     ServerTokenStats,
 )
+from max.benchmark.benchmark_shared.single_turn import prime_shared_contexts
 from pytest_mock import MockerFixture
 
 
@@ -1458,3 +1463,187 @@ def test_prefix_turn_images_reach_the_wire() -> None:
         " turn sends"
     )
     assert image_blocks[0].image_url.url == "data:image/jpeg;base64,AAAA"
+
+
+@pytest.mark.parametrize("with_tools", [False, True])
+def test_prerun_preserves_measured_tools_and_history(with_tools: bool) -> None:
+    session = _make_4turn_session(prefix_turns=2, delay_ms=0)
+    tools = [{"type": "function", "function": {"name": "read_file"}}]
+    for message in session.messages:
+        if message.source == "user":
+            message.tools = tools if with_tools else None
+    warmup = _CapturingDriver()
+    measured = _CapturingDriver()
+
+    async def run() -> None:
+        await prerun_warmup_turns(
+            sessions=[session],
+            request_driver=warmup,
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            max_concurrency=1,
+            disable_tqdm=True,
+        )
+        await chat_session_driver(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=measured,
+            request_counter=RequestCounter(max_requests=1),
+            chat_session=session,
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+        )
+
+    asyncio.run(run())
+    assert warmup.calls[0].is_cache_warmup
+    assert not measured.calls[0].is_cache_warmup
+    assert warmup.calls[0].tools == measured.calls[0].tools
+    assert warmup.calls[0].tools == (tools if with_tools else None)
+    assert warmup.calls[0].prompt == measured.calls[0].prompt[:3]
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+@pytest.mark.parametrize("is_chat", [False, True])
+def test_prime_shared_contexts_seeds_distinct_tool_variants(
+    mixed: bool,
+    is_chat: bool,
+) -> None:
+    tools = [{"type": "function", "function": {"name": "read_file"}}]
+    sessions = [_make_4turn_session(delay_ms=0) for _ in range(3)]
+    for index, session in enumerate(sessions):
+        for message in session.messages:
+            if message.source == "user":
+                message.tools = None if mixed and index == 0 else tools
+    driver = _CapturingDriver()
+    samples = (
+        ChatSamples(chat_sessions=sessions)
+        if is_chat
+        else RequestSamples(
+            requests=[
+                SampledRequest(
+                    prompt_formatted="shared body",
+                    prompt_len=2,
+                    output_len=1,
+                    encoded_images=[],
+                    ignore_eos=True,
+                    tools=session.messages[0].tools,
+                )
+                for session in sessions
+            ]
+        )
+    )
+    samples.shared_contexts = [SharedContext(text="shared", num_tokens=1)]
+    asyncio.run(
+        prime_shared_contexts(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            samples=samples,
+            request_driver=driver,
+            sampling=SamplingConfig(),
+            max_concurrency=1,
+            disable_tqdm=True,
+        )
+    )
+    assert len(driver.calls) == (2 if mixed else 1)
+    assert all(call.is_cache_warmup for call in driver.calls)
+    assert [call.tools for call in driver.calls] == (
+        [None, tools] if mixed else [tools]
+    )
+    for call in driver.calls:
+        if is_chat:
+            assert not isinstance(call.prompt, str)
+            assert call.prompt[0].content == [TextContentBlock(text="shared")]
+        else:
+            assert call.prompt == "shared"
+
+
+@pytest.mark.parametrize("max_output_len", [None, 3])
+def test_max_output_len_caps_measured_and_prerun_turns(
+    max_output_len: int | None,
+) -> None:
+    session = _make_4turn_session(prefix_turns=1, delay_ms=0)
+    warmup = _CapturingDriver()
+    max_tokens: list[int | None] = []
+
+    class _RecordingDriver(_CapturingDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            # The driver reuses one input per session, so read it per call.
+            assert isinstance(request_func_input, RequestFuncInput)
+            max_tokens.append(request_func_input.max_tokens)
+            return await super().request(request_func_input)
+
+    measured = _RecordingDriver()
+
+    async def run() -> None:
+        await prerun_warmup_turns(
+            sessions=[session],
+            request_driver=warmup,
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            max_concurrency=1,
+            disable_tqdm=True,
+            max_output_len=max_output_len,
+        )
+        await chat_session_driver(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=measured,
+            request_counter=RequestCounter(max_requests=10),
+            chat_session=session,
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            max_output_len=max_output_len,
+        )
+
+    asyncio.run(run())
+    expected = max_output_len or 5
+    assert warmup.calls[0].max_tokens == expected
+    assert max_tokens and all(n == expected for n in max_tokens)
+
+
+@pytest.mark.parametrize(
+    ("api_url", "expected_variants"),
+    [
+        # [] and None both go on the wire as no tools.
+        ("http://localhost:8000/v1/chat/completions", 2),
+        # The completions driver never sends tools.
+        ("http://localhost:8000/v1/completions", 1),
+    ],
+)
+def test_prime_shared_contexts_collapses_identical_tool_variants(
+    api_url: str, expected_variants: int
+) -> None:
+    tools = [{"type": "function", "function": {"name": "read_file"}}]
+    requests = [
+        SampledRequest(
+            prompt_formatted="shared body",
+            prompt_len=2,
+            output_len=1,
+            encoded_images=[],
+            ignore_eos=True,
+            tools=request_tools,
+        )
+        for request_tools in (None, [], tools)
+    ]
+    samples = RequestSamples(requests=requests)
+    samples.shared_contexts = [SharedContext(text="shared", num_tokens=1)]
+    driver = _CapturingDriver()
+    asyncio.run(
+        prime_shared_contexts(
+            model_id="test",
+            api_url=api_url,
+            samples=samples,
+            request_driver=driver,
+            sampling=SamplingConfig(),
+            max_concurrency=1,
+            disable_tqdm=True,
+        )
+    )
+    assert len(driver.calls) == expected_variants
+    assert driver.calls[0].tools is None

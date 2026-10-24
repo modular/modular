@@ -1,0 +1,34 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+# gazelle:default_visibility //visibility:private
+
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+modular_cc_binary(
+    name = "bench_gpu_kernel_enqueue_cuda",
+    srcs = [
+        "bench_gpu_kernel_enqueue_cuda.cpp",
+        "cuda_common.h",
+    ],
+    visibility = ["//utils/benchmarking/tools/autotune_gpu_numa:__pkg__"],
+    deps = [
+        "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_binary(
+    name = "bench_gpu_kernel_enqueue_devicecontext",
+    srcs = ["bench_gpu_kernel_enqueue_devicecontext.cpp"],
+    deps = [
+        "//MLRT:Driver/DeviceContext",
+        "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
+    ],
+)

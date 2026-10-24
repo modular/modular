@@ -31,42 +31,42 @@ def kernel6x4(
     k: Int,
     kc: Int,
 ):
-    var cv0 = c_ptr.load[width=simd_size](n * 0 + simd_size * 0)
-    var cv1 = c_ptr.load[width=simd_size](n * 0 + simd_size * 1)
-    var cv2 = c_ptr.load[width=simd_size](n * 0 + simd_size * 2)
-    var cv3 = c_ptr.load[width=simd_size](n * 0 + simd_size * 3)
-    var cv4 = c_ptr.load[width=simd_size](n * 1 + simd_size * 0)
-    var cv5 = c_ptr.load[width=simd_size](n * 1 + simd_size * 1)
-    var cv6 = c_ptr.load[width=simd_size](n * 1 + simd_size * 2)
-    var cv7 = c_ptr.load[width=simd_size](n * 1 + simd_size * 3)
-    var cv8 = c_ptr.load[width=simd_size](n * 2 + simd_size * 0)
-    var cv9 = c_ptr.load[width=simd_size](n * 2 + simd_size * 1)
-    var cv10 = c_ptr.load[width=simd_size](n * 2 + simd_size * 2)
-    var cv11 = c_ptr.load[width=simd_size](n * 2 + simd_size * 3)
-    var cv12 = c_ptr.load[width=simd_size](n * 3 + simd_size * 0)
-    var cv13 = c_ptr.load[width=simd_size](n * 3 + simd_size * 1)
-    var cv14 = c_ptr.load[width=simd_size](n * 3 + simd_size * 2)
-    var cv15 = c_ptr.load[width=simd_size](n * 3 + simd_size * 3)
-    var cv16 = c_ptr.load[width=simd_size](n * 4 + simd_size * 0)
-    var cv17 = c_ptr.load[width=simd_size](n * 4 + simd_size * 1)
-    var cv18 = c_ptr.load[width=simd_size](n * 4 + simd_size * 2)
-    var cv19 = c_ptr.load[width=simd_size](n * 4 + simd_size * 3)
-    var cv20 = c_ptr.load[width=simd_size](n * 5 + simd_size * 0)
-    var cv21 = c_ptr.load[width=simd_size](n * 5 + simd_size * 1)
-    var cv22 = c_ptr.load[width=simd_size](n * 5 + simd_size * 2)
-    var cv23 = c_ptr.load[width=simd_size](n * 5 + simd_size * 3)
+    var cv0 = c_ptr.unsafe_load[width=simd_size](n * 0 + simd_size * 0)
+    var cv1 = c_ptr.unsafe_load[width=simd_size](n * 0 + simd_size * 1)
+    var cv2 = c_ptr.unsafe_load[width=simd_size](n * 0 + simd_size * 2)
+    var cv3 = c_ptr.unsafe_load[width=simd_size](n * 0 + simd_size * 3)
+    var cv4 = c_ptr.unsafe_load[width=simd_size](n * 1 + simd_size * 0)
+    var cv5 = c_ptr.unsafe_load[width=simd_size](n * 1 + simd_size * 1)
+    var cv6 = c_ptr.unsafe_load[width=simd_size](n * 1 + simd_size * 2)
+    var cv7 = c_ptr.unsafe_load[width=simd_size](n * 1 + simd_size * 3)
+    var cv8 = c_ptr.unsafe_load[width=simd_size](n * 2 + simd_size * 0)
+    var cv9 = c_ptr.unsafe_load[width=simd_size](n * 2 + simd_size * 1)
+    var cv10 = c_ptr.unsafe_load[width=simd_size](n * 2 + simd_size * 2)
+    var cv11 = c_ptr.unsafe_load[width=simd_size](n * 2 + simd_size * 3)
+    var cv12 = c_ptr.unsafe_load[width=simd_size](n * 3 + simd_size * 0)
+    var cv13 = c_ptr.unsafe_load[width=simd_size](n * 3 + simd_size * 1)
+    var cv14 = c_ptr.unsafe_load[width=simd_size](n * 3 + simd_size * 2)
+    var cv15 = c_ptr.unsafe_load[width=simd_size](n * 3 + simd_size * 3)
+    var cv16 = c_ptr.unsafe_load[width=simd_size](n * 4 + simd_size * 0)
+    var cv17 = c_ptr.unsafe_load[width=simd_size](n * 4 + simd_size * 1)
+    var cv18 = c_ptr.unsafe_load[width=simd_size](n * 4 + simd_size * 2)
+    var cv19 = c_ptr.unsafe_load[width=simd_size](n * 4 + simd_size * 3)
+    var cv20 = c_ptr.unsafe_load[width=simd_size](n * 5 + simd_size * 0)
+    var cv21 = c_ptr.unsafe_load[width=simd_size](n * 5 + simd_size * 1)
+    var cv22 = c_ptr.unsafe_load[width=simd_size](n * 5 + simd_size * 2)
+    var cv23 = c_ptr.unsafe_load[width=simd_size](n * 5 + simd_size * 3)
 
     for pr in range(kc):
-        var bv0 = b_ptr.load[width=simd_size](
+        var bv0 = b_ptr.unsafe_load[width=simd_size](
             4 * simd_size * pr + simd_size * 0
         )
-        var bv1 = b_ptr.load[width=simd_size](
+        var bv1 = b_ptr.unsafe_load[width=simd_size](
             4 * simd_size * pr + simd_size * 1
         )
-        var bv2 = b_ptr.load[width=simd_size](
+        var bv2 = b_ptr.unsafe_load[width=simd_size](
             4 * simd_size * pr + simd_size * 2
         )
-        var bv3 = b_ptr.load[width=simd_size](
+        var bv3 = b_ptr.unsafe_load[width=simd_size](
             4 * simd_size * pr + simd_size * 3
         )
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
@@ -118,30 +118,30 @@ def kernel6x4(
         cv22 += av * bv2
         cv23 += av * bv3
 
-    c_ptr.store[width=simd_size](n * 0 + simd_size * 0, cv0)
-    c_ptr.store[width=simd_size](n * 0 + simd_size * 1, cv1)
-    c_ptr.store[width=simd_size](n * 0 + simd_size * 2, cv2)
-    c_ptr.store[width=simd_size](n * 0 + simd_size * 3, cv3)
-    c_ptr.store[width=simd_size](n * 1 + simd_size * 0, cv4)
-    c_ptr.store[width=simd_size](n * 1 + simd_size * 1, cv5)
-    c_ptr.store[width=simd_size](n * 1 + simd_size * 2, cv6)
-    c_ptr.store[width=simd_size](n * 1 + simd_size * 3, cv7)
-    c_ptr.store[width=simd_size](n * 2 + simd_size * 0, cv8)
-    c_ptr.store[width=simd_size](n * 2 + simd_size * 1, cv9)
-    c_ptr.store[width=simd_size](n * 2 + simd_size * 2, cv10)
-    c_ptr.store[width=simd_size](n * 2 + simd_size * 3, cv11)
-    c_ptr.store[width=simd_size](n * 3 + simd_size * 0, cv12)
-    c_ptr.store[width=simd_size](n * 3 + simd_size * 1, cv13)
-    c_ptr.store[width=simd_size](n * 3 + simd_size * 2, cv14)
-    c_ptr.store[width=simd_size](n * 3 + simd_size * 3, cv15)
-    c_ptr.store[width=simd_size](n * 4 + simd_size * 0, cv16)
-    c_ptr.store[width=simd_size](n * 4 + simd_size * 1, cv17)
-    c_ptr.store[width=simd_size](n * 4 + simd_size * 2, cv18)
-    c_ptr.store[width=simd_size](n * 4 + simd_size * 3, cv19)
-    c_ptr.store[width=simd_size](n * 5 + simd_size * 0, cv20)
-    c_ptr.store[width=simd_size](n * 5 + simd_size * 1, cv21)
-    c_ptr.store[width=simd_size](n * 5 + simd_size * 2, cv22)
-    c_ptr.store[width=simd_size](n * 5 + simd_size * 3, cv23)
+    c_ptr.unsafe_store(n * 0 + simd_size * 0, cv0)
+    c_ptr.unsafe_store(n * 0 + simd_size * 1, cv1)
+    c_ptr.unsafe_store(n * 0 + simd_size * 2, cv2)
+    c_ptr.unsafe_store(n * 0 + simd_size * 3, cv3)
+    c_ptr.unsafe_store(n * 1 + simd_size * 0, cv4)
+    c_ptr.unsafe_store(n * 1 + simd_size * 1, cv5)
+    c_ptr.unsafe_store(n * 1 + simd_size * 2, cv6)
+    c_ptr.unsafe_store(n * 1 + simd_size * 3, cv7)
+    c_ptr.unsafe_store(n * 2 + simd_size * 0, cv8)
+    c_ptr.unsafe_store(n * 2 + simd_size * 1, cv9)
+    c_ptr.unsafe_store(n * 2 + simd_size * 2, cv10)
+    c_ptr.unsafe_store(n * 2 + simd_size * 3, cv11)
+    c_ptr.unsafe_store(n * 3 + simd_size * 0, cv12)
+    c_ptr.unsafe_store(n * 3 + simd_size * 1, cv13)
+    c_ptr.unsafe_store(n * 3 + simd_size * 2, cv14)
+    c_ptr.unsafe_store(n * 3 + simd_size * 3, cv15)
+    c_ptr.unsafe_store(n * 4 + simd_size * 0, cv16)
+    c_ptr.unsafe_store(n * 4 + simd_size * 1, cv17)
+    c_ptr.unsafe_store(n * 4 + simd_size * 2, cv18)
+    c_ptr.unsafe_store(n * 4 + simd_size * 3, cv19)
+    c_ptr.unsafe_store(n * 5 + simd_size * 0, cv20)
+    c_ptr.unsafe_store(n * 5 + simd_size * 1, cv21)
+    c_ptr.unsafe_store(n * 5 + simd_size * 2, cv22)
+    c_ptr.unsafe_store(n * 5 + simd_size * 3, cv23)
 
 
 def kernel6x4_naive(

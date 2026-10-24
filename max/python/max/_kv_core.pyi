@@ -35,7 +35,7 @@ which narrows it again.
 """
 
 from collections.abc import Iterator, Mapping, Sequence
-from typing import TypeAlias, TypeVar, final, overload
+from typing import Literal, TypeAlias, TypeVar, final, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -133,6 +133,48 @@ def blocks_held_of_hit(
     Every leaf's blocks END at ``num_hit_blocks``, so a leaf holding ``n`` of
     them covers ``hashes[num_hit_blocks - n : num_hit_blocks]`` and the
     ``num_hit_blocks - n`` slots below are the null block.
+    """
+
+def hash_block_tokens(
+    algo: Literal["ahash64", "sha256"],
+    tokens: bytes,
+    token_width: int,
+    block_size: int,
+    parent: bytes | None = None,
+    seed: bytes | None = None,
+    salt: str | None = None,
+    overrides: Sequence[tuple[int, int]] = (),
+) -> list[bytes]:
+    """Hashes the whole blocks of a token buffer into a chain of block hashes.
+
+    A trailing partial block is dropped. Each hash covers its block and the
+    hash before it, so it identifies the whole prefix up to that block. The
+    hashes key the device prefix cache and the dKV and disk tiers.
+
+    A numpy array crosses as ``tokens.tobytes()`` with its ``itemsize`` as
+    ``token_width``: the stable ABI has no buffer protocol, and this is one
+    memcpy where ``tolist()`` would build an int per token. The GIL is
+    released while hashing.
+
+    Args:
+        algo: ``"ahash64"`` (8-byte hashes) or ``"sha256"`` (32-byte hashes).
+        tokens: The tokens back to back, native little-endian.
+        token_width: Bytes per token, 4 or 8. 8-byte tokens are narrowed to
+            their low 32 bits, as ``astype(np.int32)`` wraps them.
+        block_size: Tokens per block, greater than 0.
+        parent: The previous block's hash: 8 bytes for ``ahash64``, 32 for
+            ``sha256``. ``None`` starts a chain: zeros for ``ahash64`` and
+            the seed/salt root for ``sha256``.
+        seed: 32 bytes of cluster-level key material, zeros by default.
+        salt: A per-request salt, XORed into the seed after SHA-256. An empty
+            salt is the same as none.
+        overrides: ``(index, value)`` pairs, the index relative to ``tokens``,
+            that replace tokens (by their low 32 bits) while hashing, for
+            media placeholders. Out-of-range indices are ignored and, for a
+            repeated index, the last wins.
+
+    Raises:
+        ValueError: If ``algo`` is unknown or an argument has a bad length.
     """
 
 class InsufficientBlocksError(Exception):
@@ -316,10 +358,10 @@ class JengaBlockPool:
     def alloc_block(self, cache_id: str) -> LittleKVCacheBlock:
         """Returns a fresh block of ``cache_id``, claiming huge blocks as needed.
 
-        Prefers claiming a pristine huge block over handing out a free little
-        block that is still committed, so a prefix is evicted only when
-        nothing else is left. Handing out a committed block evicts it: its
-        bytes are about to be overwritten.
+        Prefers uncommitted free blocks in huge blocks a request already
+        holds, so idle huge blocks stay parked for any cache, then a pristine
+        huge block. Only when neither is left does it hand out a committed
+        block, the least recently used one, which evicts that commit.
 
         Raises:
             InsufficientBlocksError: If the pool has no bytes left to serve
@@ -383,6 +425,18 @@ class JengaBlockPool:
         not add up; ask :meth:`can_satisfy_demand` for a joint answer.
         """
 
+    def occupancy(self, cache_id: str) -> tuple[int, int, int, int, int]:
+        """Returns what ``cache_id`` holds, scanning the whole pool.
+
+        Returns:
+            ``(referenced, cached, free, claimed_huge_blocks,
+            parked_huge_blocks)``.
+        """
+
+    @property
+    def num_pristine_huge_blocks(self) -> int:
+        """How many parked huge blocks no cache has ever claimed."""
+
     def can_satisfy_demand(
         self, demand: Mapping[str, int], at_capacity: bool = False
     ) -> bool:
@@ -392,6 +446,14 @@ class JengaBlockPool:
         the same of a pool that has handed nothing out yet, making the answer
         a property of the pool's geometry rather than of what it currently
         holds. A count of 0 or less asks for nothing.
+        """
+
+    def max_satisfiable_multiple(
+        self, unit: Mapping[str, int], at_capacity: bool = False
+    ) -> int:
+        """Returns the most multiples of ``unit`` :meth:`can_satisfy_demand` accepts.
+
+        Returns 0 if ``unit`` asks for nothing.
         """
 
     def reset_prefix_cache(self) -> dict[str, int]:

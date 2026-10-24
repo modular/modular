@@ -12,84 +12,525 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENEnums.h"
+#include "Mojo/KGENDialect/KGENParameters.h"
+#include "Mojo/KGENDialect/KGENTypes.h"
+#include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/LITDialect/LITAttrs.h"
 #include "Mojo/LITDialect/LITInterfaces.h"
 #include "Mojo/LITDialect/LITOps.h"
+#include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/lib/MojoParser/Traits.h"
 #include "MojoUtils.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
+static FnTypeGeneratorType getToolingSignature(ASTDecl *decl) {
+  if (!decl)
+    return nullptr;
+  if (auto functionDecl = dyn_cast<FnSignatureASTDecl>(decl))
+    return functionDecl->getSignature();
+  return nullptr;
+}
+
+static ParamDeclRefAttr getIfParameter(ASTDecl &decl) {
+  if (auto val = decl.getIfIRValue().getIfPValue())
+    return dyn_cast<ParamDeclRefAttr>(val.get());
+  return {};
+}
+
+static Operation *getDefiningOpFromIR(ASTDecl &decl) {
+  if (Value val = decl.getIfIRValue().getMlirValue())
+    return val.getDefiningOp();
+  return nullptr;
+}
+
+ASTType ASTDecl::getToolingType() {
+  if (auto *varDecl = dyn_cast<VarASTDecl>(this))
+    return varDecl->getOp().getType();
+  if (auto *defDecl = dyn_cast<DefASTDecl>(this))
+    return defDecl->getOp().getFullSignature();
+  if (auto *functionTypeDecl = dyn_cast<FunctionTypeASTDecl>(this))
+    return functionTypeDecl->getSignature();
+  if (auto *structDecl = dyn_cast<StructASTDecl>(this))
+    return StructASTDecl::computeSelfType(structDecl->getOp());
+  if (auto *traitDecl = dyn_cast<TraitASTDecl>(this))
+    return TraitASTDecl::computeSelfType(traitDecl->getOp());
+  return {};
+}
+
+/// Returns this argument's ABI convention. Asserts if this is not an
+/// argument declaration.
+ArgConvention ASTDecl::getArgConvention() const {
+  ssize_t argNumber = getArgNumber();
+  assert(argNumber >= 0 && "argument convention requested for non-argument");
+  auto *parent = cast<FnSignatureASTDecl>(getParentDecl());
+  FnTypeGeneratorType signature = parent->getSignature();
+  assert(signature && "function argument must have a resolved signature");
+  assert(static_cast<size_t>(argNumber) < signature.getNumArguments() &&
+         "argument number is out of range");
+  return signature.getArgConventions()[argNumber];
+}
+
+/// Returns whether this argument appears in the user-visible signature.  This
+/// filters out implicitly declared error slots and result slots, but keeps
+/// user-declared "out" argument slots.
+bool ASTDecl::isUserArgument() const {
+  ArgConvention convention = getArgConvention();
+  if (convention == ArgConvention::ByRefError)
+    return false;
+  // Result slots are considered user arguments if they were explicitly
+  // declared.
+  if (convention != ArgConvention::ByRefResult)
+    return true;
+
+  auto *parent = cast<FnSignatureASTDecl>(getParentDecl());
+  return parent->getSignature().getArgName(getArgNumber()) != "__result__";
+}
+
+std::optional<StringRef> ASTDecl::getName() {
+  auto getFromOp = [&](Operation *op) -> std::optional<StringRef> {
+    if (!op)
+      return std::nullopt;
+    return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
+        .Case<StructDeclOp, StructFieldOp, VarDeclOp>(
+            [](auto op) { return op.getName(); })
+        .Case([](FnOp op) { return op.getSourceName(); })
+        .Case<FileModuleOp, PackageOp>([](auto op) { return op.getDeclName(); })
+        .Case([](ImportOp op) { return op.getSymName(); })
+        .Case([](AliasDeclOp op) {
+          return demangleParameterName(op.getParamDecl().getName(),
+                                       /*forUser=*/true);
+        })
+        .Case([](ASTDeclInterface op) { return op.getDeclName(); })
+        .Default({});
+  };
+
+  if (auto name = getFromOp(getIfOperation()))
+    return name;
+
+  if (getArgNumber() >= 0) {
+    FnTypeGeneratorType signature = getToolingSignature(getParentDecl());
+    size_t argNumber = static_cast<size_t>(getArgNumber());
+    if (signature && argNumber < signature.getNumArguments())
+      return signature.getArgName(argNumber);
+  }
+
+  if (getParamNumber() >= 0) {
+    auto *parentDecl = dyn_cast<DefASTDecl>(getParentDecl());
+    size_t paramNumber = static_cast<size_t>(getParamNumber());
+    if (parentDecl && paramNumber < parentDecl->getOp().getParams().size())
+      return demangleParameterName(
+          parentDecl->getOp().getParams()[paramNumber].getName(),
+          /*forUser=*/true);
+  }
+
+  if (auto irDecl = dyn_cast<IRASTDecl>(this);
+      irDecl && irDecl->getCapturedName())
+    return irDecl->getCapturedName().getValue();
+
+  if (auto paramRef = getIfParameter(*this))
+    return demangleParameterName(paramRef.getName(), /*forUser=*/true);
+
+  return getFromOp(getDefiningOpFromIR(*this));
+}
+
+std::optional<StringRef> ASTDecl::getDeprecationWarning() {
+  if (auto stabilityItf =
+          dyn_cast<StabilityDecoratorInterface>(getIfOperation()))
+    if (StringAttr attr = stabilityItf.getDeprecationWarningAttr())
+      return attr.getValue();
+  return {};
+}
+
+ASTDecl::ASTDecl(SharedState &shared, llvm::SMLoc loc, ASTDecl *parentDecl,
+                 LexerCursor cursor, LexerCursor endCursor, ssize_t indentation)
+    : ASTDecl(Kind::Base, shared, loc, parentDecl, cursor, endCursor,
+              indentation) {}
+
+ASTDecl::ASTDecl(Kind declKind, SharedState &shared, llvm::SMLoc loc,
                  ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
                  ssize_t indentation)
-    : ASTDecl(Kind::Base, shared, std::move(irValue), loc, parentDecl, cursor,
-              endCursor, indentation) {}
-
-ASTDecl::ASTDecl(Kind kind, SharedState &shared, DeclIRValue irValue,
-                 llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
-                 LexerCursor endCursor, ssize_t indentation)
-    : shared(shared), irValue(std::move(irValue)), loc(loc),
-      parentDeclAndKind(parentDecl, kind), cursor(cursor),
-      endCursorState(endCursor.getState()), indentation(indentation) {
+    : shared(shared), loc(loc), parentDecl(parentDecl), cursor(cursor),
+      endCursorState(endCursor.getState()), indentation(indentation),
+      kind(static_cast<unsigned char>(declKind)) {
   resolvedness = DeclResolvedness::unparsed;
   referencedFromBytecode = false;
   hasReferenceError = false;
   hasBodyDecorators = false;
   loadedFromBytecode = false;
   isExplicitParamScope = false;
+  retired = false;
 }
 
 ASTDecl::~ASTDecl() = default;
+
+OpASTDecl::OpASTDecl(Kind kind, SharedState &shared, Operation &operation,
+                     llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                     LexerCursor endCursor, ssize_t indentation)
+    : ASTDecl(kind, shared, loc, parentDecl, cursor, endCursor, indentation),
+      operation(&operation) {}
+
+IRASTDecl::IRASTDecl(SharedState &shared, CValue value, llvm::SMLoc loc,
+                     ASTDecl *parentDecl, LexerCursor cursor,
+                     LexerCursor endCursor, ssize_t indentation)
+    : ASTDecl(Kind::IR, shared, loc, parentDecl, cursor, endCursor,
+              indentation),
+      value(std::move(value)), argOrParamNumber(-1),
+      isParameter(this->value.getIfPValue()) {}
+
+void DefASTDecl::createIRSignatureDecls(DeclResolver &resolver) {
+  assert(getParamDecls().empty() && getArgDecls().empty() &&
+         "signature declarations already created");
+  FnOp fnOp = getOp();
+  FnTypeGeneratorType signature = fnOp.getFuncTypeGenerator();
+
+  SmallVector<ASTDecl *> newParamDecls;
+  ArrayRef<ParamDeclAttr> params =
+      fnOp.getParams().drop_back(signature.getNumImplicitOriginDecls());
+  for (size_t paramIndex : llvm::seq(params.size())) {
+    auto &paramDecl =
+        resolver.addFullyResolvedDecl(CValue(), StringAttr(), getLoc(), this);
+    paramDecl.setArgOrParamNumber(static_cast<ssize_t>(paramIndex),
+                                  /*newIsParameter=*/true);
+    newParamDecls.push_back(&paramDecl);
+  }
+  setParamDecls(newParamDecls);
+
+  SmallVector<ASTDecl *> newArgDecls;
+  for (size_t argIndex : llvm::seq(signature.getNumArguments())) {
+    auto convention = signature.getArgConventions()[argIndex];
+    auto argName = signature.getArgListAttrs().getPogs()[argIndex].getName();
+    if (convention == ArgConvention::ByRefError ||
+        (convention == ArgConvention::ByRefResult && argName == "__result__"))
+      continue;
+    auto &argDecl =
+        resolver.addFullyResolvedDecl(CValue(), StringAttr(), getLoc(), this);
+    argDecl.setArgOrParamNumber(static_cast<ssize_t>(argIndex),
+                                /*newIsParameter=*/false);
+    newArgDecls.push_back(&argDecl);
+  }
+  setArgDecls(newArgDecls);
+}
+
+FnSignatureASTDecl::FnSignatureASTDecl(Kind kind, SharedState &shared,
+                                       llvm::SMLoc loc, ASTDecl *parentDecl,
+                                       LexerCursor cursor,
+                                       LexerCursor endCursor,
+                                       ssize_t indentation)
+    : ASTDecl(kind, shared, loc, parentDecl, cursor, endCursor, indentation) {}
+
+void FnSignatureASTDecl::setParamDecls(ArrayRef<ASTDecl *> decls) {
+  paramDecls = shared.persistentAllocator.internElements(decls);
+}
+
+void FnSignatureASTDecl::setArgDecls(ArrayRef<ASTDecl *> decls) {
+  argDecls = shared.persistentAllocator.internElements(decls);
+}
+
+/// Return a list of user-declared argument declarations that we'd want to
+/// show in document generation, for example.  This filters out implicitly
+/// declared error slots and result slots, but keeps user-declared "out"
+/// argument slots.
+SmallVector<ASTDecl *> FnSignatureASTDecl::getUserArgDecls() const {
+  SmallVector<ASTDecl *> result;
+  for (ASTDecl *decl : getArgDecls())
+    if (decl->isUserArgument())
+      result.push_back(decl);
+  return result;
+}
+
+FunctionTypeASTDecl::FunctionTypeASTDecl(SharedState &shared, llvm::SMLoc loc,
+                                         ASTDecl *parentDecl,
+                                         LexerCursor cursor,
+                                         LexerCursor endCursor,
+                                         ssize_t indentation)
+    : FnSignatureASTDecl(Kind::FnSignature, shared, loc, parentDecl, cursor,
+                         endCursor, indentation) {}
+
+void FunctionTypeASTDecl::setSignature(FnTypeGeneratorType newSignature,
+                                       ArrayRef<ASTDecl *> params,
+                                       ArrayRef<ASTDecl *> args) {
+  signature = newSignature;
+  setParamDecls(params);
+  setArgDecls(args);
+}
+
+OtherOpASTDecl::OtherOpASTDecl(SharedState &shared, Operation &op,
+                               llvm::SMLoc loc, ASTDecl *parentDecl,
+                               LexerCursor cursor, LexerCursor endCursor,
+                               ssize_t indentation)
+    : OpASTDecl(Kind::OtherOp, shared, op, loc, parentDecl, cursor, endCursor,
+                indentation) {}
+
+VarASTDecl::VarASTDecl(SharedState &shared, VarDeclOp varOp, llvm::SMLoc loc,
+                       ASTDecl *parentDecl, LexerCursor cursor,
+                       LexerCursor endCursor, ssize_t indentation)
+    : OpASTDecl(Kind::Var, shared, *varOp.getOperation(), loc, parentDecl,
+                cursor, endCursor, indentation),
+      argNumber(-1) {}
+
+ModuleASTDecl::ModuleASTDecl(Kind kind, SharedState &shared,
+                             Operation &moduleOp, llvm::SMLoc loc,
+                             ASTDecl *parentDecl, LexerCursor cursor,
+                             LexerCursor endCursor, ssize_t indentation)
+    : OpASTDecl(kind, shared, moduleOp, loc, parentDecl, cursor, endCursor,
+                indentation) {}
+
+LogicalResult ModuleASTDecl::resolveSignature(Lexer &) { return success(); }
+
+LogicalResult ModuleASTDecl::resolveSyntheticSignature() { return success(); }
+
+LogicalResult ModuleASTDecl::resolveBody(Lexer &) { return success(); }
+
+LogicalResult ModuleASTDecl::resolveSyntheticBody() { return success(); }
+
+ImportPathAttr ModuleASTDecl::getAbsoluteModuleName() const {
+  SymbolRefAttr ref = getSymbolRef();
+  if (!ref)
+    return {};
+  SmallVector<StringRef> components;
+  components.push_back(ref.getRootReference().getValue());
+  for (FlatSymbolRefAttr nested : ref.getNestedReferences())
+    components.push_back(nested.getValue());
+  return ImportPathAttr::get(getContext(), /*relativeLevel=*/0, components);
+}
+
+TopLevelModuleASTDecl::TopLevelModuleASTDecl(SharedState &shared,
+                                             ModuleOp moduleOp, llvm::SMLoc loc,
+                                             ASTDecl *parentDecl,
+                                             LexerCursor cursor,
+                                             LexerCursor endCursor,
+                                             ssize_t indentation)
+    : ModuleASTDecl(Kind::TopLevelModule, shared, *moduleOp.getOperation(), loc,
+                    parentDecl, cursor, endCursor, indentation) {}
+
+FileModuleASTDecl::FileModuleASTDecl(SharedState &shared, FileModuleOp moduleOp,
+                                     llvm::SMLoc loc, ASTDecl *parentDecl,
+                                     LexerCursor cursor, LexerCursor endCursor,
+                                     ssize_t indentation)
+    : ModuleASTDecl(Kind::FileModule, shared, *moduleOp.getOperation(), loc,
+                    parentDecl, cursor, endCursor, indentation) {}
+
+PackageASTDecl::PackageASTDecl(SharedState &shared, PackageOp packageOp,
+                               llvm::SMLoc loc, ASTDecl *parentDecl,
+                               LexerCursor cursor, LexerCursor endCursor,
+                               ssize_t indentation)
+    : ModuleASTDecl(Kind::Package, shared, *packageOp.getOperation(), loc,
+                    parentDecl, cursor, endCursor, indentation) {}
+
+DefASTDecl::DefASTDecl(SharedState &shared, FnOp fnOp, llvm::SMLoc loc,
+                       ASTDecl *parentDecl, LexerCursor cursor,
+                       LexerCursor endCursor, ssize_t indentation)
+    : FnSignatureASTDecl(Kind::Def, shared, loc, parentDecl, cursor, endCursor,
+                         indentation),
+      operation(fnOp) {}
+
+TypeScopeASTDecl::TypeScopeASTDecl(Kind kind, SharedState &shared,
+                                   Operation &op, llvm::SMLoc loc,
+                                   ASTDecl *parentDecl, LexerCursor cursor,
+                                   LexerCursor endCursor, ssize_t indentation)
+    : OpASTDecl(kind, shared, op, loc, parentDecl, cursor, endCursor,
+                indentation) {}
+
+TypeASTDecl::TypeASTDecl(Kind kind, SharedState &shared, Operation &op,
+                         llvm::SMLoc loc, ASTDecl *parentDecl,
+                         LexerCursor cursor, LexerCursor endCursor,
+                         ssize_t indentation)
+    : TypeScopeASTDecl(kind, shared, op, loc, parentDecl, cursor, endCursor,
+                       indentation) {}
+
+ExtensionASTDecl::ExtensionASTDecl(SharedState &shared,
+                                   ExtensionDeclOp extensionOp, llvm::SMLoc loc,
+                                   ASTDecl *parentDecl, LexerCursor cursor,
+                                   LexerCursor endCursor, ssize_t indentation)
+    : TypeScopeASTDecl(Kind::Extension, shared, *extensionOp.getOperation(),
+                       loc, parentDecl, cursor, endCursor, indentation) {}
+
+StructASTDecl::StructASTDecl(SharedState &shared, StructDeclOp structOp,
+                             llvm::SMLoc loc, ASTDecl *parentDecl,
+                             LexerCursor cursor, LexerCursor endCursor,
+                             ssize_t indentation)
+    : TypeASTDecl(Kind::Struct, shared, *structOp.getOperation(), loc,
+                  parentDecl, cursor, endCursor, indentation) {}
+
+TraitASTDecl::TraitASTDecl(SharedState &shared, TraitDeclOp traitOp,
+                           llvm::SMLoc loc, ASTDecl *parentDecl,
+                           LexerCursor cursor, LexerCursor endCursor,
+                           ssize_t indentation)
+    : TypeASTDecl(Kind::Trait, shared, *traitOp.getOperation(), loc, parentDecl,
+                  cursor, endCursor, indentation) {}
 
 AliasASTDecl::AliasASTDecl(SharedState &shared, AliasDeclOp aliasOp,
                            llvm::SMLoc loc, ASTDecl *parentDecl,
                            LexerCursor cursor, LexerCursor endCursor,
                            ssize_t indentation)
-    : ASTDecl(Kind::Alias, shared, aliasOp.getOperation(), loc, parentDecl,
-              cursor, endCursor, indentation) {}
+    : OpASTDecl(Kind::Alias, shared, *aliasOp.getOperation(), loc, parentDecl,
+                cursor, endCursor, indentation) {}
 
-AliasDeclOp AliasASTDecl::getOp() const {
-  return cast<AliasDeclOp>(getIfOperation());
+ConformanceASTDecl::ConformanceASTDecl(SharedState &shared,
+                                       ConformanceOp conformanceOp,
+                                       llvm::SMLoc loc, ASTDecl *parentDecl,
+                                       LexerCursor cursor,
+                                       LexerCursor endCursor,
+                                       ssize_t indentation)
+    : OpASTDecl(Kind::Conformance, shared, *conformanceOp.getOperation(), loc,
+                parentDecl, cursor, endCursor, indentation) {}
+
+ImportASTDecl::ImportASTDecl(SharedState &shared, Operation &importOp,
+                             llvm::SMLoc loc, ASTDecl *parentDecl,
+                             LexerCursor cursor, LexerCursor endCursor,
+                             ssize_t indentation)
+    : OpASTDecl(Kind::Import, shared, importOp, loc, parentDecl, cursor,
+                endCursor, indentation) {
+  assert((isa<ImportOp, UnresolvedImportOp>(importOp)) &&
+         "expected an import operation");
 }
+
+EnumCaseASTDecl::EnumCaseASTDecl(SharedState &shared, EnumCaseOp caseOp,
+                                 llvm::SMLoc loc, ASTDecl *parentDecl,
+                                 LexerCursor cursor, LexerCursor endCursor,
+                                 ssize_t indentation)
+    : OpASTDecl(Kind::EnumCase, shared, *caseOp.getOperation(), loc, parentDecl,
+                cursor, endCursor, indentation) {}
+
+StructFieldASTDecl::StructFieldASTDecl(SharedState &shared,
+                                       StructFieldOp fieldOp, llvm::SMLoc loc,
+                                       ASTDecl *parentDecl, LexerCursor cursor,
+                                       LexerCursor endCursor,
+                                       ssize_t indentation)
+    : OpASTDecl(Kind::StructField, shared, *fieldOp.getOperation(), loc,
+                parentDecl, cursor, endCursor, indentation) {}
 
 WitnessASTDecl::WitnessASTDecl(SharedState &shared,
                                UnresolvedDecls unresolvedDecls,
                                TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
                                ASTDecl *parentDecl, LexerCursor cursor,
                                LexerCursor endCursor, ssize_t indentation)
-    : ASTDecl(Kind::Witness, shared, static_cast<Operation *>(nullptr), loc,
-              parentDecl, cursor, endCursor, indentation),
+    : ASTDecl(Kind::Witness, shared, loc, parentDecl, cursor, endCursor,
+              indentation),
       storage(std::move(unresolvedDecls)), traitSymbol(traitSymbol) {}
+
+LogicalResult ASTDecl::resolveSignature(Lexer &lexer) {
+  auto &resolver = shared.getDeclResolver();
+  if (getIfOperation()) {
+    llvm_unreachable("do not know how to resolve this decl signature");
+  }
+
+  if (auto traitType = dyn_cast_or_null<TraitType>(getIfTypeValue()))
+    return success(!failed(resolver.resolveSignature(traitType, *this)));
+
+  llvm_unreachable("do not know how to resolve this decl signature");
+}
+
+LogicalResult ASTDecl::resolveSyntheticSignature() {
+  auto &resolver = shared.getDeclResolver();
+  if (!getIfOperation())
+    if (auto traitType = dyn_cast_or_null<TraitType>(getIfTypeValue()))
+      return success(!failed(resolver.resolveSignature(traitType, *this)));
+
+  Lexer lexer(getShared().diags, getCursor());
+  LogicalResult result = resolveSignature(lexer);
+  getCursor() = lexer.getCursor();
+  return result;
+}
+
+LogicalResult ASTDecl::resolveBody(Lexer &lexer) {
+  auto &resolver = shared.getDeclResolver();
+  if (getIfOperation()) {
+    llvm_unreachable("do not know how to resolve this decl body");
+  }
+
+  if (auto traitType = dyn_cast_or_null<TraitType>(getIfTypeValue()))
+    return success(!failed(resolver.resolveBody(traitType, *this)));
+
+  llvm_unreachable("do not know how to resolve this decl body");
+}
+
+LogicalResult ASTDecl::resolveSyntheticBody() {
+  auto &resolver = shared.getDeclResolver();
+  if (auto traitType = dyn_cast_or_null<TraitType>(getIfTypeValue())) {
+    return success(!failed(resolver.resolveBody(traitType, *this)));
+  }
+
+  llvm_unreachable("do not know how to resolve this synthetic decl body");
+}
 
 bool ASTDecl::isCallableDecl() const {
   if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
-  return isa_and_nonnull<FnOp>(getIfOperation());
+  return isa<DefASTDecl>(this);
 }
 
-FnTypeGeneratorType ASTDecl::getDeclFullSignature() const {
+FnTypeGeneratorType
+ASTDecl::getDeclFullSignature(ASTType contextualType) const {
   if (auto *witness = dyn_cast<WitnessASTDecl>(this)) // already expanded.
     return cast<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
-  return cast<FnOp>(getIfOperation()).getFullSignature();
+  FnOp fnOp = cast<DefASTDecl>(this)->getOp();
+  auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(contextualType));
+  if (!genAttr)
+    return fnOp.getFullSignature();
+
+  // The struct's parameters come from the contextual generator, e.g. `A` in
+  // `comptime A[T: AnyType] = S[0, T]`. Build the full signature with the
+  // generator's inputs parameter.
+  auto structBody = sugarCast<StructType>(ASTType(genAttr.getBody()));
+  // Name the generator's inputs, the name does not matter, it is shortlived.
+  ParamRefRemapper nameRemapper;
+  SmallVector<ParamDeclAttr> genDecls;
+  for (auto [i, type] : llvm::enumerate(genAttr.getInputParamTypes())) {
+    auto decl = ParamDeclAttr::get(("Gen#" + Twine(i)).str(),
+                                   nameRemapper.replace(type));
+    nameRemapper.appendParamDecl(decl);
+    genDecls.push_back(decl);
+  }
+
+  // The method's own signature refers to the struct's parameters by name;
+  // replace them with the struct body's values.
+  auto structDecl = cast<DeclInterface>(fnOp->getParentOp());
+  ArrayRef<ParamDeclAttr> structParams = structDecl.getInputParams();
+  ArrayRef<TypedAttr> structValues = structBody.getParamValues();
+  assert(structParams.size() == structValues.size() &&
+         "struct body doesn't bind every struct parameter");
+  SmallVector<TypedAttr> namedStructValues;
+  for (TypedAttr value : structValues)
+    namedStructValues.push_back(cast<TypedAttr>(nameRemapper.replace(value)));
+  ParameterEvaluator evaluator(structParams, namedStructValues);
+
+  // Get the fnSig name, but with name remapped to the generator's parameter.
+  auto fnSig = cast<FnTypeGeneratorType>(
+      evaluator.getReboundType(fnOp.getFuncTypeGenerator()));
+
+  SmallVector<StringAttr> genPogNames;
+  SmallVector<TypedAttr> genDefaults;
+  for (PogMetadataAttr pog : genAttr.getMetadata().getPogs()) {
+    genPogNames.push_back(pog.getName());
+    genDefaults.push_back(pog.getDefaultValue());
+  }
+
+  return FnTypeGeneratorType::prependParams(fnSig, genDecls, genPogNames,
+                                            genDefaults);
 }
 
 bool ASTDecl::isStaticMethodDecl() const {
   if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return witness->getWitnessEntry().isStaticMethod;
-  return cast<FnOp>(getIfOperation()).getIsStatic();
+  return cast<DefASTDecl>(this)->getOp().getIsStatic();
 }
 
 ImplicitConversionKind ASTDecl::getDeclImplicitConversionKind() const {
   if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return witness->getWitnessEntry().implicitConversion;
-  return cast<FnOp>(getIfOperation()).getImplicitConversion();
+  return cast<DefASTDecl>(this)->getOp().getImplicitConversion();
 }
 
 DocStringAttr ASTDecl::getDocString() const {
@@ -103,6 +544,18 @@ void ASTDecl::setErroneous() { hasReferenceError = true; }
 std::optional<DocString> ASTDecl::getParsedDocString() const {
   if (auto rawDocStr = getDocString())
     return DocString(rawDocStr);
+  return {};
+}
+
+std::string ASTDecl::getDocumentationSummary() const {
+  if (auto docString = getParsedDocString())
+    return docString->getSummary().str();
+  return {};
+}
+
+std::string ASTDecl::getDocumentationDescription() const {
+  if (auto docString = getParsedDocString())
+    return DocString::formatDescription(docString->getDescription());
   return {};
 }
 
@@ -144,19 +597,24 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
   return {};
 }
 
-/// If this is a method of a struct or trait, return the decl for the struct
-/// or trait.
-ASTDecl *ASTDecl::tryGetMethodParentDecl() const {
-  // Methods are always FuncOps.
-  if (!isa_and_nonnull<FnOp>(getIfOperation()))
-    return nullptr;
-
+/// If this is a method of a struct, trait, or extension, return its parent.
+TypeScopeASTDecl *DefASTDecl::tryGetMethodParentDecl() const {
   // Don't return non-null for nested functions or module-level functions.
-  ASTDecl *parent = getParentDecl();
-  return isa_and_nonnull<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(
-             parent->getIfOperation())
-             ? parent
-             : nullptr;
+  return dyn_cast_if_present<TypeScopeASTDecl>(getParentDecl());
+}
+
+void StructASTDecl::setParamDecls(ArrayRef<ASTDecl *> decls) {
+  paramDecls = shared.persistentAllocator.internElements(decls);
+}
+
+ASTDecl *StructASTDecl::getParamByName(StringAttr name) const {
+  for (ASTDecl *paramDecl : paramDecls) {
+    auto paramValue = paramDecl->getIfIRValue().getIfPValue();
+    if (paramValue && isa<ParamDeclRefAttr>(paramValue.get()) &&
+        cast<ParamDeclRefAttr>(paramValue.get()).getName() == name)
+      return paramDecl;
+  }
+  return nullptr;
 }
 
 /// Collect the struct/trait declaration and all visible extension declarations
@@ -171,8 +629,8 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     result.push_back(astDecl);
 
   // Handle both struct and trait types for extension lookup.
-  if (!astDecl || !astDecl->getUserNameIfOperation() ||
-      !isa<StructDeclOp, TraitDeclOp>(astDecl->getIfOperation()))
+  if (!isa_and_nonnull<TypeASTDecl>(astDecl) ||
+      !astDecl->getUserNameIfOperation())
     return result;
 
   // Now find all extensions that target this struct/trait.
@@ -204,9 +662,9 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     // extension visible in its source module, so one extension can be found in
     // several enclosing scopes; count it once, or its methods tie with
     // themselves in overload resolution.
-    auto extOp =
-        dyn_cast_or_null<ExtensionDeclOp>(foundAstDecl->getIfOperation());
-    if (extOp && extOp.getTargetStructAttr() == typeSymbol &&
+    auto *extensionDecl = dyn_cast<ExtensionASTDecl>(foundAstDecl);
+    if (extensionDecl &&
+        extensionDecl->getOp().getTargetStructAttr() == typeSymbol &&
         !llvm::is_contained(result, foundAstDecl))
       result.push_back(foundAstDecl);
   }
@@ -219,7 +677,7 @@ void ASTDecl::takeDecls(ASTDecl &src) {
     setErroneous();
   for (auto &[name, children] : src.getDeclsInScope())
     for (ASTDecl *child : children)
-      child->parentDeclAndKind.setPointer(this);
+      child->parentDecl = this;
   declsInScope = std::move(src.declsInScope);
   counter = src.counter;
   assert(!knownAssumptions && "assumptions should be empty before overwriting");
@@ -239,7 +697,7 @@ void ASTDecl::mergeDeclsFrom(ASTDecl &src) {
   for (auto &[name, children] : *src.declsInScope) {
     TinyPtrVector<ASTDecl *> &entries = (*declsInScope)[name];
     for (ASTDecl *child : children) {
-      child->parentDeclAndKind.setPointer(this);
+      child->parentDecl = this;
       entries.push_back(child);
     }
   }
@@ -247,7 +705,7 @@ void ASTDecl::mergeDeclsFrom(ASTDecl &src) {
 }
 
 DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *
-ASTDecl::getTraitConformanceLineage(bool createIfMissing) {
+TypeScopeASTDecl::getTraitConformanceLineage(bool createIfMissing) {
   if (!traitConformanceLineage && createIfMissing)
     traitConformanceLineage.reset(new TraitConformanceLineageType());
   return traitConformanceLineage.get();
@@ -295,7 +753,7 @@ static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(
 
     if (isParamScope) {
       ++depth;
-      if (isa_and_nonnull<FileModuleOp>(decl->getIfOperation()))
+      if (isa<FileModuleASTDecl>(decl))
         break;
     }
 
@@ -461,7 +919,7 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
 }
 
 /// Given an MLIR op for a struct declaration, return the self type.
-Type ASTDecl::computeSelfTypeForStruct(StructDeclOp structOp) {
+Type StructASTDecl::computeSelfType(StructDeclOp structOp) {
   SmallVector<TypedAttr> parameters;
   for (auto decl : structOp.getParams()) {
     // We're using the parameter from the type declaration scope in the
@@ -474,7 +932,7 @@ Type ASTDecl::computeSelfTypeForStruct(StructDeclOp structOp) {
   return structOp.bindReference(parameters);
 }
 
-Type ASTDecl::computeSelfTypeForTrait(TraitDeclOp traitOp) {
+Type TraitASTDecl::computeSelfType(TraitDeclOp traitOp) {
   // The last parameter to the trait is the 'T' parameter which (when everything
   // gets instantiated) resolves to the final type the trait is instantiated on.
   return ASTType(ParamDeclRefAttr::get(traitOp.getParamsAttr().back()));
@@ -503,10 +961,11 @@ void ASTDecl::findExtensionsInScopeForStruct(
     return;
 
   for (ASTDecl *decl : it->second) {
-    auto extOp = dyn_cast_or_null<ExtensionDeclOp>(decl->getIfOperation());
-    if (!extOp || !extOp.getTargetStructAttr() ||
-        extOp.getTargetStructAttr() != targetStruct)
+    auto *extensionDecl = dyn_cast<ExtensionASTDecl>(decl);
+    if (!extensionDecl ||
+        extensionDecl->getOp().getTargetStructAttr() != targetStruct)
       continue;
+    ExtensionDeclOp extOp = extensionDecl->getOp();
 
     // If no trait filter specified, add this extension.
     if (!filterTrait.has_value()) {

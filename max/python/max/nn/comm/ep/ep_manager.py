@@ -54,6 +54,8 @@ from max.support.math import ceildiv
 from numpy.typing import NDArray
 
 from ...activation import GatedActivation
+from ...graph_groups import EPPayload
+from ...layer import Module
 from .ep_config import (
     _EP_LOCAL_SYNC_RESERVED_WORDS,
     NUM_GROUPS,
@@ -408,84 +410,64 @@ class EPBatchManager:
             )
         return self._atomic_counters
 
-    def _atomic_counters_input_types(self) -> list[BufferType]:
-        """Generate input types for atomic counter buffers.
+    def input_tree(self) -> EPPayload:
+        """Names the EP graph inputs, in the order the graph declares them.
 
-        Returns:
-            list[BufferType]: List of buffer types for atomic counters.
+        ``atomic_counters`` is group-major (``[NUM_GROUPS][n_gpus_per_node]``);
+        the three pointer fields hold one host tensor per group. The EPLB
+        fields are present only when EPLB is enabled, one buffer per GPU.
         """
-        return [
+        n_gpus = self.config.n_gpus_per_node
+        counters = tuple(
             BufferType(
                 DType.int32,
                 [
                     _ep_counter_words(
                         self.config.n_experts,
-                        self.config.n_gpus_per_node,
+                        n_gpus,
                         self.config.use_allreduce,
                         self.config.moe_dim,
                     )
                 ],
-                device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
+                device=DeviceRef.GPU(i % n_gpus),
             )
-            for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
-        ]
-
-    def _dev_ptrs_input_types(self) -> list[TensorType]:
-        """Generate input types for device pointer tensors.
-
-        Returns:
-            list[TensorType]: List of tensor types for device pointers.
-        """
-        return (
-            [
-                TensorType(
-                    DType.uint64,
-                    [self.config.n_gpus_per_node],
-                    device=DeviceRef.CPU(),
-                ),
-            ]
-            * 3  # 3 buffer types: send, recv, recv_count
-            * NUM_GROUPS  # For double buffering
+            for i in range(NUM_GROUPS * n_gpus)
         )
+
+        def ptrs() -> tuple[TensorType, ...]:
+            return tuple(
+                TensorType(DType.uint64, [n_gpus], device=DeviceRef.CPU())
+                for _ in range(NUM_GROUPS)
+            )
+
+        inputs = EPPayload(
+            atomic_counters=counters,
+            send_buf_ptrs=ptrs(),
+            recv_buf_ptrs=ptrs(),
+            recv_count_ptrs=ptrs(),
+        )
+        if self.config.eplb_enabled:
+            shape = [
+                self.config.num_moe_layers,
+                self.config.num_logical_experts,
+            ]
+            inputs["eplb_log2phy"] = tuple(
+                BufferType(
+                    DType.int32,
+                    [*shape, self.config.max_replicas],
+                    device=DeviceRef.GPU(i),
+                )
+                for i in range(n_gpus)
+            )
+            inputs["eplb_logcnt"] = tuple(
+                BufferType(DType.int32, shape, device=DeviceRef.GPU(i))
+                for i in range(n_gpus)
+            )
+        return inputs
 
     def input_types(self) -> list[TensorType | BufferType]:
-        """Get the input types for the MoE graph.
-
-        Returns:
-            list[TensorType | BufferType]: List of input types for atomic
-                                          counters and device pointers.
-        """
-        types: list[TensorType | BufferType] = (
-            self._atomic_counters_input_types() + self._dev_ptrs_input_types()
-        )
-
-        if self.config.eplb_enabled:
-            types += self._eplb_input_types()
-        return types
-
-    def _eplb_input_types(self) -> list[TensorType | BufferType]:
-        """Per-device log2phy + logcnt buffer types."""
-        num_moe_layers = self.config.num_moe_layers
-        num_experts_per_layer = self.config.num_logical_experts
-        max_replicas = self.config.max_replicas
-        n_gpus = self.config.n_gpus_per_node
-        log2phy: list[TensorType | BufferType] = [
-            BufferType(
-                DType.int32,
-                [num_moe_layers, num_experts_per_layer, max_replicas],
-                device=DeviceRef.GPU(i),
-            )
-            for i in range(n_gpus)
-        ]
-        logcnt: list[TensorType | BufferType] = [
-            BufferType(
-                DType.int32,
-                [num_moe_layers, num_experts_per_layer],
-                device=DeviceRef.GPU(i),
-            )
-            for i in range(n_gpus)
-        ]
-        return log2phy + logcnt
+        """Get the input types for the MoE graph."""
+        return tree.leaves(self.input_tree())
 
     def fetch_buffers(self, _input_vals: Iterable[Value[Any]]) -> None:
         """Extract and organize communication buffers from graph input values.
@@ -1220,6 +1202,83 @@ class EPBatchManager:
         return _as_input_type(input_tokens, results)
 
 
+class EPInit(Module):
+    """Sets up SHMEM and allocates the EP buffers on each local GPU.
+
+    Its graph takes each device's atomic counters for both buffer groups and
+    returns, per device, the device pointers to the SHMEM send, receive and
+    receive count buffers, then every device's rank. With the fused MoE, each
+    device then also returns its fused MoE workspace size and token block, and
+    why the backend refuses the configuration, if it does.
+
+    Args:
+        config: EP configuration.
+        counter_shape: The shape of each atomic counter buffer.
+        fused_moe: Whether each device also sets up the one-launch fused MoE
+            workspace after ``ep.init``.
+    """
+
+    def __init__(
+        self,
+        config: EPConfig,
+        counter_shape: Sequence[int | Dim],
+        fused_moe: bool = False,
+    ) -> None:
+        super().__init__()
+        self.config = config
+        self.counter_shape = counter_shape
+        self.fused_moe = fused_moe
+
+    def input_types(self) -> list[BufferType]:
+        """Returns the atomic counter buffer types, both groups' per device."""
+        return [
+            BufferType(
+                DType.int32,
+                self.counter_shape,
+                device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
+            )
+            for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
+        ]
+
+    def __call__(self, *atomic_counters: Value[Any]) -> list[TensorValue]:
+        n_gpus = self.config.n_gpus_per_node
+        dev_ptrs_list: list[TensorValue] = []
+        my_rank_list: list[TensorValue] = []
+        fused_list: list[TensorValue] = []
+
+        # Initialize SHMEM context and allocate buffers for each GPU
+        for i in range(n_gpus):
+            # Get atomic counter buffers for both groups
+            atomic_counter_group_0 = atomic_counters[i].buffer
+            atomic_counter_group_1 = atomic_counters[i + n_gpus].buffer
+
+            # Call the custom EP initialization kernel
+            dev_ptrs, my_rank = call_ep_init(
+                atomic_counter_group_0, atomic_counter_group_1, self.config
+            )
+            # Device pointers cannot be output as CPU tensors since the
+            # InferenceSession may not be initialized with CPU; moved to the
+            # device as a workaround.
+            dev_ptrs_list.append(dev_ptrs.to(atomic_counter_group_0.device))
+
+            my_rank_list.append(my_rank)
+
+            if self.fused_moe:
+                # The backend sets up its one-launch fused MoE workspace
+                # from this rank's ep.init pointers, or says why not.
+                workspace, refusal = _call_mega_ffn_ep_fused_init(
+                    atomic_counter_group_0, dev_ptrs, self.config
+                )
+                fused_list += [
+                    workspace.to(atomic_counter_group_0.device),
+                    refusal.to(atomic_counter_group_0.device),
+                ]
+
+        my_ranks = ops.concat(my_rank_list, axis=0)
+
+        return [*dev_ptrs_list, my_ranks.to(DeviceRef.GPU(0)), *fused_list]
+
+
 class EPCommInitializer:
     """Helper class for initializing buffers for Expert Parallelism (EP).
 
@@ -1252,6 +1311,8 @@ class EPCommInitializer:
     """Bytes per device and token block of the one-launch fused MoE workspace
     EP init set up, or ``None`` when it set none up."""
 
+    _fused_moe: bool = False
+
     def __init__(self, config: EPConfig):
         """Initialize the EP communication initializer.
 
@@ -1259,6 +1320,8 @@ class EPCommInitializer:
             config: EP configuration.
         """
         self.config = config
+        self._eplb_log2phy: list[Buffer] = []
+        self._eplb_logcnt: list[Buffer] = []
         # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
         self.atomic_counter_size = _ep_counter_words(
             config.n_experts,
@@ -1277,76 +1340,29 @@ class EPCommInitializer:
             for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
         ]
 
-    def _build_ep_init_graph(self, fused_moe: bool = False) -> Graph:
-        """Build the computation graph for EP initialization.
-
-        Creates a graph that initializes SHMEM context and allocates symmetric
-        memory buffers on each GPU. The graph takes atomic counter buffers as
-        input and returns device pointers to allocated SHMEM buffers.
-
-        Args:
-            fused_moe: Whether each device also sets up the one-launch fused
-                MoE workspace after ``ep.init``, returning its size and token
-                block or why the backend does not serve the configuration.
-
-        Returns:
-            Graph: Computation graph for EP initialization.
-        """
-        atomic_counter_shape = self.atomic_counters[0].shape
-        with Graph(
-            "ep_init",
-            input_types=[
-                BufferType(
-                    DType.int32,
-                    atomic_counter_shape,
-                    device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
-                )
-                for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
-            ],
-        ) as g:
-            dev_ptrs_list: list[TensorValue] = []
-            my_rank_list: list[TensorValue] = []
-            fused_list: list[TensorValue] = []
-
-            # Initialize SHMEM context and allocate buffers for each GPU
-            for i in range(self.config.n_gpus_per_node):
-                # Get atomic counter buffers for both groups
-                atomic_counter_group_0 = g.inputs[i].buffer
-                atomic_counter_group_1 = g.inputs[
-                    i + self.config.n_gpus_per_node
-                ].buffer
-
-                # Call the custom EP initialization kernel
-                dev_ptrs, my_rank = call_ep_init(
-                    atomic_counter_group_0, atomic_counter_group_1, self.config
-                )
-                # Device pointers cannot be output as CPU tensors since the InferenceSession
-                # may not be initialized with CPU; moved to the device as a workaround.
-                dev_ptrs_list.append(dev_ptrs.to(atomic_counter_group_0.device))
-
-                my_rank_list.append(my_rank)
-
-                if fused_moe:
-                    # The backend sets up its one-launch fused MoE workspace
-                    # from this rank's ep.init pointers, or says why not.
-                    workspace, refusal = _call_mega_ffn_ep_fused_init(
-                        atomic_counter_group_0, dev_ptrs, self.config
-                    )
-                    fused_list += [
-                        workspace.to(atomic_counter_group_0.device),
-                        refusal.to(atomic_counter_group_0.device),
-                    ]
-
-            my_ranks = ops.concat(my_rank_list, axis=0)
-
-            g.output(*dev_ptrs_list, my_ranks.to(DeviceRef.GPU(0)), *fused_list)
-        return g
-
     def ep_init(self, session: InferenceSession) -> None:
         """Initialize Expert Parallelism communication infrastructure.
 
+        Compiles :meth:`init_module` as the ``ep_init`` graph and runs it with
+        :meth:`run_init`.
+
         Args:
             session: Inference session used to compile and execute the graph.
+        """
+        init = self.init_module()
+        self.run_init(
+            session.load(init.trace(*init.input_types(), name="ep_init"))
+        )
+
+    def init_module(self) -> EPInit:
+        """Prepares this process for EP initialization.
+
+        Enables peer access between the local GPUs and sets the NVSHMEM
+        environment, so call it before compiling the module it returns. Then
+        run the compiled graph with :meth:`run_init`.
+
+        Returns:
+            The module whose graph sets up SHMEM and allocates the EP buffers.
         """
         enable_all_peer_access()
         logger.info("Initializing EP communication infrastructure...")
@@ -1379,12 +1395,24 @@ class EPCommInitializer:
             # TODO: Provide a way to let user manually map NICs to different GPU
             os.environ["NVSHMEM_ENABLE_NIC_PE_MAPPING"] = "1"
 
-        # Build and compile the initialization graph
-        fused_moe = _ep_fused_moe_requested()
+        self._fused_moe = _ep_fused_moe_requested()
         self.config.fused_moe_ready = False
         self.fused_moe_workspace = None
-        graph = self._build_ep_init_graph(fused_moe)
-        self.init_model = session.load(graph)
+        return EPInit(
+            self.config, self.atomic_counters[0].shape, self._fused_moe
+        )
+
+    def run_init(self, init_model: Model) -> None:
+        """Runs the compiled EP initialization graph.
+
+        Keeps the device pointers to the SHMEM buffers it allocates, and sets
+        the config's node ID.
+
+        Args:
+            init_model: The graph of :meth:`init_module`, compiled and
+                initialized.
+        """
+        self.init_model = init_model
 
         # Execute the graph to initialize SHMEM and get device pointers
         all_outputs = self.init_model.execute(*self.atomic_counters)
@@ -1441,7 +1469,7 @@ class EPCommInitializer:
         if self.config.use_allreduce:
             logger.info("Using allreduce as the EP communication backend.")
 
-        if fused_moe:
+        if self._fused_moe:
             self._set_up_fused_moe(all_outputs_np[n_gpus + 1 :])
 
     def _set_up_fused_moe(self, outputs: list[npt.NDArray[Any]]) -> None:
@@ -1482,15 +1510,52 @@ class EPCommInitializer:
             f" {token_block}"
         )
 
+    def set_eplb_placement(
+        self, log2phy: Sequence[Buffer], logcnt: Sequence[Buffer]
+    ) -> None:
+        """Supplies the per-device EPLB tables :meth:`model_inputs` returns.
+
+        Args:
+            log2phy: One ``[num_moe_layers, num_logical, max_replicas]``
+                buffer per local GPU.
+            logcnt: One ``[num_moe_layers, num_logical]`` buffer per local
+                GPU.
+
+        Raises:
+            ValueError: If EPLB is disabled in the config or a list does not
+                have one buffer per local GPU.
+        """
+        if not self.config.eplb_enabled:
+            raise ValueError("EPLB placement given but eplb_enabled is False")
+        n_gpus = self.config.n_gpus_per_node
+        if len(log2phy) != n_gpus or len(logcnt) != n_gpus:
+            raise ValueError(
+                f"EPLB placement needs {n_gpus} buffers per table, got "
+                f"{len(log2phy)} log2phy and {len(logcnt)} logcnt"
+            )
+        self._eplb_log2phy = list(log2phy)
+        self._eplb_logcnt = list(logcnt)
+
     def model_inputs(self) -> list[Buffer]:
         """Get the model inputs for the MoE model.
 
         Returns:
-            list[Buffer]: List of all tensors needed as model inputs.
+            list[Buffer]: List of all tensors needed as model inputs, in the
+            order of :meth:`EPBatchManager.input_types`.
+
+        Raises:
+            ValueError: If EPLB is enabled but no placement was supplied.
         """
-        return (
+        inputs = (
             self.atomic_counters
             + self.send_buf_ptrs
             + self.recv_buf_ptrs
             + self.recv_count_ptrs
         )
+        if self.config.eplb_enabled:
+            if not self._eplb_log2phy:
+                raise ValueError(
+                    "eplb_enabled is True but set_eplb_placement was not called"
+                )
+            inputs += self._eplb_log2phy + self._eplb_logcnt
+        return inputs

@@ -34,23 +34,16 @@ from layout.tma_async import TMATensorTile
 from layout import (
     Coord,
     Idx,
-    IntTuple,
-    Layout,
     MixedLayout,
     DefaultEngine,
-    RuntimeLayout,
-    RuntimeTuple,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.tensor_engine import TensorEngine
 from layout.tile_io import copy_sram_to_dram
 from max.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
-from ....structuring import RegTile
-from structured_kernels.smem_types import reg_tile_to_tile_tensor
 from layout.swizzle import Swizzle
 from max.gpu import lane_id
 from max.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
@@ -412,9 +405,9 @@ trait RegTileWriter(TrivialRegisterPassable):
     @inline(.always)
     def write_tile(
         self,
-        c_reg_tile: RegTile,
+        c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         coords: Tuple[Int, Int],
-    ) capturing -> None:
+    ) -> None:
         """Write a register tile to memory.
 
         Args:
@@ -463,16 +456,10 @@ struct FragmentToSMemWriter[
 
     comptime st_matrix_layout_regular = st_matrix_n_layout[
         Self.c_type, Self.tile_n_size, Self.num_m_mmas, Self.num_consumer
-    ]()
+    ]
 
     comptime st_matrix_layout_transpose = st_matrix_m_layout[
         Self.c_type, Self.tile_n_size, Self.num_m_mmas, Self.num_consumer
-    ]()
-
-    comptime st_matrix_rt_layout_type = RuntimeLayout[
-        Self.st_matrix_layout_regular if not Self.swapAB else Self.st_matrix_layout_transpose,
-        element_type=.int32,
-        linear_idx_type=.int32,
     ]
 
     comptime st_matrix_tile_layout_regular = row_major[
@@ -492,7 +479,6 @@ struct FragmentToSMemWriter[
     ]
     var warp_group_thread_idx: Int
     var local_warp_group_idx: Int
-    var st_matrix_rt_layout: Self.st_matrix_rt_layout_type
 
     @inline(.always)
     def __init__(
@@ -517,7 +503,6 @@ struct FragmentToSMemWriter[
         self.c_tile = c_tile
         self.warp_group_thread_idx = warp_group_thread_idx
         self.local_warp_group_idx = local_warp_group_idx
-        self.st_matrix_rt_layout = Self.st_matrix_rt_layout_type()
 
     @inline(.always)
     def _compute_swizzled_offset[n_frag: Int, m_frag: Int](self) -> Int32:
@@ -530,18 +515,19 @@ struct FragmentToSMemWriter[
         Returns:
             Swizzled offset for st.matrix instruction.
         """
-        var layout_coords = RuntimeTuple[
-            IntTuple(
-                UNKNOWN_VALUE,
-                IntTuple(n_frag, m_frag, UNKNOWN_VALUE),
-            )
-        ](
+        var layout_coords = Coord(
             self.warp_group_thread_idx,
-            n_frag,
-            m_frag,
-            self.local_warp_group_idx,
+            Coord(Idx[n_frag], Idx[m_frag], self.local_warp_group_idx),
         )
-        var linear_idx = self.st_matrix_rt_layout(layout_coords)
+        var linear_idx: Int32
+        comptime if Self.swapAB:
+            linear_idx = Self.st_matrix_layout_transpose.__call__[
+                linear_idx_type=.int32
+            ](layout_coords)
+        else:
+            linear_idx = Self.st_matrix_layout_regular.__call__[
+                linear_idx_type=.int32
+            ](layout_coords)
         return self.st_matrix_swizzle(linear_idx)
 
     @inline(.always)
@@ -582,15 +568,15 @@ struct FragmentToSMemWriter[
 
         # Execute st.matrix hardware instruction
         st_matrix[simd_width=packed_width, transpose=Self.swapAB](
-            smem_tile._storage + swizzled_offset, packed_data
+            smem_tile._storage.unsafe_offset(swizzled_offset), packed_data
         )
 
     @inline(.always)
     def write_tile(
         self,
-        c_reg_tile: RegTile,
+        c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         coords: Tuple[Int, Int],
-    ) capturing -> None:
+    ) -> None:
         """Write accumulator tile from registers to shared memory.
 
         Args:
@@ -615,7 +601,9 @@ struct FragmentToSMemWriter[
             origin=MutAnyOrigin,
             address_space=.SHARED,
         ](
-            self.c_tile._storage + tile_linear_idx * elements_per_tile,
+            self.c_tile._storage.unsafe_offset(
+                tile_linear_idx * elements_per_tile
+            ),
             flat_tile_layout,
         )
 
@@ -651,8 +639,8 @@ struct FragmentToSMemWriter[
                 var reg_fragment = c_reg_tile.tile[1, elements_per_store](
                     m_frag, reg_fragment_idx
                 )
-                var frag_data = reg_fragment.load[elements_per_store](
-                    0, 0
+                var frag_data = reg_fragment.load[width=elements_per_store](
+                    (0, 0)
                 ).cast[Self.c_type]()
                 self._store_fragment[elements_per_store, m_frag, n_frag](
                     smem_frag, frag_data
@@ -671,8 +659,8 @@ struct FragmentToSMemWriter[
                 var reg_fragment = c_reg_tile.tile[1, elements_per_store](
                     m_frag, reg_fragment_idx
                 )
-                var frag_data = reg_fragment.load[elements_per_store](
-                    0, 0
+                var frag_data = reg_fragment.load[width=elements_per_store](
+                    (0, 0)
                 ).cast[Self.c_type]()
                 self._store_fragment[elements_per_store, m_frag, n_frag](
                     smem_frag, frag_data
@@ -777,9 +765,9 @@ struct RegisterToGMemWriter[
     @inline(.always)
     def write_tile(
         self,
-        c_reg_tile: RegTile,
+        c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         coords: Tuple[Int, Int],
-    ) capturing -> None:
+    ) -> None:
         """Write a single MMA tile from registers to global memory.
 
         Args:
@@ -800,7 +788,7 @@ struct RegisterToGMemWriter[
         has_compute_fn: Bool = False,
     ](
         self,
-        c_reg_tile: RegTile,
+        c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         coords: Tuple[Int, Int],
         value_epilogue_fn: EpilogueFnType,
         value_compute_fn: ComputeFnType = no_compute_fn,
@@ -840,7 +828,7 @@ struct RegisterToGMemWriter[
     @inline(.always)
     def _write_direct_vectorized(
         self,
-        c_reg_tile: RegTile,
+        c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
@@ -857,7 +845,7 @@ struct RegisterToGMemWriter[
         # Direct copy using hardware layout
         copy_local_to_dram[row_major[8, 4]()](
             warp_tile.vectorize[1, 2](),
-            reg_tile_to_tile_tensor(c_frag).vectorize[1, 2](),
+            c_frag.vectorize[1, 2](),
         )
 
     @inline(.always)
@@ -870,7 +858,7 @@ struct RegisterToGMemWriter[
         has_compute_fn: Bool,
     ](
         self,
-        c_reg_tile: RegTile,
+        c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
@@ -940,13 +928,13 @@ struct RegisterToGMemWriter[
         has_compute_fn: Bool,
     ](
         gmem_frag: TileTensor[mut=True, Self.c_type, ...],
-        c_reg_frag: RegTile,
+        c_reg_frag: TileTensor[address_space=.LOCAL, ...],
         mma_id: Int,
         m: Int,
         n: Int,
         value_epilogue_fn: EpilogueFnType,
         value_compute_fn: ComputeFnType,
-    ) capturing:
+    ):
         """Apply epilogue or compute_lambda and store result."""
         comptime value_alignment = 2
 
@@ -959,7 +947,7 @@ struct RegisterToGMemWriter[
             var reg_val = value_compute_fn[
                 Self.c_type, type_of(frag_val).length, alignment=value_alignment
             ]((m, n), frag_val)
-            gmem_frag.store(Coord(Idx[frag_idx], Idx[0]), reg_val)
+            gmem_frag.store((Idx[frag_idx], Idx[0]), reg_val)
 
     @inline(.always)
     def _write_with_runtime_bounds[
@@ -971,7 +959,7 @@ struct RegisterToGMemWriter[
         has_compute_fn: Bool,
     ](
         self,
-        c_reg_tile: RegTile,
+        c_reg_tile: TileTensor[address_space=.LOCAL, ...],
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,

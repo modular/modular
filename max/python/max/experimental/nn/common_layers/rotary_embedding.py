@@ -164,7 +164,11 @@ class RotaryEmbedding(Module[..., Tensor]):
         if seq_len is None:
             seq_len = v.shape[-3]
 
-        freqs_cis_sliced = self.freqs_cis[start_pos : start_pos + seq_len]
+        # freqs_cis lives on the CPU and isn't a child module tensor, so
+        # Module.to() leaves it there. Move it to the input's device.
+        freqs_cis_sliced = self.freqs_cis.to(v.device)[
+            start_pos : start_pos + seq_len
+        ]
         # Handle optimized case that flattens freqs_cis.
         # This is needed so naive llama3 can still use Llama3RotaryEmbedding with correct freqs_cis.
         if len(freqs_cis_sliced.shape) == 2:

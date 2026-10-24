@@ -14,6 +14,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.common_layers.linear import (
@@ -21,12 +24,19 @@ from max.experimental.nn.common_layers.linear import (
     row_parallel,
 )
 from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.linear import _matmul_mapping
+from max.experimental.nn.linear import _float8_matmul_op, _matmul_mapping
 from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import NamedMapping
+from max.experimental.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    NamedMapping,
+    Partial,
+    Sharded,
+)
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import kernels
+from max.nn.quant_config import QuantConfig
 from max.support.math import ceildiv
 
 from ..model_config import NemotronHConfig
@@ -37,53 +47,18 @@ from ..quantization import (
     Parallelism,
     linear_parallelism,
 )
+from .sharding import shard_segments
 
 # The largest E2M1 value times the largest E4M3 value: a row scaled by
 # amax / _NVFP4_RANGE has its largest block scale at the E4M3 maximum.
 _NVFP4_RANGE = 6.0 * 448.0
 
-# The SM100 block-scaled matmul reads its scales in granules of 128 rows by 4
-# scale columns.
-_SF_GRANULE_ROWS = 128
-_SF_ATOM_ROWS = 32
-_SF_ATOM_COLS = 4
-
-
-def interleave_expert_scales(scales: TensorValue) -> TensorValue:
-    """Permutes stacked E4M3 block scales into the kernel layout.
-
-    Each expert's element ``(r, c)`` lands at ``[r // 128, c // 4, r % 32,
-    (r % 128) // 32, c % 4]``, where ``set_scale_factor`` in
-    ``max/kernels/src/linalg/fp4_utils.mojo`` stores it. Rows are
-    zero-padded to a whole granule. The scales are weights, so the graph
-    compiler runs this once, at model init.
-
-    Args:
-        scales: The ``[experts, N, K / 16]`` scales. ``K / 16`` must be a
-            multiple of 4.
-
-    Returns:
-        The ``[experts, ceil(N / 128), K / 64, 32, 4, 4]`` scales.
-    """
-    experts, rows, cols = (int(d) for d in scales.shape)
-    if cols % _SF_ATOM_COLS:
-        raise ValueError(f"cannot interleave NVFP4 scales {scales.shape}")
-    granules = ceildiv(rows, _SF_GRANULE_ROWS)
-    padding = granules * _SF_GRANULE_ROWS - rows
-    if padding:
-        scales = ops.pad(scales, [0, 0, 0, padding, 0, 0])
-    atoms = ops.reshape(
-        scales,
-        [
-            experts,
-            granules,
-            _SF_GRANULE_ROWS // _SF_ATOM_ROWS,
-            _SF_ATOM_ROWS,
-            cols // _SF_ATOM_COLS,
-            _SF_ATOM_COLS,
-        ],
-    )
-    return ops.permute(atoms, [0, 1, 4, 3, 2, 5])
+# Whether to quantize activations with the fused row-amax kernel
+# (`kernels.grouped_quantize_nvfp4_row_scaled`), whose output is
+# bit-identical to the op chain in `nvfp4_grouped_matmul`. The fused kernel
+# makes the B=64 decode step about 8% faster (SERVOPT-1732); the chain stays
+# as the reference path.
+_FUSED_NVFP4_ROW_QUANT = True
 
 
 def nvfp4_grouped_matmul(
@@ -95,11 +70,15 @@ def nvfp4_grouped_matmul(
     scales_offsets: TensorValue,
     expert_ids: TensorValue,
     rows: TensorValue | None = None,
+    relu2: bool = False,
 ) -> TensorValue:
     """Quantizes ``x`` to NVFP4 per row and runs the W4A4 grouped matmul.
 
     The checkpoint has no activation scale, so each row gets its own global
-    scale from its amax, which the matmul epilogue multiplies back in.
+    scale from its amax, which the matmul epilogue multiplies back in. With
+    ``_FUSED_NVFP4_ROW_QUANT``, one kernel takes the amax, rounds the scales,
+    quantizes and applies relu2; otherwise a chain of ops does the same, with
+    the same bits out.
 
     Args:
         x: BF16 activations, ``[tokens, K]``.
@@ -111,42 +90,58 @@ def nvfp4_grouped_matmul(
         expert_ids: The expert of each group.
         rows: The ``x`` row of each routed row, when ``x`` is not already in
             routed order.
+        relu2: Whether to multiply with ``relu(x) ** 2`` in place of ``x``.
 
     Returns:
         The BF16 output, ``[routed rows, N]``.
     """
-    amax = ops.max(ops.abs(ops.cast(x, DType.float32)), axis=-1)
-    # A row of zeros would otherwise divide by zero.
-    row_scales = ops.cast(
-        ops.max(
-            amax / _NVFP4_RANGE, ops.constant(1e-30, DType.float32, x.device)
-        ),
-        DType.bfloat16,
-    )
-    # Float32 division is slow when the numerator is zero, and relu2 makes
-    # about half of these zero, so multiply by the reciprocal instead.
-    scaled = ops.cast(
-        ops.cast(x, DType.float32)
-        * (1.0 / ops.cast(row_scales, DType.float32)),
-        DType.bfloat16,
-    )
-    row_scales = ops.reshape(row_scales, [-1])
-    if rows is not None:
-        row_scales = ops.gather(row_scales, rows, axis=0)
     num_experts = int(weight.shape[0])
-    x_fp4, x_block_scales = kernels.grouped_quantize_dynamic_block_scaled(
-        scaled,
-        row_offsets=expert_start_indices,
-        scales_offsets=scales_offsets,
-        expert_ids=expert_ids,
-        sf_tensor=ops.broadcast_to(
-            ops.constant(1.0, DType.float32, x.device), [num_experts]
-        ),
-        sf_vector_size=NVFP4_GROUP_SIZE,
-        scales_type=DType.float8_e4m3fn,
-        out_type=DType.uint8,
-        indices=rows,
-    )
+    if _FUSED_NVFP4_ROW_QUANT:
+        x_fp4, x_block_scales, row_scales = (
+            kernels.grouped_quantize_nvfp4_row_scaled(
+                x,
+                row_offsets=expert_start_indices,
+                scales_offsets=scales_offsets,
+                indices=rows,
+                relu2=relu2,
+            )
+        )
+    else:
+        if relu2:
+            r = ops.relu(x)
+            x = r * r
+        amax = ops.max(ops.abs(ops.cast(x, DType.float32)), axis=-1)
+        # A row of zeros would otherwise divide by zero.
+        row_scales = ops.cast(
+            ops.max(
+                amax / _NVFP4_RANGE,
+                ops.constant(1e-30, DType.float32, x.device),
+            ),
+            DType.bfloat16,
+        )
+        # Float32 division is slow when the numerator is zero, and relu2
+        # makes about half of these zero, so multiply by the reciprocal.
+        scaled = ops.cast(
+            ops.cast(x, DType.float32)
+            * (1.0 / ops.cast(row_scales, DType.float32)),
+            DType.bfloat16,
+        )
+        row_scales = ops.reshape(row_scales, [-1])
+        if rows is not None:
+            row_scales = ops.gather(row_scales, rows, axis=0)
+        x_fp4, x_block_scales = kernels.grouped_quantize_dynamic_block_scaled(
+            scaled,
+            row_offsets=expert_start_indices,
+            scales_offsets=scales_offsets,
+            expert_ids=expert_ids,
+            sf_tensor=ops.broadcast_to(
+                ops.constant(1.0, DType.float32, x.device), [num_experts]
+            ),
+            sf_vector_size=NVFP4_GROUP_SIZE,
+            scales_type=DType.float8_e4m3fn,
+            out_type=DType.uint8,
+            indices=rows,
+        )
     # The kernel picks its tiling from the average rows per expert.
     routed_rows = ops.cast(
         ops.shape_to_tensor([x_fp4.shape[0]])[0], DType.uint32
@@ -225,42 +220,15 @@ def _place(weight: Tensor, parallelism: Parallelism) -> Tensor:
     return weight
 
 
-class _PerDeviceLinear(Module[[Tensor], Tensor]):
-    """Runs a quantized matmul on each device's shard of the input.
-
-    The quantized kernels have no sharding rules, so the output takes the
-    placement the framework's FP8 :class:`Linear` derives from its weight's.
-    A row-parallel layer leaves each device its share of the sum, which the
-    residual add reduces.
-    """
-
-    weight: Tensor
-
-    def _local(self, x: TensorValue, device: int) -> TensorValue:
-        raise NotImplementedError
-
-    def forward(self, x: Tensor) -> Tensor:
-        with ensure_context():
-            shards = [
-                self._local(TensorValue(shard), d)
-                for d, shard in enumerate(x.local_shards)
-            ]
-        mapping = (
-            _matmul_mapping(x, self.weight)
-            if x.mesh.num_devices > 1
-            else x.mapping
-        )
-        return Tensor.from_shard_values(shards, mapping)
-
-
 def nvfp4_block_scale_shape(
     out_dim: int, in_dim: int, parallelism: Parallelism, num_devices: int
 ) -> list[int]:
-    """Returns the shape of an NVFP4 linear's interleaved block scales.
+    """Returns the shape of an NVFP4 linear's interleaved block scales on
+    the devices.
 
     Each device's share is interleaved on its own, since the interleaved
     layout pads the output rows to whole 128-row granules. The first axis
-    holds the shares, so a sharded layer splits it across devices.
+    holds the shares.
     """
     parts = 1 if parallelism is Parallelism.REPLICATED else num_devices
     rows = (
@@ -277,11 +245,18 @@ def nvfp4_block_scale_shape(
     ]
 
 
-class NVFP4Linear(_PerDeviceLinear):
+class NVFP4Linear(Module[[Tensor], Tensor]):
     """A linear layer with NVFP4 weights, run W4A4.
 
     The checkpoint quantizes the weight only. Each activation row is
     quantized to NVFP4 with its own scale, as the routed experts are.
+
+    The block scales are placed like the weight, as the checkpoint stores
+    them, and the graph interleaves each device's share for the
+    block-scaled matmul. The quantized kernels have no sharding rules, so
+    each device runs its own share: a column-parallel layer splits the
+    output's columns, and a row-parallel one leaves each device its share
+    of the sum, which the residual add reduces.
     """
 
     def __init__(
@@ -290,33 +265,134 @@ class NVFP4Linear(_PerDeviceLinear):
         out_dim: int,
         parallelism: Parallelism,
         num_devices: int,
+        row_segments: Sequence[int] = (),
     ) -> None:
-        self.weight = _place(
-            Tensor.zeros([out_dim, in_dim // 2], dtype=DType.uint8),
-            parallelism,
-        )
-        block_scale = Tensor.zeros(
-            nvfp4_block_scale_shape(out_dim, in_dim, parallelism, num_devices),
-            dtype=DType.float8_e4m3fn,
-        )
-        if parallelism is not Parallelism.REPLICATED:
-            block_scale = block_scale.to(
-                NamedMapping(block_scale.mesh, (TP,) + (None,) * 5)
-            )
-        self.weight_scale = block_scale
-        self.weight_scale_2 = Tensor.zeros([1], dtype=DType.float32)
+        """Initializes the layer.
 
-    def _local(self, x: TensorValue, device: int) -> TensorValue:
-        return nvfp4_matmul(
-            x,
-            TensorValue(self.weight.local_shards[device]),
-            TensorValue(self.weight_scale.local_shards[device]),
-            TensorValue(self.weight_scale_2.local_shards[device]),
+        Args:
+            in_dim: The input dimension.
+            out_dim: The output dimension.
+            parallelism: How the weight splits across devices.
+            num_devices: The number of devices.
+            row_segments: The sizes of the parts the weight's rows stack,
+                each split across devices, or none for one part. Only a
+                column-parallel layer has parts.
+        """
+        self.parallelism = parallelism
+        self.row_segments = tuple(row_segments) if num_devices > 1 else ()
+        shapes = (
+            ([out_dim, in_dim // 2], DType.uint8),
+            ([out_dim, in_dim // NVFP4_GROUP_SIZE], DType.float8_e4m3fn),
         )
+        if self.row_segments:
+            # A plain split would give a device whole parts, so both stay on
+            # the host for the graph to give each device its share of each.
+            self.weight, self.weight_scale = (
+                Tensor.zeros(shape, dtype=dtype, device=CPU())
+                for shape, dtype in shapes
+            )
+        else:
+            self.weight, self.weight_scale = (
+                _place(Tensor.zeros(shape, dtype=dtype), parallelism)
+                for shape, dtype in shapes
+            )
+        self.weight_scale_2 = Tensor.zeros([], dtype=DType.float32)
+
+    def placed(self, mesh: DeviceMesh) -> tuple[Tensor, Tensor]:
+        """Returns the weight and its block scales, each device holding its
+        share."""
+        if not self.row_segments:
+            return self.weight, self.weight_scale
+        return (
+            shard_segments(self.weight, self.row_segments, mesh),
+            shard_segments(self.weight_scale, self.row_segments, mesh),
+        )
+
+    def device_params(
+        self, mesh: DeviceMesh
+    ) -> list[tuple[TensorValue, TensorValue, TensorValue]]:
+        """Returns each device's weight, interleaved block scales and global
+        scale, as the matmul reads them."""
+        weight, scales = self.placed(mesh)
+        with ensure_context():
+            return [
+                (
+                    TensorValue(weight.local_shards[d]),
+                    ops.unsqueeze(
+                        kernels.block_scales_interleave(
+                            TensorValue(scales.local_shards[d]),
+                            NVFP4_GROUP_SIZE,
+                        ),
+                        0,
+                    ),
+                    ops.reshape(
+                        TensorValue(self.weight_scale_2.local_shards[d]), [1]
+                    ),
+                )
+                for d in range(mesh.num_devices)
+            ]
+
+    def matmul_on(self, x: TensorValue, device: int) -> TensorValue:
+        """Runs ``x @ weight.T`` on one device with its share of the weight."""
+        params = self.device_params(self.weight_scale_2.mesh)[device]
+        return nvfp4_matmul(x, *params)
+
+    def forward(self, x: Tensor) -> Tensor:
+        with ensure_context():
+            shards = [
+                nvfp4_matmul(TensorValue(shard), *params)
+                for shard, params in zip(
+                    x.local_shards, self.device_params(x.mesh), strict=True
+                )
+            ]
+        if (
+            x.mesh.num_devices == 1
+            or self.parallelism is Parallelism.REPLICATED
+        ):
+            mapping = x.mapping
+        elif self.parallelism is Parallelism.COLUMN:
+            mapping = DeviceMapping(x.mesh, (Sharded(x.rank - 1),))
+        else:
+            mapping = DeviceMapping(x.mesh, (Partial(),))
+        return Tensor.from_shard_values(shards, mapping)
+
+
+class RowGroupedLinear(Linear):
+    """A column-parallel linear whose weight rows stack parts, each split
+    across devices.
+
+    A plain split of the rows would give a device whole parts. The weight
+    stays whole on the host as stored, and the graph gives each device its
+    share of every part.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        row_segments: Sequence[int],
+        quant_config: QuantConfig | None = None,
+    ) -> None:
+        super().__init__(in_dim, out_dim, bias=False, quant_config=quant_config)
+        self.weight = Tensor.zeros(
+            [out_dim, in_dim], dtype=self.weight.dtype, device=CPU()
+        )
+        self.row_segments = tuple(row_segments)
+
+    def placed_weight(self, mesh: DeviceMesh) -> Tensor:
+        """Returns the weight, each device holding its rows."""
+        return shard_segments(self.weight, self.row_segments, mesh)
+
+    def forward(self, x: Tensor) -> Tensor:
+        weight = self.placed_weight(x.mesh)
+        if self.quant_config is None:
+            return x @ weight.T
+        y = _float8_matmul_op(x, weight, self.weight_scale, self.input_scale)
+        return y.rebind_mapping(_matmul_mapping(x, weight))
 
 
 def quantized_linear(
-    config: NemotronHConfig, module: str
+    config: NemotronHConfig, module: str, row_segments: Sequence[int] = ()
 ) -> Linear | NVFP4Linear:
     """Builds a dense linear module that reads its weight as stored.
 
@@ -324,17 +400,24 @@ def quantized_linear(
         config: The model config.
         module: The module's checkpoint path, such as
             ``backbone.layers.0.mixer.in_proj``.
+        row_segments: The sizes of the parts a column-parallel weight's rows
+            stack, each split across devices, or none for one part.
     """
     in_dim, out_dim = config.linear_shape(module)
     parallelism = linear_parallelism(module)
     fmt = config.quant_scheme.format_of(module)
+    num_devices = len(config.devices)
     if fmt is ModuleFormat.NVFP4_WEIGHT_ONLY:
-        return NVFP4Linear(in_dim, out_dim, parallelism, len(config.devices))
+        return NVFP4Linear(
+            in_dim, out_dim, parallelism, num_devices, row_segments
+        )
     quant_config = (
         FP8_STATIC_TENSOR_QUANT
         if fmt is ModuleFormat.FP8_STATIC_TENSOR
         else None
     )
+    if row_segments and num_devices > 1:
+        return RowGroupedLinear(in_dim, out_dim, row_segments, quant_config)
     linear = Linear(in_dim, out_dim, bias=False, quant_config=quant_config)
     match parallelism:
         case Parallelism.COLUMN:

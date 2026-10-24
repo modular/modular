@@ -23,7 +23,7 @@ from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
 from std.builtin.device_passable import DevicePassable
-from std.sys import CompilationTarget, argv, default_accelerator
+from std.sys import CompilationTarget, argv
 
 from max.gpu.host import (
     ConstantMemoryMapping,
@@ -34,9 +34,10 @@ from max.gpu.host import (
     Dim,
     FuncAttribute,
     LaunchAttribute,
+    default_accelerator,
 )
-from max.gpu.host.device_context import _DumpPath
-from max.gpu.host.launch_attribute import (
+from max.gpu.host import _DumpPath
+from max.gpu.host import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
@@ -372,7 +373,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -458,7 +459,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     def enqueue_function_collective_checked[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,

@@ -30,7 +30,7 @@ checkpoints are NVFP4).
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, ClassVar
 
@@ -39,6 +39,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.compilation import CompiledCallable
+from max.experimental.nn.common_layers.quant_ops import (
+    routed_weight_dtype,
+)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -58,6 +61,7 @@ from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -72,9 +76,6 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
-from ..deepseekV3_modulev3.layers.quant_ops import (
-    routed_weight_dtype,
-)
 from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
 from .inputs import KimiK2_5ModelInputs
@@ -130,9 +131,9 @@ class KimiK2_5Model(
             memory_plan=memory_plan,
         )
 
-        # The base hook is typed loosely (``Callable``); both towers here come
-        # out of ``Module.compile``.
-        vision_model, language_model = self.load_model()
+        # The base hook is typed loosely (``Callable``); both towers here are
+        # ModuleV3 graphs, so they load as compiled callables.
+        vision_model, language_model = self._load_towers(session)
         assert isinstance(language_model, CompiledCallable)
         assert vision_model is None or isinstance(
             vision_model, CompiledCallable
@@ -350,11 +351,11 @@ class KimiK2_5Model(
             self.ep_comm_initializer.ep_init(self.session)
             ep_config.node_id = self.ep_comm_initializer.config.node_id
 
-    def _compile_vision_model(
+    def _vision_spec(
         self,
         model_config: KimiK2_5Config,
         state_dict: dict[str, WeightData],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         device_ref = DeviceRef.from_device(self.devices[0])
         vision_config = model_config.vision_config
 
@@ -385,20 +386,24 @@ class KimiK2_5Model(
             DType.int64, shape=["n_patches"], device=device_ref
         )
 
-        return vision_nn.compile(
-            pixel_values_type,
-            grid_thws_type,
-            cu_seqlens_type,
-            max_seqlen_type,
-            position_ids_type,
+        return GraphSpec(
+            vision_nn,
+            type(vision_nn).__qualname__,
+            [
+                pixel_values_type,
+                grid_thws_type,
+                cu_seqlens_type,
+                max_seqlen_type,
+                position_ids_type,
+            ],
             weights=state_dict,
         )
 
-    def _compile_language_model(
+    def _language_spec(
         self,
         model_config: KimiK2_5Config,
         state_dict: dict[str, WeightData],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         llm = model_config.llm_config
         assert llm.mesh is not None
 
@@ -469,8 +474,10 @@ class KimiK2_5Model(
             *self._modulev3_extra_input_types,
         )
 
-        return language_nn.compile(
-            *language_input_types,
+        return GraphSpec(
+            language_nn,
+            type(language_nn).__qualname__,
+            language_input_types,
             weights=state_dict,
         )
 

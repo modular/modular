@@ -19,16 +19,17 @@ import functools
 import inspect
 import io
 import itertools
+import sys
 import traceback
 from collections import OrderedDict
-from collections.abc import Callable, Generator, Iterable, Sequence
+from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, TypeGuard, TypeVar, cast
+from typing import Any, TypeAlias, TypeGuard, TypeVar, cast
 
-from max import mlir
+from max import mlir, tree
 from max._core import Attribute as _Attribute
 from max._core import Block, OpBuilder, Operation
 from max._core import Type as _Type
@@ -52,6 +53,7 @@ from mojo.paths import (
     is_mojo_source_package_path,
 )
 
+from ._api_boundary import api_boundary, callers_of_api
 from .type import (
     BufferType,
     DeviceRef,
@@ -61,6 +63,17 @@ from .type import (
     _ChainType,
 )
 from .value import BufferValue, TensorValue, TensorValueLike, Value, _ChainValue
+
+GraphOutputs: TypeAlias = (
+    Value[Any]
+    | TensorValueLike
+    | Sequence["GraphOutputs"]
+    | Mapping[Any, "GraphOutputs"]
+)
+"""What a graph outputs: values, or a tree of them whose leaves are the
+outputs in order. Sequences and mappings rather than :data:`max.tree.Tree`'s
+lists and dicts, so a ``list[TensorValue]`` or a typed group is accepted.
+Mapping keys only name the outputs, so any key type is."""
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -442,8 +455,24 @@ def _location(
         # - Avoids reference cycles
         # - Doesn't keep references to closures
 
-        # Always remove at least _location
-        tb = traceback.extract_stack()[: -(ignore_frames + 1)]
+        # Below the call into the graph API, the frames are MAX's
+        # implementation of the op. An op built through an internal path has
+        # no boundary on its stack and keeps every frame.
+        callers = (
+            callers_of_api(sys._getframe(1))
+            if _InferenceSession.debug.source_tracebacks_hide_internal
+            else None
+        )
+        tb: list[traceback.FrameSummary]
+        if callers is not None:
+            tb = list(
+                traceback.StackSummary.extract(
+                    (frame, frame.f_lineno) for frame in callers
+                )
+            )
+        else:
+            # Always remove at least _location
+            tb = traceback.extract_stack()[: -(ignore_frames + 1)]
         location = (
             _graph.frame_loc(mlir.Context.current, tb)
             if tb
@@ -691,6 +720,15 @@ class GraphDebugConfig:
     def source_tracebacks(self, value: bool) -> None:
         _InferenceSession.debug.source_tracebacks = value
 
+    @property
+    def source_tracebacks_hide_internal(self) -> bool:
+        """See :attr:`max.engine.DebugConfig.source_tracebacks_hide_internal`."""
+        return _InferenceSession.debug.source_tracebacks_hide_internal
+
+    @source_tracebacks_hide_internal.setter
+    def source_tracebacks_hide_internal(self, value: bool) -> None:
+        _InferenceSession.debug.source_tracebacks_hide_internal = value
+
 
 class Graph:
     """Represents a single MAX graph.
@@ -790,6 +828,9 @@ class Graph:
     _current_block: mlir.Block
     _should_verify_ops: bool
     _has_chain_input: bool
+    # How the value passed to :meth:`output` nests the outputs; ``None`` for a
+    # graph read back from MLIR, which records no structure.
+    _output_structure: tree.TreeDef | None = None
     # Per-device chains that ensure the correct sequence of device execution.
     # ``device_chains[DeviceRef.CPU()]`` is the host orchestration chain (the
     # chain advanced by host-side ops like ``debug.print``, ``mo.call``, and
@@ -806,8 +847,7 @@ class Graph:
     def __init__(
         self,
         name: str,
-        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
-        | None = None,
+        forward: Callable[..., GraphOutputs | None] | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
         *args,
@@ -907,16 +947,16 @@ class Graph:
             # constructor.
             with self:
                 result = forward(*self.inputs, *args, **kwargs)
-                # Account for forward methods that return None, a single
-                # output, or multiple outputs.
-                outputs = (
-                    ()
-                    if result is None
-                    else (result,)
-                    if not isinstance(result, Iterable)
-                    else result
-                )
-                self.output(*outputs)
+                # Forward returns None, one value, a tree such as a tuple or a
+                # named dict, or any other iterable of values.
+                if result is None:
+                    self.output()
+                elif tree.is_node(result):
+                    self.output(result)
+                elif isinstance(result, Iterable):
+                    self.output(*result)
+                else:
+                    self.output(result)
 
     @functools.cached_property
     def inputs(self) -> Sequence[Value[Any]]:
@@ -939,8 +979,7 @@ class Graph:
     def add_subgraph(
         self,
         name: str,
-        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
-        | None = None,
+        forward: Callable[..., GraphOutputs | None] | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
         custom_extensions: Iterable[Path] = [],
@@ -1381,7 +1420,8 @@ class Graph:
             entries
         )
 
-    def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
+    @api_boundary
+    def output(self, *outputs: GraphOutputs) -> None:
         """Sets the output values of the graph and finalizes construction.
 
         Call this once after building all ops. The graph can't be executed
@@ -1404,12 +1444,29 @@ class Graph:
                 two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
                 graph.output(ops.elementwise.mul(x, two))
 
+        Pass one named tree, such as a dict of logits and hidden states, to
+        name each output by its path in it; :attr:`output_tree` then returns
+        the output types in that structure.
+
         Args:
-            outputs: The output values of the graph. Each value may be a
-                :class:`Value` or any :class:`~max.graph.TensorValueLike`.
+            outputs: The output values of the graph, or a single tree whose
+                leaves they are. Each value may be a :class:`Value` or any
+                :class:`~max.graph.TensorValueLike`.
         """
+        root = (
+            outputs[0]
+            if len(outputs) == 1 and tree.is_node(outputs[0])
+            else outputs
+        )
+        leaves, self._output_structure = tree.flatten(root)
+        if any(isinstance(leaf, str) for leaf in leaves):
+            raise TypeError(
+                f"graph outputs {leaves} include a string, as when a named"
+                " tree is unpacked into its keys: pass the tree itself, as"
+                " graph.output(outputs)"
+            )
         outputs = tuple(
-            o if isinstance(o, Value) else TensorValue(o) for o in outputs
+            o if isinstance(o, Value) else TensorValue(o) for o in leaves
         )
         outputs = cast(tuple[Value[Any], ...], outputs)
         # mo.output doesn't support infer_type
@@ -1498,6 +1555,23 @@ class Graph:
 
         return [Value.from_mlir(val).type for val in operand_values]
 
+    @property
+    def output_tree(self) -> tree.Tree[Type[Any]]:
+        """The output types, nested as they were passed to :meth:`output()`.
+
+        A single named tree, such as a dict of logits and hidden states, names
+        each output by its path in it; separate values, or a graph read back
+        from MLIR, give a tuple.
+
+        Raises:
+            TypeError: If the graph has not yet been terminated by a call to
+                :meth:`output()`.
+        """
+        types = self.output_types
+        if self._output_structure is None:
+            return tuple(types)
+        return tree.unflatten(self._output_structure, types)
+
     def _load_mlir(self, path: Path) -> None:
         self._context_state = []
         self._data_dependent_dims = 0
@@ -1570,6 +1644,7 @@ class Graph:
         self._data_dependent_dims = index + 1
         return index
 
+    @api_boundary
     def add_weight(
         # TODO(GEX-2121): Remove `force_initial_weight_on_host`
         self,
@@ -1770,6 +1845,7 @@ class GraphBlock:
         self._block_ctx = None
         return ctx.__exit__(exc_type, exc_val, exc_tb)
 
+    @api_boundary
     def output(
         self,
         *values: Value[Any] | TensorValueLike,

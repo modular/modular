@@ -1,0 +1,140 @@
+---
+title: Quantization
+sidebar_label: Quantization
+description: Serve a quantized checkpoint with MAX or declare quantization for the
+  layers in your own model.
+---
+
+Quantization stores a model's weights at lower precision than the format it was
+trained in, which cuts memory use and speeds up the matrix multiplications that
+dominate inference. MAX runs pre-quantized checkpoints as-is, and your
+architecture can declare how a layer is scaled.
+
+## How quantization works
+
+A quantized layer stores its weights in a narrow type, such as an 8-bit or 4-bit
+format, and keeps a scale factor that maps those values back to a usable range.
+The scale's granularity decides the accuracy and the cost: one scale for a whole
+tensor, one per row or column, or one per block. Finer granularity tracks the
+weight distribution more closely and costs more to apply.
+
+Models often quantize only some of their projections. A layer can keep its
+attention projections at `bfloat16` while its MLP weights run at FP8, which is
+what the per-layer sets in a
+[`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) express.
+
+## Serve a pre-quantized checkpoint
+
+Pass the checkpoint file when the weights are already quantized in a separate
+file format. MAX detects the format from the file:
+
+```bash
+max serve --model meta-llama/Llama-3.1-8B-Instruct \
+    --weight-path=bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
+```
+
+Pass the encoding when the checkpoint uses the same file layout as its
+full-precision release. The `--quantization-encoding` flag accepts the following
+values:
+
+- `float32`: full precision.
+- `float16`: 16-bit floating point.
+- `bfloat16`: 16-bit brain floating point.
+- `float8_e4m3fn`: 8-bit floating point with the e4m3fn encoding.
+- `float4_e2m1fnx2`: NVFP4, 4-bit floating point packed two per byte.
+- `float6_e2m3fn`: 6-bit floating point.
+- `q4_0`: 4-bit quantization.
+- `q4_k`: 4-bit quantization with K-means clustering.
+- `q6_k`: 6-bit quantization with K-means clustering.
+- `gptq`: quantization for transformer checkpoints in the GPTQ format.
+
+```bash
+max generate --model hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4 \
+    --quantization-encoding=gptq \
+    --prompt "What is the meaning of life?"
+```
+
+Architectures register the encodings they support, so an encoding a checkpoint
+declares but the architecture doesn't list fails at load, before the first
+request.
+
+## Quantize the layers in your model
+
+A [`QuantConfig`](/api/python/generated/max.nn.QuantConfig/)
+describes the scale granularity, the scale dtype, which layers are quantized,
+and the checkpoint format. Pass it to a layer that accepts one, such as
+[`Linear`](/api/python/generated/max.experimental.nn.Linear/), and the layer
+allocates a quantized weight plus the scale tensors it needs. `Linear` accepts
+static per-tensor FP8 only; a block-scaled FP4 or a dynamic input scale raises
+`NotImplementedError` when the layer is constructed, so the failure surfaces at
+model-build time:
+
+```python
+from max.driver import CPU
+from max.dtype import DType
+from max.experimental.nn import Linear
+from max.experimental.tensor import default_device
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+
+# Static per-tensor FP8: one weight scale and one input scale cover the whole
+# layer.
+quant_config = QuantConfig(
+    input_scale=InputScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        origin=ScaleOrigin.STATIC,
+        dtype=DType.float32,
+    ),
+    weight_scale=WeightScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        dtype=DType.float32,
+    ),
+    mlp_quantized_layers={0},
+    attn_quantized_layers=set(),
+    format=QuantFormat.COMPRESSED_TENSORS_FP8,
+)
+
+with default_device(CPU()):
+    linear = Linear(4, 8, bias=False, quant_config=quant_config)
+    for name, tensor in linear.parameters:
+        print(f"{name}: {tensor.dtype}")
+```
+
+The layer holds an FP8 weight beside its scale tensors:
+
+```output
+weight: DType.float8_e4m3fn
+weight_scale: DType.float32
+input_scale: DType.float32
+```
+
+The scale values come from the checkpoint, so a weight adapter and
+`_prepare_state_dict()` load them the same way they load any other parameter.
+
+A compiled module fixes its parameter dtypes in the graph, so one compiled graph
+serves one quantization. Serving both FP8 and `bfloat16` weights means two
+builds.
+
+## Formats the model config expresses
+
+Formats that need per-block scales, such as NVFP4, are expressed in the model
+config for the architectures that support them. See [Map checkpoint
+weights](/develop/model-bringup-workflow/#map-checkpoint-weights) for how those
+architectures load their quantized checkpoints.
+
+## Next steps
+
+To connect quantized weights to a checkpoint, continue with:
+
+- [Map checkpoint weights](/develop/model-bringup-workflow/#map-checkpoint-weights):
+  how the pipeline maps quantized checkpoint tensors onto your model.
+- [Weight adapters](/develop/weight-adapters/): reconcile names, dtypes, and
+  scale tensors between the checkpoint and your module.
+- [LLM quantization](https://handbook.modular.com/model-preparation/llm-quantization/):
+  background on the formats and their accuracy trade-offs.

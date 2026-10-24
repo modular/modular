@@ -3,16 +3,7 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
-_EXTRA_COPTS = {
-    "test_layout_tensor_copy.mojo": [
-        "--debug-level",
-        "full",
-    ],
-    "test_layout_tensor_copy_nvidia.mojo": [
-        "--debug-level",
-        "full",
-    ],
-}
+_EXTRA_COPTS = {}
 
 _H100_TESTS = [
     "test_stmatrix.mojo",
@@ -49,6 +40,9 @@ _EXTRA_CONSTRAINTS = {
 } | {
     # Experimental SWIZZLE_NONE uint32 TMA store, validated on B200.
     "test_tma_swizzle_none_uint32_store.mojo": ["//:b200_gpu"],
+    # Packed FP4 (`16U4_ALIGN16B`) TMA loads for the W4A8 block-scaled matmul.
+    "test_tma_packed_fp4_async_copy.mojo": ["//:b200_gpu"],
+    "test_tma_packed_fp4_3d_async_copy.mojo": ["//:b200_gpu"],
     # TMA load from a TileTensor source; runs wherever TMA is supported.
     "test_tma_async_tile_tensor.mojo": select({
         "//:h100_gpu": [],
@@ -56,7 +50,6 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 } | {
-    "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
     # compile_info emits PTX assembly, which is NVIDIA-specific
     "test_tile_tensor_coordinate_codegen.mojo": ["//:nvidia_gpu"],
     "test_ldmatrix.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
@@ -77,7 +70,6 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
     "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
-    "test_layout_tensor_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_tensor_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
     "test_gemm_vectorized_views.mojo": _APPLE_GPU_INCOMPATIBLE,
@@ -87,8 +79,6 @@ _EXTRA_CONSTRAINTS = {
 
 _FILECHECK_TESTS = [
     "test_codegen_to_llvm.mojo",
-    "test_layout_tensor_copy.mojo",
-    "test_layout_tensor_copy_nvidia.mojo",
     "test_tensor_core_amd.mojo",
     "test_tensor_core_apple.mojo",
     "test_apple_mma_8x8.mojo",
@@ -159,6 +149,7 @@ _FILECHECK_EXTRA_DEPS = {
             "test_tile_layout_device_launch.mojo",
             # Blackwell-only `TmemEngine` probe; dedicated target below.
             "test_tmem_engine.mojo",
+            "test_tensor_engine_plugin_gpu.mojo",
         ],
     )
 ]
@@ -181,10 +172,10 @@ mojo_test(
     ],
 )
 
-# `DevicePointerEngine` and `Layout` launch probes. They only import `layout`
-# and `std`, so they get dedicated targets with minimal dependencies rather
-# than the heavy `nn`/`linalg`/`kv_cache` set the glob above attaches to every
-# other test.
+# Engine and `Layout` launch probes (`DevicePointerEngine`, the
+# `layout._plugin` hook). They only import `layout` and `std`, so they get
+# dedicated targets with minimal dependencies rather than the heavy
+# `nn`/`linalg`/`kv_cache` set the glob above attaches to every other test.
 [
     mojo_test(
         name = src + ".test",
@@ -202,6 +193,7 @@ mojo_test(
         "test_device_pointer_tile_storage_kernel.mojo",
         "test_optional_device_pointer_tile.mojo",
         "test_tile_layout_device_launch.mojo",
+        "test_tensor_engine_plugin_gpu.mojo",
     ]
 ]
 

@@ -33,7 +33,6 @@ from kv_cache.types import KVCacheStaticParams, KVCollectionT
 from layout import (
     Coord,
     Layout,
-    RuntimeLayout,
     UNKNOWN_VALUE,
     row_major,
 )
@@ -60,7 +59,12 @@ from nn.kv_cache_ragged import (
     kv_cache_store_padded,
     kv_matmul_ragged_paged,
 )
-from extensibility import InputTensor, OutputTensor
+from extensibility import (
+    Input,
+    InputTensor,
+    Output,
+    OutputTensor,
+)
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -70,8 +74,6 @@ from extensibility import (
 from std.logger import Logger
 
 comptime logger = Logger()
-
-from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
@@ -100,7 +102,7 @@ struct Struct_kv_cache_store_paged:
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         context: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var paged_kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
@@ -117,11 +119,10 @@ struct Struct_kv_cache_store_paged:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        @__parameter
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: Coord) capturing -> SIMD[kv_type, width]:
+        ](idx: Coord) {var inputs} -> SIMD[kv_type, width]:
             # The value dtype is the producer compute dtype (bf16), which need
             # not match the cache: an FP8 cache saturates on the store rather
             # than emitting NaN for out-of-range values.
@@ -131,10 +132,11 @@ struct Struct_kv_cache_store_paged:
                 )
             )
 
-        kv_cache_store_ragged[input_fn=input_fn, target=target](
+        kv_cache_store_ragged[target=target](
             cache,
             inputs.shape_coord(),
             input_row_offsets.to_tile_tensor(),
+            input_fn,
             context,
         )
 
@@ -222,7 +224,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContext,
-    ) capturing raises:
+    ) raises:
         comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
@@ -262,7 +264,7 @@ struct Struct_kv_cache_store_k_scales_paged:
             var input_row_offsets,
             var input_k_scales,
         }:
-            var row = Int(idx[0].value())
+            var row = Int(idx[0])
             # Same bound as the value store: a row past the last offset
             # belongs to no request, and the search below would answer with
             # the last one and write it past the end of that request's span.
@@ -275,16 +277,16 @@ struct Struct_kv_cache_store_k_scales_paged:
             ](
                 (
                     row,
-                    Int(idx[1].value()),
-                    Int(idx[2].value()),
+                    Int(idx[1]),
+                    Int(idx[2]),
                 ),
             )
             var batch_idx = get_batch_from_row_offsets(
                 input_row_offsets_tt, row
             )
             var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
-            var h_idx = Int(idx[1].value())
-            var hd_idx = Int(idx[2].value())
+            var h_idx = Int(idx[1])
+            var hd_idx = Int(idx[2])
             var cache_length = k_cache.cache_length(batch_idx)
             var cache_token_idx = token_idx + cache_length
             k_cache.store_scale(
@@ -328,7 +330,7 @@ struct Struct_kv_cache_store_padded:
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         context: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var paged_kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
@@ -345,20 +347,20 @@ struct Struct_kv_cache_store_padded:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        @__parameter
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: Coord) capturing -> SIMD[dtype, width]:
+        ](idx: Coord) {var inputs} -> SIMD[dtype, width]:
             comptime assert idx.rank == 4
             return inputs._lambda_load[
                 width=width, element_alignment=alignment
             ](idx)
 
-        kv_cache_store_padded[input_fn=input_fn, target=target](
+        kv_cache_store_padded[target=target](
             cache,
             inputs.shape(),
             valid_lengths.to_tile_tensor(),
+            input_fn,
             context,
         )
 
@@ -377,6 +379,8 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         cache_dtype: DType,
         //,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
     ](
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         page_stride: InputTensor[dtype=.int64, rank=1, ...],
@@ -385,11 +389,9 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        weight_offset: Scalar[dtype=dtype],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -404,11 +406,11 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             target=target,
             multiply_before_cast=multiply_before_cast,
             per_head_norm=per_head_norm,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
         ](
             kv_collection,
             gamma.to_tile_tensor[.int64](),
-            epsilon,
-            weight_offset,
             layer_idx,
             total_seq_len,
             input_row_offsets.to_tile_tensor[.int64](),
@@ -528,7 +530,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
             width: Int, alignment: Int
         ](token: Int, head: Int, col: Int) {var q_proj} -> SIMD[dtype, width]:
             return q_proj._fused_load[width=width, element_alignment=alignment](
-                IndexList[3](token, head, col)
+                (token, head, col)
             )
 
         fused_qk_rms_norm_rope_ragged_paged[
@@ -697,7 +699,7 @@ def load_staged_row[
         The `width` elements starting at `[token, head, col]`.
     """
     return proj._fused_load[width=width, element_alignment=alignment](
-        IndexList[3](token, head, col)
+        (token, head, col)
     )
 
 
@@ -1088,6 +1090,8 @@ struct Struct_rms_norm_value_cache_ragged_paged:
         cache_dtype: DType,
         //,
         target: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
     ](
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         page_stride: InputTensor[dtype=.int64, rank=1, ...],
@@ -1096,11 +1100,9 @@ struct Struct_rms_norm_value_cache_ragged_paged:
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Float32,
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        weight_offset: Scalar[dtype=dtype],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -1115,11 +1117,11 @@ struct Struct_rms_norm_value_cache_ragged_paged:
             target=target,
             multiply_before_cast=multiply_before_cast,
             per_head_norm=per_head_norm,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
         ](
             kv_collection,
             gamma.to_tile_tensor[.int64](),
-            epsilon,
-            weight_offset,
             layer_idx,
             total_seq_len,
             input_row_offsets.to_tile_tensor[.int64](),
@@ -1319,15 +1321,18 @@ struct Struct_kv_cache_row_offsets_ragged_paged:
     def execute[
         target: StaticString,
     ](
-        cache_row_offsets: OutputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_row_offsets: Some[Output & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(cache_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
         kv_cache_row_offsets_ragged_paged[target=target](
-            cache_row_offsets.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
-            cache_lengths.to_tile_tensor[.int64](),
+            cache_row_offsets.to_tile_tensor[.uint32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            cache_lengths.to_tile_tensor[.uint32](),
             context,
         )
 

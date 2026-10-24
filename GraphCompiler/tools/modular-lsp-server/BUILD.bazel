@@ -1,0 +1,23 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//GraphCompiler:__subpackages__",
+])
+
+modular_cc_binary(
+    name = "modular-lsp-server",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//Cache",
+        "//GraphCompiler:MAPDialect",
+        "//GraphCompiler:MGPDialect",
+        "//GraphCompiler:MODialect",
+        "//GraphCompiler:MOGGDialect",
+        "//GraphCompiler:RMODialect",
+        "//Mojo:ToolCommon",
+        "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:MLProgramDialect",
+        "@llvm-project//mlir:MlirLspServerLib",
+    ],
+)

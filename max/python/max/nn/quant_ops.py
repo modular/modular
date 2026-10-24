@@ -287,6 +287,7 @@ def _matmul_float8_mxfp8(
     x: TensorValue,
     weight: TensorValue,
     weight_scale: TensorValue,
+    x_scales: TensorValue | None = None,
 ) -> TensorValue:
     """Computes ``x @ weight.T`` with MXFP8 quantization.
 
@@ -304,30 +305,34 @@ def _matmul_float8_mxfp8(
         weight: The weight tensor in ``float8_e4m3fn``, shape ``[N, K]``.
         weight_scale: The E8M0 (``float8_e8m0fnu``) weight scales, rank-2
             ``[N, K // 32]`` as loaded from the checkpoint.
+        x_scales: The activation's E8M0 block scales when ``x`` arrives
+            already MXFP8 (from a fused activation + quantize), in the layout
+            :func:`~max.nn.kernels.quantize_dynamic_block_scaled` produces.
+            Skips the quantize.
 
     Returns:
         The output tensor in bf16.
     """
-    if _is_amd_gpu():
-        # AMD reads rank-2 E8M0 scales and raw byte operands; no rank-5 SF-atom
-        # interleave, and `lane_bytes=32` is derived from the operand dtype in
-        # the wrapper. Mirrors `_matmul_float4_mxfp4`, one byte per element.
-        x_fp8, x_scales = quantize_dynamic_block_scaled(
+    if x_scales is None:
+        x, x_scales = quantize_dynamic_block_scaled(
             x,
             sf_vector_size=32,
             scales_type=DType.float8_e8m0fnu,
             out_type=DType.float8_e4m3fn,
         )
-        return _matmul_float8_mxfp8_prequantized(
-            x_fp8, x_scales, weight, weight_scale
+    elif x.dtype != DType.float8_e4m3fn:
+        raise ValueError(
+            "a pre-quantized MXFP8 activation must be float8_e4m3fn, got"
+            f" {x.dtype}"
         )
 
-    x, x_scales = quantize_dynamic_block_scaled(
-        x,
-        sf_vector_size=32,
-        scales_type=DType.float8_e8m0fnu,
-        out_type=DType.float8_e4m3fn,
-    )
+    if _is_amd_gpu():
+        # AMD reads rank-2 E8M0 scales and raw byte operands; no rank-5 SF-atom
+        # interleave, and `lane_bytes=32` is derived from the operand dtype in
+        # the wrapper. Mirrors `_matmul_float4_mxfp4`, one byte per element.
+        return _matmul_float8_mxfp8_prequantized(
+            x, x_scales, weight, weight_scale
+        )
 
     weight_scale = weight_scale.to(x.device)
     # Lift the rank-2 [N, K/32] checkpoint scales into the rank-5 tcgen05

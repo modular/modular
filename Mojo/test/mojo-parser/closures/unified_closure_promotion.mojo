@@ -58,7 +58,7 @@ def trigger_dtype():
 
 # COM: Verify async closures instantiate the closure trait with async
 # COM: metadata and use an async call op.
-# S2-DAG: lit.struct.decl @"closure$async_unified_closure()::inc::__storage"{{.*}}#kgen.fn_metadata<{{.*}}"async|capturing"
+# S2-DAG: lit.struct.decl @"closure$async_unified_closure()::inc::__storage"{{.*}}#kgen.fn_metadata<{{.*}}"async"
 # S2-LABEL: lit.fn @"async_unified_closure()"
 # S2-DAG: lit.async.call[!lit.generator<
 
@@ -152,7 +152,7 @@ def trigger_promoted_param_wrapper[n: Int]():
 # S6: lit.alias.decl *"X`": !alias_Int1 = <apply(
 # S6-SAME: @"take_closure_param[{{.*}}]($0)"
 # S6-SAME: store_to_mem(apply_result_slot(
-# S6-SAME: @"inflated$def[::SIMD[DType.int, 1]](arg: ::SIMD[DType.int, 1]) capturing thin -> ::SIMD[DType.int, 1]|{{[0-9a-f]+}}"::@"__init__()"
+# S6-SAME: @"inflated$def[::SIMD[DType.int, 1]](arg: ::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]|{{[0-9a-f]+}}"::@"__init__()"
 # S6: lit.call @{{.*}}::@"take_closure_param
 
 
@@ -161,12 +161,11 @@ def take_closure_param[C: def[n: Int](arg: Int) -> Int](impl: C) -> Int:
     return impl[3](4)
 
 
-@__parameter
 def legacy(arg0: Int) -> Int:
     return arg0 + 3
 
 
-def s6_trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
+def s6_trigger[xx: Int, func: def(Int) thin -> Int]() -> Int:
     def wrapped_ok[n: Int](arg: Int) -> Int:
         return func(arg) + xx
 

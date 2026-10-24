@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 #
 # Fuzz target: MoE router `single_group_router` (the MiniMax-M3 `n_groups=1`
-# routing path -- one block per token, one thread per expert, warp-bitonic
-# top-k). It selects the top `n_experts_per_tok` experts by `score + bias`,
+# routing path -- one warp per token, one warp-argmax round per selected
+# expert). It selects the top `n_experts_per_tok` experts by `score + bias`,
 # then returns the UN-biased score, optionally normalized over the selected
 # set, times `routed_scaling_factor`. A wrong index sends a token to the wrong
 # expert -- a large, discrete accuracy error, not a rounding error.
@@ -32,16 +32,13 @@
 #     overflow-safe; `large`/`specials` are excluded from the ref auto-mix.
 #   contract (--contract 1): injects NaN/Inf/large specials and checks the
 #     SAFETY invariant -- every token's k expert indices are in
-#     [0, n_routed_experts) ALWAYS (an out-of-range index would OOB the
-#     downstream expert gather), and DISTINCT for tokens whose scores are all
-#     finite (a duplicate is double-routing). NaN/Inf scores break the sort's
-#     total order and cannot occur in production (the router input is sigmoid
-#     output in [0, 1]), so duplicates on a non-finite token are exempt -- a
-#     latent robustness gap, not a live bug.
+#     [0, n_routed_experts) and DISTINCT, whatever the scores (an
+#     out-of-range index would OOB the downstream expert gather, and a
+#     duplicate is double-routing).
 
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_bool, get_defined_int
-from std.utils.numerics import isfinite, neg_inf
+from std.utils.numerics import neg_inf
 
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
@@ -205,32 +202,16 @@ def _check_router(
     return True
 
 
-def _token_all_finite(scores: Span[Scalar[scores_type], _], t: Int) -> Bool:
-    """Whether every score for token `t` is finite."""
-    var base = t * N_EXPERTS
-    for e in range(N_EXPERTS):
-        if not isfinite(scores[base + e]):
-            return False
-    return True
-
-
-def _check_index_contract(
-    actual_idx: Span[Int32, _],
-    scores: Span[Scalar[scores_type], _],
-    num_tokens: Int,
-) -> Bool:
+def _check_index_contract(actual_idx: Span[Int32, _], num_tokens: Int) -> Bool:
     """Router safety contract:
 
-    - in-range ALWAYS: every written expert index is in [0, N_EXPERTS). An
+    - in-range: every written expert index is in [0, N_EXPERTS). An
       out-of-range index is a memory-safety bug regardless of input (it would
       OOB the downstream expert gather/dispatch).
-    - distinct for FINITE tokens only: a token whose scores are all finite must
-      get DISTINCT experts (a duplicate is double-routing). NaN/Inf scores break
-      the sort's total order and cannot occur in production (router input is
-      sigmoid output in [0, 1]), so duplicates on a non-finite token are exempt.
+    - distinct: a token never gets the same expert twice (a duplicate is
+      double-routing), NaN and Inf scores included.
     """
     for t in range(num_tokens):
-        var finite = _token_all_finite(scores, t)
         for j in range(TOPK):
             var idx = Int(actual_idx[t * TOPK + j])
             if idx < 0 or idx >= N_EXPERTS:
@@ -243,16 +224,15 @@ def _check_index_contract(
                     idx,
                 )
                 return False
-            if finite:
-                for j2 in range(j + 1, TOPK):
-                    if idx == Int(actual_idx[t * TOPK + j2]):
-                        print(
-                            "FUZZ_CONTRACT_FAIL kind=dup token=",
-                            t,
-                            "idx=",
-                            idx,
-                        )
-                        return False
+            for j2 in range(j + 1, TOPK):
+                if idx == Int(actual_idx[t * TOPK + j2]):
+                    print(
+                        "FUZZ_CONTRACT_FAIL kind=dup token=",
+                        t,
+                        "idx=",
+                        idx,
+                    )
+                    return False
     return True
 
 
@@ -304,9 +284,7 @@ def run_one_case(
         var idx_h = ctx.enqueue_create_host_buffer[.int32](nt * TOPK)
         ctx.enqueue_copy(idx_h, idx_dev)
         ctx.synchronize()
-        if not _check_index_contract(
-            idx_h.as_span(), scores_host.as_span(), nt
-        ):
+        if not _check_index_contract(idx_h.as_span(), nt):
             raise Error("MoE router index contract violated")
     elif check:
         var idx_h = ctx.enqueue_create_host_buffer[.int32](nt * TOPK)

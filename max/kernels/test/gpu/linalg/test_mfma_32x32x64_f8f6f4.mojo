@@ -30,7 +30,7 @@ from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Idx, TensorLayout, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -97,8 +97,8 @@ def _mfma_32x32x64_kernel[
         CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
     ](scaled_acc, a_frag, b_frag, two, one)
 
-    baseline_out.store[width=16](Coord(lane, Idx[0]), baseline_acc)
-    scaled_out.store[width=16](Coord(lane, Idx[0]), scaled_acc)
+    baseline_out.store((lane, Idx[0]), baseline_acc)
+    scaled_out.store((lane, Idx[0]), scaled_acc)
 
 
 def _run_mfma_32x32x64_smoke(ctx: DeviceContext) raises:
@@ -109,19 +109,20 @@ def _run_mfma_32x32x64_smoke(ctx: DeviceContext) raises:
     128.0 when scale_a is doubled. We assert on every element of every lane,
     not just a sample.
     """
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime accum_width = 16
-    comptime num_values = WARP_SIZE * accum_width  # 64 lanes * 16 floats = 1024
+    comptime num_values = warp_size * accum_width  # 64 lanes * 16 floats = 1024
 
     var baseline_device = ctx.enqueue_create_buffer[.float32](num_values)
     var scaled_device = ctx.enqueue_create_buffer[.float32](num_values)
 
     var baseline_tt = TileTensor(
         baseline_device,
-        row_major(Idx[WARP_SIZE], Idx[accum_width]),
+        row_major(Idx[warp_size], Idx[accum_width]),
     )
     var scaled_tt = TileTensor(
         scaled_device,
-        row_major(Idx[WARP_SIZE], Idx[accum_width]),
+        row_major(Idx[warp_size], Idx[accum_width]),
     )
 
     comptime kernel = _mfma_32x32x64_kernel[
@@ -133,7 +134,7 @@ def _run_mfma_32x32x64_smoke(ctx: DeviceContext) raises:
         baseline_tt.as_unsafe_any_origin(),
         scaled_tt.as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
 

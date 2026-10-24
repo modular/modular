@@ -35,6 +35,7 @@ class raw_indented_ostream;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class ASTType;
+class DefASTDecl;
 class IREmitter;
 class ExprNode;
 class FnTypeGeneratorType;
@@ -235,6 +236,7 @@ public:
   // These are the results of type checking 'params' in typeCheck.
   /// One ParamDeclAttr for each parameter being declared.
   SmallVector<ParamDeclAttr> paramDeclAttrs;
+  SmallVector<ASTDecl *> paramASTDecls;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
   SmallVector<VariadicKind> variadicKinds;
@@ -318,11 +320,11 @@ public:
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
   ///
-  /// 'fnDecl' will be null when this is a function type, which doesn't have a
-  /// declaration.
+  /// 'fnDecl' will be null when this is a function type, whose declarations
+  /// are owned by `paramList.declScope`.
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
-                         const ExprNode *originExpr, ASTDecl *fnDecl,
+                         const ExprNode *originExpr, DefASTDecl *fnDecl,
                          StringAttr baseName);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
@@ -346,6 +348,8 @@ public:
   /// This is the type checked argument types with argument conventions and
   /// origins applied, e.g. "!lit.ref<String>" or "!kgen.param_list<Int>"
   SmallVector<Type> fullArgTypes;
+  /// Argument declarations created while type-checking a function signature.
+  SmallVector<ASTDecl *> argASTDecls;
   SmallVector<ParamDeclAttr> implicitOriginDecls;
 
   /// This is the result type + variant for throwing functions.  This is what
@@ -372,7 +376,7 @@ public:
   /// the function's name (e.g. a deprecated '__del__' becomes '__deinit__'),
   /// so the caller's downstream use of the name (mangling, the symbol and
   /// source-name attributes) always sees the canonical form.
-  void verifyFunctionNameBinding(ASTDecl &decl, StringAttr &name);
+  void verifyFunctionNameBinding(DefASTDecl &decl, StringAttr &name);
 
   /// In a method with a self argument, check to make sure it has the correct
   /// type and invariants. "isSelfResult" is true for initializers that return

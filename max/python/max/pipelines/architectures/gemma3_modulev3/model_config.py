@@ -151,6 +151,17 @@ class Gemma3Config(
     quantization_encoding: SupportedEncoding | None = None
     """The resolved quantization encoding the model runs with."""
 
+    @property
+    def devices(self) -> list[DeviceRef]:
+        """Returns the devices in :attr:`mesh`.
+
+        Satisfies the ``devices`` member of ``ModelConfig`` in
+        :mod:`max.pipelines.kv_cache.memory_planner`. The paged planner
+        accepts a config through ``ModelConfigWithKVCache``, which requires
+        the ``get_kv_params`` member as well.
+        """
+        return [DeviceRef.from_device(device) for device in self.mesh.devices]
+
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Retrieves the number of hidden layers from the HuggingFace configuration.

@@ -24,10 +24,10 @@ package_group(
         "//Mojo/docs/site/...",
         "//bazel/...",
         "//docs/...",
-        "//max/python/max/_core/mcl/...",
+        "//max/docs/site/...",
+        "//max/python/max/_core/max_license/...",
         "//max/tests/internal/API/c/...",  # Only when testing internally
         "//oss/modular/bazel/...",
-        "//oss/modular/docs/...",
         "//oss/modular/max/python/max/_core/max_license/...",  # Only when testing internally
         "//plugins/...",
         "//utils/...",
@@ -283,7 +283,7 @@ td_library(
 mlir_nanobind(
     name = "KGENDialectNanobindInc",
     srcs = glob(["include/Mojo/KGENDialect/*.td"]),
-    allowlist = "//max/python/max/_core/mcl/modules/dialects:allowlist.txt",
+    allowlist = "//max/python/max/_core/max_license/modules/dialects:allowlist.txt",
     output_dir = "include/Mojo/KGENDialect/Nanobind",
     deps = [
         ":KGENDialectTdFiles",
@@ -1207,6 +1207,7 @@ modular_cc_library(
         ":ObjectCompiler.headers",  # For MetalAddressSpace.h
         ":TargetLowering",
         ":ToolCommon",
+        "//Support:Compiler",
         "//Support:DebugInfoTransforms",
         "@llvm-project//llvm:Support",  # For llvm/ADT/Triple.h
         "@llvm-project//mlir:IR",
@@ -1239,12 +1240,15 @@ modular_cc_library(
         "//Support:Context",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoTransforms",
+        "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:CAPIIRHeaders",
         "@llvm-project//mlir:CAPITransformsHeaders",
         "@llvm-project//mlir:IndexDialect",
         "@llvm-project//mlir:NVVMDialect",
         "@llvm-project//mlir:ROCDLDialect",
+        "@llvm-project//mlir:SCFDialect",
         "@llvm-project//mlir:TransformUtils",
+        "@llvm-project//mlir:UBDialect",
     ],
 )
 
@@ -1458,6 +1462,17 @@ modular_cc_library(
         "//Config",
         # DocGen.h exposes DiagnosticFormat in the DocGenConfig struct.
         "//Support:Driver",
+    ],
+)
+
+modular_cc_library(
+    name = "Precompile",
+    srcs = glob(["lib/Precompile/*.cpp"]),
+    hdrs = glob(["include/Mojo/Precompile/*.h"]),
+    deps = [
+        ":LITDialect",
+        "//Support:Compiler",
+        "//Support:DebugInfoDialect",
     ],
 )
 

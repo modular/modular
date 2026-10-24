@@ -158,19 +158,10 @@ def swap_container_fields(mut v: Container[_]):
 # Tuple Types
 ##===----------------------------------------------------------------------===##
 
-# FIXME: Empty tuple `Tuple[]` cannot be spelled.
-
 
 # CHECK-LABEL: lit.fn @"returnTup0
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> []
 def returnTup0() -> Tuple[]:
-    # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
-    return ()
-
-
-# CHECK-LABEL: lit.fn @"returnTup0a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> []
-def returnTup0a() -> ():
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 

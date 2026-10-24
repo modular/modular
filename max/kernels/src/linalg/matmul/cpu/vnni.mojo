@@ -94,6 +94,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
             tile_n_k: Dynamic tile sizes along the N and K dimensions.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
+        comptime assert a.flat_rank == 2, "a must be rank 2"
 
         comptime c_type = c_local.dtype
         # Seek outer indices in packed layout.
@@ -105,7 +106,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
 
         var b_ptr = b_packed.ptr_at_offset(
             Coord(n_outer_idx, kl // 4, Idx[0])
-        ).bitcast[Scalar[c_type]]()
+        ).unsafe_bitcast[Scalar[c_type]]()
 
         comptime if not is_tail:
             # Prefetch B matrix.
@@ -120,7 +121,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                         .for_read()
                         .high_locality()
                         .to_data_cache()
-                    ](b_ptr + (prefetch_offset + idx * simd_size))
+                    ](b_ptr.unsafe_offset(prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
         var K = Int(a.dim[1]())
@@ -129,7 +130,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var a_local = stack_allocation[
             dtype=a.dtype, address_space=a.address_space
         ](row_major[kernel_rows * 4]())
-        var a_base_ptr = a.ptr + (global_offset.M * K + global_k)
+        var a_base_ptr = a.ptr_at_offset(Coord(global_offset.M, global_k))
         var a_ptr = a_local.ptr if (
             is_tail
             and not CompilationTarget.has_avx512f()
@@ -157,19 +158,21 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 var a_val = (
                     bitcast[c_type, 1](
                         partial_simd_load[4](
-                            a_ptr + idx0 * a_ptr_stride, 0, tail_length, 0
+                            a_ptr.unsafe_offset(idx0 * a_ptr_stride),
+                            0,
+                            tail_length,
+                            0,
                         )
                     ) if (is_tail and CompilationTarget.has_avx512f()) else (
-                        a_ptr + idx0 * a_ptr_stride
+                        a_ptr.unsafe_offset(idx0 * a_ptr_stride)
                     )
-                    .bitcast[Scalar[c_type]]()
-                    .load()
+                    .unsafe_bitcast[Scalar[c_type]]()
+                    .unsafe_load()
                 )
 
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
-                # var c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local[idx0, idx1]
-                var b_val = (b_ptr + idx1 * simd_size).load[
+                var b_val = b_ptr.unsafe_offset(idx1 * simd_size).unsafe_load[
                     width=simd_size, alignment=alignment
                 ]()
 
@@ -228,10 +231,11 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 results.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
+        comptime assert c.flat_rank == 2, "c must be rank 2"
 
         var c_stride = Int(c.dim[1]())
 
-        var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr_at_offset(Coord(global_offset.M, global_offset.N))
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
@@ -247,7 +251,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                    rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -264,7 +268,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     b_packed,
                     acc,
                     global_offset,
-                    Index(idx_n, idx_k),
+                    (idx_n, idx_k),
                     tile_n_k,
                 )
             if kl != tile_n_k[1]:
@@ -273,11 +277,11 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     b_packed,
                     acc,
                     global_offset,
-                    Index(idx_n, kl),
+                    (idx_n, kl),
                     tile_n_k,
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

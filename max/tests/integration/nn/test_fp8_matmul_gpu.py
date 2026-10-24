@@ -507,7 +507,7 @@ def test_quantize_dynamic_scaled_float8_amax_floor(
                     amax_floor=amax_floor,
                 )
             )
-        graph.output(*outputs)
+        graph.output(outputs)
 
     compiled = gpu_session.load(graph)
 

@@ -21,7 +21,7 @@ Key abstraction:
 
 ## Unified Stage Types
 
-ProducerStage and ConsumerStage are linear types (`@explicit_destroy`) that work
+ProducerStage and ConsumerStage are linear types (`not Deinitable`) that work
 in both contexts:
 
 1. **Linear Type API** (flat, explicit):
@@ -125,7 +125,7 @@ struct ProducerConsumerPipeline[
     @inline(.always)
     def __init__(
         out self,
-        ptr: UnsafePointer[
+        ptr: MutPointer[
             Self.Backend.BarrierStorage,
             MutUntrackedOrigin,
             address_space=.SHARED,
@@ -506,12 +506,11 @@ struct ProducerConsumerPipeline[
 # =============================================================================
 
 
-@explicit_destroy("Must call release() to advance stage")
 struct ProducerStage[
     pipeline_origin: MutOrigin,
     num_stages: Int,
     Backend: PipelineBackend = NvidiaMbarBackend[num_stages],
-](not Deinitable, Movable):
+](not Deinitable else "Must call release() to advance stage", Movable):
     """Unified handle for producing to a pipeline stage.
 
     Works as both a linear type (direct use) and within context managers.
@@ -634,12 +633,14 @@ struct ProduceContext[
         self._stage^.deinit_assert_empty()
 
 
-@explicit_destroy("Must call release() or release_without_signal()")
 struct ConsumerStage[
     pipeline_origin: MutOrigin,
     num_stages: Int,
     Backend: PipelineBackend = NvidiaMbarBackend[num_stages],
-](not Deinitable, Movable):
+](
+    not Deinitable else "Must call release() or release_without_signal()",
+    Movable,
+):
     """Unified handle for consuming from a pipeline stage.
 
     Works as both a linear type (direct use) and within context managers.

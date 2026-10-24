@@ -181,7 +181,7 @@ def _run_graph_tower(
         patches, pos_ids, cu, pgi, msl = values
         # The graph tower takes one tensor per device for each ragged input.
         outputs = tower([patches], [pos_ids], [cu], [pgi], msl)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     compiled = session.load(graph, weights_registry=tower.state_dict())
     result = compiled.execute(*_input_buffers(inputs, device))[0]

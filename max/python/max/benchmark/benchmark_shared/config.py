@@ -22,7 +22,16 @@ from typing import Annotated, Any, Literal
 import yaml
 from cyclopts import Parameter
 from max.config import ConfigFileModel
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from openai.types.chat import ChatCompletionToolParam
+from openai.types.chat.completion_create_params import ResponseFormat
+from pydantic import (
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from .backend_names import Backend
 from .datasets import (
@@ -269,60 +278,61 @@ class BaseBenchmarkConfig(ConfigFileModel):
         return value
 
 
-def _mapping_from_argument(value: object, field: str) -> dict[str, Any]:
-    """Resolve one argument into a mapping, from any of its three spellings.
+# response_format and tools are typed as plain JSON containers because
+# cyclopts cannot take a union of TypedDicts as a flag; their validators check
+# the OpenAI shapes with these.
+_RESPONSE_FORMAT_ADAPTER: TypeAdapter[ResponseFormat] = TypeAdapter(
+    ResponseFormat
+)
+_TOOLS_ADAPTER: TypeAdapter[list[ChatCompletionToolParam]] = TypeAdapter(
+    list[ChatCompletionToolParam]
+)
 
-    A field holding structured data is reachable three ways: as a mapping
-    (from a config or workload YAML), as an inline JSON object string, and as
-    a path to a YAML/JSON file.
+
+def _json_from_argument(value: object, field: str, inline_start: str) -> object:
+    """Resolve one argument into parsed JSON, from any of its spellings.
+
+    A string is inline JSON when it starts with ``inline_start``, and
+    otherwise a path to a JSON/YAML file.
+    Anything else is already parsed, as from a config or workload YAML, and
+    passes through for the field's type to check.
 
     Args:
         value: The raw argument.
         field: The field's name, for error messages.
+        inline_start: The character an inline value starts with.
 
     Returns:
-        The resolved mapping.
+        The parsed value.
 
     Raises:
-        ValueError: If the string is neither an inline object nor a readable
-            file, the content fails to parse, or it does not resolve to an
-            object.
+        ValueError: If the string is neither inline JSON nor a readable
+            file, or the content fails to parse or is empty.
     """
-    if isinstance(value, Mapping):
-        return dict(value)
     if not isinstance(value, str):
-        raise ValueError(
-            f"{field} must be a mapping, an inline JSON string, or a path "
-            f"to a YAML/JSON file; got {type(value).__name__}."
-        )
+        return value
     text = value.strip()
-    if text.startswith("{"):
+    if text.startswith(inline_start):
         source, origin = text, "inline JSON"
     else:
         path = Path(text)
-        if not path.is_file():
-            raise ValueError(
-                f"{field} {text!r} is not a readable file path; "
-                "an inline value must be a JSON object starting "
-                "with '{'."
-            )
         try:
             source = path.read_text()
         except OSError as e:
             raise ValueError(
-                f"{field} {text!r} is not a readable file path: {e}"
+                f"{field} {text!r} is not a readable file path; an inline "
+                f"value must start with {inline_start!r}: {e}"
             ) from e
-        origin = f"file {text!r}"
+        origin = f"file {str(path)!r}"
     try:
         parsed = yaml.safe_load(source)
     except yaml.YAMLError as e:
         raise ValueError(f"Failed to parse {field} ({origin}): {e}") from e
-    if not isinstance(parsed, Mapping):
-        raise ValueError(
-            f"{field} ({origin}) must be a mapping/object, got "
-            f"{type(parsed).__name__}."
-        )
-    return dict(parsed)
+    # An empty or null-only file loads as None, which would silently unset
+    # the field.
+    if parsed is None:
+        raise ValueError(f"{field} ({origin}) is empty.")
+    return parsed
 
 
 class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
@@ -538,6 +548,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     max_output_len: int | None = Field(
         default=None,
+        gt=0,
         description="Maximum output length per request.",
         json_schema_extra={"group": "Output Control"},
     )
@@ -583,11 +594,16 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
-    response_format: str | None = Field(
+    # accepts_keys=False for the same reason extra_body needs it.
+    response_format: Annotated[
+        dict[str, Any] | None, Parameter(accepts_keys=False)
+    ] = Field(
         default=None,
         description=(
-            "JSON response format for structured output. Can be a JSON string "
-            "or '@path/to/schema.json' to load from file. "
+            "JSON response format for structured output. Can be a JSON string, "
+            "or a path to a JSON/YAML file ('path/to/schema.json'); in a "
+            "--workload-config YAML, a relative path resolves against the "
+            "YAML's directory, or the cwd when nothing is there. "
             'Example: \'{"type": "json_schema", "json_schema": {...}}\'. '
             "Applied to the share of traffic --response-format-fraction "
             "selects, except chat-judge workloads, whose driver builds its "
@@ -625,11 +641,17 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
-    tools: str | None = Field(
+    tools: Annotated[
+        list[dict[str, Any]] | None,
+        Parameter(accepts_keys=False),
+    ] = Field(
         default=None,
         description=(
             "OpenAI chat-completions tool definitions to send, as a JSON list "
-            "or '@path/to/tools.json' to load from file. Applied to the share "
+            "or a path to a JSON/YAML file ('path/to/tools.json'); in a "
+            "--workload-config YAML, a relative path resolves against the "
+            "YAML's directory, or the cwd when nothing is there. Applied to "
+            "the share "
             "of traffic --tools-fraction selects, except chat-judge "
             "workloads, whose driver builds its own requests, and requests "
             "whose dataset already attached tools. The rendered definitions "
@@ -1263,23 +1285,102 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         """Parse the flag from a mapping, inline JSON, or a file path.
 
         Raises:
-            ValueError: If the value does not resolve to a mapping.
+            ValueError: If a string is neither inline JSON nor a readable file.
         """
         if value is None or (isinstance(value, str) and not value.strip()):
             return None
-        return _mapping_from_argument(value, "agentic_tool_profiles")
+        return _json_from_argument(value, "agentic_tool_profiles", "{")
+
+    @field_validator("response_format", mode="before")
+    @classmethod
+    def _parse_response_format(cls, value: object) -> object:
+        """Parse ``response_format`` from a mapping, inline JSON, or a file.
+
+        Raises:
+            ValueError: If a string is neither inline JSON nor a readable file.
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        return _json_from_argument(value, "response_format", "{")
+
+    @field_validator("tools", mode="before")
+    @classmethod
+    def _parse_tools(cls, value: object) -> object:
+        """Parse ``tools`` from a list, inline JSON, or a file.
+
+        Raises:
+            ValueError: If a string is neither inline JSON nor a readable file.
+        """
+        # cyclopts hands a list-typed flag over as a list of its one token,
+        # which it has already JSON-decoded when it could.
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], (str, list))
+        ):
+            value = value[0]
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        return _json_from_argument(value, "tools", "[")
+
+    @field_validator("response_format")
+    @classmethod
+    def _check_response_format(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Check ``response_format`` against the OpenAI response formats.
+
+        Raises:
+            ValueError: If it matches none of them.
+        """
+        if value is None:
+            return None
+        # pydantic collects only ValueError and AssertionError from a
+        # validator.
+        try:
+            return dict(_RESPONSE_FORMAT_ADAPTER.validate_python(value))
+        except ValidationError as e:
+            raise ValueError(f"Invalid response_format: {e}") from e
+
+    @field_validator("tools")
+    @classmethod
+    def _check_tools(
+        cls, value: list[dict[str, Any]] | None
+    ) -> list[dict[str, Any]] | None:
+        """Check ``tools`` against the OpenAI tool definition.
+
+        Raises:
+            ValueError: If the list is empty, which would select requests
+                and send them no tools, or holds an invalid definition.
+        """
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("tools must hold at least one tool definition.")
+        try:
+            tools = _TOOLS_ADAPTER.validate_python(value)
+        except ValidationError as e:
+            raise ValueError(f"Invalid tools: {e}") from e
+        return [dict(tool) for tool in tools]
+
+    @property
+    def openai_response_format(self) -> ResponseFormat | None:
+        """``response_format`` as the OpenAI type its validator checked."""
+        if self.response_format is None:
+            return None
+        return _RESPONSE_FORMAT_ADAPTER.validate_python(self.response_format)
 
     @field_validator("extra_body", mode="before")
     @classmethod
-    def _parse_extra_body(cls, value: object) -> dict[str, Any]:
+    def _parse_extra_body(cls, value: object) -> object:
         """Parse ``extra_body`` from a mapping, inline JSON, or a file path.
 
         Raises:
-            ValueError: If the value does not resolve to a mapping.
+            ValueError: If a string is neither inline JSON nor a readable file.
         """
         if value is None or (isinstance(value, str) and not value.strip()):
             return {}
-        return _mapping_from_argument(value, "extra_body")
+        return _json_from_argument(value, "extra_body", "{")
 
     @model_validator(mode="after")
     def _check_warmup_runtime_estimates(self) -> ServingBenchmarkConfig:

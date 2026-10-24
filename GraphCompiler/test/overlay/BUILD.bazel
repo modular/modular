@@ -1,0 +1,60 @@
+load("//bazel:api.bzl", "lit_tests", "overlay_layer")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
+
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
+# Exercises the package overlay on //GraphCompiler (see
+# oss/modular/bazel/internal/overlay.bzl). Each replacement is its base file
+# with a snippet appended, so the fixture tracks the base files instead of
+# copying them. The snippets add an `mo.overlay_test` op (TableGen), a constant
+# it reports (header), and its verifier (source); the lit test only passes if
+# all three replacements reached the build.
+[
+    genrule(
+        name = path.rsplit("/", 1)[1] + ".gen",
+        srcs = [
+            "//GraphCompiler:" + path,
+            snippet,
+        ],
+        outs = ["overlay/" + path],
+        cmd = "cat $(SRCS) > $@",
+        tags = [ALLOW_UNUSED_TAG],
+    )
+    for path, snippet in [
+        ("include/GraphCompiler/MODialect/MOCompositeOps.td", "overlay_test_op.td"),
+        ("include/GraphCompiler/MODialect/MOOps.h", "overlay_test_op.h"),
+        ("lib/MODialect/MOOps.cpp", "overlay_test_op.cpp"),
+    ]
+]
+
+overlay_layer(
+    name = "fixture",
+    srcs = [
+        ":MOCompositeOps.td.gen",
+        ":MOOps.cpp.gen",
+        ":MOOps.h.gen",
+    ],
+    strip_prefix = "GraphCompiler/test/overlay/overlay/",
+    # Only reached through --//GraphCompiler:overlay, which the unused-targets
+    # query can't see.
+    tags = [ALLOW_UNUSED_TAG],
+    visibility = ["//GraphCompiler:__pkg__"],
+)
+
+config_setting(
+    name = "fixture_active",
+    flag_values = {"//GraphCompiler:overlay": ":fixture"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+lit_tests(
+    name = "test",
+    srcs = glob(["*.mlir"]),
+    target_compatible_with = select({
+        ":fixture_active": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tools = ["//GraphCompiler/tools/mo-opt"],
+)

@@ -14,9 +14,10 @@
 
 from .hash import assert_dif_hashes, assert_fill_factor, dif_bits
 from .test_utils import (
-    check_write_to,
     check_convertible_to_python,
+    check_niches,
     check_python_object,
+    check_write_to,
 )
 from .types import (
     AbortOnCopy,

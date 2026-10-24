@@ -48,35 +48,31 @@ def _check_rms_norm[cols: Int](rows: Int) raises:
     var x = _input(rows, cols)
     var out = List[Scalar[dtype]](length=rows * cols, fill=0)
     var gamma_h = List[Scalar[dtype]](length=cols, fill=1)
-    var gamma = TileTensor[mut=False](
-        gamma_h.unsafe_ptr(), row_major(Coord(Index(cols)))
-    )
+    var gamma = TileTensor[mut=False](gamma_h.unsafe_ptr(), row_major(cols))
     var x_ptr = x.unsafe_ptr()
     var out_ptr = out.unsafe_ptr()
-    comptime eps = Scalar[dtype](1e-5)
+    comptime eps = Float32(1e-5)
 
     @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](c: Coord) {var x_ptr} -> SIMD[dtype, width]:
-        var i = Int(c[0].value()) * cols + Int(c[1].value())
+        var i = Int(c[0]) * cols + Int(c[1])
         return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](c: Coord, v: SIMD[dtype, width]) {var out_ptr}:
-        var i = Int(c[0].value()) * cols + Int(c[1].value())
+        var i = Int(c[0]) * cols + Int(c[1])
         out_ptr.unsafe_offset(i).unsafe_store[width=width](v)
 
-    rms_norm[dtype, 2, target="cpu"](
+    rms_norm[dtype, 2, target="cpu", epsilon=eps, weight_offset=Float32(0)](
         input_fn,
         output_fn,
         Coord(Index(rows, cols)),
         cols,
         gamma,
-        eps,
-        Scalar[dtype](0),
     )
 
     for r in range(rows):
@@ -97,16 +93,14 @@ def _check_rms_norm[cols: Int](rows: Int) raises:
 def _check_softmax[cols: Int, logsoftmax: Bool = False](rows: Int) raises:
     var x = _input(rows, cols)
     var out = List[Scalar[dtype]](length=rows * cols, fill=0)
-    var out_t = TileTensor(
-        out.unsafe_ptr(), row_major(Coord(Index(rows, cols)))
-    )
+    var out_t = TileTensor(out.unsafe_ptr(), row_major(rows, cols))
     var x_ptr = x.unsafe_ptr()
 
     @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](c: Coord) {var x_ptr} -> SIMD[dtype, width]:
-        var i = Int(c[0].value()) * cols + Int(c[1].value())
+        var i = Int(c[0]) * cols + Int(c[1])
         return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
 
     softmax[dtype, 2, target="cpu", logsoftmax=logsoftmax](

@@ -129,6 +129,25 @@ def match_same_indent(x: Int):
         case_callee[2]()
 
 
+# CHECK-LABEL: lit.fn @"match_negative_int
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
+# CHECK:       [[NEG_ONE:%.*]] = kgen.param.constant: !Int = <{:scalar<index> -1}>
+# CHECK:       lit.call {{.*}}@"__eq__({{.*}}(%x, [[NEG_ONE]])
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 2
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 3
+def match_negative_int(x: Int):
+    match x:
+    case 0:
+        case_callee[0]()
+    case -0:
+        case_callee[1]()
+    case -1:
+        case_callee[2]()
+    case _:
+        case_callee[3]()
+
+
 # CHECK-LABEL: lit.fn @"match_indented_cases
 # CHECK:       kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK:       lit.call {{.*}}@"__eq__(
@@ -170,10 +189,14 @@ def match_indented_cases(x: Int):
 # CHECK:       }
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.match.complete
+# CHECK:       kgen.param.constant: !Int = <{:scalar<index> -1}>
+# CHECK:       kgen.param.constant: !Int = <{:scalar<index> -2}>
 def match_tuple_subject(point: Tuple[Int, Int]):
     match point:
     case (0, 0):
         case_callee[0]()
+    case (-0x1, -(2)):
+        case_callee[2]()
     case _:
         case_callee[1]()
 
@@ -187,9 +210,20 @@ def match_tuple_subject(point: Tuple[Int, Int]):
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
 def match_initializer_list(value: InitPattern):
     match value:
-    case {}:
+    case == {}:
         case_callee[0]()
-    case {1, offset=2}:
+    case == {1, offset=2}:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"match_initializer_fields
+# CHECK:       lit.ref.struct.ger {{.*}}[value]
+# CHECK:       lit.call {{.*}}@"__eq__(
+def match_initializer_fields(value: InitPattern):
+    match value:
+    case {value=0}:
+        case_callee[0]()
+    case _:
         case_callee[1]()
 
 
@@ -256,6 +290,63 @@ def match_with_guard(x: Int, c: Int):
         case_callee[1]()
 
 
+# CHECK-LABEL: lit.fn @"match_guarded_literal_fallback
+# CHECK:       [[MODE:%.*]] = lit.var.decl "mode" var
+# CHECK:       hlcf.match {
+# CHECK:         hlcf.if %{{.*}} {
+# CHECK-NEXT:      hlcf.match {
+# CHECK:           case {
+# CHECK:             lit.ref.store {{.*}}, [[MODE]]
+# CHECK-NEXT:        hlcf.match.complete
+# CHECK-NEXT:      } else {
+# CHECK-NEXT:        hlcf.unreachable
+# CHECK-NEXT:      }
+# CHECK-NEXT:      hlcf.match.complete
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    }
+# CHECK-NEXT:    hlcf.match.next
+# CHECK:         hlcf.match.complete
+# CHECK:       [[RESULT:%.*]] = lit.ref.load [[MODE]]
+# CHECK-NEXT:  lit.return [[RESULT]]
+def match_guarded_literal_fallback(x: Int) -> Int:
+    var mode = 0
+    match x:
+    case 1 if mode == 0:
+        mode = 2
+    case 1:
+        mode = 3
+    case _:
+        pass
+    return mode
+
+
+# CHECK-LABEL: lit.fn @"match_guarded_literal_fallthrough
+# CHECK:       hlcf.match {
+# CHECK:         hlcf.if %{{.*}} {
+# CHECK-NEXT:      hlcf.match {
+# CHECK:             lit.call {{.*}}@"case_callee{{.*}}<index> 1
+# CHECK-NEXT:        hlcf.match.complete
+# CHECK-NEXT:      } else {
+# CHECK-NEXT:        hlcf.match.next
+# CHECK-NEXT:      }
+# CHECK-NEXT:      hlcf.match.complete
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    }
+# CHECK-NEXT:    hlcf.match.next
+# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
+# CHECK-NEXT:    hlcf.match.complete
+def match_guarded_literal_fallthrough(x: Int, c: Bool, d: Bool):
+    match x:
+    case 1 if c:
+        case_callee[0]()
+    case 1 if d:
+        case_callee[1]()
+    case _:
+        case_callee[2]()
+
+
 # CHECK-LABEL: lit.fn @"match_case_body
 # CHECK:       kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK:       lit.call {{.*}}@"__eq__(
@@ -291,6 +382,15 @@ def match_float(x: Float64):
         case_callee[0]()
     case _:
         case_callee[1]()
+
+    # CHECK:       lit.call {{.*}}@"__eq__(
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 2
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 3
+    match x:
+    case -1.5:
+        case_callee[2]()
+    case _:
+        case_callee[3]()
 
 
 # CHECK-LABEL: lit.fn @"match_string
@@ -340,49 +440,17 @@ def match_bool(x: Bool):
         case_callee[2]()
 
 
-# EnumLike Color with inferred-member patterns (e.g. `case .red`).
-struct Color(ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_names = ParameterList.of[
-        "red".value, "green".value, "blue".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, NoneType, NoneType
-    ].values
-
-    def __init__(out self):
-        pass
-
-    def _get_enum_discriminant(self) -> Int:
-        return 0
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
-        # No payload. The body only exists so the trait method is implemented.
-        while True:
-            pass
+# Enum Color with inferred-member patterns (e.g. `case .red`).
+__enum Color(ImplicitlyCopyable):
+    case red
+    case green
+    case blue
 
 
-struct OpenColor(ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_names = ParameterList.of[
-        "red".value, "green".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, NoneType
-    ].values
+__enum OpenColor(ImplicitlyCopyable):
+    case red
+    case green
     comptime _enum_is_exhaustive = False
-
-    def __init__(out self):
-        pass
-
-    def _get_enum_discriminant(self) -> Int:
-        return 0
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
-        while True:
-            pass
 
 
 # An open enum does not require every known case to appear.
@@ -1041,6 +1109,9 @@ def comptime_match_literals[x: Int]():
     # CHECK:      hlcf.comptime.if {{.*}}identical{{.*}}#lit.struct.extract<:!Int x, "_mlir_value">{{.*}}0{{.*}} {
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:        hlcf.comptime.yield
+    # CHECK:      } elif {{.*}}identical{{.*}}#lit.struct.extract<:!Int x, "_mlir_value">{{.*}}-1{{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 3
+    # CHECK:        hlcf.comptime.yield
     # CHECK:      } elif {{.*}}identical{{.*}}#lit.struct.extract<:!Int x, "_mlir_value">{{.*}}1{{.*}} {
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:        hlcf.comptime.yield
@@ -1051,6 +1122,8 @@ def comptime_match_literals[x: Int]():
     comptime match x:
     case 0:
         case_callee[0]()
+    case -1:
+        case_callee[3]()
     case 1:
         case_callee[1]()
     case _:
@@ -1063,8 +1136,13 @@ def match_explicit_values(
 ):
     # A prefix-equality pattern compares against an existing value instead of
     # introducing a binding.
+    # CHECK:       kgen.param.constant: !Int = <{:scalar<index> 0}>
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 6
     # CHECK:       lit.call {{.*}}@"__eq__(::SIMD{{.*}}(%value, %expected)
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
     match value:
+    case 0:
+        case_callee[6]()
     case == expected:
         case_callee[0]()
     case _:

@@ -60,8 +60,62 @@ class PagedKVCacheManagerInterface(ABC):
         """Counts each replica's contiguous cached prefix for a request."""
 
     @abstractmethod
-    def alloc(self, ctx: TextContext) -> KVTransfer:
-        """Allocates blocks for a request."""
+    def alloc(
+        self, ctx: TextContext, *, defer_lookup: bool = False
+    ) -> KVTransfer:
+        """Allocates blocks for a request.
+
+        ``defer_lookup`` says the caller holds the request out of the batch
+        while the returned transfer is incomplete and calls ``alloc`` again
+        once it completes. Only then may a connector lookup run off the
+        calling thread, since the request then holds no pages until that
+        next call. A caller that reads the request's blocks right after this
+        returns leaves it off.
+        """
+
+    def starts_lookup(self, ctx: TextContext) -> bool:
+        """Returns whether a deferred ``alloc`` would start a connector lookup.
+
+        Takes nothing, so a caller that bounds how many lookups it has out can
+        hold the request back before one is started. A manager that never
+        defers a lookup reads ``False``.
+        """
+        return False
+
+    def start_lookup(self, ctx: TextContext) -> KVTransfer:
+        """Starts the lookup a deferred ``alloc`` would start, taking no pages.
+
+        For a request that has to wait its turn anyway, so the lookup runs
+        while it waits. Asked only when ``starts_lookup`` reads ``True``, so
+        a manager that never defers a lookup is never asked.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} never starts a deferred lookup"
+        )
+
+    def awaits_lookup(self, ctx: TextContext) -> bool:
+        """Returns whether the request's last ``alloc`` left a lookup out.
+
+        Read after a deferred ``alloc``, so a caller counts only the lookups
+        that actually hold a request out, re-asks included. A manager that
+        never defers a lookup reads ``False``.
+        """
+        return False
+
+    def hand_back_lookup(self, ctx: TextContext) -> bool:
+        """Hands back the request's lookup without loading from it.
+
+        For a request whose answered lookup would otherwise wait in a queue
+        past its lease. Its next deferred ``alloc`` starts a fresh one. A
+        manager may keep the lookup instead, for one that already gave up, a
+        request handed back too often, or an answer still fresh enough to
+        load. A manager that never defers a lookup has nothing to hand back.
+
+        Returns ``False`` when the manager kept an answer a later call may
+        still hand back, and ``True`` when there is nothing left to hand
+        back.
+        """
+        return True
 
     @abstractmethod
     def runtime_inputs(

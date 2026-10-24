@@ -172,73 +172,69 @@ For each function call, output the function name and arguments within the follow
     {%- if block_start > 0 and messages[block_start - 1].role == 'assistant' and messages[block_start - 1].tool_calls -%}
         {%- set ns_a.tool_calls = messages[block_start - 1].tool_calls -%}
     {%- endif -%}
-    {%- set ns_chk = namespace(can_sort=true) -%}
+    {%- set ns_chk = namespace(can_sort=true, res=[], mk=[], ek=[], tcs=[]) -%}
+    {%- for k in range(block_start, ns_blk.end + 1) -%}
+        {%- set m = messages[k] -%}
+        {%- if is_list_of_outputs(m) -%}
+            {%- for entry in m.content -%}
+                {%- set ns_chk.res = ns_chk.res + [id_of(entry)] -%}
+                {%- set ns_chk.mk = ns_chk.mk + [k] -%}
+                {%- set ns_chk.ek = ns_chk.ek + [loop.index0] -%}
+            {%- endfor -%}
+        {%- else -%}
+            {%- set ns_chk.res = ns_chk.res + [id_of(m)] -%}
+            {%- set ns_chk.mk = ns_chk.mk + [k] -%}
+            {%- set ns_chk.ek = ns_chk.ek + [-1] -%}
+        {%- endif -%}
+    {%- endfor -%}
     {%- if not ns_a.tool_calls -%}
         {%- set ns_chk.can_sort = false -%}
     {%- else -%}
-        {%- for k in range(block_start, ns_blk.end + 1) -%}
-            {%- if not ns_chk.can_sort -%}{%- break -%}{%- endif -%}
-            {%- set m = messages[k] -%}
-            {%- if is_list_of_outputs(m) -%}
-                {%- for entry in m.content -%}
-                    {%- if not ns_chk.can_sort -%}{%- break -%}{%- endif -%}
-                    {%- set eid = id_of(entry) -%}
-                    {%- if not eid -%}
-                        {%- set ns_chk.can_sort = false -%}
-                    {%- elif has_dup_tool_result_id(block_start, ns_blk.end, eid) -%}
-                        {%- set ns_chk.can_sort = false -%}
-                    {%- elif not tc_id_exists(ns_a.tool_calls, eid) -%}
-                        {%- set ns_chk.can_sort = false -%}
-                    {%- endif -%}
-                {%- endfor -%}
-            {%- else -%}
-                {%- set tk_id = id_of(m) -%}
-                {%- if not tk_id -%}
-                    {%- set ns_chk.can_sort = false -%}
-                {%- elif has_dup_tool_result_id(block_start, ns_blk.end, tk_id) -%}
-                    {%- set ns_chk.can_sort = false -%}
-                {%- elif not tc_id_exists(ns_a.tool_calls, tk_id) -%}
-                    {%- set ns_chk.can_sort = false -%}
-                {%- endif -%}
-            {%- endif -%}
+        {%- for tc in ns_a.tool_calls -%}
+            {%- set ns_chk.tcs = ns_chk.tcs + [id_of(tc)] -%}
         {%- endfor -%}
-        {%- for i in range(ns_a.tool_calls | length) -%}
-            {%- if not ns_chk.can_sort -%}{%- break -%}{%- endif -%}
-            {%- set tc_id = id_of(ns_a.tool_calls[i]) -%}
-            {%- if not tc_id -%}
-                {%- set ns_chk.can_sort = false -%}
-            {%- endif -%}
-            {%- for j in range(i + 1, ns_a.tool_calls | length) -%}
-                {%- if id_of(ns_a.tool_calls[j]) == tc_id -%}
+        {%- if '' in ns_chk.res or '' in ns_chk.tcs -%}
+            {%- set ns_chk.can_sort = false -%}
+        {%- elif ns_chk.res | unique(case_sensitive=true) | list | length != ns_chk.res | length -%}
+            {%- set ns_chk.can_sort = false -%}
+        {%- elif ns_chk.tcs | unique(case_sensitive=true) | list | length != ns_chk.tcs | length -%}
+            {%- set ns_chk.can_sort = false -%}
+        {%- else -%}
+            {%- for eid in ns_chk.res -%}
+                {%- if eid not in ns_chk.tcs -%}
                     {%- set ns_chk.can_sort = false -%}
                     {%- break -%}
                 {%- endif -%}
             {%- endfor -%}
-        {%- endfor -%}
+        {%- endif -%}
     {%- endif -%}
     {%- if ns_chk.can_sort -%}
-        {%- for tc in ns_a.tool_calls -%}
-            {%- set tc_id = id_of(tc) -%}
-            {%- for k in range(block_start, ns_blk.end + 1) -%}
-                {%- set m = messages[k] -%}
-                {%- if is_list_of_outputs(m) -%}
-                    {%- for entry in m.content -%}
-                        {%- set eid = id_of(entry) -%}
-                        {%- if eid == tc_id -%}
-                            {%- if entry.output is iterable and entry.output is not string and entry.output is not mapping and entry.output and entry.output.0.type == "tool_reference" -%}
-                                {{- tool_references_to_response(entry.output) -}}
-                            {%- else -%}
-                                {{- tool_response(visible_text(entry.output)) -}}
-                            {%- endif -%}
-                        {%- endif -%}
-                    {%- endfor -%}
+        {%- set ns_ord = namespace(res=[], tcs=[], j=0, pairs=[]) -%}
+        {%- for eid in ns_chk.res -%}
+            {%- set ns_ord.res = ns_ord.res + [{'id': eid, 'p': loop.index0}] -%}
+        {%- endfor -%}
+        {%- for tc_id in ns_chk.tcs -%}
+            {%- set ns_ord.tcs = ns_ord.tcs + [{'id': tc_id, 'i': loop.index0}] -%}
+        {%- endfor -%}
+        {%- set ns_ord.res = ns_ord.res | sort(attribute='id', case_sensitive=true) -%}
+        {%- for tc in ns_ord.tcs | sort(attribute='id', case_sensitive=true) -%}
+            {%- if ns_ord.j < ns_ord.res | length and ns_ord.res[ns_ord.j].id == tc.id -%}
+                {%- set ns_ord.pairs = ns_ord.pairs + [{'i': tc.i, 'p': ns_ord.res[ns_ord.j].p}] -%}
+                {%- set ns_ord.j = ns_ord.j + 1 -%}
+            {%- endif -%}
+        {%- endfor -%}
+        {%- for pair in ns_ord.pairs | sort(attribute='i') -%}
+            {%- set m = messages[ns_chk.mk[pair.p]] -%}
+            {%- if ns_chk.ek[pair.p] >= 0 -%}
+                {%- set entry = m.content[ns_chk.ek[pair.p]] -%}
+                {%- if entry.output is iterable and entry.output is not string and entry.output is not mapping and entry.output and entry.output.0.type == "tool_reference" -%}
+                    {{- tool_references_to_response(entry.output) -}}
                 {%- else -%}
-                    {%- set tk_id = id_of(m) -%}
-                    {%- if tk_id == tc_id -%}
-                        {{- render_tool_response(m) -}}
-                    {%- endif -%}
+                    {{- tool_response(visible_text(entry.output)) -}}
                 {%- endif -%}
-            {%- endfor -%}
+            {%- else -%}
+                {{- render_tool_response(m) -}}
+            {%- endif -%}
         {%- endfor -%}
     {%- else -%}
         {%- for k in range(block_start, ns_blk.end + 1) -%}

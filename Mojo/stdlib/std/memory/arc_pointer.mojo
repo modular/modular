@@ -25,7 +25,7 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.memory.maybe_uninit import MaybeUninit
 from std.memory.alloc import (
     alloc,
@@ -284,7 +284,7 @@ struct ArcPointer[T: Movable & Deinitable](
         if self._inner[].drop_weak():
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._inner).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
 
@@ -551,7 +551,7 @@ struct WeakPointer[T: Movable & Deinitable](
             dealloc(
                 ThinAllocation(
                     unsafe_owned_ptr=self._inner.unsafe_value()
-                ).unsafe_with_layout({count = 1})
+                ).unsafe_with_layout({length = 1})
             )
 
     def try_upgrade(self) -> Optional[ArcPointer[Self.T]]:

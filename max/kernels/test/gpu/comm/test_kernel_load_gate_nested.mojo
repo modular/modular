@@ -117,8 +117,7 @@ def _run_scenario[
     var collective_error = Optional[Error]()
 
     @inline(.always)
-    @__parameter
-    __async def opener() -> None:
+    __async def opener() {mut collective_error, var} -> None:
         _mark(start_ns, "opener: opening collective")
         try:
             _open_collective[hold_window=True](
@@ -128,9 +127,14 @@ def _run_scenario[
             collective_error = e^
         _mark(start_ns, "opener: collective closed")
 
+    # TODO(MOCO-5158): an async closure whose captures are all
+    # register-passable is invoked with a pointer to a by-value context.
+    # Capturing a String makes the context memory-only; drop it with the fix.
+    var memory_only = String()
+
     @inline(.always)
-    @__parameter
-    __async def loader() -> None:
+    __async def loader() {var} -> None:
+        _ = memory_only
         comptime if inner_collective:
             _mark(start_ns, "loader: opening inner collective")
             try:

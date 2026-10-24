@@ -103,7 +103,7 @@ kgen.generator @kernel<dtype: dtype>(%arg0: !kgen.simd<4, dtype>) -> !kgen.simd<
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: kgen.param.constant{{.*}}!DICompositeType(tag: DW_TAG_array_type, name: \22!kgen.simd<4, ui32>\22
-  kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(!kgen.simd<4, ui32>) -> (!kgen.simd<4, ui32>) @kernel<:dtype ui32>>>
+  kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(!kgen.simd<4, ui32>) -> (!kgen.simd<4, ui32>) @kernel<:dtype ui32>>>
   hlcf.return
 }
 

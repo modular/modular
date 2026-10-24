@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only NVFP4 (W4A16) matmul on the 16x32x16 `matmul2d` tile.
 
-Target: Apple M5 (`compute_capability == 5`) only.
+Target: Apple M5 and newer (`compute_capability >= 5`).
 
 `out = activation @ weight^T` where the FP4 weight stays PACKED in DRAM
 (`uint8 [N, K//2]` lo-nibble first + `float8_e4m3fn [N, K//16]` block scales).
@@ -72,7 +72,6 @@ from layout.coord import Coord
 from layout.tile_layout import Layout, TensorLayout
 
 from linalg.fp4_utils import decode_e2m1_to_f32, NVFP4_SF_VECTOR_SIZE
-from linalg.utils import elementwise_epilogue_type
 
 
 # ===----------------------------------------------------------------------=== #
@@ -93,8 +92,8 @@ comptime M2D_N = 32
 comptime M2D_K = 16
 
 
-def _require_apple_m5(ctx: DeviceContext) raises:
-    """Runtime guard: reject a non-Apple-M5 GPU at the host enqueue entry.
+def _require_apple_m5_or_newer(ctx: DeviceContext) raises:
+    """Runtime guard: reject a pre-M5 Apple GPU at the host enqueue entry.
 
     The kernel body uses the Apple simdgroup MMA (`_mma_apple`), which compiles
     for any Apple GPU target, so the Metal-4 / M5 requirement is enforced at
@@ -104,11 +103,11 @@ def _require_apple_m5(ctx: DeviceContext) raises:
     comptime assert).
     """
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "matmul2d W4A16 (Apple M5 NVFP4) requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "matmul2d W4A16 (Apple M5 NVFP4) requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -448,7 +447,7 @@ struct Fp4WeightLoader[
             var k_abs0 = k0 + cb  # even (k0 mult 16, cb mult 4)
             # One 2-byte packed load -> 4 nibbles (k = cb .. cb+3).
             var two = self.packed.load[width=2, alignment=1](
-                Coord(n_abs, k_abs0 // 2)
+                (n_abs, k_abs0 // 2)
             )
             var pw = UInt16(two[0]) | (UInt16(two[1]) << UInt16(8))
             var nib = SIMD[.uint16, 4](0)
@@ -523,7 +522,7 @@ struct Fp4WeightLoader[
         """
         var byte0 = col0 // 2  # first packed byte in this row's strip
         var bytes = self.packed.load[width=bytes_per_thread, alignment=1](
-            Coord(n_abs, (k0 // 2) + byte0)
+            (n_abs, (k0 // 2) + byte0)
         )
         var nib = SIMD[.uint16, cols_per_thread](0)
         comptime for j in range(bytes_per_thread):
@@ -534,12 +533,11 @@ struct Fp4WeightLoader[
             self.scales[n_abs, (k0 + col0) // Self.SF][0].cast[.float32]()
         )
         var dec = (decode_e2m1_to_f32(nib) * scale_abs).cast[Self.in_type]()
-        b_view.store[width=cols_per_thread](Coord(n_local, col0), dec)
+        b_view.store((n_local, col0), dec)
 
 
 struct Matmul2dFp4[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_sg_m: Int = 2,
     num_sg_n: Int = 2,
     tm: Int = 2,
@@ -554,8 +552,6 @@ struct Matmul2dFp4[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract). Currently unused on the interior store; wired for parity.
         num_sg_m: Simdgroup rows per threadgroup.
         num_sg_n: Simdgroup cols per threadgroup.
         tm: Output 16x32 tiles per simdgroup along M (register-C accumulators).
@@ -737,8 +733,8 @@ struct Matmul2dFp4[
                     var gm = trow0 + c_rc[i][0]
                     var gn = tcol0 + c_rc[i][1]
                     if gm < M and gn < N:
-                        c.store[width=1](
-                            Coord(gm, gn),
+                        c.store(
+                            (gm, gn),
                             SIMD[Self.c_type, 1](cv[i].cast[Self.c_type]()),
                         )
 
@@ -944,8 +940,8 @@ struct Matmul2dFp4[
                     var gm = trow0 + c_rc[i][0]
                     var gn = tcol0 + c_rc[i][1]
                     if gm < M and gn < N:
-                        c.store[width=1](
-                            Coord(gm, gn),
+                        c.store(
+                            (gm, gn),
                             SIMD[Self.c_type, 1](cv[i].cast[Self.c_type]()),
                         )
 
@@ -953,7 +949,6 @@ struct Matmul2dFp4[
 @inline(.always)
 def enqueue_matmul2d_fp4[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_sg_m: Int = 2,
     num_sg_n: Int = 2,
     tm: Int = 2,
@@ -979,8 +974,6 @@ def enqueue_matmul2d_fp4[
     Parameters:
         c_type: Output element type; one of `fp16`, `bf16`, `fp32` (defaults
             to `float32`). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue applying a per-element
-            transform to the output (defaults to `None`).
         num_sg_m: Simdgroup rows per threadgroup (defaults to 2).
         num_sg_n: Simdgroup cols per threadgroup (defaults to 2).
         tm: Output 16x32 tiles per simdgroup along M (defaults to 2).
@@ -997,13 +990,12 @@ def enqueue_matmul2d_fp4[
         ctx: Device context used to enqueue the kernel.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime MM = Matmul2dFp4[
         c_type,
-        elementwise_lambda_fn,
         num_sg_m,
         num_sg_n,
         tm,
@@ -1011,11 +1003,11 @@ def enqueue_matmul2d_fp4[
     ]
 
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_matmul2d_fp4 requires Apple M5 (compute_capability =="
-                " 5); got compute_capability="
+                "enqueue_matmul2d_fp4 requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -1062,7 +1054,6 @@ def enqueue_matmul2d_fp4[
 @inline(.always)
 def enqueue_matmul2d_fp4_smem[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     # Production default = the M5-Max-tuned geometry: 16 simdgroups (512 threads)
     # sharing a NARROW BN=32 decoded B tile (tm=4, tn=1) with a DEEP smem_bk=256
     # strip. Amortizes the barrier + un-overlappable decode over 16 co-resident
@@ -1102,8 +1093,6 @@ def enqueue_matmul2d_fp4_smem[
     Parameters:
         c_type: Output element type; one of `fp16`, `bf16`, `fp32` (defaults
             to `float32`). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue applying a per-element
-            transform to the output (defaults to `None`).
         num_sg_m: Simdgroup rows per threadgroup (defaults to 16).
         num_sg_n: Simdgroup cols per threadgroup (defaults to 1).
         tm: Output 16x32 tiles per simdgroup along M (defaults to 4).
@@ -1121,13 +1110,12 @@ def enqueue_matmul2d_fp4_smem[
         ctx: Device context used to enqueue the kernel.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime MM = Matmul2dFp4[
         c_type,
-        elementwise_lambda_fn,
         num_sg_m,
         num_sg_n,
         tm,
@@ -1136,11 +1124,11 @@ def enqueue_matmul2d_fp4_smem[
     ]
 
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_matmul2d_fp4_smem requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "enqueue_matmul2d_fp4_smem requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )

@@ -68,11 +68,11 @@ def block_scaled_matmul_fp8_ref(
         return
 
     var k_groups = K // MXFP8_SF_VECTOR_SIZE
-    var am_scales = a_scales_ptr + m * k_groups
-    var bn_scales = b_scales_ptr + n * k_groups
+    var am_scales = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales = b_scales_ptr.unsafe_offset(n * k_groups)
     # One byte per element at MXFP8, so the row stride is K (not K // 2).
-    var am = (a_ptr + m * K).bitcast[Float8_e4m3fn]()
-    var bn = (b_ptr + n * K).bitcast[Float8_e4m3fn]()
+    var am = a_ptr.unsafe_offset(m * K).unsafe_bitcast[Float8_e4m3fn]()
+    var bn = b_ptr.unsafe_offset(n * K).unsafe_bitcast[Float8_e4m3fn]()
 
     var accum = Float32(0)
     for ko in range(k_groups):
@@ -83,8 +83,8 @@ def block_scaled_matmul_fp8_ref(
         for ki in range(MXFP8_SF_VECTOR_SIZE):
             part += am[ki].cast[.float32]() * bn[ki].cast[.float32]()
         accum += part * a_scale * b_scale
-        am += MXFP8_SF_VECTOR_SIZE
-        bn += MXFP8_SF_VECTOR_SIZE
+        am = am.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
+        bn = bn.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
 
     c_ptr[m * N + n] = accum
 

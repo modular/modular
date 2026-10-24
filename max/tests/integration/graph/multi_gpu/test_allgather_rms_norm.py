@@ -17,7 +17,7 @@ The only test that runs the Mojo handler: the kernel-level test re-implements th
 grouping itself, so it cannot catch a handler bug (wrong group window, wrong
 gamma index, wrong output arity). Exercises both dispatch branches -- the fused
 kernel (decode M, below the fuse threshold) and the two-launch fallback (prefill
-M, standalone all-gather + rms_norm_gpu through the @__copy_capture closures) --
+M, standalone all-gather + rms_norm_gpu through the copy-capture closures) --
 full-world and grouped, with a DISTINCT gamma per device so a gamma indexed by
 the group-local rank instead of the device index fails here.
 """

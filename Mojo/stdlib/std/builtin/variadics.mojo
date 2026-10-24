@@ -179,7 +179,6 @@ struct TypeList[
 
     comptime _IndexToIntTypeTabulateWrap[
         Trait: type_of(AnyType),
-        ToT: Trait,
         //,
         ToWrap: __generator_type[Idx: Int] Trait,
         idx: __mlir_type.index,
@@ -187,7 +186,6 @@ struct TypeList[
 
     comptime tabulate[
         Trait: type_of(AnyType),
-        ToT: Trait,
         //,
         count: Int,
         Mapper: __generator_type[Idx: Int] Trait,
@@ -197,7 +195,7 @@ struct TypeList[
             `#kgen.param_list.tabulate<`,
             count.__mlir_index__(),
             `,`,
-            Self._IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+            Self._IndexToIntTypeTabulateWrap[Trait=Trait, Mapper, ...],
             `> : `,
             _MLIR.KGENParamListType[Trait],
         ],
@@ -206,7 +204,6 @@ struct TypeList[
 
     Parameters:
         Trait: The trait of the generated TypeList.
-        ToT: The type of the values in the generated TypeList.
         count: The number of times to apply the generator, the length of the result..
         Mapper: The generator to apply, mapping from Int to ToT.
     """
@@ -593,7 +590,7 @@ struct _ParameterListIter[type: Copyable, //, *values: type](
     ) raises StopIteration -> ref[ImmStaticOrigin] Self.type:
         var index = self.index
 
-        if index >= Self.values.size:
+        if index >= Self.values.length:
             raise StopIteration()
         self.index = index + 1
         return Self.values[index]
@@ -603,7 +600,7 @@ struct _ParameterListIter[type: Copyable, //, *values: type](
 
     @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = Self.values.size - self.index
+        var len = Self.values.length - self.index
         return (len, {len})
 
 
@@ -633,7 +630,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     def sum_values[*args: Int]():
 
         # Iterate over elements at compile time
-        comptime for i in range(args.size):  # can also use len() at comptime
+        comptime for i in range(args.length):  # can also use len() at comptime
 
             # print() below is a run-time call, so placing args[i] directly inside
             # it will invoke run-time access and not compile-time access; both share
@@ -646,7 +643,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
 
         # Iterate over elements at run-time
         var total = 0
-        for i in range(len(args)): # can also use the comptime args.size
+        for i in range(len(args)): # can also use the comptime args.length
             total += args[i]
 
         print(total)
@@ -667,7 +664,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     comptime _mlir_type = _MLIR.KGENParamListType[Self.type]
     """The low-level MLIR type of the parameter list."""
 
-    comptime size: Int = Int(
+    comptime length: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             Self._mlir_type,
@@ -689,7 +686,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         Returns:
             The number of elements on the variadic list.
         """
-        return Self.size
+        return Self.length
 
     @staticmethod
     def get_span() -> Span[Self.type, ImmStaticOrigin]:
@@ -711,7 +708,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         ref static_array = global_constant[array]()
         # Get a pointer to the first element, not the whole array.
         var first_elt = Pointer(to=static_array).unsafe_bitcast[Self.type]()
-        return Span(unsafe_ptr=first_elt, length=Self.size)
+        return Span(unsafe_ptr=first_elt, length=Self.length)
 
     @inline(.always)
     def __getitem__(self, idx: Int) -> ref[ImmStaticOrigin] Self.type:
@@ -968,7 +965,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         Mapper: __generator_type[Elt: Self.type] Trait,
     ] = TypeList.tabulate[
         Trait=Trait,
-        Self.size,
+        Self.length,
         Self._MapToTypeTabulator[Trait=Trait, Mapper=Mapper, idx=_],
     ]
     """Convert each element of this list into a type, forming a TypeList with
@@ -1164,9 +1161,7 @@ struct VariadicList[
         """
         # Convert the !lit.ref to a pointer, then cast to a pointer to
         # the first element.
-        var array_up = Pointer(
-            to=Pointer(_mlir_value=value)[]
-        ).unsafe_origin_cast[ImmUntrackedOrigin]()
+        var array_up = Pointer(to=Pointer(_mlir_value=value)[])
         var elt_ptr = Pointer[_, ImmUntrackedOrigin](
             _mlir_value=__mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
@@ -1694,7 +1689,7 @@ def _call_with_dynamic_pack_pointers[
     RaiseType: AnyType,
     MakeElemPtr: def[idx: Int]() -> Pointer[Args[idx], MutUnsafeAnyOrigin],
     //,
-    user_func: def(* args: * Args) thin raises RaiseType -> RetType,
+    user_func: def(*args: *Args) thin raises RaiseType -> RetType,
 ](make_elem_ptr: MakeElemPtr) raises RaiseType -> RetType:
     """Call `user_func` using a `VariadicPack` whose elements are initialized
     by per-index calls to `make_elem_ptr`.

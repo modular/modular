@@ -187,7 +187,7 @@ def _rows_selected_building(
             signal_buffers,
             list(state),
         )
-        graph.output(*outputs)
+        graph.output(outputs)
 
     return selected
 

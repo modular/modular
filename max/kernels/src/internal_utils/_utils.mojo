@@ -56,7 +56,7 @@ struct InitializationType(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -113,9 +113,10 @@ struct InitializationType(
 
 # TODO: refactor the following to run exactly once.
 def bench_compile_time[
-    func_type: TrivialRegisterPassable,
+    ret_type: AnyType,
+    declared_arg_types: TypeList[Trait=AnyType, ...],
     //,
-    func: func_type,
+    func: def(*args: *declared_arg_types) thin -> ret_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
     comptime assert emission_kind in ["asm", "llvm", "ptx"]
@@ -133,11 +134,9 @@ def bench_compile_time[
                     keep(s)
                 case "ptx":
                     with DeviceContext() as ctx:
-                        var func = DeviceFunction[
-                            func, TypeList.of[Trait=AnyType]()
-                        ](ctx)
+                        var func = DeviceFunction[func](ctx)
                         # Ensure that the compilation step is not optimized away.
-                        keep(UnsafePointer(to=func))
+                        keep(Pointer(to=func))
                         clobber_memory()
 
         b.iter(bench_iter)
@@ -368,16 +367,12 @@ struct Timer:
         var current = Float64(std.time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
-        self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
+        self.report.append(String(t"[{msg}] {elapsed / 1e6} (ms)"))
 
     def print(self) raises:
         for i in range(len(self.report)):
             print(self.report[i])
-        print(
-            "[total-elapsed] "
-            + String((self.current - self.start) / 1e6)
-            + " (ms)"
-        )
+        print(t"[total-elapsed] {(self.current - self.start) / 1e6} (ms)")
         print(
             "-----------------------------------------------------------------------"
         )
@@ -387,7 +382,7 @@ struct Timer:
 def init_vector_gpu[
     dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    x: MutPointer[Scalar[dtype], MutAnyOrigin],
     len: Int32,
     mode: InitializationType,
     value: Scalar[dtype],
@@ -466,7 +461,7 @@ def init_vector_launch[
 # Each thread processes 4 elements for better memory throughput.
 def _init_block_scaled_scales_gpu[
     dtype: DType
-](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int32):
+](x: MutPointer[Scalar[dtype], MutAnyOrigin], len: Int32):
     var _len = Int(len)
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
@@ -536,9 +531,9 @@ def human_readable_size(size: Int) -> String:
     comptime GB = MB * KB
 
     if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GB"
+        return String(t"{_pretty_print_float(Float64(size) / GB)}GB")
     if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MB"
+        return String(t"{_pretty_print_float(Float64(size) / MB)}MB")
     if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KB"
-    return String(size) + "B"
+        return String(t"{_pretty_print_float(Float64(size) / KB)}KB")
+    return String(t"{size}B")

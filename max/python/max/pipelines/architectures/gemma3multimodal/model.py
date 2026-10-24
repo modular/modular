@@ -14,19 +14,16 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
 from max import tree
-from max.driver import Buffer, Device, DLPackArray
-from max.dtype import DType
+from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType, Type
+from max.graph import DeviceRef
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.comm import Signals
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
@@ -34,9 +31,11 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
-    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
+    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 
@@ -52,6 +51,9 @@ from .weight_adapters import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+# The vision and language graphs compile into one artifact.
+_COMPILE_GROUP = "gemma3multimodal"
 
 
 @dataclass
@@ -99,8 +101,11 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
 
 class Gemma3_MultiModalModel(
+    LogProbabilitiesMixin,
     AlwaysSignalBuffersMixin,
-    MultiGraphPipelineModelWithKVCache[TextAndVisionContext],
+    PipelineModelWithKVCache[
+        TextAndVisionContext, Gemma3ForConditionalGenerationConfig, Model
+    ],
 ):
     """Gemma 3 multimodal pipeline model for text generation.
 
@@ -129,11 +134,8 @@ class Gemma3_MultiModalModel(
         Gemma3MultiModalBatchProcessor
     )
 
-    language_model: Model
-    """The compiled and initialized MAX Engine model ready for inference."""
-
-    vision_model: Model | None
-    """The compiled and initialized MAX Engine vision model ready for inference."""
+    _vision_weights_dict: dict[str, WeightData]
+    _language_weights_dict: dict[str, WeightData]
 
     # The vision and text towers are in the same weights file, but are in
     # separate models, so load_state_dict will naturally be loading subsets in
@@ -171,7 +173,18 @@ class Gemma3_MultiModalModel(
         # preventing potential race conditions in multi-GPU scenarios.
         _ = self.signal_buffers
 
-        self.vision_model, self.language_model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def language_model(self) -> Model:
+        """The compiled and initialized MAX Engine model ready for inference."""
+        return self._models[GraphRole.DECODER]
+
+    @property
+    def vision_model(self) -> Model:
+        """The compiled and initialized MAX Engine vision model ready for
+        inference."""
+        return self._models[GraphRole.VISION]
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -206,190 +219,61 @@ class Gemma3_MultiModalModel(
         self.config = model_config
         return model_config
 
-    def _language_model_input_types(
-        self, config: Gemma3ForConditionalGenerationConfig
-    ) -> Sequence[TensorType | BufferType]:
-        """Prepare the Tensor input types that our language graph will work with"""
-        device_ref = DeviceRef.from_device(self.devices[0])
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
+    def graph_specs(
+        self, model_config: Gemma3ForConditionalGenerationConfig
+    ) -> dict[str, GraphSpec]:
+        """Returns the vision encoder and the decoder, in one compile group."""
+        return {
+            GraphRole.VISION: self._vision_spec(
+                model_config, self._vision_weights_dict
+            ),
+            GraphRole.DECODER: self._language_spec(
+                model_config, self._language_weights_dict
+            ),
+        }
 
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        image_embeddings_types = [
-            TensorType(
-                DType.bfloat16,
-                shape=[
-                    "num_image_tokens",
-                    config.text_config.hidden_size,
-                ],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        image_token_indices_types = [
-            TensorType(
-                DType.int32,
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
-        )
-
-        return (
-            tokens_type,
-            return_n_logits_type,
-            *input_row_offsets_types,
-            *image_embeddings_types,
-            *image_token_indices_types,
-            *signals.input_types(),
-            *self.kv_params.flattened_kv_inputs(),
-        )
-
-    def _build_language_graph(
+    def _language_spec(
         self,
         config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Build the language model with our input types and graph"""
-        with Graph(
+    ) -> GraphSpec:
+        language_model = Gemma3LanguageModel(config)
+        language_model.load_state_dict(
+            state_dict,
+            weight_alignment=1,
+            strict=self._strict_state_dict_loading,
+        )
+        return GraphSpec(
+            language_model,
             getattr(self.huggingface_config, "model_type", "Gemma3"),
-            input_types=self._language_model_input_types(config),
-            module=module,
-        ) as graph:
-            language_model = Gemma3LanguageModel(config)
-            language_model.load_state_dict(
-                state_dict,
-                weight_alignment=1,
-                strict=self._strict_state_dict_loading,
-            )
-
-            # Unpack inputs following InternVL pattern
-            tokens, return_n_logits, *variadic_args = graph.inputs
-
-            # Extract input_row_offsets (one per device)
-            input_row_offsets = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract image embeddings (one per device).
-            image_embeddings = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            image_token_indices = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract signal buffers (one per device)
-            signal_buffers = [
-                v.buffer for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract KV cache inputs from the unified {sliding, global} tree.
-            kv_cache_local, kv_cache_global = (
-                self.kv_params.unflatten_basic_kv_tree(iter(variadic_args))
-            )
-
-            outputs = language_model(
-                tokens=tokens.tensor,
-                signal_buffers=signal_buffers,
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets,
-                sliding_kv_collections=kv_cache_local,
-                global_kv_collections=kv_cache_global,
-                image_embeddings=image_embeddings,
-                image_token_indices=image_token_indices,
-            )
-            graph.output(*outputs)
-        return graph, language_model.state_dict()
-
-    def _vision_model_input_types(
-        self, config: Gemma3ForConditionalGenerationConfig
-    ) -> list[Type[Any]]:
-        """Build the vision model graph for processing images."""
-        pixel_values_types = [
-            TensorType(
-                DType.bfloat16,
-                shape=[
-                    "batch_size",
-                    3,
-                    config.vision_config.image_size,
-                    config.vision_config.image_size,
-                ],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        # Create signal types for distributed communication
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+            language_model.input_tree(self.kv_params),
+            weights=language_model.state_dict(),
+            group=_COMPILE_GROUP,
         )
-        return [*pixel_values_types, *signals.input_types()]
 
-    def _build_vision_graph(
+    def _vision_spec(
         self,
         config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Build the vision model with our input types and graph"""
-        vision_graph_name = (
-            getattr(self.huggingface_config, "model_type", "Gemma3") + "_vision"
+    ) -> GraphSpec:
+        vision_model = Gemma3VisionModel(
+            config,
+            device=DeviceRef.from_device(self.devices[0]),
         )
-        with Graph(
-            vision_graph_name,
-            input_types=self._vision_model_input_types(config),
-            module=module,
-        ) as graph:
-            vision_model = Gemma3VisionModel(
-                config,
-                device=DeviceRef.from_device(self.devices[0]),
-            )
-
-            vision_model.load_state_dict(
-                state_dict=state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-                strict=self._strict_state_dict_loading,
-            )
-
-            pixel_values = [
-                inp.tensor for inp in graph.inputs[: len(self.devices)]
-            ]
-
-            signal_buffers = [
-                inp.buffer for inp in graph.inputs[len(self.devices) :]
-            ]
-
-            image_embeddings = vision_model(pixel_values, signal_buffers)
-
-            graph.output(*image_embeddings)
-
-            return graph, vision_model.state_dict()
+        vision_model.load_state_dict(
+            state_dict=state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=self._strict_state_dict_loading,
+        )
+        return GraphSpec(
+            vision_model,
+            getattr(self.huggingface_config, "model_type", "Gemma3")
+            + "_vision",
+            vision_model.input_types(),
+            weights=vision_model.state_dict(),
+            group=_COMPILE_GROUP,
+        )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """If required, execute the vision model, then continue to execute the

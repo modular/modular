@@ -30,7 +30,8 @@ pub struct LittleBlock<H> {
     pub ref_cnt: i64,
     /// The hash this block is committed under, once it is full.
     pub block_hash: Option<H>,
-    pub free: FreeLinks,
+    /// Its place in a [`crate::pool::free_list::FreeQueue`], while on one.
+    pub free: Option<u64>,
 }
 
 // Derived, this would demand `H: Default`, which a hash need not be.
@@ -39,17 +40,15 @@ impl<H> Default for LittleBlock<H> {
         LittleBlock {
             ref_cnt: 0,
             block_hash: None,
-            free: FreeLinks::default(),
+            free: None,
         }
     }
 }
 
-impl<H> Linked for LittleBlock<H> {
-    fn links(&self) -> &FreeLinks {
-        &self.free
-    }
-    fn links_mut(&mut self) -> &mut FreeLinks {
-        &mut self.free
+impl<H> LittleBlock<H> {
+    /// Whether the block is on a free queue.
+    pub fn is_free(&self) -> bool {
+        self.free.is_some()
     }
 }
 

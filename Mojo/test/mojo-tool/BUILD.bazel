@@ -13,7 +13,6 @@ lit_tests(
             "**/inputs/**",
             "package/test_package/**/*.mojo",
             "package/test_package_with_main/**/*.mojo",
-            "package/test_package_moco_773/**/*.mojo",
             "package/test_package_fixit/**/*.mojo",
             "package/test_package_fixit_patch_empty/**/*.mojo",
             "package/test_package_werror/**/*.mojo",
@@ -23,11 +22,8 @@ lit_tests(
         "//Mojo/tools/mblack",
     ] + glob([
         "**/inputs/**",
-        # test_package/ is also copied to KGEN/test/kgen-doc/test_package/.
-        # Keep both trees in sync when adding or modifying package fixture files.
         "package/test_package/**/*.mojo",
         "package/test_package_with_main/**/*.mojo",
-        "package/test_package_moco_773/**/*.mojo",
         "package/test_package_fixit/**/*.mojo",
         "package/test_package_fixit_patch_empty/**/*.mojo",
         "package/test_package_werror/**/*.mojo",

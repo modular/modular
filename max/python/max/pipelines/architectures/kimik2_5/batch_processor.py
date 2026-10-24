@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max._core.engine import Model
-from max.driver import Buffer
+from max.driver import Buffer, Device
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_tensor_to
@@ -33,10 +34,14 @@ from max.pipelines.architectures.deepseekV3.batch_processor import (
 )
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.interfaces.batch_processor import (
+    BatchProcessorRuntime,
     InputsT,
     ragged_kv_symbolic_inputs,
 )
-from max.pipelines.lib.vision_encoder_cache import concat_device_buffers
+from max.pipelines.lib.vision_encoder_cache import (
+    VisionEncodeResult,
+    concat_device_buffers,
+)
 
 from .context import KimiK2_5TextAndVisionContext
 from .memory_planner import _vision_encoder_token_budget, _vision_merge_sq
@@ -58,6 +63,14 @@ class KimiK2_5BatchProcessorBase(DeepseekV3BatchProcessorBase[InputsT]):
     _model_config: KimiK2_5Config | None = None
     _vision_model: Model | None = None
     _session: InferenceSession | None = None
+    _empty_vision_embeddings: list[Buffer] | None = None
+
+    def __init__(self, config: Any, runtime: BatchProcessorRuntime) -> None:
+        super().__init__(config, runtime)
+        # The vision encoder reads only the config's vision half, which the
+        # HuggingFace config fixes before the language model finalizes.
+        if isinstance(config, KimiK2_5Config):
+            self._model_config = config
 
     def bind_model_config(self, model_config: KimiK2_5Config) -> None:
         """Wire the finalized Kimi-K2.5 config from ``load_model``."""
@@ -72,6 +85,49 @@ class KimiK2_5BatchProcessorBase(DeepseekV3BatchProcessorBase[InputsT]):
         """Wire the compiled vision encoder and inference session."""
         self._vision_model = vision_model
         self._session = session
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> None:
+        """Packs nothing ahead: :meth:`vision_execute` packs each chunk."""
+        del selection, devices
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: None,
+    ) -> VisionEncodeResult:
+        """Runs the chunked vision encoder over the cache-selected images.
+
+        The chunked encode (packing, per-chunk graph runs and
+        re-concatenation to per-image order) stays here; the cache only ever
+        sees the per-image-ordered output.
+        """
+        del devices, packed
+        embeddings, token_counts = self.encode_uncached_chunked(selection)
+        return VisionEncodeResult(
+            embeddings=embeddings, per_image_token_counts=token_counts
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device ``[0, hidden]`` image embeddings for non-vision steps.
+
+        Cached: this is hit on every text-only / decode step, so it must not
+        allocate per call.
+        """
+        if self._empty_vision_embeddings is None:
+            hf_config = self.runtime.pipeline_config.model.huggingface_config
+            hidden_size = hf_config.text_config.hidden_size
+            host = Buffer.zeros(shape=[0, hidden_size], dtype=DType.bfloat16)
+            self._empty_vision_embeddings = [host.to(d) for d in devices]
+        return self._empty_vision_embeddings
 
     def get_symbolic_inputs(
         self,

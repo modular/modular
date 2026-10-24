@@ -26,10 +26,7 @@ runs the closure on. The acquire/release happens once per run, outside the
 measured loop, so it does not perturb the per-call numbers.
 
 Operands go in an explicit capture list, which keeps them alive for as long as
-the closure is. The implicit by-reference capture of an `@__parameter` closure
-does not: it is not a use, so an operand whose last use precedes `b.iter` is
-destroyed before the measured closure runs, leaving the closure to operate on a
-freed `PyObject`.
+the closure is.
 """
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep

@@ -160,20 +160,37 @@ def _aggregate_gpu_stats(
         )
 
     bytes_per_mib = 1024 * 1024
+    saw_memory_stats = False
     utilization_by_device: dict[str, float] = {}
     for device_name in all_devices:
         present = [s[device_name] for s in gpu_metrics if device_name in s]
-        peak_gpu_memory_mib.append(
-            max(stats.memory.used_bytes for stats in present) / bytes_per_mib
-        )
-        available_gpu_memory_mib.append(
-            min(stats.memory.free_bytes for stats in present) / bytes_per_mib
-        )
+        # Some drivers report no memory info (for example, NVML on DGX
+        # Spark), only utilization and clocks. Leave those devices out of
+        # the memory series. Counting them as zero would skew it. As a
+        # result, the memory lists and gpu_utilization aren't index-aligned
+        # by device when only some devices report memory.
+        memory_present = [
+            m for m in (stats.memory for stats in present) if m is not None
+        ]
+        if memory_present:
+            peak_gpu_memory_mib.append(
+                max(m.used_bytes for m in memory_present) / bytes_per_mib
+            )
+            available_gpu_memory_mib.append(
+                min(m.free_bytes for m in memory_present) / bytes_per_mib
+            )
+            saw_memory_stats = True
         utilization = statistics.mean(
             stats.utilization.gpu_usage_percent for stats in present
         )
         gpu_utilization.append(utilization)
         utilization_by_device[device_name] = utilization
+
+    if not saw_memory_stats:
+        logger.warning(
+            "Skipping GPU memory metrics: this driver doesn't report GPU "
+            "memory info"
+        )
 
     # One entry per device, so the reported mean GPU utilization (mean of this
     # list) is the mean across every device the source reports. A Prometheus

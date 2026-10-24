@@ -47,7 +47,7 @@ from std.atomic import Atomic
 from max.gpu import lane_id
 from std.sys._assembly import inlined_assembly
 
-comptime MbarPtr = UnsafePointer[
+comptime MbarPtr = MutPointer[
     SharedMemBarrier, MutUntrackedOrigin, address_space=.SHARED
 ]
 
@@ -70,7 +70,7 @@ trait PipelineBackend(TrivialRegisterPassable):
     comptime BarrierStorage: AnyType
 
     # What `full_handle`/`empty_handle` return for one slot. Bound to
-    # TrivialRegisterPassable (like the backend itself) so the @explicit_destroy
+    # TrivialRegisterPassable (like the backend itself) so the `not Deinitable`
     # stage handles can store it as a field with no custom destroy semantics
     # to reason about generically.
     comptime Handle: TrivialRegisterPassable
@@ -80,7 +80,7 @@ trait PipelineBackend(TrivialRegisterPassable):
         num_stages: Int
     ](
         out self,
-        ptr: UnsafePointer[
+        ptr: MutPointer[
             Self.BarrierStorage, MutUntrackedOrigin, address_space=.SHARED
         ],
     ):
@@ -267,7 +267,7 @@ struct NvidiaMbarBackend[num_stages: Int](PipelineBackend):
             " NvidiaMbarBackend's own num_stages"
         )
         self.full = ptr
-        self.empty = ptr + Self.num_stages
+        self.empty = ptr.unsafe_offset(Self.num_stages)
 
     @staticmethod
     @inline(.always)
@@ -321,17 +321,17 @@ struct NvidiaMbarBackend[num_stages: Int](PipelineBackend):
 
     @inline(.always)
     def full_handle(self, stage: UInt32) -> Self.Handle:
-        return self.full + stage
+        return self.full.unsafe_offset(stage)
 
     @inline(.always)
     def empty_handle(self, stage: UInt32) -> Self.Handle:
-        return self.empty + stage
+        return self.empty.unsafe_offset(stage)
 
 
 # ===----------------------------------------------------------------------=== #
 # AMD atomic-counter backend
 # ===----------------------------------------------------------------------=== #
-comptime AmdCounterPtr = UnsafePointer[
+comptime AmdCounterPtr = MutPointer[
     Int64, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]
 
@@ -391,7 +391,7 @@ struct AmdCounterBackend[
     @always_inline
     def __init__[num_stages: Int](out self, ptr: AmdCounterPtr):
         self.full = ptr
-        self.empty = ptr + num_stages
+        self.empty = ptr.unsafe_offset(num_stages)
 
     @staticmethod
     @always_inline
@@ -432,7 +432,7 @@ struct AmdCounterBackend[
     ](self, stage: UInt32, phase: UInt32):
         # `ticks` are ignored on AMD.
         _amd_wait_for_counter(
-            self.full + Int(stage),
+            self.full.unsafe_offset(Int(stage)),
             Int64(phase + 1) * Int64(Self.producer_arrivals),
         )
 
@@ -441,36 +441,36 @@ struct AmdCounterBackend[
         ticks: Optional[UInt32] = None
     ](self, stage: UInt32, phase: UInt32):
         _amd_wait_for_counter(
-            self.empty + Int(stage),
+            self.empty.unsafe_offset(Int(stage)),
             Int64(phase - 1) * Int64(Self.consumer_arrivals),
         )
 
     @always_inline
     def try_full(self, stage: UInt32, phase: UInt32) -> Bool:
         return _amd_counter_try(
-            self.full + Int(stage),
+            self.full.unsafe_offset(Int(stage)),
             Int64(phase + 1) * Int64(Self.producer_arrivals),
         )
 
     @always_inline
     def try_empty(self, stage: UInt32, phase: UInt32) -> Bool:
         return _amd_counter_try(
-            self.empty + Int(stage),
+            self.empty.unsafe_offset(Int(stage)),
             Int64(phase - 1) * Int64(Self.consumer_arrivals),
         )
 
     @always_inline
     def arrive_full(self, stage: UInt32):
-        _amd_increment_if_warp_leader(self.full + Int(stage))
+        _amd_increment_if_warp_leader(self.full.unsafe_offset(Int(stage)))
 
     @always_inline
     def arrive_empty(self, stage: UInt32):
-        _amd_increment_if_warp_leader(self.empty + Int(stage))
+        _amd_increment_if_warp_leader(self.empty.unsafe_offset(Int(stage)))
 
     @always_inline
     def full_handle(self, stage: UInt32) -> Self.Handle:
-        return self.full + Int(stage)
+        return self.full.unsafe_offset(Int(stage))
 
     @always_inline
     def empty_handle(self, stage: UInt32) -> Self.Handle:
-        return self.empty + Int(stage)
+        return self.empty.unsafe_offset(Int(stage))

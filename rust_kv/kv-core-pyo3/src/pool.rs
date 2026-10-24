@@ -156,6 +156,17 @@ impl PyJengaBlockPool {
             .ok_or_else(|| PyKeyError::new_err(cache_id.to_owned()))
     }
 
+    /// Returns a `{cache_id: num_blocks}` mapping as one count per cache.
+    fn dense(&self, demand: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+        let mut dense = vec![0; self.cache_index.len()];
+        for item in demand.call_method0("items")?.try_iter()? {
+            let (cache_id, num_blocks): (String, i64) = item?.extract()?;
+            // No demand at all, as the Python pool read a count of 0 or less.
+            dense[self.cache(&cache_id)?] = usize::try_from(num_blocks).unwrap_or(0);
+        }
+        Ok(dense)
+    }
+
     /// Returns `block`'s `(cache, bid)`, refusing a block of another pool:
     /// with one pool per data-parallel replica, a mix-up would otherwise
     /// silently free or commit another replica's block.
@@ -356,6 +367,29 @@ impl PyJengaBlockPool {
         Ok(self.shared.lock(py).num_free_blocks(cache))
     }
 
+    /// Returns `(referenced, cached, free, claimed_huge_blocks,
+    /// parked_huge_blocks)` for `cache_id`, as `kv_core`'s `CacheOccupancy`.
+    fn occupancy(
+        &self,
+        py: Python<'_>,
+        cache_id: &str,
+    ) -> PyResult<(usize, usize, usize, usize, usize)> {
+        let cache = self.cache(cache_id)?;
+        let occupancy = self.shared.lock(py).occupancy(cache);
+        Ok((
+            occupancy.referenced,
+            occupancy.cached,
+            occupancy.free,
+            occupancy.claimed_huge_blocks,
+            occupancy.parked_huge_blocks,
+        ))
+    }
+
+    #[getter]
+    fn num_pristine_huge_blocks(&self, py: Python<'_>) -> usize {
+        self.shared.lock(py).num_pristine_huge_blocks()
+    }
+
     #[pyo3(signature = (demand, at_capacity = false))]
     fn can_satisfy_demand(
         &self,
@@ -363,13 +397,22 @@ impl PyJengaBlockPool {
         demand: &Bound<'_, PyAny>,
         at_capacity: bool,
     ) -> PyResult<bool> {
-        let mut dense = vec![0; self.cache_index.len()];
-        for item in demand.call_method0("items")?.try_iter()? {
-            let (cache_id, num_blocks): (String, i64) = item?.extract()?;
-            // No demand at all, as the Python pool read a count of 0 or less.
-            dense[self.cache(&cache_id)?] = usize::try_from(num_blocks).unwrap_or(0);
-        }
+        let dense = self.dense(demand)?;
         Ok(self.shared.lock(py).can_satisfy_demand(&dense, at_capacity))
+    }
+
+    #[pyo3(signature = (unit, at_capacity = false))]
+    fn max_satisfiable_multiple(
+        &self,
+        py: Python<'_>,
+        unit: &Bound<'_, PyAny>,
+        at_capacity: bool,
+    ) -> PyResult<usize> {
+        let dense = self.dense(unit)?;
+        Ok(self
+            .shared
+            .lock(py)
+            .max_satisfiable_multiple(&dense, at_capacity))
     }
 
     fn reset_prefix_cache<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {

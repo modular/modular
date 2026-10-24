@@ -273,8 +273,6 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Throws", 0, "throws">,
   /// This is an async function.
   I16BitEnumAttrCaseBit<"Async", 1, "async">,
-  /// This function captures state.
-  I16BitEnumAttrCaseBit<"Capturing", 2, "capturing">,
   /// This function has a auto-derefed result of !lit.ref or !kgen.pointer type.
   I16BitEnumAttrCaseBit<"RefResult", 5, "refresult">,
   /// This function uses the C ABI for argument and return value passing.
@@ -392,6 +390,31 @@ def KGEN_VariadicKind : I32EnumAttr<"VariadicKind",
   I32EnumAttrCase<"PackVarArg", 2, "pack_vararg">,
   /// A variadic keywords argument, e.g. `**x: Int`.
   I32EnumAttrCase<"KwVarArg", 3, "kw_vararg">
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// StructDomain
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructDomain : I32EnumAttr<"StructDomain",
+    "Whether a struct is a memory layout or a value representation", [
+  /// Not decided yet. Only LIT-level IR has these; LowerLIT decides each one
+  /// by its position.
+  ///
+  /// FIXME(MOCO-5118): This case only needs to exist because `!kgen.struct` can
+  /// appear before LowerLIT in Mojo source. Its elements are then LIT types,
+  /// whose type constants have identical halves until LowerLIT splits them.
+  /// This means a struct cannot tell plain elements from unlowered ones. A LIT-
+  /// level pack type (so that only LowerLIT builds `!kgen.struct`) would remove
+  /// the bulk of this awkwardness.
+  I32EnumAttrCase<"Unset", 0, "unset">,
+  /// A memory layout (the type domain).
+  I32EnumAttrCase<"Layout", 1, "layout">,
+  /// A value representation (the value domain).
+  I32EnumAttrCase<"Value", 2, "value">
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;

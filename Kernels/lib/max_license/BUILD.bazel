@@ -1,0 +1,65 @@
+load("//bazel:api.bzl", "kgen_kernel", "modular_cc_library")
+
+# gazelle:default_visibility //Kernels/lib/max_license:consumers
+
+package(default_visibility = ["//Kernels/lib/max_license:consumers"])
+
+package_group(
+    name = "consumers",
+    packages = [
+        "//GraphCompiler/...",
+        "//Kernels/...",
+        "//max/...",
+    ],
+)
+
+kgen_kernel(
+    name = "weights_registry_c_api",
+    src = "WeightsRegistry/weights_registry_c_api.mojo",
+    deps = [
+        "//max/kernels/src/weights_registry",
+        "@mojo//:std",
+    ],
+)
+
+modular_cc_library(
+    name = "WeightsRegistry",
+    srcs = glob(["WeightsRegistry/*.cpp"]),
+    hdrs = ["WeightsRegistry/WeightsRegistry.h"],
+    include_prefix = "Kernels/max_license",
+    strip_include_prefix = "WeightsRegistry",
+    deps = [
+        ":weights_registry_c_api",
+    ],
+)
+
+kgen_kernel(
+    name = "mojo_string_c_api",
+    src = "MojoString/mojo_string_c_api.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+kgen_kernel(
+    name = "tracing_c_api",
+    src = "Tracing/tracing_c_api.mojo",
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+modular_cc_library(
+    name = "Tracing",
+    srcs = glob(["Tracing/*.cpp"]),
+    hdrs = ["Tracing/Tracing.h"],
+    include_prefix = "Kernels/max_license",
+    strip_include_prefix = "Tracing",
+    deps = [
+        ":tracing_c_api",
+    ] + select({
+        "//:tracy_enabled": ["@tracy//:Tracy"],
+        "//conditions:default": [],
+    }),
+)

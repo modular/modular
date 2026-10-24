@@ -83,11 +83,11 @@ def block_scaled_matmul_ref(
 
     var k_groups = K // MXFP4_SF_VECTOR_SIZE
 
-    var am_scales_ptr = a_scales_ptr + m * k_groups
-    var bn_scales_ptr = b_scales_ptr + n * k_groups
+    var am_scales_ptr = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales_ptr = b_scales_ptr.unsafe_offset(n * k_groups)
 
-    var am_ptr = a_ptr + m * (K // 2)
-    var bn_ptr = b_ptr + n * (K // 2)
+    var am_ptr = a_ptr.unsafe_offset(m * (K // 2))
+    var bn_ptr = b_ptr.unsafe_offset(n * (K // 2))
 
     var accum = SIMD[.float32, 2](0)
 
@@ -96,16 +96,16 @@ def block_scaled_matmul_ref(
         var b_scale = bn_scales_ptr[ko].cast[.float32]()
 
         for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[.int32, 1](am_ptr.load[width=4](ki))
-            var b_data = bitcast[.int32, 1](bn_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](am_ptr.unsafe_load[width=4](ki))
+            var b_data = bitcast[.int32, 1](bn_ptr.unsafe_load[width=4](ki))
 
             comptime for byte_select in range(4):
                 accum += cast_fp4x2_to_fp32x2[byte_select](
                     a_data, a_scale
                 ) * cast_fp4x2_to_fp32x2[byte_select](b_data, b_scale)
 
-        am_ptr += MXFP4_SF_VECTOR_SIZE // 2
-        bn_ptr += MXFP4_SF_VECTOR_SIZE // 2
+        am_ptr = am_ptr.unsafe_offset(MXFP4_SF_VECTOR_SIZE // 2)
+        bn_ptr = bn_ptr.unsafe_offset(MXFP4_SF_VECTOR_SIZE // 2)
 
     c_ptr[m * N + n] = accum.reduce_add()
 
@@ -316,8 +316,8 @@ def _test_case[
     ctx.enqueue_function[block_scaled_matmul_ref](
         a_d,
         b_d,
-        sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
-        sfb_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         c_ref_d,
         Int32(M_static),
         Int32(N_static),
@@ -335,11 +335,11 @@ def _test_case[
     # layout — the kernel uses the underlying bytes through
     # `PreshuffledScaleLoader`, the TileTensor layout is unused.
     var sfa_tt = TileTensor(
-        sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
     ).as_imm()
     var sfb_tt = TileTensor(
-        sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
     ).as_imm()
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())

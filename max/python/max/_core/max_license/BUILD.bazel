@@ -1,0 +1,136 @@
+load("//bazel:api.bzl", "modular_cc_library", "modular_nanobind_library")
+load("//bazel:config.bzl", "KERNEL_PROFILING_LOCAL_DEFINES")
+load("//bazel:tablegen.bzl", "mlir_nanobind")
+load("//max/python/max/_core/max_license/mlir_nanobind:tblgen.bzl", "tblgen_nanobind")  # buildifier: disable=bzl-visibility
+
+package(default_visibility = ["//max:consumers"])
+
+tblgen_nanobind(
+    name = "MOSHDialectNanobindInc",
+    src = "//GraphCompiler:mosh_json",
+    allowlist = "//max/python/max/_core/max_license/modules/dialects:allowlist.txt",
+    dialect = "MOSHDialect",
+    output = "include/_core/Graph/mosh_dialect_nanobind.cpp.inc",
+)
+
+mlir_nanobind(
+    name = "BuiltinDialectNanobindInc",
+    srcs = [
+        "@llvm-project//mlir:include/mlir/IR/BuiltinAttributeInterfaces.td",
+        "@llvm-project//mlir:include/mlir/IR/BuiltinAttributes.td",
+        "@llvm-project//mlir:include/mlir/IR/BuiltinDialect.td",
+        "@llvm-project//mlir:include/mlir/IR/BuiltinLocationAttributes.td",
+        "@llvm-project//mlir:include/mlir/IR/BuiltinOps.td",
+        "@llvm-project//mlir:include/mlir/IR/BuiltinTypeInterfaces.td",
+        "@llvm-project//mlir:include/mlir/IR/BuiltinTypes.td",
+        "@llvm-project//mlir:include/mlir/Transforms/Passes.td",
+    ],
+    allowlist = "//max/python/max/_core/max_license/modules/dialects:allowlist.txt",
+    output_dir = "include/_core/Graph",
+    deps = [
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:PassBaseTdFiles",
+        "@llvm-project//mlir:RewritePassBaseTdFiles",
+    ],
+)
+
+modular_nanobind_library(
+    name = "DLPackPython",
+    srcs = glob(["lib/DLPack/*.cpp"]),
+    hdrs = glob(["include/_core/DLPack/*.h"]),
+    deps = [
+        "//Support:ML",
+        "@dlpack",
+    ],
+)
+
+# Stride arithmetic for buffer views. Split out of DriverPython so it can be
+# unit tested without a Python interpreter.
+modular_cc_library(
+    name = "DriverViewStrides",
+    srcs = ["lib/Driver/ViewStrides.cpp"],
+    hdrs = ["include/_core/Driver/ViewStrides.h"],
+    # Matches DriverPython, whose callers propagate these throws to Python.
+    copts = ["-fexceptions"],
+    includes = ["include"],
+    deps = ["//Support:ML"],
+)
+
+modular_nanobind_library(
+    name = "DriverPython",
+    srcs = glob(
+        ["lib/Driver/*.cpp"],
+        exclude = ["lib/Driver/ViewStrides.cpp"],
+    ),
+    hdrs = glob(
+        ["include/_core/Driver/*.h"],
+        exclude = ["include/_core/Driver/ViewStrides.h"],
+    ),
+    deps = [
+        ":DLPackPython",
+        ":DriverViewStrides",
+        "//MLRT:Driver/DeviceAffinity",
+        "//AsyncRT:Runtime",
+        # Headers only. Do not link //MLRT:Driver/DeviceContextImpl statically
+        # here: it holds process-wide globals (virtual-device settings, device
+        # caches) and the extension would get its own copy, split from the one
+        # inside libmax that device creation actually reads.
+        "//MLRT:Driver/DeviceContextAPI",
+        "//max/lib/max_license:max",
+    ],
+)
+
+modular_nanobind_library(
+    name = "EnginePython",
+    srcs = glob(["lib/Engine/*.cpp"]),
+    hdrs = glob(["include/_core/Engine/*.h"]),
+    deps = [
+        ":DLPackPython",
+        ":DriverPython",
+        "//Kernels/lib/max_license:WeightsRegistry",
+        "//Support:Configuration",
+        "//Support:ProfilerHostGlue",
+        "//Support:Profiling",
+        "//Support:ProfilingRanges",
+        "//max/lib/max_license:max",
+    ],
+)
+
+modular_nanobind_library(
+    name = "GraphPython",
+    srcs = glob(["lib/Graph/*.cpp"]),
+    hdrs = glob(["include/_core/Graph/*.h"]),
+    deps = [
+        "//Support:NanobindUtils",
+        "//max/lib/max_license:max",
+    ],
+)
+
+modular_nanobind_library(
+    name = "ProfilerPython",
+    srcs = glob(["lib/Profiler/*.cpp"]),
+    hdrs = glob(["include/_core/Profiler/*.h"]),
+    local_defines = KERNEL_PROFILING_LOCAL_DEFINES,
+    deps = [
+        "//Kernels/lib/max_license:Tracing",
+    ],
+)
+
+# Note this one is special, it defines the bindings here so that they can be unit tested separately.
+modular_nanobind_library(
+    name = "AsyncRTPython",
+    srcs = glob(["lib/AsyncRT/*.cpp"]),
+    hdrs = glob(["include/_core/AsyncRT/*.h"]),
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:Support",
+        "//Support:Base",
+        "//Support:NanobindUtils",
+        "//Support:TypeID",
+    ],
+)
+
+exports_files([
+    "_core.cpp",
+    "patterns.nb",
+])

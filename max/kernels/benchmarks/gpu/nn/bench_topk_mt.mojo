@@ -87,6 +87,20 @@ in a single remote-B200 invocation, where forty separate ones would spend more
 wall clock on bazel round trips than on the kernel. `rows`, `N` and the three
 knobs are ignored under it.
 
+`--bounds=True` passes the per-row live prefix lengths to the kernel as a
+`RowBoundsPtr`, which models production's fused causal bound (that one
+computes the live length in-kernel from row offsets; the read traffic the
+kernels see is the same): the `-inf` masked suffix is never read. The default
+`False` scans past it as dead columns -- the same selections, since the
+sentinel sits below every live score, but not the same bytes.
+
+`--sweep=2` runs the M0 baseline grid of the cluster-cooperative top-k plan:
+bf16, `unord_nd`, `K = 2048`, bounded, rows 1..64 against five lengths, plus
+the unbounded arm at rows=24. `rows`, `N`, `K`, `dtype`, `mode` and the three
+knobs are ignored under it; `dist` is not. `--bounds` is refused under both
+sweeps rather than ignored: each sweep fixes its own bounds arms, and a flag
+silently dropped would report one arm under the label of another.
+
 Scores land in the buffer already rounded, so at bf16 the printed
 `input_checksum` is over the rounded array. Two arms agreeing on it means they
 scored the same input; they will NOT match the f32 arm's, by construction.
@@ -102,6 +116,7 @@ from internal_utils import arg_parse
 from layout import TileTensor, row_major
 
 from nn.topk_bitonic import (
+    RowBoundsPtr,
     _hsel_phi_dtype,
     _hsel_prefetch_scan_items,
     _hsel_sig_bits,
@@ -119,6 +134,7 @@ def _get_run_name(
     sig_bits: Int,
     phi_bits: Int,
     scan_items: Int,
+    use_bounds: Bool,
 ) -> String:
     # Every knob that changes the kernel belongs in the id: two arms sharing a
     # `BenchId` land under one entry and get averaged into a number that is
@@ -142,6 +158,8 @@ def _get_run_name(
         phi_bits,
         ", scan_items=",
         scan_items,
+        ", bounds=",
+        use_bounds,
     )
 
 
@@ -207,6 +225,15 @@ def _sample(dist: String, r: Int, c: Int, N: Int) -> Float32:
     return Float32((acc - Float64(_IH_TERMS) / 2.0) * _IH_SCALE)
 
 
+def _row_keys(r: Int, N: Int) -> Int:
+    """The live prefix length of row `r`: `N` minus up to an eighth of it.
+
+    Keyed off `_u_len(r)` so the score fill and the row-bounds buffer derive
+    the same count from the same row without one having to observe the other.
+    """
+    return N - Int(_u_len(r) * Float64(N) / 8.0)
+
+
 def execute_topk_bitonic[
     ordered: Bool,
     deterministic: Bool,
@@ -222,19 +249,32 @@ def execute_topk_bitonic[
     K: Int,
     dist: String,
     mode: String,
+    use_bounds: Bool = False,
 ) raises:
     """Benches `persistent_topk_block_split` on scores shaped like the DSA
     indexer's: a random-length valid prefix per row (varying `num_keys`
     within a causal chunk), an `-inf` masked suffix, and valid values drawn
     from `dist`.
+
+    `use_bounds=True` hands the kernel the prefix lengths as a
+    `RowBoundsPtr`, which models production's fused causal bound (that one
+    computes the live length in-kernel from row offsets; the kernels see the
+    same read traffic): the masked suffix is then never read. `False`
+    leaves the suffix to be scanned past as dead columns -- the same
+    selections either way, since the sentinel sits below every live score,
+    but not the same read traffic.
     """
     var scores_buf = ctx.enqueue_create_buffer[in_dtype](rows * N)
     var idxs_buf = ctx.enqueue_create_buffer[.int32](rows * K)
+    # Allocated unconditionally: a Mojo local declared inside an `if` dies with
+    # the block, and the bounds pointer must outlive the bench loop below.
+    var bounds_buf = ctx.enqueue_create_buffer[.int32](rows)
+    var bounds_t = TileTensor(bounds_buf, row_major(rows))
 
     var csum = UInt64(0xCBF29CE484222325)
     with scores_buf.map_to_host() as h:
         for r in range(rows):
-            var num_keys = N - Int(_u_len(r) * Float64(N) / 8.0)
+            var num_keys = _row_keys(r, N)
             for c in range(N):
                 var v: Float32
                 if c < num_keys:
@@ -254,12 +294,26 @@ def execute_topk_bitonic[
                 ) * 0x100000001B3
     print("input_checksum=", hex(csum), sep="")
 
+    if use_bounds:
+        with bounds_buf.map_to_host() as b:
+            for r in range(rows):
+                b[r] = Int32(_row_keys(r, N))
+
     var scores_t = TileTensor(scores_buf, row_major(rows, N))
     var idxs_t = TileTensor(idxs_buf, row_major(rows, K))
     ctx.synchronize()
 
     @inline(.always)
     def kernel_launch(c: DeviceContext) raises {mut idxs_t, imm}:
+        var row_bounds = Optional[RowBoundsPtr]()
+        if use_bounds:
+            row_bounds = Optional(
+                RowBoundsPtr(
+                    rebind[ImmPointer[Scalar[DType.int32], ImmutAnyOrigin]](
+                        bounds_t.ptr
+                    )
+                )
+            )
         persistent_topk_block_split[
             ordered=ordered,
             deterministic=deterministic,
@@ -273,6 +327,7 @@ def execute_topk_bitonic[
             N,
             K,
             rows,
+            row_bounds,
         )
 
     @inline(.always)
@@ -292,6 +347,7 @@ def execute_topk_bitonic[
                 sig_bits,
                 8 * size_of[phi_dtype](),
                 scan_items,
+                use_bounds,
             )
         ),
         [],
@@ -299,6 +355,7 @@ def execute_topk_bitonic[
 
     _ = scores_buf
     _ = idxs_buf
+    _ = bounds_buf
 
 
 def _bf16_arms[
@@ -314,6 +371,7 @@ def _bf16_arms[
     sig_bits: Int,
     phi_bits: Int,
     scan_items: Int,
+    use_bounds: Bool = False,
 ) raises:
     """The four bf16 configurations, selected at runtime from the two knobs.
 
@@ -328,7 +386,7 @@ def _bf16_arms[
             DType.bfloat16,
             sig_bits=32,
             phi_dtype=DType.uint32,
-        ](ctx, m, rows, N, K, dist, mode)
+        ](ctx, m, rows, N, K, dist, mode, use_bounds)
     elif scan_items == 8:
         execute_topk_bitonic[
             ordered,
@@ -336,14 +394,14 @@ def _bf16_arms[
             DType.bfloat16,
             phi_dtype=DType.uint16,
             scan_items=8,
-        ](ctx, m, rows, N, K, dist, mode)
+        ](ctx, m, rows, N, K, dist, mode, use_bounds)
     elif phi_bits == 16:
         execute_topk_bitonic[
             ordered, deterministic, DType.bfloat16, phi_dtype=DType.uint16
-        ](ctx, m, rows, N, K, dist, mode)
+        ](ctx, m, rows, N, K, dist, mode, use_bounds)
     else:
         execute_topk_bitonic[ordered, deterministic, DType.bfloat16](
-            ctx, m, rows, N, K, dist, mode
+            ctx, m, rows, N, K, dist, mode, use_bounds
         )
 
 
@@ -384,6 +442,31 @@ def _sweep(ctx: DeviceContext, mut m: Bench, dist: String) raises:
                 )
 
 
+def _sweep_m0(ctx: DeviceContext, mut m: Bench, dist: String) raises:
+    """The M0 baseline grid of the cluster-cooperative top-k plan: the
+    pre-port numbers the port's own milestones are measured against.
+
+    bf16 scores, the production contract (`unord_nd`), `K = 2048`, bounded
+    rows, over the row counts the cluster kernel would be dispatched on --
+    1..64 spans the 24-row GLM decode shape and vLLM's 64-row dispatch gate --
+    and the N ladder the plan names. The unbounded arm at rows=24 rides along
+    in the same process so what the fused causal bound saves is measured
+    paired, at the serving row count, rather than across runs.
+
+    Rows innermost so a row-count ladder is adjacent in time and the shape of
+    the rows curve is not a clock drift artifact.
+    """
+    comptime K = 2048
+    for N in [8192, 16384, 32768, 65536, 107232]:
+        for rows in range(1, 65):
+            execute_topk_bitonic[False, False, DType.bfloat16](
+                ctx, m, rows, N, K, dist, "unord_nd", use_bounds=True
+            )
+        execute_topk_bitonic[False, False, DType.bfloat16](
+            ctx, m, 24, N, K, dist, "unord_nd", use_bounds=False
+        )
+
+
 def main() raises:
     var rows = arg_parse("rows", 48)
     var N = arg_parse("N", 157696)
@@ -395,6 +478,7 @@ def main() raises:
     var phi_bits = arg_parse("phi-bits", 0)
     var scan_items = arg_parse("scan-items", 0)
     var sweep = arg_parse("sweep", 0)
+    var use_bounds = arg_parse("bounds", False)
 
     # An unrecognized mode or distribution is refused rather than falling back to
     # a default. A sweep that asks for a contract this binary does not have would
@@ -448,10 +532,22 @@ def main() raises:
             "dtype=bfloat16 is built for mode ord or unord_nd, not ", mode
         )
 
+    # `--bounds` reaches the single-cell mode only: each sweep fixes its own
+    # bounds arms, and an accepted-but-ignored flag would report one arm under
+    # the label of another.
+    if sweep != 0 and use_bounds:
+        raise Error("--bounds applies to the single-cell mode only")
+
     var m = Bench()
     with DeviceContext() as ctx:
-        if sweep != 0:
+        if sweep == 1:
+            m.config.show_progress = False
             _sweep(ctx, m, dist)
+            m.dump_report()
+            return
+        if sweep == 2:
+            m.config.show_progress = False
+            _sweep_m0(ctx, m, dist)
             m.dump_report()
             return
         if dtype == "bfloat16":
@@ -467,6 +563,7 @@ def main() raises:
                     sig_bits,
                     phi_bits,
                     scan_items,
+                    use_bounds,
                 )
             else:
                 _bf16_arms[True, True](
@@ -480,22 +577,23 @@ def main() raises:
                     sig_bits,
                     phi_bits,
                     scan_items,
+                    use_bounds,
                 )
         elif mode == "unord_nd":
             execute_topk_bitonic[False, False, DType.float32](
-                ctx, m, rows, N, K, dist, mode
+                ctx, m, rows, N, K, dist, mode, use_bounds
             )
         elif mode == "unord":
             execute_topk_bitonic[False, True, DType.float32](
-                ctx, m, rows, N, K, dist, mode
+                ctx, m, rows, N, K, dist, mode, use_bounds
             )
         elif mode == "ord_nd":
             execute_topk_bitonic[True, False, DType.float32](
-                ctx, m, rows, N, K, dist, mode
+                ctx, m, rows, N, K, dist, mode, use_bounds
             )
         else:
             execute_topk_bitonic[True, True, DType.float32](
-                ctx, m, rows, N, K, dist, mode
+                ctx, m, rows, N, K, dist, mode, use_bounds
             )
 
     m.dump_report()

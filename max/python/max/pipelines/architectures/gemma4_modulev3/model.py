@@ -38,6 +38,7 @@ from max.pipelines.architectures.gemma4.model_config import (
 )
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
+    GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -112,7 +113,7 @@ class Gemma4Model(
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.vision_model, self.language_model = self.load_model()
+        self.vision_model, self.language_model = self._load_towers(session)
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -162,26 +163,25 @@ class Gemma4Model(
         self.config = model_config
         return model_config
 
-    def _compile_vision_model(  # type: ignore[override]
+    def _vision_spec(
         self,
         model_config: Gemma4ForConditionalGenerationConfig,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any] | None:
-        """Compiles the vision tower, or ``None`` when text-only.
-
-        The override widens the base hook's return type: ``load_model``
-        already types the vision tower as optional, hence the override
-        ignore.
+    ) -> GraphSpec | None:
+        """Builds the vision tower, or returns ``None`` when text-only.
 
         The multi-graph base does not open the ``F.lazy()`` / ``default_dtype``
-        build context that the single-graph base does, so each compile hook
+        build context that the single-graph base does, so each spec hook
         owns it.
         """
         if model_config.vision_config is None:
             return None
 
+        # The vision tower is never quantized (modelopt ignore-lists it);
+        # always build it in the unquantized (BF16) dtype so its leaves
+        # match the checkpoint storage even under NVFP4.
         device_ref = DeviceRef.from_device(self.devices[0])
-        with F.lazy(), default_dtype(model_config.dtype):
+        with F.lazy(), default_dtype(model_config.unquantized_dtype):
             vision_nn = Gemma4VisionModel(model_config)
             vision_nn.to(self.devices[0])
 
@@ -205,18 +205,33 @@ class Gemma4Model(
             ),
             TensorType(DType.uint32, shape=[], device=DeviceRef.CPU()),
         )
-        return vision_nn.compile(*input_types, weights=state_dict)
+        return GraphSpec(
+            vision_nn,
+            type(vision_nn).__qualname__,
+            input_types,
+            weights=state_dict,
+        )
 
-    def _compile_language_model(
+    def _language_spec(
         self,
         model_config: Gemma4ForConditionalGenerationConfig,
         state_dict: dict[str, Any],
-    ) -> Callable[..., Any]:
+    ) -> GraphSpec:
         n_devices = len(self.devices)
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
+        # Under NVFP4 the checkpoint's model dtype is packed uint8, which
+        # only the quantized linears consume; every unquantized leaf (norms,
+        # embeddings, layer_scalar, BF16 attention) must build in the
+        # checkpoint's unquantized dtype instead, matching the graph arch's
+        # ``unquantized_dtype`` handling.
+        build_dtype = (
+            model_config.unquantized_dtype
+            if model_config.text_config.quant_config is not None
+            else model_config.dtype
+        )
         with (
             F.lazy(),
-            default_dtype(model_config.dtype),
+            default_dtype(build_dtype),
             default_device(mesh),
         ):
             language_nn = Gemma4(model_config, self.kv_params, mesh)
@@ -230,7 +245,12 @@ class Gemma4Model(
             # empty_vision_embeddings() allocates.
             embedding_dtype=model_config.unquantized_dtype,
         )
-        return language_nn.compile(*input_types, weights=state_dict)
+        return GraphSpec(
+            language_nn,
+            type(language_nn).__qualname__,
+            input_types,
+            weights=state_dict,
+        )
 
     # --- SupportsVisionEncoding ---
 

@@ -69,13 +69,13 @@ def _kernel[
         scratch_storage[i] = SENTINEL
     barrier()
     var scores = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        score_storage.ptr + LOCAL_GUARD, row_major[4, 2]()
+        score_storage.ptr.unsafe_offset(LOCAL_GUARD), row_major[4, 2]()
     )
     var accum = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        accum_storage.ptr + LOCAL_GUARD, row_major[4, 2]()
+        accum_storage.ptr.unsafe_offset(LOCAL_GUARD), row_major[4, 2]()
     )
     var scratch = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
-        scratch_storage.ptr + LOCAL_GUARD, row_major[4, 16]()
+        scratch_storage.ptr.unsafe_offset(LOCAL_GUARD), row_major[4, 16]()
     )
     var rowmax = stack_allocation[dtype=.float32](row_major[2, 1]())
     var rowsum = stack_allocation[dtype=.float32](row_major[2, 1]())
@@ -135,7 +135,7 @@ def main() raises:
             host[i] = SENTINEL
         ctx.enqueue_copy(device, host)
         var output = TileTensor(
-            device.unsafe_ptr() + DRAM_GUARD,
+            device.unsafe_ptr().unsafe_offset(DRAM_GUARD),
             row_major[NUM_THREADS, NUM_FIELDS](),
         ).as_unsafe_any_origin()
         ctx.enqueue_function[_kernel[type_of(output).LayoutType]](
@@ -187,7 +187,7 @@ def main() raises:
                                 1,
                                 m,
                                 n,
-                                thread // WARP_SIZE,
+                                thread // ctx.default_device_info.warp_size,
                                 thread % 4,
                                 element,
                             )

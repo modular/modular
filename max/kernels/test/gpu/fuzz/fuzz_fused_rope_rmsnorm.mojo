@@ -477,13 +477,13 @@ def run_one_case(
     )
 
     @inline(.always)
-    @__copy_capture(latent)
-    @__parameter
-    def kv_input_fn[width: Int](coords: IndexList[2]) -> SIMD[kv_type, width]:
+    def kv_input_fn[
+        width: Int
+    ](coords: IndexList[2]) {var latent} -> SIMD[kv_type, width]:
         return latent.load[width=width]((coords[0], coords[1]))
 
     # === Kernel under test ===================================================
-    mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
+    mla_fused_rope_rmsnorm_quantization(
         q_rope_out,
         q_rope.as_imm(),
         row_offsets.as_imm(),
@@ -492,6 +492,7 @@ def run_one_case(
         kv_collection,
         UInt32(0),  # layer_idx
         EPS,
+        kv_input_fn,
         ctx,
     )
     ctx.synchronize()

@@ -33,7 +33,21 @@ def test_legacy_record_decodes_with_no_clocks() -> None:
     )
     decoded = msgspec.json.decode(legacy, type=GPUStats)
     assert decoded.clocks is None
+    assert decoded.memory is not None
     assert decoded.memory.total_bytes == 1
+
+
+def test_memory_stats_missing_round_trip() -> None:
+    stats = GPUStats(
+        memory=None,
+        utilization=UtilizationStats(
+            gpu_usage_percent=42, memory_activity_percent=None
+        ),
+        clocks=None,
+    )
+    decoded = msgspec.json.decode(msgspec.json.encode(stats), type=GPUStats)
+    assert decoded.memory is None
+    assert decoded.utilization.gpu_usage_percent == 42
 
 
 def test_clock_stats_round_trip() -> None:

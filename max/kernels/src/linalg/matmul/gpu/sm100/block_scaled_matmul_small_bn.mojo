@@ -62,7 +62,7 @@ from layout import (
     coord,
 )
 from layout.coord import ComptimeInt
-from layout.tile_layout import Layout as TileLayout, row_major as tt_row_major
+from layout.tile_layout import Layout as TileLayout
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -99,7 +99,12 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_BlockScaled_SS
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from .config import BlockScaledMatmulConfig
 from .tile_scheduler import (
     TileScheduler,
@@ -470,11 +475,15 @@ def load_AB_SFA[
             var sfa_smem_tile = sfa_smem_tiles[offset]
 
             var a_smem_slice = type_of(a_smem_tile)(
-                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                a_smem_tile.ptr.unsafe_offset(
+                    peer_cta_coord[2] * a_tma_load_size
+                ),
                 a_smem_tile.layout,
             )
             var b_smem_slice = type_of(b_smem_tile)(
-                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                b_smem_tile.ptr.unsafe_offset(
+                    peer_cta_coord[1] * b_tma_load_size
+                ),
                 b_smem_tile.layout,
             )
 
@@ -511,6 +520,75 @@ def load_AB_SFA[
                     work_tile_coord[0] * (BM // SF_MN_GROUP_SIZE),
                     batch_coord,
                 ),
+            )
+
+
+@inline(.always)
+def _prefetch_weight_tiles_l2_sbn[
+    a_type: DType,
+    b_type: DType,
+    sfa_tma_dtype: DType,
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    sfa_tile_shape: Coord,
+    sfa_desc_shape: Coord,
+    /,
+    *,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    num_sf_k_tiles: Int,
+    k_group_size: Int = 1,
+    AB_swapped: Bool = False,
+](
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
+    sfa_tma_op: TMATensorTile[sfa_tma_dtype, sfa_tile_shape, sfa_desc_shape],
+    peer_cta_coord: Tuple[Int, Int, Int],
+    work_tile_coord: Tuple[Int, Int, Int],
+    iter_idx: UInt32,
+):
+    """Prefetches into L2 the weight tiles `load_AB_SFA` loads for the
+    k-group at `iter_idx`. Call from one thread.
+
+    AB_swapped=False: weight = B. AB_swapped=True: weight = A + SFA.
+    """
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime MMA_N = mma_shape[1]
+    comptime a_tma_rows = a_desc_shape.element_types[1].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[1].static_value
+    var batch_coord = work_tile_coord[2]
+
+    comptime for j in range(k_group_size):
+        var k = Int(iter_idx) + j
+        comptime if AB_swapped:
+            a_tma_op.prefetch_l2_3d(
+                (
+                    k * BK,
+                    peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM,
+                    batch_coord,
+                )
+            )
+            sfa_tma_op.prefetch_l2_4d(
+                (
+                    0,
+                    k * num_sf_k_tiles,
+                    work_tile_coord[0] * (BM // SF_MN_GROUP_SIZE),
+                    batch_coord,
+                )
+            )
+        else:
+            b_tma_op.prefetch_l2_3d(
+                (
+                    k * BK,
+                    peer_cta_coord[1] * b_tma_rows
+                    + peer_cta_coord[0] * BN
+                    + work_tile_coord[1] * MMA_N,
+                    batch_coord,
+                )
             )
 
 
@@ -610,7 +688,9 @@ def _prefetch_weight_tiles_sbn[
             comptime if not AB_swapped:
                 var b_smem_tile = b_smem_tiles[offset]
                 var b_smem_slice = type_of(b_smem_tile)(
-                    b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                    b_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[1] * b_tma_load_size
+                    ),
                     b_smem_tile.layout,
                 )
                 b_tma_op.async_multicast_load_3d[cta_group](
@@ -626,7 +706,9 @@ def _prefetch_weight_tiles_sbn[
             else:
                 var a_smem_tile = a_smem_tiles[offset]
                 var a_smem_slice = type_of(a_smem_tile)(
-                    a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                    a_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[2] * a_tma_load_size
+                    ),
                     a_smem_tile.layout,
                 )
                 a_tma_op.async_multicast_load_3d[cta_group](
@@ -732,7 +814,9 @@ def _complete_activation_tiles_sbn[
             comptime if not AB_swapped:
                 var a_smem_tile = a_smem_tiles[offset]
                 var a_smem_slice = type_of(a_smem_tile)(
-                    a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                    a_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[2] * a_tma_load_size
+                    ),
                     a_smem_tile.layout,
                 )
                 a_tma_op.async_multicast_load_3d[cta_group](
@@ -760,7 +844,9 @@ def _complete_activation_tiles_sbn[
             else:
                 var b_smem_tile = b_smem_tiles[offset]
                 var b_smem_slice = type_of(b_smem_tile)(
-                    b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                    b_smem_tile.ptr.unsafe_offset(
+                        peer_cta_coord[1] * b_tma_load_size
+                    ),
                     b_smem_tile.layout,
                 )
                 b_tma_op.async_multicast_load_3d[cta_group](
@@ -820,7 +906,7 @@ def consumer_main_loop[
     sfb_smem_tiles: SMemTileArrayWithLayout[sfb_dtype, ...],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     sfb_pipeline: ProducerConsumerPipeline[num_group_pipeline_stages],
-    sfb_ready_mbars: UnsafePointer[SharedMemBarrier, _, address_space=.SHARED],
+    sfb_ready_mbars: Pointer[SharedMemBarrier, _, address_space=.SHARED],
     mut sfb_ready_state: PipelineState[num_group_pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
         c_type,
@@ -975,10 +1061,8 @@ def _sfb_cpasync_produce_tile[
     work_info: WorkInfo,
     num_iters: UInt32,
     mut sfb_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
-    sfb_smem_base_ptr: UnsafePointer[
-        mut=True, Scalar[sfb_dtype], _, address_space=.SHARED
-    ],
-    sfb_global_ptr: UnsafePointer[mut=False, Scalar[sfb_dtype], _],
+    sfb_smem_base_ptr: MutPointer[Scalar[sfb_dtype], _, address_space=.SHARED],
+    sfb_global_ptr: ImmPointer[Scalar[sfb_dtype], _],
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
@@ -1043,8 +1127,8 @@ def _sfb_cpasync_produce_tile[
         for jj in range(k_group_size):
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
-            var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(Coord(Int64(offset)))
+            var sfb_smem_tile_ptr = sfb_smem_base_ptr.unsafe_offset(
+                Int(sfb_smem_stage_layout(Coord(Int64(offset))))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -1087,16 +1171,14 @@ def _sfb_cpasync_produce_tile[
                             )
                             async_copy[size=SF_ATOM_K * size_of[sfb_dtype](),](
                                 (
-                                    sfb_global_ptr + global_offset
-                                ).address_space_cast[.GLOBAL](),
-                                (
-                                    sfb_smem_tile_ptr + smem_offset
-                                ).address_space_cast[.SHARED](),
+                                    sfb_global_ptr.unsafe_offset(global_offset)
+                                ).unsafe_address_space_cast[.GLOBAL](),
+                                sfb_smem_tile_ptr.unsafe_offset(smem_offset),
                             )
                         else:
-                            (sfb_smem_tile_ptr + smem_offset).store(
-                                SIMD[sfb_dtype, SF_ATOM_K]()
-                            )
+                            sfb_smem_tile_ptr.unsafe_offset(
+                                smem_offset
+                            ).unsafe_store(SIMD[sfb_dtype, SF_ATOM_K]())
 
         # async_copy_arrive + mbar.arrive for each active position.
         # Multi-pass: same thread may arrive multiple times for MMA_N > 32.
@@ -1121,10 +1203,8 @@ def _sfb_cpasync_produce_tile_warpwide[
     work_info: WorkInfo,
     num_iters: UInt32,
     mut sfb_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
-    sfb_smem_base_ptr: UnsafePointer[
-        mut=True, Scalar[sfb_dtype], _, address_space=.SHARED
-    ],
-    sfb_global_ptr: UnsafePointer[mut=False, Scalar[sfb_dtype], _],
+    sfb_smem_base_ptr: MutPointer[Scalar[sfb_dtype], _, address_space=.SHARED],
+    sfb_global_ptr: ImmPointer[Scalar[sfb_dtype], _],
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
@@ -1203,8 +1283,8 @@ def _sfb_cpasync_produce_tile_warpwide[
         for jj in range(k_group_size):
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
-            var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(Coord(Int64(offset)))
+            var sfb_smem_tile_ptr = sfb_smem_base_ptr.unsafe_offset(
+                Int(sfb_smem_stage_layout(Coord(Int64(offset))))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -1235,15 +1315,13 @@ def _sfb_cpasync_produce_tile_warpwide[
                         )
                     )
                     async_copy[size=SF_ATOM_K * size_of[sfb_dtype](),](
-                        (sfb_global_ptr + global_offset).address_space_cast[
-                            .GLOBAL
-                        ](),
-                        (sfb_smem_tile_ptr + smem_offset).address_space_cast[
-                            .SHARED
-                        ](),
+                        sfb_global_ptr.unsafe_offset(
+                            global_offset
+                        ).unsafe_address_space_cast[.GLOBAL](),
+                        sfb_smem_tile_ptr.unsafe_offset(smem_offset),
                     )
                 else:
-                    (sfb_smem_tile_ptr + smem_offset).store(
+                    sfb_smem_tile_ptr.unsafe_offset(smem_offset).unsafe_store(
                         SIMD[sfb_dtype, SF_ATOM_K]()
                     )
 
@@ -1275,11 +1353,8 @@ def _sfb_cpasync_produce_tile_warpwide[
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__name(
     StaticString(config.get_kernel_name())
-    + StaticString(
-        "_fused_compute_epi" if elementwise_compute_lambda_fn
-        is not None else ""
-    )
-    + StaticString("_fused_epi" if elementwise_lambda_fn is not None else ""),
+    + StaticString("_epilogue_fn" if has_epilogue_fn else "")
+    + StaticString("_compute_fn" if has_compute_fn else ""),
 )
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
@@ -1302,12 +1377,13 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ],
     # Need because nvvm.cluster_dim only takes StaticTuple
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
+    *,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
@@ -1317,11 +1393,13 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
     alpha: Float32,
-    sfb_global_ptr: UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin],
+    sfb_global_ptr: ImmPointer[Scalar[sfb_dtype], ImmutAnyOrigin],
     sfb_batch_stride: Int32,
     sfb_n_stride: Int32,
     sfb_k_tiles: Int32,
     sfb_n_total: Int32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     var _sfb_batch_stride = Int(sfb_batch_stride)
     var _sfb_n_stride = Int(sfb_n_stride)
@@ -1435,7 +1513,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         UInt8,
         address_space=.SHARED,
         alignment=128,
-    ]().bitcast[SmemType]()[]
+    ]().unsafe_bitcast[SmemType]()[]
 
     ref a_smem_storage = smem_storage.a_smem
     ref b_smem_storage = smem_storage.b_smem
@@ -1480,8 +1558,6 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         c_smem_dim1=OutputN,
         num_output_stages=config.num_output_stages,
         num_output_warps=num_output_warps,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         batched=True,
     ]
     comptime OutputStageType = OutputStage[opc]
@@ -1575,24 +1651,24 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         sfb_mbars_storage.unsafe_ptr(),
     )
 
-    var ptr_tmem_addr: UnsafePointer[
+    var ptr_tmem_addr: MutPointer[
         UInt32, origin_of(tmem_addr_storage), address_space=.SHARED
     ] = tmem_addr_storage.unsafe_ptr()
 
     var clc_response = clc_response_storage.unsafe_ptr()
-    var clc_full_mbar: UnsafePointer[
+    var clc_full_mbar: MutPointer[
         SharedMemBarrier,
         origin_of(clc_mbars_full_storage),
         address_space=.SHARED,
     ] = clc_mbars_full_storage.unsafe_ptr()
-    var clc_empty_mbar: UnsafePointer[
+    var clc_empty_mbar: MutPointer[
         SharedMemBarrier,
         origin_of(clc_mbars_empty_storage),
         address_space=.SHARED,
     ] = clc_mbars_empty_storage.unsafe_ptr()
 
     var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
-    var sfb_ready_mbars: UnsafePointer[
+    var sfb_ready_mbars: MutPointer[
         SharedMemBarrier,
         origin_of(sfb_ready_mbars_storage),
         address_space=.SHARED,
@@ -1846,6 +1922,29 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     first_tile_pf_done,
                     num_iters // UInt32(config.k_group_size),
                 ):
+                    comptime if config.l2_prefetch_k_groups > 0:
+                        var pf_iter = (
+                            i + UInt32(config.l2_prefetch_k_groups)
+                        ) * UInt32(config.k_group_size)
+                        if pf_iter < num_iters and elect_one_sync():
+                            _prefetch_weight_tiles_l2_sbn[
+                                block_tile_shape=config.block_tile_shape,
+                                mma_shape=config.mma_shape,
+                                num_sf_k_tiles=config.num_sf_k_tiles,
+                                k_group_size=config.k_group_size,
+                                AB_swapped=config.AB_swapped,
+                            ](
+                                a_tma_op,
+                                b_tma_op,
+                                sfa_tma_op,
+                                peer_cta_coord,
+                                (
+                                    Int(work_info.m),
+                                    Int(work_info.n),
+                                    Int(work_info.k_start),
+                                ),
+                                pf_iter,
+                            )
                     load_AB_SFA[
                         block_tile_shape=config.block_tile_shape,
                         mma_shape=config.mma_shape,
@@ -1988,7 +2087,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     # Signal leader's sfb_ready_mbar.
                     if elect_one_sync():
                         umma_arrive_leader_cta(
-                            sfb_ready_mbars + sfb_ready_state.index()
+                            sfb_ready_mbars.unsafe_offset(
+                                sfb_ready_state.index()
+                            )
                         )
 
                     sfb_ready_state.step()
@@ -2174,13 +2275,32 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
                 # TileWriter handles: TMEM load -> alpha scale -> SMEM write
                 # -> TMA store -> AccumBarrier.arrive()
-                tile_writer.write_batched(
-                    c_tiles,
-                    output_stage,
-                    (work_info.m, work_info.n, work_info.k_start),
-                    (mnk[0], mnk[1]),
-                    alpha,
-                )
+                comptime if has_epilogue_fn:
+                    tile_writer.write_batched(
+                        c_tiles,
+                        output_stage,
+                        (work_info.m, work_info.n, work_info.k_start),
+                        (mnk[0], mnk[1]),
+                        epilogue_fn,
+                        alpha,
+                    )
+                elif has_compute_fn:
+                    tile_writer.write_batched(
+                        c_tiles,
+                        output_stage,
+                        (work_info.m, work_info.n, work_info.k_start),
+                        (mnk[0], mnk[1]),
+                        compute_fn,
+                        alpha,
+                    )
+                else:
+                    tile_writer.write_batched(
+                        c_tiles,
+                        output_stage,
+                        (work_info.m, work_info.n, work_info.k_start),
+                        (mnk[0], mnk[1]),
+                        alpha,
+                    )
                 mma_output_pipeline.consumer_step()
 
                 var next_work_info = scheduler.fetch_next_work(
@@ -2208,17 +2328,18 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
 
 def _create_tma_and_launch[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     transpose_b: Bool,
     *,
     K: Int,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     a_3d: TileTensor,
     b_3d: TileTensor,
@@ -2227,6 +2348,8 @@ def _create_tma_and_launch[
     sfb_5d_tensor: TileTensor,
     ctx: DeviceContext,
     alpha: Float32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ) raises:
     """Create TMA descriptors and launch the small-BN block-scaled matmul kernel.
 
@@ -2339,7 +2462,15 @@ def _create_tma_and_launch[
         Int64(sfa_5d_tensor.dim[2]()),
         Idx[sf_atom_u16],
     )
-    var sfa_4d_layout = tt_row_major(sfa_4d_shape)
+    var sfa_4d_layout = TileLayout(
+        sfa_4d_shape,
+        Coord(
+            Int64(sfa_5d_tensor.dynamic_stride(0) // 2),
+            Int64(sfa_5d_tensor.dynamic_stride(1) // 2),
+            Int64(sfa_5d_tensor.dynamic_stride(2) // 2),
+            Idx[1],
+        ),
+    )
     var sfa_4d_tensor = sfa_5d_tensor.bitcast[.uint16]().reshape(sfa_4d_layout)
 
     comptime sfa_tma_tile_shape = coord[
@@ -2359,13 +2490,10 @@ def _create_tma_and_launch[
 
     # SFB global pointer and strides for cp.async path.
     # 5D layout: (batch, n_groups, k_tiles, SF_ATOM_M[0], SF_ATOM_M[1]*SF_ATOM_K)
-    # Row-major strides: stride[2]=512, stride[1]=k_tiles*512,
-    # stride[0]=n_groups*stride[1].
     var sfb_ptr = sfb_5d_tensor.ptr
-    comptime K_TILE_ELEMS = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
     var _sfb_k_tiles = Int(sfb_5d_tensor.dim[2]())
-    var _sfb_n_stride_val = _sfb_k_tiles * K_TILE_ELEMS
-    var _sfb_batch_stride_val = Int(sfb_5d_tensor.dim[1]()) * _sfb_n_stride_val
+    var _sfb_n_stride_val = Int(sfb_5d_tensor.dynamic_stride(1))
+    var _sfb_batch_stride_val = Int(sfb_5d_tensor.dynamic_stride(0))
 
     # Shared memory
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
@@ -2408,10 +2536,12 @@ def _create_tma_and_launch[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
+        EpilogueFnType=EpilogueFnType,
+        ComputeFnType=ComputeFnType,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
     ]
 
     # Grid and block dimensions
@@ -2460,6 +2590,7 @@ def _create_tma_and_launch[
         Int32(_sfb_n_stride_val),
         Int32(_sfb_k_tiles),
         Int32(N_maybe_swapped),
+        host_args=(epilogue_fn, compute_fn),
         grid_dim=grid_dim,
         # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
         block_dim=(
@@ -2494,24 +2625,27 @@ def _create_tma_and_launch[
 
 
 def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     sfa_dtype: DType,
     sfb_dtype: DType,
     transpose_b: Bool,
     *,
     K: Int,
     config: BlockScaledMatmulConfig[_, _, _, sfa_dtype, sfb_dtype, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c_tensor: TileTensor,
     a_tensor: TileTensor,
     b_tensor: TileTensor,
     a_scales_tensor: TileTensor[sfa_dtype, ...],
     b_scales_tensor: TileTensor[sfb_dtype, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
@@ -2640,22 +2774,52 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
 
-    var sfa_5d_shape = _scales_5d_shape(a_scales_tensor)
-    var sfa_5d_layout = tt_row_major(sfa_5d_shape)
+    # The views keep the scales' own strides, so a batch may be a strided
+    # slice of a larger scale tensor.
+    def _scales_5d_stride(
+        scales: TileTensor,
+    ) -> Coord[
+        Int64,
+        Int64,
+        Int64,
+        ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+        ComptimeInt[1],
+    ]:
+        comptime if is_batched_matmul:
+            return Coord(
+                Int64(scales.dynamic_stride(0)),
+                Int64(scales.dynamic_stride(1)),
+                Int64(scales.dynamic_stride(2)),
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
+                Idx[1],
+            )
+        else:
+            return Coord(
+                Int64(scales.dim[0]() * scales.dynamic_stride(0)),
+                Int64(scales.dynamic_stride(0)),
+                Int64(scales.dynamic_stride(1)),
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
+                Idx[1],
+            )
+
+    var sfa_5d_layout = TileLayout(
+        _scales_5d_shape(a_scales_tensor), _scales_5d_stride(a_scales_tensor)
+    )
     var sfa_5d_tensor = a_scales_tensor.as_imm().reshape(sfa_5d_layout)
-    var sfb_5d_shape = _scales_5d_shape(b_scales_tensor)
-    var sfb_5d_layout = tt_row_major(sfb_5d_shape)
+    var sfb_5d_layout = TileLayout(
+        _scales_5d_shape(b_scales_tensor), _scales_5d_stride(b_scales_tensor)
+    )
     var sfb_5d_tensor = b_scales_tensor.as_imm().reshape(sfb_5d_layout)
 
     comptime if is_batched_matmul:
         _create_tma_and_launch[
             K=K,
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             a_tensor,
             b_tensor,
@@ -2664,16 +2828,18 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             sfb_5d_tensor,
             ctx,
             alpha,
+            epilogue_fn,
+            compute_fn,
         )
     else:
         _create_tma_and_launch[
             K=K,
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             _to_batched_3d(a_tensor),
             _to_batched_3d(b_tensor),
@@ -2682,6 +2848,8 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             sfb_5d_tensor,
             ctx,
             alpha,
+            epilogue_fn,
+            compute_fn,
         )
 
 
@@ -2692,10 +2860,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     *,
     K: Int,
     config: BlockScaledMatmulConfig[_, _, _, sfa_dtype, sfb_dtype, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -2727,10 +2891,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             16 and satisfy `ceildiv(K, BK) % k_group_size == 0`.
         config: Kernel configuration controlling tile shapes, pipeline
             stages, cluster geometry, and swizzle modes.
-        elementwise_compute_lambda_fn: Fused elementwise compute lambda
-            applied during the epilogue (defaults to `None`).
-        elementwise_lambda_fn: Fused elementwise epilogue lambda applied
-            to the output tile (defaults to `None`).
         pdl_level: Programmatic dependent launch level controlling
             dependent grid synchronization (defaults to `PDLLevel.ON`).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per
@@ -2752,7 +2912,51 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         alpha: Scalar multiplier applied to the product `A @ B` (defaults
             to 1.0).
     """
+    _blackwell_block_scaled_matmul_small_bn_impl[
+        K=K,
+        config=config,
+        pdl_level=pdl_level,
+        max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+    ](
+        c_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
+        no_epilogue_fn,
+        no_compute_fn,
+        ctx,
+        alpha,
+    )
 
+
+def _blackwell_block_scaled_matmul_small_bn_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
+    transpose_b: Bool,
+    *,
+    K: Int,
+    config: BlockScaledMatmulConfig[_, _, _, sfa_dtype, sfb_dtype, transpose_b],
+    pdl_level: PDLLevel = PDLLevel.ON,
+    max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c_tensor: TileTensor,
+    a_tensor: TileTensor,
+    b_tensor: TileTensor,
+    a_scales_tensor: TileTensor[sfa_dtype, ...],
+    b_scales_tensor: TileTensor[sfb_dtype, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+    alpha: Float32,
+) raises:
     comptime if config.AB_swapped:
         # When both A and B are K-major, C = A @ B'.
         # If we swap A and B: D = B @ A', and D' = (B @ A')' = A @ B' = C.
@@ -2766,16 +2970,18 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             K=K,
             config=new_config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             c_tensor,
             b_tensor,
             a_tensor,
             b_scales_tensor,
             a_scales_tensor,
+            epilogue_fn,
+            compute_fn,
             ctx,
             alpha,
         )
@@ -2786,16 +2992,18 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             K=K,
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             c_tensor,
             a_tensor,
             b_tensor,
             a_scales_tensor,
             b_scales_tensor,
+            epilogue_fn,
+            compute_fn,
             ctx,
             alpha,
         )

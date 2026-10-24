@@ -30,6 +30,7 @@ import pytest
 from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.kv_cache.connectors.tier_connector import (
     TierConnector,
+    _leaf_recency,
     _validate_leaves,
 )
 from max.pipelines.kv_cache.kv_connector import KVLoadRefused
@@ -58,9 +59,14 @@ class _FakeRust:
         # (every block when None), and skips reported as already held.
         self.offload_posts: int | None = None
         self.offload_already_held = 0
+        self.touches: list[list[bytes]] = []
 
     def reclaim(self) -> None:
         self.calls.append("reclaim")
+
+    def touch(self, block_hashes: Sequence[bytes]) -> None:
+        self.calls.append("touch")
+        self.touches.append(list(block_hashes))
 
     def lookup(
         self, leaf_idxs: Sequence[int], block_hashes: Sequence[bytes]
@@ -307,6 +313,47 @@ def test_leaves_of_different_depth_drop_nothing_they_were_not_given() -> None:
     )
 
     assert connector._offload_blocks_dropped == 0
+
+
+# ============================================================================
+# touch
+# ============================================================================
+
+
+def test_touch_hands_the_tiers_the_whole_sequence_once() -> None:
+    """The native side orders each leaf; the shim crosses the hashes once."""
+    leaves = {"full": FULL, "window": WINDOW, "ssm": KVCacheGroupId.recurrent()}
+    hashes = [_h(1), _h(2), _h(3), _h(4)]
+    rust = _FakeRust(resident=[])
+
+    _connector(leaves, rust).touch(hashes)
+
+    assert rust.calls == ["reclaim", "touch"]
+    assert rust.touches == [hashes]
+
+
+def test_each_leaf_gets_the_recency_its_attention_reads_back() -> None:
+    assert _leaf_recency(FULL, PAGE_SIZE) == ("full_sequence", 0)
+    assert _leaf_recency(WINDOW, PAGE_SIZE) == ("sliding_window", 2)
+    assert _leaf_recency(KVCacheGroupId.recurrent(), PAGE_SIZE) == (
+        "recurrent",
+        0,
+    )
+
+
+class _FakePanic(BaseException):
+    """Stands in for pyo3's ``PanicException``, which is not an ``Exception``."""
+
+
+class _PanickingTouchRust(_FakeRust):
+    def touch(self, block_hashes: Sequence[bytes]) -> None:
+        raise _FakePanic("tier gone")
+
+
+def test_touch_swallows_a_native_panic() -> None:
+    rust = _PanickingTouchRust(resident=[])
+
+    _connector({"full": FULL}, rust).touch([_h(1)])
 
 
 # ============================================================================

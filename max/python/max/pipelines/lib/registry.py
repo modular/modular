@@ -71,6 +71,9 @@ from .interfaces import PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
+from .pipeline_variants.spec_decode_pipeline_model import (
+    spec_decode_architecture,
+)
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .reasoning import get_parser_cls
 from .tokenizer import TextTokenizer
@@ -510,12 +513,24 @@ class PipelineRegistry:
             if draft is not None
             else None
         )
-        speculator = select_speculator(
-            name,
-            pipeline_config.speculative.speculative_method,
-            draft_archs[0] if draft_archs else None,
-        )
-        return arch if speculator is None else speculator.derive()
+        method = pipeline_config.speculative.speculative_method
+        draft_arch = draft_archs[0] if draft_archs else None
+        prefer_v3 = pipeline_config.runtime.prefer_module_v3
+        # A target's speculators keep only the methods they declare; the
+        # prefer flag keeps the speculator in lockstep with the
+        # architecture variant the same flag selects.
+        if any(
+            speculator.method == method
+            for speculator in ARCH_LOOKUP.speculators_for(
+                name, prefer_module_v3=prefer_v3
+            )
+        ):
+            speculator = select_speculator(
+                name, method, draft_arch, prefer_module_v3=prefer_v3
+            )
+            assert speculator is not None
+            return speculator.derive()
+        return spec_decode_architecture(name, method, draft_arch) or arch
 
     def get_active_huggingface_config(
         self,
@@ -625,6 +640,11 @@ class PipelineRegistry:
             raise ValueError(
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
             )
+        if arch.pipeline_model is None:
+            raise ValueError(
+                f"{arch.name} is a draft architecture that only runs beside a"
+                " target model."
+            )
 
         # Calculate Max Length
         huggingface_config = pipeline_config.model.huggingface_config
@@ -716,6 +736,11 @@ class PipelineRegistry:
         if arch is None:
             raise ValueError(
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
+            )
+        if arch.pipeline_model is None:
+            raise ValueError(
+                f"{arch.name} is a draft architecture that only runs beside a"
+                " target model."
             )
 
         # For speculative decoding, pre-resolve the draft architecture for

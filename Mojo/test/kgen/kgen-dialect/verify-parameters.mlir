@@ -2,13 +2,6 @@
 
 // CHECK-LABEL: kgen.generator @parameterIsolatedRegions
 kgen.generator @parameterIsolatedRegions<A>() {
-  // CHECK: kgen.param.declare.region
-  kgen.param.declare.region Fn = <B>() {
-    kgen.param.constant = <B>
-    hlcf.return
-  }
-  // CHECK: {isolated}
-
   // CHECK: hlcf.comptime.if
   hlcf.comptime.if lt(A, 1) {
     hlcf.comptime.yield

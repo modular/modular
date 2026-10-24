@@ -22,7 +22,7 @@ from std.sys.info import (
     _is_amd_rdna3,
     _is_amd_rdna4,
     is_amd_gpu,
-    is_apple_m5,
+    _is_apple_m5_or_newer,
 )
 
 from std.memory import bitcast
@@ -226,7 +226,9 @@ def mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif is_amd_gpu():
         _mma_amd(d, a, b, c)
     # MSTDL-2556: Compilation Target Check doesn't match above
-    elif is_apple_m5() and CompilationTarget._has_feature["metal4_0"]():
+    elif _is_apple_m5_or_newer() and CompilationTarget._has_feature[
+        "metal4_0"
+    ]():
         _mma_apple(d, a, b, c)
     else:
         CompilationTarget.unsupported_target_error[
@@ -274,7 +276,7 @@ def ld_matrix[
         from max.gpu.compute.mma import ld_matrix
         from std.memory import alloc, dealloc, Layout
 
-        var layout = Layout[Float16](count=8)
+        var layout = Layout[Float16](length=8)
         var allocation = alloc(layout)
         var ptr = allocation.unsafe_ptr()
 
@@ -1017,7 +1019,7 @@ def wgmma_async[
                 scale_d, scale_a, scale_b, trans_b,
                 c[0], c[1], c[2], c[3],
             )
-    
+
             return rebind[type_of(c)](
                 SIMD[.float32, 4](r[0], r[1], r[2], r[3])
             )
@@ -1042,7 +1044,7 @@ def wgmma_async[
                 scale_d, scale_a, scale_b, trans_b,
                 c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
             )
-    
+
             return rebind[type_of(c)](
                 SIMD[.float32, 8](
                     r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
@@ -1072,7 +1074,7 @@ def wgmma_async[
                 c[0],  c[1],  c[2],  c[3],  c[4],  c[5],  c[6],  c[7],
                 c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
             )
-    
+
             return rebind[type_of(c)](
                 SIMD[.float32, 16](
                     r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
@@ -1109,7 +1111,7 @@ def wgmma_async[
                 c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23],
                 c[24], c[25], c[26], c[27], c[28], c[29], c[30], c[31],
             )
-    
+
             return rebind[type_of(c)](
                 SIMD[.float32, 32](
                     r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
@@ -1238,7 +1240,7 @@ def wgmma_async[
                 c[116], c[117], c[118], c[119], c[120], c[121], c[122], c[123],
                 c[124], c[125], c[126], c[127],
             )
-    
+
             return rebind[type_of(c)](
                 SIMD[.float32, 128](
                     r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],

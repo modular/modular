@@ -52,7 +52,7 @@ class DeepseekV3_2TopKRouter(DeepseekV3TopKRouter):
                 - topk_idx: Indices of top-k selected experts of shape (seq_len, num_experts_per_token)
                 - topk_weight: Routing weights for selected experts of shape (seq_len, num_experts_per_token)
         """
-        logits = self.gate_score(hidden_states)
+        logits = self.gate_score(hidden_states.cast(self.gate_dtype))
 
         scores = ops.sigmoid(logits)
 

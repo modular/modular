@@ -26,7 +26,7 @@ from std.sys import (
 
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext
-from max.gpu.host.device_attribute import DeviceAttribute
+from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     DefaultEngine,
@@ -187,7 +187,7 @@ def _small_MN_gemms_impl[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=(
                     ceildiv(m, config.tile_m),
                     ceildiv(n, config.tile_n),
@@ -222,7 +222,7 @@ def _small_MN_gemms_impl[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=(
                     ceildiv(m, config.tile_m),
                     ceildiv(n, config.tile_n),
@@ -332,6 +332,10 @@ def dispatch_gemv[
         Index(7168, 8192),
         Index(7168, 21504),
         Index(7168, 18432),
+        Index(16384, 512),
+        Index(8192, 512),
+        Index(32768, 1280),
+        Index(4096, 1280),
     ]
 
     comptime if static_NK in SM100_GEMV_SHAPES:
@@ -846,6 +850,17 @@ def _matmul_dispatch_sm100_impl[
                 has_compute_fn=has_compute_fn,
             ](c, a, b, epilogue_fn, compute_fn, ctx)
 
+        elif a_type == .bfloat16 and c_type in (DType.float32,):
+            # The heuristic configs are not tuned for fp32 output, so only
+            # shapes a tuned row covers leave vendor BLAS.
+            status = sm100_heuristic_and_outliers_dispatch[
+                transpose_b=transpose_b,
+                pdl_level=pdl_level,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+                outliers_only=True,
+            ](c, a, b, epilogue_fn, compute_fn, ctx)
+
         if status:
             logger.info("------ Executing MOJO SM100 Matmul------")
             return
@@ -1139,6 +1154,7 @@ def select_and_launch_sm100_config[
     epilogue_is_1d: Bool = False,
     has_compute_fn: Bool = True,
     has_epilogue_fn: Bool = False,
+    outliers_only: Bool = False,
 ](
     launch: launch_type,
     c: TileTensor[mut=True, c_type, ...],
@@ -1159,7 +1175,9 @@ def select_and_launch_sm100_config[
     Checks the per-dtype outlier tuning list for a matching (N, K, M) config,
     then falls back to the heuristic config set from `build_sm100_matmul_configs`
     chosen via `choose_config`. For float8_e4m3fn output, always launches the
-    default config on a miss; other dtypes return `DISPATCH_MISS`.
+    default config on a miss; other dtypes return `DISPATCH_MISS`. With
+    `outliers_only`, a shape no outlier row covers returns `DISPATCH_MISS`
+    without trying the heuristic.
     """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
@@ -1194,8 +1212,12 @@ def select_and_launch_sm100_config[
             and not has_epilogue_fn
             and not has_epilogue_tensor
         )
+        # Only the split-K reduction writes fp32 from narrower inputs.
+        comptime split_k_only = c_type == .float32 and a_type != .float32
         comptime for tuning_config in outlier_configs:
-            comptime if tuning_config.num_split_k == 1 or split_k_allowed:
+            comptime if (
+                tuning_config.num_split_k == 1 and not split_k_only
+            ) or (tuning_config.num_split_k > 1 and split_k_allowed):
                 if (
                     m >= tuning_config.M
                     and m < tuning_config.M_end
@@ -1228,6 +1250,9 @@ def select_and_launch_sm100_config[
 
                     launch[matmul_config](c, a, b, ctx, epilogue_tensor)
                     return DISPATCH_HIT
+
+    comptime if outliers_only:
+        return DISPATCH_MISS
 
     comptime configs = build_sm100_matmul_configs[
         a_type,
@@ -1554,7 +1579,7 @@ def _vendor_blas_matmul_sm100[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=epilogue_fn,
+                    host_args=(epilogue_fn,),
                     grid_dim=grid_dim,
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
@@ -1580,7 +1605,7 @@ def _vendor_blas_matmul_sm100[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=compute_fn,
+                    host_args=(compute_fn,),
                     grid_dim=grid_dim,
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
@@ -1831,6 +1856,7 @@ def sm100_heuristic_and_outliers_dispatch[
     EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = True,
+    outliers_only: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -1875,6 +1901,9 @@ def sm100_heuristic_and_outliers_dispatch[
             `has_epilogue_tensor` (defaults to `False`).
         has_compute_fn: Whether to apply `compute_fn`. When False,
             `compute_fn` is ignored (defaults to `True`).
+        outliers_only: Whether to return `DISPATCH_MISS` for a shape no
+            outlier row covers instead of trying the heuristic (defaults
+            to `False`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -1940,4 +1969,5 @@ def sm100_heuristic_and_outliers_dispatch[
         epilogue_is_1d=epilogue_is_1d,
         has_compute_fn=has_compute_fn,
         has_epilogue_fn=has_epilogue_fn,
+        outliers_only=outliers_only,
     ](launch_callback, c, a, b, ctx, epilogue_tensor)

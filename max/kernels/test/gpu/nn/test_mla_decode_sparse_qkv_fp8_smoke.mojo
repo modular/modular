@@ -19,8 +19,7 @@ signatures. Numerical correctness is covered by
 test_mla_decode_sparse_qkv_fp8.mojo.
 """
 
-from std.sys import default_accelerator
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_sparse_qkv_fp8 import (
     MLA_SM100_Decode_Sparse_QKV_FP8,

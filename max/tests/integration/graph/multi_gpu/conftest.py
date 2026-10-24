@@ -65,7 +65,7 @@ def _build_symbolic_reducescatter_graph(
             [inp.buffer for inp in graph.inputs[num_gpus:]],
             axis=0,
         )
-        graph.output(*outputs)
+        graph.output(outputs)
         return graph
 
 

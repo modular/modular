@@ -105,17 +105,15 @@ struct TileScheduler[
     var log_cluster_dim_k: FastDiv[.uint32]
 
     @__allow_legacy_any_origin_fields
-    var clc_response: UnsafePointer[
-        UInt128, MutAnyOrigin, address_space=.SHARED
-    ]
+    var clc_response: MutPointer[UInt128, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var full_mbar: UnsafePointer[
+    var full_mbar: MutPointer[
         SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
-    var empty_mbar: UnsafePointer[
+    var empty_mbar: MutPointer[
         SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
 
@@ -123,15 +121,9 @@ struct TileScheduler[
     def __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
-        clc_response_ptr: UnsafePointer[
-            mut=True, UInt128, _, address_space=.SHARED
-        ],
-        full_mbar_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, _, address_space=.SHARED
-        ],
-        empty_mbar_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, _, address_space=.SHARED
-        ],
+        clc_response_ptr: MutPointer[UInt128, _, address_space=.SHARED],
+        full_mbar_ptr: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
+        empty_mbar_ptr: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     ):
         comptime assert Self.block_swizzle_size in [
             0,
@@ -152,7 +144,7 @@ struct TileScheduler[
     @inline(.always)
     @staticmethod
     def work_info_from_clc_response(
-        result: UnsafePointer[mut=True, UInt128, _, address_space=.SHARED],
+        result: MutPointer[UInt128, _, address_space=.SHARED],
     ) -> WorkInfo:
         comptime asm = """{
             .reg .pred p1;
@@ -283,7 +275,7 @@ struct TileScheduler[
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
         var work_tile = self.work_info_from_clc_response(
-            self.clc_response + consumer_state.index()
+            self.clc_response.unsafe_offset(consumer_state.index())
         )
         # Only cta 0 in a cluster is used for scheduling.
         self.empty_mbar[consumer_state.index()].arrive_cluster(0)
@@ -311,8 +303,10 @@ struct TileScheduler[
 
         if elect_one_sync():
             clusterlaunchcontrol_try_cancel[multicast=multicast](
-                self.clc_response + clc_state.index(),
-                (self.full_mbar + clc_state.index()).bitcast[Int64](),
+                self.clc_response.unsafe_offset(clc_state.index()),
+                self.full_mbar.unsafe_offset(clc_state.index()).unsafe_bitcast[
+                    Int64
+                ](),
             )
 
         return clc_state.next()

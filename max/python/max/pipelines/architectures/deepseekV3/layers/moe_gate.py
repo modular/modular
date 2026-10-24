@@ -113,7 +113,7 @@ class DeepseekV3TopKRouter(MoEGate):
 
     def compute_scores(self, hidden_states: TensorValue) -> TensorValue:
         """Sigmoid scores in correction-bias dtype, ready for the router kernel."""
-        logits = self.gate_score(hidden_states)
+        logits = self.gate_score(hidden_states.cast(self.gate_dtype))
         return ops.sigmoid(logits.cast(self.correction_bias_dtype))
 
     def __call__(

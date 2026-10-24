@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only NVFP4 (W4A16) matmul: `out = activation @ weight^T`.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`). The FP4 weight stays
+Apple silicon GPU (Metal 4, `compute_capability >= 5`). The FP4 weight stays
 packed in DRAM (`uint8 [N, K//2]` lo-nibble + `float8_e4m3fn [N, K//16]` block
 scales); each `(BN, BK)` weight sub-tile is COOPERATIVELY dequantized to bf16
 once per K-strip into threadgroup memory (SMEM), then the dense bf16 simdgroup
@@ -45,7 +45,6 @@ This kernel mirrors `AppleM5MatMul._run_gemm_body` for everything but the B side
 tail loop, cast/epilogue store). The dense fp16/bf16/fp32 path is untouched.
 """
 
-from std.collections import Optional
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
@@ -71,12 +70,11 @@ from linalg.matmul.gpu.apple.matmul_kernel import (
     AppleM5MatMul,
     enqueue_apple_matmul,
 )
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import no_compute_fn, no_epilogue_fn
 
 
 struct AppleM5Fp4MatMul[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     *,
     BM: Int = 128,
     BK: Int = 64,
@@ -86,8 +84,6 @@ struct AppleM5Fp4MatMul[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue; receives
-            `SIMD[c_type, width]` at absolute `(row, col)` (AMD's contract).
         BM: Threadgroup M-tile height (also the Morton grid_m divisor). The
             simdgroup tile is a square `32x32` (2x2 `MmaOpApple`), so `BM=128`
             stacks 4 M-simdgroups (8 simdgroups/threadgroup) and `BM=64` stacks
@@ -360,7 +356,7 @@ struct AppleM5Fp4MatMul[
             # This thread's contiguous packed byte-run: one TileTensor width-load
             # (coalesced K; adjacent threads read adjacent bytes) -- no raw ptr.
             var bytes = packed.load[width=BYTES_PER_THREAD, alignment=1](
-                Coord(n_abs, (k0 // 2) + byte0)
+                (n_abs, (k0 // 2) + byte0)
             )
             var nib = SIMD[.uint16, COLS_PER_THREAD](0)
 
@@ -396,8 +392,8 @@ struct AppleM5Fp4MatMul[
                 # OOB N-row, or this thread's whole col-run is past the K tail:
                 # zero-fill (the MMA must read a clean zero, not stale SMEM).
                 if n_abs >= n or col0 >= kv:
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0),
+                    b_smem_view.store(
+                        (buf, nrow, col0),
                         SIMD[Self.in_type, COLS_PER_THREAD](0),
                     )
                     return
@@ -408,8 +404,8 @@ struct AppleM5Fp4MatMul[
                 )
                 if col0 + COLS_PER_THREAD <= kv:
                     # Whole run in-bounds: the interior fast path (below).
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0),
+                    b_smem_view.store(
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -433,9 +429,7 @@ struct AppleM5Fp4MatMul[
                             vals[i] = (dec.cast[.float32]() * scale_abs).cast[
                                 Self.in_type
                             ]()
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0), vals
-                    )
+                    b_smem_view.store((buf, nrow, col0), vals)
             else:
                 # Interior: no bounds branch. One wide contiguous packed load ->
                 # nibble expand -> decode -> one hoisted scale. The scale comes
@@ -443,8 +437,8 @@ struct AppleM5Fp4MatMul[
                 # per-thread scattered load.
                 comptime if Self.coalesce_scales:
                     var scale_abs = s_smem_view[buf, nrow, col0 // SF][0]
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0),
+                    b_smem_view.store(
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -455,8 +449,8 @@ struct AppleM5Fp4MatMul[
                             DType.float32
                         ]()
                     )
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0),
+                    b_smem_view.store(
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -473,8 +467,8 @@ struct AppleM5Fp4MatMul[
             var t = Int(tid)
             if t < NSCALE:
                 var srow, sblk = divmod(t, NBLK)
-                s_smem_view.store[width=1](
-                    Coord(buf, srow, sblk),
+                s_smem_view.store(
+                    (buf, srow, sblk),
                     Float32(
                         abs(
                             scales[Int(tg_col) + srow, Int(k0) // SF + sblk][
@@ -563,10 +557,8 @@ struct AppleM5Fp4MatMul[
             _run_strips[False]()
 
         # ---- Epilogue (mirrors `AppleM5MatMul._run_gemm_body`): bounded store
-        # for fp32 fast path; cast/lambda path for non-fp32 out or fused lambda.
-        comptime use_epilogue_path = (
-            Self.c_type != .float32 or Self.elementwise_lambda_fn
-        )
+        # for fp32 fast path; cast path for non-fp32 out.
+        comptime use_epilogue_path = Self.c_type != .float32
         var valid_cols = max(Int32(0), min(SG_N_i32, n_i32 - col_base))
 
         comptime if use_epilogue_path:
@@ -581,33 +573,17 @@ struct AppleM5Fp4MatMul[
             def _write4(
                 lrow: Int,
                 lcol: Int,
-                arow: Int,
                 acol: Int,
                 v_fp32: SIMD[.float32, 4],
             ) {imm}:
                 var y = v_fp32.cast[Self.c_type]()
-                comptime if case .Some(epilogue) = Self.elementwise_lambda_fn:
-                    if acol + 3 < n:
-                        epilogue[Self.c_type, 4, alignment=elem_align](
-                            (arow, acol), y
-                        )
-                    else:
-                        for e in range(min(4, n - acol)):
-                            epilogue[Self.c_type, 1](
-                                (arow, acol + e),
-                                SIMD[Self.c_type, 1](y[e]),
-                            )
+                if acol + 3 < n:
+                    c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
                 else:
-                    if acol + 3 < n:
-                        c_vec.store[alignment=elem_align](
-                            Coord(lrow, lcol // 4), y
+                    for e in range(min(4, n - acol)):
+                        c_sub.store[alignment=elem_align](
+                            (lrow, lcol + e), y[e]
                         )
-                    else:
-                        for e in range(min(4, n - acol)):
-                            c_sub.store[width=1, alignment=elem_align](
-                                Coord(lrow, lcol + e),
-                                SIMD[Self.c_type, 1](y[e]),
-                            )
 
             comptime for mi in range(Mma.num_m_mmas):
                 comptime for ni in range(Mma.num_n_mmas):
@@ -617,19 +593,11 @@ struct AppleM5Fp4MatMul[
                     var acol = tile_col_base + lcol
                     var arow = tile_row_base + lrow
                     if arow < m and acol < n:
-                        _write4(
-                            lrow, lcol, arow, acol, frag.slice[4, offset=0]()
-                        )
+                        _write4(lrow, lcol, acol, frag.slice[4, offset=0]())
                     if arow + 8 < m and acol < n:
-                        _write4(
-                            lrow + 8,
-                            lcol,
-                            arow + 8,
-                            acol,
-                            frag.slice[4, offset=4](),
-                        )
+                        _write4(lrow + 8, lcol, acol, frag.slice[4, offset=4]())
         else:
-            var c_ptr_fp32 = rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr)
+            var c_ptr_fp32 = rebind[MutPointer[Float32, MutAnyOrigin]](c_ptr)
             var c_mat_fp32 = TileTensor(c_ptr_fp32, row_major(m, n))
             var c_sub_fp32 = c_mat_fp32.tile[SG_M, SG_N](
                 Int(sg_row_idx), Int(sg_col_idx)
@@ -743,7 +711,6 @@ comptime _M2D_DEEPK_M_THRESHOLD = 1024
 @inline(.always)
 def _enqueue_apple_fp4_materialize_dense[
     c_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[.bfloat16, ...],
@@ -762,8 +729,7 @@ def _enqueue_apple_fp4_materialize_dense[
     per-element `E2M1 * |block_scale|` decode the fused kernel and the test
     oracle use -- so this path is bit-exact vs the fused path), then runs the
     stock dense bf16 MMA (`enqueue_apple_matmul`, `transpose_b=True`) reading the
-    materialized weight. The optional fused epilogue is threaded straight through
-    to the dense matmul (which applies it on the dense path). The NVFP4
+    materialized weight. The NVFP4
     `weight_scale_2` per-tensor scalar is applied OUTSIDE the kernel by the graph
     lowering (a post-matmul multiply), identically for both paths.
 
@@ -784,12 +750,11 @@ def _enqueue_apple_fp4_materialize_dense[
 
     enqueue_fp4_materialize[.bfloat16](wdense_tt, packed, scales, ctx)
 
-    if ctx.compute_capability() == 5:
+    if ctx.compute_capability() >= 5:
         enqueue_apple_matmul[
             in_type=DType.bfloat16,
             c_type=c_type,
             transpose_b=True,
-            elementwise_lambda_fn=elementwise_lambda_fn,
         ](c, a, wdense_tt.as_imm(), ctx)
     else:
         comptime apple_kernel = gemm_kernel_apple_8x8[
@@ -803,7 +768,6 @@ def _enqueue_apple_fp4_materialize_dense[
             type_of(a).Engine,
             type_of(wdense_tt).Engine,
             transpose_b=True,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             BLOCK_M=64,
             BLOCK_N=64,
             BLOCK_K=16,
@@ -816,6 +780,7 @@ def _enqueue_apple_fp4_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
+            host_args=(no_epilogue_fn, no_compute_fn),
             grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
             block_dim=(4 * WARP_SIZE,),
         )
@@ -828,7 +793,6 @@ def _enqueue_apple_fp4_materialize_dense[
 @inline(.always)
 def _launch_apple_fp4_matmul[
     c_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     *,
     BM: Int,
     BK: Int,
@@ -852,7 +816,6 @@ def _launch_apple_fp4_matmul[
     """
     comptime MM = AppleM5Fp4MatMul[
         c_type,
-        elementwise_lambda_fn,
         BM=BM,
         BK=BK,
         coalesce_scales=coalesce_scales,
@@ -899,7 +862,6 @@ def _launch_apple_fp4_matmul[
 @inline(.always)
 def enqueue_apple_fp4_matmul[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     *,
     use_matmul2d: Bool = False,
 ](
@@ -917,8 +879,6 @@ def enqueue_apple_fp4_matmul[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract), threaded to whichever path runs.
         use_matmul2d: OPT-IN OVERRIDE. When `True`, route EVERY aligned interior
             (N % `_M2D_TG_N=32` == 0, K % `_M2D_SMEM_BK=256` == 0) to the native
             `matmul2d`-tile W4A16 kernel
@@ -954,8 +914,7 @@ def enqueue_apple_fp4_matmul[
       and hits the M5 DRAM wall, while `matmul2d` stays 4-bit-in-DRAM and holds
       ~42 TF/s -- measured 1.02-1.31x over the walled MAT at M in {1024,2048,4096}
       (thermal-fair A/B). This is the real FLUX.2-dev FFN-down (N=6144, K=18432)
-      at prefill. Only when there is no fused epilogue (the `matmul2d` interior
-      store does not yet apply the lambda).
+      at prefill.
     - Large M (`M >= 1536`): MATERIALIZE the weight to a transient `(N, K)` bf16
       buffer (`enqueue_fp4_materialize`), then run the stock dense bf16 MMA
       (`enqueue_apple_matmul`). The FP4 decode is off the MMA critical path, so
@@ -1001,7 +960,7 @@ def enqueue_apple_fp4_matmul[
     # Pre-M5 (M1-M4): route unconditionally to materialize->dense, which
     # decodes the FP4 weight to a transient bf16 buffer (hardware-neutral) and
     # runs the pre-M5 dense bf16 `gemm_kernel_apple_8x8`.
-    if cc != 5:
+    if cc < 5:
         # NVFP4's block size is 16, so K is always a multiple of 16 (hence 8)
         # for well-formed weights, however to be safe we assert on a malformed
         # K instead of producing silently bad results.
@@ -1013,7 +972,7 @@ def enqueue_apple_fp4_matmul[
             ),
             k,
         )
-        _enqueue_apple_fp4_materialize_dense[c_type, elementwise_lambda_fn](
+        _enqueue_apple_fp4_materialize_dense[c_type](
             c, a, packed, scales, m, n, k, ctx
         )
         return
@@ -1021,9 +980,7 @@ def enqueue_apple_fp4_matmul[
     # `matmul2d` W4A16 path (`enqueue_matmul2d_fp4_smem`). Its interior kernel is
     # tile-aligned (N % TG_N == 0, K % smem_bk == 0), so every route to it is
     # gated on that alignment with a fall-through to the incumbent (which handles
-    # ragged N/K). `elementwise_lambda_fn` is not yet wired on the `matmul2d`
-    # interior store, so only route the no-epilogue case.
-    comptime _m2d_no_epi = not elementwise_lambda_fn
+    # ragged N/K).
     var m2d_aligned = (n % _M2D_TG_N) == 0 and (k % _M2D_SMEM_BK) == 0
 
     # (1) DEEP-K niche = the DEFAULT route where m2d actually wins: at K >= 18432
@@ -1034,20 +991,19 @@ def enqueue_apple_fp4_matmul[
     # hence a DEEP-K gate, not a general large-M gate). This is the real FLUX.2-dev
     # FFN-down (N=6144, K=18432) at prefill M ~ 4096. See the `_M2D_DEEPK_*`
     # threshold comment for the full crossover.
-    comptime if _m2d_no_epi:
-        if (
-            m2d_aligned
-            and k >= _M2D_DEEPK_K_THRESHOLD
-            and m >= _M2D_DEEPK_M_THRESHOLD
-        ):
-            enqueue_matmul2d_fp4_smem[c_type=c_type](c, a, packed, scales, ctx)
-            return
+    if (
+        m2d_aligned
+        and k >= _M2D_DEEPK_K_THRESHOLD
+        and m >= _M2D_DEEPK_M_THRESHOLD
+    ):
+        enqueue_matmul2d_fp4_smem[c_type=c_type](c, a, packed, scales, ctx)
+        return
 
     # (2) OPT-IN force to m2d (A/B + future geometry). Off the deep-K niche m2d is
     # dominated (MAT wins mid-K large-M, FUSED wins small-M; see the `_M2D_*`
     # table), so this is NOT taken by default -- only when the caller passes
     # `use_matmul2d=True`, and still only on the aligned interior.
-    comptime if use_matmul2d and _m2d_no_epi:
+    comptime if use_matmul2d:
         if m2d_aligned:
             enqueue_matmul2d_fp4_smem[c_type=c_type](c, a, packed, scales, ctx)
             return
@@ -1055,9 +1011,7 @@ def enqueue_apple_fp4_matmul[
     # (3) BATCH-1 DECODE: M == 1 -> register-resident W4A16 GEMV, no MMA; see
     # fp4_gemv.mojo for the full rationale.
     if m == 1:
-        enqueue_apple_fp4_gemv[c_type, elementwise_lambda_fn](
-            c, a, packed, scales, n, k, ctx
-        )
+        enqueue_apple_fp4_gemv[c_type](c, a, packed, scales, n, k, ctx)
         return
 
     # Three-way M-adaptive dispatch (two independent crossovers, both measured):
@@ -1070,7 +1024,7 @@ def enqueue_apple_fp4_matmul[
         # transient buffer is execution-time only (not a graph constant) -- no
         # persistent 4x weight blow-up. (The per-call alloc/free is what pushes
         # this crossover to 1536 rather than ~512; see the threshold comment.)
-        _enqueue_apple_fp4_materialize_dense[c_type, elementwise_lambda_fn](
+        _enqueue_apple_fp4_materialize_dense[c_type](
             c, a, packed, scales, m, n, k, ctx
         )
     elif m >= _FP4_TALL_M_THRESHOLD:
@@ -1081,9 +1035,9 @@ def enqueue_apple_fp4_matmul[
         # the per-call alloc is paid (the crossover sweep shows fused winning or
         # tied for M < 1536). Coalesce the scale load into SMEM (+7-12%; the
         # extra barrier is hidden by the wide tile's high occupancy).
-        _launch_apple_fp4_matmul[
-            c_type, elementwise_lambda_fn, BM=128, BK=64, coalesce_scales=True
-        ](c, a, packed, scales, m, n, ctx)
+        _launch_apple_fp4_matmul[c_type, BM=128, BK=64, coalesce_scales=True](
+            c, a, packed, scales, m, n, ctx
+        )
     else:
         # Small M (< 256): fused cooperative-SMEM, BM=64 -- keeps occupancy up
         # (no wasted rows in a 128-tall tile). Keep the scattered per-thread
@@ -1091,6 +1045,6 @@ def enqueue_apple_fp4_matmul[
         # BK=32 here (NOT 64): at BM=64 a BK=64 strip forces COLS_PER_THREAD=32,
         # which crashes the M5 Metal backend (>16-lane 16-bit SIMD arithmetic);
         # BK=64's win needs the BM=128 thread count to keep COLS_PER_THREAD=16.
-        _launch_apple_fp4_matmul[
-            c_type, elementwise_lambda_fn, BM=64, BK=32, coalesce_scales=False
-        ](c, a, packed, scales, m, n, ctx)
+        _launch_apple_fp4_matmul[c_type, BM=64, BK=32, coalesce_scales=False](
+            c, a, packed, scales, m, n, ctx
+        )

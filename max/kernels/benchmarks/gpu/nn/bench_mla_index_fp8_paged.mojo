@@ -370,7 +370,7 @@ def execute_mla_indexer_paged[
     # The MLA cache's physical rows. The bench reuses the indexer cache's page
     # table as the MLA one; production allocates both caches' pages together.
     var phys_device = ctx.enqueue_create_buffer[.int32](total_seq_len * top_k)
-    var phys_ptr = phys_device.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var phys_ptr = phys_device.unsafe_ptr()
     var logical_ptr = o_device.unsafe_ptr().as_imm()
     var row_offsets_ptr = input_row_offsets_device.unsafe_ptr().as_imm()
     var lut_ptr = k_lut_device.unsafe_ptr().as_imm()

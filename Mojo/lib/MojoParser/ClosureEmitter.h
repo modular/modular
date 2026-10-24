@@ -27,6 +27,9 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN::LIT {
+class OpASTDecl;
+class TraitASTDecl;
+
 // Naming schemes used for emitting closure related-struct.
 inline constexpr llvm::StringLiteral kClosurePrefix = "closure$";
 inline constexpr llvm::StringLiteral kClosureInflatedPrefix = "inflated$";
@@ -39,7 +42,7 @@ public:
   ClosureEmitter(SharedState &shared);
 
   /// Return true if \p type provably conforms to \p traitDecl.
-  static bool provenConformsToTrait(ASTType type, ASTDecl *traitDecl,
+  static bool provenConformsToTrait(ASTType type, TraitASTDecl &traitDecl,
                                     SharedState &shared,
                                     ArrayRef<ConstraintAttr> callerAssumptions);
 
@@ -48,40 +51,44 @@ public:
     ArgConvention convention;
   };
 
+  struct PromotedClosure {
+    DefASTDecl *functionDecl;
+    ASTDecl *valueDecl;
+  };
+
   /// Move `nestedFnDecl` into `storageStructDecl` as a method and wire its
   /// captured values to the storage struct fields. Returns the method decl.
-  ASTDecl *
-  liftClosureIntoMethod(ASTDecl &nestedFnDecl, ASTDecl &storageStructDecl,
+  DefASTDecl *
+  liftClosureIntoMethod(DefASTDecl &nestedFnDecl,
+                        StructASTDecl &storageStructDecl,
                         PromotedClosureSelfArg selfArg,
                         ArrayRef<StructDefFieldAttr> concreteFieldDecls,
                         ArrayRef<Value> concreteFieldCaptures,
                         ArrayRef<CaptureConvention> captureConventions,
                         ArrayRef<Type> selfBoundFieldTypes, Location location);
 
-  /// Promote a closure decl into `targetParent`. nullptr → nearest FileModuleOp
-  /// (thin/stateless promotions).
-  ASTDecl *
-  promoteClosure(ASTDecl &nestedFnDecl,
+  /// Promote a closure decl into `targetParent`. nullptr → nearest
+  /// FileModuleASTDecl (thin/stateless promotions).
+  PromotedClosure
+  promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclAttr> prependedParams = {},
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 TriBool capturingOverride = TriBool::unknown(),
-                 ASTDecl *targetParent = nullptr);
+                 OpASTDecl *targetParent = nullptr);
 
   /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
-  ASTDecl *
-  promoteClosure(ASTDecl &nestedFnDecl,
+  PromotedClosure
+  promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclRefAttr> prependedParamRefs,
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 TriBool capturingOverride = TriBool::unknown(),
-                 ASTDecl *targetParent = nullptr);
+                 OpASTDecl *targetParent = nullptr);
 
-  Value emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
+  Value emitClosure(ModuleASTDecl &moduleDecl, DefASTDecl &nestedFnDecl,
                     ArrayRef<Capture> captures, Location location,
                     bool isCopyable, ArrayRef<ParamDeclRefAttr> paramCaptures);
-  static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
+  static ASTDecl *addCaptureValue(SharedState &shared, DefASTDecl &closure,
                                   StringRef name, SMLoc location);
 
-  static ASTDecl *addCaptureValue(ASTDecl &closure, SMLoc location,
+  static ASTDecl *addCaptureValue(DefASTDecl &closure, SMLoc location,
                                   StringRef name, CaptureConvention capture,
                                   IREmitter &emitter,
                                   ASTDecl *signatureDecl = nullptr);
@@ -121,7 +128,7 @@ public:
     bool isEmpty() const { return closureMethod == ClosureMethod::NONE; }
     ClosureMethod getClosureMethod() const { return closureMethod; }
 
-    TraitDeclOp getTrait(SharedState &shared) const;
+    TraitASTDecl &getTrait(SharedState &shared) const;
 
     FnTypeGeneratorType getSignature() const { return signature; }
 
@@ -142,7 +149,7 @@ public:
 
   /// Bundles the IR artifacts produced by liftClosure.
   struct Closure {
-    ASTDecl *structDecl;         ///< The closure storage struct.
+    StructASTDecl *structDecl;   ///< The closure storage struct.
     ASTDecl *promotedCallMethod; ///< The storage struct's `__call__` method.
     TypedAttr typeAttr;          ///< Bound closure storage struct type.
   };
@@ -154,12 +161,12 @@ private:
   StringAttr selfName, copyName;
 
   /// Augment a synthesized struct with trivial lifecycle traits.
-  void addTrivialClosureLifecycle(ASTDecl &structDecl,
+  void addTrivialClosureLifecycle(StructASTDecl &structDecl,
                                   const ClosureParent &callParent);
 
   /// Construct the closure struct, lift the nested function into a method, and
   /// emit witness tables for all closure parents.
-  Closure liftClosure(ASTDecl &moduleDecl, SMLoc smLoc,
+  Closure liftClosure(ModuleASTDecl &moduleDecl, SMLoc smLoc,
                       SmallVector<ClosureParent> &closureParents,
                       SymbolRefAttr parentSymbolRef,
                       SmallVector<StructDefFieldAttr> &&fieldDecls,
@@ -169,7 +176,7 @@ private:
                       SmallVector<TypedAttr> &&structParamBindings,
                       StringAttr name, TypeConvention typeConvention,
                       SmallVector<Type> &&deviceCaptureFieldTypes,
-                      bool capturesEncodable, ASTDecl &nestedFnDecl);
+                      bool capturesEncodable, DefASTDecl &nestedFnDecl);
 
   /// Given the signature of a trait function, specialize it and add it to the
   /// struct as \p fnName.
@@ -181,7 +188,7 @@ private:
   /// parameters instead of indices.
   std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
   pushBackTraitFunctionImpl(FnTypeGeneratorType traitFnSignature,
-                            ASTDecl &structDecl, bool synthetic,
+                            StructASTDecl &structDecl, bool synthetic,
                             StringAttr fnName, SpecialFunctionKind specialFnID,
                             InlineLevel inlineLevel);
   struct DevicePassablePopulators {
@@ -194,12 +201,12 @@ private:
   /// Add DevicePassable conformance using callbacks that populate each
   /// interface member and return its witness.
   void
-  addConformanceToDevicePassable(ASTDecl &structDecl,
+  addConformanceToDevicePassable(StructASTDecl &structDecl,
                                  const DevicePassablePopulators &populators);
   /// Add DevicePassable conformance to closure storage (__storage), whose
   /// device_type reflects the device representations of its captures.
   void
-  addStorageConformanceToDevicePassable(ASTDecl &structDecl,
+  addStorageConformanceToDevicePassable(StructASTDecl &structDecl,
                                         ArrayRef<Type> deviceCaptureFieldTypes,
                                         StringRef name);
 

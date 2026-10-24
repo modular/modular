@@ -49,7 +49,7 @@ struct PairMode(EnumLike, Equatable, ImplicitlyCopyable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -153,17 +153,32 @@ def _specials_shared[
 ]() -> List[Scalar[dtype]] where dtype.is_floating_point():
     """Returns the special values that both `hypot_specials` and
     `remainder_specials` contain."""
-    var big = max_finite[dtype]()
-    var tiny = _tiny[dtype]
-    var min_normal = _min_normal[dtype]
     var max_subnormal = Scalar[dtype](
         from_bits=_FPIntegralType[dtype](
             (1 << FPUtils[dtype].mantissa_width()) - 1
         )
     )
+    var specials: List[Scalar[dtype]] = [max_subnormal, -max_subnormal]
+    specials.extend(scalb_specials[dtype]())
+    return specials^
+
+
+def scalb_specials[
+    dtype: DType
+]() -> List[Scalar[dtype]] where dtype.is_floating_point():
+    """Returns the special values whose pairs the `scalb` tests check first.
+
+    Parameters:
+        dtype: The floating-point type of the values.
+
+    Returns:
+        Signed zeros, small integers and halves, the extremes of the finite,
+        normal and subnormal ranges, the infinities and NaN.
+    """
+    var big = max_finite[dtype]()
+    var tiny = _tiny[dtype]
+    var min_normal = _min_normal[dtype]
     return [
-        max_subnormal,
-        -max_subnormal,
         0,
         -0.0,
         1,

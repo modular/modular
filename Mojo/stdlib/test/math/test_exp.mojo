@@ -17,6 +17,8 @@ from std.random import randn_float64, seed
 from test_utils.math import libm_call
 from std.testing import assert_almost_equal, assert_equal, TestSuite
 
+comptime exp_libm = libm_call["expf", "exp"]
+
 
 def test_exp_bfloat16() raises:
     assert_equal(exp(BFloat16(2.0)), 7.375)
@@ -47,13 +49,6 @@ def test_exp_float64() raises:
     # FIXME (40568) should remove str
     assert_equal(String(exp(Float64(89))), String(4.4896128193366053e38))
     assert_equal(String(exp(Float64(108.5230))), String(1.3518859659123633e47))
-
-
-@inline(.always)
-def exp_libm[
-    dtype: DType, simd_width: SIMDLength
-](arg: SIMD[dtype, simd_width]) raises -> SIMD[dtype, simd_width]:
-    return libm_call["expf", "exp"](arg)
 
 
 def _test_exp_libm[dtype: DType]() raises where dtype.is_floating_point():

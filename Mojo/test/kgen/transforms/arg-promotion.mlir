@@ -17,7 +17,7 @@ kgen.func @inreg_args(%arg0: index owned) {
 // CHECK-LABEL: kgen.func @indirectly_referenced
 // CHECK-SAME: %arg0: !kgen.pointer<index> imm_mem
 kgen.func @indirectly_referenced(%arg0: !kgen.pointer<index> imm_mem) {
-  kgen.create_closure[(!kgen.pointer<index> imm_mem) -> (): @indirectly_referenced]()
+  kgen.create_func_ptr[(!kgen.pointer<index> imm_mem) -> (): @indirectly_referenced]()
   hlcf.return
 }
 

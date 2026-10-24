@@ -76,7 +76,8 @@ def StructType : DialectType<(type
   TypedAttr:$elementTypesVariadic,
   TypedAttr:$isMemoryOnly,
   TypedAttr:$minAlignment,
-  Bool:$isParamPack
+  Bool:$isParamPack,
+  EnumAttr<"::M::KGEN::StructDomain">:$domain
 )>;
 
 def StructInstanceType : DialectType<(type
@@ -386,7 +387,7 @@ def VariantAttr : DialectAttribute<(attr
 }
 
 def LinkDependencyArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"FlatSymbolRefAttr">:$value
+  ConcreteAttrArray<"SymbolRefAttr">:$value
 )>;
 
 def PreservedAttr : DialectAttribute<(attr
@@ -456,12 +457,6 @@ def ExtensionAttr : DialectAttribute<(attr
   Type:$type,
   TypedAttr:$anchor,
   TypedAttrArray:$extensions
-)>;
-
-def CompileOffloadClosureAttr : DialectAttribute<(attr
-  TypedAttr:$target,
-  TypedAttr:$func,
-  Type:$type
 )>;
 
 def GetLinkageNameAttr : DialectAttribute<(attr
@@ -664,7 +659,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     TypeConformsToTraitAttr,
     DowncastAttr,
     ExtensionAttr,
-    CompileOffloadClosureAttr,
     GetLinkageNameAttr,
     GetSourceNameAttr,
     GetFunctionParameterCountAttr,

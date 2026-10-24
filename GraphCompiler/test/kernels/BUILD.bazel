@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "mojo_library")
+
+# gazelle:default_visibility //GraphCompiler:__subpackages__
+
+package(default_visibility = ["//GraphCompiler:__subpackages__"])
+
+mojo_library(
+    name = "testing_kernels",
+    testonly = True,
+    srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
+    visibility = [
+        "//GraphCompiler:__subpackages__",
+        "//max/tests/integration/graph:__subpackages__",
+    ],
+    deps = [
+        "//max:algorithm",
+        "//max:extensibility",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max/kernels/src/graph_compiler/builtin_primitives",
+        "@mojo//:std",
+    ],
+)

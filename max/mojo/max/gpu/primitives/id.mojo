@@ -19,9 +19,9 @@ indices and dimensions.
 from std.math.uutils import ufloordiv
 from std.sys import llvm_intrinsic
 from std.sys.info import CompilationTarget, is_amd_gpu, is_nvidia_gpu
-from std.sys.intrinsics import readfirstlane
 
 from max.gpu.globals import WARP_SIZE
+from max.gpu.intrinsics import readfirstlane
 
 from . import warp
 

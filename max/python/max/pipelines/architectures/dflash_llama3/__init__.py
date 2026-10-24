@@ -21,10 +21,10 @@ iteration.
 
 from .arch import dflash_llama_arch
 from .dflash_llama3 import DFlashLlama3
-from .model import DFlashLlama3Model
+from .model import DFlashLlama3ArchConfig
 
 __all__ = [
     "DFlashLlama3",
-    "DFlashLlama3Model",
+    "DFlashLlama3ArchConfig",
     "dflash_llama_arch",
 ]

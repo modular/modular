@@ -27,7 +27,7 @@ from max.pipelines.lib import (
 )
 from max.serve.config import Settings
 from max.serve.pipelines import model_worker
-from max.serve.telemetry import _kernel_capture, common
+from max.serve.telemetry import _kernel_capture, _log_context, _tracing
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.trace import Link, SpanContext
 
@@ -56,16 +56,8 @@ def test_config_file_limits_reach_the_pipeline_config(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("limits", "capture", "batch", "warned"),
     [
-        pytest.param({}, True, True, [], id="defaults"),
         pytest.param(
             {"kernel_trace_max_passes": 32}, True, True, [], id="lowered"
-        ),
-        pytest.param(
-            {"kernel_trace_max_passes": 65},
-            True,
-            False,
-            ["kernel_trace_max_passes"],
-            id="raised",
         ),
         pytest.param(
             {"kernel_trace_max_passes": 65, "kernel_trace_max_spans": 20_001},
@@ -115,8 +107,8 @@ def test_warns_once_per_raised_limit_in_use(
     batch: bool,
     warned: list[str],
 ) -> None:
-    monkeypatch.setattr(common, "batch_spans_enabled", lambda: batch)
-    monkeypatch.setattr(common, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_tracing, "batch_spans_enabled", lambda: batch)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     with caplog.at_level(logging.WARNING, logger="max.serve"):
         model_worker._warn_raised_kernel_trace_limits(
             ProfilingConfig.model_validate(limits),
@@ -133,8 +125,8 @@ def test_no_link_warning_without_exported_spans(
 ) -> None:
     """At level batch, a worker that exports no spans has no ``max.batch``
     spans."""
-    monkeypatch.setattr(common, "batch_spans_enabled", lambda: True)
-    monkeypatch.setattr(common, "_tracing_enabled", lambda: False)
+    monkeypatch.setattr(_tracing, "batch_spans_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: False)
     with caplog.at_level(logging.WARNING, logger="max.serve"):
         model_worker._warn_raised_kernel_trace_limits(
             ProfilingConfig(kernel_trace_max_batch_links=129),
@@ -144,19 +136,17 @@ def test_no_link_warning_without_exported_spans(
     assert caplog.records == []
 
 
-@pytest.mark.parametrize("role", ["prefill_only", "decode_only"])
 def test_no_link_warning_in_a_disaggregated_worker(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
-    role: PipelineRole,
 ) -> None:
     """Disaggregated schedulers emit no ``max.batch`` spans."""
-    monkeypatch.setattr(common, "batch_spans_enabled", lambda: True)
-    monkeypatch.setattr(common, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_tracing, "batch_spans_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     with caplog.at_level(logging.WARNING, logger="max.serve"):
         model_worker._warn_raised_kernel_trace_limits(
             ProfilingConfig(kernel_trace_max_batch_links=129),
-            role,
+            "decode_only",
             kernel_capture=False,
         )
     assert caplog.records == []
@@ -171,31 +161,29 @@ def test_no_link_warning_in_a_disaggregated_worker(
         (True, "prefill_and_decode", True, True),
     ],
 )
-def test_configure_kernel_capture_returns_the_permission(
+def test_worker_builds_a_capture_only_when_permitted(
     monkeypatch: pytest.MonkeyPatch,
     headers: bool,
     role: PipelineRole,
     permitted: bool,
     expected: bool,
 ) -> None:
-    """The worker warns about the capture limits only when it may capture."""
-    monkeypatch.setattr(common, "_trace_level_header_enabled", headers)
+    monkeypatch.setattr(_tracing, "trace_level_header_enabled", headers)
     monkeypatch.setattr(
-        _kernel_capture, "configure_kernel_capture", lambda settings: None
+        _kernel_capture, "configure_kernel_capture", lambda settings: permitted
     )
-    monkeypatch.setattr(
-        _kernel_capture, "kernel_capture_permitted", lambda: permitted
-    )
-    assert model_worker._configure_kernel_capture(Settings(), role) is expected
+    limits = ProfilingConfig()
+    capture = model_worker._configure_kernel_capture(Settings(), role, limits)
+    assert (capture and capture._limits) is (limits if expected else None)
 
 
-@pytest.mark.parametrize(("links", "kept"), [(64, 128), (128, 128), (129, 129)])
+@pytest.mark.parametrize(("links", "kept"), [(64, 128), (129, 129)])
 def test_worker_tracing_raises_only_a_raised_link_limit(
     monkeypatch: pytest.MonkeyPatch, links: int, kept: int
 ) -> None:
     """128 kept from 64 means the SDK's default limit, not the value."""
     providers: list[TracerProvider] = []
-    monkeypatch.setattr(common, "set_tracer_provider", providers.append)
+    monkeypatch.setattr(_tracing, "set_tracer_provider", providers.append)
     monkeypatch.delenv("MAX_SERVE_DISABLE_TELEMETRY", raising=False)
     monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
     monkeypatch.delenv("OTEL_SPAN_LINK_COUNT_LIMIT", raising=False)

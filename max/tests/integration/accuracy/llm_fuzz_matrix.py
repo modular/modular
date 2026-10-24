@@ -28,18 +28,12 @@ import click
 from pipeline_matrix import PipelineEntry, entries_to_matrix, filter_entries
 
 CONFIGS_DIR = Path("max/tests/integration/accuracy/llm_fuzz/configs")
-SMOKE_TEST_PIPELINE = "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash"
+# The PR fallback when no config changed: the CPU entry, so a pull request
+# exercises the harness end to end without taking an accelerator.
+SMOKE_TEST_PIPELINE = "modularai/SmolLM-135M-Instruct-FP32"
 
 
 PIPELINES: Final[list[PipelineEntry]] = [
-    PipelineEntry(
-        pipeline="nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash",
-        model_path="nvidia/Kimi-K2.7-Code-NVFP4",
-        runner="modrunner-b200-efa-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
-        timeout=90,
-    ),
     PipelineEntry(
         pipeline="google/gemma-4-31B-it",
         model_path="google/gemma-4-31B-it",
@@ -48,13 +42,32 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.1",
         timeout=60,
     ),
+    # NVFP4 target with the DSpark draft at TP=2 on 2xB200. The shipped recipe
+    # (nemotron_h_modulev3/recipes/lightning_bf16_dspark.yaml) uses the BF16
+    # target; this lane swaps in the NVFP4 target.
+    PipelineEntry(
+        pipeline="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__dspark-tp2",
+        model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        runner="modrunner-b200-efa-2x",
+        gpu_flag="--devices gpu:0,1",
+        instance_type="bm.gpu.b200.2",
+        timeout=90,
+    ),
     PipelineEntry(
         pipeline="meta-models/Muse-Glimmer-30B",
         model_path="meta-models/Muse-Glimmer-30B",
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",
-        timeout=60,
+        timeout=90,
+    ),
+    PipelineEntry(
+        pipeline="tencent/Hy4-preview-FP8-ep-tp-mtp",
+        model_path="tencent/Hy4-preview-FP8",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=210,
     ),
     PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",
@@ -94,14 +107,6 @@ PIPELINES: Final[list[PipelineEntry]] = [
         runner="modrunner-mi355-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.mi355x.8",
-        timeout=90,
-    ),
-    PipelineEntry(
-        pipeline="nvidia/GLM-5.2-NVFP4-ep-tp-mtp",
-        model_path="nvidia/GLM-5.2-NVFP4",
-        runner="modrunner-b200-efa-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
         timeout=90,
     ),
     # Tiny model on CPU: a cheap end-to-end check of the fuzz harness and the

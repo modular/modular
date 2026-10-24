@@ -241,6 +241,15 @@ class TokenBudgetCollection:
         for token_budget in self.token_budgets:
             token_budget.add_to_budget(context, request_type)
 
+    def reserve(self, tokens: int) -> None:
+        """Charges every budget for tokens that no context accounts for.
+
+        Args:
+            tokens: The number of tokens to charge.
+        """
+        for token_budget in self.token_budgets:
+            token_budget.used += tokens
+
 
 class ActiveTokenBudget(TokenBudget):
     """Token budget that tracks the active window of each context.

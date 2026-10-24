@@ -13,11 +13,11 @@
 
 from std.math import exp, frexp, inf, isinf, isnan, j1, ldexp, nan, sqrt, y1
 from std.math.math import _call_libm
-from std.sys import default_accelerator, simd_width_of
+from std.sys import simd_width_of
 from std.utils.numerics import FPUtils
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import assert_equal, assert_true, TestSuite
 
 from std.utils.coord import Coord
@@ -130,7 +130,7 @@ def _check[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, math_fn(val)

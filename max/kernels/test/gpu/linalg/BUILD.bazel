@@ -58,6 +58,8 @@ _EXTRA_CONSTRAINTS = {
     # simdgroup MMA (prefill) vs the naive reference. Apple M5 only.
     "test_grouped_matmul_apple.mojo": ["//:apple_gpu"],
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
+    # PDL (griddepcontrol) + llvm.nvvm.nanosleep: NVIDIA SM90+ only.
+    "test_gemv_pdl_race.mojo": ["//:nvidia_gpu"],
     "test_gemv.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -119,6 +121,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_multistage_gemm_epilogue_fn.mojo": ["//:amd_gpu"],
+    "test_multistage_mma_tile_iter.mojo": ["//:nvidia_gpu"],
     "test_multistage_gemm_closures_nvidia.mojo": ["//:nvidia_gpu"],
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
@@ -130,6 +133,11 @@ _EXTRA_CONSTRAINTS = {
         "//:nvidia_gpu",
         "//:has_multi_gpu",
     ],
+    "test_vendor_blas_strided.mojo": select({
+        "//:nvidia_gpu": ["//:nvidia_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mxfp4_dequant_smoke.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
         "//:amd_gpu": ["//:amd_gpu"],
@@ -333,6 +341,7 @@ _B200_TESTS = [
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn_2sm.mojo",
     "test_block_scaled_matmul_mxfp8_dispatch.mojo",
+    "test_block_scaled_matmul_block_diagonal.mojo",
     "test_matmul_sm100_block_scaled_fp4_small_bn.mojo",
     "test_matmul_sm100_block_scaled_fp4_small_bn_2sm.mojo",
     "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo",
@@ -366,7 +375,7 @@ _GPU_MEMORY = {
     "test_mxfp6_matmul_amd.mojo": "2",
     "test_block_scaled_mma_amd_pack_k.mojo": "1",
     "test_blockwise_fp8_1d2d_structured.mojo": "1.5",
-    "test_blockwise_fp8_grouped_matmul_amd.mojo": "4",
+    "test_blockwise_fp8_grouped_matmul_amd.mojo": "2",
     "test_blockwise_fp8_grouped_matmul_amd_bench.mojo": "4",
     "test_bulk_mma_pair_cta_sm100.mojo": "1.5",
     "test_cublaslt_scaled_mxfp8_matmul.mojo": "1.5",
@@ -394,7 +403,7 @@ _GPU_MEMORY = {
     "test_matmul_amd.mojo": "2",
     "test_matmul_custom.mojo": "5",
     "test_matmul_dispatch_tables.mojo": "1",
-    "test_matmul_dispatching_amd.mojo": "8",
+    "test_matmul_dispatching_amd.mojo": "4",
     "test_matmul_sm100_1sm_bf16.mojo": "1.5",
     "test_matmul_sm100_1sm_bf16_1d_bias.mojo": "1.5",
     "test_matmul_sm100_1sm_bf16_bias.mojo": "2",
@@ -456,14 +465,14 @@ _GPU_MEMORY = {
     "test_block_scaled_matmul_mxfp8_dispatch.mojo": "2",
     "test_mfma_32x32x64_f8f6f4.mojo": "1",
     "test_mxfp4_grouped_matmul_amd_expert_offset.mojo": "4",
-    "test_mxfp4_grouped_matmul_amd_kernels.mojo": "8",
-    "test_mxfp6_grouped_matmul_amd_kernels.mojo": "8",
-    "test_mxfp6_matmul_amd_preb.mojo": "8",
-    "test_mxfp6_matmul_amd_preb_epilogue.mojo": "8",
+    "test_mxfp4_grouped_matmul_amd_kernels.mojo": "2",
+    "test_mxfp6_grouped_matmul_amd_kernels.mojo": "4",
+    "test_mxfp6_matmul_amd_preb.mojo": "2",
+    "test_mxfp6_matmul_amd_preb_epilogue.mojo": "2",
     "test_mxfp4_matmul_amd.mojo": "2",
-    "test_mxfp4_moe_matmul_amd_routed.mojo": "8",
+    "test_mxfp4_moe_matmul_amd_routed.mojo": "2",
     "test_mxfp8_matmul_amd.mojo": "2",
-    "test_mxfp8_matmul_amd_preb.mojo": "8",
+    "test_mxfp8_matmul_amd_preb.mojo": "2",
     "test_mx_split_k_epilogue_amd.mojo": "2",
     "test_ping_pong.mojo": "1",
     "test_ping_pong_shapes.mojo": "2",
@@ -566,6 +575,53 @@ _GPU_MEMORY = {
         ] + _EXTRA_DEPS.get(src, []),
     )
     for src in _AMD_GENERIC_FALLBACK_TESTS
+]
+
+# W4A8 (E4M3 x E2M1) SM100 block-scaled matmul tests, sharing one harness
+# with an exact host reference. A wrong TMA transaction count hangs rather
+# than fails, so these are `size = "medium"` (300 s) instead of this file's
+# usual `large` (900 s); each finishes in under 30 s on B200. `mojo_test`
+# cannot set `timeout` itself: it forwards the attribute to its `.debug`
+# `mojo_binary`, which rejects it.
+_W4A8_BLOCK_SCALED_HARNESS = "w4a8_block_scaled_matmul_harness.mojo"
+
+_W4A8_BLOCK_SCALED_B200_TESTS = [
+    "test_w4a8_block_scaled_reference.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_minimal.mojo",
+    "test_matmul_sm100_block_scaled_w4a8.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_swapab.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_with_weight_prefetch.mojo",
+    "test_matmul_sm100_batched_block_scaled_w4a8.mojo",
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "medium",
+        srcs = [
+            src,
+            _W4A8_BLOCK_SCALED_HARNESS,
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:b200_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:max_mojo",
+            "//max:structured_kernels",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _W4A8_BLOCK_SCALED_B200_TESTS
 ]
 
 # B200 smoke tests - tagged manual for local-only execution, not run in CI
@@ -764,7 +820,6 @@ mojo_test(
         },
         tags = ["gpu"] + (
             ["manual"] if src in [
-                "test_multistage_gemm_fp8.mojo",  # TODO: KERN-1480 Fix and remove this tag
                 "test_ping_pong_shapes.mojo",  # TODO: KERN-2631 Flaky on AMD, re-enable
                 "test_blockwise_fp8_matmul_amd_bench.mojo",  # perf bench, local-only
                 "test_blockwise_fp8_grouped_matmul_amd_bench.mojo",  # perf bench, local-only
@@ -781,7 +836,8 @@ mojo_test(
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + _AMD_GENERIC_FALLBACK_TESTS + [
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + _AMD_GENERIC_FALLBACK_TESTS + _W4A8_BLOCK_SCALED_B200_TESTS + [
+            _W4A8_BLOCK_SCALED_HARNESS,
             "test_w4a8_grouped_shapes.mojo",
             "test_matmul_pdl_race.mojo",
             "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",

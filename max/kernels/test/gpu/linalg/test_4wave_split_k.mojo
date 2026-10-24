@@ -15,7 +15,7 @@
 Two cases exercised from `main()`:
 
   - **plain**: standard split-K (no lambda), output written to `c`.
-  - **epilogue**: split-K with `elementwise_lambda_fn`. Each output
+  - **epilogue**: split-K with an `epilogue_fn` value. Each output
     cell is reduced from `num_splits` f32 partials, then the lambda
     fires ONCE on the final reduced value (not per partial). Verifies
     both lambda accuracy vs vendor BLAS and lambda exclusivity (`c`
@@ -161,7 +161,7 @@ def test_4wave_split_k_epilogue[
     var a_tt = TileTensor(device_a, row_major[M, K]())
     var b_tt = TileTensor(device_b, row_major[N, K]())
     var c_tt = TileTensor(device_c, row_major[M, N]())
-    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
+    # Capture the raw pointer: a `{var}` capture byte-copies, so a
     # `DeviceBuffer`-backed tile would reach the device as a host reference.
     var out_tt = TileTensor(device_out.unsafe_ptr(), row_major[M, N]())
 
@@ -187,7 +187,7 @@ def test_4wave_split_k_epilogue[
     ](idx: Coord, val: SIMD[_dtype, width]) {var} -> None:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert idx.flat_rank == out_tt.flat_rank
-        out_tt.store[width=width, alignment=alignment](
+        out_tt.store[alignment=alignment](
             idx, rebind[SIMD[out_dtype, width]](val)
         )
 

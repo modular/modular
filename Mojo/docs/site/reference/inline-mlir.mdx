@@ -605,9 +605,7 @@ execution and later resumes by running the provided region:
 
 ```mojo
 @inline(.always)
-def _suspend_async[
-    body: def(AnyCoroutine) capturing -> None
-]():
+def _suspend_async(body: Some[def(AnyCoroutine) -> None]):
     # Runs when the coroutine resumes.
     # The operation passes the coroutine handle as `hdl`.
     __mlir_region await_body(

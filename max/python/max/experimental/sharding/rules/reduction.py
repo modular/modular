@@ -52,13 +52,47 @@ def softmax_rule(value: TensorLayout, axis: int = -1) -> list[AxisAssignment]:
     return [AxisAssignment((R,), (R,)), *_non_reduction_axis_rows(value, axis)]
 
 
+def cumsum_rule(
+    x: TensorLayout,
+    axis: int = -1,
+    exclusive: bool = False,
+    reverse: bool = False,
+) -> list[AxisAssignment]:
+    """Cumulative sum: shard any non-scan axis; ``P -> P`` for integral dtypes.
+
+    Cumsum is linear, so a Partial input could pass through in exact
+    arithmetic, but scanning each fragment and then summing reassociates a
+    floating-point scan: with two ranks holding ``[1e20, 1]`` and
+    ``[-1e20, 1]``, resolve-then-scan gives ``[0, 2]`` and
+    scan-then-resolve gives ``[0, 0]``. The row is therefore offered for
+    integral dtypes only, where resolved results agree bit-for-bit with
+    resolve-first execution under the dtype's wrapping arithmetic.
+    ``exclusive`` and ``reverse`` do not affect placement: both variants
+    are linear, and for integral dtypes every prefix index order is exact.
+
+    A scan axis that is ``Sharded`` still resolves to ``R`` first (each
+    device's prefix sums need the totals of the shards before it); a
+    distributed scan is a separate project.
+    """
+    rows = [AxisAssignment((R,), (R,)), *_non_reduction_axis_rows(x, axis)]
+    if x.dtype.is_integral():
+        rows.append(AxisAssignment((P,), (P,)))
+    return rows
+
+
 def linear_reduce_rule(
     x: TensorLayout, axis: int = -1, *extra: Any
 ) -> list[AxisAssignment]:
-    """Linear reduction: ``S(reduced_axis) -> Partial(SUM)``; ``P -> P``.
+    """Returns the reduction rows: ``S(reduced_axis) -> Partial()``; ``P -> P``.
 
-    Used by ``sum``. Not by ``cumsum``: a device's prefix sums along a
-    sharded axis need the totals of the shards before it.
+    ``reduced_axis`` is ``axis`` normalized against ``x``. Used by ``sum``.
+    Not by ``cumsum``: a device's prefix sums along a sharded axis need the
+    totals of the shards before it.
+
+    Args:
+        x: The input layout.
+        axis: The axis to reduce. Defaults to ``-1``.
+        extra: Further tensor arguments, which this rule ignores.
     """
     norm = axis % x.rank
     return [

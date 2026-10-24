@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only NVFP4 (W4A16) GEMV: `out = x @ dequant(W)^T` at M=1.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`). The batch-1 decode
+Apple silicon GPU (Metal 4, `compute_capability >= 5`). The batch-1 decode
 regime (`M == 1`) is a matrix-vector product, NOT a matrix-matrix product: there
 is exactly one activation row, so there is no MMA to feed. Routing it through the
 prefill cooperative-SMEM MMA path (`AppleM5Fp4MatMul`) wastes the simdgroup
@@ -57,16 +57,14 @@ Two hard M5 constraints, both satisfied by the width-16 decode:
     fp32-vs-MMA reduction order and the final cast).
 """
 
-from std.collections import Optional
 from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 import max.gpu.primitives.warp as warp
 
-from layout import Coord, TensorEngine, TileTensor, TensorLayout
+from layout import TensorEngine, TileTensor, TensorLayout
 
 from linalg.fp4_utils import decode_e2m1_to_f16, NVFP4_SF_VECTOR_SIZE
-from linalg.utils import elementwise_epilogue_type
 
 
 @__name(t"fp4_gemv_{c_type}")
@@ -80,7 +78,6 @@ def fp4_gemv_kernel[
     a_engine: TensorEngine,
     p_engine: TensorEngine,
     s_engine: TensorEngine,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],  # [1, N]
     a: TileTensor[
@@ -111,8 +108,6 @@ def fp4_gemv_kernel[
         a_engine: `TensorEngine` of the activation `a`.
         p_engine: `TensorEngine` of the packed FP4 weight.
         s_engine: `TensorEngine` of the FP8 block scales.
-        elementwise_lambda_fn: Optional fused epilogue applied on the
-            width-1 store.
 
     Args:
         c: Output tile tensor `[1, N]` receiving the GEMV result.
@@ -128,7 +123,7 @@ def fp4_gemv_kernel[
     comptime SF = NVFP4_SF_VECTOR_SIZE  # 16 nibbles / scale block
     comptime BYTES = SF // 2  # 8 packed bytes / block
 
-    var n_idx = Int(global_idx.x) // WARP_SIZE
+    var n_idx = global_idx.x // WARP_SIZE
     if n_idx >= n:
         return
     var lid = Int(lane_id())
@@ -143,7 +138,7 @@ def fp4_gemv_kernel[
         var byte0 = blk * BYTES  # first packed byte of this block
         # One coalesced width-8 byte load (adjacent lanes read adjacent runs) --
         # no raw pointer arithmetic (TileTensor width-load).
-        var bytes = packed.load[width=BYTES, alignment=1](Coord(n_idx, byte0))
+        var bytes = packed.load[width=BYTES, alignment=1]((n_idx, byte0))
         # Expand 8 bytes -> 16 E2M1 nibbles: element 2*j = lo nibble (even K),
         # 2*j+1 = hi nibble (odd K). Width-16 uint16 arithmetic: M5-safe.
         var nib = SIMD[.uint16, SF](0)
@@ -160,24 +155,18 @@ def fp4_gemv_kernel[
         # `decode_e2m1_to_f32(nib)` (all 16 E2M1 values are exact in f16->f32),
         # so `* scale_abs` still matches the materialize->dense oracle exactly.
         var w_f32 = decode_e2m1_to_f16(nib).cast[.float32]() * scale_abs
-        var xv = a.load[width=SF](Coord(0, k0)).cast[.float32]()
+        var xv = a.load[width=SF]((0, k0)).cast[.float32]()
         acc[0] += (xv * w_f32).reduce_add()
         blk += WARP_SIZE
 
     var dot = warp.sum(acc)
     if lid == 0:
-        var y = dot.cast[c_type]()
-
-        comptime if case .Some(epilogue) = elementwise_lambda_fn:
-            epilogue[c_type, 1]((0, n_idx), y)
-        else:
-            c.store[width=1](Coord(0, n_idx), y)
+        c.store((0, n_idx), dot.cast[c_type]())
 
 
 @inline(.always)
 def enqueue_apple_fp4_gemv[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[.bfloat16, ...],
@@ -198,8 +187,6 @@ def enqueue_apple_fp4_gemv[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract), applied on the width-1 store.
 
     Args:
         c: Output tile tensor `[1, N]` receiving the GEMV result.
@@ -224,7 +211,6 @@ def enqueue_apple_fp4_gemv[
         type_of(a).Engine,
         type_of(packed).Engine,
         type_of(scales).Engine,
-        elementwise_lambda_fn,
     ]
     ctx.enqueue_function[kernel](
         c,

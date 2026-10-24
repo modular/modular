@@ -1,0 +1,254 @@
+---
+title: Serve your custom model
+description: Learn how to serve a model with a custom architecture with max serve and send inference requests to it.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+You can serve a model with a custom architecture using the same [`max
+serve`](/cli/serve/) command that runs [MAX-supported
+models](/models/). Once `max serve` loads your architecture package, your
+model gets batching, KV cache management, tokenization, and the rest of the MAX
+serving stack on top of it. This page teaches you how to make your custom
+architecture package compatible with `max serve`.
+
+:::note
+
+If you don't have a complete custom architecture package, see the [Model
+bring-up workflow](/develop/model-bringup-workflow/) to learn how to
+implement one.
+
+:::
+
+## How MAX registers custom architectures
+
+A custom model architecture package is a Python package (a directory containing
+an `__init__.py`) that MAX can import. To serve the model, the `__init__.py`
+must expose an `ARCHITECTURES` list of
+[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)<!-- rumdl-disable-line MD013 -->
+instances. Each `SupportedArchitecture`
+instance bundles the model class, config, tokenizer, encodings, and weight
+adapters under a name.
+
+A minimal `__init__.py` looks like this:
+
+<!-- skip: next "imports the arch.py module defined on this page" -->
+
+```python title="__init__.py"
+from .arch import my_arch
+
+ARCHITECTURES = [my_arch]
+```
+
+A typical `arch.py` builds a `SupportedArchitecture` from
+[`max.pipelines.lib`](/api/python/pipelines.lib/) with types from
+[`max.pipelines.modeling.types`](/api/python/pipelines.modeling.types/):
+
+<!-- invisible-code-block: python
+from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
+from max.pipelines.architectures.llama3_modulev3.model_config import (
+    Llama3Config,
+)
+from max.pipelines.architectures.olmo3 import weight_adapters
+fake_module("mypkg")
+fake_module("mypkg.weight_adapters", **vars(weight_adapters))
+fake_module("mypkg.model", MyModel=Llama3Model)
+fake_module("mypkg.model_config", MyModelConfig=Llama3Config)
+__name__, __package__ = "mypkg.arch", "mypkg"
+-->
+
+```python title="arch.py"
+from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.llama3_modulev3.batch_processor import (
+    Llama3ModuleV3BatchProcessor,
+)
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
+
+from . import weight_adapters
+from .model import MyModel
+from .model_config import MyModelConfig
+
+my_arch = SupportedArchitecture(
+    name="MyModelForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["my-org/my-model"],
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16"},
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
+    pipeline_model=MyModel,
+    tokenizer=TextTokenizer,
+    context_type=TextContext,
+    config=MyModelConfig,
+    batching=Llama3ModuleV3BatchProcessor,
+    memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
+)
+```
+
+<!-- invisible-code-block: python
+fake_module("mypkg.arch", my_arch=my_arch)
+assert my_arch.name == "MyModelForCausalLM"
+-->
+
+`MyModel` subclasses
+[`ModuleV3PipelineModelWithKVCache`](/api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/),
+which builds your [`max.experimental.nn`](/api/python/experimental.nn/) module
+and compiles it with the checkpoint weights. Set
+`model_config_cls = MyModelConfig` on `MyModel`: the pipeline model uses it to
+size the KV cache and build the batch processor, and raises an error at startup
+when it's unset. MAX reads the `config` field in `arch.py` to plan memory, so
+both name the same class. The `batching` field names the batch processor that
+prepares each batch's inputs, and `memory_planner` sizes the KV cache.
+
+When you pass your package to `max serve` with `--custom-architectures`, MAX
+imports it, reads the `ARCHITECTURES` list, and registers every entry. When the
+server starts, MAX matches the checkpoint's `architectures[0]` field against the
+registered names to pick the right implementation. If you expose a
+`SupportedArchitecture` whose `name` matches a built-in architecture's `name`,
+your custom architecture takes precedence.
+
+## Run `max serve` with your custom architecture
+
+From the directory that contains your architecture package, run:
+
+```bash
+max serve \
+  --model my-org/my-model \
+  --custom-architectures my_arch_package
+```
+
+- `--model` specifies the Hugging Face model ID or local path for the
+  checkpoint to load.
+
+- `--custom-architectures` specifies your custom architecture package. If you
+  run the command from outside your architecture's root directory, you can
+  pass a directory path followed by a colon and the Python package name, such
+  as `folder/path/to/import:my_arch_package`.
+
+- `--device-memory-utilization` (default `0.9`) sets the fraction of free device
+  memory the server uses. The KV cache gets what remains after the weights and
+  activations.
+
+If startup reports that the model and KV cache exceed available memory, reduce
+`--max-length` or `--max-batch-size`. If other processes share the device and
+allocation fails, lower the fraction, for example
+`--device-memory-utilization 0.6`.
+
+An AI coding agent can run this for you with the `serve-model` skill. The
+skill sets up the environment and picks the flags your model needs, including
+`--custom-architectures`, `--devices`, `--quantization-encoding`, and
+`--trust-remote-code`. See [Modular skills](/coding-assistants/#skills) to
+install it.
+
+:::caution Trust remote code
+
+Some Hugging Face repos ship custom Python files (such as `modeling_*.py` or
+a custom tokenizer) that the loader executes when it instantiates the model.
+If you see a `trust_remote_code` error, add `--trust-remote-code` to opt in.
+Only use this flag with model repositories you trust.
+
+:::
+
+## Send a request
+
+When the server is ready to accept requests, you'll see:
+
+```output
+Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+```
+
+The server exposes an [OpenAI-compatible API](/rest-api/). Send a chat
+completion request with cURL or the OpenAI Python client:
+
+<Tabs>
+<TabItem value="curl" label="cURL">
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "my-org/my-model",
+    "messages": [
+      {"role": "user", "content": "Hello! Can you help me with a simple task?"}
+    ],
+    "max_completion_tokens": 100
+  }'
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+<!-- skip: next "needs a running server" -->
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="EMPTY",  # Required by the API but not used by MAX
+)
+
+response = client.chat.completions.create(
+    model="my-org/my-model",
+    messages=[
+        {"role": "user", "content": "Hello! Can you help me with a simple task?"}
+    ],
+    max_completion_tokens=100,
+)
+
+print(response.choices[0].message.content)
+```
+
+</TabItem>
+</Tabs>
+
+The `model` field in the request body must match the value you passed to
+`--model` when you started the server.
+
+## Troubleshoot serve-time errors
+
+Serve-time errors such as an unsupported quantization encoding, a missing
+weight adapter, or an unmatched architecture name usually indicate a mismatch
+between your `SupportedArchitecture` and the checkpoint. If you see one of
+these errors, check that:
+
+- `name` matches the `architectures[0]` field in your checkpoint's
+  `config.json`, character for character.
+
+- `supported_encodings` includes every encoding your checkpoint declares.
+
+- `weight_adapters` has an entry for each weight format you want to load. For
+  example, a `.safetensors` checkpoint needs a
+  [`WeightsFormat.safetensors`](/api/python/generated/max.graph.weights.WeightsFormat/#max.graph.weights.WeightsFormat.safetensors)
+  entry, and a `.gguf` checkpoint needs a `WeightsFormat.gguf` entry.
+
+If the server fails while it compiles the model, compare your weight
+adapter's output with your module's parameter names. A parameter with no
+matching weight raises a `KeyError`, and a weight whose shape or dtype differs
+from its parameter raises a `ValueError`. See [Map checkpoint
+weights](/develop/model-bringup-workflow/#map-checkpoint-weights).
+
+To learn more about these fields, see [Model
+pipeline](/develop/pipelines/#supported-architecture).
+
+## Next steps
+
+Serving features and performance optimizations work on any architecture that
+MAX loads.
+
+- [Prefix caching](/serve/prefix-caching/): Reuse the KV cache across
+  requests that share a prompt prefix to cut time-to-first-token on repeated
+  workloads.
+- [LoRA adapters](/serve/lora-adapters/): Serve multiple fine-tuned
+  adapters on top of your base architecture without loading separate model
+  copies.
+- [Benchmark MAX on NVIDIA or AMD GPUs](/serve/benchmark/): Measure the
+  throughput and latency of the endpoint you started.

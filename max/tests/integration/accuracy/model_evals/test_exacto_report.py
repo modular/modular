@@ -72,14 +72,31 @@ OPENBENCH_LOG: dict[str, Any] = {
         {
             "id": 1,
             "epoch": 1,
+            "target": "B",
+            "scores": {
+                "mcq_scorer": {"value": "C", "answer": "B", "explanation": "ok"}
+            },
             "output": {
                 "usage": {"output_tokens": 100},
-                "choices": [{"stop_reason": "stop"}],
+                "choices": [
+                    {
+                        "stop_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {"type": "reasoning", "reasoning": "B fits."},
+                                {"type": "text", "text": "Answer: B"},
+                            ],
+                        },
+                    }
+                ],
             },
         },
         {
             "id": 1,
             "epoch": 2,
+            "target": "B",
+            "scores": {"mcq_scorer": {"value": "C", "answer": "B"}},
             "output": {
                 "usage": {"output_tokens": 200},
                 "choices": [{"stop_reason": "stop"}],
@@ -88,6 +105,8 @@ OPENBENCH_LOG: dict[str, Any] = {
         {
             "id": 2,
             "epoch": 1,
+            "target": "C",
+            "scores": {"mcq_scorer": {"value": "I", "answer": "A"}},
             "output": {
                 "usage": {"output_tokens": 300},
                 "choices": [{"stop_reason": "stop"}],
@@ -96,6 +115,8 @@ OPENBENCH_LOG: dict[str, Any] = {
         {
             "id": 2,
             "epoch": 2,
+            "target": "C",
+            "scores": {"mcq_scorer": {"value": "I", "answer": "A"}},
             "output": {
                 "usage": {"output_tokens": 400},
                 "choices": [{"stop_reason": "max_tokens"}],
@@ -105,13 +126,86 @@ OPENBENCH_LOG: dict[str, Any] = {
 }
 
 
-def test_rows_come_from_the_epoch_reduced_records() -> None:
+def test_rows_are_one_per_request_indexed_from_zero() -> None:
     rows, _ = exacto_report.parse_openbench_log(OPENBENCH_LOG)
-    # One row per question, not per request: 2 questions x 2 epochs = 4 samples.
-    assert len(rows) == 2
-    assert [r["sample_id"] for r in rows] == [1, 2]
-    assert rows[0]["value"] == 1.0
-    assert rows[0]["scorer"] == "mcq_scorer"
+    # 2 questions x 2 epochs, which Inspect numbers from 1.
+    assert [(r["prompt_index"], r["repeat_index"]) for r in rows] == [
+        (0, 0),
+        (0, 1),
+        (1, 0),
+        (1, 1),
+    ]
+    assert [r["correct"] for r in rows] == [True, True, False, False]
+
+
+def test_row_splits_reasoning_from_the_answer_text() -> None:
+    rows, _ = exacto_report.parse_openbench_log(OPENBENCH_LOG)
+    assert rows[0] == {
+        "prompt_index": 0,
+        "repeat_index": 0,
+        "correct_letter": "B",
+        "predicted": "B",
+        "correct": True,
+        "explanation": "ok",
+        "response": "Answer: B",
+        "reasoning": "B fits.",
+        "finish_reason": "stop",
+        "completion_tokens": 100,
+        "error": None,
+    }
+
+
+def test_truncated_row_finishes_with_length() -> None:
+    rows, _ = exacto_report.parse_openbench_log(OPENBENCH_LOG)
+    assert rows[3]["finish_reason"] == "length"
+
+
+def test_plain_string_content_is_the_response() -> None:
+    sample = {
+        "id": 3,
+        "epoch": 1,
+        "output": {"choices": [{"message": {"content": "Answer: D"}}]},
+    }
+    rows, _ = exacto_report.parse_openbench_log({"samples": [sample]})
+    assert (rows[0]["response"], rows[0]["reasoning"]) == ("Answer: D", None)
+
+
+def test_errored_sample_keeps_its_error_and_scores_wrong() -> None:
+    sample = {
+        "id": 3,
+        "epoch": 1,
+        "target": "D",
+        "error": {"message": "HTTP 500", "traceback": "..."},
+    }
+    rows, _ = exacto_report.parse_openbench_log({"samples": [sample]})
+    assert rows[0]["error"] == "HTTP 500"
+    assert rows[0]["correct"] is False
+    assert rows[0]["response"] is None
+    assert rows[0]["predicted"] is None
+
+
+def test_a_scored_response_with_no_parsed_answer_predicts_empty() -> None:
+    sample = {
+        "id": 3,
+        "epoch": 1,
+        "target": "D",
+        "scores": {"mcq_scorer": {"value": "I", "answer": None}},
+    }
+    rows, _ = exacto_report.parse_openbench_log({"samples": [sample]})
+    assert rows[0]["predicted"] == ""
+
+
+def test_an_aborted_harness_writes_no_results(tmp_path: Path) -> None:
+    # Inspect logs only the samples that finished before it aborted, so their
+    # rows must not reach the uploader as a run, nor may an earlier run's.
+    (tmp_path / "results.jsonl").write_text("{}")
+    log = {**OPENBENCH_LOG, "status": "error"}
+    rows, summary = exacto_report.parse_openbench_log(log)
+    exacto_report.write_outputs(
+        str(tmp_path), "gpqa_diamond", rows, summary, "EXACTO_GPQA"
+    )
+    assert not (tmp_path / "results.jsonl").exists()
+    assert (tmp_path / "score.json").exists()
 
 
 def test_summary_carries_the_reported_metrics() -> None:
@@ -325,25 +419,20 @@ def test_stop_ratio_floor_skipped_when_ratio_unavailable(
     exacto_report._enforce_stop_ratio({"stop_ratio": None})
 
 
-def _row(value: int, answer: str, target: str) -> dict[str, Any]:
-    return {
-        "value": value,
-        "answer": answer,
-        "explanation": f"Extracted '{answer}' from response, target was '{target}'",
-    }
+def _row(prompt: int, target: str) -> dict[str, Any]:
+    return {"prompt_index": prompt, "correct_letter": target}
 
 
-def test_target_letters_read_from_both_correct_and_wrong_rows() -> None:
-    rows = [_row(1, "B", "B"), _row(0, "A", "C"), _row(1, "D", "D")]
-    assert exacto_report.target_letter_counts(rows) == {"B": 1, "C": 1, "D": 1}
+def test_target_letters_count_each_question_once() -> None:
+    # Two epochs of question 0, one of question 1.
+    rows = [_row(0, "B"), _row(0, "B"), _row(1, "C")]
+    assert exacto_report.target_letter_counts(rows) == {"B": 1, "C": 1}
 
 
 def test_position_bias_detected_when_one_letter_dominates() -> None:
     # The real openbench gpqa_diamond shape: seed(0) before every shuffle, so
     # every question's correct answer is the same letter.
-    rows = [_row(1, "B", "B") for _ in range(154)] + [
-        _row(0, "A", "B") for _ in range(44)
-    ]
+    rows = [_row(i, "B") for i in range(198)]
     warning = exacto_report.answer_position_warning(rows)
     assert warning is not None
     assert "198" in warning and "'B'" in warning
@@ -351,13 +440,14 @@ def test_position_bias_detected_when_one_letter_dominates() -> None:
 
 
 def test_no_position_warning_when_answers_are_spread() -> None:
-    rows = [_row(1, L, L) for L in "ABCD" for _ in range(25)]
+    rows = [_row(i, "ABCD"[i % 4]) for i in range(100)]
     assert exacto_report.answer_position_warning(rows) is None
 
 
 def test_position_check_skipped_on_a_tiny_smoke_run() -> None:
-    # A 4-question smoke run is degenerate by construction; do not cry wolf.
-    rows = [_row(1, "B", "B") for _ in range(4)]
+    # A 4-question smoke run is degenerate by construction; do not cry wolf,
+    # however many epochs it ran.
+    rows = [_row(i, "B") for i in range(4) for _ in range(10)]
     assert exacto_report.answer_position_warning(rows) is None
 
 
@@ -366,9 +456,7 @@ def test_contamination_reaches_score_json_not_just_stdout(
 ) -> None:
     # Regression: the counts were set after score.json was dumped, so the
     # warning printed but every downstream reader saw a clean run.
-    rows = [_row(1, "B", "B") for _ in range(154)] + [
-        _row(0, "A", "B") for _ in range(44)
-    ]
+    rows = [_row(i, "B") for i in range(198)]
     exacto_report.write_outputs(
         str(tmp_path), "gpqa_diamond", rows, {"accuracy": 0.7778}, "EXACTO_GPQA"
     )
@@ -414,3 +502,137 @@ def test_zero_sample_failure_still_leaves_artifacts(tmp_path: Path) -> None:
 def test_a_scored_run_is_not_treated_as_empty() -> None:
     _, summary = exacto_report.parse_openbench_log(OPENBENCH_LOG)
     exacto_report._enforce_no_samples(summary)
+
+
+TAU2_LOG: dict[str, Any] = {
+    "info": {
+        "num_trials": 2,
+        "agent_info": {
+            "llm": "openai/served-name",
+            "llm_args": {
+                "api_base": "http://localhost:8000/v1",
+                "temperature": 0.0,
+                "reasoning_effort": "high",
+            },
+        },
+        "user_info": {"llm": "gemini/gemini-2.5-flash", "llm_args": {}},
+    },
+    "tasks": [{"id": "3"}, {"id": "4"}],
+    "simulations": [
+        {
+            "task_id": "3",
+            "trial": 0,
+            "termination_reason": "user_stop",
+            "reward_info": {"reward": 1.0},
+        },
+        {
+            "task_id": "4",
+            "trial": 1,
+            "termination_reason": "agent_error",
+            "reward_info": {"reward": 0.0},
+        },
+    ],
+}
+
+
+def test_tau2_rows_index_tasks_by_id_and_trials_from_zero() -> None:
+    # A split runs the airline tasks in its own order, so the index comes
+    # from the task id rather than the task's position in the run.
+    rows, _ = exacto_report.parse_tau2_log(TAU2_LOG)
+    assert [(r["prompt_index"], r["repeat_index"]) for r in rows] == [
+        (3, 0),
+        (4, 1),
+    ]
+    assert [r["error"] for r in rows] == [None, "agent_error"]
+
+
+def test_gpqa_config_records_the_endpoint_and_parity_knobs() -> None:
+    rows, summary = exacto_report.parse_openbench_log(OPENBENCH_LOG)
+    assert exacto_report.eval_config("openbench", summary, rows) == {
+        "base_url": "http://localhost:8000",
+        "temperature": 0.5,
+        "reasoning_effort": "high",
+        "sample_size": 2,
+    }
+
+
+def test_a_run_of_every_question_is_the_full_set() -> None:
+    # Counted from the rows, so a range or oversized --limit can't mislead it.
+    rows, summary = exacto_report.parse_openbench_log(OPENBENCH_LOG)
+    summary["dataset_samples"] = 2
+    config = exacto_report.eval_config("openbench", summary, rows)
+    assert config["sample_size"] is None
+
+
+def test_tau2_config_names_the_user_simulator_and_a_subset() -> None:
+    rows, summary = exacto_report.parse_tau2_log(TAU2_LOG)
+    summary["full_task_count"] = 50
+    assert exacto_report.eval_config("tau2", summary, rows) == {
+        "base_url": "http://localhost:8000",
+        "temperature": 0.0,
+        "reasoning_effort": "high",
+        "user_llm": "gemini/gemini-2.5-flash",
+        "sample_size": 2,
+    }
+    summary["full_task_count"] = 2
+    assert (
+        exacto_report.eval_config("tau2", summary, rows)["sample_size"] is None
+    )
+
+
+def test_an_unknown_full_count_keeps_the_subset_size() -> None:
+    # The runner drops --full-task-count when it can't read the split.
+    rows, summary = exacto_report.parse_tau2_log(TAU2_LOG)
+    assert exacto_report.eval_config("tau2", summary, rows)["sample_size"] == 2
+
+
+def test_config_json_is_written_beside_the_score(tmp_path: Path) -> None:
+    rows, summary = exacto_report.parse_openbench_log(OPENBENCH_LOG)
+    config = exacto_report.eval_config("openbench", summary, rows)
+    exacto_report.write_outputs(
+        str(tmp_path), "gpqa_diamond", rows, summary, "EXACTO_GPQA", config
+    )
+    assert json.loads((tmp_path / "config.json").read_text()) == config
+
+
+def test_a_vgi_log_records_its_media_manifest_and_rejected_requests() -> None:
+    log = json.loads(json.dumps(OPENBENCH_LOG))
+    log["eval"]["task"] = "vgi_bench"
+    log["eval"]["metadata"] = {
+        "harness": "OpenRouterTeam/benchmark-harness",
+        "media_manifest_hash": "8726" + "0" * 60,
+    }
+    log["samples"][2]["scores"]["mcq_scorer"] = {
+        "value": "I",
+        "answer": None,
+        "explanation": "Model error: HTTP 400: video fetch failed",
+    }
+    _, summary = exacto_report.parse_openbench_log(log)
+    assert summary["media_manifest_hash"] == "8726" + "0" * 60
+    assert summary["model_errors_scored_wrong"] == 1
+    # Scored 0 like the harness, so not an error against the budget.
+    assert summary["errors"] == 0
+
+
+def test_rejected_requests_past_the_budget_fail_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # They stay in the accuracy as 0, but a server that refuses most videos
+    # must not report that deflated score as a clean run.
+    monkeypatch.delenv("EVAL_MAX_ERROR_RATE", raising=False)
+    summary = {"total": 10, "errors": 0, "model_errors_scored_wrong": 2}
+    with pytest.raises(SystemExit):
+        exacto_report._enforce_error_budget(summary)
+
+
+def test_rejected_requests_within_the_budget_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("EVAL_MAX_ERROR_RATE", raising=False)
+    exacto_report._enforce_error_budget(
+        {"total": 10, "errors": 0, "model_errors_scored_wrong": 1}
+    )
+
+
+def test_vgi_bench_is_a_known_dataset() -> None:
+    assert "vgi_bench" in exacto_report.DATASETS

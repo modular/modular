@@ -54,7 +54,6 @@ from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from layout import TensorEngine, TileTensor
-from layout.coord import Coord
 from layout.tile_layout import (
     TensorLayout,
     row_major,
@@ -261,7 +260,6 @@ def naive_fa_decode_apple_core[
     Constraints:
         `Depth % WARP_SIZE == 0`: the head dim must split evenly across lanes.
     """
-    var _batch_size = Int(batch_size)
     var _max_prompt_len = Int(max_prompt_len)
     var _max_cache_size = Int(max_cache_size)
     var _num_heads = Int(num_heads)
@@ -337,9 +335,7 @@ def naive_fa_decode_apple_core[
     # Q is a flat 1D TileTensor over the whole buffer; this lane owns the
     # head-dim chunk [lane*EPL, lane*EPL+EPL) at `q_offset`. Vectorized load
     # through the tile (no raw pointer arithmetic).
-    var q_frag = q.load[width=EPL](Coord(q_offset + lane * EPL)).cast[
-        DType.float32
-    ]()
+    var q_frag = q.load[width=EPL]((q_offset + lane * EPL,)).cast[.float32]()
 
     # KV sub-tile layout: a 1D (_depth,) contiguous view of one token's K/V for
     # `kv_head`, reused for every key in this split. `block_paged_tile` infers
@@ -365,9 +361,7 @@ def naive_fa_decode_apple_core[
             # Per-head sink weight from the nullable `OptionalReg[TileTensor]`
             # (NOT a dangling pointer -- KB `unsafepointer-is-non-nullable`).
             # The deref is comptime-gated on `sink`, so None is never reached.
-            m = rebind[Scalar[q_type]](sink_weights.value()[head_id]).cast[
-                DType.float32
-            ]()
+            m = sink_weights.value().load[width=1]((head_id,)).cast[.float32]()
             l = Float32(1.0)
 
     for kv0 in range(start, end, BN):
@@ -382,8 +376,8 @@ def naive_fa_decode_apple_core[
                     UInt32(kv_head),
                     kv_token_layout,
                 )
-                var kvec = k_tile.load[width=EPL](Coord(lane * EPL)).cast[
-                    DType.float32
+                var kvec = k_tile.load[width=EPL]((lane * EPL,)).cast[
+                    .float32
                 ]()
                 partials[kk] = (q_frag * kvec).reduce_add()
 
@@ -417,8 +411,8 @@ def naive_fa_decode_apple_core[
                     UInt32(kv_head),
                     kv_token_layout,
                 )
-                var vvec = v_tile.load[width=EPL](Coord(lane * EPL)).cast[
-                    DType.float32
+                var vvec = v_tile.load[width=EPL]((lane * EPL,)).cast[
+                    .float32
                 ]()
                 o_frag = o_frag + p[kk] * vvec
 
@@ -430,19 +424,13 @@ def naive_fa_decode_apple_core[
         var oi = _o_idx(
             batch_id, head_id, d, split_id, _num_heads, Depth, _num_partitions
         )
-        o_partial[oi] = rebind[o_partial.ElementType](
-            SIMD[p_type, 1](o_frag[i].cast[p_type]())
-        )
+        o_partial[oi] = rebind[o_partial.ElementType](o_frag[i].cast[p_type]())
     if lane == 0:
         var idx = _ml_idx(
             batch_id, head_id, split_id, _num_heads, _num_partitions
         )
-        l_partial[idx] = rebind[l_partial.ElementType](
-            SIMD[p_type, 1](l.cast[p_type]())
-        )
-        m_partial[idx] = rebind[m_partial.ElementType](
-            SIMD[p_type, 1](m.cast[p_type]())
-        )
+        l_partial[idx] = rebind[l_partial.ElementType](l.cast[p_type]())
+        m_partial[idx] = rebind[m_partial.ElementType](m.cast[p_type]())
 
 
 # ===-------------------------------------------------------------------=== #
@@ -552,23 +540,23 @@ def naive_fa_decode_apple_stitch[
 
     for split in range(active_splits):
         var ml = _ml_idx(batch_id, head_id, split, _num_heads, _num_partitions)
-        var m_s = rebind[Scalar[p_type]](m_partial[ml]).cast[.float32]()
+        var m_s = m_partial.load[width=1]((ml,)).cast[.float32]()
         var m_new = max(m, m_s)
         var corr = exp(m - m_new)
         # `p` must use the same exp base as the producer for an exact combine.
         var p = exp(m_s - m_new)
-        var l_s = rebind[Scalar[p_type]](l_partial[ml]).cast[.float32]()
+        var l_s = l_partial.load[width=1]((ml,)).cast[.float32]()
         l = l * corr + p * l_s
         var oi = _o_idx(
             batch_id, head_id, d, split, _num_heads, _depth, _num_partitions
         )
-        var o_s = rebind[Scalar[p_type]](o_partial[oi]).cast[.float32]()
+        var o_s = o_partial.load[width=1]((oi,)).cast[.float32]()
         acc = acc * corr + p * o_s
         m = m_new
 
     var o_off = (seq_start * _num_heads + head_id) * _depth
     output[o_off + d] = rebind[output.ElementType](
-        SIMD[output_type, 1]((acc / l).cast[output_type]())
+        (acc / l).cast[output_type]()
     )
 
 
@@ -695,13 +683,11 @@ def naive_fa_decode_apple[
     # (`_o_idx`/`_ml_idx`) and the BSHD/ragged q/out offset, so the flat views
     # just carry the storage handles with TileTensor typing (no raw pointers /
     # DeviceBuffer-as-pointer inside the kernels).
-    var q_flat = TileTensor(
-        q.unsafe_ptr().as_imm().as_unsafe_any_origin(),
-        row_major(q.num_elements()),
+    var q_flat = (
+        q.as_imm().as_unsafe_any_origin().reshape(row_major(q.num_elements()))
     )
-    var output_flat = TileTensor(
-        output.unsafe_ptr().as_unsafe_any_origin(),
-        row_major(output.num_elements()),
+    var output_flat = output.as_unsafe_any_origin().reshape(
+        row_major(output.num_elements())
     )
     var o_partial_t = TileTensor(o_partial_dev, row_major(o_partial_n))
     var m_partial_t = TileTensor(m_partial_dev, row_major(ml_partial_n))

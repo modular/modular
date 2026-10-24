@@ -643,7 +643,9 @@ struct GroupedCLCWorkIterator[
 
         The CLC response contains: (linear_idx, 0, 0, is_valid).
         """
-        var response_ptr = self.clc_response + self.consumer_state.index()
+        var response_ptr = self.clc_response.unsafe_offset(
+            self.consumer_state.index()
+        )
         # Read the 128-bit response and extract linear_idx (first 32 bits)
         var response = response_ptr[].cast[.uint32]()
         return response
@@ -918,7 +920,9 @@ struct GroupedCLCSchedulerIterator[
         # signals the barriers. Without this, all 32 threads would each do
         # arrive_cluster(), causing 32 arrivals on barriers expecting only 1.
         if elect_one_sync():
-            var response_ptr = self.clc_response + self.producer_state.index()
+            var response_ptr = self.clc_response.unsafe_offset(
+                self.producer_state.index()
+            )
             response_ptr[] = UInt128(Int(next_linear_idx))
 
             comptime for cta in range(Self.cta_group):

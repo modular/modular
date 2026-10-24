@@ -206,13 +206,14 @@ TEST_F(StructTypeTest, UniquingConsistency) {
   // Create via ArrayRef<Type>
   KGENStructType fromTypes = KGENStructType::get(&ctx, {i32Type, i64Type});
 
-  // Create via ParamListAttr with TypeParamAttrs
+  // Create via ParamListAttr with TypeParamAttrs. A list of types is a layout,
+  // so ask for the layout domain to build the same type.
   auto metatype = TypeType::get(&ctx);
   auto variadicType = ParamListType::get(metatype);
   SmallVector<TypedAttr> elements = {TypeParamAttr::get(i32Type, metatype),
                                      TypeParamAttr::get(i64Type, metatype)};
   ParamListAttr variadic = ParamListAttr::get(elements, variadicType);
-  KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
+  KGENStructType fromVariadic = KGENStructType::getLayoutDomain(&ctx, variadic);
 
   // These should be the exact same type (pointer equality due to uniquing).
   EXPECT_EQ(fromTypes, fromVariadic);
@@ -238,7 +239,7 @@ TEST_F(StructTypeTest, UniquingWithParamTypes) {
   SmallVector<TypedAttr> elements = {
       cast<TypedAttr>(TypeParamAttr::get(paramType, metatype))};
   ParamListAttr variadic = ParamListAttr::get(elements, variadicType);
-  KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
+  KGENStructType fromVariadic = KGENStructType::getLayoutDomain(&ctx, variadic);
 
   EXPECT_EQ(fromTypes, fromVariadic);
 }
@@ -267,7 +268,7 @@ TEST_F(StructTypeTest, UniquingWithCanonicalizingTypeParamAttr) {
   // Since canonicalization is deterministic, both paths produce the same attr.
   SmallVector<TypedAttr> elements = {typeParamResult};
   ParamListAttr variadic = ParamListAttr::get(elements, variadicType);
-  KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
+  KGENStructType fromVariadic = KGENStructType::getLayoutDomain(&ctx, variadic);
 
   // Since canonicalization is deterministic, these should be the same type.
   EXPECT_EQ(fromTypes, fromVariadic);

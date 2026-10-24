@@ -615,6 +615,55 @@ logit_verification_pipelines:
     cos_dist_threshold: 3.0e-01
     kl_div_threshold: 5.0e-01
 
+  # Runs only on the 2x B200 job (nvidia-multi), whose `gpu:0,1` device list
+  # makes MAX shard the model at TP=2.
+  nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4:
+    pre_submit_agents: []
+    pipeline: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only, nvidia-multi, no-h100]
+    torch_reference_is_unquantized_source: true
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4_golden/1/2b31a05956691e1d5a61ca1f7bc0b019a8406b81ea8ec3cabe5146e7961a8e6c/nvidia_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4_golden.tar.gz"
+      json_file: "torch_nvidia_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4_float4_e2m1fnx2_golden.json"
+    # The torch reference is the BF16 checkpoint (transformers cannot load
+    # NVFP4), so the gate carries the NVFP4 weight-quantization error itself;
+    # a vLLM NVFP4 golden would give a tighter gate. --find-tolerances on
+    # 2x B200 (TP=2) measured max cosine distance 4.8e-02 and max KL 1.2e+00
+    # (suggested 4.9e-02 / 1.3e+00). The KL max comes from the long
+    # benchmarking prompt, whose step-0 token already differs (mean KL
+    # 4.6e-01); the other three average 2.6e-02 to 4.7e-02. Widened ~2x like
+    # the -fp8kv entry above rather than ~3x: this entry runs only on the
+    # 2x B200 job, so there is no cross-hardware spread to absorb, and the
+    # margin covers near-tie token flips like the step-0 one. 1.0e-01 still
+    # sits well under the ~7e-01 a dropped weight-scale family produced on
+    # the Qwen3.8 NVFP4 entry.
+    cos_dist_threshold: 1.0e-01
+    kl_div_threshold: 2.5e+00
+
+  # The DSpark recipe's target (`lightning_nvfp4_dspark.yaml`): the unscaled
+  # FP8 KV cache, at TP=2 on the 2x B200 job. A DSpark verify reads the same
+  # target logits, so the goldens are the BF16 source's above; the FP8 cache
+  # is the only difference. --find-tolerances on 2x B200 (TP=2) measured max
+  # cosine distance 6.1e-02 (BF16 KV: 4.8e-02) and max KL 1.2e+00, the same
+  # long-prompt maximum as the BF16-KV entry. The BF16-KV thresholds keep
+  # ~1.6x / ~2x headroom over that, the widening the entry above uses.
+  nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-fp8kv:
+    pre_submit_agents: []
+    pipeline: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only, nvidia-multi, no-h100]
+    torch_reference_is_unquantized_source: true
+    config_params_override:
+      kv_cache_format: float8_e4m3fn
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4_golden/1/2b31a05956691e1d5a61ca1f7bc0b019a8406b81ea8ec3cabe5146e7961a8e6c/nvidia_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4_golden.tar.gz"
+      json_file: "torch_nvidia_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4_float4_e2m1fnx2_golden.json"
+    cos_dist_threshold: 1.0e-01
+    kl_div_threshold: 2.5e+00
+
   Qwen/Qwen3-Embedding-0.6B-bfloat16:
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-Embedding-0.6B"
@@ -808,6 +857,17 @@ logit_verification_pipelines:
     kl_div_threshold: 4.6e-01
     timeout: 1800
 
+  # Laguna S-2.1 stays `manual` until a golden exists: `transformers` cannot
+  # load its mixed NVFP4/BF16 experts and the BF16 source model is 236 GB, so
+  # the reference has to come from vLLM. Fill in `pregenerated_torch_goldens`
+  # and the tolerances `--find-tolerances` suggests before dropping the tag.
+  poolside/Laguna-S-2.1-NVFP4:
+    pre_submit_agents: []
+    pipeline: "poolside/Laguna-S-2.1-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only, no-h100, manual]
+
   # MiniMax-M3 (dense-only layers) on a trimmed checkpoint, compared
   # against goldens pregenerated from the mm-sglang MiniMax-M3 fork.
   minimax/minimax3-dense-only:
@@ -818,7 +878,7 @@ logit_verification_pipelines:
     encoding: float8_e4m3fn
     tags: [manual]
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/minimax_m3_dense_only_golden/1/916ae32aad3b2c036783d3451e9c897512734de1f4d71c95d0afdaaaa2aeddd4/minimax_m3_dense_only_golden.tar.gz"
+      tar_file: "s3://modular-ci-prod-artifact-bucket/artifacts/minimax_m3_dense_only_golden/1/916ae32aad3b2c036783d3451e9c897512734de1f4d71c95d0afdaaaa2aeddd4/minimax_m3_dense_only_golden.tar.gz"
       json_file: "torch_minimax_m3_dense_only_golden.json"
     # Placeholder tolerances (headroom over measured); re-tune via the Action.
     cos_dist_threshold: 5.0e-04
@@ -841,7 +901,7 @@ logit_verification_pipelines:
     # into the runfiles the generate_llm_logits child inherits.
     verify_target: //max_private/minimax_m3:verify_minimax_m3
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/MiniMaxAI_MiniMax-M3-MXFP8_golden/1/f6c729e886f1750f1c569f5d68bfcd300f5e5eca24507047fd11830dadfd9cae/MiniMaxAI_MiniMax-M3-MXFP8_golden.tar.gz"
+      tar_file: "s3://modular-ci-prod-artifact-bucket/artifacts/MiniMaxAI_MiniMax-M3-MXFP8_golden/1/f6c729e886f1750f1c569f5d68bfcd300f5e5eca24507047fd11830dadfd9cae/MiniMaxAI_MiniMax-M3-MXFP8_golden.tar.gz"
       json_file: "sglang_MiniMaxAI_MiniMax-M3-MXFP8_float8_e4m3fn_golden.json"
     # Matches the 405B 8xb200 entry above. The MCloud deploy runs this entry
     # with no precompile pass -- the only precompiler can't register a private

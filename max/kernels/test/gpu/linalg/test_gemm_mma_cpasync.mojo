@@ -16,6 +16,7 @@ from std.random import random_float64
 
 from max.gpu.host import DeviceContext
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 
 from linalg.gemv import gemm_mma_cpasync
 import linalg.matmul.vendor.blas as vendor_blas
@@ -63,10 +64,10 @@ def run_gemm_mma_cpasync[
     var out_size = gemm_m * gemm_n
 
     # Host buffers.
-    var act_host = alloc[Scalar[a_type]](act_size)
-    var weight_host = alloc[Scalar[b_type]](weight_size)
-    var out_host = alloc[Scalar[c_type]](out_size)
-    var ref_host = alloc[Scalar[c_type]](out_size)
+    var act_host = unsafe_alloc[Scalar[a_type]](act_size)
+    var weight_host = unsafe_alloc[Scalar[b_type]](weight_size)
+    var out_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var ref_host = unsafe_alloc[Scalar[c_type]](out_size)
 
     for i in range(act_size):
         act_host[i] = random_float64(min=-0.5, max=0.5).cast[a_type]()
@@ -127,8 +128,8 @@ def run_gemm_mma_cpasync[
     ctx.synchronize()
 
     # Compare in f32.
-    var out_f32 = alloc[Float32](out_size)
-    var ref_f32 = alloc[Float32](out_size)
+    var out_f32 = unsafe_alloc[Float32](out_size)
+    var ref_f32 = unsafe_alloc[Float32](out_size)
     for i in range(out_size):
         out_f32[i] = out_host[i].cast[.float32]()
         ref_f32[i] = ref_host[i].cast[.float32]()
@@ -152,8 +153,8 @@ def run_gemm_mma_cpasync_residual[
 ](gemm_m: Int, gemm_k: Int, gemm_n: Int, *, ctx: DeviceContext) raises:
     """Run GEMM TC kernel with residual epilogue: D = matmul(A,B) + residual.
 
-    Also exercises the elementwise-lambda epilogue under `swapAB`: the lambda
-    must receive the true row-major `[M, N]` index so the residual is added at
+    Also exercises the epilogue closure under `swapAB`: the closure must
+    receive the true row-major `[M, N]` index so the residual is added at
     the correct location even when the kernel tiles the transposed problem.
     """
     print(
@@ -173,11 +174,11 @@ def run_gemm_mma_cpasync_residual[
     var weight_size = gemm_n * gemm_k
     var out_size = gemm_m * gemm_n
 
-    var act_host = alloc[Scalar[a_type]](act_size)
-    var weight_host = alloc[Scalar[b_type]](weight_size)
-    var residual_host = alloc[Scalar[c_type]](out_size)
-    var out_host = alloc[Scalar[c_type]](out_size)
-    var ref_host = alloc[Scalar[c_type]](out_size)
+    var act_host = unsafe_alloc[Scalar[a_type]](act_size)
+    var weight_host = unsafe_alloc[Scalar[b_type]](weight_size)
+    var residual_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var out_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var ref_host = unsafe_alloc[Scalar[c_type]](out_size)
 
     for i in range(act_size):
         act_host[i] = random_float64(min=-0.5, max=0.5).cast[a_type]()
@@ -209,21 +210,16 @@ def run_gemm_mma_cpasync_residual[
     var c_tensor = TileTensor(out_dev, c_shape)
     var residual_tensor = TileTensor(residual_dev, c_shape)
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor, residual_tensor)
     def residual_epilogue[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width]):
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var residual_tensor} -> SIMD[
+        dtype, width
+    ]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var res = residual_tensor.load[width=width](idx).cast[dtype]()
-        c_tensor.store[width=width](idx, (val + res).cast[c_type]())
+        return val + residual_tensor.load[width=width](idx).cast[dtype]()
 
-    gemm_mma_cpasync[
-        tile_k=tile_k,
-        elementwise_lambda_fn=residual_epilogue,
-        swapAB=swapAB,
-    ](
+    gemm_mma_cpasync[tile_k=tile_k, swapAB=swapAB](
         c_tensor,
         a_tensor,
         w_tensor,
@@ -231,6 +227,7 @@ def run_gemm_mma_cpasync_residual[
         gemm_k,
         gemm_n,
         1,
+        residual_epilogue,
         ctx,
     )
     ctx.synchronize()
@@ -249,8 +246,8 @@ def run_gemm_mma_cpasync_residual[
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
-    var out_f32 = alloc[Float32](out_size)
-    var ref_f32 = alloc[Float32](out_size)
+    var out_f32 = unsafe_alloc[Float32](out_size)
+    var ref_f32 = unsafe_alloc[Float32](out_size)
     for i in range(out_size):
         out_f32[i] = out_host[i].cast[.float32]()
         ref_f32[i] = (
@@ -320,8 +317,8 @@ def run_gemm_mma_cpasync_epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var out_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -2 if Int(idx[0].value()) % 2 == 1 else 2
-        out_tensor.store[width=width](
+        var row_scale = -2 if Int(idx[0]) % 2 == 1 else 2
+        out_tensor.store(
             idx,
             (val * SIMD[dtype, width](row_scale)).cast[out_tensor.dtype](),
         )

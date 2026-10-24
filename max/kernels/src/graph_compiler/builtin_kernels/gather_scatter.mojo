@@ -79,15 +79,20 @@ from nn.split import split
 from nn.tile import tile, tile_shape
 from extensibility import (
     ElementwiseUnaryOp,
+    Input,
     InputTensor,
     InputVariadicTensors,
     ManagedTensorSlice,
+    MutableInput,
+    Output,
     OutputTensor,
     OutputVariadicTensors,
+    Tensor,
+    TensorTuple,
+    TileTensorable,
 )
 from builtin_primitives.primitives import (
     _dense_row_major_anchor_stride,
-    foreach,
     view_copy_impl,
 )
 from extensibility import (
@@ -392,6 +397,105 @@ def _unsqueeze_shape_kernel[
     output[unsafe_offset=o * Int(output_stride)] = dim
 
 
+def squeeze_shape_gpu[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int,
+    remove_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    remove_indices_stride: Int,
+    num_input_dims: Int,
+    num_remove_indices: Int,
+    ctx: DeviceContext,
+) raises:
+    """Removes the dimensions at `remove_indices` from a GPU shape vector.
+
+    Parameters:
+        dtype: Element type of the input and output shape vectors.
+        indices_type: Element type of the indices.
+
+    Args:
+        output: The output shape vector, `num_input_dims - num_remove_indices`
+            entries long.
+        output_stride: Stride between output entries, in elements.
+        input: The input shape vector.
+        input_stride: Stride between input entries, in elements.
+        remove_indices: The dimensions to remove, possibly negative.
+        remove_indices_stride: Stride between indices, in elements.
+        num_input_dims: Length of the input shape vector.
+        num_remove_indices: Number of indices.
+        ctx: Device context to launch on.
+
+    Raises:
+        If the kernel launch fails.
+    """
+    ctx.enqueue_function[_squeeze_shape_kernel[dtype, indices_type]](
+        output,
+        Int32(output_stride),
+        input,
+        Int32(input_stride),
+        remove_indices,
+        Int32(remove_indices_stride),
+        Int32(num_input_dims),
+        Int32(num_remove_indices),
+        grid_dim=max(ceildiv(num_input_dims, _SHAPE_BLOCK), 1),
+        block_dim=_SHAPE_BLOCK,
+    )
+
+
+def unsqueeze_shape_gpu[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int,
+    padding_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    padding_indices_stride: Int,
+    num_input_dims: Int,
+    num_padding_indices: Int,
+    ctx: DeviceContext,
+) raises:
+    """Inserts size-1 dimensions at `padding_indices` into a GPU shape vector.
+
+    Parameters:
+        dtype: Element type of the input and output shape vectors.
+        indices_type: Element type of the indices.
+
+    Args:
+        output: The output shape vector, `num_input_dims + num_padding_indices`
+            entries long.
+        output_stride: Stride between output entries, in elements.
+        input: The input shape vector.
+        input_stride: Stride between input entries, in elements.
+        padding_indices: The output positions of the new dimensions, possibly
+            negative.
+        padding_indices_stride: Stride between indices, in elements.
+        num_input_dims: Length of the input shape vector.
+        num_padding_indices: Number of indices.
+        ctx: Device context to launch on.
+
+    Raises:
+        If the kernel launch fails.
+    """
+    ctx.enqueue_function[_unsqueeze_shape_kernel[dtype, indices_type]](
+        output,
+        Int32(output_stride),
+        input,
+        Int32(input_stride),
+        padding_indices,
+        Int32(padding_indices_stride),
+        Int32(num_input_dims),
+        Int32(num_padding_indices),
+        grid_dim=max(
+            ceildiv(num_input_dims + num_padding_indices, _SHAPE_BLOCK), 1
+        ),
+        block_dim=_SHAPE_BLOCK,
+    )
+
+
 @extensibility.register("mo.squeeze_shape")
 struct SqueezeShape:
     """Registers the `mo.squeeze_shape` graph op with the graph compiler."""
@@ -399,61 +503,85 @@ struct SqueezeShape:
     @staticmethod
     def execute[
         target: StaticString,
-        dtype: DType,
-        indices_type: DType,
     ](
-        output_shape: OutputTensor[dtype=dtype, rank=1, ...],
-        input_shape: InputTensor[dtype=dtype, rank=1, ...],
-        remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
+        output_shape: Some[Output & Tensor],
+        input_shape: Some[Input & Tensor],
+        remove_indices: Some[Input & Tensor],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Removes the dimensions at `remove_indices` from `input_shape`.
 
         Raises:
             If the GPU kernel launch fails.
         """
-        var num_input_dims = input_shape.dim_size[0]()
-        var num_remove_indices = remove_indices.dim_size[0]()
-        assert (
-            num_input_dims - num_remove_indices == output_shape.dim_size[0]()
+        comptime assert conforms_to(type_of(output_shape), TileTensorable)
+        comptime assert conforms_to(type_of(input_shape), TileTensorable)
+        comptime assert conforms_to(type_of(remove_indices), TileTensorable)
+        comptime dtype = type_of(output_shape).dtype
+        comptime indices_type = type_of(remove_indices).dtype
+        comptime assert type_of(output_shape).rank == 1
+        comptime assert type_of(input_shape).rank == 1
+        comptime assert type_of(remove_indices).rank == 1
+
+        var output_tt = output_shape.to_tile_tensor()
+        var input_tt = input_shape.to_tile_tensor[dtype]()
+        var remove_tt = remove_indices.to_tile_tensor()
+        var num_input_dims = Int(input_tt.dim[0]())
+        var num_remove_indices = Int(remove_tt.dim[0]())
+        assert num_input_dims - num_remove_indices == Int(
+            output_tt.dim[0]()
         ), "Incorrect output shape."
+
+        var output_ptr = output_tt.ptr.unsafe_origin_cast[MutAnyOrigin]()
+        var output_stride = Int(output_tt.dynamic_stride(0))
+        # The helpers take mutable pointers but only read the inputs.
+        var input_ptr = input_tt.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+            MutAnyOrigin
+        ]()
+        var input_stride = Int(input_tt.dynamic_stride(0))
+        var indices_ptr = remove_tt.ptr.unsafe_mut_cast[
+            True
+        ]().unsafe_origin_cast[MutAnyOrigin]()
+        var indices_stride = Int(remove_tt.dynamic_stride(0))
 
         comptime if is_cpu[target]():
             _squeeze_shape(
-                output_shape.unsafe_ptr(),
-                output_shape.stride_length[0](),
-                input_shape.unsafe_ptr(),
-                input_shape.stride_length[0](),
-                remove_indices.unsafe_ptr(),
-                remove_indices.stride_length[0](),
+                output_ptr,
+                output_stride,
+                input_ptr,
+                input_stride,
+                indices_ptr,
+                indices_stride,
                 num_input_dims,
                 num_remove_indices,
             )
         else:
-            comptime kernel = _squeeze_shape_kernel[dtype, indices_type]
-            ctx.enqueue_function[kernel](
-                output_shape.unsafe_ptr(),
-                Int32(output_shape.stride_length[0]()),
-                input_shape.unsafe_ptr(),
-                Int32(input_shape.stride_length[0]()),
-                remove_indices.unsafe_ptr(),
-                Int32(remove_indices.stride_length[0]()),
-                Int32(num_input_dims),
-                Int32(num_remove_indices),
-                grid_dim=max(ceildiv(num_input_dims, _SHAPE_BLOCK), 1),
-                block_dim=_SHAPE_BLOCK,
+            squeeze_shape_gpu(
+                output_ptr,
+                output_stride,
+                input_ptr,
+                input_stride,
+                indices_ptr,
+                indices_stride,
+                num_input_dims,
+                num_remove_indices,
+                ctx,
             )
 
 
 @extensibility.register_shape_function("mo.squeeze_shape")
-def squeeze_shape_fn[
-    dtype: DType, indices_type: DType
-](
-    input_shape: InputTensor[dtype=dtype, rank=1, ...],
-    remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
+def squeeze_shape_fn(
+    input_shape: Some[Tensor], remove_indices: Some[Tensor]
 ) raises -> IndexList[1]:
     """Computes the output shape for the `mo.squeeze_shape` graph op."""
-    var out_dim = input_shape.dim_size[0]() - remove_indices.dim_size[0]()
+    comptime assert type_of(input_shape).rank == 1, "input_shape must be rank 1"
+    comptime assert (
+        type_of(remove_indices).rank == 1
+    ), "remove_indices must be rank 1"
+    var out_dim = (
+        coord_to_index_list(input_shape.shape())[0]
+        - coord_to_index_list(remove_indices.shape())[0]
+    )
 
     if out_dim < 0:
         raise Error(
@@ -470,64 +598,85 @@ struct UnsqueezeShape:
     @staticmethod
     def execute[
         target: StaticString,
-        dtype: DType,
-        indices_type: DType,
     ](
-        output_shape: OutputTensor[dtype=dtype, rank=1, ...],
-        input_shape: InputTensor[dtype=dtype, rank=1, ...],
-        padding_indices: InputTensor[dtype=indices_type, rank=1, ...],
+        output_shape: Some[Output & Tensor],
+        input_shape: Some[Input & Tensor],
+        padding_indices: Some[Input & Tensor],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Inserts size-1 dimensions into `input_shape` at `padding_indices`.
 
         Raises:
             If the GPU kernel launch fails.
         """
-        var num_input_dims = input_shape.dim_size[0]()
-        var num_padding_indices = padding_indices.dim_size[0]()
-        assert (
-            num_input_dims + num_padding_indices == output_shape.dim_size[0]()
+        comptime assert conforms_to(type_of(output_shape), TileTensorable)
+        comptime assert conforms_to(type_of(input_shape), TileTensorable)
+        comptime assert conforms_to(type_of(padding_indices), TileTensorable)
+        comptime dtype = type_of(output_shape).dtype
+        comptime indices_type = type_of(padding_indices).dtype
+        comptime assert type_of(output_shape).rank == 1
+        comptime assert type_of(input_shape).rank == 1
+        comptime assert type_of(padding_indices).rank == 1
+
+        var output_tt = output_shape.to_tile_tensor()
+        var input_tt = input_shape.to_tile_tensor[dtype]()
+        var padding_tt = padding_indices.to_tile_tensor()
+        var num_input_dims = Int(input_tt.dim[0]())
+        var num_padding_indices = Int(padding_tt.dim[0]())
+        assert num_input_dims + num_padding_indices == Int(
+            output_tt.dim[0]()
         ), "Incorrect output shape."
+
+        var output_ptr = output_tt.ptr.unsafe_origin_cast[MutAnyOrigin]()
+        var output_stride = Int(output_tt.dynamic_stride(0))
+        # The helpers take mutable pointers but only read the inputs.
+        var input_ptr = input_tt.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+            MutAnyOrigin
+        ]()
+        var input_stride = Int(input_tt.dynamic_stride(0))
+        var indices_ptr = padding_tt.ptr.unsafe_mut_cast[
+            True
+        ]().unsafe_origin_cast[MutAnyOrigin]()
+        var indices_stride = Int(padding_tt.dynamic_stride(0))
 
         comptime if is_cpu[target]():
             _unsqueeze_shape(
-                output_shape.unsafe_ptr(),
-                output_shape.stride_length[0](),
-                input_shape.unsafe_ptr(),
-                input_shape.stride_length[0](),
-                padding_indices.unsafe_ptr(),
-                padding_indices.stride_length[0](),
+                output_ptr,
+                output_stride,
+                input_ptr,
+                input_stride,
+                indices_ptr,
+                indices_stride,
                 num_input_dims,
                 num_padding_indices,
             )
         else:
-            comptime kernel = _unsqueeze_shape_kernel[dtype, indices_type]
-            ctx.enqueue_function[kernel](
-                output_shape.unsafe_ptr(),
-                Int32(output_shape.stride_length[0]()),
-                input_shape.unsafe_ptr(),
-                Int32(input_shape.stride_length[0]()),
-                padding_indices.unsafe_ptr(),
-                Int32(padding_indices.stride_length[0]()),
-                Int32(num_input_dims),
-                Int32(num_padding_indices),
-                grid_dim=max(
-                    ceildiv(num_input_dims + num_padding_indices, _SHAPE_BLOCK),
-                    1,
-                ),
-                block_dim=_SHAPE_BLOCK,
+            unsqueeze_shape_gpu(
+                output_ptr,
+                output_stride,
+                input_ptr,
+                input_stride,
+                indices_ptr,
+                indices_stride,
+                num_input_dims,
+                num_padding_indices,
+                ctx,
             )
 
 
 @extensibility.register_shape_function("mo.unsqueeze_shape")
-def unsqueeze_shape_fn[
-    dtype: DType, indices_type: DType
-](
-    input_shape: InputTensor[dtype=dtype, rank=1, ...],
-    remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
+def unsqueeze_shape_fn(
+    input_shape: Some[Tensor], remove_indices: Some[Tensor]
 ) -> IndexList[1]:
     """Computes the output shape for the `mo.unsqueeze_shape` graph op."""
-    var out_dim = input_shape.dim_size[0]() + remove_indices.dim_size[0]()
+    comptime assert type_of(input_shape).rank == 1, "input_shape must be rank 1"
+    comptime assert (
+        type_of(remove_indices).rank == 1
+    ), "remove_indices must be rank 1"
+    var out_dim = (
+        coord_to_index_list(input_shape.shape())[0]
+        + coord_to_index_list(remove_indices.shape())[0]
+    )
     return IndexList[1](out_dim)
 
 
@@ -539,71 +688,84 @@ struct ScatterND:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
         # Existing implementations do not require static shape information
         scatter_nd[target=target](
-            input.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[dtype](),
+            output.to_tile_tensor(),
             context=ctx,
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_nd_shape` takes shapes.
 @extensibility.register_shape_function("mo.scatter_nd")
-def scatter_nd_shape_fn[](
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, ...],
-    indices: InputTensor,
-) raises -> IndexList[input.rank]:
+def scatter_nd_shape_fn(
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter_nd` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_nd_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
         )
     )
 
 
-@extensibility.register("mo.scatter_nd.skip_neg_indices")
-struct ScatterNDSkipNegIndices:
-    """Registers the `mo.scatter_nd.skip_neg_indices` graph op with the graph compiler.
+@extensibility.register("mo.scatter_nd.skip_oob_indices")
+struct ScatterNDSkipOobIndices:
+    """Registers the `mo.scatter_nd.skip_oob_indices` graph op with the graph compiler.
     """
 
     @staticmethod
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        # This is identical to mo.scatter_nd except in how we handle negative indices.
-        # In mo.scatter_nd, it is well defined to pass indices between [-dim_size, dim_size).
-        # Negative indices will be normalized by incrementing them by dim_size.
-        # This allows the kernel to support negative relative indexing.
-        # eg: x[-1] == x[dim_size - 1]
-        #
-        # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
-        # the update for that index instead.
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+        # Unlike mo.scatter_nd, which requires every index to lie in
+        # [-dim_size, dim_size), this skips the update for an index outside
+        # that range. Negative indices inside it still wrap, so -1 writes the
+        # last row; a caller marking rows to skip needs a value below
+        # -dim_size, such as the dtype's min.
         scatter_nd_generator[
             oob_index_strategy=ScatterOobIndexStrategy.SKIP,
             target=target,
             atomic_update_fn=None,
-            _trace_description="scatter_nd.skip_neg_indices",
+            _trace_description="scatter_nd.skip_oob_indices",
         ](
-            input.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[dtype](),
+            output.to_tile_tensor(),
             context=ctx,
         )
 
@@ -616,37 +778,47 @@ struct ScatterNDAdd:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
         scatter_nd_generator[
             target=target,
             atomic_update_fn=_atomic_add,
             _trace_description="scatter_nd.add",
         ](
-            input.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[dtype](),
+            output.to_tile_tensor(),
             context=ctx,
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_nd_shape` takes shapes.
 @extensibility.register_shape_function("mo.scatter_nd.add")
-def scatter_nd_add_shape[](
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, ...],
-    indices: InputTensor,
-) raises -> IndexList[input.rank]:
+def scatter_nd_add_shape(
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter_nd.add` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_nd_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
         )
     )
 
@@ -659,12 +831,19 @@ struct ScatterNDMul:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+
         @inline(.always)
         def reduce_fn[
             dtype: DType, width: SIMDLength
@@ -678,26 +857,30 @@ struct ScatterNDMul:
             atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.mul",
         ](
-            input.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[dtype](),
+            output.to_tile_tensor(),
             context=ctx,
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_nd_shape` takes shapes.
 @extensibility.register_shape_function("mo.scatter_nd.mul")
-def scatter_nd_mul_shape[](
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, ...],
-    indices: InputTensor,
-) raises -> IndexList[input.rank]:
+def scatter_nd_mul_shape(
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter_nd.mul` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_nd_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
         )
     )
 
@@ -710,12 +893,19 @@ struct ScatterNDMin:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+
         @inline(.always)
         def reduce_fn[
             dtype: DType, width: SIMDLength
@@ -729,26 +919,30 @@ struct ScatterNDMin:
             atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.min",
         ](
-            input.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[dtype](),
+            output.to_tile_tensor(),
             context=ctx,
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_nd_shape` takes shapes.
 @extensibility.register_shape_function("mo.scatter_nd.min")
-def scatter_nd_min_shape[](
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, ...],
-    indices: InputTensor,
-) raises -> IndexList[input.rank]:
+def scatter_nd_min_shape(
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter_nd.min` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_nd_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
         )
     )
 
@@ -761,12 +955,19 @@ struct ScatterNDMax:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+
         @inline(.always)
         def reduce_fn[
             dtype: DType, width: SIMDLength
@@ -780,26 +981,30 @@ struct ScatterNDMax:
             atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.max",
         ](
-            input.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[dtype](),
+            output.to_tile_tensor(),
             context=ctx,
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_nd_shape` takes shapes.
 @extensibility.register_shape_function("mo.scatter_nd.max")
-def scatter_nd_max_shape[](
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, ...],
-    indices: InputTensor,
-) raises -> IndexList[input.rank]:
+def scatter_nd_max_shape(
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter_nd.max` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_nd_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
         )
     )
 
@@ -815,16 +1020,22 @@ struct ApplyPackedBitmask:
         //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        logits: InputTensor[dtype=dtype, rank=2, ...],
-        packed: InputTensor[dtype=.int32, rank=2, ...],
+        output: Some[Output & Tensor],
+        logits: Some[Input & Tensor],
+        packed: Some[Input & Tensor],
         fill_value: Scalar[dtype],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(packed), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(logits).rank == 2
+        comptime assert type_of(packed).rank == 2
         apply_packed_bitmask[target](
-            output.to_tile_tensor(),
-            logits.to_tile_tensor(),
-            packed.to_tile_tensor(),
+            output.to_tile_tensor[dtype](),
+            logits.to_tile_tensor[dtype](),
+            packed.to_tile_tensor[.int32](),
             fill_value,
             ctx,
         )
@@ -838,18 +1049,21 @@ struct ScatterSetConstant:
     @staticmethod
     def execute[
         data_type: DType,
-        index_type: DType,
         //,
         target: StaticString,
     ](
-        data: MutableInputTensor[dtype=data_type, rank=2, ...],
-        indices: InputTensor[dtype=index_type, rank=2, ...],
+        data: Some[MutableInput & Tensor],
+        indices: Some[Input & Tensor],
         fill_value: Scalar[data_type],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(data), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert type_of(data).rank == 2
+        comptime assert type_of(indices).rank == 2
         scatter_set_constant[target](
-            data.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            data.to_tile_tensor[data_type](),
+            indices.to_tile_tensor(),
             fill_value,
             ctx,
         )
@@ -882,20 +1096,31 @@ struct Scatter:
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_elements_shape` takes
+# shapes.
 @extensibility.register_shape_function("mo.scatter")
 def scatter_shape_fn[
     axis: Int,
 ](
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-    indices: InputTensor[rank=input.rank, ...],
-) raises -> IndexList[input.rank]:
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    comptime assert (
+        type_of(updates).rank == type_of(input).rank
+    ), "updates rank must match input rank"
+    comptime assert (
+        type_of(indices).rank == type_of(input).rank
+    ), "indices rank must match input rank"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_elements_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
             axis,
         )
     )
@@ -928,19 +1153,30 @@ struct ScatterAdd:
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_elements_shape` takes
+# shapes.
 @extensibility.register_shape_function("mo.scatter.add")
 def scatter_add_shape_fn(
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-    indices: InputTensor[rank=input.rank, ...],
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
     axis: Scalar,
-) raises -> IndexList[input.rank]:
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter.add` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    comptime assert (
+        type_of(updates).rank == type_of(input).rank
+    ), "updates rank must match input rank"
+    comptime assert (
+        type_of(indices).rank == type_of(input).rank
+    ), "indices rank must match input rank"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_elements_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
             Int(axis),
         )
     )
@@ -983,19 +1219,30 @@ struct ScatterMax:
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_elements_shape` takes
+# shapes.
 @extensibility.register_shape_function("mo.scatter.max")
 def scatter_max_shape_fn(
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-    indices: InputTensor[rank=input.rank, ...],
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
     axis: Scalar,
-) raises -> IndexList[input.rank]:
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter.max` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    comptime assert (
+        type_of(updates).rank == type_of(input).rank
+    ), "updates rank must match input rank"
+    comptime assert (
+        type_of(indices).rank == type_of(input).rank
+    ), "indices rank must match input rank"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_elements_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
             Int(axis),
         )
     )
@@ -1038,19 +1285,30 @@ struct ScatterMin:
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_elements_shape` takes
+# shapes.
 @extensibility.register_shape_function("mo.scatter.min")
 def scatter_min_shape_fn(
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-    indices: InputTensor[rank=input.rank, ...],
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
     axis: Scalar,
-) raises -> IndexList[input.rank]:
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter.min` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    comptime assert (
+        type_of(updates).rank == type_of(input).rank
+    ), "updates rank must match input rank"
+    comptime assert (
+        type_of(indices).rank == type_of(input).rank
+    ), "indices rank must match input rank"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_elements_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
             Int(axis),
         )
     )
@@ -1093,19 +1351,30 @@ struct ScatterMul:
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `scatter_elements_shape` takes
+# shapes.
 @extensibility.register_shape_function("mo.scatter.mul")
 def scatter_mul_shape_fn(
-    input: InputTensor,
-    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-    indices: InputTensor[rank=input.rank, ...],
+    input: Some[TileTensorable],
+    updates: Some[TileTensorable],
+    indices: Some[TileTensorable],
     axis: Scalar,
-) raises -> IndexList[input.rank]:
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.scatter.mul` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert (
+        type_of(updates).dtype == type_of(input).dtype
+    ), "updates dtype must match input dtype"
+    comptime assert (
+        type_of(updates).rank == type_of(input).rank
+    ), "updates rank must match input rank"
+    comptime assert (
+        type_of(indices).rank == type_of(input).rank
+    ), "indices rank must match input rank"
+    return rebind[IndexList[type_of(input).rank]](
         scatter_elements_shape(
-            input.to_tile_tensor[.int64](),
-            updates.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+            indices.to_tile_tensor(),
             Int(axis),
         )
     )
@@ -1125,12 +1394,15 @@ struct BroadcastTo:
 
     @staticmethod
     def shape_impl[
-        input_rank: Int, output_rank: Int
-    ](
-        input: InputTensor[rank=input_rank, ...],
-        shape: InputTensor[rank=1, ...],
-    ) raises -> IndexList[output_rank]:
-        if output_rank != shape.dim_size[0]():
+        output_rank: Int
+    ](input: Some[Tensor], shape: Some[TileTensorable]) raises -> IndexList[
+        output_rank
+    ]:
+        comptime input_rank = type_of(input).rank
+        comptime assert type_of(shape).rank == 1, "shape must be rank 1"
+        var input_shape = coord_to_index_list(input.shape())
+        var shape_tt = shape.to_tile_tensor()
+        if output_rank != Int(shape_tt.dim(0)):
             raise Error(
                 "[broadcast_to] requires (len(target_shape) == output_rank)"
             )
@@ -1141,14 +1413,14 @@ struct BroadcastTo:
         var output_shape = IndexList[output_rank]()
 
         for axis in range(output_rank):
-            output_shape[axis] = Int(shape[axis])
+            output_shape[axis] = Int(shape_tt[axis])
 
         # Validate the compatibility between input and output shapes
         # NOTE we don't need to check the padded dims
         for i in range(input_rank):
             var input_axis = input_rank - i - 1
             var output_axis = output_rank - i - 1
-            var input_dim = input.dim_size(input_axis)
+            var input_dim = input_shape[input_axis]
             var output_dim = output_shape[output_axis]
             if input_dim != 1 and input_dim != output_dim:
                 raise Error(
@@ -1167,11 +1439,10 @@ struct BroadcastTo:
 
 @extensibility.register_shape_function("mo.broadcast_to")
 def broadcast_to_shape_fn[
-    input_rank: Int, output_rank: Int
-](
-    input: InputTensor[rank=input_rank, ...],
-    shape: InputTensor[rank=1, ...],
-) raises -> IndexList[output_rank]:
+    output_rank: Int
+](input: Some[Tensor], shape: Some[TileTensorable]) raises -> IndexList[
+    output_rank
+]:
     """Computes the output shape for the `mo.broadcast_to` graph op."""
     return BroadcastTo.shape_impl[output_rank=output_rank](input, shape)
 
@@ -1236,11 +1507,13 @@ struct BroadcastShape:
 
 @extensibility.register_shape_function("mo.broadcast_shape")
 def broadcast_shape_fn(
-    lhs_buf: InputTensor[rank=1, ...], rhs_buf: InputTensor[rank=1, ...]
+    lhs_buf: Some[Tensor], rhs_buf: Some[Tensor]
 ) raises -> IndexList[1]:
     """Computes the output shape for the `mo.broadcast_shape` graph op."""
-    var lhs_dim = lhs_buf.dim_size[0]()
-    var rhs_dim = rhs_buf.dim_size[0]()
+    comptime assert type_of(lhs_buf).rank == 1, "lhs_buf must be rank 1"
+    comptime assert type_of(rhs_buf).rank == 1, "rhs_buf must be rank 1"
+    var lhs_dim = coord_to_index_list(lhs_buf.shape())[0]
+    var rhs_dim = coord_to_index_list(rhs_buf.shape())[0]
     return IndexList[1](max(lhs_dim, rhs_dim))
 
 
@@ -1409,16 +1682,19 @@ struct Reshape:
         raise Error("Should never be called!")
 
 
+# TODO(GEX-4377): Bind `input` as `Some[Tensor]` once `reshape_shape` takes
+# its element count.
 @extensibility.register_shape_function("mo.reshape")
 def reshape_shape_fn[
     output_rank: Int
-](input: InputTensor, shape: InputTensor[rank=1, ...]) raises -> IndexList[
+](input: Some[TileTensorable], shape: Some[TileTensorable]) raises -> IndexList[
     output_rank
 ]:
     """Computes the output shape for the `mo.reshape` graph op."""
+    comptime assert type_of(shape).rank == 1, "shape must be rank 1"
     return reshape_shape[output_rank=output_rank](
-        input.to_tile_tensor[.int64](),
-        shape.to_tile_tensor[.int64](),
+        input.to_tile_tensor(),
+        shape.to_tile_tensor(),
     )
 
 
@@ -1498,34 +1774,39 @@ struct Transpose:
     @inline(.never)
     @staticmethod
     def shape_impl(
-        input: InputTensor,
-        permutations: InputTensor[rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        if permutations.dim_size[0]() != input.rank:
+        input: Some[Tensor],
+        permutations: Some[TileTensorable],
+    ) raises -> IndexList[type_of(input).rank]:
+        comptime rank = type_of(input).rank
+        comptime assert (
+            type_of(permutations).rank == 1
+        ), "permutations must be rank 1"
+        var perms = permutations.to_tile_tensor()
+        if Int(perms.dim(0)) != rank:
             raise Error("[transpose] permutation size must match input rank")
 
-        comptime for i in range(input.rank):
-            var perm = Int(permutations[i])
-            if perm < 0 or input.rank <= perm:
+        comptime for i in range(rank):
+            var perm = Int(perms[i])
+            if perm < 0 or rank <= perm:
                 raise Error(
                     "[transpose] each permutation must be within range [0,"
                     " rank)"
                 )
 
-        var shape, _ = Self.transpose_in_place(input, permutations)
-        var out = IndexList[input.rank]()
+        var input_shape = coord_to_index_list(input.shape())
+        var out = IndexList[rank]()
 
-        comptime for i in range(input.rank):
-            out[i] = shape[i]
+        comptime for i in range(rank):
+            out[i] = input_shape[Int(perms[i])]
 
         return out
 
 
 @extensibility.register_shape_function("mo.transpose")
 def transpose_shape_fn(
-    input: InputTensor,
-    permutations: InputTensor[rank=1, ...],
-) raises -> IndexList[input.rank]:
+    input: Some[Tensor],
+    permutations: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.transpose` graph op."""
     return Transpose.shape_impl(input, permutations)
 
@@ -1689,20 +1970,25 @@ struct Slice:
         ](output, view_tensor, ctx)
 
 
+# TODO(GEX-4377): Bind `input` as `Some[Tensor]` once `slice_shape` takes its
+# shape.
 @extensibility.register_shape_function("mo.slice")
 def slice_shape_fn(
-    input: InputTensor,
-    starts: InputTensor[rank=1, ...],
-    stops: InputTensor[rank=1, ...],
-    steps: InputTensor[rank=1, ...],
-) raises -> IndexList[input.rank]:
+    input: Some[TileTensorable],
+    starts: Some[TileTensorable],
+    stops: Some[TileTensorable],
+    steps: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.slice` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(starts).rank == 1, "starts must be rank 1"
+    comptime assert type_of(stops).rank == 1, "stops must be rank 1"
+    comptime assert type_of(steps).rank == 1, "steps must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
         slice_shape(
-            input.to_tile_tensor[.int64](),
-            starts.to_tile_tensor[.int64](),
-            stops.to_tile_tensor[.int64](),
-            steps.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            starts.to_tile_tensor(),
+            stops.to_tile_tensor(),
+            steps.to_tile_tensor(),
         )
     )
 
@@ -1726,7 +2012,7 @@ struct MutableStore(ElementwiseUnaryOp):
         buffer: MutableInputTensor,
         tensor: FusedInputTensor,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         # TODO: Remove the execute method (GEX-2453).
         raise Error("exec should never be called !")
 
@@ -1739,22 +2025,30 @@ struct MutableStoreSlice:
     @staticmethod
     def execute[
         target: StaticString,
-        dtype: DType,
-        rank: Int,
     ](
-        to_buffer: MutableInputTensor[dtype=dtype, rank=rank, ...],
-        in_slice: InputTensor[dtype=dtype, rank=rank, ...],
-        starts: InputTensor[rank=1, ...],
-        stops: InputTensor[rank=1, ...],
-        steps: InputTensor[rank=1, ...],
+        to_buffer: Some[MutableInput & Tensor],
+        in_slice: Some[Input & Tensor],
+        starts: Some[Input & Tensor],
+        stops: Some[Input & Tensor],
+        steps: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(to_buffer), TileTensorable)
+        comptime assert conforms_to(type_of(in_slice), TileTensorable)
+        comptime assert conforms_to(type_of(starts), TileTensorable)
+        comptime assert conforms_to(type_of(stops), TileTensorable)
+        comptime assert conforms_to(type_of(steps), TileTensorable)
+        comptime dtype = type_of(to_buffer).dtype
+        comptime assert type_of(in_slice).rank == type_of(to_buffer).rank
+        comptime assert type_of(starts).rank == 1
+        comptime assert type_of(stops).rank == 1
+        comptime assert type_of(steps).rank == 1
         copy_to_slice[target=target](
-            to_buffer.to_tile_tensor[.int64](),
-            in_slice.to_tile_tensor[.int64](),
-            starts.to_tile_tensor[.int64](),
-            stops.to_tile_tensor[.int64](),
-            steps.to_tile_tensor[.int64](),
+            to_buffer.to_tile_tensor[dtype](),
+            in_slice.to_tile_tensor[dtype](),
+            starts.to_tile_tensor(),
+            stops.to_tile_tensor(),
+            steps.to_tile_tensor(),
             ctx,
         )
 
@@ -1769,30 +2063,37 @@ struct GatherND:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor,
-        data: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor,
+        output: Some[Output & Tensor],
+        data: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(data), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
         gather_nd[batch_dims=batchDims, target=target](
-            data.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            data.to_tile_tensor[dtype](),
+            indices.to_tile_tensor(),
+            output.to_tile_tensor(),
             ctx,
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `gather_nd_shape` takes shapes.
 @extensibility.register_shape_function("mo.gather_nd")
 def gather_nd_shape_fn[
     batch_dims: Int, output_rank: Int
-](data: InputTensor, indices: InputTensor) raises -> IndexList[output_rank]:
+](
+    data: Some[TileTensorable], indices: Some[TileTensorable]
+) raises -> IndexList[output_rank]:
     """Computes the output shape for the `mo.gather_nd` graph op."""
     return gather_nd_shape[
         batch_dims=batch_dims,
         output_rank=output_rank,
     ](
-        data.to_tile_tensor[.int64](),
-        indices.to_tile_tensor[.int64](),
+        data.to_tile_tensor(),
+        indices.to_tile_tensor(),
     )
 
 
@@ -1810,7 +2111,7 @@ struct Gather:
         input: FusedInputTensor[dtype=output.dtype, ...],
         indices: FusedInputTensor,
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         @inline(.always)
         def input_fn[
             width: Int, element_alignment: Int
@@ -1852,15 +2153,18 @@ struct Gather:
         )
 
 
+# TODO(GEX-4377): Bind `Some[Tensor]` once `gather_shape` takes shapes.
 @extensibility.register_shape_function("mo.gather")
 def gather_shape_fn[
     output_rank: Int,
     axis: Int,
-](input: InputTensor, indices: InputTensor) raises -> IndexList[output_rank]:
+](
+    input: Some[TileTensorable], indices: Some[TileTensorable]
+) raises -> IndexList[output_rank]:
     """Computes the output shape for the `mo.gather` graph op."""
     return gather_shape[output_rank=output_rank](
-        input.to_tile_tensor[.int64](),
-        indices.to_tile_tensor[.int64](),
+        input.to_tile_tensor(),
+        indices.to_tile_tensor(),
         axis,
     )
 
@@ -1873,9 +2177,9 @@ struct GatherSum:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor[dtype=.int32, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Fused gather (axis 0) + sum reduction (axis 1).
@@ -1883,10 +2187,14 @@ struct GatherSum:
         Dispatches to the CPU `gather_reduce` kernel or the GPU
         `gather_sum` kernel based on `target`.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
         gather_sum[target=target](
-            output.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            input.to_tile_tensor[dtype](),
+            indices.to_tile_tensor[.int32](),
             ctx,
         )
 
@@ -1897,33 +2205,39 @@ struct Tile:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        repeats: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        repeats: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(repeats), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).rank == type_of(output).rank
         tile[target=target](
-            input.to_tile_tensor[.int64](),
-            repeats.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[dtype](),
+            repeats.to_tile_tensor(),
+            output.to_tile_tensor[dtype](),
             ctx,
         )
 
 
+# TODO(GEX-4377): Bind `input` as `Some[Tensor]` once `tile_shape` takes its
+# shape.
 @extensibility.register_shape_function("mo.tile")
 def tile_shape_fn(
-    input: InputTensor,
-    repeats: InputTensor[rank=1, ...],
-) raises -> IndexList[input.rank]:
+    input: Some[TileTensorable],
+    repeats: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.tile` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(repeats).rank == 1, "repeats must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
         tile_shape(
-            input.to_tile_tensor[.int64](),
-            repeats.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
+            repeats.to_tile_tensor(),
         )
     )
 
@@ -1961,7 +2275,7 @@ struct Concat:
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
         check_axis_in_range[axis, output.rank]()
@@ -1969,18 +2283,16 @@ struct Concat:
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
-        # Copy-capture `inputs` into the device-kernel closure via
-        # `@__copy_capture`. Without it the closure captures `inputs` by
-        # reference, so on Metal the GPU kernel holds a host-side pointer to the
-        # capture and reads garbage (concat with >=3 inputs silently returned
-        # all-zeros). `inputs` (`FusedInputVariadicTensors`) stores its tensors
-        # by value, so the copy brings their device pointers into the kernel.
+        # Copy-capture `inputs` into the device-kernel closure. A by-reference
+        # capture leaves the GPU kernel holding a host-side pointer to the
+        # capture on Metal, so it reads garbage (concat with >=3 inputs
+        # silently returned all-zeros). `inputs` (`FusedInputVariadicTensors`)
+        # stores its tensors by value, so the copy brings their device pointers
+        # into the kernel.
         @inline(.always)
-        @__parameter
-        @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int, width: Int, alignment: Int = 1
-        ](coords: Coord) -> SIMD[dtype, width]:
+        ](coords: Coord) {var inputs} -> SIMD[dtype, width]:
             comptime assert (
                 input_index < inputs.size
             ), "tensor index out of bounds"
@@ -1992,11 +2304,9 @@ struct Concat:
         # by-reference capture leaves the device kernel holding a host pointer
         # to the output tensor on Metal.
         @inline(.always)
-        @__parameter
-        @__copy_capture(output)
         def epilogue_wrapper[
-            _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](coords: Coord, value: SIMD[_dtype, width]):
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](coords: Coord, value: SIMD[_dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
                 coords,
                 rebind[SIMD[output.dtype, width]](value),
@@ -2005,26 +2315,28 @@ struct Concat:
         fused_concat[
             dtype,
             rank,
-            inputs_lambda,
-            epilogue_wrapper,
             axis=normalize_neg_index(axis, rank),
             target=target,
         ](
             input_shapes,
             output.runtime_layout(),
+            inputs_lambda,
+            epilogue_wrapper,
             ctx,
         )
 
 
 @extensibility.register_shape_function("mo.concat")
 def concat_shape_fn[
-    dtype: DType,
-    rank: Int,
+    Ins: TypeList[Trait=Tensor, ...],
+    //,
     axis: Int,
-](
-    inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
-) raises -> IndexList[rank]:
+](inputs: TensorTuple[*Ins]) raises -> IndexList[Ins[0].rank]:
     """Computes the output shape for the `mo.concat` graph op."""
+    comptime for i in range(len(Ins)):
+        comptime assert (
+            Ins[i].dtype == Ins[0].dtype
+        ), "inputs must share a dtype"
     return concat_shape_impl(axis, inputs)
 
 
@@ -2101,39 +2413,43 @@ struct SplitOutputShapeHelper:
 
 
 @extensibility.register_shape_function("split_ith_output_shape")
-def split_ith_output_shape_fn[
-    rank: Int,
-    input_type: DType,
-    split_size_type: DType,
-](
-    input_buf: InputTensor[dtype=input_type, rank=rank, ...],
-    split_sizes_buf: InputTensor[dtype=split_size_type, rank=1, ...],
+def split_ith_output_shape_fn(
+    input_buf: Some[Tensor],
+    split_sizes_buf: Some[TileTensorable],
     split_axis: Scalar,
     output_idx: Scalar,
-) raises -> IndexList[rank]:
+) raises -> IndexList[type_of(input_buf).rank]:
     """Computes the output shape for the `split_ith_output_shape` graph op."""
-    if not (0 <= Int(output_idx) < split_sizes_buf.size()):
+    comptime rank = type_of(input_buf).rank
+    comptime assert (
+        type_of(split_sizes_buf).rank == 1
+    ), "split_sizes_buf must be rank 1"
+    var split_sizes = split_sizes_buf.to_tile_tensor()
+    var num_splits = Int(split_sizes.dim(0))
+    if not (0 <= Int(output_idx) < num_splits):
         raise Error(
             "[split] output index must be within range [0, len(split_sizes))"
         )
 
     check_axis_in_range[rank](Int(split_axis))
 
-    var output_split_size = Int(split_sizes_buf[Int(output_idx)])
+    var output_split_size = Int(split_sizes[Int(output_idx)])
 
     var normalized_split_axis = normalize_neg_index(Int(split_axis), rank)
 
     var split_sizes_sum = 0
 
-    for i in range(split_sizes_buf.dim_size[0]()):
-        split_sizes_sum += Int(split_sizes_buf[i])
-    if split_sizes_sum != input_buf.dim_size(normalized_split_axis):
+    for i in range(num_splits):
+        split_sizes_sum += Int(split_sizes[i])
+    var output_shape = rebind[IndexList[rank]](
+        coord_to_index_list(input_buf.shape())
+    )
+    if split_sizes_sum != output_shape[normalized_split_axis]:
         raise Error(
             "[split] sum of split sizes must match input dimension at split"
             " axis"
         )
 
-    var output_shape = input_buf.shape()
     output_shape[normalized_split_axis] = output_split_size
     return output_shape
 
@@ -2144,23 +2460,23 @@ struct IndexTensor:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        indices_type: DType,
-        data_rank: Int,
-        indices_rank: Int,
-        output_rank: Int,
         batch_dims: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=output_rank, ...],
-        data: InputTensor[dtype=dtype, rank=data_rank, ...],
-        indices: InputTensor[dtype=indices_type, rank=indices_rank, ...],
+        output: Some[Output & Tensor],
+        data: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(data), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime indices_type = type_of(indices).dtype
         index_tensor[dtype, indices_type, batch_dims, target=target](
-            data.to_tile_tensor[.int64](),
-            indices.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            data.to_tile_tensor[dtype](),
+            indices.to_tile_tensor(),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -2173,49 +2489,53 @@ struct AdvancedIndexingGetItem:
     @inline(.always)
     @staticmethod
     def execute[
-        input_rank: Int,
-        index_rank: Int,
-        output_rank: Int,
-        input_type: DType,
-        index_type: DType,
-        num_index_tensors: Int,
+        Indices: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
         start_axis: Int,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tensor: OutputTensor[dtype=input_type, rank=output_rank, ...],
-        input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
-        indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
-        ],
+        out_tensor: Some[Output & Tensor],
+        input_tensor: Some[Input & Fused & LoadAccess],
+        indices: TensorTuple[*Indices],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
+        comptime assert conforms_to(type_of(out_tensor), TileTensorable)
+        comptime input_rank = type_of(input_tensor).rank
+        comptime index_rank = Indices[0].rank
+        comptime num_index_tensors = len(Indices)
+        _check_index_tensors[*Indices]()
+        comptime assert type_of(input_tensor).dtype == type_of(out_tensor).dtype
         comptime assert (
-            output_rank == input_rank + index_rank - num_index_tensors
+            type_of(out_tensor).rank
+            == input_rank + index_rank - num_index_tensors
         )
         # Do not support boolean masks at this time.
-        comptime assert index_type != .bool
+        comptime assert Indices[0].dtype != .bool
+
+        comptime assert conforms_to(type_of(input_tensor), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input_tensor)
+        comptime assert conforms_to(type_of(in_view), Loadable)
 
         @inline(.always)
         def input_tensor_fn[
             dtype: DType, width: Int
-        ](idx: Coord) {var input_tensor} -> SIMD[dtype, width]:
-            return rebind[SIMD[dtype, width]](
-                input_tensor._fused_load[width](idx)
-            )
+        ](idx: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](in_view.load[width](idx))
+
+        var index_views = TensorTuple._fused_view(indices)
 
         @inline(.always)
         def indices_fn[
             indices_index: Int,
-        ](coordinates: Coord) {var indices} -> Int:
+        ](coordinates: Coord) {var index_views} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
-            return Int(indices[indices_index]._fused_load[width=1](coordinates))
+            comptime assert conforms_to(
+                type_of(index_views[indices_index]), Loadable
+            )
+            return Int(index_views[indices_index].load[width=1](coordinates))
 
         advanced_indexing_getitem[
             input_rank=input_rank,
@@ -2225,8 +2545,8 @@ struct AdvancedIndexingGetItem:
             target=target,
             trace_description=_trace_name,
         ](
-            out_tensor.to_tile_tensor[.int64](),
-            input_tensor.strides(),
+            out_tensor.to_tile_tensor(),
+            _fused_row_major_strides(input_tensor),
             ctx,
             input_tensor_fn,
             indices_fn,
@@ -2235,24 +2555,114 @@ struct AdvancedIndexingGetItem:
 
 @extensibility.register_shape_function("advanced_indexing_getitem")
 def advanced_indexing_getitem_shape_fn[
-    input_rank: Int,
-    index_rank: Int,
-    input_type: DType,
-    index_type: DType,
-    num_index_tensors: Int,
+    Indices: TypeList[Trait=Tensor, ...],
     //,
     start_axis: Int,
-](
-    input_tensor: InputTensor[dtype=input_type, rank=input_rank, ...],
-    indices: InputVariadicTensors[
-        dtype=index_type, rank=index_rank, size=num_index_tensors, ...
-    ],
-) -> IndexList[input_rank + index_rank - num_index_tensors]:
+](input_tensor: Some[Tensor], indices: TensorTuple[*Indices]) -> IndexList[
+    type_of(input_tensor).rank + Indices[0].rank - Indices.length
+]:
     """Computes the output shape for the `advanced_indexing_getitem` graph op.
     """
+    comptime input_rank = type_of(input_tensor).rank
+    comptime index_rank = Indices[0].rank
+    comptime for i in range(Indices.length):
+        comptime assert (
+            Indices[i].dtype == Indices[0].dtype
+        ), "indices must share a dtype"
+        comptime assert (
+            Indices[i].rank == index_rank
+        ), "indices must share a rank"
     return advanced_indexing_getitem_shape[
-        start_axis=start_axis, num_index_tensors=num_index_tensors
-    ](input_tensor.shape(), indices[0].shape())
+        start_axis=start_axis, num_index_tensors=Indices.length
+    ](
+        rebind[IndexList[input_rank]](
+            coord_to_index_list(input_tensor.shape())
+        ),
+        rebind[IndexList[index_rank]](coord_to_index_list(indices[0].shape())),
+    )
+
+
+def _check_index_tensors[*Indices: Tensor]():
+    """Checks that an advanced-indexing op's index tensors share a dtype and
+    rank."""
+    comptime for i in range(len(Indices)):
+        comptime assert (
+            Indices[i].dtype == Indices[0].dtype
+        ), "indices must share a dtype"
+        comptime assert (
+            Indices[i].rank == Indices[0].rank
+        ), "indices must share a rank"
+
+
+def _fused_row_major_strides(
+    tensor: Some[Tensor],
+) -> IndexList[type_of(tensor).rank]:
+    """Returns the strides a fused tensor argument reads or writes with.
+
+    A fused argument has no buffer of its own. MOGG lays its producer or
+    consumer out row-major over its shape, as it does for the legacy fused
+    slices.
+    """
+    return rebind[IndexList[type_of(tensor).rank]](
+        coord_to_index_list(row_major(tensor.shape()).stride_coord())
+    )
+
+
+@inline(.always)
+def _advanced_indexing_setitem_inplace[
+    Indices: TypeList[Trait=Input & Fused & LoadAccess, ...],
+    //,
+    start_axis: Int,
+    target: StaticString,
+    trace_description: StaticString,
+](
+    input_tile: TileTensor[mut=True, ...],
+    updates: Some[Input & Fused & LoadAccess],
+    indices: TensorTuple[*Indices],
+    ctx: DeviceContext,
+) raises:
+    comptime index_rank = Indices[0].rank
+    comptime num_index_tensors = len(Indices)
+    _check_index_tensors[*Indices]()
+    comptime assert type_of(updates).dtype == input_tile.dtype
+
+    comptime assert conforms_to(type_of(updates), UnsafeFusedView)
+    var updates_view = unsafe_fused_view(updates)
+    comptime assert conforms_to(type_of(updates_view), Loadable)
+
+    @inline(.always)
+    def updates_tensor_fn[
+        dtype: DType, width: Int
+    ](idx: Coord) {var updates_view} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](updates_view.load[width](idx))
+
+    var index_views = TensorTuple._fused_view(indices)
+
+    @inline(.always)
+    def indices_fn[
+        indices_index: Int,
+    ](coordinates: Coord) {var index_views} -> Int:
+        comptime assert (
+            indices_index < num_index_tensors
+        ), "tensor index out of bounds"
+        comptime assert conforms_to(
+            type_of(index_views[indices_index]), Loadable
+        )
+        return Int(index_views[indices_index].load[width=1](coordinates))
+
+    advanced_indexing_setitem_inplace[
+        start_axis=start_axis,
+        num_index_tensors=num_index_tensors,
+        target=target,
+        trace_description=trace_description,
+    ](
+        input_tile,
+        rebind[IndexList[index_rank]](coord_to_index_list(indices[0].shape())),
+        _fused_row_major_strides(updates),
+        ctx,
+        updates_tensor_fn,
+        indices_fn,
+    )
 
 
 @extensibility.register("advanced_indexing_setitem_inplace")
@@ -2263,57 +2673,23 @@ struct AdvancedIndexingSetItemInplace:
     @inline(.always)
     @staticmethod
     def execute[
-        input_rank: Int,
-        index_rank: Int,
-        updates_rank: Int,
-        input_type: DType,
-        index_type: DType,
-        num_index_tensors: Int,
+        Indices: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
         start_axis: Int,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        input_tensor: MutableInputTensor[
-            dtype=input_type, rank=input_rank, ...
-        ],
-        updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
-        indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
-        ],
+        input_tensor: Some[MutableInput & Tensor],
+        updates: Some[Input & Fused & LoadAccess],
+        indices: TensorTuple[*Indices],
         ctx: DeviceContext,
-    ) capturing raises:
-        @inline(.always)
-        def updates_tensor_fn[
-            dtype: DType, width: Int
-        ](idx: Coord) {var updates} -> SIMD[dtype, width]:
-            return rebind[SIMD[dtype, width]](updates._fused_load[width](idx))
-
-        @inline(.always)
-        def indices_fn[
-            indices_index: Int,
-        ](coordinates: Coord) {var indices} -> Int:
-            comptime assert (
-                indices_index < num_index_tensors
-            ), "tensor index out of bounds"
-            return Int(indices[indices_index]._fused_load[width=1](coordinates))
-
-        advanced_indexing_setitem_inplace[
+    ) raises:
+        comptime assert conforms_to(type_of(input_tensor), TileTensorable)
+        _advanced_indexing_setitem_inplace[
             start_axis=start_axis,
-            num_index_tensors=num_index_tensors,
             target=target,
             trace_description=_trace_name,
-        ](
-            input_tensor.to_tile_tensor[.int64](),
-            indices[0].shape(),
-            updates.strides(),
-            ctx,
-            updates_tensor_fn,
-            indices_fn,
-        )
+        ](input_tensor.to_tile_tensor(), updates, indices, ctx)
 
 
 @extensibility.register("advanced_indexing_setitem")
@@ -2324,62 +2700,64 @@ struct AdvancedIndexingSetItem:
     @inline(.always)
     @staticmethod
     def execute[
-        input_rank: Int,
-        index_rank: Int,
-        updates_rank: Int,
-        input_type: DType,
-        index_type: DType,
-        num_index_tensors: Int,
+        Indices: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
         start_axis: Int,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output_tensor: OutputTensor[dtype=input_type, rank=input_rank, ...],
-        input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
-        updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
-        indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
-        ],
+        output_tensor: Some[Output & Tensor],
+        input_tensor: Some[Input & Fused & LoadAccess],
+        updates: Some[Input & Fused & LoadAccess],
+        indices: TensorTuple[*Indices],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Implement basic numpy-style advanced indexing with assignment but returns a copy.
         """
+        comptime assert conforms_to(type_of(output_tensor), TileTensorable)
+        comptime dtype = type_of(output_tensor).dtype
+        comptime assert type_of(input_tensor).dtype == dtype
+        comptime assert (
+            type_of(input_tensor).rank == type_of(output_tensor).rank
+        )
+
+        var output_tile = output_tensor.to_tile_tensor()
+        comptime assert conforms_to(type_of(input_tensor), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input_tensor)
+        comptime assert conforms_to(type_of(in_view), Loadable)
 
         # First copy over input tensor into the output
         @inline(.always)
-        def func[
-            width: Int, element_alignment: Int
-        ](idx: IndexList[output_tensor.rank]) {var} -> SIMD[
-            output_tensor.dtype, width
-        ]:
-            return input_tensor._fused_load[
-                width, element_alignment=element_alignment
-            ](idx)
+        def copy_input[
+            width: Int, element_alignment: Int = 1
+        ](index: Coord) {var in_view, var output_tile}:
+            output_tile.store[
+                width=width,
+                alignment=min(
+                    type_of(output_tensor).alignment,
+                    element_alignment * align_of[dtype](),
+                ),
+            ](
+                index,
+                rebind[SIMD[dtype, width]](
+                    in_view.load[
+                        width=width, element_alignment=element_alignment
+                    ](index)
+                ),
+            )
 
-        foreach[target=target, _trace_name=_trace_name + "_p1/2_copy"](
-            func, output_tensor, ctx
-        )
+        elementwise[
+            get_kernel_simd_width[dtype, target](),
+            target=target,
+            _trace_description=_trace_name + "_p1/2_copy",
+        ](copy_input, Coord(output_tensor.shape()).flatten(), ctx)
 
         # Then run the updates in-place.
-        # For type checking
-        var tensor = MutableInputTensor[
-            dtype=input_type,
-            rank=input_rank,
-            static_spec=output_tensor.static_spec,
-        ](
-            output_tensor._ptr,
-            output_tensor.shape(),
-            output_tensor.strides(),
-        )
-        AdvancedIndexingSetItemInplace.execute[
-            target=target,
+        _advanced_indexing_setitem_inplace[
             start_axis=start_axis,
-            _trace_name=_trace_name + "_p2/2_update",
-        ](tensor, updates, indices, ctx)
+            target=target,
+            trace_description=_trace_name + "_p2/2_update",
+        ](output_tile, updates, indices, ctx)
 
 
 @extensibility.register("mo.sliced.add.ragged")

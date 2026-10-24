@@ -18,7 +18,7 @@ Covers the same shapes as test_ping_pong_shapes.mojo but goes through
 the production dispatch path instead of calling ping_pong_matmul directly.
 """
 
-from std.sys import align_of, get_defined_bool
+from std.sys import get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
@@ -179,7 +179,7 @@ def test_dispatch_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -scale if Int(idx[0].value()) % 2 == 1 else scale
+        var row_scale = -scale if Int(idx[0]) % 2 == 1 else scale
         return val * SIMD[dtype, width](row_scale)
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
@@ -480,26 +480,22 @@ def test_oob_epilogue[
     )
 
     # Epilogue writes to out_tensor using global (m, n) coordinates
-    @__parameter
     @inline(.always)
-    @__copy_capture(out_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDLength,
         *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        alignment: Int,
+    ](idx: Coord, val: SIMD[_dtype, width]) {var out_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert idx.flat_rank == out_tensor.flat_rank
-        out_tensor.store[width=width, alignment=alignment](
+        out_tensor.store[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    _matmul_gpu[
-        use_tensor_core=True,
-        transpose_b=True,
-        elementwise_lambda_fn=epilogue_fn,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+    _matmul_gpu[use_tensor_core=True, transpose_b=True](
+        c_tensor, a_tensor, b_tensor, epilogue_fn, ctx
+    )
 
     vendor_blas.matmul(
         ctx,
@@ -678,26 +674,22 @@ def test_oob_epilogue_dynamic_m[
         out_dev.unsafe_ptr(), row_major(alloc_m, Idx[N])
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(out_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDLength,
         *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        alignment: Int,
+    ](idx: Coord, val: SIMD[_dtype, width]) {var out_tensor}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert idx.flat_rank == out_tensor.flat_rank
-        out_tensor.store[width=width, alignment=alignment](
+        out_tensor.store[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    _matmul_gpu[
-        use_tensor_core=True,
-        transpose_b=True,
-        elementwise_lambda_fn=epilogue_fn,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+    _matmul_gpu[use_tensor_core=True, transpose_b=True](
+        c_tensor, a_tensor, b_tensor, epilogue_fn, ctx
+    )
 
     vendor_blas.matmul(
         ctx,
@@ -871,6 +863,17 @@ def main() raises:
         # ============================================================
         print("\nFP8 - Various M values (N=2048, K=2048):")
         test_dispatch_dynamic_m[.float8_e4m3fn, .float32, 2048, 2048](ctx, 2048)
+
+        # ============================================================
+        # FP8 N=7168 K=1024 (attention out proj, TP=8 shard)
+        # ============================================================
+        # M=17..32 picks a block_n=64 config whose BK=1024 exceeds K / 2.
+        print("\nFP8 - Various M values (N=7168, K=1024):")
+        var fp8_7168_m: List[Int] = [16, 17, 24, 32, 33]
+        for i in range(len(fp8_7168_m)):
+            test_dispatch_dynamic_m[.float8_e4m3fn, .float32, 7168, 1024](
+                ctx, fp8_7168_m[i]
+            )
 
         # ============================================================
         # OOB diagnostic: detect reads/writes past M

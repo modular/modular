@@ -47,7 +47,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import DecoderOutputs, ReturnLogits, logits_outputs
 from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
@@ -254,7 +254,7 @@ class Eagle3MLADraft(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         split_prefix: str = "eagle3_draft",
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Forward pass of the Eagle3 draft model.
 
         Args:
@@ -413,7 +413,8 @@ class Eagle3MLADraft(Module):
             DType.float32,
         )
 
-        ret_val: tuple[TensorValue, ...] = (last_logits,)
+        variable_logits: TensorValue | None = None
+        logit_offsets: TensorValue | None = None
 
         if self.return_logits == ReturnLogits.VARIABLE:
             draft_return_n_logits_range = ops.range(
@@ -486,16 +487,19 @@ class Eagle3MLADraft(Module):
                 dtype=DType.int64,
                 device=devices[0],
             )
-            ret_val += (variable_logits, logit_offsets)
 
-        ret_val += extract_hs(
-            return_hidden_states=self.return_hidden_states,
-            last_token_hs_distributed=last_token_distributed,
-            all_hs_distributed=hs,
-            normalizer=self.norm_shards,
+        return logits_outputs(
+            last_logits,
+            variable_logits,
+            logit_offsets,
+            self.return_hidden_states,
+            extract_hs(
+                return_hidden_states=self.return_hidden_states,
+                last_token_hs_distributed=last_token_distributed,
+                all_hs_distributed=hs,
+                normalizer=self.norm_shards,
+            ),
         )
-
-        return ret_val
 
     def input_types(
         self, kv_params: KVCacheParamInterface

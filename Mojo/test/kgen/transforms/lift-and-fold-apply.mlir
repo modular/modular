@@ -32,14 +32,6 @@ kgen.generator @lift_apply() {
   %0 = kgen.call @take_and_pass<apply(:(index) -> index @pass, p1)>() : ()
     -> !pop.array<apply(:(index) -> index @pass, apply(:(index) -> index @pass, p1)), index>
 
-  // CHECK: region F = <p2>
-  kgen.param.declare.region F = <p2>() {
-    // CHECK: apply *[[L4:.*]] = [(index) -> index: @pass](p2)
-    // CHECK: constant = <*[[L4]]>
-    kgen.param.constant = <apply(:(index) -> index @pass, p2)>
-    hlcf.return
-  }
-
   hlcf.return
 }
 

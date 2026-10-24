@@ -530,7 +530,3 @@ other value.
   scope's end isn't supported.
 - **No `thin` on declarations.** These apply to function types,
   not closure declarations. A declaration with captures can't be `thin`.
-- **Trait conformance with closure fields.** A struct can contain a
-  closure-typed field and conform to a trait, but every method of that trait
-  must be declared `capturing` until the capturing effect is removed (see
-  `unified_closure_structs.mojo`).

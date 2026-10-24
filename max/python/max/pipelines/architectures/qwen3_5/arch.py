@@ -39,6 +39,11 @@ qwen3_5_arch = SupportedArchitecture(
     pipeline_model=Qwen3_5Model,
     tokenizer=Qwen3_5Tokenizer,
     context_type=Qwen3VLTextAndVisionContext,
+    input_modalities={
+        InputModality.TEXT,
+        InputModality.IMAGE,
+        InputModality.VIDEO,
+    },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3_5_state_dict,
     },
@@ -53,6 +58,11 @@ qwen3_5_arch = SupportedArchitecture(
     # A warmup probe's state pages are freed with its KV, so a sweep of probes
     # cannot exhaust them.
     supports_device_graph_capture=True,
+    checkpoint_drafts={"mtp": "MTPQwen3_5DraftModel"},
+    spec_decode_graph_names={
+        "dflash2": "qwen3_5_with_dflash2_graph",
+        "mtp": "qwen3_5_with_mtp_graph",
+    },
 )
 
 

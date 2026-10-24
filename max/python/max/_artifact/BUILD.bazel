@@ -1,0 +1,51 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+# The value types and the encoding, which max.experimental imports, so
+# nothing here may depend on max.experimental or max.pipelines.
+modular_py_library(
+    name = "_artifact",
+    srcs = [
+        "__init__.py",
+        "codec.py",
+        "metadata.py",
+        "value_types.py",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        requirement("typing-extensions"),
+    ],
+)
+
+# The writer and reader, and the model component, which holds
+# max.experimental CompiledCallables.
+modular_py_library(
+    name = "model_artifact",
+    srcs = [
+        "batch_processor.py",
+        "model_artifact.py",
+        "pipeline_modules.py",
+        "serialization.py",
+    ],
+    deps = [
+        ":_artifact",
+        "//max/python/max:_core",
+        "//max/python/max/experimental",
+        requirement("huggingface-hub"),
+        requirement("typing-extensions"),
+    ],
+)
+
+# max export, which builds a pipeline.
+modular_py_library(
+    name = "export",
+    srcs = ["export.py"],
+    deps = [
+        ":_artifact",
+        ":model_artifact",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+    ],
+)

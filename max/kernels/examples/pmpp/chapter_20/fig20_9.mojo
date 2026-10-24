@@ -18,6 +18,7 @@ from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from max.gpu.primitives.warp import (
     shuffle_idx,
     lane_group_max,
@@ -46,13 +47,13 @@ comptime d_size = D_MODEL // WARP_SIZE  # 4
 
 
 def flashattention_forward_kernel(
-    Q: UnsafePointer[Float32, MutAnyOrigin],
-    K: UnsafePointer[Float32, MutAnyOrigin],
-    V: UnsafePointer[Float32, MutAnyOrigin],
+    Q: MutPointer[Float32, MutAnyOrigin],
+    K: MutPointer[Float32, MutAnyOrigin],
+    V: MutPointer[Float32, MutAnyOrigin],
     N_dev: Int32,
     scaling: Float32,
-    out_D: UnsafePointer[Float32, MutAnyOrigin],
-    out_O: UnsafePointer[Float32, MutAnyOrigin],
+    out_D: MutPointer[Float32, MutAnyOrigin],
+    out_O: MutPointer[Float32, MutAnyOrigin],
 ):
     # Int is not device-passable; widen the fixed-width arg.
     var N = Int(N_dev)
@@ -227,10 +228,10 @@ def flashattention_forward_kernel(
 
 
 def cpu_attention(
-    h_Q: UnsafePointer[mut=False, Float32, _],
-    h_K: UnsafePointer[mut=False, Float32, _],
-    h_V: UnsafePointer[mut=False, Float32, _],
-    h_O: UnsafePointer[mut=True, Float32, _],
+    h_Q: ImmPointer[Float32, _],
+    h_K: ImmPointer[Float32, _],
+    h_V: ImmPointer[Float32, _],
+    h_O: MutPointer[Float32, _],
     N: Int,
     D: Int,
 ):
@@ -238,7 +239,7 @@ def cpu_attention(
     var neg_inf = Float32(-3.40282e38)
 
     for i in range(N):
-        var scores = alloc[Float32](N)
+        var scores = unsafe_alloc[Float32](N)
         var max_val = neg_inf
 
         for j in range(N):
@@ -268,7 +269,7 @@ def cpu_attention(
                 out_val += (scores[j] / sum_exp) * h_V[j * D + k]
             h_O[i * D + k] = out_val
 
-        scores.free()
+        scores.unsafe_free()
 
 
 def main() raises:
@@ -279,12 +280,12 @@ def main() raises:
     print("Initializing data N=", N, "d=", D_MODEL, "...")
 
     var size_mat = N * D_MODEL
-    var h_Q = alloc[Float32](size_mat)
-    var h_K = alloc[Float32](size_mat)
-    var h_V = alloc[Float32](size_mat)
-    var h_O = alloc[Float32](size_mat)
-    var h_O_ref = alloc[Float32](size_mat)
-    var h_D = alloc[Float32](N)
+    var h_Q = unsafe_alloc[Float32](size_mat)
+    var h_K = unsafe_alloc[Float32](size_mat)
+    var h_V = unsafe_alloc[Float32](size_mat)
+    var h_O = unsafe_alloc[Float32](size_mat)
+    var h_O_ref = unsafe_alloc[Float32](size_mat)
+    var h_D = unsafe_alloc[Float32](N)
 
     rand(h_Q, size_mat)
     rand(h_K, size_mat)
@@ -345,9 +346,9 @@ def main() raises:
     else:
         print("TEST FAILED with", err_count, "errors")
 
-    h_Q.free()
-    h_K.free()
-    h_V.free()
-    h_O.free()
-    h_O_ref.free()
-    h_D.free()
+    h_Q.unsafe_free()
+    h_K.unsafe_free()
+    h_V.unsafe_free()
+    h_O.unsafe_free()
+    h_O_ref.unsafe_free()
+    h_D.unsafe_free()

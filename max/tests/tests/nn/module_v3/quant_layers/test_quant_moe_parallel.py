@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock
 
+import pytest
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
@@ -26,6 +29,16 @@ from max.experimental.nn.common_layers.functional_kernels import (
     moe_create_indices,
 )
 from max.experimental.nn.common_layers.mesh_axis import TP
+from max.experimental.nn.common_layers.quant_linear import QuantizedMLP
+from max.experimental.nn.common_layers.quant_moe import (
+    ExpertParallelMoE,
+    TensorParallelMoE,
+)
+from max.experimental.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
+    MXFP8Tensor,
+    NVFP4Tensor,
+)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -42,13 +55,20 @@ from max.nn.comm.ep.ep_manager import (
     get_ep_local_sync_counters_size,
 )
 from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
-    ExpertParallelMoE,
-    TensorParallelMoE,
+from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
+    DeepseekV3_2MLP,
 )
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
-    FP8BlockTensor,
-    NVFP4Tensor,
+from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe_gate import (
+    DeepseekV3_2TopKRouter,
+)
+from max.pipelines.architectures.deepseekV3_2_modulev3.layers.transformer_block import (
+    _get_mlp,
+)
+from max.pipelines.architectures.deepseekV3_2_modulev3.model_config import (
+    DeepseekV3_2Config,
+)
+from max.pipelines.architectures.deepseekV3_modulev3.layers.transformer_block import (
+    ParallelismMode,
 )
 
 _HIDDEN_DIM = 256
@@ -211,7 +231,7 @@ def test_tensor_parallel_moe_fp8_weights(
         gate_up = layer.gate_up_proj
         assert isinstance(gate_up, list)
         assert isinstance(gate_up[0], FP8BlockTensor)
-        assert list(gate_up[0].data.shape) == [
+        assert list(gate_up[0].weight.shape) == [
             _NUM_EXPERTS,
             2 * _FP8_MOE_DIM // num_devices,
             _FP8_HIDDEN_DIM,
@@ -226,7 +246,7 @@ def test_tensor_parallel_moe_fp8_weights(
         down = layer.down_proj
         assert isinstance(down, list)
         assert isinstance(down[0], FP8BlockTensor)
-        assert list(down[0].data.shape) == [
+        assert list(down[0].weight.shape) == [
             _NUM_EXPERTS,
             _FP8_HIDDEN_DIM,
             _FP8_MOE_DIM // num_devices,
@@ -414,6 +434,61 @@ def test_expert_parallel_moe_allreduce_shared_expert_on_side_stream(
     assert re.search(r'"mo\.sequence"\(%\w+\) <\{streamId = 1 : ui64\}>', ir)
 
 
+@pytest.mark.parametrize("overlap_env", ["0", "1"])
+def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
+    mock_accelerator: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    overlap_env: str,
+) -> None:
+    """Peer-to-peer EP runs the shared expert between dispatch launch and wait.
+
+    This matches the graph-API EP path for any ``MODULAR_OVERLAP_SHARED_EXPERT``
+    value: the blocking multi-device dispatch and combine would serialize the
+    shared expert behind the EP communication.
+    """
+    monkeypatch.setenv("MODULAR_OVERLAP_SHARED_EXPERT", overlap_env)
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        num_devices = len(devices)
+        mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(DType.bfloat16, num_devices), devices
+        )
+
+        with default_device(mesh), default_dtype(DType.bfloat16):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                has_shared_experts=True,
+                shared_experts_dim=_MOE_DIM,
+                ep_batch_manager=ep_batch_manager,
+            )
+
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            out = layer(x, comm_buffers)
+            ir = str(Graph.current._mlir_op)
+
+    assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
+    assert "mo.distributed.ep" not in ir
+    for op in ("dispatch_async", "dispatch_wait", "combine_async"):
+        assert ir.count(f'"ep.{op}') == num_devices, op
+    last_launch = ir.rindex('"ep.dispatch_async')
+    first_wait = ir.index('"ep.dispatch_wait')
+    # The shared expert's gate/up matmul is the only matmul in between: the
+    # router runs before the launch and the routed experts after the wait.
+    between = ir[last_launch:first_wait]
+    assert "matmul" in between
+    assert ('"mo.sequence"' in between) == (overlap_env == "1")
+
+
 def test_expert_parallel_moe_fp8_weights(
     mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
 ) -> None:
@@ -447,18 +522,18 @@ def test_expert_parallel_moe_fp8_weights(
         assert len(gate_up) == num_devices
         for i, shard in enumerate(gate_up):
             assert isinstance(shard, FP8BlockTensor)
-            assert list(shard.data.shape) == [
+            assert list(shard.weight.shape) == [
                 num_local_experts,
                 2 * _MOE_DIM,
                 _HIDDEN_DIM,
             ]
-            assert shard.data.device == devices[i]
+            assert shard.weight.device == devices[i]
 
         down = layer.down_proj
         assert len(down) == num_devices
         for shard in down:
             assert isinstance(shard, FP8BlockTensor)
-            assert list(shard.data.shape) == [
+            assert list(shard.weight.shape) == [
                 num_local_experts,
                 _HIDDEN_DIM,
                 _MOE_DIM,
@@ -486,7 +561,7 @@ def test_tensor_parallel_moe_nvfp4_weights(
         gate_up = layer.gate_up_proj
         assert len(gate_up) == num_devices
         assert isinstance(gate_up[0], NVFP4Tensor)
-        assert list(gate_up[0].data.shape) == [
+        assert list(gate_up[0].weight.shape) == [
             _NUM_EXPERTS,
             2 * _MOE_DIM // num_devices,
             _HIDDEN_DIM // 2,
@@ -504,7 +579,7 @@ def test_tensor_parallel_moe_nvfp4_weights(
         down = layer.down_proj
         assert len(down) == num_devices
         assert isinstance(down[0], NVFP4Tensor)
-        assert list(down[0].data.shape) == [
+        assert list(down[0].weight.shape) == [
             _NUM_EXPERTS,
             _HIDDEN_DIM,
             _MOE_DIM // 2 // num_devices,
@@ -584,7 +659,7 @@ def test_expert_parallel_moe_nvfp4_weights(
         assert len(gate_up) == num_devices
         for i, shard in enumerate(gate_up):
             assert isinstance(shard, NVFP4Tensor)
-            assert list(shard.data.shape) == [
+            assert list(shard.weight.shape) == [
                 num_local_experts,
                 2 * _MOE_DIM,
                 _HIDDEN_DIM // 2,
@@ -596,13 +671,13 @@ def test_expert_parallel_moe_nvfp4_weights(
             ]
             # gate and up share one global scale per expert.
             assert list(shard.weight_scale_2.shape) == [num_local_experts]
-            assert shard.data.device == devices[i]
+            assert shard.weight.device == devices[i]
 
         down = layer.down_proj
         assert len(down) == num_devices
         for shard in down:
             assert isinstance(shard, NVFP4Tensor)
-            assert list(shard.data.shape) == [
+            assert list(shard.weight.shape) == [
                 num_local_experts,
                 _HIDDEN_DIM,
                 _MOE_DIM // 2,
@@ -626,7 +701,9 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
         num_local_experts = _NUM_EXPERTS // num_devices
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
 
-        def _build(quant_config: QuantConfig) -> ExpertParallelMoE:
+        def _build(
+            quant_config: QuantConfig, swiglu_limit: float = 0.0
+        ) -> ExpertParallelMoE:
             ep_batch_manager, _ = _build_ep_batch_manager(
                 _ep_config(
                     DType.uint8,
@@ -643,10 +720,16 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
                     moe_dim=_MOE_DIM,
                     quant_config=quant_config,
                     ep_batch_manager=ep_batch_manager,
+                    swiglu_limit=swiglu_limit,
                 )
 
         chained = _build(nvfp4_quant_config)
         assert not chained._uses_fused_swiglu
+
+        # The fused kernel has no clamp, so a SwiGLU limit keeps the chained
+        # path and its unpermuted weights.
+        clamped = _build(fused, swiglu_limit=10.0)
+        assert not clamped._uses_fused_swiglu
 
         layer = _build(fused)
         assert layer._uses_fused_swiglu
@@ -654,7 +737,7 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
         gate_up = layer.gate_up_proj
         for shard in gate_up:
             assert isinstance(shard, NVFP4Tensor)
-            assert list(shard.data.shape) == [
+            assert list(shard.weight.shape) == [
                 num_local_experts,
                 2 * _MOE_DIM,
                 _HIDDEN_DIM // 2,
@@ -664,3 +747,244 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
                 2 * _MOE_DIM,
                 _HIDDEN_DIM // 16,
             ]
+
+
+# --------------------------------------------------------------------------- #
+# GLM-5.x router
+# --------------------------------------------------------------------------- #
+
+
+def test_glm_router_outputs_keep_input_placement(
+    mock_accelerator: MagicMock,
+) -> None:
+    """The DeepSeek-V3.2 router claims its top-k outputs' placement.
+
+    ``moe_router_group_limited`` has no sharding rule, so its outputs are
+    ``Unknown`` until claimed, and the expert-parallel MoE casts them next.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+
+        with default_dtype(DType.bfloat16), default_device(mesh):
+            router = DeepseekV3_2TopKRouter(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                routed_scaling_factor=1.0,
+                scoring_func="sigmoid",
+                topk_method="noaux_tc",
+                n_group=2,
+                topk_group=1,
+                norm_topk_prob=True,
+                correction_bias_dtype=DType.float32,
+            )
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            topk_idx, topk_weight = router(x)
+            topk_idx = topk_idx.cast(DType.int32)
+
+        assert topk_idx.mapping == replicated
+        assert topk_weight.mapping == replicated
+
+
+def _glm_moe_layer(
+    mock_accelerator: MagicMock, quant_config: QuantConfig, dispatch: DType
+) -> ExpertParallelMoE:
+    """Builds the GLM-5.x expert-parallel MoE layer for ``quant_config``."""
+    devices = [mock_accelerator(0), mock_accelerator(1)]
+    mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+    ep_batch_manager, _ = _build_ep_batch_manager(
+        _ep_config(dispatch, len(devices), dispatch_quant_config=quant_config),
+        devices,
+    )
+    config = SimpleNamespace(
+        quant_config=quant_config,
+        n_routed_experts=_NUM_EXPERTS,
+        first_k_dense_replace=0,
+        moe_layer_freq=1,
+        routed_scaling_factor=1.0,
+        scoring_func="sigmoid",
+        topk_method="noaux_tc",
+        n_group=2,
+        topk_group=1,
+        norm_topk_prob=True,
+        correction_bias_dtype=DType.float32,
+        hidden_size=_HIDDEN_DIM,
+        num_experts_per_tok=_NUM_EXPERTS_PER_TOKEN,
+        moe_intermediate_size=_MOE_DIM,
+        n_shared_experts=1,
+        mesh=mesh,
+    )
+    with default_dtype(DType.bfloat16), default_device(mesh):
+        layer = _get_mlp(
+            cast(DeepseekV3_2Config, config),
+            ParallelismMode.TP_EP,
+            0,
+            ep_batch_manager,
+        )
+    assert isinstance(layer, ExpertParallelMoE)
+    return layer
+
+
+def test_glm_nvfp4_ep_router_and_shared_expert_in_bfloat16(
+    mock_accelerator: MagicMock, nvfp4_quant_config: QuantConfig
+) -> None:
+    """NVFP4 EP matches the graph-API model's sharded router and shared expert.
+
+    Those run the gate GEMM and the shared-expert SwiGLU in bfloat16; other
+    quantizations keep the float32 variants.
+    """
+    with F.lazy():
+        layer = _glm_moe_layer(
+            mock_accelerator, nvfp4_quant_config, DType.uint8
+        )
+    assert not isinstance(layer.gate, DeepseekV3_2TopKRouter)
+    assert type(layer.shared_experts) is QuantizedMLP
+
+
+def test_glm_fp8_ep_router_and_shared_expert_in_float32(
+    mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
+) -> None:
+    with F.lazy():
+        layer = _glm_moe_layer(
+            mock_accelerator, fp8_quant_config, DType.float8_e4m3fn
+        )
+    assert isinstance(layer.gate, DeepseekV3_2TopKRouter)
+    assert isinstance(layer.shared_experts, DeepseekV3_2MLP)
+
+
+# --------------------------------------------------------------------------- #
+# MXFP8
+# --------------------------------------------------------------------------- #
+
+
+def _mxfp8_tp_moe(
+    devices: list[Device], quant_config: QuantConfig
+) -> TensorParallelMoE:
+    mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+    with default_device(mesh):
+        return TensorParallelMoE(
+            hidden_dim=_HIDDEN_DIM,
+            num_experts=_NUM_EXPERTS,
+            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+            moe_dim=_MOE_DIM,
+            quant_config=quant_config,
+        )
+
+
+def test_tensor_parallel_moe_mxfp8_weights(
+    mock_accelerator: MagicMock, mxfp8_quant_config: QuantConfig
+) -> None:
+    """MXFP8 TP co-shards the data and the 32-element block scales."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        n = len(devices)
+        layer = _mxfp8_tp_moe(devices, mxfp8_quant_config)
+
+        gate_up = layer.gate_up_proj
+        assert len(gate_up) == n
+        assert isinstance(gate_up[0], MXFP8Tensor)
+        assert list(gate_up[0].weight.shape) == [
+            _NUM_EXPERTS,
+            2 * _MOE_DIM // n,
+            _HIDDEN_DIM,
+        ]
+        assert list(gate_up[0].weight_scale.shape) == [
+            _NUM_EXPERTS,
+            2 * _MOE_DIM // n,
+            _HIDDEN_DIM // 32,
+        ]
+
+        down = layer.down_proj
+        assert len(down) == n
+        assert isinstance(down[0], MXFP8Tensor)
+        assert list(down[0].weight.shape) == [
+            _NUM_EXPERTS,
+            _HIDDEN_DIM,
+            _MOE_DIM // n,
+        ]
+        assert list(down[0].weight_scale.shape) == [
+            _NUM_EXPERTS,
+            _HIDDEN_DIM,
+            _MOE_DIM // 32 // n,
+        ]
+
+
+def test_tensor_parallel_moe_mxfp8_forward(
+    mock_accelerator: MagicMock,
+    mxfp8_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """MXFP8 TP forward returns a Partial sum for the caller to all-reduce."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        layer = _mxfp8_tp_moe(devices, mxfp8_quant_config)
+        mesh = layer.mesh
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM],
+            dtype=DType.bfloat16,
+            device=DeviceMapping(mesh, (Replicated(),)),
+        )
+        out = layer(x)
+
+    assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
+    assert out.mapping.placements == (Partial(),)
+
+
+@pytest.mark.parametrize(
+    ("quant_config_name", "moe_dim"),
+    [
+        # 176 columns per device: 5.5 MXFP8 blocks of 32.
+        ("mxfp8_quant_config", 1408),
+        # 24 columns per device: 1.5 NVFP4 blocks of 16.
+        ("nvfp4_quant_config", 192),
+    ],
+)
+def test_tensor_parallel_moe_rejects_split_scale_block(
+    mock_accelerator: MagicMock,
+    request: pytest.FixtureRequest,
+    quant_config_name: str,
+    moe_dim: int,
+) -> None:
+    """A TP slice of moe_dim that cuts a scale block would misalign the scales."""
+    quant_config = request.getfixturevalue(quant_config_name)
+    with F.lazy():
+        devices = [mock_accelerator(i) for i in range(8)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        with (
+            default_device(mesh),
+            pytest.raises(ValueError, match="multiple of the weight scale"),
+        ):
+            TensorParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=moe_dim,
+                quant_config=quant_config,
+            )
+
+
+def test_expert_parallel_moe_rejects_mxfp8(
+    mock_accelerator: MagicMock, mxfp8_quant_config: QuantConfig
+) -> None:
+    """The EP dispatch has no MXFP8 path, so construction says so."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        ep_batch_manager, _ = _build_ep_batch_manager(
+            _ep_config(DType.bfloat16, len(devices)), devices
+        )
+        with default_device(mesh), pytest.raises(ValueError, match="MXFP8"):
+            ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=mxfp8_quant_config,
+                ep_batch_manager=ep_batch_manager,
+            )

@@ -19,7 +19,7 @@ of `group` consecutive physical `m_row` values collapse onto ONE sequence
 position, but distinct HEADS within that group, and -- whenever `group < 32`
 -- distinct SEQUENCE POSITIONS, land in the same 32-lane warp. The online-
 softmax lazy-rescale gate in `softmax_warp.mojo`'s main loop
-(`if _vote_nvidia_helper(diff < rescale_threshold) != 0:`) is a warp-wide
+(`if vote[.uint32](diff < rescale_threshold) != 0:`) is a warp-wide
 ANY-ballot over this per-thread predicate -- the same pattern fixed for the
 SM100 FA4 dense-GQA kernel in PR #98402 and for MLA decode's MTP-fold in this
 PR. One row's growth can force a sibling row (a different head and/or a

@@ -329,7 +329,7 @@ def _enum_reflection_write_to[
     writer.write_string(".")
 
     var discriminant = this._get_enum_discriminant()
-    comptime for i in range(names.size):
+    comptime for i in range(names.length):
         if discriminant == i:
             writer.write_string(StaticString(names[i]))
 

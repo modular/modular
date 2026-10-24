@@ -29,6 +29,10 @@ Parsing is delegated to the checkpoint's reference decoder
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import ModuleType
+from typing import ClassVar
+
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     generate_call_id,
@@ -36,20 +40,19 @@ from max.pipelines.lib.tool_parsing import (
 )
 from max.pipelines.modeling.types import ParsedToolCall, ParsedToolResponse
 
-from .encoding_dsv4 import (
-    dsml_token,
-    eos_token,
-    parse_message_from_completion_text,
-    parse_tool_calls,
-    tool_calls_block_name,
-)
+from . import encoding_dsv4
+from .encoding_dsv4 import dsml_token, tool_calls_block_name
 
-_INVOKE_BEGIN = f"<{dsml_token}invoke"
-_INVOKE_END = f"</{dsml_token}invoke>"
-_PARAMETER_END = f"</{dsml_token}parameter>\n"
 _HEADER_END = '">\n'
 # Stands in for the real header when only the arguments are decoded.
 _PLACEHOLDER_HEADER = f' name="_"{_HEADER_END}'
+
+
+def _tool_name(name: str, call: Mapping[str, object]) -> str:
+    # Decoders that split ``namespace::name`` get the name back as emitted,
+    # so a namespaced call is never mistaken for a bare tool of that name.
+    namespace = call.get("namespace")
+    return name if namespace is None else f"{namespace}::{name}"
 
 
 @register("deepseekv4")
@@ -62,17 +65,25 @@ class DeepseekV4ToolParser(StructuralTagToolParser):
     reference decoder rejects such output outright; here it stays verbatim in
     the reasoning.
 
-    The section marker includes the ``\\n\\n`` the reference decoder requires
-    before ``<｜DSML｜tool_calls>``, so the content ahead of a call streams
-    without it, as it parses. Arguments stream one complete parameter at a
-    time; ``string="true|false"`` carries each value's type, so no schema is
-    needed.
+    ``SECTION_BEGIN`` starts at the tag, because grammar enforcement matches
+    it by token id and the ``\\n\\n`` the reference decoder requires before
+    it merges into the preceding token. Content still ends before that blank
+    line, as it parses. Arguments stream one complete parameter at a time;
+    ``string="true|false"`` carries each value's type, so no schema is needed.
     """
 
-    SECTION_BEGIN = f"\n\n<{dsml_token}{tool_calls_block_name}>"
+    SECTION_BEGIN = f"<{dsml_token}{tool_calls_block_name}>\n"
     SECTION_END = f"</{dsml_token}{tool_calls_block_name}>"
-    CALL_BEGIN = _INVOKE_BEGIN
-    CALL_END = _INVOKE_END
+    CALL_BEGIN = f"<{dsml_token}invoke"
+    CALL_END = f"</{dsml_token}invoke>"
+    PARAMETER_END: ClassVar[str] = f"</{dsml_token}parameter>\n"
+    ENCODING: ClassVar[ModuleType] = encoding_dsv4
+
+    @property
+    def _start_marker(self) -> str:
+        # Without the tag's trailing newline, so a response cut off right
+        # after the tag still ends its content there.
+        return "\n\n" + self.SECTION_BEGIN.rstrip("\n")
 
     def parse_complete(self, response: str) -> ParsedToolResponse:
         """Parses a complete response with the reference decoder.
@@ -93,14 +104,20 @@ class DeepseekV4ToolParser(StructuralTagToolParser):
         Raises:
             ValueError: If the DSML is malformed or holds no tool call.
         """
-        if dsml_token not in response:
+        encoding = self.ENCODING
+        if encoding.dsml_token not in response:
             return ParsedToolResponse(content=response, tool_calls=[])
+        if response.endswith(self._start_marker):
+            # Cut off before the section tag's newline, so no call was made.
+            content = response[: -len(self._start_marker)].rstrip()
+            return ParsedToolResponse(content=content or None, tool_calls=[])
 
+        eos_token = encoding.eos_token
         text = (
             response if response.endswith(eos_token) else response + eos_token
         )
         try:
-            message = parse_message_from_completion_text(
+            message = encoding.parse_message_from_completion_text(
                 text, thinking_mode="chat"
             )
         except AssertionError as e:
@@ -110,7 +127,7 @@ class DeepseekV4ToolParser(StructuralTagToolParser):
         tool_calls = [
             ParsedToolCall(
                 id=generate_call_id(),
-                name=call["function"]["name"],
+                name=_tool_name(call["function"]["name"], call),
                 arguments=call["function"]["arguments"],
             )
             for call in message["tool_calls"]
@@ -130,11 +147,16 @@ class DeepseekV4ToolParser(StructuralTagToolParser):
         Raises:
             ValueError: If an invoke is malformed.
         """
-        _, _, calls = parse_tool_calls(0, f">{tool_section}{self.SECTION_END}")
+        try:
+            _, _, calls = self.ENCODING.parse_tool_calls(
+                0, f">\n{tool_section}{self.SECTION_END}"
+            )
+        except AssertionError as e:
+            raise ValueError(f"Malformed DeepSeek-V4 tool call: {e}") from e
         return [
             ParsedToolCall(
                 id=generate_call_id(),
-                name=call["name"],
+                name=_tool_name(call["name"], call),
                 arguments=call["arguments"],
             )
             for call in calls
@@ -143,7 +165,7 @@ class DeepseekV4ToolParser(StructuralTagToolParser):
     def _decode_invoke(self, header: str, parameters: str) -> ParsedToolCall:
         """Decodes one invoke from its header and complete parameter lines."""
         (call,) = self._parse_complete_section(
-            f"\n{_INVOKE_BEGIN}{header}{parameters}{_INVOKE_END}\n"
+            f"{self.CALL_BEGIN}{header}{parameters}{self.CALL_END}\n"
         )
         return call
 
@@ -177,10 +199,10 @@ class DeepseekV4ToolParser(StructuralTagToolParser):
         reports it.
         """
         if not is_complete:
-            end = args_text.rfind(_PARAMETER_END)
+            end = args_text.rfind(self.PARAMETER_END)
             if end == -1:
                 return ""
-            args_text = args_text[: end + len(_PARAMETER_END)]
+            args_text = args_text[: end + len(self.PARAMETER_END)]
         try:
             arguments = self._decode_invoke(
                 _PLACEHOLDER_HEADER, args_text

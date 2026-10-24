@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import NonCallableMock
 
@@ -24,6 +25,9 @@ from max.pipelines.architectures.deepseekV3.deepseekV3 import (
     _validate_parallelism_config,
 )
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
+from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import (
+    _validate_parallelism_config as _validate_v3_2_parallelism_config,
+)
 from max.pipelines.architectures.deepseekV3_nextn.model_config import (
     DeepseekV3NextNConfig,
 )
@@ -73,6 +77,43 @@ def test_valid_multi_gpu_with_ep() -> None:
     )
     # Should not raise
     _validate_parallelism_config(config)
+
+
+@pytest.mark.parametrize(
+    "validate",
+    [_validate_parallelism_config, _validate_v3_2_parallelism_config],
+)
+@pytest.mark.parametrize("data_parallel_degree", [2, 4])
+def test_partial_data_parallelism_rejected(
+    validate: Callable[[NonCallableMock], None], data_parallel_degree: int
+) -> None:
+    """Test that attention must be all TP or all DP.
+
+    The pipeline sets the degree after the config's own check, so the
+    model's check is the one that sees it.
+    """
+    config = make_mock_config(
+        ep_config=NonCallableMock(),
+        data_parallel_degree=data_parallel_degree,
+        num_devices=8,
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"must be 1 \(TP attention\) or the number of devices \(8\)",
+    ):
+        validate(config)
+
+
+@pytest.mark.parametrize("data_parallel_degree", [1, 8])
+def test_v3_2_valid_multi_gpu_with_ep(data_parallel_degree: int) -> None:
+    """Test that DeepseekV3.2 takes all-TP and all-DP attention with EP."""
+    config = make_mock_config(
+        ep_config=NonCallableMock(),
+        data_parallel_degree=data_parallel_degree,
+        num_devices=8,
+    )
+    # Should not raise
+    _validate_v3_2_parallelism_config(config)
 
 
 # ── DeepseekV3NextNConfig validation tests ──

@@ -140,32 +140,6 @@ kgen.generator @mutually_recursive() {
 
 // -----
 
-// expected-error @below {{cyclic reference between expressions defining and using parameters}}
-kgen.generator @use_itself() {
-  // expected-note @below {{parameter "F" is defined here, which references itself}}
-  kgen.param.declare.region F = (){
-    kgen.call_param[() -> (): F]()
-    hlcf.return
-  }
-  hlcf.return
-}
-
-// -----
-
-// expected-error @below {{cyclic reference between expressions defining and using parameters}}
-kgen.generator @region_cycle() {
-  // expected-note @below {{parameter "F" is defined here, which references the first expression}}
-  kgen.param.declare.region F = () -> index {
-    %0 = kgen.param.constant = <N>
-    hlcf.return %0 : index
-  }
-  // expected-note @below {{parameter "N" is defined here, which references the expression:}}
-  kgen.param.declare N = <apply(:() -> index F)>
-  hlcf.return
-}
-
-// -----
-
 // expected-error @below {{'kgen.generator' op funcTypeGenerator is not self-contained: it references parameter 'ty2' by name instead of by index}}
 kgen.generator @badTypes<ty1 : dtype>(%a : !kgen.scalar<ty2>) {
   hlcf.return
@@ -221,30 +195,6 @@ kgen.func @call_param_in_func(%arg0: si32) -> si32 {
   // expected-error @below {{'kgen.call_param' op is only allowed in generators pre-elaboration}}
   %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
   hlcf.return %0: si32
-}
-
-// -----
-
-kgen.generator @bar<F>() {
-  kgen.param.declare.region fn = () {
-    // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "Q"}}
-    %0 = kgen.param.constant = <Q>
-    hlcf.return
-  }
-  hlcf.return
-}
-
-// -----
-
-kgen.generator @doIt<SomeParam>() {
-  kgen.param.declare.region fn = () {
-    // expected-error @below {{'kgen.param.constant' op reference to parameter "SomeOtherParam" with incorrect type 'index'}}
-    %0 = kgen.param.constant = <SomeOtherParam>
-    // expected-note @below {{parameter defined with type '!kgen.dtype'}}
-    kgen.param.declare SomeOtherParam : dtype = <f32>
-    hlcf.return
-  }
-  hlcf.return
 }
 
 // -----
@@ -308,23 +258,6 @@ kgen.func @no_return() {
 
 // -----
 
-// expected-error @below {{cyclic reference between expressions}}
-kgen.generator @cyclicIf() {
-  kgen.param.declare cond_var: i1 = <1>
-  // expected-note @below {{parameter "M2" is defined here}}
-  kgen.param.declare.region M2 = () -> index {
-    kgen.param.constant = <N>
-    hlcf.unreachable
-  }
-  // This forwards the output parameter of the if statement back around to N,
-  // creating a cycle.
-  // expected-note @below {{parameter "N" is defined here}}
-  kgen.param.declare N = <apply(:() -> index M2)>
-  hlcf.return
-}
-
-// -----
-
 kgen.generator @declareWrongType() {
   // expected-error @below {{'kgen.param.declare' op declares a parameter with type 'index' but parameter expression has type 'i32'}}
   "kgen.param.declare"() {paramDecl = #kgen<param.decl p1 : index>, value = 1 : i32} : () -> ()
@@ -341,37 +274,6 @@ kgen.generator @duplicate_decl() {
   hlcf.return
 }
 
-// -----
-
-// expected-note @below {{previous declaration here}}
-kgen.generator @name_shadowing_1<a>() {
-  // expected-error @below {{redeclaration of parameter "a"}}
-  kgen.param.declare.region fn = <a>() {
-    hlcf.unreachable
-  }
-  hlcf.return
-}
-
-// -----
-
-kgen.generator @name_shadowing_2<a>() {
-  // expected-note @below {{previous declaration here}}
-  kgen.param.declare b = <a>
-  kgen.param.declare.region fn = () {
-    // expected-error @below {{redeclaration of parameter "b"}}
-    kgen.param.declare b = <a>
-    hlcf.unreachable
-  }
-  hlcf.return
-}
-
-// -----
-
-kgen.func @stage_closure() {
-  // expected-error @below {{staged closures cannot have parameters}}
-  %0 = kgen.stage_closure = <n : ui32>() capturing -> index {
-  } { name = "k" }
-}
 
 // -----
 

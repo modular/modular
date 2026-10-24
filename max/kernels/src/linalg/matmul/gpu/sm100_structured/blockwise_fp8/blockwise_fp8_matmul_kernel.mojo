@@ -533,11 +533,15 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                a_tile._storage.unsafe_offset(
+                    peer_m_rank * Self.a_tma_load_size
+                ),
                 a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                b_tile._storage.unsafe_offset(
+                    peer_rank_m * Self.b_tma_load_size
+                ),
                 b_tile.layout,
             )
 
@@ -732,7 +736,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         var a_tiles = smem.a_tiles()
         var b_tiles = smem.b_tiles()

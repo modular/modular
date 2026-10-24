@@ -14,7 +14,9 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+import functools
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from max import tree
@@ -25,12 +27,15 @@ from max.graph import (
     Graph,
     TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.data_parallelism import split_batch
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.layer import LayerList, Module
+from max.nn.transformer import DecoderOutputs
 
 from .llama3 import Llama3
 from .model_config import Llama3Config
@@ -60,16 +65,24 @@ class DataParallelLlama(Module):
 
     def __call__(
         self, all_model_args: Sequence[Sequence[Any]]
-    ) -> tuple[TensorValue, ...]:
-        all_outputs: list[list[TensorValue]] = [[] for _ in range(3)]
+    ) -> DecoderOutputs:
+        replicas: list[DecoderOutputs] = []
         for args, model in zip(all_model_args, self.models, strict=True):
-            outputs = model(*args)
-            for i, output in enumerate(outputs):
-                all_outputs[i].append(output.to(self.devices[0]))
-        if all_outputs[1] and all_outputs[2]:
-            return tuple(ops.concat(output, axis=0) for output in all_outputs)
-        else:
-            return (ops.concat(all_outputs[0], axis=0),)
+            replica = model(*args)
+            assert isinstance(replica, DecoderOutputs)
+            replicas.append(replica)
+        # Every replica returns the same structure, so each output joins its
+        # replicas' values along the batch, on the first device.
+        joined = [
+            ops.concat([v.to(self.devices[0]) for v in values], axis=0)
+            for values in zip(
+                *(tree.leaves(r, leaf=TensorValue) for r in replicas),
+                strict=True,
+            )
+        ]
+        outputs = tree.unflatten(tree.flatten(replicas[0])[1], joined)
+        assert isinstance(outputs, DecoderOutputs)
+        return outputs
 
     # Graph helpers.
     def input_types(
@@ -129,7 +142,7 @@ class DataParallelLlama(Module):
 
     def _call_flat(
         self, kv_params: KVCacheParamInterface, *args: Value[Any]
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         (
             tokens,
             input_row_offsets,
@@ -164,12 +177,56 @@ class DataParallelLlama(Module):
 
         return self(all_model_args)
 
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
 
-def create_graph(
-    config: Llama3Config,
-    kv_params: KVCacheParamInterface,
-    state_dict: dict[str, Any],
-) -> tuple[Graph, dict[str, Any]]:
+        Adapts the flat graph inputs to :meth:`__call__` through
+        :meth:`_call_flat`.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            functools.partial(self._call_flat, self.config.kv_params),
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
+
+def create_model(
+    config: Llama3Config, state_dict: dict[str, Any]
+) -> DataParallelLlama:
+    """Builds a data-parallel Llama with a replica of the weights per device.
+
+    Args:
+        config: The model config.
+        state_dict: The single-replica weights. Drops ``rope_freqs.weight``,
+            which the model does not use.
+
+    Returns:
+        The model, with its weights loaded.
+    """
     model = DataParallelLlama(config)
 
     state_dict.pop("rope_freqs.weight", None)
@@ -188,8 +245,4 @@ def create_graph(
         weight_alignment=1,
         strict=True,
     )
-    inputs = model.input_types(kv_params)
-    with Graph("llama3", input_types=inputs) as graph:
-        outputs = model._call_flat(kv_params, *graph.inputs)
-        graph.output(*outputs)
-        return graph, model.state_dict()
+    return model

@@ -29,11 +29,10 @@ from std.testing import assert_almost_equal
 
 comptime epilogue_func_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+](SIMD[dtype, width]) thin -> SIMD[dtype, width]
 
 
 @inline(.always)
-@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,
@@ -95,10 +94,10 @@ def run_bmm_and_check_result[
     var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_device = TileTensor[dtype](a_device_buffer, a_host.layout)
-    var b_device = TileTensor[dtype](b_device_buffer, b_host.layout)
-    var c_device = TileTensor[dtype](c_device_buffer, c_host.layout)
-    var c_device_ref = TileTensor[dtype](c_device_ref_buffer, c_host_ref.layout)
+    var a_device = TileTensor(a_device_buffer, a_host.layout)
+    var b_device = TileTensor(b_device_buffer, b_host.layout)
+    var c_device = TileTensor(c_device_buffer, c_host.layout)
+    var c_device_ref = TileTensor(c_device_ref_buffer, c_host_ref.layout)
 
     var a_device_3d = _reshape_tile_tensor_with_batch_to_3d(a_device)
     var b_device_3d = _reshape_tile_tensor_with_batch_to_3d(b_device)
@@ -116,25 +115,23 @@ def run_bmm_and_check_result[
     ctx.enqueue_copy(b_device_buffer, b_host._storage)
 
     # Run BMM
-    @__parameter
+    comptime c_rank = c_device.rank
+
     @inline(.always)
-    @__copy_capture(c_device)
-    def epilogue_fn[
+    def compute_fn[
         dtype: DType,
         width: SIMDLength,
         *,
-        alignment: Int = 1,
-    ](coord: Coord, val: SIMD[dtype, width],) capturing -> None:
-        comptime assert coord.rank == c_device.rank
+        alignment: Int,
+    ](coord: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert coord.rank == c_rank
         comptime func = lambda_fn.value()
-        var update_val = func(val)
-        c_device.store(coord, update_val.cast[c_device.dtype]())
+        return func(val)
 
     comptime if lambda_fn:
-        _batched_matmul_gpu[
-            transpose_b=transpose_b,
-            elementwise_epilogue_fn=epilogue_fn,
-        ](c_device, a_device, b_device, ctx)
+        _batched_matmul_gpu[transpose_b=transpose_b](
+            c_device, a_device, b_device, compute_fn, ctx
+        )
     else:
         _batched_matmul_gpu[transpose_b=transpose_b](
             c_device, a_device, b_device, ctx
@@ -163,19 +160,19 @@ def run_bmm_and_check_result[
             ctx,
         )
     else:
-        var c_batch_stride = Int(c_device_ref_3d.layout.stride[0]().value())
-        var a_batch_stride = Int(a_device_3d.layout.stride[0]().value())
-        var b_batch_stride = Int(b_device_3d.layout.stride[0]().value())
+        var c_batch_stride = Int(c_device_ref_3d.dynamic_stride(0))
+        var a_batch_stride = Int(a_device_3d.dynamic_stride(0))
+        var b_batch_stride = Int(b_device_3d.dynamic_stride(0))
 
         for i in range(b):
-            var c_ptr = c_device_ref_3d._storage + Scalar[
-                a_host.linear_idx_type
-            ](i * c_batch_stride)
-            var a_ptr = a_device_3d._storage + Scalar[a_host.linear_idx_type](
-                i * a_batch_stride
+            var c_ptr = c_device_ref_3d._storage.unsafe_offset(
+                Scalar[a_host.linear_idx_type](i * c_batch_stride)
             )
-            var b_ptr = b_device_3d._storage + Scalar[a_host.linear_idx_type](
-                i * b_batch_stride
+            var a_ptr = a_device_3d._storage.unsafe_offset(
+                Scalar[a_host.linear_idx_type](i * a_batch_stride)
+            )
+            var b_ptr = b_device_3d._storage.unsafe_offset(
+                Scalar[a_host.linear_idx_type](i * b_batch_stride)
             )
 
             var c_buffer = TileTensor(c_ptr, row_major(m, n))

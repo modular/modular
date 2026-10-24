@@ -13,26 +13,9 @@ common workflows.
   in the root of the repository that automatically downloads the
   currently supported version of `bazel`.
 
-The `bazel` build operates in one of two modes, specified
-with the `--config=<mode>` flag:
-
-- `prebuilt-mojo`. Uses a prebuilt `mojo` package.
-  - Use `--config=prebuilt-mojo` when testing changes to the Mojo
-    standard library or MAX accelerator library.
-  - `bazel` automatically downloads the current nightly version of `mojo`. It
-    does not pick up the current globally installed version.
-
-- `build-mojo`. Builds the Mojo compiler from source when needed.
-  - Use `--config=build-mojo` when testing changes to the Mojo compiler.
-  - Building the compiler from source takes a significant amount of time. Using
-    the prebuilt `mojo` package is much faster.
-
-You can specify the `--config` option on the command line, or add the following
-to a `local.bazelrc` file in the root of the repository:
-
-```text
-build --config=prebuilt-mojo
-```
+The whole tree — including the Mojo compiler and MAX — is built from source, so
+there is no build-mode `--config` to choose; `bazel` builds and tests targets
+directly.
 
 ## Examples
 
@@ -75,11 +58,10 @@ case `bazel` automatically skips building and testing them. `bazel` also
 automatically detects the current GPU hardware, so tests that are
 specific to individual GPUs can be run.
 
-When building the Mojo compiler, you can run arbitrary Mojo code using the
-following command:
+You can run arbitrary Mojo code using the following command:
 
 ```sh
-./bazelw run --config=build-mojo //Mojo:mojo -- run my_file.mojo
+./bazelw run //Mojo:mojo -- run my_file.mojo
 ```
 
 ## Testing one-off scripts
@@ -113,13 +95,6 @@ To automatically apply the fixes (where possible), you can run:
 See the `lint` and `format` targets defined in
 [bazel/lint/BUILD.bazel](https://github.com/modular/modular/blob/main/bazel/lint/BUILD.bazel)
 to see what the current tools being run are.
-
-## Using a different Mojo version
-
-The Mojo version in
-[`bazel/mojo.MODULE.bazel`](https://github.com/modular/modular/blob/main/bazel/mojo.MODULE.bazel)
-is automatically updated with each nightly, but can be manually replaced locally
-to use a different version if desired.
 
 ## `BUILD.bazel` file
 

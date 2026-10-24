@@ -79,13 +79,14 @@ def rms_norm_fused_fp8[
     out_dtype: DType,
     scales_dtype: DType,
     rank: Int,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        in_dtype, width
-    ],
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[in_dtype, width],
     /,
     target: StaticString = "gpu",
     compile_only: Bool = False,
 ](
+    input_fn: InputFnType,
     shape: IndexList[rank],
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
@@ -107,13 +108,15 @@ def rms_norm_fused_fp8[
         scales_dtype: Data type for scale factors (bfloat16, float16, or
             float32).
         rank: Tensor rank.
-        input_fn: Function to load input values.
+        InputFnType: The type of `input_fn` (inferred).
         target: Target device ("gpu" or "cpu").
         compile_only: If True, only compiles the kernel without executing it.
             Used to pre-compile kernels and avoid JIT compilation deadlocks
             in multi-GPU contexts.
 
     Args:
+        input_fn: Function to load input values. It runs on the device, so
+            it must copy what it captures.
         shape: Input tensor shape.
         output: Output TileTensor to write FP8 quantized values.
         gamma: RMSNorm scale parameter (rank 1).
@@ -159,9 +162,9 @@ def rms_norm_fused_fp8[
                 out_dtype,
                 scales_dtype,
                 rank,
-                input_fn,
                 compile_only=compile_only,
             ](
+                input_fn,
                 shape,
                 output,
                 gamma,
@@ -181,11 +184,12 @@ def _rms_norm_fused_fp8_gpu[
     out_dtype: DType,
     scales_dtype: DType,
     rank: Int,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        in_dtype, width
-    ],
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[in_dtype, width],
     compile_only: Bool = False,
 ](
+    input_fn: InputFnType,
     shape: IndexList[rank],
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
@@ -211,7 +215,9 @@ def _rms_norm_fused_fp8_gpu[
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) {var shape} -> SIMD[in_dtype, simd_width]:
+    ](row: Int, col: Int) {var shape, var input_fn} -> SIMD[
+        in_dtype, simd_width
+    ]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width, rank](indices.canonicalize())
@@ -223,7 +229,10 @@ def _rms_norm_fused_fp8_gpu[
     var scale_output_1d = TileTensor(scale_output._storage, row_major(rows))
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
     comptime base_simd_width = simd_width_of[in_dtype, target=ctx.target]()
 
     # Dispatch: select SIMD width and kernel strategy based on column count
@@ -250,10 +259,10 @@ def _rms_norm_fused_fp8_gpu[
         )
 
     if cols % base_simd_width == 0:
-        if cols <= (WARP_SIZE * base_simd_width * max_warps_per_block):
+        if cols <= (warp_size * base_simd_width * max_warps_per_block):
             launch[base_simd_width, True]()
         elif (
-            cols <= (WARP_SIZE * (base_simd_width * 2) * max_warps_per_block)
+            cols <= (warp_size * (base_simd_width * 2) * max_warps_per_block)
             and cols % (base_simd_width * 2) == 0
         ):
             launch[base_simd_width * 2, True]()
@@ -327,7 +336,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     ](val: SIMD[accum_type, width], col: Int) {
         var gamma, var _weight_offset
     } -> SIMD[accum_type, width]:
-        var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
+        var gamma_val = gamma.load[width=width, alignment=align]((col,))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + _weight_offset.cast[accum_type]()
         )
@@ -447,7 +456,7 @@ def _rms_norm_fused_fp8_kernel_block[
     ](val: SIMD[accum_type, width], col: Int) {
         var gamma, var _weight_offset
     } -> SIMD[accum_type, width]:
-        var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
+        var gamma_val = gamma.load[width=width, alignment=align]((col,))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + _weight_offset.cast[accum_type]()
         )
@@ -537,8 +546,11 @@ def _rms_norm_fused_fp8_gpu_launch[
     Selects between warp-tiling and block-tiling kernels at compile time.
     """
 
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime threads_per_block = max_warps_per_block * warp_size
 
     var grid_dim = rows
     var block_dim = threads_per_block
@@ -548,7 +560,7 @@ def _rms_norm_fused_fp8_gpu_launch[
         width: Int
     ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
         """Write output to buffer."""
-        output.store_linear[width=width](IndexList[2](row, col), val)
+        output.store[width=width](Coord(row, col), val)
 
     comptime if use_warp_tiling:
         comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
@@ -577,8 +589,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 weight_offset.cast[.float32](),
                 Int32(cols),
                 Float32(scale_ub),
-                host_arg=input_fn,
-                host_arg2=output_fn,
+                host_args=(input_fn, output_fn),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(),
@@ -610,8 +621,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 weight_offset.cast[.float32](),
                 Int32(cols),
                 Float32(scale_ub),
-                host_arg=input_fn,
-                host_arg2=output_fn,
+                host_args=(input_fn, output_fn),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(),

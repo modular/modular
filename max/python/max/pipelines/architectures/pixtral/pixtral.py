@@ -13,16 +13,32 @@
 
 from __future__ import annotations
 
-from max.graph import TensorValue, ops
+from collections import OrderedDict
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+from max import tree
+from max.graph import Graph, TensorValue, Type, Value, ops
+from max.graph import Module as GraphModule
 from max.nn.attention import AttentionWithRope
 from max.nn.conv import Conv2d
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    KVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import Module
 from max.nn.linear import MLP, Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import TransformerBlock
+from max.nn.transformer import DecoderOutputs, TransformerBlock
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    vision_merge_inputs,
+)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from .llava.llava_decoder import Transformer
@@ -180,6 +196,97 @@ class PixtralLanguage(Module):
     def __init__(self, config: PixtralConfig) -> None:
         super().__init__()
         self.language_model = _build_language_model(config)
+        self._device = config.devices[0]
+        self._embedding_dtype = config.dtype
+        self._hidden_size = config.hidden_size
+
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; its leaves are its inputs.
+
+        Image embeddings are always inputs: a text-only batch feeds zero rows.
+
+        Args:
+            kv_params: The KV cache parameters.
+
+        Returns:
+            The input types under ``batch``, ``vision`` and ``kv``, in graph
+            order.
+        """
+        return OrderedDict(
+            batch=ragged_batch_inputs(
+                self._device, ("tokens", "row_offsets", "return_n_logits")
+            ),
+            vision=vision_merge_inputs(
+                [self._device],
+                self._embedding_dtype,
+                self._hidden_size,
+                rows_dim="num_image_tokens",
+            ),
+            kv=kv_params.get_symbolic_inputs(),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        kv_params = self.language_model.kv_params
+        # The KV cache comes last, and unflattens through the KV params.
+        head = OrderedDict(
+            (key, types)
+            for key, types in self.input_tree(kv_params).items()
+            if key != "kv"
+        )
+        head_treedef = tree.flatten(head)[1]
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            remaining = iter(inputs)
+            named = tree.unflatten(head_treedef, remaining, exact=False)
+            assert isinstance(named, OrderedDict)
+            batch, vision = named["batch"], named["vision"]
+            kv_collections = tree.leaves(
+                kv_params.unflatten_kv_inputs(remaining),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens=batch["tokens"].tensor,
+                kv_collection=kv_collections[0],
+                return_n_logits=batch["return_n_logits"].tensor,
+                input_row_offsets=batch["row_offsets"].tensor,
+                image_embeddings=vision["image_embeddings"][0].tensor,
+                image_token_indices=vision["image_token_indices"][0].tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
 
     def __call__(
         self,
@@ -189,7 +296,7 @@ class PixtralLanguage(Module):
         input_row_offsets: TensorValue,
         image_embeddings: TensorValue,
         image_token_indices: TensorValue,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         h = self.language_model.embed_tokens(tokens)
 
         h = merge_multimodal_embeddings(

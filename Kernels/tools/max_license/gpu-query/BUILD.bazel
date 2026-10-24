@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+# gazelle:default_visibility //visibility:public
+
+package(default_visibility = ["//visibility:public"])
+
+modular_cc_binary(
+    name = "gpu-query",
+    srcs = ["gpu_query.cpp"],
+    deps = [
+        "//MLRT:Driver/DeviceContextImplCpp",
+        "//Support:Base",
+        "//Support:Buffer",
+    ],
+)

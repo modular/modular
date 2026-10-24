@@ -57,7 +57,7 @@ struct WrapsMadeFromPack[*Ts: AnyType](Movable where False):
 
     @implicit
     def __init__(out self, *args: * Self.Ts):
-        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, Ts]' value to 'MadeFromPack[Ts]'}}
+        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, *Ts]' value to 'MadeFromPack[*Ts]'}}
         self.data = args
 
 

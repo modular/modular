@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -31,18 +31,17 @@ modular_py_test(
     size = "large",
     srcs = ["test_drafter_gpu.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     precompile_mefs = True,
-    # Postsubmit: an expensive B200 test that presubmit would rerun on any
-    # change to its dependencies.
+    # Manual: MiMo GPU model checks time out on shared CI workers.
     tags = [
         "gpu",
-        "postsubmit",
+        "manual",
     ],
     deps = [
         "//max/python/max:tree",
@@ -54,6 +53,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
+        requirement("ml-dtypes"),
     ],
 )
 
@@ -81,5 +81,163 @@ modular_py_binary(
         requirement("packaging"),
         requirement("safetensors"),
         requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "tiny_mimo_dflash",
+    testonly = True,
+    srcs = ["tiny_mimo_dflash.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_drafter_loading",
+    size = "small",
+    srcs = ["test_drafter_loading.py"],
+    # Importing max.pipelines times out pytest collection on contended macOS
+    # workers, and macOS adds no coverage to these CPU-only tests.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":tiny_mimo_dflash",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/pipelines/weights",
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+# Builds, never compiles, the fused graphs at tensor parallelism 2 on virtual
+# B200s: no GPU.
+modular_py_test(
+    name = "test_capture_safe_graphs",
+    size = "small",
+    srcs = ["test_capture_safe_graphs.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_dflash_harness",
+        ":tiny_mimo_dflash",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+    ],
+)
+
+# The target's fused QKV preparation reaches the spec graph at TP2 and TP4.
+modular_py_test(
+    name = "test_qkv_fusion",
+    size = "small",
+    srcs = ["test_qkv_fusion.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_dflash_harness",
+        ":tiny_mimo_dflash",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+    ],
+)
+
+# Drives the fused graph and the plain MiMo-V2 graph by hand over a tiny
+# random-weight model. The fused graph is built by ``SpecDecodePipelineModel``
+# as served.
+modular_py_library(
+    name = "mimo_dflash_harness",
+    testonly = True,
+    srcs = ["mimo_dflash_harness.py"],
+    imports = ["."],
+    visibility = [
+        "//:__pkg__",
+        "//mach/tools/gen-mef:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
+    deps = [
+        ":tiny_mimo_dflash",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/pipelines/weights",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
+)
+
+# Every committed token is the target's argmax, and speculation commits what
+# plain greedy decoding does, on a random-weight model. The target's W4A8
+# experts run only on SM100.
+modular_py_test(
+    name = "test_fused_graph_gpu",
+    size = "large",
+    srcs = ["test_fused_graph_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    # Manual: MiMo GPU model checks time out on shared CI workers.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        requirement("numpy"),
+    ],
+)
+
+# Sampled acceptance and the lm_head padding rows on the fused graph of a
+# random-weight model.
+modular_py_test(
+    name = "test_sampled_acceptance_gpu",
+    size = "large",
+    srcs = ["test_sampled_acceptance_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    # Manual: MiMo GPU model checks time out on shared CI workers.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )

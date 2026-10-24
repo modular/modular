@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from layout import Coord, Idx, TileTensor, row_major
@@ -50,11 +51,11 @@ def test_grouped_nvfp4_quantization[
     comptime SENTINEL = 0xEE
 
     # Derive row_offsets, tile_starts, scales_offsets from expert_counts.
-    var row_offsets_host = alloc[UInt32](num_experts + 1)
-    var scales_offsets_host = alloc[UInt32](num_experts)
-    var expert_ids_host = alloc[Int32](num_experts)
-    var sf_tensor_host = alloc[Float32](num_experts)
-    var tile_starts = alloc[Int](num_experts + 1)
+    var row_offsets_host = unsafe_alloc[UInt32](num_experts + 1)
+    var scales_offsets_host = unsafe_alloc[UInt32](num_experts)
+    var expert_ids_host = unsafe_alloc[Int32](num_experts)
+    var sf_tensor_host = unsafe_alloc[Float32](num_experts)
+    var tile_starts = unsafe_alloc[Int](num_experts + 1)
 
     row_offsets_host[0] = 0
     tile_starts[0] = 0
@@ -74,7 +75,7 @@ def test_grouped_nvfp4_quantization[
     var total_scales = total_m_tiles * scales_per_m_tile
 
     # --- Grouped kernel buffers ---
-    var host_input = alloc[Scalar[dtype]](total_tokens * N)
+    var host_input = unsafe_alloc[Scalar[dtype]](total_tokens * N)
     var host_input_tensor = TileTensor(
         host_input, row_major(total_tokens, Idx[N])
     )
@@ -88,7 +89,7 @@ def test_grouped_nvfp4_quantization[
     var dev_output = ctx.enqueue_create_buffer[out_dtype](
         max(total_tokens * output_N, 1) + output_N
     )
-    var sentinel_host = alloc[Scalar[out_dtype]](
+    var sentinel_host = unsafe_alloc[Scalar[out_dtype]](
         total_tokens * output_N + output_N
     )
     for i in range(total_tokens * output_N + output_N):
@@ -146,10 +147,10 @@ def test_grouped_nvfp4_quantization[
     )
 
     # --- Copy grouped results back to host ---
-    var host_output = alloc[Scalar[out_dtype]](
+    var host_output = unsafe_alloc[Scalar[out_dtype]](
         total_tokens * output_N + output_N
     )
-    var host_scales = alloc[Scalar[scales_dtype]](max(total_scales, 1))
+    var host_scales = unsafe_alloc[Scalar[scales_dtype]](max(total_scales, 1))
 
     ctx.enqueue_copy(host_output, dev_output)
     ctx.enqueue_copy(host_scales, dev_scales)
@@ -173,7 +174,7 @@ def test_grouped_nvfp4_quantization[
         var ref_output = ctx.enqueue_create_buffer[out_dtype](count * output_N)
         var ref_scales = ctx.enqueue_create_buffer[scales_dtype](scales_total_i)
 
-        ctx.enqueue_copy(ref_input, host_input + row_start * N)
+        ctx.enqueue_copy(ref_input, host_input.unsafe_offset(row_start * N))
 
         var ref_input_shape = Coord(count, Idx[N])
         var ref_output_shape = Coord(count, Idx[output_N])
@@ -203,8 +204,8 @@ def test_grouped_nvfp4_quantization[
             tensor_sf=tensor_sfs[expert_i],
         )
 
-        var host_ref_output = alloc[Scalar[out_dtype]](count * output_N)
-        var host_ref_scales = alloc[Scalar[scales_dtype]](scales_total_i)
+        var host_ref_output = unsafe_alloc[Scalar[out_dtype]](count * output_N)
+        var host_ref_scales = unsafe_alloc[Scalar[scales_dtype]](scales_total_i)
 
         ctx.enqueue_copy(host_ref_output, ref_output)
         ctx.enqueue_copy(host_ref_scales, ref_scales)
@@ -212,7 +213,7 @@ def test_grouped_nvfp4_quantization[
 
         # Compare output for this expert.
         var grouped_out = TileTensor(
-            host_output + row_start * output_N,
+            host_output.unsafe_offset(row_start * output_N),
             row_major(ref_output_shape),
         )
         var ref_out = TileTensor(host_ref_output, row_major(ref_output_shape))
@@ -236,7 +237,7 @@ def test_grouped_nvfp4_quantization[
         # Compare scales for this expert.
         var tile_start_i = tile_starts[expert_i]
         var grouped_scales = TileTensor(
-            host_scales + tile_start_i * scales_per_m_tile,
+            host_scales.unsafe_offset(tile_start_i * scales_per_m_tile),
             row_major(ref_scales_shape),
         )
         var ref_sc = TileTensor(host_ref_scales, row_major(ref_scales_shape))
@@ -258,8 +259,8 @@ def test_grouped_nvfp4_quantization[
                                 ref_sc[c].cast[.float64](),
                             )
 
-        host_ref_output.free()
-        host_ref_scales.free()
+        host_ref_output.unsafe_free()
+        host_ref_scales.unsafe_free()
 
     # --- Fused gather variant ---
     # Shuffle the input rows and hand the kernel the inverse permutation
@@ -267,11 +268,11 @@ def test_grouped_nvfp4_quantization[
     # loads must reproduce the identity run byte for byte, on both the
     # packed payload and the scale tiles. A rotation is not its own inverse
     # beyond two rows, so indices applied in the wrong direction fail.
-    var perm = alloc[Int](total_tokens)
-    var indices_host = alloc[Int32](total_tokens)
+    var perm = unsafe_alloc[Int](total_tokens)
+    var indices_host = unsafe_alloc[Int32](total_tokens)
     for i in range(total_tokens):
         perm[i] = (i + 1) % total_tokens
-    var shuffled_host = alloc[Scalar[dtype]](total_tokens * N)
+    var shuffled_host = unsafe_alloc[Scalar[dtype]](total_tokens * N)
     for j in range(total_tokens):
         for c in range(N):
             shuffled_host[j * N + c] = host_input[perm[j] * N + c]
@@ -281,7 +282,6 @@ def test_grouped_nvfp4_quantization[
     var dev_shuffled = ctx.enqueue_create_buffer[dtype](
         max(total_tokens * N, 1)
     )
-    var dev_indices = ctx.enqueue_create_buffer[.int32](max(total_tokens, 1))
     var dev_output2 = ctx.enqueue_create_buffer[out_dtype](
         max(total_tokens * output_N, 1) + output_N
     )
@@ -289,59 +289,81 @@ def test_grouped_nvfp4_quantization[
         max(total_scales, 1)
     )
     ctx.enqueue_copy(dev_shuffled, shuffled_host)
-    ctx.enqueue_copy(dev_indices, indices_host)
-    ctx.enqueue_copy(dev_output2, sentinel_host)
 
     var shuffled_tensor = TileTensor(dev_shuffled, row_major(input_shape))
     var output2_tensor = TileTensor(dev_output2, row_major(output_shape))
     var scales2_tensor = TileTensor(dev_scales2, row_major(scales_shape))
-    var indices_tensor = TileTensor(dev_indices, row_major(total_tokens))
-
-    grouped_quantize_dynamic_scaled_fp4_async(
-        output2_tensor,
-        scales2_tensor,
-        shuffled_tensor,
-        row_offsets_tensor,
-        scales_offsets_tensor,
-        expert_ids_tensor,
-        sf_tensor_device,
-        ctx,
-        row_indices=indices_tensor.as_unsafe_any_origin().as_imm(),
-    )
-
-    var host_output2 = alloc[Scalar[out_dtype]](
+    var host_output2 = unsafe_alloc[Scalar[out_dtype]](
         total_tokens * output_N + output_N
     )
-    var host_scales2 = alloc[Scalar[scales_dtype]](max(total_scales, 1))
-    ctx.enqueue_copy(host_output2, dev_output2)
-    ctx.enqueue_copy(host_scales2, dev_scales2)
-    ctx.synchronize()
+    var host_scales2 = unsafe_alloc[Scalar[scales_dtype]](max(total_scales, 1))
 
-    for i in range(output_N):
-        assert_equal(Int(host_output2[total_tokens * output_N + i]), SENTINEL)
-    for i in range(total_tokens * output_N):
-        assert_equal(host_output2[i], host_output[i])
-    for i in range(total_scales):
-        assert_equal(
-            host_scales2[i].cast[.float64](),
-            host_scales[i].cast[.float64](),
+    # MoE passes the uint32 slot order from moe_create_indices, where slot s
+    # belongs to token s // top_k. The remainder varies across slots, so a
+    # missing or wrong division reads the wrong rows. top_k 1 covers plain
+    # int32 token rows.
+    comptime for top_k in [1, 6]:
+        comptime idx_dtype = DType.int32 if top_k == 1 else DType.uint32
+        var slots_host = unsafe_alloc[Scalar[idx_dtype]](total_tokens)
+        for i in range(total_tokens):
+            slots_host[i] = Scalar[idx_dtype](
+                Int(indices_host[i]) * top_k + i % top_k
+            )
+        var dev_slots = ctx.enqueue_create_buffer[idx_dtype](
+            max(total_tokens, 1)
+        )
+        ctx.enqueue_copy(dev_slots, slots_host)
+        ctx.enqueue_copy(dev_output2, sentinel_host)
+        ctx.enqueue_memset(dev_scales2, Scalar[scales_dtype](0))
+
+        grouped_quantize_dynamic_scaled_fp4_async[
+            row_indices_dtype=idx_dtype, row_index_divisor=top_k
+        ](
+            output2_tensor,
+            scales2_tensor,
+            shuffled_tensor,
+            row_offsets_tensor,
+            scales_offsets_tensor,
+            expert_ids_tensor,
+            sf_tensor_device,
+            ctx,
+            row_indices=TileTensor(dev_slots, row_major(total_tokens))
+            .as_unsafe_any_origin()
+            .as_imm(),
         )
 
-    shuffled_host.free()
-    indices_host.free()
-    perm.free()
-    host_output2.free()
-    host_scales2.free()
+        ctx.enqueue_copy(host_output2, dev_output2)
+        ctx.enqueue_copy(host_scales2, dev_scales2)
+        ctx.synchronize()
 
-    host_input.free()
-    host_output.free()
-    host_scales.free()
-    sentinel_host.free()
-    row_offsets_host.free()
-    scales_offsets_host.free()
-    expert_ids_host.free()
-    sf_tensor_host.free()
-    tile_starts.free()
+        for i in range(output_N):
+            assert_equal(
+                Int(host_output2[total_tokens * output_N + i]), SENTINEL
+            )
+        for i in range(total_tokens * output_N):
+            assert_equal(host_output2[i], host_output[i])
+        for i in range(total_scales):
+            assert_equal(
+                host_scales2[i].cast[.float64](),
+                host_scales[i].cast[.float64](),
+            )
+        slots_host.unsafe_free()
+
+    shuffled_host.unsafe_free()
+    indices_host.unsafe_free()
+    perm.unsafe_free()
+    host_output2.unsafe_free()
+    host_scales2.unsafe_free()
+
+    host_input.unsafe_free()
+    host_output.unsafe_free()
+    host_scales.unsafe_free()
+    sentinel_host.unsafe_free()
+    row_offsets_host.unsafe_free()
+    scales_offsets_host.unsafe_free()
+    expert_ids_host.unsafe_free()
+    sf_tensor_host.unsafe_free()
+    tile_starts.unsafe_free()
 
 
 def main() raises:

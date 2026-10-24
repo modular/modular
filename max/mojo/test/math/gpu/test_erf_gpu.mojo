@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import erf, exp2, inf, isinf, isnan, nan
-from std.math.math import _call_libm
-from std.sys import bit_width_of, default_accelerator, simd_width_of
+from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import assert_true, TestSuite
+from test_utils.math import libm_call_f64
 
 from std.utils.coord import Coord
 
@@ -52,15 +52,6 @@ def _apply[
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     comptime assert name == "erf"
     return erf(x)
-
-
-def _reference[
-    dtype: DType, //, name: StaticString
-](x: Scalar[dtype]) -> Scalar[dtype] where dtype.is_floating_point():
-    """Returns host libm in float64, rounded to `dtype`."""
-    comptime if dtype == .float64:
-        return _call_libm[name](x)
-    return _call_libm[name](x.cast[.float64]()).cast[dtype]()
 
 
 def _inputs[
@@ -120,7 +111,7 @@ def _run[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, _apply[name](val))
 
@@ -133,7 +124,7 @@ def _run[
     with out_device.map_to_host() as out_host:
         for i in range(length):
             var x = inputs[i]
-            var want = _reference[name](x)
+            var want = libm_call_f64[name](x)
             var cpu_val = _apply[name](x)
             var gpu = _ulp_diff(out_host[i], want)
             var cpu = _ulp_diff(cpu_val, want)

@@ -41,8 +41,10 @@ Rotation is over *interleaved* pairs (the reference does
 
 from __future__ import annotations
 
+import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, TensorValue, ops
+from max.graph import DeviceRef, Dim, StaticDim, TensorValue, ops
+from max.nn.kernels import rope_ragged
 from max.nn.rotary_embedding import YarnRotaryEmbedding, YarnScalingParams
 
 from ..model_config import DeepseekV4Config
@@ -131,7 +133,7 @@ def apply_rope_tail(
     *,
     inverse: bool = False,
 ) -> TensorValue:
-    """Rotate the trailing ``rope_head_dim`` dims of ``x``, leaving the rest alone.
+    """Rotates the trailing ``rope_head_dim`` dims of ``x``, leaving the rest alone.
 
     Args:
         x: ``[..., seq, ..., width]`` with ``width >= rope_head_dim``. The
@@ -144,10 +146,69 @@ def apply_rope_tail(
         inverse: Rotate by the conjugate, which is what the reference does to
             the attention *output* before the output projection.
     """
+    fused = _rope_tail_kernel(x, freqs_cis, rope_head_dim, inverse)
+    if fused is not None:
+        return fused
+    return _rope_tail_ops(x, freqs_cis, rope_head_dim, inverse)
+
+
+def _rope_tail_kernel(
+    x: TensorValue, freqs_cis: TensorValue, rope_head_dim: int, inverse: bool
+) -> TensorValue | None:
+    """Rotates the tail of ``x`` with one ``rope_ragged`` kernel.
+
+    The kernel reads ``x`` once and writes it once, where the graph of
+    slices, f32 products, stack and concat moves it several times.
+
+    Returns:
+        The rotated ``x``, or ``None`` when the table does not hold exactly
+        one row per token of ``x``.
+    """
+    width = int(x.shape[-1])
+    if x.rank < 3 or width % 8 or rope_head_dim % 8:
+        return None
+    if freqs_cis.rank == 3:
+        if x.shape[0] != StaticDim(1) or freqs_cis.shape[0] != x.shape[1]:
+            return None
+    elif freqs_cis.rank == 4:
+        if list(freqs_cis.shape[:2]) != list(x.shape[:2]):
+            return None
+    else:
+        return None
+    tokens = x.shape[0] * x.shape[1]
+    table = ops.reshape(freqs_cis, [tokens, rope_head_dim])
+    if inverse:
+        conj = np.tile(np.array([1.0, -1.0], np.float32), rope_head_dim // 2)
+        table = table * ops.constant(
+            conj, dtype=table.dtype, device=table.device
+        )
+    # One batch whose last offset exceeds any token count, starting at
+    # position 0: token i reads table row i.
+    offsets = ops.constant(
+        np.array([0, np.iinfo(np.uint32).max], np.uint32),
+        dtype=DType.uint32,
+        device=x.device,
+    )
+    start = ops.constant(
+        np.zeros(1, np.uint32), dtype=DType.uint32, device=x.device
+    )
+    out = rope_ragged(
+        ops.reshape(x, [tokens, -1, width]),
+        offsets,
+        start,
+        table,
+        interleaved=True,
+    )
+    return ops.reshape(out, x.shape)
+
+
+def _rope_tail_ops(
+    x: TensorValue, freqs_cis: TensorValue, rope_head_dim: int, inverse: bool
+) -> TensorValue:
+    """Rotates the tail of ``x`` with graph ops, for any broadcast of the table."""
     # Positive bounds, deliberately. A negative bound on the last axis can
-    # come back rotated when the sliced value is itself the result of a concat
-    # -- measured in .agent/backlogs/192/ISSUES.md Issue 34, where
-    # ``kv[..., :-rd]`` on the output of ``apply_rope_tail`` returned
+    # come back rotated when the sliced value is itself the result of a
+    # concat: ``kv[..., :-rd]`` on the output of ``apply_rope_tail`` returned
     # ``kv[rd:]`` and the latent came out rolled by rd. Every op involved is
     # correct on its own; only the composition is wrong, so the shape of the
     # slice expression is what has to stay positive.

@@ -53,13 +53,14 @@ def _mixed_mma[
 
 
 def _check[accum_width: Int, reverse: Bool](ctx: DeviceContext) raises:
-    comptime count = WARP_SIZE * accum_width
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime count = warp_size * accum_width
     var device = ctx.enqueue_create_buffer[.float32](count)
     var host = ctx.enqueue_create_host_buffer[.float32](count)
-    var tt = TileTensor(device, row_major[WARP_SIZE, accum_width]())
+    var tt = TileTensor(device, row_major[warp_size, accum_width]())
     comptime kernel = _mixed_mma[type_of(tt).LayoutType, accum_width, reverse]
     ctx.enqueue_function[kernel](
-        tt.as_unsafe_any_origin(), grid_dim=1, block_dim=WARP_SIZE
+        tt.as_unsafe_any_origin(), grid_dim=1, block_dim=warp_size
     )
     ctx.enqueue_copy(host, device)
     ctx.synchronize()

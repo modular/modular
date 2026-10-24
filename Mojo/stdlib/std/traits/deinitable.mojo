@@ -92,7 +92,7 @@ trait Deinitable:
         var allocation: Allocation[Int]
 
         def __init__(out self, size: Int):
-            self.allocation = alloc(Layout[Int](count=size))
+            self.allocation = alloc(Layout[Int](length=size))
 
         def __deinit__(deinit self):
             # Clean up owned resources

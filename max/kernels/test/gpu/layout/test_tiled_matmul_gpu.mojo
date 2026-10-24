@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 from max.gpu.host import DeviceContext
@@ -280,26 +281,23 @@ def single_warp_mma_sync_m16n8k8[
     # MMA fragments address the row-major A and column-major B storage
     # directly; each axis describes a lane or a value owned by that lane.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
-    var mat_a_mma = TileTensor(
-        ptr=mat_a.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_a_mma = mat_a.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
             Coord(Idx[1], Idx[8], Idx[64], Idx[4]),
         ),
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
     # These strides address column-major KxN storage without a transpose.
-    var mat_b_mma = TileTensor(
-        ptr=mat_b.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_b_mma = mat_b.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2]),
             Coord(Idx[1], Idx[8], Idx[4]),
         ),
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-c
-    var mat_c_mma = TileTensor(
-        ptr=mat_c.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_c_mma = mat_c.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
             Coord(Idx[2], Idx[8], Idx[1], Idx[64]),
         ),
@@ -378,10 +376,13 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     BM: Int,
     BN: Int,
     BK: Int,
+    DstEngine: TensorEngine,
+    LhsEngine: TensorEngine,
+    RhsEngine: TensorEngine,
 ](
-    dst: TileTensor[.float32, DstLayoutType, MutAnyOrigin],
-    lhs: TileTensor[.float32, LhsLayoutType, ImmutAnyOrigin],
-    rhs: TileTensor[.float32, RhsLayoutType, ImmutAnyOrigin],
+    dst: TileTensor[.float32, DstLayoutType, MutAnyOrigin, Engine=DstEngine],
+    lhs: TileTensor[.float32, LhsLayoutType, ImmutAnyOrigin, Engine=LhsEngine],
+    rhs: TileTensor[.float32, RhsLayoutType, ImmutAnyOrigin, Engine=RhsEngine],
 ):
     var lhs_sram_tile = stack_allocation[.float32, address_space=.SHARED](
         col_major[BM, BK]()
@@ -466,9 +467,9 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
 
     comptime thread_layout = row_major[TH_M, TH_N]()
 
-    var mat_c_ptr = alloc[Float32](M * N)
-    var mat_a_ptr = alloc[Float32](M * K)
-    var mat_b_ptr = alloc[Float32](K * N)
+    var mat_c_ptr = unsafe_alloc[Float32](M * N)
+    var mat_a_ptr = unsafe_alloc[Float32](M * K)
+    var mat_b_ptr = unsafe_alloc[Float32](K * N)
 
     for i in range(M * K):
         mat_a_ptr[i] = Float32(i)
@@ -497,6 +498,9 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
         BM,
         BN,
         BK,
+        type_of(mat_c).Engine,
+        type_of(mat_a).Engine,
+        type_of(mat_b).Engine,
     ]
 
     ctx.enqueue_function[sram_blocked_matmul_dynamic_nd_buffer_kernel](

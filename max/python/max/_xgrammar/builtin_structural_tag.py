@@ -15,7 +15,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2023-2025 xgrammar Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+import re
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 from pydantic import TypeAdapter
 
@@ -59,6 +60,7 @@ def get_model_structural_tag(
     reasoning: bool = True,
     force_reasoning: bool = False,
     reject_unsupported: bool = False,
+    **format_options: Any,
 ) -> StructuralTag:
     r"""Get a structural tag for a model's reasoning and tool-call output format.
 
@@ -213,6 +215,9 @@ def get_model_structural_tag(
     reject_unsupported : bool
         Whether to raise an error during grammar compilation when a tool's schema
         cannot be enforced. Otherwise, the schema is enforced best-effort.
+    **format_options : Any
+        Format-specific options, forwarded unchanged to the registered format's
+        function. A format ignores any option it does not define.
 
     Notes
     -----
@@ -246,6 +251,7 @@ def get_model_structural_tag(
         simplified_tool_choice,
         reasoning,
         reject_unsupported=reject_unsupported,
+        **format_options,
     )
 
 
@@ -2356,24 +2362,150 @@ def get_deepseek_v4_structural_tag(
     return StructuralTag(format=sequence_format)
 
 
-# Characters backslash-escaped to stand for themselves in an xgrammar regex.
-# ``-`` is included so the same escape is safe inside a character class.
-_M3_REGEX_META = frozenset('\\^$.|?*+()[]{}/"-')
+@register_model_structural_tag("deepseek_v41")
+def get_deepseek_v41_structural_tag(
+    tools: Optional[List[FunctionToolParam]] = None,
+    builtin_tools: Optional[List[BuiltinToolParam]] = None,
+    tool_choice: Literal["auto", "required", "forced"] = "auto",
+    reasoning: bool = True,
+    reject_unsupported: bool = False,
+    **kwargs: Any,
+) -> StructuralTag:
+    """Get DeepSeek-V4.1 style structural tag format.
 
-# Body of the negated character class a generated tool name is drawn from.
-# Excluding the envelope's own punctuation keeps a name the model invents from
-# spelling ``]<]minimax[>[``, so it cannot close the invoke, close or reopen the
-# tool-call section, or run past the parser's ``name=([^>]+)>`` capture.
-_M3_INVOKE_NAME_CLASS_BODY = '^"<>\\[\\]\\n\\r'
+    Corresponding model key: ``"deepseek_v41"``.
+
+    Same layout as ``"deepseek_v4"``, but V4.1 renamed every DSML tag and
+    gave each a leading space (``<｜DSML｜ calls>``, ``<｜DSML｜ invoke``,
+    ``<｜DSML｜ parameter``), so V4's tag can never match V4.1 output.
+
+    Supported models:
+
+    - DeepSeek-V4.1-Flash
+    """
+    INVOKE_BEGIN_PREFIX = '<｜DSML｜ invoke name="'
+    INVOKE_BEGIN_SUFFIX = '">\n'
+    INVOKE_END = "</｜DSML｜ invoke>\n"
+    INVOKE_SEPARATOR = ""
+    TOOL_CALLS_PREFIX = "\n\n"
+    FUNCTION_CALLS_BEGIN = "<｜DSML｜ calls>\n"
+    FUNCTION_CALLS_END = "</｜DSML｜ calls>"
+    FUNCTION_CALLS_TRIGGER = "<｜DSML｜ calls>"
+    THINK_TAG_END = "</think>"
+    THINK_EXCLUDE_TOKENS = ["<think>", "</think>"]
+    XML_STYLE = "deepseek_v41_xml"
+
+    tools = tools or []
+    builtin_tools = builtin_tools or []
+    if tool_choice == "auto":
+        tags = []
+        for tool in tools:
+            function = tool.function
+            parameters = _get_function_parameters(function)
+            name = function.name
+            tags.append(
+                TagFormat(
+                    begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
+                        # DSML frames arguments as named parameters, so a
+                        # non-object root has no wire form and must not compile.
+                        require_object_root=True,
+                        # Omitted items / additionalProperties allow anything
+                        # in JSON Schema; strict mode would forbid them.
+                        strict_mode=False,
+                    ),
+                    end=INVOKE_END,
+                )
+            )
+
+        # generate function calling triggered tag
+        if len(tags) > 0:
+            function_calling_tags = TagsWithSeparatorFormat(
+                tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True
+            )
+
+            suffix_tag = TriggeredTagsFormat(
+                triggers=[FUNCTION_CALLS_TRIGGER],
+                tags=[
+                    TagFormat(
+                        begin=FUNCTION_CALLS_BEGIN,
+                        content=function_calling_tags,
+                        end=FUNCTION_CALLS_END,
+                    )
+                ],
+                excludes=THINK_EXCLUDE_TOKENS,
+                # The reader takes one calls block, and nothing after it.
+                stop_after_first=True,
+            )
+        else:
+            suffix_tag = AnyTextFormat(excludes=THINK_EXCLUDE_TOKENS)
+
+    elif tool_choice == "forced":
+        if not tools:
+            raise ValueError("Forced tool choice must resolve to exactly one tool.")
+        function = tools[0].function
+        suffix_tag = SequenceFormat(
+            elements=[
+                ConstStringFormat(value=TOOL_CALLS_PREFIX + FUNCTION_CALLS_BEGIN),
+                TagFormat(
+                    begin=(INVOKE_BEGIN_PREFIX + function.name + INVOKE_BEGIN_SUFFIX),
+                    content=JSONSchemaFormat(
+                        json_schema=_get_function_parameters(function),
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
+                        require_object_root=True,
+                        strict_mode=False,
+                    ),
+                    end=INVOKE_END,
+                ),
+                ConstStringFormat(value=FUNCTION_CALLS_END),
+            ]
+        )
+    elif tool_choice == "required":
+        tags = []
+        for tool in tools:
+            function = tool.function
+            parameters = _get_function_parameters(function)
+            name = function.name
+            tags.append(
+                TagFormat(
+                    begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
+                    content=JSONSchemaFormat(
+                        json_schema=parameters,
+                        style=XML_STYLE,
+                        reject_unsupported=reject_unsupported,
+                        require_object_root=True,
+                        strict_mode=False,
+                    ),
+                    end=INVOKE_END,
+                )
+            )
+        assert len(tags) > 0
+        suffix_tag = SequenceFormat(
+            elements=[
+                ConstStringFormat(value=TOOL_CALLS_PREFIX + FUNCTION_CALLS_BEGIN),
+                TagsWithSeparatorFormat(tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True),
+                ConstStringFormat(value=FUNCTION_CALLS_END),
+            ]
+        )
+
+    if not reasoning:
+        return StructuralTag(format=suffix_tag)
+
+    prefix_tag = TagFormat(begin="", content=AnyTextFormat(), end=THINK_TAG_END)
+
+    sequence_format = SequenceFormat(elements=[prefix_tag, suffix_tag])
+    return StructuralTag(format=sequence_format)
 
 
-# Longest declared name the escape hatch will build a complement for. The
-# pattern nests one group per character, and xgrammar's EBNF parser rejects one
-# built from a name of ~1024 (600 still compiles). A tool name is
-# caller-supplied and its length is never checked, so without this a long one
-# would fail the request from inside the handler. Real names are far shorter --
-# OpenAI caps a function name at 64.
-_M3_UNKNOWN_HATCH_MAX_NAME_LEN = 256
+# A history tool name the invoke header can carry. Excluding the envelope's own
+# punctuation keeps a caller-supplied name from spelling ``]<]minimax[>[``, so
+# it cannot close the invoke, close or reopen the tool-call section, or run past
+# the parser's ``name=([^>]+)>`` capture.
+_M3_HISTORY_NAME_RE = re.compile(r'[^"<>\[\]\n\r]+')
 
 
 # Where a JSON Schema nests subschemas, by the shape holding them. Only these
@@ -2476,63 +2608,6 @@ def _m3_expand_container_literals(schema: Any) -> Any:
     return out
 
 
-def _m3_escape_regex_literal(text: str) -> str:
-    """Escapes *text* so an xgrammar regex matches it literally."""
-    return "".join("\\" + c if c in _M3_REGEX_META else c for c in text)
-
-
-def _m3_regex_excluding(names: List[str], negated_class_body: str) -> str:
-    """Builds a regex for a nonempty run of *negated_class_body* not in *names*.
-
-    *negated_class_body* must be the body of a *negated* class (leading ``^``):
-    a diverging character is spelled by appending to that body, which subtracts
-    only because the class is negated.
-
-    xgrammar's converter rejects lookahead (``regex_converter.cc``: "Lookahead
-    is not supported yet"), so the complement of a finite literal set is spelled
-    out from a trie over it. At each prefix the match may diverge to a character
-    no candidate continues with, descend into one that does, or -- when the
-    prefix is not itself a candidate -- stop there. A candidate's strict
-    extensions stay admissible, so with ``set_alarm`` excluded ``set_alarm_v2``
-    still matches while ``set_alarm`` does not.
-    """
-    any_char = f"[{negated_class_body}]"
-    candidates = {n for n in names if n}
-    if not candidates:
-        return any_char + "+"
-
-    # prefix -> the characters some candidate continues it with.
-    continuations: Dict[str, set[str]] = {}
-    for name in candidates:
-        for i in range(len(name)):
-            continuations.setdefault(name[:i], set()).add(name[i])
-
-    # Built bottom-up, and the branches nest rather than being flattened into
-    # one alternation per trie node. Nesting writes a shared prefix once, which
-    # keeps the pattern linear in the total name length rather than quadratic;
-    # the explicit ordering keeps a caller-supplied name from recursing this
-    # once per character and exhausting the stack. Both matter because this
-    # compiles on the request path.
-    patterns: Dict[str, str] = {}
-    for prefix in sorted(continuations, key=len, reverse=True):
-        nexts = continuations[prefix]
-        blocked = "".join(_m3_escape_regex_literal(c) for c in sorted(nexts))
-        alternatives = [f"[{negated_class_body}{blocked}]{any_char}*"]
-        for char in sorted(nexts):
-            # A node nothing extends is a candidate, so its run must continue
-            # to land outside the set.
-            descent = patterns.get(prefix + char, any_char + "+")
-            alternatives.append(_m3_escape_regex_literal(char) + descent)
-        group = "(" + "|".join(alternatives) + ")"
-        # Stopping here is only outside the set if the prefix is not itself a
-        # candidate. The empty prefix is excluded because a name is nonempty.
-        patterns[prefix] = (
-            group if not prefix or prefix in candidates else group + "?"
-        )
-
-    return patterns[""]
-
-
 @register_model_structural_tag("minimax_m3")
 def get_minimax_m3_structural_tag(
     tools: Optional[List[FunctionToolParam]] = None,
@@ -2540,11 +2615,16 @@ def get_minimax_m3_structural_tag(
     tool_choice: Literal["auto", "required", "forced"] = "auto",
     reasoning: bool = True,
     reject_unsupported: bool = False,
+    history_tool_names: Sequence[str] = (),
     **kwargs: Any,
 ) -> StructuralTag:
     """Get MiniMax-M3 style structural tag format.
 
     Corresponding model key: ``"minimax_m3"``.
+
+    Under ``auto`` and ``required``, a call to a name in
+    ``history_tool_names`` that ``tools`` does not declare is admitted with a
+    free-form body. A forced choice admits only the named tool.
 
     The MiniMax-M3 tool calling format uses tag-prefixed XML:
 
@@ -2585,47 +2665,37 @@ def get_minimax_m3_structural_tag(
             end=INVOKE_END,
         )
 
-    def _unknown_invoke_tags(known_names: List[str]) -> List[TagFormat]:
-        """Builds the invoke admitting a name not among the request's tools.
+    def _history_invoke_tags() -> List[TagFormat]:
+        """Builds an invoke for each tool the history called but ``tools`` omits.
 
-        The model may follow a tool-usage pattern established by the chat
-        history even when the request declared a different inventory, so an
-        unrecognized name is admitted with a free-form body -- no schema is
-        known for it. The name excludes ``known_names`` so this never shadows
-        the typed branches above: a declared tool still gets its
-        schema-enforced body, and it is drawn from a class that cannot spell
-        the envelope's own markers.
+        The model may follow a tool-usage pattern the chat history established
+        even when the request declared a different inventory, so those names
+        stay callable with a free-form body -- no schema is known for them.
+        Only names the history actually called are admitted: admitting any
+        undeclared name let a near-miss spelling of a declared tool
+        (``tool-name`` for ``tool_name``) skip that tool's schema.
 
-        Returns nothing when a declared name is too long to build a complement
-        for. This only widens what is admissible, so declining it falls back to
-        the declared names alone rather than failing the request.
+        A name that could spell the envelope's own markers is dropped.
         """
-        if any(
-            len(name) > _M3_UNKNOWN_HATCH_MAX_NAME_LEN for name in known_names
-        ):
-            return []
+        declared = {t.function.name for t in tools}
+        names = [
+            n
+            for n in dict.fromkeys(history_tool_names)
+            if n not in declared and _M3_HISTORY_NAME_RE.fullmatch(n)
+        ]
         return [
             TagFormat(
-                begin=INVOKE_BEGIN_PREFIX,
-                content=SequenceFormat(
-                    elements=[
-                        RegexFormat(
-                            pattern=_m3_regex_excluding(
-                                known_names, _M3_INVOKE_NAME_CLASS_BODY
-                            )
-                        ),
-                        ConstStringFormat(value=INVOKE_BEGIN_SUFFIX),
-                        AnyTextFormat(
-                            excludes=[
-                                INVOKE_END,
-                                TAG_PREFIX + TOOL_CALL_END,
-                                TAG_PREFIX + TOOL_CALL_BEGIN,
-                            ]
-                        ),
+                begin=INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX,
+                content=AnyTextFormat(
+                    excludes=[
+                        INVOKE_END,
+                        TAG_PREFIX + TOOL_CALL_END,
+                        TAG_PREFIX + TOOL_CALL_BEGIN,
                     ]
                 ),
                 end=INVOKE_END,
             )
+            for name in names
         ]
 
     def _forced_or_required_section(invokes: Format) -> SequenceFormat:
@@ -2652,9 +2722,7 @@ def get_minimax_m3_structural_tag(
             for t in tools
         ]
         if tags:
-            tags.extend(
-                _unknown_invoke_tags([t.function.name for t in tools])
-            )
+            tags.extend(_history_invoke_tags())
             invokes = TagsWithSeparatorFormat(
                 tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True
             )
@@ -2693,7 +2761,7 @@ def get_minimax_m3_structural_tag(
             for t in tools
         ]
         assert len(tags) > 0
-        tags.extend(_unknown_invoke_tags([t.function.name for t in tools]))
+        tags.extend(_history_invoke_tags())
         suffix_tag = _forced_or_required_section(
             TagsWithSeparatorFormat(
                 tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True

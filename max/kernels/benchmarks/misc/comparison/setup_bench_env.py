@@ -16,24 +16,25 @@
 
 Modes:
 1. Install mode (default): Creates/uses a venv, installs PyTorch + external baselines.
-2. Wheel build mode (--build-wheels): Builds reproducible wheels for CI/Bazel integration.
+2. Wheel build mode (--build-wheels): Builds a reproducible DeepGEMM wheel for
+   CI/Bazel integration.
 
-External baselines: DeepGEMM, FlashInfer, FlashAttention.
-Repositories are auto-cloned to ~/.cache/blackwell_bench/ if not present.
+External baselines: DeepGEMM, FlashInfer, FlashAttention (FA4).
+
+Only DeepGEMM still needs a locally built wheel; its source is auto-cloned to
+~/.cache/blackwell_bench/ if not present. FlashInfer and FA4 are published as
+pure-Python JIT wheels, so both install from PyPI at the versions the Bazel
+benchmark targets resolve from the pip lock.
 
 Wheel Build Usage:
-    # Build all wheels for SM100 (Blackwell B200)
+    # Build the DeepGEMM wheel for SM100 (Blackwell B200)
     python setup_bench_env.py --build-wheels --wheel-dir ./sm100_wheels
-
-    # Build only DeepGEMM wheel
-    python setup_bench_env.py --build-wheels --wheel-dir ./sm100_wheels \\
-        --no-flashinfer --no-flashattn
 
     # Use custom source path (skips auto-clone)
     python setup_bench_env.py --build-wheels --wheel-dir ./sm100_wheels \\
         --deepgemm-src /path/to/DeepGEMM
 
-After building, upload wheels to S3:
+After building, upload the wheel to S3:
     ./utils/upload-public-bazel-artifact.sh deep_gemm sm100 <wheel_path>
 """
 
@@ -56,21 +57,19 @@ DEFAULT_MAX_JOBS = 64
 DEFAULT_WHEEL_DIR = REPO_ROOT / "sm100_wheels"
 DEFAULT_SRC_CACHE = Path.home() / ".cache/blackwell_bench"
 
-# External baseline repositories
+# External baseline repositories built from source.
 REPOS = {
     "deepgemm": {
         "url": "https://github.com/deepseek-ai/DeepGEMM.git",
         "branch": "main",
     },
-    "flashinfer": {
-        "url": "https://github.com/flashinfer-ai/flashinfer.git",
-        "branch": "main",
-    },
-    "flashattn": {
-        "url": "https://github.com/Dao-AILab/flash-attention.git",
-        "branch": "main",
-    },
 }
+
+# Keep in sync with the pins in
+# oss/modular/bazel/pip/requirements/pyproject.toml, so a venv set up here
+# matches what the Bazel benchmark targets resolve from the pip lock.
+FLASHINFER_REQUIREMENT = "flashinfer-python==0.7.0"
+FLASH_ATTN_REQUIREMENT = "flash-attn-4==4.0.0b31"
 
 
 @dataclass
@@ -113,7 +112,7 @@ def ensure_repo(name: str, src: Path) -> Path:
     """Ensure a source repository exists, cloning if necessary.
 
     Args:
-        name: Repository key in REPOS dict (e.g., "deepgemm", "flashinfer")
+        name: Repository key in REPOS dict (e.g., "deepgemm")
         src: Target directory path for the repository
 
     Returns:
@@ -307,10 +306,6 @@ def build_wheel_generic(
     print("[info] Build environment:")
     for var in [
         "TORCH_CUDA_ARCH_LIST",
-        "FLASHINFER_CUDA_ARCH_LIST",
-        "FLASH_ATTN_CUDA_ARCHS",
-        "FLASH_ATTENTION_FORCE_BUILD",
-        "FLASH_ATTENTION_SKIP_CUDA_BUILD",
         "MAX_JOBS",
         "NVCC_THREADS",
     ]:
@@ -401,51 +396,6 @@ def build_deepgemm_wheel(
     }
     return build_wheel_generic(
         python, src, wheel_dir, "deep_gemm", env_extras, clean
-    )
-
-
-def build_flashinfer_wheel(
-    python: Path, src: Path, wheel_dir: Path, clean: bool = True
-) -> WheelBuildResult:
-    """Build FlashInfer wheel with JIT cache settings."""
-    env_extras = {
-        "NVCC_THREADS": os.environ.get("NVCC_THREADS", "4"),
-        "FLASHINFER_WORKSPACE_BASE": str(DEFAULT_FI_BASE),
-        "FLASHINFER_CACHE_DIR": str(DEFAULT_FI_CACHE),
-    }
-    return build_wheel_generic(
-        python, src, wheel_dir, "flashinfer", env_extras, clean
-    )
-
-
-def build_flashattn_wheel(
-    python: Path, src: Path, wheel_dir: Path, clean: bool = True
-) -> WheelBuildResult:
-    """Build flash-attention wheel as pure Python (cute interface only).
-
-    We build a pure Python wheel because:
-    1. The cute interface uses nvidia-cutlass-dsl's JIT compiler, not precompiled CUDA
-    2. Building CUDA extensions requires matching CUDA/PyTorch versions
-    3. The prebuilt wheels from GitHub may be outdated vs the source
-
-    Environment variables:
-    - FLASH_ATTENTION_FORCE_BUILD: Force building from source instead of downloading
-      prebuilt wheels from GitHub releases (which may be outdated).
-    - FLASH_ATTENTION_SKIP_CUDA_BUILD: Skip compiling CUDA extensions (flash_attn_2_cuda).
-      The cute interface we use doesn't need these - it uses cutlass-dsl JIT.
-    """
-    env_extras: dict[str, str] = {
-        "NVCC_THREADS": os.environ.get("NVCC_THREADS", "4"),
-        # Force building from source - don't download prebuilt wheels from GitHub
-        # which may be outdated relative to the source checkout.
-        "FLASH_ATTENTION_FORCE_BUILD": "TRUE",
-        # Skip CUDA extension compilation - we only need the pure Python cute
-        # interface which uses nvidia-cutlass-dsl's JIT compiler at runtime.
-        "FLASH_ATTENTION_SKIP_CUDA_BUILD": "TRUE",
-    }
-
-    return build_wheel_generic(
-        python, src, wheel_dir, "flash_attn", env_extras, clean
     )
 
 
@@ -574,73 +524,17 @@ def install_deepgemm(python: Path, src: Path) -> None:
         print("[warn] DeepGEMM install failed")
 
 
-def install_flashinfer(python: Path, src: Path) -> None:
-    if not src.exists():
-        print(f"[warn] flashinfer not found at {src}, skipping")
+def install_pip_baselines(python: Path, requirements: list[str]) -> None:
+    """Installs the pure-Python JIT baselines in one pip resolve."""
+    if not requirements:
         return
     env = build_env(python)
-    env.setdefault("MAX_JOBS", str(DEFAULT_MAX_JOBS))
-    env.setdefault("NVCC_THREADS", "4")
     env.setdefault("FLASHINFER_WORKSPACE_BASE", str(DEFAULT_FI_BASE))
     env.setdefault("FLASHINFER_CACHE_DIR", str(DEFAULT_FI_CACHE))
     try:
-        sh(
-            [
-                str(python),
-                "-m",
-                "pip",
-                "install",
-                "--no-build-isolation",
-                "-v",
-                str(src),
-            ],
-            env=env,
-        )
+        sh([str(python), "-m", "pip", "install", *requirements], env=env)
     except subprocess.CalledProcessError:
-        print("[warn] flashinfer install failed")
-
-
-def install_flashattn(python: Path, src: Path) -> None:
-    if not src.exists():
-        print(f"[warn] flash-attention not found at {src}, skipping")
-        return
-
-    env = build_env(python)
-    env.setdefault("MAX_JOBS", str(DEFAULT_MAX_JOBS))
-    env.setdefault("NVCC_THREADS", "4")
-
-    # Pin CUDA toolchain to 13.0 to match torch cu130 wheels
-    for cuda_dir in (
-        "/usr/local/cuda-13.0",
-        "/usr/local/cuda-13",
-        env.get("CUDA_HOME"),
-    ):
-        if cuda_dir and os.path.isdir(cuda_dir):
-            env["CUDA_HOME"] = cuda_dir
-            env["PATH"] = f"{cuda_dir}/bin:" + env.get("PATH", "")
-            ldpaths = env.get("LD_LIBRARY_PATH", "")
-            env["LD_LIBRARY_PATH"] = (
-                f"{cuda_dir}/lib64:{ldpaths}"
-                if ldpaths
-                else f"{cuda_dir}/lib64"
-            )
-            env["CUDACXX"] = f"{cuda_dir}/bin/nvcc"
-            break
-    try:
-        sh(
-            [
-                str(python),
-                "-m",
-                "pip",
-                "install",
-                "--no-build-isolation",
-                "-v",
-                str(src),
-            ],
-            env=env,
-        )
-    except subprocess.CalledProcessError:
-        print("[warn] flash-attention install failed")
+        print(f"[warn] install failed: {' '.join(requirements)}")
 
 
 def ensure_max_venv() -> Path:
@@ -771,30 +665,6 @@ def run_wheel_build(args: argparse.Namespace) -> int:
             )
         results.append(result)
 
-    if not args.no_flashinfer:
-        try:
-            src = ensure_repo("flashinfer", args.flashinfer_src)
-            result = build_flashinfer_wheel(
-                vpy, src, args.wheel_dir, clean=args.clean_build
-            )
-        except subprocess.CalledProcessError as e:
-            result = WheelBuildResult(
-                package="flashinfer", success=False, error=f"Clone failed: {e}"
-            )
-        results.append(result)
-
-    if not args.no_flashattn:
-        try:
-            src = ensure_repo("flashattn", args.flashattn_src)
-            result = build_flashattn_wheel(
-                vpy, src, args.wheel_dir, clean=args.clean_build
-            )
-        except subprocess.CalledProcessError as e:
-            result = WheelBuildResult(
-                package="flash_attn", success=False, error=f"Clone failed: {e}"
-            )
-        results.append(result)
-
     # Print summary
     print_wheel_summary(results)
 
@@ -822,18 +692,17 @@ def run_install(args: argparse.Namespace) -> None:
             install_deepgemm(vpy, src)
         except subprocess.CalledProcessError as e:
             print(f"[warn] DeepGEMM clone failed: {e}")
-    if not args.no_flashinfer:
-        try:
-            src = ensure_repo("flashinfer", args.flashinfer_src)
-            install_flashinfer(vpy, src)
-        except subprocess.CalledProcessError as e:
-            print(f"[warn] FlashInfer clone failed: {e}")
-    if not args.no_flashattn:
-        try:
-            src = ensure_repo("flashattn", args.flashattn_src)
-            install_flashattn(vpy, src)
-        except subprocess.CalledProcessError as e:
-            print(f"[warn] flash-attention clone failed: {e}")
+    install_pip_baselines(
+        vpy,
+        [
+            req
+            for req, skip in (
+                (FLASHINFER_REQUIREMENT, args.no_flashinfer),
+                (FLASH_ATTN_REQUIREMENT, args.no_flashattn),
+            )
+            if not skip
+        ],
+    )
 
     # Run smoke test with PATH including venv/bin so helper tools (ninja) are found.
     smoke_env = build_env(vpy)
@@ -843,8 +712,8 @@ def run_install(args: argparse.Namespace) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=(
-            "Set up venv for MHA and grouped GEMM benchmarks, or build wheels"
-            " for CI."
+            "Set up venv for MHA and grouped GEMM benchmarks, or build the"
+            " DeepGEMM wheel for CI."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -852,11 +721,8 @@ Examples:
   # Install mode (default): set up venv with all baselines
   python setup_bench_env.py
 
-  # Build wheels for SM100 (Blackwell B200)
+  # Build the DeepGEMM wheel for SM100 (Blackwell B200)
   python setup_bench_env.py --build-wheels --wheel-dir ./sm100_wheels
-
-  # Build only DeepGEMM wheel
-  python setup_bench_env.py --build-wheels --no-flashinfer --no-flashattn
 
   # Build with clean artifacts
   python setup_bench_env.py --build-wheels --clean-build
@@ -867,14 +733,14 @@ Examples:
     ap.add_argument(
         "--build-wheels",
         action="store_true",
-        help="Build wheels instead of installing packages",
+        help="Build the DeepGEMM wheel instead of installing packages",
     )
     ap.add_argument(
         "--wheel-dir",
         type=Path,
         default=DEFAULT_WHEEL_DIR,
         help=(
-            f"Output directory for built wheels (default: {DEFAULT_WHEEL_DIR})"
+            f"Output directory for the built wheel (default: {DEFAULT_WHEEL_DIR})"
         ),
     )
     ap.add_argument(
@@ -907,42 +773,16 @@ Examples:
         "--cuda-arch-list",
         default="10.0a",
         help=(
-            "Space- or semicolon-separated list for TORCH_CUDA_ARCH_LIST /"
-            " FLASHINFER_CUDA_ARCH_LIST (e.g., '10.0a' for SM100 Blackwell; use"
-            " '12.0f' for SM120)."
+            "Space- or semicolon-separated list for TORCH_CUDA_ARCH_LIST"
+            " (e.g., '10.0a' for SM100 Blackwell; use '12.0f' for SM120)."
         ),
     )
-    ap.add_argument(
-        "--flashattn-archs",
-        default="100",
-        help=(
-            "Semicolon- or space-separated list passed to FLASH_ATTN_CUDA_ARCHS"
-            " (default SM100-only; per upstream, SM100 maps to Blackwell"
-            " data-center parts such as B200/GB200)."
-        ),
-    )
-
     # Source paths (auto-cloned to cache dir if not present)
     ap.add_argument(
         "--deepgemm-src",
         default=DEFAULT_SRC_CACHE / "DeepGEMM",
         type=Path,
         help=f"DeepGEMM source (default: {DEFAULT_SRC_CACHE / 'DeepGEMM'})",
-    )
-    ap.add_argument(
-        "--flashinfer-src",
-        default=DEFAULT_SRC_CACHE / "flashinfer",
-        type=Path,
-        help=f"FlashInfer source (default: {DEFAULT_SRC_CACHE / 'flashinfer'})",
-    )
-    ap.add_argument(
-        "--flashattn-src",
-        default=DEFAULT_SRC_CACHE / "flash-attention",
-        type=Path,
-        help=(
-            "flash-attention source (default:"
-            f" {DEFAULT_SRC_CACHE / 'flash-attention'})"
-        ),
     )
 
     # Package selection
@@ -966,13 +806,8 @@ Examples:
     }.items():
         os.environ.setdefault(var, val)
 
-    # Limit codegen targets (torch extension and flashinfer) to reduce ptxas load.
+    # Limit codegen targets (the torch extension) to reduce ptxas load.
     os.environ.setdefault("TORCH_CUDA_ARCH_LIST", args.cuda_arch_list)
-    os.environ.setdefault("FLASHINFER_CUDA_ARCH_LIST", args.cuda_arch_list)
-    # Limit flash-attention build targets.
-    os.environ.setdefault(
-        "FLASH_ATTN_CUDA_ARCHS", args.flashattn_archs.replace(" ", ";")
-    )
 
     # Reset flashinfer cache to avoid stale builds pointing at other venvs.
     os.environ.setdefault("FLASHINFER_WORKSPACE_BASE", str(DEFAULT_FI_BASE))

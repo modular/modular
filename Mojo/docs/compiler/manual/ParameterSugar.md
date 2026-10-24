@@ -97,7 +97,7 @@ comptime metaprogramming. We want people to build powerful and expressive
 libraries, and we want clients of those libraries to not be exposed to the
 internal implementation details unless needed. Poor error messages were a
 common source of complaints, particularly from GPU programmers that are building
-into high level abstractions like `LayoutTensor`.
+into high level abstractions like `TileTensor`.
 
 Mojo now supports type sugar, so let's look at a simple example:
 

@@ -14,6 +14,7 @@
 from std.math import isnan, nan
 from std.testing import assert_almost_equal, assert_true
 from std.utils import Index
+from std.utils.numerics import get_accum_type
 
 from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
@@ -28,8 +29,8 @@ def run_split_k[
     P: Int,
     transpose_b: Bool,
     use_epilogue: Bool = False,
+    dtype: DType = .float32,
 ](ctx: DeviceContext, m: Int) raises:
-    comptime dtype = DType.float32
     comptime guard_size = 32
     comptime config = MatmulConfig[dtype, dtype, dtype, transpose_b](
         block_tile_shape=Index(
@@ -40,11 +41,13 @@ def run_split_k[
         ),
         mma_shape=_amdgpu_get_mma_shape[
             dtype, True
-        ]() if ctx.target.is_amd_gpu() else get_mma_shape[dtype, dtype](),
+        ]() if ctx.target.is_amd_gpu() else get_mma_shape[
+            dtype, get_accum_type[dtype]()
+        ](),
         num_pipeline_stages=1 if ctx.target.is_amd_gpu() else 4,
         num_k_partitions=P,
     )
-    print("split-K:", m, N, K, P, transpose_b, use_epilogue)
+    print("split-K:", m, N, K, P, transpose_b, use_epilogue, dtype)
 
     var a_device = ctx.enqueue_create_buffer[dtype](m * K)
     var b_device = ctx.enqueue_create_buffer[dtype](N * K)
@@ -54,11 +57,11 @@ def run_split_k[
     with a_device.map_to_host() as a_host, b_device.map_to_host() as b_host:
         for row in range(m):
             for kk in range(K):
-                a_host[row * K + kk] = Float32((row + kk) % 7 - 3) / 8
+                a_host[row * K + kk] = Scalar[dtype]((row + kk) % 7 - 3) / 8
         for col in range(N):
             for kk in range(K):
                 var idx = col * K + kk if transpose_b else kk * N + col
-                b_host[idx] = Float32((col + 3 * kk) % 11 - 5) / 8
+                b_host[idx] = Scalar[dtype]((col + 3 * kk) % 11 - 5) / 8
 
     var a = TileTensor(a_device, row_major(m, Idx[K]))
     var b = TileTensor(
@@ -93,9 +96,9 @@ def run_split_k[
                     )
                 assert_almost_equal(
                     c_host[row * N + col],
-                    Float32(expected),
-                    rtol=1e-3,
-                    atol=1e-2,
+                    Scalar[dtype](expected),
+                    rtol=1e-2 if dtype == .bfloat16 else 1e-3,
+                    atol=1e-1 if dtype == .bfloat16 else 1e-2,
                 )
         for idx in range(m * N, m * N + guard_size):
             assert_true(isnan(c_host[idx]), "split-K wrote past the output")
@@ -112,3 +115,7 @@ def main() raises:
             run_split_k[128, 512, 4, True](ctx, 17)
             run_split_k[128, 640, 3, False](ctx, 129)
             run_split_k[128, 640, 3, True, True](ctx, 129)
+            # A bf16 C stages each warp tile through shared memory and, with
+            # a bf16 workspace, partition 0's unmasked rows past M would land
+            # in partition 1's slab.
+            run_split_k[128, 512, 2, True, dtype=.bfloat16](ctx, 129)

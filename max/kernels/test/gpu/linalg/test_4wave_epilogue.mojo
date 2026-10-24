@@ -72,7 +72,7 @@ def test_4wave_epilogue[
     var a_tt = TileTensor(device_a, row_major[M, K]())
     var b_tt = TileTensor(device_b, row_major[N, K]())
     var c_tt = TileTensor(device_c, row_major[M, N]())
-    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
+    # Capture the raw pointer: a `{var}` capture byte-copies, so a
     # `DeviceBuffer`-backed tile would reach the device as a host reference.
     var out_tt = TileTensor(device_out.unsafe_ptr(), row_major[M, N]())
 
@@ -100,7 +100,7 @@ def test_4wave_epilogue[
     ](idx: Coord, val: SIMD[_dtype, width]) {var} -> None:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert idx.flat_rank == out_tt.flat_rank
-        out_tt.store[width=width, alignment=alignment](
+        out_tt.store[alignment=alignment](
             idx, rebind[SIMD[out_dtype, width]](val)
         )
 
@@ -156,9 +156,9 @@ def test_4wave_epilogue[
 
         # --- 2. Lambda exclusivity: c_tt should still be sentinel ---
         # The kernel writes via the lambda, NOT into `c`. If this
-        # check fires, the kernel has a "shadow" store path or my
-        # `comptime if Bool(elementwise_lambda_fn)` branch is leaking
-        # to the no-lambda store as well.
+        # check fires, the kernel has a "shadow" store path or the
+        # `comptime if has_epilogue_fn` branch is leaking to the
+        # no-lambda store as well.
         var leaks = 0
         for i in range(M * N):
             if host_c[i] != sentinel_c:

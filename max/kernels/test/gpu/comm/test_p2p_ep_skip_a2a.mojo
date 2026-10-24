@@ -19,10 +19,11 @@ and that the combine kernel produces the expected weighted reduction:
   output[i] = input[i] * (1 + sum(w_k for local k))  [fused_shared_expert]
 """
 
+from std.memory.alloc import unsafe_alloc
 from std.random import randint, randn, seed
-from std.sys import default_accelerator, size_of
+from std.sys import size_of
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from layout import Coord, TileTensor, Idx, row_major
 from shmem.ep import (
     ep_fused_dispatch_kernel_api,
@@ -37,7 +38,7 @@ def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: MutPointer[Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
-        var topk_ids_for_token = topk_ids + tok_id * top_k
+        var topk_ids_for_token = topk_ids.unsafe_offset(tok_id * top_k)
 
         def is_duplicate() {imm} -> Int:
             for i in range(top_k):
@@ -48,7 +49,12 @@ def legalize_topk_ids[
 
         var duplicate_idx = is_duplicate()
         while duplicate_idx != -1:
-            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            randint(
+                topk_ids_for_token.unsafe_offset(duplicate_idx),
+                1,
+                0,
+                n_experts - 1,
+            )
             duplicate_idx = is_duplicate()
 
 
@@ -119,9 +125,9 @@ def test_skip_a2a[
     var device_src_info_buf = ctx.enqueue_create_buffer[.int32](max_recv_num_tokens * 2)
 
     # --- Host buffers ---
-    var host_topk_ids = alloc[Int32](n_tokens * top_k)
-    var host_input_tokens = alloc[Scalar[input_type]](n_tokens * hidden_size)
-    var host_router_weights = alloc[Float32](n_tokens * top_k)
+    var host_topk_ids = unsafe_alloc[Int32](n_tokens * top_k)
+    var host_input_tokens = unsafe_alloc[Scalar[input_type]](n_tokens * hidden_size)
+    var host_router_weights = unsafe_alloc[Float32](n_tokens * top_k)
 
     # Initialize random data
     seed(42)
@@ -139,18 +145,18 @@ def test_skip_a2a[
     comptime N_DEVICES = 2
     var ptrs_layout = row_major[N_DEVICES]()
 
-    var dispatch_send_ptrs = alloc[UInt64](N_DEVICES)
+    var dispatch_send_ptrs = unsafe_alloc[UInt64](N_DEVICES)
     dispatch_send_ptrs[my_rank] = UInt64(Int(dispatch_send_buf.unsafe_ptr()))
-    var dispatch_recv_ptrs = alloc[UInt64](N_DEVICES)
+    var dispatch_recv_ptrs = unsafe_alloc[UInt64](N_DEVICES)
     dispatch_recv_ptrs[my_rank] = UInt64(Int(dispatch_recv_buf.unsafe_ptr()))
-    var dispatch_recv_count_ptrs = alloc[UInt64](N_DEVICES)
+    var dispatch_recv_count_ptrs = unsafe_alloc[UInt64](N_DEVICES)
     dispatch_recv_count_ptrs[my_rank] = UInt64(Int(dispatch_recv_count_buf.unsafe_ptr()))
 
-    var combine_send_ptrs = alloc[UInt64](N_DEVICES)
+    var combine_send_ptrs = unsafe_alloc[UInt64](N_DEVICES)
     combine_send_ptrs[my_rank] = UInt64(Int(combine_send_buf.unsafe_ptr()))
-    var combine_recv_ptrs = alloc[UInt64](N_DEVICES)
+    var combine_recv_ptrs = unsafe_alloc[UInt64](N_DEVICES)
     combine_recv_ptrs[my_rank] = UInt64(Int(combine_recv_buf.unsafe_ptr()))
-    var combine_recv_count_ptrs = alloc[UInt64](N_DEVICES)
+    var combine_recv_count_ptrs = unsafe_alloc[UInt64](N_DEVICES)
     combine_recv_count_ptrs[my_rank] = UInt64(Int(combine_recv_count_buf.unsafe_ptr()))
     # fmt: on
 
@@ -196,23 +202,21 @@ def test_skip_a2a[
     )
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(router_weights_tt)
     def router_weights_fn[
         width: Int
-    ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
-        var w = router_weights_tt.load[width=1]((token_idx, topk_id))
+    ](token_idx: Int, topk_id: Int) {var router_weights_tt} -> SIMD[
+        .float32, width
+    ]:
+        var w = router_weights_tt[token_idx, topk_id]
         return SIMD[.float32, width](w)
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(combine_output_tt)
     def store_combine_output[
         dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[rank], val: SIMD[dtype, width]):
-        combine_output_tt.store[
-            width=width, alignment=alignment * size_of[dtype]()
-        ](Coord(coords), rebind[SIMD[input_type, width]](val))
+    ](coords: IndexList[rank], val: SIMD[dtype, width]) {var combine_output_tt}:
+        combine_output_tt.store[alignment=alignment * size_of[dtype]()](
+            Coord(coords), rebind[SIMD[input_type, width]](val)
+        )
 
     # --- Run fused dispatch ---
     ep_fused_dispatch_kernel_api[
@@ -256,8 +260,6 @@ def test_skip_a2a[
         n_gpus_per_node,
         n_nodes,
         "gpu",
-        store_combine_output,
-        router_weights_wrapper=router_weights_fn,
         fused_shared_expert=fused_shared_expert,
         skip_a2a=True,
         allreduce_world_size=N_DEVICES,
@@ -270,6 +272,8 @@ def test_skip_a2a[
         combine_recv_ptrs_tt,
         combine_recv_count_ptrs_tt,
         ctx,
+        store_combine_output,
+        router_weights_fn,
         topk_ids_p=topk_ids_immut_ptr,
     )
 
@@ -277,7 +281,7 @@ def test_skip_a2a[
 
     # --- Verify results ---
     print("Verifying results...")
-    var host_output = alloc[Scalar[input_type]](n_tokens * hidden_size)
+    var host_output = unsafe_alloc[Scalar[input_type]](n_tokens * hidden_size)
     ctx.enqueue_copy(host_output, device_combine_output_buf)
     ctx.synchronize()
 
@@ -328,16 +332,16 @@ def test_skip_a2a[
     print("All results verified successfully!")
 
     # --- Cleanup ---
-    host_topk_ids.free()
-    host_input_tokens.free()
-    host_router_weights.free()
-    host_output.free()
-    dispatch_send_ptrs.free()
-    dispatch_recv_ptrs.free()
-    dispatch_recv_count_ptrs.free()
-    combine_send_ptrs.free()
-    combine_recv_ptrs.free()
-    combine_recv_count_ptrs.free()
+    host_topk_ids.unsafe_free()
+    host_input_tokens.unsafe_free()
+    host_router_weights.unsafe_free()
+    host_output.unsafe_free()
+    dispatch_send_ptrs.unsafe_free()
+    dispatch_recv_ptrs.unsafe_free()
+    dispatch_recv_count_ptrs.unsafe_free()
+    combine_send_ptrs.unsafe_free()
+    combine_recv_ptrs.unsafe_free()
+    combine_recv_count_ptrs.unsafe_free()
 
     # Extend the lifetime of the device buffers, as we directly use the pointers
     _ = dispatch_send_buf^

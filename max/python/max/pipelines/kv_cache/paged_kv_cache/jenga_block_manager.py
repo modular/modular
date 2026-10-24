@@ -23,6 +23,7 @@ different caches. This allows the memory to be fungible between the caches.
 from __future__ import annotations
 
 import logging
+import time
 from bisect import bisect_left
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVConnector,
     KVLoadFailed,
     KVLoadRefused,
+    KVLookup,
     KVTransfer,
 )
 from max.pipelines.modeling.types import RequestID
@@ -69,6 +71,35 @@ from .scratch_coordinator import (
 
 logger = logging.getLogger("max.pipelines")
 
+# A request waits this long on one lookup before it is served as a miss. Half
+# the dKV client's 10 s plan TTL, so an answer still leaves time to load it.
+# Each re-ask gets its own deadline.
+_CONNECTOR_LOOKUP_TIMEOUT_S = 5.0
+
+# How often one request's connector lookup is asked again because the device
+# hit it was asked past shrank before the answer was read. Past that a shrink
+# is computed, so constant eviction cannot hold the request out of the batch
+# for good.
+_MAX_CONNECTOR_LOOKUP_REASKS = 2
+
+# How often the scheduler may hand back one request's answered lookup. Its own
+# budget, so a request passed over in its queue keeps the re-asks a later
+# shrink needs. Past that an answer is kept, so a queue that keeps passing the
+# request over cannot hold it out of the batch for good.
+_MAX_CONNECTOR_LOOKUP_HAND_BACKS = 2
+
+# An answered lookup younger than this is kept for a request still waiting in
+# its queue rather than handed back, because asking again costs another
+# leased read with its pins and G2 stages. One older is asked again when it is
+# consumed, counted as a hand back, because its lease may lapse before the
+# load reaches the store and a refused load serves the request as a miss.
+# Counted from the lookup's start, which precedes its lease, so at least 3 s
+# of the 10 s lease remain, several forward passes for a request popped just
+# under it to load. The lease is the shorter of dkv-connector's
+# DEFAULT_PLAN_TTL and the server's DKV_READER_LEASE_DEADLINE, and neither
+# reaches Python, so this has to follow them by hand.
+_LOOKUP_HAND_BACK_AGE_S = 7.0
+
 
 @dataclass
 class _PendingTransfer:
@@ -87,6 +118,128 @@ class _PendingTransfer:
     def pinned_blocks(self) -> Iterator[LittleKVCacheBlock]:
         """Every block this transfer pins, across all its leaves."""
         return chain.from_iterable(self.blocks.values())
+
+
+class _PendingLookup:
+    """A connector lookup one ``alloc`` started for a later one to consume.
+
+    Asked over the request's hashes from ``first_block`` on, counted from its
+    committed index, because the device tier was expected to serve the blocks
+    before that. The ``alloc`` that consumes it takes the device hit for real
+    and reads the answer from wherever that hit ends.
+
+    It reads answered once the connector answers, once polling the handle
+    raises, or once it has been out for ``_CONNECTOR_LOOKUP_TIMEOUT_S``. The
+    last two hand the handle back at once and read as a miss, so a request
+    is never held out of the batch for good and an idle engine does not
+    keep polling a lookup that will never answer.
+    """
+
+    def __init__(
+        self,
+        connector: KVConnector,
+        handle: KVLookup,
+        first_block: int,
+        started_at: float,
+    ) -> None:
+        self.handle = handle
+        self.first_block = first_block
+        self.missed = False
+        self._connector = connector
+        self._started_at = started_at
+        self._answered = False
+        self._returned = False
+
+    def is_answered(self) -> bool:
+        """Returns whether the lookup can be consumed.
+
+        Never blocks and never raises.
+        """
+        if self._answered:
+            return True
+
+        try:
+            complete = self.handle.is_complete()
+        except Exception:
+            logger.exception(
+                "polling a %s lookup failed, so its request is served as a "
+                "cache miss",
+                self._connector.name,
+            )
+            self._give_up()
+            return True
+
+        if complete:
+            self._answered = True
+        elif time.monotonic() - self._started_at >= _CONNECTOR_LOOKUP_TIMEOUT_S:
+            logger.warning(
+                "a %s lookup did not answer within %.1f s, so its request is "
+                "served as a cache miss",
+                self._connector.name,
+                _CONNECTOR_LOOKUP_TIMEOUT_S,
+            )
+            self._give_up()
+        return self._answered
+
+    def age_s(self) -> float:
+        """Returns how long ago the lookup started, in seconds."""
+        return time.monotonic() - self._started_at
+
+    def is_stale(self) -> bool:
+        """Returns whether the answer is too old to load.
+
+        Never polls the handle, so asking before an alloc takes nothing.
+        """
+        return (
+            self._answered
+            and not self.missed
+            and self.age_s() >= _LOOKUP_HAND_BACK_AGE_S
+        )
+
+    def abandon(self) -> None:
+        """Hands the handle back, once however often this is called."""
+        if self._returned:
+            return
+        self._returned = True
+        self._connector.abandon_lookup(self.handle)
+
+    def _give_up(self) -> None:
+        """Hands the handle back and reads as a miss from now on."""
+        self.missed = True
+        self._answered = True
+        self.abandon()
+
+
+class _PendingLookupTransfer:
+    """What ``alloc`` returns while the connector is still answering a lookup.
+
+    Nothing is in flight into device memory, so there is nothing to pin and
+    nothing to drain. It reads complete once the lookup can be consumed,
+    which is the scheduler's cue to run ``alloc`` again.
+    """
+
+    def __init__(self, lookup: _PendingLookup) -> None:
+        self._lookup = lookup
+        self._polled = False
+
+    def is_complete(self) -> bool:
+        """Returns whether the lookup can be consumed.
+
+        Never blocks and never raises. The first poll repeats the unanswered
+        reading ``alloc`` took rather than asking again. A lookup can answer
+        on another thread between the two, and the caller polls straight
+        after ``alloc`` to decide whether to cordon a request that holds no
+        pages yet, so reading it answered there would run the request with
+        nothing allocated.
+        """
+        if not self._polled:
+            self._polled = True
+            return False
+        return self._lookup.is_answered()
+
+    def synchronize(self) -> None:
+        """Returns at once, since no copy is in flight to wait for."""
+        return
 
 
 @dataclass(frozen=True)
@@ -260,6 +413,30 @@ class RequestCacheState:
     """An onload whose copy failed after it was spliced in, for the next
     ``alloc`` to roll back."""
 
+    pending_lookup: _PendingLookup | None = None
+    """A connector lookup started for this request and not yet consumed."""
+
+    connector_lookup_reasks: int = 0
+    """How often the connector was asked again because the device hit
+    shrank under a lookup, which ``_MAX_CONNECTOR_LOOKUP_REASKS`` bounds."""
+
+    connector_lookup_hand_backs: int = 0
+    """How often the scheduler handed back an answered lookup, which
+    ``_MAX_CONNECTOR_LOOKUP_HAND_BACKS`` bounds."""
+
+    def lookup_is_stale(self) -> bool:
+        """Returns whether the answer is too old to load and is asked again.
+
+        Only while the request has hand backs left, so one whose queue keeps
+        passing it over loads its last answer rather than asking for good.
+        """
+        return (
+            self.pending_lookup is not None
+            and self.pending_lookup.is_stale()
+            and self.connector_lookup_hand_backs
+            < _MAX_CONNECTOR_LOOKUP_HAND_BACKS
+        )
+
 
 @dataclass(frozen=True)
 class KVLeafInfo:
@@ -270,6 +447,46 @@ class KVLeafInfo:
 
     ratio: int
     group_id: KVCacheGroupId
+
+
+@dataclass(frozen=True, slots=True)
+class _LeafOccupancy:
+    """What one leaf holds of a replica's pool, in its own small pages."""
+
+    used: int
+    """Pages a request holds."""
+
+    evictable: int
+    """Unreferenced pages still in the prefix cache, which allocation evicts."""
+
+    empty: int
+    """Pages the leaf can allocate without evicting one of its own commits."""
+
+    total: int
+    """Pages the leaf would have if it held every allocatable huge block."""
+
+    used_huge_blocks: int
+    """Huge blocks typed to the leaf that a request holds."""
+
+    evictable_huge_blocks: int
+    """Huge blocks no request holds that are still typed to the leaf."""
+
+    @property
+    def pressure_pct(self) -> float:
+        """Returns the share of the leaf's pages neither evictable nor empty."""
+        return BlockCount(
+            free=self.evictable + self.empty, total=self.total
+        ).used_pct
+
+
+@dataclass(frozen=True, slots=True)
+class _PoolOccupancy:
+    """A snapshot of one replica's pool, per leaf."""
+
+    leaves: dict[str, _LeafOccupancy]
+
+    empty_huge_blocks: int
+    """Huge blocks no leaf has ever claimed."""
 
 
 class JengaBlockManager:
@@ -383,6 +600,7 @@ class JengaBlockManager:
     @traced
     def release(self, ctx: TextContext) -> None:
         """Frees every page the request holds, in every cache."""
+        ctx.kv_cache_write_ranges.clear()
         req_id = ctx.request_id
         replica_idx = self._replica_of(ctx)
 
@@ -391,7 +609,16 @@ class JengaBlockManager:
 
         self._touch_committed_sequence(ctx)
 
-        del self._requests[req_id]
+        # The pages are already free, so the request goes before the hand
+        # back and one that raises cannot leave it claimed over them.
+        state = self._requests.pop(req_id)
+        self._abandon_pending_lookup(state)
+
+    def _abandon_pending_lookup(self, state: RequestCacheState) -> None:
+        """Hands back a lookup the request started and will never load from."""
+        pending, state.pending_lookup = state.pending_lookup, None
+        if pending is not None:
+            pending.abandon()
 
     def _touch_committed_sequence(self, ctx: TextContext) -> None:
         """Re-ranks the request's whole committed sequence in the external tier.
@@ -417,8 +644,28 @@ class JengaBlockManager:
     # ============================================================================
 
     @traced
-    def alloc(self, ctx: TextContext) -> KVTransfer:
+    def alloc(
+        self, ctx: TextContext, *, defer_lookup: bool = False
+    ) -> KVTransfer:
         """Gives every cache the pages the next forward needs.
+
+        Args:
+            ctx: The request, already claimed on a replica.
+            defer_lookup: Whether the caller holds the request out of the
+                batch while the returned transfer is incomplete and calls
+                ``alloc`` again once it completes. Only then does a
+                connector lookup run off this thread, because the request
+                holds no pages until that next call. A caller that reads
+                the request's blocks right after this one leaves it off and
+                gets the synchronous lookup, and a lookup an earlier call
+                left outstanding is then handed back rather than waited on.
+
+        Returns:
+            The transfer the caller polls before the request runs, already
+            complete when nothing was onloaded. With ``defer_lookup`` it may
+            instead track a lookup the connector has not answered, in which
+            case the request holds no pages and the next ``alloc`` finishes
+            the reuse.
 
         Raises:
             InsufficientBlocksError: If the pool cannot serve all of the
@@ -434,7 +681,14 @@ class JengaBlockManager:
         self._rollback_failed_onload(ctx, replica_idx)
 
         committed_before = self._state_of(ctx).committed_idx
-        transfer = self._reuse_blocks_from_prefix_cache(ctx, replica_idx)
+        transfer = self._reuse_blocks_from_prefix_cache(
+            ctx, replica_idx, defer_lookup=defer_lookup
+        )
+        # The connector has not answered yet. Nothing is spliced or drawn, so
+        # there is no demand to size and nothing to roll back, and the caller
+        # holds the request out until the transfer completes.
+        if self._state_of(ctx).pending_lookup is not None:
+            return transfer
 
         self._metrics.input_tokens += ctx.tokens.active_length
 
@@ -458,6 +712,108 @@ class JengaBlockManager:
         return transfer
 
     @traced
+    def starts_lookup(self, ctx: TextContext) -> bool:
+        """Returns whether a deferred ``alloc`` would start a connector lookup.
+
+        Reads the same state the reuse would and takes nothing, so a caller
+        can decide whether it can afford the lookup before one is started.
+        A request whose outstanding lookup is consumed rather than started
+        reads ``False``, and so does one whose connector answers in place,
+        because that lookup never holds the request out. An answer too old
+        to load, or one the device hit it was asked past shrank under, is
+        asked again rather than consumed, so it reads ``True``, until the
+        request's re-asks after a shrink run out and the rest is computed.
+        """
+        state = self._state_of(ctx)
+        if (
+            self._connector is None
+            or not self._enable_prefix_caching
+            or ctx.tokens.processed_length != 0
+            or state.skips_connector
+            or not self._connector.defers_lookup(self._replica_of(ctx))
+        ):
+            return False
+
+        self._compute_hashes_for_request(ctx)
+        desired_hashes = state.hashes[state.committed_idx // self._block_size :]
+        num_device_blocks = self._count_device_prefix_blocks(
+            desired_hashes, self._replica_of(ctx)
+        )
+        pending = state.pending_lookup
+        if pending is None or state.lookup_is_stale():
+            return num_device_blocks < len(desired_hashes)
+        return (
+            pending.is_answered()
+            and not pending.missed
+            and num_device_blocks < pending.first_block
+            and state.connector_lookup_reasks < _MAX_CONNECTOR_LOOKUP_REASKS
+        )
+
+    def start_lookup(self, ctx: TextContext) -> KVTransfer:
+        """Starts the lookup a deferred ``alloc`` would start, taking no pages.
+
+        For a request that has to wait its turn anyway, so the connector
+        answers while it waits. An answer that comes back at once is kept
+        for the ``alloc`` that admits the request rather than consumed here.
+
+        Returns:
+            The transfer to poll, which reads complete once the lookup can
+            be consumed, or a complete one when there was nothing to ask.
+        """
+        state = self._state_of(ctx)
+        self._compute_hashes_for_request(ctx)
+        self._connector_lookup_is_ready(
+            ctx,
+            state.hashes[state.committed_idx // self._block_size :],
+            self._replica_of(ctx),
+            start=True,
+        )
+        if state.pending_lookup is None:
+            return CompletedTransfer()
+        return _PendingLookupTransfer(state.pending_lookup)
+
+    def awaits_lookup(self, ctx: TextContext) -> bool:
+        """Returns whether the request's last ``alloc`` left a lookup out.
+
+        Such a request holds no pages, and the next ``alloc`` after the
+        lookup answers takes them. A lookup that answered inside the
+        ``alloc`` was consumed there and reads ``False``.
+        """
+        return self._state_of(ctx).pending_lookup is not None
+
+    def hand_back_lookup(self, ctx: TextContext) -> bool:
+        """Hands back the request's lookup without loading from it.
+
+        Only once its answer is ``_LOOKUP_HAND_BACK_AGE_S`` old, because a
+        fresher one can still be loaded once the request reaches the head of
+        its queue, and asking again costs another leased read. The request
+        then reads as starting a fresh lookup, and the hand back is counted
+        against ``_MAX_CONNECTOR_LOOKUP_HAND_BACKS``, so a request passed over
+        again and again keeps its last answer and loads it, or is served as a
+        miss, rather than asking for good. A no-op when it has none out, and
+        when its lookup already gave up, so a store that did not answer is
+        not asked again for that request.
+
+        Returns ``False`` when it kept a fresh answer, which a later call may
+        still hand back, and ``True`` when there is nothing left to hand
+        back.
+        """
+        state = self._state_of(ctx)
+        pending = state.pending_lookup
+        if (
+            pending is None
+            or pending.missed
+            or state.connector_lookup_hand_backs
+            >= _MAX_CONNECTOR_LOOKUP_HAND_BACKS
+        ):
+            return True
+        if pending.age_s() < _LOOKUP_HAND_BACK_AGE_S:
+            return False
+
+        state.connector_lookup_hand_backs += 1
+        self._abandon_pending_lookup(state)
+        return True
+
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """Claims a dummy request and points it at the replica's null page."""
         self.claim(ctx, replica_idx)
@@ -476,6 +832,26 @@ class JengaBlockManager:
     def step(self, ctx: TextContext) -> None:
         """Records what the forward just wrote and slides every window."""
         replica_idx = self._replica_of(ctx)
+        write_ranges = ctx.kv_cache_write_ranges
+        ctx.kv_cache_write_ranges = {}
+        for leaf_id, (start, end) in write_ranges.items():
+            group = self._groups[leaf_id]
+            if not isinstance(group, SlidingWindowKVGroupCoordinator):
+                raise ValueError("Partial writes require a sliding-window leaf")
+            if not 0 <= start <= end <= ctx.tokens.processed_length:
+                raise ValueError("Write range exceeds processed tokens")
+        for leaf_id, (start, end) in write_ranges.items():
+            group = self._groups[leaf_id]
+            assert isinstance(group, SlidingWindowKVGroupCoordinator)
+            group.record_write_range(ctx.request_id, start, end)
+        for leaf_id, group in self._groups.items():
+            if (
+                isinstance(group, SlidingWindowKVGroupCoordinator)
+                and leaf_id not in write_ranges
+            ):
+                group.record_full_write(
+                    ctx.request_id, ctx.tokens.processed_length
+                )
         if self._enable_prefix_caching:
             self._commit_blocks_into_prefix_cache(ctx, replica_idx)
 
@@ -491,33 +867,66 @@ class JengaBlockManager:
         Read-only. With cross-replica copies on, a block held by any replica
         counts as a hit, without checking there is room to copy it in.
 
-        Both halves run the same reconcile the reuse path runs -- the device
-        one over the block pools, the external one over the connector's
-        ``lookup`` masks -- so this cannot disagree with what a real admit
-        would serve. That costs a lookup per replica for a connector whose
-        tiers are not local, and nothing else: a lookup is advisory, and this
-        never goes on to load. Its one caller (prefix-aware DP prefill
-        balancing) fails open.
+        Both halves run the same reconcile the reuse path runs, the device
+        one over the block pools and the external one over the connector's
+        masks, so this cannot disagree with what a real admit would serve
+        on the leaves the masks cover. The external half is one ``probe``
+        over the whole chain, answered for every replica at once since the
+        connector's tiers are shared, and read from wherever each replica's
+        device hit ends. A probe may answer for one representative leaf, as
+        the dKV connector does against a server without presence, so only
+        the leaves it covers are reconciled, and the count can then exceed
+        what an admit serves when another leaf holds less. A connector with
+        no probe is asked with a ``lookup`` per replica instead, which is
+        advisory, and this never goes on to load. The dKV connector declines
+        the probe only for a tree without a full-attention leaf. Its one
+        caller, the prefix-aware DP prefill balancer, fails open.
 
         Returns:
             A list of PrefixCacheHits for each replica.
         """
         desired_hashes = self._compute_block_hashes(ctx, [])
-        hit_counts: list[PrefixCacheHits] = []
-        # TODO(CLIN-2043): prices DP admission with a leased lookup per replica
-        # on every leaf; pricing once needs a shape-aware probe across leaves.
-        for replica_idx in range(self._num_replicas):
-            num_hit_blocks = self._find_longest_device_prefix_cache_hit(
+        device_hits = [
+            self._find_longest_device_prefix_cache_hit(
                 desired_hashes, replica_idx, self._cross_replica_copy_enabled
             )
-            remaining = desired_hashes[num_hit_blocks:]
-            num_external_blocks = (
-                self._find_longest_connector_prefix_cache_hit(
-                    remaining, replica_idx, ctx.dkv_cache_hint
-                )
-                if self._connector is not None and remaining
-                else 0
+            for replica_idx in range(self._num_replicas)
+        ]
+        probed = None
+        if self._connector is not None and any(
+            num_hit_blocks < len(desired_hashes)
+            for num_hit_blocks in device_hits
+        ):
+            # TODO(CLIN-2105): The probe still runs on the scheduler thread,
+            # a few ms per presence call against a healthy dKV but up to its
+            # RPC timeout against a slow one, and a request requeued under KV
+            # pressure is priced again on every pass. Move it behind
+            # start_presence once presence time shows up in batch creation.
+            probed = self._connector.probe(
+                desired_hashes,
+                range(self._num_replicas),
+                hint=ctx.dkv_cache_hint,
             )
+
+        hit_counts: list[PrefixCacheHits] = []
+        for replica_idx, num_hit_blocks in enumerate(device_hits):
+            remaining = desired_hashes[num_hit_blocks:]
+            if self._connector is None or not remaining:
+                num_external_blocks = 0
+            elif probed is not None:
+                num_external_blocks = self._longest_connector_hit(
+                    {
+                        leaf_id: mask[num_hit_blocks:]
+                        for leaf_id, mask in probed[replica_idx].items()
+                    },
+                    covered_only=True,
+                )
+            else:
+                num_external_blocks = (
+                    self._find_longest_connector_prefix_cache_hit(
+                        remaining, replica_idx, ctx.dkv_cache_hint
+                    )
+                )
             hit_counts.append(
                 PrefixCacheHits(
                     device_blocks=num_hit_blocks,
@@ -664,7 +1073,19 @@ class JengaBlockManager:
         resident = self._connector.lookup(
             desired, replica_idx=replica_idx, hint=hint
         )
+        return self._longest_connector_hit(resident)
 
+    def _longest_connector_hit(
+        self,
+        resident: Mapping[str, Sequence[bool]],
+        covered_only: bool = False,
+    ) -> int:
+        """Returns how deep a run the connector's ``resident`` masks serve.
+
+        ``covered_only`` reconciles only the leaves ``resident`` answers
+        for, which a pricing probe may narrow to one representative leaf.
+        A lookup the manager loads from has to answer for every leaf.
+        """
         # Restricted to the cacheable leaves rather than passed straight
         # through: a connector answering for a leaf this manager does not
         # reconcile would otherwise decide part of the hit.
@@ -675,6 +1096,7 @@ class JengaBlockManager:
                     resident[leaf_id],
                 )
                 for leaf_id, group in self._cacheable_groups.items()
+                if not covered_only or leaf_id in resident
             ]
         )
 
@@ -686,6 +1108,7 @@ class JengaBlockManager:
         replica_idx: int,
         hint: bytes | None,
         num_device_blocks: int,
+        defer_lookup: bool,
     ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVTransfer]:
         """Loads the prefix of ``desired`` the connector's tiers can serve.
 
@@ -697,11 +1120,49 @@ class JengaBlockManager:
         :meth:`SlidingWindowKVGroupCoordinator.claim_hit_blocks` builds for
         the device tier. Both phases get the same ``hint``.
         ``num_device_blocks`` is the device hit spliced in ahead of the load,
-        which a failed copy rolls back along with it.
+        which a failed copy rolls back along with it. With ``defer_lookup``
+        a connector whose lookup is a round trip is never asked on this
+        thread.
+
+        A lookup an earlier deferred ``alloc`` started is consumed here
+        rather than asked again, and handed back however this exits, raising
+        included.
 
         Returns:
             How many blocks were loaded, the blocks they are landing in per
             leaf, and the transfer tracking the copy.
+        """
+        state = self._requests[request_id]
+        pending, state.pending_lookup = state.pending_lookup, None
+        try:
+            return self._load_connector_prefix_cache_hit(
+                request_id,
+                desired,
+                replica_idx,
+                hint,
+                num_device_blocks,
+                pending,
+                defer_lookup,
+            )
+        except BaseException:
+            if pending is not None:
+                pending.abandon()
+            raise
+
+    def _load_connector_prefix_cache_hit(
+        self,
+        request_id: RequestID,
+        desired: Sequence[bytes],
+        replica_idx: int,
+        hint: bytes | None,
+        num_device_blocks: int,
+        pending: _PendingLookup | None,
+        defer_lookup: bool,
+    ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVTransfer]:
+        """Runs :meth:`_lookup_connector_prefix_cache_hit` over ``pending``.
+
+        Hands ``pending`` back on every path that returns without loading
+        from it, and leaves a raise to the caller to hand it back.
         """
         connector = self._connector
         empty: dict[str, list[LittleKVCacheBlock]] = {
@@ -710,12 +1171,38 @@ class JengaBlockManager:
         miss = (0, empty, CompletedTransfer())
         state = self._requests[request_id]
         if connector is None or not desired or state.skips_connector:
+            if pending is not None:
+                pending.abandon()
             return miss
-        aligned = self._find_longest_connector_prefix_cache_hit(
-            desired, replica_idx, hint
-        )
-        if aligned == 0:
+        # Already handed back, because polling it raised or it ran past its
+        # deadline.
+        if pending is not None and pending.missed:
             return miss
+
+        # A device hit deeper than the one the lookup was asked past leaves
+        # a suffix of the answer to read, and a shallower one leaves a gap no
+        # answer covers. A deferred alloc asks about that gap on this thread
+        # only when the connector answers in place, and otherwise serves it
+        # as a miss with the hit kept.
+        if pending is not None and num_device_blocks < pending.first_block:
+            pending.abandon()
+            pending = None
+
+        lookup: KVLookup | None = None
+        if pending is None:
+            if defer_lookup and connector.defers_lookup(replica_idx):
+                return miss
+            resident = connector.lookup(
+                desired, replica_idx=replica_idx, hint=hint
+            )
+        else:
+            offset = num_device_blocks - pending.first_block
+            lookup = pending.handle
+            resident = {
+                leaf_id: mask[offset:]
+                for leaf_id, mask in lookup.masks().items()
+            }
+        aligned = self._longest_connector_hit(resident)
 
         pool = self.pools[replica_idx]
         # What each leaf READS of a hit that deep, which for a windowed leaf is
@@ -727,26 +1214,36 @@ class JengaBlockManager:
         # Too few blocks to schedule this request at all. Report no hit and let
         # the caller raise InsufficientBlocksError once it has released what
         # the request owns.
-        if not pool.can_satisfy_demand(held):
+        if aligned == 0 or not pool.can_satisfy_demand(held):
+            if pending is not None:
+                pending.abandon()
             return miss
 
         rows = {
             leaf_id: [pool.alloc_block(leaf_id) for _ in range(num_blocks)]
             for leaf_id, num_blocks in held.items()
         }
+        row_bids = {
+            leaf_id: [block.bid for block in blocks]
+            for leaf_id, blocks in rows.items()
+        }
+        row_hashes = {
+            leaf_id: list(desired[aligned - held[leaf_id] : aligned])
+            for leaf_id in rows
+        }
         try:
-            event = connector.load(
-                {
-                    leaf_id: [block.bid for block in blocks]
-                    for leaf_id, blocks in rows.items()
-                },
-                {
-                    leaf_id: list(desired[aligned - held[leaf_id] : aligned])
-                    for leaf_id in rows
-                },
-                replica_idx=replica_idx,
-                hint=hint,
-            )
+            if lookup is None:
+                event = connector.load(
+                    row_bids, row_hashes, replica_idx=replica_idx, hint=hint
+                )
+            else:
+                event = connector.load_lookup(
+                    lookup,
+                    row_bids,
+                    row_hashes,
+                    replica_idx=replica_idx,
+                    hint=hint,
+                )
             landed = event.is_complete()
         except (KVLoadRefused, KVLoadFailed) as err:
             # Evicted between the two calls, no room to stage the copy, or a
@@ -758,6 +1255,8 @@ class JengaBlockManager:
                 self._skip_connector_after_failure(request_id, err)
             else:
                 logger.warning("serving a request as a cache miss: %s", err)
+            if pending is not None:
+                pending.abandon()
             for blocks in rows.values():
                 for block in blocks:
                     pool.free_block(block)
@@ -1001,6 +1500,30 @@ class JengaBlockManager:
             for leaf_id in self._leaf_ids
         }
 
+    def occupancy(self, replica_idx: int = 0) -> _PoolOccupancy:
+        """Returns each leaf's pages and huge blocks on the given replica.
+
+        Scans the whole pool, so call it for periodic logging, not per batch.
+        """
+        pool = self.pools[replica_idx]
+        total_huge_blocks = pool.num_allocatable_huge_blocks
+        leaves = {}
+        for leaf_id in self._leaf_ids:
+            used, evictable, empty, used_huge, evictable_huge = pool.occupancy(
+                leaf_id
+            )
+            leaves[leaf_id] = _LeafOccupancy(
+                used=used,
+                evictable=evictable,
+                empty=empty,
+                total=total_huge_blocks * pool.cache_ratios[leaf_id],
+                used_huge_blocks=used_huge,
+                evictable_huge_blocks=evictable_huge,
+            )
+        return _PoolOccupancy(
+            leaves=leaves, empty_huge_blocks=pool.num_pristine_huge_blocks
+        )
+
     # ============================================================================
     # Internal
     # ============================================================================
@@ -1216,7 +1739,7 @@ class JengaBlockManager:
         return num_bytes
 
     def _reuse_blocks_from_prefix_cache(
-        self, ctx: TextContext, replica_idx: int = 0
+        self, ctx: TextContext, replica_idx: int = 0, *, defer_lookup: bool
     ) -> KVTransfer:
         """Splices the longest prefix-cache hit into the request.
 
@@ -1226,7 +1749,9 @@ class JengaBlockManager:
 
         Returns:
             The transfer tracking the onload's copy, already complete when
-            nothing was onloaded.
+            nothing was onloaded. With ``defer_lookup`` it may instead track
+            a connector lookup that has not answered, in which case nothing
+            was spliced and the request's ``pending_lookup`` is set.
         """
         # Only try to reuse blocks if the ctx is fresh (ie: no tokens are processed)
         if not self._enable_prefix_caching or ctx.tokens.processed_length != 0:
@@ -1234,8 +1759,15 @@ class JengaBlockManager:
 
         self._compute_hashes_for_request(ctx)
 
-        committed_blocks = self._state_of(ctx).committed_idx // self._block_size
-        desired_hashes = self._state_of(ctx).hashes[committed_blocks:]
+        state = self._state_of(ctx)
+        committed_blocks = state.committed_idx // self._block_size
+        desired_hashes = state.hashes[committed_blocks:]
+
+        if not self._connector_lookup_is_ready(
+            ctx, desired_hashes, replica_idx, start=defer_lookup
+        ):
+            assert state.pending_lookup is not None
+            return _PendingLookupTransfer(state.pending_lookup)
 
         hit_blocks, num_hit_blocks = self._lookup_device_prefix_cache_hit(
             desired_hashes, replica_idx
@@ -1248,6 +1780,7 @@ class JengaBlockManager:
                 replica_idx,
                 hint=ctx.dkv_cache_hint,
                 num_device_blocks=num_hit_blocks,
+                defer_lookup=defer_lookup,
             )
         )
         num_reused = num_hit_blocks + num_loaded
@@ -1293,6 +1826,133 @@ class JengaBlockManager:
             "must never hash the last token."
         )
         return transfer
+
+    def _connector_lookup_is_ready(
+        self,
+        ctx: TextContext,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int,
+        *,
+        start: bool,
+    ) -> bool:
+        """Returns whether this request's reuse can go ahead without waiting.
+
+        Starts a lookup when ``start`` is set and none is outstanding, and
+        starts it over when the device hit it was asked past shrank while it
+        was out or its answer grew too old to load. ``True`` when there is
+        nothing to ask, when the outstanding lookup can be consumed, or when
+        the request's reuse runs the synchronous lookup instead. A lookup
+        still outstanding when ``start`` is not set is handed back so that
+        the synchronous lookup runs, because that caller reads the request's
+        blocks as soon as ``alloc`` returns.
+        """
+        state = self._state_of(ctx)
+        connector = self._connector
+        # An answer the request waited on in its queue past the hand back age
+        # is asked again from the current device hit, with the request held
+        # out again, rather than loaded under a lease that may lapse first.
+        pending = state.pending_lookup
+        if (
+            start
+            and pending is not None
+            and pending.is_answered()
+            and state.lookup_is_stale()
+        ):
+            self._abandon_pending_lookup(state)
+            state.connector_lookup_hand_backs += 1
+            pending = None
+        if pending is None:
+            if not start or connector is None or state.skips_connector:
+                return True
+            # Counted rather than claimed, so nothing is held while the
+            # connector answers. The alloc that consumes the answer takes the
+            # device hit for real and reads the answer from where it ends.
+            num_device_blocks = self._count_device_prefix_blocks(
+                desired_hashes, replica_idx
+            )
+            remaining = desired_hashes[num_device_blocks:]
+            if not remaining:
+                return True
+            pending = self._start_connector_lookup(
+                ctx, remaining, replica_idx, first_block=num_device_blocks
+            )
+            return pending.is_answered()
+
+        if not pending.is_answered():
+            if start:
+                return False
+            state.pending_lookup = None
+            pending.abandon()
+            return True
+        if not start or pending.missed:
+            return True
+
+        # The answer starts where the device hit ended when it was asked. A
+        # hit that shrank meanwhile, typically an eviction, leaves a gap no
+        # mask covers, so the lookup is started over from the shorter count
+        # with the request still held out. This has to be settled before the
+        # hit is taken, because taking it can enqueue a cross-replica copy
+        # into the pages it claims, and those must stay held until the copy
+        # lands. A hit that keeps shrinking stops being chased after
+        # ``_MAX_CONNECTOR_LOOKUP_REASKS`` of these and the rest is computed.
+        num_device_blocks = self._count_device_prefix_blocks(
+            desired_hashes, replica_idx
+        )
+        if num_device_blocks >= pending.first_block:
+            return True
+        self._abandon_pending_lookup(state)
+        if state.connector_lookup_reasks >= _MAX_CONNECTOR_LOOKUP_REASKS:
+            return True
+
+        state.connector_lookup_reasks += 1
+        replacement = self._start_connector_lookup(
+            ctx,
+            desired_hashes[num_device_blocks:],
+            replica_idx,
+            first_block=num_device_blocks,
+        )
+        return replacement.is_answered()
+
+    def _count_device_prefix_blocks(
+        self, desired_hashes: Sequence[bytes], replica_idx: int
+    ) -> int:
+        """Returns how many blocks the device hit would cover if taken now.
+
+        Counts without claiming or copying anything, and counts blocks a
+        peer replica holds when cross-replica copies are on, the same way
+        :meth:`_lookup_device_prefix_cache_hit` takes them.
+        """
+        if self._only_use_kv_connector_last_level_cache:
+            return 0
+        return self._find_longest_device_prefix_cache_hit(
+            desired_hashes, replica_idx, self._cross_replica_copy_enabled
+        )
+
+    def _start_connector_lookup(
+        self,
+        ctx: TextContext,
+        remaining: Sequence[bytes],
+        replica_idx: int,
+        first_block: int,
+    ) -> _PendingLookup:
+        """Starts a lookup over ``remaining`` for a later ``alloc`` to read.
+
+        ``remaining`` begins ``first_block`` blocks past the committed index,
+        and the lookup becomes the request's ``pending_lookup``.
+        """
+        assert self._connector is not None
+        # Taken before the store is asked, so the age never trails the lease.
+        started_at = time.monotonic()
+        pending = _PendingLookup(
+            self._connector,
+            self._connector.start_lookup(
+                remaining, replica_idx=replica_idx, hint=ctx.dkv_cache_hint
+            ),
+            first_block=first_block,
+            started_at=started_at,
+        )
+        self._state_of(ctx).pending_lookup = pending
+        return pending
 
     def _rollback_prefix_reuse(
         self, ctx: TextContext, replica_idx: int, committed_idx: int

@@ -55,6 +55,7 @@ glm5_1_modulev3_arch = SupportedArchitecture(
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
+    supports_nvfp4_kv_cache=True,
     config=Glm5_1Config,
     memory_planner=DeepseekV3ModuleV3MemoryPlanner,
     tool_parser="glm45",

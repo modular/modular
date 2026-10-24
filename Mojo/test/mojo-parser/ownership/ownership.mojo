@@ -655,8 +655,7 @@ struct GenericRegType(RegisterPassable, SomeTrait):
 
 # CHECK-LABEL: lit.fn @"destruct_generic_return
 def destruct_generic_return():
-    @__parameter
-    def return_generic_type[T: SomeTrait]() -> T:
+    def return_generic_type[T: SomeTrait]() {imm} -> T:
         while True:
             pass
 
@@ -1555,11 +1554,12 @@ struct TestSynthesizedConditionalDtor[T: Movable](
 
 # MOCO-4059: Conditionally linear type with concrete struct.
 # CHECK-LABEL: lit.struct.decl @AConditionallyLinearType
-@explicit_destroy("I am conditionally linear!")
 @fieldwise_init
 struct AConditionallyLinearType[T: AnyType](
     Copyable,
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "I am conditionally linear!"
+    ),
 ):
 
     def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):

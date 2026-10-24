@@ -28,9 +28,10 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
 # A padded page may spend at most this share of itself on bytes the kernel
-# never reads. Zero by default.
+# never reads. A round allowance, not tuned to any model: enough for an awkward
+# page to tile a far smaller huge block, while adding at most a tenth to it.
 _MAX_PADDING_FRACTION = float(
-    os.getenv("MODULAR_KV_JENGA_MAX_PADDING_FRACTION") or 0.0
+    os.getenv("MODULAR_KV_JENGA_MAX_PADDING_FRACTION") or 0.1
 )
 
 # The search will not consider a huge block larger than this. Past it the
@@ -43,6 +44,9 @@ _MAX_HUGE_PAGE_BYTES = int(
 # the candidate search; ratios above this imply a page so much smaller than the
 # block that padding it tightly is free anyway.
 _MAX_TILING_RATIO = int(os.getenv("MODULAR_KV_JENGA_MAX_TILING_RATIO") or 256)
+
+# The share of the budget whole huge blocks may strand before planning warns.
+_STRANDING_WARN_FRACTION = 0.05
 
 
 def compute_jenga_ratios(
@@ -141,8 +145,9 @@ class JengaGeometry:
     """How many little pages of each cache one huge block holds."""
 
     padded_sizes: dict[str, int]
-    """Each cache's page size after padding. Every value divides
-    ``huge_page_bytes`` and is a whole number of that cache's rows."""
+    """Each cache's page stride after padding. Every value divides
+    ``huge_page_bytes``, and is either the cache's own page size or a multiple
+    of its stride alignment."""
 
     def padding_fraction(self, cache_id: str, data_bytes: int) -> float:
         """Returns the share of ``cache_id``'s page that is padding."""
@@ -150,15 +155,14 @@ class JengaGeometry:
 
 
 def _smallest_tiling_page(
-    huge_page_bytes: int, data_bytes: int, row_bytes: int
+    huge_page_bytes: int, data_bytes: int, stride_alignment: int | None
 ) -> int | None:
     """Returns the smallest page holding ``data_bytes`` that tiles the block.
 
     A page must divide ``huge_page_bytes``, so a huge block holds a whole
-    number of them, and must be a whole number of rows, because
-    ``PagedKVCache`` expresses paging as row arithmetic -- ``_stride()`` divides
-    the page stride by ``num_heads * head_size`` and that division has to be
-    exact, or there is no row index for the start of a page.
+    number of them. One larger than the data must also be a multiple of
+    ``stride_alignment``, the strides the cache's kernels can address; a cache
+    without one gets only its data.
 
     Searching the ratio rather than the page keeps this cheap: the ratio cannot
     exceed ``huge_page_bytes // data_bytes``, a few hundred at the sizes we
@@ -168,11 +172,15 @@ def _smallest_tiling_page(
         The page size, or ``None`` when no divisor of ``huge_page_bytes``
         qualifies.
     """
+    if huge_page_bytes % data_bytes == 0:
+        return data_bytes
+    if stride_alignment is None:
+        return None
     for ratio in range(huge_page_bytes // data_bytes, 0, -1):
         if huge_page_bytes % ratio:
             continue
         page = huge_page_bytes // ratio
-        if page % row_bytes == 0:
+        if page % stride_alignment == 0:
             return page
     return None
 
@@ -180,7 +188,7 @@ def _smallest_tiling_page(
 def _fit_huge_page(
     huge_page_bytes: int,
     cache_sizes: Mapping[str, int],
-    row_sizes: Mapping[str, int],
+    stride_alignments: Mapping[str, int | None],
     max_padding_fraction: float,
 ) -> dict[str, int] | None:
     """Pads every cache onto ``huge_page_bytes``, or gives up on it.
@@ -191,7 +199,7 @@ def _fit_huge_page(
     padded: dict[str, int] = {}
     for cache_id, data_bytes in cache_sizes.items():
         page = _smallest_tiling_page(
-            huge_page_bytes, data_bytes, row_sizes[cache_id]
+            huge_page_bytes, data_bytes, stride_alignments[cache_id]
         )
         if page is None or page / data_bytes - 1 > max_padding_fraction:
             return None
@@ -199,53 +207,36 @@ def _fit_huge_page(
     return padded
 
 
-def _geometry_cost(
-    available_bytes: int,
-    huge_page_bytes: int,
-    cache_sizes: Mapping[str, int],
-    padded_sizes: Mapping[str, int],
-    include_null_block: bool,
-) -> float | None:
-    """Returns the share of the budget a geometry cannot put cache data in.
-
-    Two terms, and they pull against each other -- which is why the huge block
-    is chosen on their sum rather than on padding alone. A larger block lets
-    every page land closer above its data (less padding) but quantises the
-    budget more coarsely, so it strands a bigger remainder and spends more on
-    the null block. Minimising padding alone walks straight into the coarse end.
-
-    Returns ``None`` when the budget cannot hold the blocks the pool needs.
-    """
-    num_huge_blocks = available_bytes // huge_page_bytes
-    if num_huge_blocks < (2 if include_null_block else 1):
-        return None
-
-    padding = sum(
-        padded_sizes[cache_id] / data_bytes - 1
-        for cache_id, data_bytes in cache_sizes.items()
-    ) / len(cache_sizes)
-    unusable = available_bytes - num_huge_blocks * huge_page_bytes
-    if include_null_block:
-        unusable += huge_page_bytes
-    return padding + unusable / available_bytes
+def _padding_bytes(
+    cache_sizes: Mapping[str, int], padded_sizes: Mapping[str, int]
+) -> int:
+    """Returns the padding bytes in one page of every cache."""
+    return sum(padded_sizes.values()) - sum(cache_sizes.values())
 
 
 def _huge_page_candidates(
     cache_sizes: Mapping[str, int],
-    row_sizes: Mapping[str, int],
+    stride_alignments: Mapping[str, int | None],
     ceiling: int,
 ) -> list[int]:
     """Returns the huge-block sizes worth pricing, smallest first.
 
-    Every page is a whole number of its own rows and divides the huge block, so
-    the block is necessarily a multiple of ``lcm(row_sizes)`` -- which is the
+    A packed page divides the huge block and a padded one is a multiple of its
+    alignment, so the block is a multiple of the lcm of both -- which is the
     grid the search runs on. On that grid the sizes that matter are the ones
     where some cache tiles *tightly*: for each cache and each small ratio, the
     smallest grid point at or above ``ratio * page``. That keeps the candidate
     set in the low thousands while still containing the optimum, since a
     geometry is only as good as its worst-padded leaf.
     """
-    grid = lcm(*row_sizes.values())
+    grid = lcm(
+        *(
+            data_bytes
+            if (alignment := stride_alignments[cache_id]) is None
+            else alignment
+            for cache_id, data_bytes in cache_sizes.items()
+        )
+    )
     floor = max(cache_sizes.values())
     candidates = set()
     for data_bytes in cache_sizes.values():
@@ -262,31 +253,30 @@ def _huge_page_candidates(
 def plan_jenga_geometry(
     available_bytes: int,
     cache_sizes: Mapping[str, int],
-    row_sizes: Mapping[str, int],
+    stride_alignments: Mapping[str, int | None],
     *,
     include_null_block: bool = True,
     max_padding_fraction: float = _MAX_PADDING_FRACTION,
 ) -> JengaGeometry:
     """Fits a byte budget to a huge-block geometry, padding pages to get there.
 
-    The exact-tiling geometry :func:`compute_jenga_ratios` computes is priced
-    first and wins whenever it is competitive, so a model whose page sizes
-    already divide each other is allocated exactly as before. When a coprime
-    factor makes that least common multiple too coarse to allocate -- the case
-    that takes a vision tower pooled with a text cache to a 23.7 GiB huge block
-    -- the search pads each page up to a divisor of a smaller block instead.
+    Only a cache with a stride alignment is padded. The search takes the huge
+    block with the fewest padding bytes, then the smaller block, so the exact
+    geometry wins whenever it fits under the ceiling. The budget only rules
+    out blocks it cannot hold two of, so pools with different budgets, such
+    as prefill and decode or dKV peers, agree on every page stride.
 
     Args:
         available_bytes: The per-device KV budget the pool may occupy.
         cache_sizes: Each cache's page size in bytes, before padding.
-        row_sizes: The granularity each cache's padded page must be a whole
-            number of -- a row, ``num_heads * head_size * dtype_size``, widened
-            where a kernel needs more alignment than a row gives.
+        stride_alignments: Each cache's stride alignment, or ``None`` for a
+            cache that must stay packed; see
+            :attr:`~max.nn.kv_cache.KVLeafRegion.stride_alignment`.
         include_null_block: Whether to include the null block.
         max_padding_fraction: The most of a page any one cache may spend on
             padding. Caps the search rather than the result: a geometry needing
             more is simply not considered. Defaults to
-            ``MODULAR_KV_JENGA_MAX_PADDING_FRACTION``, itself zero.
+            ``MODULAR_KV_JENGA_MAX_PADDING_FRACTION``, itself 10%.
 
     Returns:
         The geometry to allocate.
@@ -299,54 +289,50 @@ def plan_jenga_geometry(
         raise ValueError(f"cache_sizes must be non-empty, found {cache_sizes}")
     if any(size <= 0 for size in cache_sizes.values()):
         raise ValueError(f"cache_sizes must be positive, found {cache_sizes}")
-    if any(size <= 0 for size in row_sizes.values()):
-        raise ValueError(f"row_sizes must be positive, found {row_sizes}")
-    if cache_sizes.keys() != row_sizes.keys():
+    if any(
+        alignment is not None and alignment <= 0
+        for alignment in stride_alignments.values()
+    ):
         raise ValueError(
-            f"cache_sizes and row_sizes must cover the same caches, found "
-            f"{sorted(cache_sizes)} and {sorted(row_sizes)}"
+            f"stride_alignments must be positive or None, found "
+            f"{stride_alignments}"
         )
-    for cache_id, data_bytes in cache_sizes.items():
-        if data_bytes % row_sizes[cache_id]:
-            raise ValueError(
-                f"cache {cache_id!r} holds {data_bytes} bytes per page, which "
-                f"is not a whole number of its {row_sizes[cache_id]}-byte "
-                f"rows. A page the kernel addresses by row cannot be a "
-                f"fraction of one."
-            )
+    if cache_sizes.keys() != stride_alignments.keys():
+        raise ValueError(
+            f"cache_sizes and stride_alignments must cover the same caches, "
+            f"found {sorted(cache_sizes)} and {sorted(stride_alignments)}"
+        )
     if available_bytes <= 0:
         raise ValueError(
             f"available_bytes must be positive, found {available_bytes}"
         )
 
-    best: tuple[float, int, dict[str, int]] | None = None
-
+    min_huge_blocks = 2 if include_null_block else 1
     exact = lcm(*cache_sizes.values())
-    exact_cost = _geometry_cost(
-        available_bytes, exact, cache_sizes, cache_sizes, include_null_block
+    candidates = _huge_page_candidates(
+        cache_sizes, stride_alignments, _MAX_HUGE_PAGE_BYTES
     )
-    if exact_cost is not None:
-        best = (exact_cost, exact, dict(cache_sizes))
+    if exact <= _MAX_HUGE_PAGE_BYTES:
+        candidates.append(exact)
 
-    ceiling = min(_MAX_HUGE_PAGE_BYTES, available_bytes // 2)
-    for huge_page_bytes in _huge_page_candidates(
-        cache_sizes, row_sizes, ceiling
-    ):
+    best: tuple[int, int, dict[str, int]] | None = None
+    for huge_page_bytes in candidates:
+        if available_bytes // huge_page_bytes < min_huge_blocks:
+            continue
         padded = _fit_huge_page(
-            huge_page_bytes, cache_sizes, row_sizes, max_padding_fraction
+            huge_page_bytes,
+            cache_sizes,
+            stride_alignments,
+            max_padding_fraction,
         )
         if padded is None:
             continue
-        cost = _geometry_cost(
-            available_bytes,
-            huge_page_bytes,
-            cache_sizes,
-            padded,
-            include_null_block,
-        )
-        # Ties go to the smaller block: same cost, finer allocation quantum.
-        if cost is not None and (best is None or cost < best[0]):
+        cost = _padding_bytes(cache_sizes, padded)
+        if best is None or (cost, huge_page_bytes) < best[:2]:
             best = (cost, huge_page_bytes, padded)
+
+    if best is None and available_bytes // exact >= min_huge_blocks:
+        best = (0, exact, dict(cache_sizes))
 
     if best is None:
         pages = ", ".join(
@@ -355,9 +341,9 @@ def plan_jenga_geometry(
         )
         raise ValueError(
             f"{to_human_readable_bytes(available_bytes)} is too small to build "
-            f"a pool from the page sizes ({pages}), even allowing each page to "
-            f"pad by {max_padding_fraction:.0%} to tile a smaller huge block. "
-            f"Exact tiling would take "
+            f"a pool from the page sizes ({pages}), even allowing each page "
+            f"with a stride alignment to pad by {max_padding_fraction:.0%} to "
+            f"tile a smaller huge block. Exact tiling would take "
             f"{to_human_readable_bytes(exact)} per huge block."
         )
 
@@ -370,6 +356,35 @@ def plan_jenga_geometry(
             for cache_id, size in padded_sizes.items()
         },
         padded_sizes=padded_sizes,
+    )
+
+
+def _stranding_warning(
+    geometry: JengaGeometry, num_leaves: int, available_bytes: int
+) -> str | None:
+    """Returns a warning when the huge block can strand more than a threshold of the budget.
+
+    In the worst case each leaf holds one nearly empty huge block, plus the
+    null block.
+
+    Args:
+        geometry: The planned geometry.
+        num_leaves: Leaves sharing the pool.
+        available_bytes: The per-device budget the geometry was planned for.
+
+    Returns:
+        The warning, or ``None``.
+    """
+    stranded = (num_leaves + 1) * geometry.huge_page_bytes
+    if stranded <= _STRANDING_WARN_FRACTION * available_bytes:
+        return None
+    return (
+        f"Jenga KV geometry can strand {stranded / available_bytes:.1%} of "
+        f"the per-device KV budget: {num_leaves} leaves plus the null block "
+        f"each own whole {to_human_readable_bytes(geometry.huge_page_bytes)} "
+        f"huge blocks, out of {to_human_readable_bytes(available_bytes)}. "
+        f"Setting a stride alignment on the leaf that inflates the huge block "
+        f"lets the planner pad it."
     )
 
 

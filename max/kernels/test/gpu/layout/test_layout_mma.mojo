@@ -142,7 +142,7 @@ def test_layout_mma[
         mat_a.device_tensor().as_unsafe_any_origin(),
         mat_b.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(ctx.default_device_info.warp_size),
     )
 
     ctx.synchronize()
@@ -207,15 +207,16 @@ def test_c_fragment_layout[
     row_stride: Int,
     col_stride: Int,
 ](ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime M = shape[0]
     comptime N = shape[1]
-    comptime registers = M * N // WARP_SIZE
+    comptime registers = M * N // warp_size
     comptime guard = 8
     comptime storage_size = 2 * guard + (M - 1) * row_stride + (
         N - 1
     ) * col_stride + 1
     comptime storage_layout = row_major[storage_size]()
-    comptime fragment_layout = row_major[WARP_SIZE, registers]()
+    comptime fragment_layout = row_major[warp_size, registers]()
     # Runtime strides exercise non-contiguous columns as well as padded rows.
     var matrix_layout = MixedLayout(
         Coord(Idx[M], Idx[N]), Coord(Int(row_stride), Int(col_stride))
@@ -250,7 +251,7 @@ def test_c_fragment_layout[
         d_view.as_unsafe_any_origin(),
         loaded.device_tensor().as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
     loaded.to_host()
@@ -264,8 +265,8 @@ def test_c_fragment_layout[
                 lane = (row % 8) * 4 + col // 2
                 register = (row // 8) * 2 + col % 2
             else:
-                lane = ((row // 4) % (WARP_SIZE // N)) * N + col
-                register = (row // (4 * (WARP_SIZE // N))) * 4 + row % 4
+                lane = ((row // 4) % (warp_size // N)) * N + col
+                register = (row // (4 * (warp_size // N))) * 4 + row % 4
             assert_equal(
                 fragments[lane, register], Scalar[dtype](row * N + col + 1)
             )
@@ -318,9 +319,10 @@ def test_input_fragment_layout[
     shape: IndexList[3],
     k_groups: Int,
 ](ctx: DeviceContext, column_major: Bool) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime rows = shape[0]
     comptime cols = shape[2] * k_groups
-    comptime registers = rows * cols // WARP_SIZE
+    comptime registers = rows * cols // warp_size
     var row_stride = 1 if column_major else cols + 3
     var col_stride = rows + 3 if column_major else 1
     comptime guard = 8
@@ -328,7 +330,7 @@ def test_input_fragment_layout[
         rows * (cols + 3), cols * (rows + 3)
     )
     comptime storage_layout = row_major[storage_size]()
-    comptime fragment_layout = row_major[WARP_SIZE, registers, 3]()
+    comptime fragment_layout = row_major[warp_size, registers, 3]()
     var matrix_layout = MixedLayout(
         Coord(Idx[rows], Idx[cols]), Coord(row_stride, col_stride)
     )
@@ -362,7 +364,7 @@ def test_input_fragment_layout[
             source_view.as_imm().as_unsafe_any_origin(),
             loaded.device_tensor().as_unsafe_any_origin(),
             grid_dim=1,
-            block_dim=WARP_SIZE,
+            block_dim=warp_size,
         )
         ctx.synchronize()
         loaded.to_host()

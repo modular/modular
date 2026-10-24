@@ -75,6 +75,7 @@ _THIRD_PARTY_IMPORTS = {
     "pyyaml": ["yaml"],
     "pygithub": ["github"],
     "pyzmq": ["zmq"],
+    "z3_solver": ["z3"],
 }
 
 

@@ -136,6 +136,13 @@ struct FA4Config[
     # False -- the default and every config today -- means `o_phys_cols()` is
     # literally `padded_ov_depth`, i.e. every existing config is byte-identical.
     var ws_shared_key: Bool
+    # Fuses a GQA group that does not divide MMA_M (9 or 6) into one CTA on the
+    # warp-specialized BM=32 depth-128 route. Fusing shrinks `BM_eff()` from 32
+    # to `32 // group`, so this is an explicit knob rather than derived: the
+    # dispatch instantiates both the fused and the unfused config and picks per
+    # launch by `max_prompt_len`. Reconstructors (`with_splitk`) must forward it,
+    # or the rebuilt config is unfused under a grid sized for the fused one.
+    var fuse_nondividing: Bool
 
     # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. When the
     # optional param is unset, fall back to `qkv_dtype` so the type is always
@@ -1194,6 +1201,7 @@ struct FA4Config[
         single_o: Bool = False,
         bn_cap: Int = 0,
         ws_shared_key: Bool = False,
+        fuse_nondividing: Bool = False,
     ):
         # num_qk_stages == 0 (default) derives the optimal Q@K' staging.
         # A nonzero value pins it (used by the in-kernel 1Q/2Q switch, which
@@ -1234,9 +1242,21 @@ struct FA4Config[
             self.MMA_M = 32
         else:
             self.MMA_M = 128
-        # A group that does not divide MMA_M is packed only by the d256
-        # shared-key decode vehicle: its tile holds `MMA_M // group` seq
-        # positions x `group` heads and leaves `MMA_M % group` pad rows.
+        # A group that does not divide MMA_M is packed by the d256 shared-key
+        # decode vehicle, and, when requested via `fuse_nondividing`, by the
+        # BM=32 depth-128 route. Such a tile holds `MMA_M // group` seq
+        # positions x `group` heads and leaves `MMA_M % group` pad rows, which
+        # `load_warp.mojo` zero-fills and excludes from the Q barrier's bytes.
+        # The request is honored only for the validated (group, depth) set, so
+        # callers can pass it unconditionally and read the result back.
+        self.fuse_nondividing = (
+            fuse_nondividing
+            and BM == 32
+            and not pair_cta
+            and qk_depth == 128
+            and not is_mla
+            and (group == 9 or group == 6)
+        )
         self.fuse_gqa = (
             group > 1
             and not is_mla
@@ -1248,6 +1268,7 @@ struct FA4Config[
                     and qk_depth == 256
                     and group < self.MMA_M
                 )
+                or self.fuse_nondividing
             )
         )
         comptime if Self.qkv_dtype.is_float8():
@@ -1443,7 +1464,7 @@ struct FA4Config[
         # - mma must wait for each P stage barrier before processing
         self.num_pv_stages = 2
 
-        var smem_use = 0
+        var smem_use = 4
         # Compute misc_mbars fixed size (barriers that don't scale with num_kv_stages):
         # - S consumers: 2 * num_pv_stages (num_pv_stages per warp group)
         # - S producers: 2 (1 per warp group)
@@ -1502,8 +1523,8 @@ struct FA4Config[
         # `num_q` or `BM` (the correction store is indexed by CTA-wide `tid`,
         # not by `BM`). A `BM`-derived size only happens to be right at
         # BM==128/256; for the warp-specialized MMA_M=32 path (BM=32) it would
-        # under-reserve and the trailing mbar region overflows into unmapped
-        # __shared__ on init.
+        # under-reserve and the trailing mbar / tmem_addr regions overflow
+        # into unmapped __shared__ on init.
         smem_use += (
             2
             * WARPGROUP_SIZE
@@ -1966,6 +1987,10 @@ struct FA4Config[
         mode) are re-passed so a GLM-style config (`v_head_dim != qk_nope`) or a
         single-O config survives the reconstruction; both are byte-identical for
         the DeepSeek/MHA shapes (nope == ov, single_o == False).
+
+        `fuse_nondividing` is re-passed too: dropping it changes `BM_eff()`, so
+        the rebuilt config would run unfused under a grid sized for the fused
+        one.
         """
         return Self(
             num_q_heads=self.num_q_heads,
@@ -1985,10 +2010,17 @@ struct FA4Config[
             nope_depth=self.nope_depth,
             single_o=self.single_o,
             ws_shared_key=self.ws_shared_key,
+            fuse_nondividing=self.fuse_nondividing,
         )
 
     @inline(.always)
-    def with_bm(self, bm: Int, *, ws_shared_key: Bool = False) -> Self:
+    def with_bm(
+        self,
+        bm: Int,
+        *,
+        ws_shared_key: Bool = False,
+        fuse_nondividing: Bool = False,
+    ) -> Self:
         """Reconstruct this config with an explicit `BM` (single-CTA).
 
         Used by dispatch to force a warp-specialized packed-TMEM datapath
@@ -2007,6 +2039,10 @@ struct FA4Config[
         *selected* here (a `BM=32`/`BM=64` reconstruction is exactly where it
         becomes legal). It defaults to False, so every existing call is
         unchanged.
+
+        `fuse_nondividing` follows the same rule: it is selected here, defaults
+        to False, and is honored only for BM=32 depth-128 groups 9 and 6 (read
+        the result back from the returned config's `fuse_nondividing`).
         """
         return Self(
             num_q_heads=self.num_q_heads,
@@ -2020,6 +2056,7 @@ struct FA4Config[
             BM=bm,
             nope_depth=self.nope_depth,
             ws_shared_key=ws_shared_key,
+            fuse_nondividing=fuse_nondividing,
         )
 
     @inline(.always)

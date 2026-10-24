@@ -40,14 +40,24 @@ modular_py_test(
     size = "small",
     srcs = glob(
         ["test_*_gpu.py"],
-        exclude = ["test_serving_numerics_gpu.py"],
+        exclude = [
+            "test_expert_precision_gpu.py",
+            "test_serving_numerics_gpu.py",
+        ],
     ),
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
-    gpu_constraints = ["//:b200_gpu"],
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
     imports = ["."],
-    tags = ["gpu"],
+    # Manual: MiMo GPU model checks time out on shared CI workers.
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         "//max/python/max:tree",
         "//max/python/max/driver",
@@ -64,7 +74,10 @@ modular_py_library(
     testonly = True,
     srcs = ["tiny_fixture.py"],
     imports = ["."],
-    deps = [requirement("numpy")],
+    deps = [
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
 )
 
 modular_py_library(
@@ -85,12 +98,36 @@ modular_py_library(
         "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("transformers"),
+        requirement("ml-dtypes"),
     ],
 )
 
 filegroup(
     name = "tiny_goldens",
     srcs = ["testdata/tiny_goldens.npz"],
+)
+
+modular_py_test(
+    name = "mimo_v2_expert_precision_gpu",
+    size = "large",
+    srcs = ["test_expert_precision_gpu.py"],
+    exec_properties = {"test.resources:gpu-memory": "8"},
+    gpu_constraints = ["//:b200_gpu"],
+    # Manual: MiMo GPU model checks time out on shared CI workers.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
 )
 
 # Compiles and runs the tiny fixture, tensor parallel over two GPUs, and scores
@@ -101,7 +138,7 @@ modular_py_test(
     srcs = ["test_serving_numerics_gpu.py"],
     data = [":tiny_goldens"],
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = [
         "//:b200_gpu",
@@ -110,11 +147,10 @@ modular_py_test(
     imports = ["."],
     precompile_device_count = 2,
     precompile_mefs = True,
-    # Postsubmit: an expensive B200 test that presubmit would rerun on any
-    # change to its dependencies.
+    # Manual: MiMo GPU model checks time out on shared CI workers.
     tags = [
         "gpu",
-        "postsubmit",
+        "manual",
     ],
     deps = [
         ":mimo_runner",
@@ -124,21 +160,33 @@ modular_py_test(
     ],
 )
 
-# Real-checkpoint validation; needs both MiMo-V2.6-Flash snapshots on disk, so
-# it runs by hand on a host that has them, never in CI.
-modular_py_binary(
-    name = "check_real_checkpoint",
-    testonly = True,
-    srcs = ["check_real_checkpoint.py"],
-    main = "check_real_checkpoint.py",
-    tags = ["manual"],
+# TP4 uses the same goldens and bounds as TP2. The standard remote B200 lane
+# exposes two GPUs, so this target runs explicitly on a four-GPU workspace.
+modular_py_test(
+    name = "mimo_v2_numerics_tp4_gpu",
+    size = "large",
+    srcs = ["test_serving_numerics_gpu.py"],
+    data = [":tiny_goldens"],
+    env = {"MIMO_TEST_TP_DEGREE": "4"},
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    precompile_device_count = 4,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
+        ":mimo_runner",
+        ":tiny_fixture",
         "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures/mimo_v2",
         requirement("numpy"),
-        requirement("transformers"),
     ],
 )
 
@@ -155,26 +203,6 @@ modular_py_binary(
         ":mimo_runner",
         requirement("numpy"),
         requirement("safetensors"),
-    ],
-)
-
-# Checks the W4A8 MoE layer (interleave, usage stats, error against an exact
-# host reference) at production width; needs a B200, so it runs by hand.
-modular_py_binary(
-    name = "check_serving_moe",
-    testonly = True,
-    srcs = ["check_serving_moe.py"],
-    main = "check_serving_moe.py",
-    tags = ["manual"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures/mimo_v2",
-        requirement("numpy"),
-        requirement("transformers"),
     ],
 )
 

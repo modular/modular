@@ -24,14 +24,12 @@ request never sees the previous tenant's inputs."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Final
 
-from max.driver import Buffer, Device
 from max.dtype import DType
-from max.graph import BufferType, BufferValue, DeviceRef, Value
 from max.nn.kv_cache import RecurrentStateRegion
 from typing_extensions import Self
 
@@ -67,8 +65,7 @@ def conv_state_regions(
 ) -> tuple[RecurrentStateRegion, ...]:
     """Returns the conv leaves a request occupies, per device.
 
-    Backbone only; the MTP draft uses scratch pools, see
-    :class:`InklingConvScratchPools`.
+    Backbone only: the MTP depths read a zero slot their graph creates.
     """
     return InklingConvStateLayout.from_config(
         text_config, tp_size=tp_size, num_draft_tokens=num_draft_tokens
@@ -146,29 +143,6 @@ class InklingConvStateLayout:
         leaf = self.kinds().index(is_local) * len(ConvSite) + int(site)
         return leaf, ordinal
 
-    def take_pools(
-        self, inputs: Iterator[Value[Any]], num_devices: int
-    ) -> list[list[BufferValue]]:
-        """Pulls this layout's pools off a graph-input iterator, one list per rank."""
-        per_device = self.num_layers * len(ConvSite)
-        return [
-            [next(inputs).buffer for _ in range(per_device)]
-            for _ in range(num_devices)
-        ]
-
-    def buffer_types(self, devices: Sequence[DeviceRef]) -> list[BufferType]:
-        """Graph input types of the pools, in device then :attr:`layers` order."""
-        return [
-            BufferType(
-                CONV_STATE_DTYPE,
-                shape=["max_conv_slots", self.ring_len, channels],
-                device=device,
-            )
-            for device in devices
-            for widths in self.layers
-            for channels in widths
-        ]
-
     @classmethod
     def from_config(
         cls,
@@ -214,27 +188,3 @@ class InklingConvStateLayout:
             is_local=tuple(is_local),
             leaf_prefix=leaf_prefix,
         )
-
-
-class InklingConvScratchPools:
-    """The MTP draft's conv pools: one zero slot that every batch item
-    reads. The draft never commits, so its taps before a chunk read as
-    zero."""
-
-    def __init__(
-        self, layout: InklingConvStateLayout, devices: Sequence[Device]
-    ) -> None:
-        self._pools: list[list[Buffer]] = [
-            [
-                Buffer.zeros(
-                    [1, layout.ring_len, channels], CONV_STATE_DTYPE, device
-                )
-                for widths in layout.layers
-                for channels in widths
-            ]
-            for device in devices
-        ]
-
-    def pools(self, device_idx: int) -> list[Buffer]:
-        """Per-site pools of one rank, in depth then :class:`ConvSite` order."""
-        return self._pools[device_idx]

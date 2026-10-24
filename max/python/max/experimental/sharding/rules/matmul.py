@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from max.dtype import DType
 from max.experimental.sharding.placements import Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.graph.dim import Dim, StaticDim
@@ -132,8 +133,13 @@ def _mv_rows(lhs: TensorLayout) -> list[AxisAssignment]:
     return rows
 
 
-def matmul_rule(lhs: TensorLayout, rhs: TensorLayout) -> list[AxisAssignment]:
-    """Strategies for ``matmul``: vector-vector / vector-matrix / matrix-matrix variants."""
+def matmul_rule(
+    lhs: TensorLayout, rhs: TensorLayout, out_dtype: DType | None = None
+) -> list[AxisAssignment]:
+    """Strategies for ``matmul``: vector-vector / vector-matrix / matrix-matrix variants.
+
+    ``out_dtype`` doesn't affect placement.
+    """
     if lhs.rank == 1 and rhs.rank == 1:
         rows = _vv_rows()
     elif lhs.rank == 1:

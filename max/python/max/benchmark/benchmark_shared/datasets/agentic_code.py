@@ -295,6 +295,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         max_num_unique_sys_prompt: int = 1,
         min_input_len: int = 4,
         min_output_len: int = 1,
+        max_output_len: int | None = None,
         tools: Sequence[ToolConfig] | None = None,
         agentic_rounds_per_turn: DistributionParameter | None = None,
         enable_tool_calls: bool = True,
@@ -324,6 +325,8 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             max_num_unique_sys_prompt: System-prefix variants when fitting.
             min_input_len: Floor for sampled input lengths when fitting.
             min_output_len: Floor for sampled output lengths when fitting.
+            max_output_len: Optional ceiling that fitted output lengths are
+                clamped to.
             enable_tool_calls: When False, skip turns whose messages include
                 non-system/user roles (same as ``sample_requests``).
 
@@ -367,6 +370,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 max_num_unique_sys_prompt=max_num_unique_sys_prompt,
                 min_input_len=min_input_len,
                 min_output_len=min_output_len,
+                max_output_len=max_output_len,
                 shuffle_pool=False,
                 tools=tools,
                 agentic_rounds_per_turn=agentic_rounds_per_turn,

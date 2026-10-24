@@ -32,7 +32,7 @@ struct Node[T: ImplicitlyCopyable & Writable & Deinitable](Movable):
     # returns a pointer to the new `Node`.
     @staticmethod
     def make_node(value: Self.T) -> Self.NodePointer:
-        var node_ptr = alloc[Self]({count = 1}).unsafe_leak()
+        var node_ptr = alloc[Self]({length = 1}).unsafe_leak()
         node_ptr.unsafe_write(Self(value))
         return node_ptr
 
@@ -43,7 +43,7 @@ struct Node[T: ImplicitlyCopyable & Writable & Deinitable](Movable):
         node_ptr.unsafe_deinit_pointee()
         dealloc(
             ThinAllocation(unsafe_owned_ptr=node_ptr).unsafe_with_layout(
-                {count = 1}
+                {length = 1}
             )
         )
 

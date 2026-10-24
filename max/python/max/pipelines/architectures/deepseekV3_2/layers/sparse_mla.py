@@ -99,11 +99,21 @@ def _sparse_prefill_head_count_supported(
     return n_heads in _SPARSE_PREFILL_TP_SHARDED_HEADS and cache_dtype in (
         DType.bfloat16,
         DType.float8_e4m3fn,
+        DType.uint8,
     )
 
 
 # Head counts already warned about; the guard runs per layer, so dedup the log.
 _WARNED_FALLBACK_HEADS: set[int] = set()
+
+
+def sparse_selection_width(kv_params: KVCacheParams, index_topk: int) -> int:
+    """Returns the width of one token's selected cache rows.
+
+    An NVFP4 cache pages its scales apart from its values, so the indexer
+    follows each token's value rows with the matching scale-pool rows.
+    """
+    return 2 * index_topk if kv_params.is_nvfp4_kv_cache else index_topk
 
 
 def _carried_rows(
@@ -451,7 +461,9 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             freqs_cis,
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
-            sparse_indices_stride=self.index_topk,
+            sparse_indices_stride=sparse_selection_width(
+                self.kv_params, self.index_topk
+            ),
             physical_rows=rows,
             selection_lag=selection_lag,
         )
@@ -652,7 +664,12 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
                 if prev_topk_i is None:
                     prev_topk_i = ops.broadcast_to(
                         ops.constant(0, dtype=DType.int32, device=xs[i].device),
-                        (xs[i].shape[0], self.index_topk),
+                        (
+                            xs[i].shape[0],
+                            sparse_selection_width(
+                                self.kv_params, self.index_topk
+                            ),
+                        ),
                     )
                 topk_indices.append(prev_topk_i)
                 continue
@@ -1067,7 +1084,9 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             freqs_cis,
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
-            sparse_indices_stride=self.index_topk,
+            sparse_indices_stride=sparse_selection_width(
+                self.kv_params, self.index_topk
+            ),
             physical_rows=rows,
             selection_lag=selection_lag,
         )
@@ -1255,7 +1274,12 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
                 if prev_topk_i is None:
                     prev_topk_i = ops.broadcast_to(
                         ops.constant(0, dtype=DType.int32, device=xs[i].device),
-                        (xs[i].shape[0], self.index_topk),
+                        (
+                            xs[i].shape[0],
+                            sparse_selection_width(
+                                self.kv_params, self.index_topk
+                            ),
+                        ),
                     )
                 topk_outs.append(prev_topk_i)
                 continue

@@ -40,6 +40,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.nn.transformer import DecoderOutputs
 from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from ..deepseekV3.deepseekV3 import (
@@ -171,7 +172,7 @@ class DeepseekV3NextN(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
         split_prefix: str = "draft",
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("host_input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():

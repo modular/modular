@@ -17,6 +17,7 @@ modular_py_library(
         "realization_context.py",
         "support.py",
         "tensor.py",
+        "tensor_spec_serialization.py",
         "validation.py",
     ] + glob([
         "functional/**/*.py",
@@ -49,6 +50,7 @@ modular_py_library(
         "//max/python/max:_validation_hooks",
         "//max/python/max:interpreter",
         "//max/python/max:tree",
+        "//max/python/max/_artifact",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -56,6 +58,7 @@ modular_py_library(
         "//max/python/max/mlir",
         requirement("numpy"),
         requirement("rich"),
+        requirement("typing-extensions"),
         "@mojo//:python",
     ],
 )

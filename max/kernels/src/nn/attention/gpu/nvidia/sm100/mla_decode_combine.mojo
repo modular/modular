@@ -100,29 +100,29 @@ struct CombineParams[
     comptime num_threads = Self.heads_per_block * Self.warps_per_head * WARP_SIZE
 
     @__allow_legacy_any_origin_fields
-    var out_accum_split_ptr: UnsafePointer[
+    var out_accum_split_ptr: MutPointer[
         Scalar[Self.output_type], origin=MutAnyOrigin
     ]
 
     @__allow_legacy_any_origin_fields
-    var lse_accum_split_ptr: UnsafePointer[
+    var lse_accum_split_ptr: MutPointer[
         Scalar[Self.accum_type], origin=MutAnyOrigin
     ]
 
     # Final output tensor
     @__allow_legacy_any_origin_fields
-    var output_ptr: UnsafePointer[Scalar[Self.output_type], origin=MutAnyOrigin]
+    var output_ptr: MutPointer[Scalar[Self.output_type], origin=MutAnyOrigin]
 
     # Input row offsets for ragged mode (cumulative token counts per batch)
     # In ragged mode: input_row_offsets[i] = start token index for batch i
     @__allow_legacy_any_origin_fields
-    var input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin]
+    var input_row_offsets_ptr: MutPointer[UInt32, origin=MutAnyOrigin]
 
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
     # Contains log-sum-exp of non-selected tokens' attention scores (natural log).
     # Only used when has_attn_sink is True at compile time.
     @__allow_legacy_any_origin_fields
-    var attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]]
+    var attn_sink_ptr: OptionalReg[MutPointer[Float32, origin=MutAnyOrigin]]
     var batch_size: Int64
     var seq_len: Int64
     var num_heads: Int64
@@ -154,17 +154,15 @@ struct CombineParams[
 
     def __init__(
         out self,
-        out_accum_split_ptr: UnsafePointer[
+        out_accum_split_ptr: MutPointer[
             Scalar[Self.output_type], origin=MutAnyOrigin
         ],
-        lse_accum_split_ptr: UnsafePointer[
+        lse_accum_split_ptr: MutPointer[
             Scalar[Self.accum_type], origin=MutAnyOrigin
         ],
-        output_ptr: UnsafePointer[
-            Scalar[Self.output_type], origin=MutAnyOrigin
-        ],
-        input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
-        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
+        output_ptr: MutPointer[Scalar[Self.output_type], origin=MutAnyOrigin],
+        input_row_offsets_ptr: MutPointer[UInt32, origin=MutAnyOrigin],
+        attn_sink_ptr: OptionalReg[MutPointer[Float32, origin=MutAnyOrigin]],
         batch_size: Int,
         seq_len: Int,
         num_heads: Int,
@@ -319,14 +317,16 @@ def mla_combine_kernel[
         + head_idx
     )
     var oaccum_base = (
-        params.out_accum_split_ptr + out_row * Int(params.out_accum_stride_head)
+        params.out_accum_split_ptr.unsafe_offset(
+            out_row * Int(params.out_accum_stride_head)
+        )
     ).as_imm()
 
     # Prefetch first split's data into registers
     var datas = Array[_, elems_per_thread](
         fill_with_unrolled=lambda [i: Int]() -> SIMD[
             output_type, vec_size
-        ]: oaccum_base.load[width=vec_size](
+        ]: oaccum_base.unsafe_load[width=vec_size](
             head_dim_offset + lane_idx * vec_size + i * (WARP_SIZE * vec_size)
         )
     )
@@ -447,7 +447,7 @@ def mla_combine_kernel[
                     + lane_idx * vec_size
                     + i * (WARP_SIZE * vec_size)
                 )
-                datas[i] = oaccum_base.load[width=vec_size](next_offset)
+                datas[i] = oaccum_base.unsafe_load[width=vec_size](next_offset)
 
     # =========================================================================
     # Step 4: Write final result to output (convert to output_type)
@@ -469,7 +469,9 @@ def mla_combine_kernel[
         # Non-ragged: same padded layout as o_accum_split
         final_out_row = out_row
 
-    var out_ptr = params.output_ptr + final_out_row * Int(params.out_stride_row)
+    var out_ptr = params.output_ptr.unsafe_offset(
+        final_out_row * Int(params.out_stride_row)
+    )
 
     comptime for i in range(elems_per_thread):
         var offset = (
@@ -477,7 +479,7 @@ def mla_combine_kernel[
         )
         # Convert float32 result back to output_type (bf16) and store
         var out_data = result[i].cast[output_type]()
-        out_ptr.store(offset, out_data)
+        out_ptr.unsafe_store(offset, out_data)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -530,26 +532,26 @@ struct SplitParallelCombineParams[
     comptime num_threads = Self.num_warps * WARP_SIZE
 
     @__allow_legacy_any_origin_fields
-    var out_accum_split_ptr: UnsafePointer[
+    var out_accum_split_ptr: MutPointer[
         Scalar[Self.output_type], origin=MutAnyOrigin
     ]
 
     @__allow_legacy_any_origin_fields
-    var lse_accum_split_ptr: UnsafePointer[
+    var lse_accum_split_ptr: MutPointer[
         Scalar[Self.accum_type], origin=MutAnyOrigin
     ]
 
     # Final output tensor
     @__allow_legacy_any_origin_fields
-    var output_ptr: UnsafePointer[Scalar[Self.output_type], origin=MutAnyOrigin]
+    var output_ptr: MutPointer[Scalar[Self.output_type], origin=MutAnyOrigin]
 
     # Input row offsets for ragged mode (cumulative token counts per batch)
     @__allow_legacy_any_origin_fields
-    var input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin]
+    var input_row_offsets_ptr: MutPointer[UInt32, origin=MutAnyOrigin]
 
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
     @__allow_legacy_any_origin_fields
-    var attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]]
+    var attn_sink_ptr: OptionalReg[MutPointer[Float32, origin=MutAnyOrigin]]
     var batch_size: Int64
     var seq_len: Int64
     var num_heads: Int64
@@ -581,17 +583,15 @@ struct SplitParallelCombineParams[
 
     def __init__(
         out self,
-        out_accum_split_ptr: UnsafePointer[
+        out_accum_split_ptr: MutPointer[
             Scalar[Self.output_type], origin=MutAnyOrigin
         ],
-        lse_accum_split_ptr: UnsafePointer[
+        lse_accum_split_ptr: MutPointer[
             Scalar[Self.accum_type], origin=MutAnyOrigin
         ],
-        output_ptr: UnsafePointer[
-            Scalar[Self.output_type], origin=MutAnyOrigin
-        ],
-        input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
-        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
+        output_ptr: MutPointer[Scalar[Self.output_type], origin=MutAnyOrigin],
+        input_row_offsets_ptr: MutPointer[UInt32, origin=MutAnyOrigin],
+        attn_sink_ptr: OptionalReg[MutPointer[Float32, origin=MutAnyOrigin]],
         batch_size: Int,
         seq_len: Int,
         num_heads: Int,
@@ -735,7 +735,9 @@ def mla_combine_kernel_split_parallel[
         + head_idx
     )
     var oaccum_base = (
-        params.out_accum_split_ptr + out_row * Int(params.out_accum_stride_head)
+        params.out_accum_split_ptr.unsafe_offset(
+            out_row * Int(params.out_accum_stride_head)
+        )
     ).as_imm()
 
     var lse_base = (
@@ -784,7 +786,7 @@ def mla_combine_kernel_split_parallel[
                 + lane_idx * vec_size
                 + i * (WARP_SIZE * vec_size)
             )
-            var data_f32 = oaccum_base.load[width=vec_size](offset).cast[
+            var data_f32 = oaccum_base.unsafe_load[width=vec_size](offset).cast[
                 DType.float32
             ]()
             result[i] = rescale * result[i] + split_l * data_f32
@@ -800,9 +802,7 @@ def mla_combine_kernel_split_parallel[
 
     comptime for i in range(elems_per_thread):
         var elem_offset = lane_idx * vec_size + i * (WARP_SIZE * vec_size)
-        smem_result.store[width=vec_size](
-            smem_warp_base + elem_offset, result[i]
-        )
+        smem_result.unsafe_store(smem_warp_base + elem_offset, result[i])
 
     if lane_idx == 0:
         smem_m[warp_idx] = warp_m
@@ -852,18 +852,16 @@ def mla_combine_kernel_split_parallel[
                 var elem_offset = lane_idx * vec_size + i * (
                     WARP_SIZE * vec_size
                 )
-                var my_data = smem_result.load[width=vec_size](
+                var my_data = smem_result.unsafe_load[width=vec_size](
                     smem_my_base + elem_offset
                 )
-                var partner_data = smem_result.load[width=vec_size](
+                var partner_data = smem_result.unsafe_load[width=vec_size](
                     smem_partner_base + elem_offset
                 )
                 var merged = (
                     my_rescale * my_data + partner_rescale * partner_data
                 )
-                smem_result.store[width=vec_size](
-                    smem_my_base + elem_offset, merged
-                )
+                smem_result.unsafe_store(smem_my_base + elem_offset, merged)
 
             # Update merged (m, l).
             if lane_idx == 0:
@@ -921,15 +919,15 @@ def mla_combine_kernel_split_parallel[
         else:
             final_out_row = out_row
 
-        var out_ptr = params.output_ptr + final_out_row * Int(
-            params.out_stride_row
+        var out_ptr = params.output_ptr.unsafe_offset(
+            final_out_row * Int(params.out_stride_row)
         )
 
         comptime for i in range(elems_per_thread):
             var elem_offset = lane_idx * vec_size + i * (WARP_SIZE * vec_size)
-            var data = smem_result.load[width=vec_size](elem_offset)
+            var data = smem_result.unsafe_load[width=vec_size](elem_offset)
             var out_data = (inv_l * data).cast[output_type]()
-            out_ptr.store(elem_offset, out_data)
+            out_ptr.unsafe_store(elem_offset, out_data)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -946,8 +944,8 @@ def launch_mla_combine_kernel_split_parallel[
     out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
     lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
     output: TileTensor[output_type, address_space=.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
+    input_row_offsets_ptr: MutPointer[UInt32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -1004,16 +1002,16 @@ def launch_mla_combine_kernel_split_parallel[
     comptime num_threads = ParamsType.num_threads
 
     var out_accum_ptr = rebind[
-        UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]
+        MutPointer[Scalar[output_type], origin=MutAnyOrigin]
     ](out_accum_split.to_device_buffer(ctx).unsafe_ptr())
 
-    var lse_ptr = rebind[
-        UnsafePointer[Scalar[accum_type], origin=MutAnyOrigin]
-    ](lse_accum_split.to_device_buffer(ctx).unsafe_ptr())
+    var lse_ptr = rebind[MutPointer[Scalar[accum_type], origin=MutAnyOrigin]](
+        lse_accum_split.to_device_buffer(ctx).unsafe_ptr()
+    )
 
-    var out_ptr = rebind[
-        UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]
-    ](output.to_device_buffer(ctx).unsafe_ptr())
+    var out_ptr = rebind[MutPointer[Scalar[output_type], origin=MutAnyOrigin]](
+        output.to_device_buffer(ctx).unsafe_ptr()
+    )
 
     var params = ParamsType(
         out_accum_ptr,
@@ -1063,8 +1061,8 @@ def launch_mla_combine_kernel[
     out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
     lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
     output: TileTensor[output_type, address_space=.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
+    input_row_offsets_ptr: MutPointer[UInt32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[MutPointer[Float32, MutAnyOrigin]],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -1126,16 +1124,16 @@ def launch_mla_combine_kernel[
     comptime num_threads = ParamsType.num_threads
 
     var out_accum_ptr = rebind[
-        UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]
+        MutPointer[Scalar[output_type], origin=MutAnyOrigin]
     ](out_accum_split.to_device_buffer(ctx).unsafe_ptr())
 
-    var lse_ptr = rebind[
-        UnsafePointer[Scalar[accum_type], origin=MutAnyOrigin]
-    ](lse_accum_split.to_device_buffer(ctx).unsafe_ptr())
+    var lse_ptr = rebind[MutPointer[Scalar[accum_type], origin=MutAnyOrigin]](
+        lse_accum_split.to_device_buffer(ctx).unsafe_ptr()
+    )
 
-    var out_ptr = rebind[
-        UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]
-    ](output.to_device_buffer(ctx).unsafe_ptr())
+    var out_ptr = rebind[MutPointer[Scalar[output_type], origin=MutAnyOrigin]](
+        output.to_device_buffer(ctx).unsafe_ptr()
+    )
 
     var params = ParamsType(
         out_accum_ptr,
@@ -1187,7 +1185,7 @@ def mla_decode_combine_partial_outputs[
     out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
     lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
     output: TileTensor[output_type, address_space=.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+    input_row_offsets_ptr: MutPointer[UInt32, origin=MutAnyOrigin],
     attn_sink_ptr: AttnSinkPtrType,
     batch_size: Int,
     seq_len: Int,
@@ -1242,9 +1240,9 @@ def mla_decode_combine_partial_outputs[
         ctx: The device context used to enqueue the kernel.
     """
     comptime has_attn_sink = not AttnSinkPtrType.is_null
-    var attn_sink_opt = rebind[
-        OptionalReg[UnsafePointer[Float32, MutAnyOrigin]]
-    ](as_optional_reg(attn_sink_ptr))
+    var attn_sink_opt = rebind[OptionalReg[MutPointer[Float32, MutAnyOrigin]]](
+        as_optional_reg(attn_sink_ptr)
+    )
     comptime if split_parallel:
         launch_mla_combine_kernel_split_parallel[
             output_type,

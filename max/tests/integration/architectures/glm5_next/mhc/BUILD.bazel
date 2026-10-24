@@ -27,7 +27,7 @@ modular_py_test(
     name = "test_hyper_connection",
     srcs = ["test_hyper_connection.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
     precompile_mefs = True,
@@ -52,7 +52,7 @@ modular_py_test(
     name = "test_mapping_matmul",
     srcs = ["test_mapping_matmul.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
     precompile_mefs = True,

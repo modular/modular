@@ -19,7 +19,7 @@ from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Layer, LayerList, Module
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import ReturnLogits, TransformerBlock
+from max.nn.transformer import DecoderOutputs, ReturnLogits, TransformerBlock
 from max.nn.transformer.transformer import LogitsPostprocessMixin
 
 
@@ -67,7 +67,7 @@ class Transformer(LogitsPostprocessMixin, Module):
         kv_collection: PagedCacheValues,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Transformer model consisting of TransformerBlock layers.
 
         Args:

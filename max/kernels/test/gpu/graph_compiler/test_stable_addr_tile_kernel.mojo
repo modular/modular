@@ -28,7 +28,7 @@ from extensibility.stable_addr_engine import (
     StableTileTensor,
     stable_tile_tensor,
 )
-from layout import Coord, TensorLayout, row_major
+from layout import TensorLayout, row_major
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, StableAddr
@@ -65,8 +65,7 @@ def fill_tile_through_slot_kernel[
     var cols = Int(tile.dim[1]())
     for r in range(rows):
         for c in range(cols):
-            var idx = Int(tile.layout(Coord(r, c)))
-            tile.raw_store[width=1](idx, _value(r, c))
+            tile.store((r, c), _value(r, c))
 
 
 def _slot_over(mut slot: DeviceBuffer[.uint64]) -> StableAddr:
@@ -139,6 +138,12 @@ def test_host_tile_writes_through_retargeted_slot(
     ctx.enqueue_function[kernel](sub, grid_dim=1, block_dim=1)
     _check_written(ctx, buf_a, written=False)
     _check_written(ctx, buf_b, written=True)
+    # `sub` holds the slot's address, not a reference to the buffer, so without
+    # this Mojo frees `slot` after `_point_slot_at` above, before the second
+    # launch reads it. On Metal a device-buffer free releases the `MTLBuffer`
+    # at once rather than after queued work, so that launch read a released
+    # slot and sometimes found zero instead of `buf_b`'s address.
+    _ = slot^
 
 
 def main() raises:

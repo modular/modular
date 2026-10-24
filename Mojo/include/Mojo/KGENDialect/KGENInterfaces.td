@@ -366,14 +366,14 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       Example:
 
       ```mlir
-      kgen.param.declare.region Fn = <A>() -> ()
+      kgen.generator @Fn<A: index>() -> ()
           constraints <[eq(A, 1), "A == 1"]> {
       }
       ```
 
       Here, the expression `eq(A, 1)` contains a use of the parameter `A` which
-      is declared inside the scope defined by the `kgen.param.declare.region`.
-      This use must be distinguished from the uses of parameters by the
+      is declared inside the scope defined by the `kgen.generator`. This use
+      must be distinguished from the uses of parameters by the
       operation at the scope that contains the operation (i.e. the scope in
       which `Fn` is declared).
     }], "void", "collectParameterUsesBelow",

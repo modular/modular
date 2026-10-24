@@ -39,17 +39,20 @@ from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
     Coord,
     Idx,
-    IntTuple,
+    coord,
     Layout,
     DefaultEngine,
-    RuntimeTuple,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout.tile_layout import Layout as InternalLayout
-from layout.layout import blocked_product, upcast, zipped_divide
-from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
+from layout.tile_layout import (
+    Layout as InternalLayout,
+    TensorLayout,
+    blocked_product,
+    col_major,
+    upcast,
+    zipped_divide,
+)
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
 from std.utils.index import Index, IndexList
@@ -229,16 +232,16 @@ def st_shared_frag_to_smem[
                 - warp_offset
             )
 
-            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+            dst_ptr.unsafe_store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m0n0, SIMD[dst.dtype, 1](elem0)
             )
-            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+            dst_ptr.unsafe_store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m0n1, SIMD[dst.dtype, 1](elem1)
             )
-            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+            dst_ptr.unsafe_store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m1n0, SIMD[dst.dtype, 1](elem2)
             )
-            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+            dst_ptr.unsafe_store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m1n1, SIMD[dst.dtype, 1](elem3)
             )
 
@@ -253,10 +256,10 @@ def st_shared_frag_to_smem[
             var top_ptr_offset = swizzle(top_row * stride0 + top_col * stride1)
             var bot_ptr_offset = swizzle(bot_row * stride0 + bot_col * stride1)
 
-            dst_ptr.store[alignment=align_of[type_of(top_elems)]()](
+            dst_ptr.unsafe_store[alignment=align_of[type_of(top_elems)]()](
                 top_ptr_offset, top_elems
             )
-            dst_ptr.store[alignment=align_of[type_of(bot_elems)]()](
+            dst_ptr.unsafe_store[alignment=align_of[type_of(bot_elems)]()](
                 bot_ptr_offset, bot_elems
             )
 
@@ -342,7 +345,7 @@ def store_fragment_to_smem[
                 v[k * cast_width + _j] = casted[_j]
 
         st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
-            dst._storage.unsafe_mut_cast[True]() + offset,
+            dst._storage.unsafe_mut_cast[True]().unsafe_offset(offset),
             bitcast[.float32, stmtx_simd_width](v),
         )
 
@@ -749,7 +752,7 @@ struct TMAReduceExecutor[
                     reduction_kind=ReduceOp.ADD
                 ](
                     c_smem_split._storage,
-                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Pointer(to=c_tma_op.descriptor).unsafe_bitcast[NoneType](),
                     Index(
                         store_coords.coord_n,
                         store_coords.coord_m,
@@ -761,7 +764,7 @@ struct TMAReduceExecutor[
                     reduction_kind=ReduceOp.ADD
                 ](
                     c_smem_split._storage,
-                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Pointer(to=c_tma_op.descriptor).unsafe_bitcast[NoneType](),
                     Index(store_coords.coord_n, store_coords.coord_m),
                 )
 
@@ -1222,7 +1225,7 @@ struct EpilogueApplier[
         local_row: UInt32,
         local_col: UInt32,
         is_upper: Bool,
-        src_ptr: UnsafePointer[Scalar[c_type], _, address_space=.SHARED],
+        src_ptr: Pointer[Scalar[c_type], _, address_space=.SHARED],
         beta: Scalar[epilogue_dtype],
     ):
         """Add beta * C to fragment elements by loading C from swizzled SMEM.
@@ -1255,16 +1258,16 @@ struct EpilogueApplier[
             var bot_col = local_col + bot[1] + UInt32(inc)
 
             # Load C from swizzled SMEM at matching fragment coordinates
-            var c0 = src_ptr.load(
+            var c0 = src_ptr.unsafe_load(
                 Int(swizzle(top_row * UInt32(c_smem_stride) + top_col))
             ).cast[epilogue_dtype]()
-            var c1 = src_ptr.load(
+            var c1 = src_ptr.unsafe_load(
                 Int(swizzle(top_row * UInt32(c_smem_stride) + top_col + 1))
             ).cast[epilogue_dtype]()
-            var c2 = src_ptr.load(
+            var c2 = src_ptr.unsafe_load(
                 Int(swizzle(bot_row * UInt32(c_smem_stride) + bot_col))
             ).cast[epilogue_dtype]()
-            var c3 = src_ptr.load(
+            var c3 = src_ptr.unsafe_load(
                 Int(swizzle(bot_row * UInt32(c_smem_stride) + bot_col + 1))
             ).cast[epilogue_dtype]()
 
@@ -1287,7 +1290,7 @@ struct EpilogueApplier[
         mut upper_frag: Array[Scalar[epilogue_dtype], frag_size],
         mut lower_frag: Array[Scalar[epilogue_dtype], frag_size],
         stage: UInt32,
-        src_ptr: UnsafePointer[Scalar[c_type], _, address_space=.SHARED],
+        src_ptr: Pointer[Scalar[c_type], _, address_space=.SHARED],
         beta: Scalar[epilogue_dtype],
     ) -> Tuple[
         Array[Scalar[epilogue_dtype], frag_size],
@@ -1609,7 +1612,6 @@ struct TMEMToSMemWriter[
 # Imports for IndexList
 # =============================================================================
 from std.utils.index import IndexList
-from layout.layout import flatten
 
 
 # =============================================================================
@@ -1743,20 +1745,6 @@ struct SMemEpilogueWriter[
             comptime tile_width = 32
             comptime num_swblocks = Self.stage_contiguous_size // Self.swizzle_width
 
-            # Old Layout for shared_memory_epilogue_transpose coordinate computation
-            comptime smem_swblock_layout = Layout.row_major(
-                Self.stageN, 2, tile_width
-            )
-            comptime smem_logical_layout = Layout(
-                flatten([num_swblocks, smem_swblock_layout.shape]),
-                flatten(
-                    [
-                        Self.stageN * Self.swizzle_width,
-                        smem_swblock_layout.stride,
-                    ]
-                ),
-            )
-
             # 4D logical layout: (num_swblocks, stageN, 2, tile_width)
             comptime logical_layout = InternalLayout(
                 Coord(
@@ -1808,7 +1796,7 @@ struct SMemEpilogueWriter[
                 Self.stage,
                 Self.stageN,
                 Self.c_type,
-                smem_logical_layout,
+                type_of(logical_layout),
                 Self.swizzle,
                 Self.num_output_warps,
                 2,  # warp_dim
@@ -1828,11 +1816,6 @@ struct SMemEpilogueWriter[
         else:
             # cta_group=1 path with only upper fragment
             comptime tile_width = 16
-
-            # Old Layout for shared_memory_epilogue_transpose coordinate computation
-            comptime smem_logical_layout = Layout.row_major(
-                Self.stageN, 4, tile_width
-            )
 
             comptime logical = row_major[Self.stageN, 4, tile_width]()
             var new_smem = c_smem_tile.reshape(logical)
@@ -1859,7 +1842,7 @@ struct SMemEpilogueWriter[
                 Self.stage,
                 Self.stageN,
                 Self.c_type,
-                smem_logical_layout,
+                type_of(logical),
                 Self.swizzle,
                 Self.num_output_warps,
                 1,  # warp_dim
@@ -1916,16 +1899,10 @@ struct SMemEpilogueWriter[
 
         Self.OutputSyncBarrier.sync()
 
-        # Precompute old Layout for warp tiles (needed for coordinate algebra)
-        comptime c_smem_warp_layout = Layout(
-            IntTuple(Self.data_paths, Self.stageN),
-            IntTuple(Self.c_smem_dim1, 1),
-        )
-
         # Construct fresh TileTensors from raw pointers to break origin
         # aliasing (upper and lower share the same c_smem_tile origin).
         comptime warp_tile_layout = row_major[Self.data_paths, Self.stageN]()
-        comptime SMemPtr = UnsafePointer[
+        comptime SMemPtr = MutPointer[
             Scalar[Self.c_type], MutUntrackedOrigin, address_space=.SHARED
         ]
         var upper_tile = TileTensor(
@@ -1946,8 +1923,6 @@ struct SMemEpilogueWriter[
             Self.c_type,
             Self.c_smem_dim1,
             Self.simd_size,
-            c_smem_warp_layout,
-            c_smem_warp_layout,
             Self.swizzle,
             Self.num_output_warps,
         ](
@@ -1975,7 +1950,7 @@ def shared_memory_epilogue_transpose[
     stage: Int,
     stageN: Int,
     c_type: DType,
-    c_smem_layout: Layout,
+    c_smem_layout: TensorLayout,
     swizzle: Swizzle,
     num_output_warps: Int,
     warp_dim: Int,
@@ -2007,46 +1982,33 @@ def shared_memory_epilogue_transpose[
     comptime simd_size = simd_width_of[c_type]()
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     comptime swizzle_dim = 64
+    comptime c_smem_value = InternalLayout[
+        c_smem_layout._shape_types, c_smem_layout._stride_types
+    ]()
 
     comptime if warp_dim == 2:
-        # Use new Layout for idx2crd operations
         comptime layout_3d = row_major[2, stageN, swizzle_dim]()
-        comptime assert c_smem_layout.rank() == 4, "c_smem_layout must be 4D"
-        comptime thread_layout = Layout.row_major(1, 8, 1, 4)
-        comptime result = zipped_divide(
-            upcast(c_smem_layout, simd_size), thread_layout
+        comptime assert c_smem_layout.rank == 4, "c_smem_layout must be 4D"
+        comptime thread_layout = row_major[1, 8, 1, 4]()
+        comptime result = zipped_divide[coord[1, 8, 1, 4]](
+            upcast[factor=simd_size](c_smem_value)
         )
-        comptime thread_layout_new = row_major[1, 8, 1, 4]()
+        # The outer mode of the zipped layout, flattened after the 4 inner
+        # thread dims: how many tiles each thread visits per dim.
+        comptime tiles_j = result.static_shape[5]
+        comptime tiles_i = result.static_shape[7]
         var lane = lane_id()
-        var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](lane)
-        comptime thread_shape = IntTuple(0, UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
+        var crd = thread_layout.idx2crd[out_dtype=DType.uint32](lane)
 
-        comptime for iter_i in range(result.shape[1][3].value()):
-            comptime for iter_j in range(result.shape[1][1].value()):
-                comptime rest_shape = IntTuple(
-                    UNKNOWN_VALUE, iter_j, UNKNOWN_VALUE, iter_i
-                )
-                var coord = RuntimeTuple[
-                    [thread_shape, rest_shape], element_type=.uint32
+        comptime for iter_i in range(tiles_i):
+            comptime for iter_j in range(tiles_j):
+                var offset = UInt32(simd_size) * result.__call__[
+                    linear_idx_type=.uint32
                 ](
-                    Int(0),
-                    Int(crd[1].value()),
-                    Int(0),
-                    Int(crd[3].value()),
-                    warp_j,
-                    iter_j,
-                    warp_i,
-                    iter_i,
-                )
-                var offset = UInt32(simd_size) * rt_crd2idx[
-                    [thread_shape, rest_shape],
-                    result.shape,
-                    result.stride,
-                    DType.uint32,
-                ](
-                    coord,
-                    RuntimeTuple[result.shape](),
-                    RuntimeTuple[result.stride](),
+                    Coord(
+                        Coord(Idx[0], crd[1], Idx[0], crd[3]),
+                        Coord(warp_j, Idx[iter_j], warp_i, Idx[iter_i]),
+                    )
                 )
                 var logical_crd = layout_3d.idx2crd[out_dtype=DType.uint32](
                     Int(offset)
@@ -2072,60 +2034,46 @@ def shared_memory_epilogue_transpose[
                 # undo swizzle to get logical `c_smem[logical_crd]` value.
                 var ptr = (
                     c_smem._storage.unsafe_mut_cast[True]()
-                    + swizzle(cj * swizzle_dim + ck)
-                    + UInt32(ci * swizzle_dim) * UInt32(stageN)
+                    .unsafe_offset(swizzle(cj * swizzle_dim + ck))
+                    .unsafe_offset(UInt32(ci * swizzle_dim) * UInt32(stageN))
                 )
                 var row = local_i + gmem_col
                 var col = local_j + gmem_row
                 if row < UInt32(Int(M)) and col < UInt32(Int(N)):
-                    var val = ptr.load[width=simd_size, alignment=alignment]()
-                    ptr.store[width=simd_size, alignment=alignment](
+                    var val = ptr.unsafe_load[
+                        width=simd_size, alignment=alignment
+                    ]()
+                    ptr.unsafe_store[width=simd_size, alignment=alignment](
                         compute_fn[c_type, simd_size, alignment=simd_size](
                             (Int(row), Int(col)), val
                         )
                     )
     else:
         # Layout F: https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-f
-        comptime assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
-        comptime thread_layout = Layout.row_major(min(16, stageN), 1, 2)
-        comptime thread_bound = thread_layout.cosize()
+        comptime assert c_smem_layout.rank == 3, "c_smem_layout must be 3D"
+        comptime thread_layout = row_major[min(16, stageN), 1, 2]()
+        comptime thread_bound = thread_layout.static_cosize
         var lane = lane_id()
         if lane < thread_bound:
-            comptime result = zipped_divide(
-                upcast(c_smem_layout, simd_size), thread_layout
+            comptime result = zipped_divide[coord[min(16, stageN), 1, 2]](
+                upcast[factor=simd_size](c_smem_value)
             )
-            # Use new Layout for idx2crd operations
-            comptime thread_layout_new = row_major[min(16, stageN), 1, 2]()
-            var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](lane)
-            comptime thread_shape = IntTuple(UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
+            # The outer mode of the zipped layout, flattened after the 3
+            # inner thread dims: how many tiles each thread visits per dim.
+            comptime tiles_j = result.static_shape[3]
+            comptime tiles_i = result.static_shape[5]
+            var crd = thread_layout.idx2crd[out_dtype=DType.uint32](lane)
             comptime layout_2d_new = row_major[stageN, swizzle_dim]()
 
-            comptime for iter_i in range(result.shape[1][2].value()):
-                comptime for iter_j in range(result.shape[1][0].value()):
-                    comptime rest_shape = IntTuple(
-                        iter_j,
-                        UNKNOWN_VALUE,
-                        iter_i,
-                    )
-                    var coord = RuntimeTuple[
-                        [thread_shape, rest_shape], element_type=.uint32
+            comptime for iter_i in range(tiles_i):
+                comptime for iter_j in range(tiles_j):
+                    var offset = UInt32(simd_size) * result.__call__[
+                        linear_idx_type=.uint32
                     ](
-                        Int(crd[0].value()),
-                        Int(0),
-                        Int(crd[2].value()),
-                        iter_j,
-                        warp_i,
-                        iter_i,
-                    )
-                    var offset = UInt32(simd_size) * rt_crd2idx[
-                        [thread_shape, rest_shape],
-                        result.shape,
-                        result.stride,
-                        DType.uint32,
-                    ](
-                        coord,
-                        RuntimeTuple[result.shape](),
-                        RuntimeTuple[result.stride](),
+                        Coord(
+                            Coord(crd[0], Idx[0], crd[2]),
+                            Coord(Idx[iter_j], warp_i, Idx[iter_i]),
+                        )
                     )
                     var logical_crd = layout_2d_new.idx2crd[
                         out_dtype=DType.uint32
@@ -2135,16 +2083,16 @@ def shared_memory_epilogue_transpose[
                     var local_j = logical_crd[1].value()
 
                     # Undo swizzle to get logical value
-                    var ptr = c_smem._storage.unsafe_mut_cast[True]() + swizzle(
-                        offset
-                    )
+                    var ptr = c_smem._storage.unsafe_mut_cast[
+                        True
+                    ]().unsafe_offset(swizzle(offset))
                     var row = UInt32(local_i) + gmem_col
                     var col = UInt32(local_j) + gmem_row
                     if row < UInt32(Int(M)) and col < UInt32(Int(N)):
-                        var val = ptr.load[
+                        var val = ptr.unsafe_load[
                             width=simd_size, alignment=alignment
                         ]()
-                        ptr.store[width=simd_size, alignment=alignment](
+                        ptr.unsafe_store[width=simd_size, alignment=alignment](
                             compute_fn[c_type, simd_size, alignment=simd_size](
                                 (Int(row), Int(col)), val
                             )
@@ -2165,8 +2113,6 @@ def shared_memory_epilogue[
     c_type: DType,
     shared_n: Int,
     simd_size: Int,
-    c_smem_upper_layout: Layout,
-    c_smem_lower_layout: Layout,
     swizzle: Swizzle,
     num_output_warps: Int,
 ](
@@ -2255,43 +2201,26 @@ def shared_memory_epilogue[
 
             # Convert SMEM offset to logical (row, col) - layout differs by MMA_M size
             comptime if MMA_M != 256:
-                comptime blocked_m_128_layout = blocked_product(
-                    Layout.row_major(data_paths * 2, stageN),
-                    Layout.col_major(2, 2),
-                    coalesce_output=True,
+                comptime blocked_m_128_layout = blocked_product[
+                    coalesce_output=True
+                ](row_major[data_paths * 2, stageN](), col_major[2, 2]())
+
+                var upper_coord = blocked_m_128_layout.idx2crd(
+                    Int(offset_upper)
+                )
+                var lower_coord = blocked_m_128_layout.idx2crd(
+                    Int(offset_lower)
                 )
 
-                var upper_coord = idx2crd(
-                    RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
-                    RuntimeTuple[
-                        blocked_m_128_layout.shape,
-                        element_type=.int64,
-                    ](),
-                    RuntimeTuple[
-                        blocked_m_128_layout.stride,
-                        element_type=.int64,
-                    ](),
-                )
+                local_upper_row = upper_coord[0].value().cast[.int64]()
+                local_lower_row = lower_coord[0].value().cast[.int64]()
 
-                var lower_coord = idx2crd(
-                    RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
-                    RuntimeTuple[
-                        blocked_m_128_layout.shape,
-                        element_type=.int64,
-                    ](),
-                    RuntimeTuple[
-                        blocked_m_128_layout.stride,
-                        element_type=.int64,
-                    ](),
-                )
-
-                local_upper_row = upper_coord[0].get_int()
-                local_lower_row = lower_coord[0].get_int()
-
-                var section_offset_upper = upper_coord[1][1].get_int()
-                var col_offset_upper = upper_coord[1][0].get_int()
-                var section_offset_lower = lower_coord[1][1].get_int()
-                var col_offset_lower = lower_coord[1][0].get_int()
+                var upper_cols = upper_coord[1].tuple()
+                var lower_cols = lower_coord[1].tuple()
+                var section_offset_upper = upper_cols[1].value().cast[.int64]()
+                var col_offset_upper = upper_cols[0].value().cast[.int64]()
+                var section_offset_lower = lower_cols[1].value().cast[.int64]()
+                var col_offset_lower = lower_cols[0].value().cast[.int64]()
 
                 local_upper_col = (
                     section_offset_upper * Int64(num_stages * stageN)

@@ -1,0 +1,229 @@
+---
+title: Build a model graph with Module
+sidebar_label: Modules
+description: Learn how to compose modules, name their parameters, load checkpoint
+  data, trace a module to a graph, and compile it.
+---
+
+A [`Module`](/api/python/generated/max.experimental.nn.Module/) holds your
+model's parameters and defines the computation that runs on them. The same
+`forward()` method runs eagerly on real tensors, traces to a
+[`Graph`](/api/python/generated/max.graph.Graph/), or compiles into a callable
+the runtime executes, depending on the context you call it in.
+
+You use modules to build a model definition, and to extend a
+[MAX-supported model](/models/) with custom layers. For a component the built-in
+layers don't provide, see [Write a custom layer](/develop/layers/).
+
+:::note
+
+To understand where modules and graphs fit in the full model development
+workflow, see the [Model development overview](/develop/).
+
+:::
+
+## How a module runs
+
+A module declares the parameters it owns, then defines `forward()` over
+[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) values.
+Operations come from
+[`max.experimental.functional`](/api/python/experimental.functional/), which you
+import as `F`.
+
+A module runs in one of these ways:
+
+- **Eager**: calling the module executes `forward()` immediately on real
+  tensors. This is how you check shapes and values on a small input.
+- **Traced**: `trace()` records the computation as a graph without compiling
+  it. Each parameter becomes an external constant the graph refers to by name.
+- **Compiled**: `compile()` traces the module and compiles the graph into a
+  callable, binding parameter values from a state dict.
+
+The pipeline model compiles your module once at load time and calls the
+compiled result for every batch. It sets the default dtype while your
+`_instantiate_module()` builds the module and places it on a device, so layer
+constructors take shapes and options only.
+
+## Define and compose modules
+
+Compose a module from built-in layers when they cover what you need:
+[`Linear`](/api/python/generated/max.experimental.nn.Linear/),
+[`Embedding`](/api/python/generated/max.experimental.nn.Embedding/),
+[`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/),
+[`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/), and
+others. Subclass `Module` directly and assign each child layer to an attribute.
+Here two `Linear` projections form a feed-forward block, and a
+[`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/) stacks two
+blocks:
+
+```python
+from max.driver import CPU
+from max.experimental import functional as F
+from max.experimental.nn import Linear, Module, ModuleList
+from max.experimental.tensor import Tensor, default_device
+
+
+class FeedForward(Module[[Tensor], Tensor]):
+    """Two linear projections with a SiLU activation between them."""
+
+    def __init__(self, dim: int, hidden_dim: int) -> None:
+        super().__init__()
+        self.fc1 = Linear(dim, hidden_dim, bias=False)
+        self.fc2 = Linear(hidden_dim, dim, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.fc2(F.silu(self.fc1(x)))
+
+
+class TwoLayerStack(Module[[Tensor], Tensor]):
+    """Two feed-forward blocks in a ModuleList."""
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.layers = ModuleList([FeedForward(dim, dim) for _ in range(2)])
+
+    def forward(self, x: Tensor) -> Tensor:
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
+with default_device(CPU()):
+    model = TwoLayerStack(dim=8)
+    for name, _ in model.parameters:
+        print(name)
+```
+
+Each parameter's name is its attribute path through the module tree, with
+`ModuleList` entries named by index:
+
+```output
+layers.0.fc1.weight
+layers.0.fc2.weight
+layers.1.fc1.weight
+layers.1.fc2.weight
+```
+
+`Linear` includes a bias by default. The example passes `bias=False`, so each
+projection has only a `weight`.
+
+The `@module_dataclass` decorator generates a module's constructor from its
+field annotations. [Write a custom layer](/develop/layers/) shows that form.
+
+## Load weights into the module
+
+`parameters` yields each parameter under its dotted attribute path, such as
+`layers.0.self_attn.q_proj.weight`, and `load_state_dict()` reads a state dict
+keyed by those paths:
+
+```python
+from max.driver import CPU
+from max.experimental.nn import Linear
+from max.experimental.tensor import Tensor, default_device
+
+
+with default_device(CPU()):
+    linear = Linear(4, 8, bias=False)
+
+    # The module names its parameters for you.
+    print([name for name, _ in linear.parameters])
+
+    # Load a checkpoint's values by parameter name.
+    linear.load_state_dict({"weight": Tensor.ones([8, 4])})
+
+    out = linear(Tensor.ones([2, 4]))
+    print(float(out.to_numpy()[0, 0]))
+```
+
+With every weight set to one, each output element sums the input's four ones:
+
+```output
+['weight']
+4.0
+```
+
+`load_state_dict()` raises `KeyError` when a parameter has no entry in the
+state dict. With its default `strict=True`, it also raises `ValueError` for an
+entry that matches no parameter, so a mismatched architecture fails before the
+model runs. Here the checkpoint has a `bias` that the layer doesn't:
+
+```python
+from max.driver import CPU
+from max.experimental.nn import Linear
+from max.experimental.tensor import Tensor, default_device
+
+
+with default_device(CPU()):
+    linear = Linear(4, 8, bias=False)
+    try:
+        linear.load_state_dict(
+            {"weight": Tensor.ones([8, 4]), "bias": Tensor.ones([8])}
+        )
+    except ValueError as error:
+        print(error)
+```
+
+The error names the entries that matched no parameter:
+
+```output
+load_state_dict did not use some weights: {'bias'}
+```
+
+A shape mismatch raises `ValueError` too, and so does a dtype mismatch. Pass
+`auto_cast=True` to cast between `float32` and `bfloat16` on load.
+
+A checkpoint's names often differ from a module's parameter names. A [weight
+adapter](/develop/weight-adapters/) renames checkpoint keys to the module's
+parameter names.
+
+## Trace a module to a graph
+
+Trace a module to inspect the MLIR that `compile()` compiles. The trace
+declares each parameter as an external constant that refers to the weight by
+name:
+
+```python
+from max.driver import CPU
+from max.dtype import DType
+from max.experimental.nn import Linear
+from max.experimental.tensor import Tensor, TensorType, default_device
+
+
+with default_device(CPU()):
+    linear = Linear(4, 8, bias=False)
+    x_type = TensorType(DType.float32, [2, 4], device=linear.device)
+
+    # Tracing builds the graph without compiling it.
+    staged = linear.trace(x_type)
+    for line in str(staged).splitlines():
+        if "mo.constant.external" in line:
+            print(line.strip())
+
+    # Compiling produces a callable bound to the module's current weights.
+    compiled = linear.compile(x_type)
+    print(compiled(Tensor.ones([2, 4])).shape)
+```
+
+The trace declares the `weight` parameter as an external constant, and the
+compiled callable returns a tensor of the projected shape:
+
+```output
+%1 = mo.constant.external [name = "weight", align = 1, device = #M.device_ref<"cpu", 0>] : !mo.tensor<[8, 4], f32>
+[Dim(2), Dim(8)]
+```
+
+`compile()` takes the input types and, optionally, the weights. Without
+`weights`, it binds the module's current parameter values. A pipeline model
+passes the input types its `batch_processor` builds and the adapted checkpoint
+weights, and invokes the returned callable once per batch.
+
+## Next steps
+
+From here, go deeper on the pieces a module touches:
+
+- [Write a custom layer](/develop/layers/): subclass a built-in layer, define
+  one from scratch, or wrap a custom op.
+- [Eager execution](/develop/eager-execution/): run `Tensor` and `F`
+  operations directly to check a forward pass.
+- [Model bring-up workflow](/develop/model-bringup-workflow/): see how modules
+  become a served architecture, from config mapping to the KV cache.

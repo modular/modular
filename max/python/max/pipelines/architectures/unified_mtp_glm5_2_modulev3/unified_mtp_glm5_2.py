@@ -21,7 +21,10 @@ from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType
 from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.speculative.config import SpeculativeConfig
-from max.pipelines.speculative.driver import SequentialDriver
+from max.pipelines.speculative.driver import (
+    SequentialDriver,
+    tensor_compat_verify,
+)
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 
 from ..deepseekV3_2_modulev3.deepseekV3_2 import DeepseekV3_2
@@ -64,8 +67,9 @@ class UnifiedMTPGlm5_2(Module[..., tuple[Tensor, ...]]):
         must call that copy's layers.
         """
         config = self.target.config
+        target_adapter = Glm5_2ModuleV3Target(self.target)
         return SequentialDriver(
-            Glm5_2ModuleV3Target(self.target),
+            tensor_compat_verify(target_adapter.verify),
             Glm5_2ModuleV3MTPProposer(self.draft, self.target),
             target_model=self.target,
             draft_model=self.draft,
@@ -78,6 +82,7 @@ class UnifiedMTPGlm5_2(Module[..., tuple[Tensor, ...]]):
             speculative_config=self.speculative_config,
             enable_structured_output=self.enable_structured_output,
             vocab_size=config.vocab_size,
+            ep_input_types=target_adapter.ep_input_types(),
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:

@@ -130,3 +130,46 @@ def test_hybrid_swa_full_kv_params_step3p5_unequal_heads() -> None:
     assert full.n_kv_heads == 8
     assert sliding.window_size == 512
     assert full.window_size is None
+
+
+def test_hybrid_swa_full_kv_params_laguna_pattern() -> None:
+    # Laguna S-2.1: one full layer then three sliding, twelve times over.
+    layer_types = (["full_attention"] + ["sliding_attention"] * 3) * 12
+    params = hybrid_swa_full_kv_params(
+        layer_types=layer_types,
+        sliding_window=512,
+        pipeline_config=_pipeline_config(),
+        devices=[DeviceRef.CPU()],
+        kv_cache_config=KVCacheConfig(),
+        cache_dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+    )
+    sliding, full = params.children.values()
+    assert isinstance(sliding, MHAKVCacheParams)
+    assert isinstance(full, MHAKVCacheParams)
+    assert sliding.num_layers == 36
+    assert full.num_layers == 12
+    assert sliding.window_size == 512
+    assert full.window_size is None
+
+    # The saving the Jenga manager buys: a sliding leaf reserves only the
+    # pages its window looks back at plus the one it is writing, however long
+    # the sequence gets, while a full leaf reserves a block per page of history.
+    leaves = {leaf.group_id: leaf for leaf in params.leaves().values()}
+    sliding_leaf = leaves[sliding.group_id]
+    full_leaf = leaves[full.group_id]
+    page_size = KVCacheConfig().kv_cache_page_size
+    blocks_for_262k = 262144 // page_size
+    assert (
+        sliding_leaf.blocks_to_reserve(
+            blocks_for_262k, enable_prefix_caching=False
+        )
+        == 512 // page_size + 1
+    )
+    assert (
+        full_leaf.blocks_to_reserve(
+            blocks_for_262k, enable_prefix_caching=False
+        )
+        == blocks_for_262k
+    )

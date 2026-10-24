@@ -19,7 +19,7 @@ Uses DecodeStreamingKVBuffer for single-buffer, per-strip DRAM→SMEM staging
 (no KVCacheIterator; strips are sub-tiled from an external DRAM tile).
 """
 
-from std.sys.intrinsics import readfirstlane
+from max.gpu.intrinsics import readfirstlane
 from max.gpu import block_idx
 from max.gpu.sync import barrier
 from max.gpu import warp_id as get_warp_id
@@ -38,10 +38,10 @@ __extension Attention:
     @inline(.always)
     def mha_decode_streaming(
         mut self,
-        exp_sum_ptr: UnsafePointer[
+        exp_sum_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
-        qk_max_ptr: UnsafePointer[
+        qk_max_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
         num_partitions: Int,

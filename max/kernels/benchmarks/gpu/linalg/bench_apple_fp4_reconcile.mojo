@@ -106,16 +106,16 @@ def _bench_shape(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
 
     # ---- FUSED (committed simdgroup_matrix, BM=128/BK=64) ----
     for _ in range(WARMUP):
-        _launch_apple_fp4_matmul[
-            c_type, None, BM=128, BK=64, coalesce_scales=True
-        ](c_tt, a_tt, packed_tt, scale_tt, m, n, ctx)
+        _launch_apple_fp4_matmul[c_type, BM=128, BK=64, coalesce_scales=True](
+            c_tt, a_tt, packed_tt, scale_tt, m, n, ctx
+        )
     ctx.synchronize()
     var best_fused = Float64(1e30)
     for _ in range(REPS):
         var t0 = perf_counter()
         for _ in range(HOT):
             _launch_apple_fp4_matmul[
-                c_type, None, BM=128, BK=64, coalesce_scales=True
+                c_type, BM=128, BK=64, coalesce_scales=True
             ](c_tt, a_tt, packed_tt, scale_tt, m, n, ctx)
         ctx.synchronize()
         var s = (perf_counter() - t0) / Float64(HOT)
@@ -289,16 +289,16 @@ def _bench_crossover(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
 
     # FUSED (mid-M incumbent).
     for _ in range(WARMUP):
-        _launch_apple_fp4_matmul[
-            c_type, None, BM=128, BK=64, coalesce_scales=True
-        ](c_tt, a_tt, packed_tt, scale_tt, m, n, ctx)
+        _launch_apple_fp4_matmul[c_type, BM=128, BK=64, coalesce_scales=True](
+            c_tt, a_tt, packed_tt, scale_tt, m, n, ctx
+        )
     ctx.synchronize()
     var best_fused = Float64(1e30)
     for _ in range(REPS):
         var t0 = perf_counter()
         for _ in range(HOT):
             _launch_apple_fp4_matmul[
-                c_type, None, BM=128, BK=64, coalesce_scales=True
+                c_type, BM=128, BK=64, coalesce_scales=True
             ](c_tt, a_tt, packed_tt, scale_tt, m, n, ctx)
         ctx.synchronize()
         best_fused = min(best_fused, (perf_counter() - t0) / Float64(HOT))
@@ -410,8 +410,8 @@ def _bench_crossover(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     print("=== FUSED vs MAT vs m2d vs DENSE across M ===")
     print("=== warmup=", WARMUP, " hot=", HOT, " best-of-", REPS, " ===")

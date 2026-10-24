@@ -911,16 +911,6 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
   hlcf.return
 }
 
-// CHECK-LABEL: @usesAGlobal
-kgen.func @usesAGlobal() {
-  %zero = index.constant 0
-  // CHECK: pop.compiler.global_load "aGlobal" : index
-  %0 = pop.compiler.global_load "aGlobal" : index
-  // CHECK: pop.compiler.global_store "aGlobal", %idx0 : index
-  pop.compiler.global_store "aGlobal", %zero : index
-  hlcf.return
-}
-
 // CHECK-LABEL: kgen.generator @atomic_cmpxchg
 // CHECK-SAME: %[[PTR:.*]]: !kgen.pointer<scalar<index>>,
 // CHECK-SAME: %[[CMP:.*]]: !kgen.scalar<index>,

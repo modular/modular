@@ -23,32 +23,33 @@ are used to optimize code generation and ensure hardware compatibility.
 
 from std.sys.info import (
     CompilationTarget,
-    _accelerator_arch,
-    _cdna_5_or_newer,
-    _is_amd_rdna,
     current_accelerator,
     is_amd_gpu,
     is_apple_gpu,
     is_nvidia_gpu,
 )
 
-from .host.info import GPUInfo
+from max._plugin import CurrentMaxPlugin
 
 # ===-----------------------------------------------------------------------===#
 # WARP_SIZE
 # ===-----------------------------------------------------------------------===#
 
 
-comptime WARP_SIZE: Int = _resolve_warp_size()
+comptime WARP_SIZE: Int = CurrentMaxPlugin.warp_size
 """The number of threads that execute in lockstep within a warp on the GPU.
 
 This constant represents the hardware warp size, which is the number of threads that execute
-instructions synchronously as a unit. The value is architecture-dependent:
+instructions synchronously as a unit. The target's MAX plugin sets it:
 - 32 threads per warp on NVIDIA GPUs
 - 32 threads per warp on AMD RDNA GPUs
 - 64 threads per warp on AMD CDNA3/CDNA4 GPUs
 - 32 threads per warp on AMD CDNA5 GPUs
-- 0 if no GPU is detected
+- 32 threads per warp on Apple GPUs
+- In host code, the warp size of the build's accelerator, or 0 without one
+
+Host code that sizes a launch should use the warp size of the device it
+launches on, `ctx.default_device_info.warp_size`, rather than this constant.
 
 The warp size is a fundamental parameter that affects:
 - Thread scheduling and execution
@@ -56,21 +57,6 @@ The warp size is a fundamental parameter that affects:
 - Synchronization primitives
 - Overall performance optimization
 """
-
-
-def _resolve_warp_size() -> Int:
-    comptime if is_nvidia_gpu():
-        return 32
-    elif _cdna_5_or_newer() or _is_amd_rdna():
-        return 32
-    elif is_amd_gpu():
-        return 64
-    elif is_apple_gpu():
-        return 32
-    elif _accelerator_arch() == "":
-        return 0
-    else:
-        return GPUInfo.default_accelerator().warp_size
 
 
 # ===-----------------------------------------------------------------------===#

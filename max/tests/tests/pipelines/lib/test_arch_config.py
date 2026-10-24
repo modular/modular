@@ -426,11 +426,6 @@ def test_kv_connector_config_disk_budget_bounds() -> None:
         KVConnectorConfig(disk_offload_max_gb=-1)
 
 
-def test_kv_connector_config_parses_mojo_tiered() -> None:
-    parsed = KVConnectorConfig.model_validate({"type": "mojo_tiered"})
-    assert parsed.type is KVConnectorType.mojo_tiered
-
-
 def test_kv_connector_config_h2d_onload_lanes() -> None:
     assert KVConnectorConfig().num_h2d_onload_lanes == 1
     assert KVConnectorConfig(num_h2d_onload_lanes=2).num_h2d_onload_lanes == 2

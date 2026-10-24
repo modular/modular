@@ -28,6 +28,7 @@ from collections.abc import Mapping, Sequence
 from max.driver import Device
 from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import (
+    TIERED_CONNECTOR_TYPES,
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
@@ -102,11 +103,7 @@ def create_connector(
 
     # ``tiered`` is a backward-compatible alias for ``rust_tiered``, kept after
     # its Python implementation was deleted.
-    if connector in (
-        KVConnectorType.tiered,
-        KVConnectorType.rust_tiered,
-        KVConnectorType.mojo_tiered,
-    ):
+    if connector in TIERED_CONNECTOR_TYPES:
         from .tier_connector import TierConnector
 
         return TierConnector.create(

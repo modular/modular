@@ -118,10 +118,6 @@ def _b_prod(x: TensorValue, v: Variant) -> TensorValue:
     return ops.prod(x, axis=1)
 
 
-def _b_mean(x: TensorValue, v: Variant) -> TensorValue:
-    return ops.mean(x, axis=1)
-
-
 # The backend only reduces the *innermost* axis for these four ("axis other than
 # innermost/-1 not supported"), but the canonical form reduces axis=1, so they
 # transpose d1 to innermost, reduce at axis=-1, and transpose back (folded into
@@ -158,7 +154,6 @@ _REDUCE_OPS: dict[type[_core.Operation], ReduceSpec] = {
     mo.ReduceMinOp: ReduceSpec(_b_min, DTypeClass.NUMERIC_BOOL),
     mo.ReduceAddOp: ReduceSpec(_b_sum, DTypeClass.NUMERIC),
     mo.ReduceMulOp: ReduceSpec(_b_prod, DTypeClass.NUMERIC),
-    mo.ReduceMeanOp: ReduceSpec(_b_mean, DTypeClass.NUMERIC),
     mo.ReduceSoftmaxOp: ReduceSpec(_b_softmax, DTypeClass.FLOAT),
     mo.ReduceLogsoftmaxOp: ReduceSpec(_b_logsoftmax, DTypeClass.FLOAT),
     mo.ReduceArgMaxOp: ReduceSpec(_b_argmax, DTypeClass.NUMERIC),

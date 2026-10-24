@@ -36,7 +36,7 @@ The framework provides four combinators -- :func:`rename`,
 :func:`swap_prefix`, :func:`precompute`, :func:`memoize` -- so adapters
 can pick lazy per-key translation or eager-within-a-group
 precomputation as the transform requires. Bulk transforms
-(stacked-QKV split, NVFP4 weight + scale pairing) stay
+(stacked-QKV split, fused-tensor unpacking) stay
 ``dict -> dict`` functions wrapped via :func:`precompute`; bijective
 per-key renames go through :func:`swap_prefix` (which keeps ``keys``
 faithful to the outward namespace); irreversible per-key renames go
@@ -220,8 +220,7 @@ def precompute(
     Eager-within-a-group: only the listed ``keys`` are materialised
     here; every other name stays lazy. This is the right hook for
     transforms whose input and output namespaces don't line up
-    one-to-one (stacked-QKV split, NVFP4 weight + scale pairing,
-    fused-tensor unpacking).
+    one-to-one (stacked-QKV split, fused-tensor unpacking).
 
     Args:
         loader: Source loader to draw the group from.

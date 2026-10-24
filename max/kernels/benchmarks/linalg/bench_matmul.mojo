@@ -42,13 +42,14 @@ def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
 
     for i in range(m):
         for p in range(k):
-            var a_val = a.raw_load(i * k + p).cast[acc_type]()
+            var a_val = a.load[width=1]((i, p)).cast[acc_type]()
             for j in range(n):
-                var b_val = b.raw_load(p * n + j).cast[acc_type]()
+                var b_val = b.load[width=1]((p, j)).cast[acc_type]()
                 accum[i * n + j] += a_val * b_val
 
-    for idx in range(m * n):
-        c.ptr[idx] = accum[idx].cast[c.dtype]()
+    for i in range(m):
+        for j in range(n):
+            c.store((i, j), accum[i * n + j].cast[c.dtype]())
 
 
 def verify(a: TileTensor, b: TileTensor, c: TileTensor):
@@ -63,7 +64,8 @@ def verify(a: TileTensor, b: TileTensor, c: TileTensor):
         for j in range(n):
             try:
                 assert_almost_equal(
-                    c.raw_load(i * n + j), c_ref.raw_load(i * n + j)
+                    c.load[width=1]((i, j)),
+                    c_ref[i, j],
                 )
             except e:
                 abort(String(e))
@@ -89,13 +91,13 @@ def bench_matmul[
     comptime b_packed = spec.static_info.b_packed
     comptime alignment = Alignment.of_bytes[64]()
     var a_alloc = alloc(
-        Layout[Scalar[a_type], alignment=alignment](count=spec.m * spec.k)
+        Layout[Scalar[a_type], alignment=alignment](length=spec.m * spec.k)
     ).into_managed()
     var b_alloc = alloc(
-        Layout[Scalar[b_type], alignment=alignment](count=spec.k * spec.n)
+        Layout[Scalar[b_type], alignment=alignment](length=spec.k * spec.n)
     ).into_managed()
     var c_alloc = alloc(
-        Layout[Scalar[c_type], alignment=alignment](count=spec.m * spec.n)
+        Layout[Scalar[c_type], alignment=alignment](length=spec.m * spec.n)
     ).into_managed()
     var a = TileTensor(
         a_alloc.unsafe_ptr(), row_major(_ri(spec.m), _ri(spec.k))
@@ -116,7 +118,7 @@ def bench_matmul[
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
     var bp_alloc = alloc(
-        Layout[Scalar[b_type], alignment=alignment](count=padded_k * padded_n)
+        Layout[Scalar[b_type], alignment=alignment](length=padded_k * padded_n)
     ).into_managed()
     var bp = TileTensor(
         bp_alloc.unsafe_ptr(), row_major(_ri(padded_k), _ri(padded_n))
@@ -127,13 +129,14 @@ def bench_matmul[
 
     @inline(.always)
     def bench_fn() raises {var a, var b, var c, var bp}:
-        comptime bench_matmul = matmul[
-            transpose_b=False, b_packed=b_packed, saturated_vnni=False
-        ]
         if b_packed:
-            bench_matmul(c, a, bp)
+            matmul[transpose_b=False, b_packed=True, saturated_vnni=False](
+                c, a, bp
+            )
         else:
-            bench_matmul(c, a, b)
+            matmul[transpose_b=False, b_packed=False, saturated_vnni=False](
+                c, a, b
+            )
         keep(c.ptr)
 
     bencher.iter(bench_fn)
@@ -191,39 +194,39 @@ def main() raises:
 
     comptime packed_float32 = MatmulSpecStatic(
         b_packed=True,
-        a_type=DType.float32,
-        b_type=DType.float32,
-        c_type=DType.float32,
+        a_type=.float32,
+        b_type=.float32,
+        c_type=.float32,
     )
     comptime unpacked_float32 = MatmulSpecStatic(
         b_packed=False,
-        a_type=DType.float32,
-        b_type=DType.float32,
-        c_type=DType.float32,
+        a_type=.float32,
+        b_type=.float32,
+        c_type=.float32,
     )
     comptime unpacked_f16_f16 = MatmulSpecStatic(
         b_packed=False,
-        a_type=DType.float16,
-        b_type=DType.float16,
-        c_type=DType.float16,
+        a_type=.float16,
+        b_type=.float16,
+        c_type=.float16,
     )
     comptime unpacked_f16_f32 = MatmulSpecStatic(
         b_packed=False,
-        a_type=DType.float16,
-        b_type=DType.float16,
-        c_type=DType.float32,
+        a_type=.float16,
+        b_type=.float16,
+        c_type=.float32,
     )
     comptime unpacked_bf16_bf16 = MatmulSpecStatic(
         b_packed=False,
-        a_type=DType.bfloat16,
-        b_type=DType.bfloat16,
-        c_type=DType.bfloat16,
+        a_type=.bfloat16,
+        b_type=.bfloat16,
+        c_type=.bfloat16,
     )
     comptime unpacked_bf16_f32 = MatmulSpecStatic(
         b_packed=False,
-        a_type=DType.bfloat16,
-        b_type=DType.bfloat16,
-        c_type=DType.float32,
+        a_type=.bfloat16,
+        b_type=.bfloat16,
+        c_type=.float32,
     )
     bench_matmul_spec(m, MatmulSpec[packed_float32](m=256, n=256, k=256))
     bench_matmul_spec(m, MatmulSpec[packed_float32](m=512, n=512, k=512))

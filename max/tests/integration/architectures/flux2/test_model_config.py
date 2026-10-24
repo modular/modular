@@ -33,7 +33,7 @@ from max.pipelines.architectures.flux2.model_config import (
     Flux2Config,
     _int8_w8a8_enabled,
     _int8_w8a8_forced,
-    _is_apple_m5,
+    _is_apple_m5_or_newer,
 )
 
 # Klein transformer configs ship an explicit ``"guidance_embeds": false``;
@@ -43,23 +43,25 @@ DEV_CONFIG: dict[str, object] = {}
 
 M5 = Mock(api="metal", architecture_name="5-metal4")
 M5_NO_METAL4 = Mock(api="metal", architecture_name="5")
+M6 = Mock(api="metal", architecture_name="6-metal4")
 M4 = Mock(api="metal", architecture_name="4-metal4")
 CUDA = Mock(api="cuda", architecture_name="sm_100a")
 CPU = Mock(api="cpu")
 
 
-def test_is_apple_m5() -> None:
-    assert _is_apple_m5(M5)
-    assert _is_apple_m5(M5_NO_METAL4)
-    assert not _is_apple_m5(M4)
-    assert not _is_apple_m5(CUDA)
-    assert not _is_apple_m5(CPU)
+def test_is_apple_m5_or_newer() -> None:
+    assert _is_apple_m5_or_newer(M5)
+    assert _is_apple_m5_or_newer(M5_NO_METAL4)
+    assert _is_apple_m5_or_newer(M6)
+    assert not _is_apple_m5_or_newer(M4)
+    assert not _is_apple_m5_or_newer(CUDA)
+    assert not _is_apple_m5_or_newer(CPU)
     # Metal device whose architecture lookup raises (unknown device name).
     unknown = Mock(api="metal")
     type(unknown).architecture_name = PropertyMock(
         side_effect=RuntimeError("Unknown device name")
     )
-    assert not _is_apple_m5(unknown)
+    assert not _is_apple_m5_or_newer(unknown)
 
 
 def _delenv_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,12 +183,12 @@ def test_nvfp4_encoding_int8_requant_selection(
     assert cfg.quant_config.format == QuantFormat.NVFP4
 
     monkeypatch.setenv("APPLE_FLUX2_INT8_W8A8", "1")
-    monkeypatch.setattr(model_config, "_is_apple_m5", lambda d: True)
+    monkeypatch.setattr(model_config, "_is_apple_m5_or_newer", lambda d: True)
     cfg = Flux2Config.initialize_from_config({}, "float4_e2m1fnx2", devices)
     assert cfg.quant_config is not None
     assert cfg.quant_config.is_int8_w8a8
 
-    monkeypatch.setattr(model_config, "_is_apple_m5", lambda d: False)
+    monkeypatch.setattr(model_config, "_is_apple_m5_or_newer", lambda d: False)
     cfg = Flux2Config.initialize_from_config({}, "float4_e2m1fnx2", devices)
     assert cfg.quant_config is not None
     assert cfg.quant_config.format == QuantFormat.NVFP4

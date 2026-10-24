@@ -263,92 +263,88 @@ def test_tile_tensor_load_store_via_nested_coord() raises:
     assert_equal(t[2, 5, 0, 0], 42.0)
 
 
-def test_tile_tensor_tile_outer_mode_basic() raises:
-    """`.tile[inner_h, inner_w](outer_h, outer_w)` slices ONE outer index
-    per mode, returning a rank-2 sub-tile whose shape is the inner sub-
-    shape. For ((OUTER_H=4, FRAG_H=16), (OUTER_W=1, FRAG_W=1)):
-    `.tile[16, 1](i, j)` returns a (16, 1) view at outer index (i, j).
+def test_tile_tensor_tile_nested_fragment_first() raises:
+    """`.tile[]` splits a nested mode first leaf first, like `crd2idx`. With
+    the fragment leaf first, ((FRAG_H=16, OUTER_H=4), (1, 1)) :
+    ((1, 16), (1, 1)), `.tile[16, 1](i, j)` is fragment `i`, at offset 16 * i.
     """
-    comptime OUTER_H = 4
     comptime FRAG_H = 16
-    comptime OUTER_W = 1
-    comptime FRAG_W = 1
-    var L = row_major_nested(
-        Coord(
-            Coord(Idx[OUTER_H], Idx[FRAG_H]), Coord(Idx[OUTER_W], Idx[FRAG_W])
-        )
+    comptime OUTER_H = 4
+    var L = Layout(
+        Coord(Coord(Idx[FRAG_H], Idx[OUTER_H]), Coord(Idx[1], Idx[1])),
+        Coord(Coord(Idx[1], Idx[FRAG_H]), Coord(Idx[1], Idx[1])),
     )
     var storage = Array[Float32, 64](fill=0.0)
     var t = TileTensor(storage, L)
-    # Mark a single element via a flat write so we can verify the tile.
-    # Outer (i=2, j=0), inner (frag_h=5, frag_w=0): flat (2,5,0,0) -> offset 37.
-    t[2, 5, 0, 0] = 99.0
-    var sub = t.tile[FRAG_H, FRAG_W](2, 0)
-    # sub is rank-2 (FRAG_H, FRAG_W) = (16, 1). Element (5, 0) holds 99.
+    storage[2 * FRAG_H + 5] = 99.0
+    var sub = t.tile[FRAG_H, 1](2, 0)
     assert_equal(sub[5, 0], 99.0)
-    # Other tiles (i=0, j=0) should not be touched.
-    var sub_zero = t.tile[FRAG_H, FRAG_W](0, 0)
+    var sub_zero = t.tile[FRAG_H, 1](0, 0)
     assert_equal(sub_zero[5, 0], 0.0)
 
 
-def test_tile_tensor_tile_outer_mode_asymmetric() raises:
-    """`.tile[inner_h, inner_w](i, j)` on shape ((B0,T0),(B1,T1)) returns
-    the (T0, T1) sub-tile at outer index (i, j) — depth-1 nested case.
+def test_tile_tensor_tile_on_row_major_nested() raises:
+    """Every element of every tile of a `row_major_nested` parent.
+
+    For shape ((T0, B0), (T1, B1)) the flat strides are
+    (B0*T1*B1, T1*B1, B1, 1), and row `i*T0 + r` of the parent is leaf
+    coordinates (r, i), so element (r, c) of tile (i, j) is at
+    r*B0*T1*B1 + i*T1*B1 + c*B1 + j.
     """
-    comptime B0 = 2
-    comptime B1 = 3
     comptime T0 = 4
+    comptime B0 = 2
     comptime T1 = 5
+    comptime B1 = 3
     var L = row_major_nested(
-        Coord(Coord(Idx[B0], Idx[T0]), Coord(Idx[B1], Idx[T1]))
+        Coord(Coord(Idx[T0], Idx[B0]), Coord(Idx[T1], Idx[B1]))
     )
-    var storage = Array[Float32, B0 * B1 * T0 * T1](fill=0.0)
-    var t = TileTensor(storage, L)
-    # Mark one element: outer (1, 2), inner (3, 1).
-    t[Coord(Coord(Idx[1], Idx[3]), Coord(Idx[2], Idx[1]))] = 77.0
-    var sub = t.tile[T0, T1](1, 2)
-    assert_equal(sub[3, 1], 77.0)
-
-
-def test_tile_tensor_tile_coord_form() raises:
-    """`.tile[*sizes](coordinates: Coord)` is the Coord-arg overload
-    of `.tile[]`; same semantics as the variadic-`Int` form.
-    """
-    comptime B0 = 2
-    comptime B1 = 3
-    comptime T0 = 4
-    comptime T1 = 5
-    var L = row_major_nested(
-        Coord(Coord(Idx[B0], Idx[T0]), Coord(Idx[B1], Idx[T1]))
+    var storage = Array[Int32, T0 * B0 * T1 * B1](
+        fill_with=lambda (k: Int) -> Int32: Int32(k)
     )
-    var storage = Array[Float32, B0 * B1 * T0 * T1](fill=0.0)
     var t = TileTensor(storage, L)
-    t[Coord(Coord(Idx[1], Idx[3]), Coord(Idx[2], Idx[1]))] = 77.0
-    var sub = t.tile[T0, T1](Coord(Idx[1], Idx[2]))
-    assert_equal(sub[3, 1], 77.0)
+    for i in range(B0):
+        for j in range(B1):
+            var sub = t.tile[T0, T1](i, j)
+            for r in range(T0):
+                for c in range(T1):
+                    assert_equal(
+                        Int(sub[r, c]),
+                        r * B0 * T1 * B1 + i * T1 * B1 + c * B1 + j,
+                    )
+    # The Coord-argument overload agrees.
+    assert_equal(
+        Int(t.tile[T0, T1](Coord(Idx[1], Idx[2]))[3, 1]),
+        3 * B0 * T1 * B1 + T1 * B1 + B1 + 2,
+    )
 
 
-def test_tile_tensor_tile_on_col_major() raises:
-    """`.tile[]` on a `col_major_nested` parent. For shape
-    `((B0,T0),(B1,T1))` col-major has flat strides `(1, B0, B0*T0,
-    B0*T0*B1)` re-nested to `((1, B0), (B0*T0, B0*T0*B1))`. The
-    innermost sub-strides become the sub-tile's strides.
+def test_tile_tensor_tile_on_col_major_nested() raises:
+    """Every element of every tile of a `col_major_nested` parent.
+
+    For shape ((T0, B0), (T1, B1)) the flat strides are
+    (1, T0, T0*B0, T0*B0*T1), so element (r, c) of tile (i, j) is at
+    r + i*T0 + c*T0*B0 + j*T0*B0*T1.
     """
-    comptime B0 = 2
-    comptime B1 = 3
     comptime T0 = 4
+    comptime B0 = 2
     comptime T1 = 5
+    comptime B1 = 3
     var L = col_major_nested(
-        Coord(Coord(Idx[B0], Idx[T0]), Coord(Idx[B1], Idx[T1]))
+        Coord(Coord(Idx[T0], Idx[B0]), Coord(Idx[T1], Idx[B1]))
     )
-    var storage = Array[Float32, B0 * B1 * T0 * T1](fill=0.0)
+    var storage = Array[Int32, T0 * B0 * T1 * B1](
+        fill_with=lambda (k: Int) -> Int32: Int32(k)
+    )
     var t = TileTensor(storage, L)
-    # Mark via hierarchical coord at outer (1, 2), inner (3, 1).
-    # Offset = 1*1 + 3*B0 + 2*(B0*T0) + 1*(B0*T0*B1) = 1+6+16+24 = 47.
-    t[Coord(Coord(Idx[1], Idx[3]), Coord(Idx[2], Idx[1]))] = 88.0
-    assert_equal(storage[47], 88.0)
-    var sub = t.tile[T0, T1](1, 2)
-    assert_equal(sub[3, 1], 88.0)
+    for i in range(B0):
+        for j in range(B1):
+            var sub = t.tile[T0, T1](i, j)
+            for r in range(T0):
+                for c in range(T1):
+                    assert_equal(
+                        Int(sub[r, c]),
+                        r + i * T0 + c * T0 * B0 + j * T0 * B0 * T1,
+                    )
 
 
 def test_tile_tensor_tile_on_flat_parent() raises:
@@ -427,9 +423,9 @@ def test_mha_mma_op_att_layout_nested_geometry() raises:
 
 def test_mha_mma_op_att_layout_nested_tile_semantics() raises:
     """Drives the softmax `.tile[FRAG_H, FRAG_W](outer_h, outer_w)`
-    access pattern on the ATT_LAYOUT_NESTED-equivalent geometry — host-
-    side stand-in for what `_col_reduce_at_j` would do on GPU under the
-    nested layout.
+    access pattern. `.tile[]` splits a nested mode first leaf first, so the
+    fragment leaf comes first: the same storage as ATT_LAYOUT_NESTED is
+    ((FRAG_H, H), (FRAG_W, W)) : ((1, FRAG_H), (1, 1)).
     """
     comptime KV_BLOCK = 128
     comptime Q_BLOCK_SIZE = 32
@@ -439,11 +435,12 @@ def test_mha_mma_op_att_layout_nested_tile_semantics() raises:
     comptime W = Q_BLOCK_SIZE // MMA_N  # 1
     comptime FRAG_H_COL_L = 16
     comptime FRAG_W_COL_L = 1
-    var L = row_major_nested(
+    var L = Layout(
         Coord(
-            Coord(Idx[H], Idx[FRAG_H_COL_L]),
-            Coord(Idx[W], Idx[FRAG_W_COL_L]),
-        )
+            Coord(Idx[FRAG_H_COL_L], Idx[H]),
+            Coord(Idx[FRAG_W_COL_L], Idx[W]),
+        ),
+        Coord(Coord(Idx[1], Idx[FRAG_H_COL_L]), Coord(Idx[1], Idx[1])),
     )
     var storage = Array[Float32, 64](fill=0.0)
     var att = TileTensor(storage, L)
@@ -455,9 +452,7 @@ def test_mha_mma_op_att_layout_nested_tile_semantics() raises:
         var base = att.tile[FRAG_H_COL_L, FRAG_W_COL_L](outer_h, 0)
         base[0, 0] = Float32(100 + outer_h)
 
-    # Row-major over (H, FRAG_H, W, FRAG_W) = (4, 16, 1, 1) places
-    # (outer_h, 0, 0, 0) at offset outer_h * 16 in the contiguous
-    # storage.
+    # Fragment `outer_h` starts at offset outer_h * FRAG_H.
     assert_equal(storage[0], 100.0)
     assert_equal(storage[16], 101.0)
     assert_equal(storage[32], 102.0)
@@ -601,7 +596,7 @@ def test_row_major_nested_depth3() raises:
 
 
 # ===----------------------------------------------------------------------=== #
-# Group G — the nested-layout LayoutTensor bridge
+# Group G — nested Coord to IntTuple conversion
 # ===----------------------------------------------------------------------=== #
 
 
@@ -616,26 +611,3 @@ def test_coord_to_int_tuple_types_nested() raises:
     comptime t = coord_to_int_tuple[*type_of(s).element_types]()
     assert_equal(t, IntTuple(IntTuple(2, IntTuple(3, 5)), 4))
     _ = s
-
-
-def test_to_layout_tensor_nested_layout() raises:
-    """`to_layout_tensor()` carries a nested layout across unchanged.
-
-    The runtime shape/stride are flat arrays of the layout's leaves, so a
-    rank-2 nested layout contributes four entries, not two.
-    """
-    var L = row_major_nested(
-        Coord(Coord(Idx[4], Idx[16]), Coord(Idx[2], Idx[8]))
-    )
-    var storage = Array[Float32, 1024](fill=0.0)
-    var t = TileTensor(storage, L)
-    var lt = t.to_layout_tensor()
-
-    comptime LTLayout = type_of(lt).layout
-    assert_equal(LTLayout.shape, IntTuple(IntTuple(4, 16), IntTuple(2, 8)))
-
-    # Flat shape (4, 16, 2, 8) -> flat strides (256, 16, 8, 1).
-    var shape = lt.runtime_layout.shape.value
-    var stride = lt.runtime_layout.stride.value
-    assert_equal(shape, type_of(shape)(4, 16, 2, 8))
-    assert_equal(stride, type_of(stride)(256, 16, 8, 1))

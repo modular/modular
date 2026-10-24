@@ -25,7 +25,7 @@ from internvl_impl.modeling_intern_vit import (
 )
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.internvl.layers.attention import (
     InternVLMultiheadAttention,
@@ -64,22 +64,20 @@ def generate_torch_outputs(
     return output
 
 
-def generate_max_outputs(
+def build_max_attention(
     max_config: VisionConfig,
-    input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
+    input_shape: tuple[int, int, int],
     dtype: DType,
-    device: Device,
-) -> torch.Tensor:
-    """Generate outputs using MAX InternVL attention implementation."""
-    is_gpu = isinstance(device, Accelerator)
-    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
-    device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+) -> Model:
+    """Compiles the MAX InternVL attention graph.
 
-    # Convert HuggingFace weights to MAX format using weight converter
+    Nothing here touches the device, so `precompile_mefs` can record the
+    compile on a CPU worker.
+    """
     max_weights = convert_hf_to_max_weights(attention_weights)
 
-    # Create the attention layer with individual parameters
+    device_ref = DeviceRef.GPU()
     head_dim = max_config.hidden_size // max_config.num_attention_heads
     attention = InternVLMultiheadAttention(
         num_attention_heads=max_config.num_attention_heads,
@@ -97,24 +95,22 @@ def generate_max_outputs(
 
     session = InferenceSession(devices=[Accelerator(0)])
 
-    # Build the graph
-    batch_size, seq_len, hidden_size = input_tensor.shape
-    input_type = TensorType(
-        dtype, [batch_size, seq_len, hidden_size], device=device_ref
-    )
+    input_type = TensorType(dtype, input_shape, device=device_ref)
 
     with Graph("InternVisionAttention", input_types=(input_type,)) as graph:
         x = graph.inputs[0]
         output = attention(x.tensor)
         graph.output(output)
 
-    compiled = session.load(graph, weights_registry=attention.state_dict())
+    return session.load(graph, weights_registry=attention.state_dict())
 
-    # Execute the model and get the first result
+
+def execute_max_attention(
+    compiled: Model, input_tensor: torch.Tensor, device: Device
+) -> torch.Tensor:
+    """Runs the compiled MAX InternVL attention on `input_tensor`."""
     result = compiled.execute(Buffer.from_dlpack(input_tensor).to(device))
-    # Convert result back to torch tensor
-    max_tensor = result[0]
-    return from_dlpack(max_tensor)
+    return from_dlpack(result[0])
 
 
 @pytest.mark.parametrize(
@@ -162,12 +158,22 @@ def test_vision_attention(config_name: ConfigNames) -> None:
         num_patches,  # sequence length is number of patches
         vision_config.hidden_size,
         dtype=torch.bfloat16,
-    ).to("cuda")
+    )
 
     # Generate vision attention weights
     vision_attention_weights = (
         weight_generator.generate_vision_attention_weights()
     )
+
+    # Compile before anything touches the GPU, so `precompile_mefs` records
+    # the compile instead of stopping at the first device allocation.
+    compiled = build_max_attention(
+        max_config=vision_config,
+        attention_weights=vision_attention_weights,
+        input_shape=(batch_size, num_patches, vision_config.hidden_size),
+        dtype=DType.bfloat16,
+    )
+    vision_input_tensor = vision_input_tensor.to("cuda")
 
     # Generate reference output
     torch_output = generate_torch_outputs(
@@ -176,13 +182,8 @@ def test_vision_attention(config_name: ConfigNames) -> None:
         vision_attention_weights,
     )
 
-    # Generate MAX output using individual parameters from config
-    max_output = generate_max_outputs(
-        max_config=vision_config,
-        input_tensor=vision_input_tensor,
-        attention_weights=vision_attention_weights,
-        dtype=DType.bfloat16,
-        device=Accelerator(),
+    max_output = execute_max_attention(
+        compiled, vision_input_tensor, Accelerator()
     )
 
     # Compare outputs using the base class method

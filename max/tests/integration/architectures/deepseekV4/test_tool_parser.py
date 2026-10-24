@@ -254,10 +254,6 @@ _PARAM = (
             id="bad_string_attr",
         ),
         pytest.param(
-            _WELL_FORMED.replace(_PARAM, _PARAM.replace("unit", "location")),
-            id="duplicate_parameter",
-        ),
-        pytest.param(
             _WELL_FORMED.replace(
                 'name="get_weather">\n', 'name="get_weather">'
             ),
@@ -282,6 +278,16 @@ def test_malformed_dsml_raises(text: str) -> None:
         DeepseekV4ToolParser().parse_complete(text)
 
 
+def test_repeated_parameter_keeps_the_first_value() -> None:
+    (call,) = DeepseekV4ToolParser().parse_complete(_WELL_FORMED).tool_calls
+    first = json.loads(call.arguments)["location"]
+    text = _WELL_FORMED.replace(_PARAM, _PARAM.replace("unit", "location"))
+    (repeated,) = DeepseekV4ToolParser().parse_complete(text).tool_calls
+    assert json.loads(repeated.arguments)["location"] == first
+    _, streamed, _ = _stream(text, list(range(1, len(text))))
+    assert streamed == [(repeated.name, repeated.arguments)]
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -295,3 +301,14 @@ def test_malformed_dsml_streams_no_bad_arguments(text: str) -> None:
     assert content == ""
     # Parameters before the malformed one may stream; nothing after it does.
     assert all(not args.endswith("}") for _, args in calls)
+
+
+def test_response_cut_off_after_the_section_tag_is_content() -> None:
+    tag = DeepseekV4ToolParser.SECTION_BEGIN.rstrip("\n")
+    text = "Checking.\n\n" + tag
+    parsed = DeepseekV4ToolParser().parse_complete(text)
+    assert parsed.content == "Checking."
+    assert parsed.tool_calls == []
+    content, calls, _ = _stream(text, list(range(1, len(text))))
+    assert content == "Checking."
+    assert calls == []

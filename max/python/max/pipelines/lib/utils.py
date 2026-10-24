@@ -34,7 +34,7 @@ from transformers import AutoConfig
 
 # Break circular import by importing PipelineConfig under TYPE_CHECKING.
 if TYPE_CHECKING:
-    from max.pipelines.lib.config import PipelineConfig
+    from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -119,19 +119,42 @@ def upper_bounded_default(upper_bound: int, default: int | None) -> int:
     return default
 
 
+def weights_under_prefix(
+    weights: Weights, prefix: str
+) -> dict[str, WeightData]:
+    """Returns the checkpoint's weights under ``prefix``, named relative to it.
+
+    A module whose attributes are named as its checkpoint names them loads
+    from a checkpoint that holds it under a prefix, such as a draft head
+    that ships in its target's.
+    """
+    return {
+        name.removeprefix(prefix): weight.data()
+        for name, weight in weights.items()
+        if name.startswith(prefix)
+    }
+
+
 def parse_state_dict_from_weights(
     pipeline_config: PipelineConfig,
     weights: Weights,
     adapter: WeightsAdapter | None = None,
     hf_config: AutoConfig | None = None,
+    model_config: MAXModelConfig | None = None,
 ) -> dict[str, WeightData]:
-    """Parse the state dict from the weights, using the adapter if provided."""
+    """Parse the state dict from the weights, using the adapter if provided.
+
+    A draft's checkpoint passes its own ``model_config``, which an adapter
+    that reads the encoding takes in place of the target's.
+    """
     if adapter:
         if hf_config is None:
             hf_config = pipeline_config.model.huggingface_config
+        extra = {} if model_config is None else {"model_config": model_config}
         return adapter(
             dict(weights.items()),
             huggingface_config=hf_config,
             pipeline_config=pipeline_config,
+            **extra,
         )
     return {key: value.data() for key, value in weights.items()}

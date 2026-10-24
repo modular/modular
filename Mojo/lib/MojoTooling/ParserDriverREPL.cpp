@@ -31,6 +31,7 @@
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -387,6 +388,36 @@ static std::string getPersistentVariableTypeName(StringRef name) {
   return llvm::formatv("__mojo_repl_persistent_var_type_{0}", name).str();
 }
 
+/// Return the names bound by top-level `var`/`ref` declarations in the main
+/// body code, e.g. `a` and `b` for `var a, b = f()` or `^ x` for
+/// ``var `^ x`: Int``.
+static llvm::StringSet<> getRedeclaredNames(ArrayRef<StringRef> mainBodyCode) {
+  llvm::StringSet<> names;
+  for (StringRef code : mainBodyCode) {
+    StringRef decl = code.take_until([](char c) { return c == '\n'; }).trim();
+    if (!decl.consume_front("var ") && !decl.consume_front("ref "))
+      continue;
+    decl = decl.ltrim(" (");
+    while (!decl.empty()) {
+      StringRef name;
+      if (decl.consume_front("`")) {
+        std::tie(name, decl) = decl.split('`');
+      } else {
+        size_t end = decl.find_first_of(" ,:=)");
+        name = decl.take_front(end);
+        decl = decl.drop_front(name.size());
+      }
+      if (!name.empty())
+        names.insert(name);
+      decl = decl.ltrim(" )");
+      if (!decl.consume_front(","))
+        break;
+      decl = decl.ltrim(" (");
+    }
+  }
+  return names;
+}
+
 /// Wrap the provided expression text in a function so that it can be executed.
 /// The generated function uses the provided name, and the provided variables
 /// are passed via fields to a generated struct that is used as the first
@@ -442,12 +473,18 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
 
   // Generate a wrapper function to handle the extracting function arguments as
   // references.
+  // A variable the expression redeclares is a fresh local of the expression
+  // function rather than one of its arguments, which would be a redefinition.
+  llvm::StringSet<> redeclared = getRedeclaredNames(mainBodyCode);
+  auto isPassedIn = [&](StringRef name) { return !redeclared.contains(name); };
+
   exprOS << "def " << wrappedFnName
          << "(mut __mojo_repl_arg: __mojo_repl_context__):\n"
             "  try:\n"
             "    __mojo_repl_expr_impl__(__mojo_repl_arg";
   for (auto &[name, type] : variables)
-    exprOS << formatv(", __mojo_repl_arg.`{0}`[][]", name);
+    if (isPassedIn(name))
+      exprOS << formatv(", __mojo_repl_arg.`{0}`[][]", name);
 
   exprOS << ")\n"
             "  except error:\n"
@@ -457,26 +494,21 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   exprOS << "def __mojo_repl_expr_impl__(mut __mojo_repl_arg: "
             "__mojo_repl_context__";
   for (auto &[name, type] : variables)
-    exprOS << llvm::formatv(", mut `{0}`: {1}", name,
-                            getPersistentVariableTypeName(name));
+    if (isPassedIn(name))
+      exprOS << llvm::formatv(", mut `{0}`: {1}", name,
+                              getPersistentVariableTypeName(name));
   exprOS << ") raises -> None:\n";
 
-  // Splat out the main body code inside of a nested def. This will allow for us
-  // to redefine previous variables transparently.
-  exprOS << "  var __mojo_repl_expr_failed = True\n"
-            "  @__parameter\n"
-            "  def __mojo_repl_expr_body__() raises -> None:\n";
+  exprOS << "  var __mojo_repl_expr_failed = True\n";
 
   // The following is the other chunk of code just written by the user.
   for (StringRef code : mainBodyCode) {
-    exprOS << "    ";
+    exprOS << "  ";
     emitAndMapCode(code);
   }
-  exprOS << "    pass\n";
 
   // If the code succeeded, reset the failure flag.
-  exprOS << "  __mojo_repl_expr_body__()\n"
-            "  __mojo_repl_expr_failed = False\n";
+  exprOS << "  __mojo_repl_expr_failed = False\n";
 
   // Emit a marker separating the top-level code from the forthcoming entry
   // point logic.
@@ -507,20 +539,20 @@ static ASTDecl &lookupSingleDecl(ASTDecl &decl, StringRef name) {
 static void processVariablesForPersistence(MojoParserREPLListener &listener,
                                            ASTDecl &exprFnDecl,
                                            ASTDecl &stateStructDecl) {
-  auto exprFn = cast<FnOp>(exprFnDecl.getIfOperation());
-  auto stateStruct = cast<StructDeclOp>(stateStructDecl.getIfOperation());
+  auto exprFn = cast<DefASTDecl>(exprFnDecl).getOp();
+  auto stateStruct = cast<StructASTDecl>(stateStructDecl).getOp();
 
   // Grab all of the variables within the expression body and sort them by name,
   // so that we can deterministically process them.
   SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
   auto addVars = [&](ASTDecl &decl) {
     for (auto &[name, decls] : decl.getDeclsInScope())
-      if (decls.size() == 1 &&
-          isa_and_nonnull<VarDeclOp>(decls.front()->getIfOperation()))
-        variables.emplace_back(name, decls.front());
+      if (decls.size() == 1)
+        if (auto *varDecl = dyn_cast<VarASTDecl>(decls.front());
+            varDecl && varDecl->getOp())
+          variables.emplace_back(name, varDecl);
   };
   addVars(exprFnDecl);
-  addVars(lookupSingleDecl(exprFnDecl, "__mojo_repl_expr_body__"));
 
   llvm::sort(variables, [](const auto &lhs, const auto &rhs) {
     return lhs.first.getValue() < rhs.first.getValue();
@@ -598,11 +630,12 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
   for (auto &[name, decl] : variables) {
     // Handle memory based decls.
-    if (auto varOp = dyn_cast_or_null<LIT::VarDeclOp>(decl->getIfOperation())) {
+    if (auto *varDecl = dyn_cast<LIT::VarASTDecl>(decl)) {
+      LIT::VarDeclOp varOp = varDecl->getOp();
       if (MRValue field = checkInsertPersistentVar(varOp)) {
         varOp.replaceAllUsesWith(field);
         varOp.erase();
-        decl->setIRValue(field);
+        decl = &decl->getShared().getDeclResolver().replaceDecl(*decl, field);
       }
       continue;
     }
@@ -716,9 +749,9 @@ LogicalResult REPLDiagnosticHandler::processDiagnostics() {
 //===----------------------------------------------------------------------===//
 
 /// Build a module decl for use in a REPL expression.
-static ASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
-                                StringRef moduleName,
-                                SharedState &sharedState) {
+static FileModuleASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
+                                          StringRef moduleName,
+                                          SharedState &sharedState) {
   StringRef exprId = sourceBuf->getBufferIdentifier();
 
   // If we are emitting debug info, create a file entry for this file.
@@ -729,7 +762,8 @@ static ASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
   // Create the input module.
   MLIRContext *ctx = sharedState.getContext();
   auto fileLoc = FileLineColLoc::get(ctx, exprId, /*line=*/1, /*column=*/1);
-  ASTDecl &decl = sharedState.createModule(moduleName, sourceBuf, fileLoc);
+  FileModuleASTDecl &decl =
+      sharedState.createModule(moduleName, sourceBuf, fileLoc);
   (void)sharedState.declResolver->resolveBody(decl, decl.getLoc());
   return decl;
 }
@@ -738,9 +772,10 @@ static ASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
 /// Returns the fully resolved REPL module decl.
 static ASTDecl &buildAndResolveREPLModule(
     const llvm::MemoryBuffer *sourceBuf, StringRef moduleName,
-    SharedState &sharedState, MojoASTDeclRef prevReplExpr, bool parseForLSP,
+    SharedState &sharedState, ASTDecl *prevReplExpr, bool parseForLSP,
     ArrayRef<std::pair<StringRef, Type>> replVariables = {}) {
-  ASTDecl &moduleDecl = buildREPLModule(sourceBuf, moduleName, sharedState);
+  FileModuleASTDecl &moduleDecl =
+      buildREPLModule(sourceBuf, moduleName, sharedState);
 
   // Generate aliases for the types of any persistent variables. We do this
   // programmatically because we can't guarantee we can print the type in a way
@@ -758,8 +793,9 @@ static ASTDecl &buildAndResolveREPLModule(
     AliasDeclOp typeDecl = AliasDeclOp::create(
         builder, builder.getUnknownLoc(),
         ParamDeclAttr::get(typeName, typeValue.getType()), typeValue.get());
-    sharedState.declResolver->addFullyResolvedDecl(&*typeDecl, typeName,
-                                                   SMLoc(), &moduleDecl);
+    sharedState.declResolver->addFullyResolvedDecl(
+        &*typeDecl, StringAttr::get(sharedState.getContext(), typeName),
+        SMLoc(), &moduleDecl);
   }
 
   // Before resolving everything in the REPL cell, resolve the body and import
@@ -779,8 +815,10 @@ static ASTDecl &buildAndResolveREPLModule(
       // If we hit an overlap and these are function decls, save them for
       // processing for later. We might be able to import if the signatures
       // don't overlap.
-      if (isa_and_nonnull<FnOp>(existingDecls.front()->getIfOperation()) &&
-          isa_and_nonnull<FnOp>(decls.front()->getIfOperation())) {
+      auto *existingFnDecl = dyn_cast<DefASTDecl>(existingDecls.front());
+      auto *newFnDecl = dyn_cast<DefASTDecl>(decls.front());
+      if (existingFnDecl && existingFnDecl->getOp() && newFnDecl &&
+          newFnDecl->getOp()) {
         fnDecls.push_back({name, decls});
       }
     }
@@ -808,8 +846,7 @@ static ASTDecl &buildAndResolveREPLModule(
       resolveSignaturesForLSP(*sharedState.declResolver);
   } else {
     // Keep unparsed decls alive — later cells may reference them.
-    sharedState.declResolver->resolveAllReferencedFrom(
-        moduleDecl, /*eraseUnparsedDecls=*/false);
+    sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
   }
 
   // Resolve any imported wildcard decls, this ensures those decls will be
@@ -826,7 +863,7 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
     MojoParserREPLListener &listener, unsigned exprFileId,
     StringRef replExprFnName,
     ArrayRef<std::pair<StringRef, Type>> replVariables) {
-  MojoASTDeclRef prevReplExpr;
+  ASTDecl *prevReplExpr = nullptr;
   if (!impl->replModuleDecls.empty())
     prevReplExpr = impl->replModuleDecls.back();
 
@@ -840,8 +877,8 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
 MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
     MojoParserREPLListener &listener, unsigned exprFileId, StringRef exprText,
     StringRef replExprFnName,
-    ArrayRef<std::pair<StringRef, Type>> replVariables,
-    MojoASTDeclRef prevReplExpr, bool parseForLSP) {
+    ArrayRef<std::pair<StringRef, Type>> replVariables, ASTDecl *prevReplExpr,
+    bool parseForLSP) {
   llvm::SourceMgr &sourceMgr = getSourceMgr();
   const llvm::MemoryBuffer *exprFileBuf = sourceMgr.getMemoryBuffer(exprFileId);
   assert(exprFileBuf->getBufferStart() <= exprText.data() &&
@@ -892,7 +929,7 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
       buildAndResolveREPLModule(sourceBuf, replModuleName, impl->sharedState,
                                 prevReplExpr, parseForLSP, replVariables);
   if (prevReplExpr)
-    impl->prevReplModuleDecls.insert({&moduleDecl, &*prevReplExpr});
+    impl->prevReplModuleDecls.insert({&moduleDecl, prevReplExpr});
 
   // Clear up the error state so that we are still able to parse future cells,
   // we'll handle diagnostic checks below.
@@ -901,7 +938,7 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
   // Check if we have a non-recoverable parse error, or emitted an error and
   // then recovered.
   if (failed(diagHandler.processDiagnostics()))
-    return {MojoASTDeclRef(&moduleDecl), MojoASTDeclRef()};
+    return {&moduleDecl, nullptr};
 
   // Process variables within the expression function for persistence.
   processVariablesForPersistence(
@@ -911,7 +948,7 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
   // Update the last REPL module decl.
   impl->replModuleDecls.push_back(&moduleDecl);
   ASTDecl *fnDecl = &lookupSingleDecl(moduleDecl, replExprFnName);
-  return {MojoASTDeclRef(&moduleDecl), MojoASTDeclRef(fnDecl)};
+  return {&moduleDecl, fnDecl};
 }
 
 void MojoParserContext::removeLastREPLExpression() {
@@ -954,8 +991,7 @@ static SmallVector<ASTDecl *> collectCompletionTargetModules(
 static ASTDecl *replayModuleIntoCache(MojoParserContext &cacheCtx,
                                       llvm::SourceMgr &cacheSourceMgr,
                                       llvm::SourceMgr &mainSourceMgr,
-                                      ASTDecl *module,
-                                      MojoASTDeclRef prevDecl) {
+                                      ASTDecl *module, ASTDecl *prevDecl) {
   int bufferId = mainSourceMgr.FindBufferContainingLoc(module->getLoc());
   const llvm::MemoryBuffer *moduleBuf = mainSourceMgr.getMemoryBuffer(bufferId);
   StringRef moduleBufCode =
@@ -1006,15 +1042,15 @@ static size_t getCompletionCacheRebuildThreshold() {
 /// Ensure the completion cache is up-to-date for a completion request.
 /// Collects target modules, incrementally updates the cache, and returns the
 /// buffer identifier for the completion buffer (for correct import resolution).
-StringRef MojoParserContext::prepareCompletionCache(MojoASTDeclRef replDecl) {
+StringRef MojoParserContext::prepareCompletionCache(ASTDecl *replDecl) {
   auto targetModules = collectCompletionTargetModules(
-      impl->replModuleDecls, impl->prevReplModuleDecls, replDecl.decl);
+      impl->replModuleDecls, impl->prevReplModuleDecls, replDecl);
   size_t target = targetModules.size();
   auto &mainSourceMgr = impl->sharedState.getSourceMgr();
 
   // Check if the existing cache can be incrementally extended.
   bool canExtend = impl->completionCache &&
-                   impl->completionCache->replDeclKey == replDecl.decl &&
+                   impl->completionCache->replDeclKey == replDecl &&
                    impl->completionCache->replayedModuleCount <= target &&
                    impl->completionCache->completionsSinceRebuild <
                        getCompletionCacheRebuildThreshold();
@@ -1025,14 +1061,14 @@ StringRef MojoParserContext::prepareCompletionCache(MojoASTDeclRef replDecl) {
     impl->completionCache = std::make_unique<Impl::CompletionCache>(
         impl->sharedState.getContext(), impl->sharedState.options,
         mainSourceMgr);
-    impl->completionCache->replDeclKey = replDecl.decl;
+    impl->completionCache->replDeclKey = replDecl;
   }
 
   auto &cc = *impl->completionCache;
   for (size_t i = cc.replayedModuleCount; i < target; ++i) {
-    cc.lastResolvedDecl = replayModuleIntoCache(
-        *cc.context, cc.sourceMgr, mainSourceMgr, targetModules[i],
-        MojoASTDeclRef(cc.lastResolvedDecl));
+    cc.lastResolvedDecl =
+        replayModuleIntoCache(*cc.context, cc.sourceMgr, mainSourceMgr,
+                              targetModules[i], cc.lastResolvedDecl);
   }
   cc.replayedModuleCount = target;
 
@@ -1051,14 +1087,13 @@ MojoParserContext::codeCompleteREPLExpression(
     StringRef exprText, uint64_t completionPosition,
     ArrayRef<std::pair<StringRef, Type>> replVariables) {
   return codeCompleteREPLExpression(exprText, completionPosition, replVariables,
-                                    MojoASTDeclRef());
+                                    nullptr);
 }
 
 std::vector<Mojo::CodeCompletionResult>
 MojoParserContext::codeCompleteREPLExpression(
     StringRef exprText, uint64_t completionPosition,
-    ArrayRef<std::pair<StringRef, Type>> replVariables,
-    MojoASTDeclRef replDecl) {
+    ArrayRef<std::pair<StringRef, Type>> replVariables, ASTDecl *replDecl) {
   REPLLocMapper locMapper(getSourceMgr());
   locMapper.exprMappers.emplace_back(
       std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
@@ -1079,7 +1114,7 @@ MojoParserContext::codeCompleteREPLExpression(
         const auto *buf = cache.context->getSourceMgr().getMemoryBuffer(fileId);
         buildAndResolveREPLModule(buf, buf->getBufferIdentifier(),
                                   cache.context->getSharedState(),
-                                  MojoASTDeclRef(cache.lastResolvedDecl),
+                                  cache.lastResolvedDecl,
                                   /*parseForLSP=*/false, replVariables);
         ++cache.completionsSinceRebuild;
       });
@@ -1094,8 +1129,7 @@ MojoParserContext::codeCompleteREPLExpression(
 std::optional<Mojo::SignatureHelpResult>
 MojoParserContext::signatureHelpREPLExpression(
     StringRef exprText, uint64_t position,
-    ArrayRef<std::pair<StringRef, Type>> replVariables,
-    MojoASTDeclRef replDecl) {
+    ArrayRef<std::pair<StringRef, Type>> replVariables, ASTDecl *replDecl) {
   REPLLocMapper locMapper(getSourceMgr());
   locMapper.exprMappers.emplace_back(
       std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
@@ -1113,7 +1147,7 @@ MojoParserContext::signatureHelpREPLExpression(
         const auto *buf = cache.context->getSourceMgr().getMemoryBuffer(fileId);
         buildAndResolveREPLModule(buf, buf->getBufferIdentifier(),
                                   cache.context->getSharedState(),
-                                  MojoASTDeclRef(cache.lastResolvedDecl),
+                                  cache.lastResolvedDecl,
                                   /*parseForLSP=*/false, replVariables);
         ++cache.completionsSinceRebuild;
       });

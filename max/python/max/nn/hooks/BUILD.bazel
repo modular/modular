@@ -8,6 +8,7 @@ modular_py_library(
         "base_print_hook.py",
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/nn",
     ],
 )

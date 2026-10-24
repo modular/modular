@@ -14,15 +14,14 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max import tree
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import DeviceRef, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -35,9 +34,10 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
-    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
+    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import Idefics3BatchProcessor
@@ -50,6 +50,9 @@ from .weight_adapters import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+# The vision and language graphs compile into one artifact.
+_COMPILE_GROUP = "idefics3"
 
 
 def _assert_image_embeddings_invariant(
@@ -108,7 +111,9 @@ class Idefics3Inputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
+class Idefics3Model(
+    PipelineModelWithKVCache[TextAndVisionContext, Idefics3Config, Model]
+):
     """An Idefics3 pipeline model for multimodal text generation."""
 
     model_config_cls: ClassVar[type[Any]] = Idefics3Config
@@ -116,11 +121,8 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         Idefics3BatchProcessor
     )
 
-    vision_model: Model | None
-    """The compiled vision model for processing images."""
-
-    language_model: Model
-    """The compiled language model for text generation."""
+    _vision_weights_dict: dict[str, WeightData]
+    _language_weights_dict: dict[str, WeightData]
 
     def __init__(
         self,
@@ -149,7 +151,17 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
 
         self.image_token_id = self.huggingface_config.image_token_id
 
-        self.vision_model, self.language_model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def vision_model(self) -> Model:
+        """The compiled vision model for processing images."""
+        return self._models[GraphRole.VISION]
+
+    @property
+    def language_model(self) -> Model:
+        """The compiled language model for text generation."""
+        return self._models[GraphRole.DECODER]
 
     def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
@@ -184,150 +196,67 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         )
         return idefics3_config
 
-    def _build_vision_graph(
-        self,
-        config: Idefics3Config,
-        state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Build the vision model graph for processing images."""
-        # Define input types for the vision model
-        # Use static dimensions from the vision config
-        image_size = config.vision_config.image_size
+    def graph_specs(self, model_config: Idefics3Config) -> dict[str, GraphSpec]:
+        """Returns the vision encoder and the decoder, in one compile group."""
+        return {
+            GraphRole.VISION: self._vision_spec(
+                model_config, self._vision_weights_dict
+            ),
+            GraphRole.DECODER: self._language_spec(
+                model_config, self._language_weights_dict
+            ),
+        }
 
-        # Expect pre-extracted patches from the tokenizer.
+    def _vision_spec(
+        self, config: Idefics3Config, state_dict: dict[str, WeightData]
+    ) -> GraphSpec:
+        vision_model = Idefics3VisionModel(
+            config.vision_config,
+            dtype=self.dtype,
+            device=DeviceRef.from_device(self.devices[0]),
+        )
+        vision_model.load_state_dict(
+            state_dict=state_dict,
+            weight_alignment=1,
+            strict=True,
+        )
+        image_size = config.vision_config.image_size
+        # Pre-extracted patches from the tokenizer, on device 0.
         pixel_values_type = TensorType(
             DType.bfloat16,
-            shape=[
-                "batch_size",
-                3,
-                image_size,
-                image_size,
-            ],
-            # Expect the input on device 0.
+            shape=["batch_size", 3, image_size, image_size],
             device=DeviceRef.GPU(),
         )
-
-        # Initialize graph with input types
-        with Graph(
-            "idefics3_vision", input_types=[pixel_values_type], module=module
-        ) as graph:
-            # Build vision model architecture.
-            vision_model = Idefics3VisionModel(
-                config.vision_config,
-                dtype=self.dtype,
-                device=DeviceRef.from_device(self.devices[0]),
-            )
-            vision_model.load_state_dict(
-                state_dict=state_dict,
-                weight_alignment=1,
-                strict=True,
-            )
-
-            # Unpack inputs.
-            (pixel_values,) = graph.inputs
-
-            # Execute vision model: pixel_values -> image_embeddings.
-            image_embeddings = vision_model(pixel_values.tensor)
-
-            # Set graph outputs.
-            graph.output(image_embeddings)
-
-            return graph, vision_model.state_dict()
-
-    def _language_graph_input_types(self) -> Sequence[TensorType | BufferType]:
-        # Generate DeviceRef.
-        device_ref = DeviceRef.from_device(self.devices[0])
-
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        return GraphSpec(
+            vision_model,
+            "idefics3_vision",
+            [pixel_values_type],
+            weights=vision_model.state_dict(),
+            group=_COMPILE_GROUP,
         )
 
-        # Construct Graph Inputs
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-
-        # Add image embeddings type - one per device, can be empty for text-only inputs
-        image_embeddings_type = TensorType(
+    def _language_spec(
+        self, config: Idefics3Config, state_dict: dict[str, WeightData]
+    ) -> GraphSpec:
+        language_model = Idefics3LanguageModel(
+            config.text_config,
+            config.image_token_id,
             self.dtype,
-            shape=[
-                "num_image_tokens",
-                self.huggingface_config.text_config.hidden_size,
-            ],
-            device=device_ref,
+            DeviceRef.from_device(self.devices[0]),
         )
-
-        # Add image token indices type
-        image_token_indices_type = TensorType(
-            DType.int32, shape=["total_image_tokens"], device=device_ref
+        language_model.load_state_dict(
+            state_dict=state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=True,
         )
-
-        return (
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            image_embeddings_type,
-            image_token_indices_type,
-            *self.kv_params.flattened_kv_inputs(),
-        )
-
-    def _build_language_graph(
-        self,
-        config: Idefics3Config,
-        state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Build the language model graph for text generation with image embeddings."""
-        # Initialize graph with input types.
-        with Graph(
+        return GraphSpec(
+            language_model,
             "idefics3_language",
-            input_types=self._language_graph_input_types(),
-            module=module,
-        ) as graph:
-            # Build language model architecture.
-            language_model = Idefics3LanguageModel(
-                config.text_config,
-                config.image_token_id,
-                self.dtype,
-                DeviceRef.from_device(self.devices[0]),
-            )
-            language_model.load_state_dict(
-                state_dict=state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-                strict=True,
-            )
-
-            # Unpack inputs
-            (
-                tokens,
-                input_row_offsets,
-                return_n_logits,
-                image_embeddings,
-                image_token_indices,
-                *variadic_args,
-            ) = graph.inputs
-
-            # Unmarshal the remaining arguments, which are for KV cache
-            kv_cache = self._unflatten_kv_inputs(variadic_args)
-
-            # Execute language model: text + image embeddings -> logits
-            outputs = language_model(
-                tokens=tokens.tensor,
-                kv_collection=kv_cache[0],
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets.tensor,
-                image_embeddings=image_embeddings.tensor,
-                image_token_indices=image_token_indices.tensor,
-            )
-
-            graph.output(*outputs)
-
-            return graph, language_model.state_dict()
+            language_model.input_types(self.kv_params),
+            weights=language_model.state_dict(),
+            group=_COMPILE_GROUP,
+        )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Idefics3 model with the prepared inputs."""

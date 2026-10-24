@@ -351,9 +351,12 @@ LIT::StructType::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   ParameterEvaluator evaluator(decl.getInputParams(), getParamValues());
   evaluator.setEvaluationContext(&evaluationContext);
   SmallVector<ParamDeclAttr, 8> specializedDecls;
-  for (ParamDeclAttr decl : decl.getInputParams())
+  for (ParamDeclAttr decl : decl.getInputParams()) {
+    // TODO(MOCO-3542): Remove once partially bound references are gone.
+    decl = ParamDeclAttr::get(decl.getName(), getCanonicalType(decl.getType()));
     specializedDecls.push_back(
         ::cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
+  }
 
   return verifyParamDeclsMatch(
       "input parameter", "!lit.struct symbol use", getParamValues(), loc,
@@ -1093,6 +1096,8 @@ std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
 
 Type OriginType::getCachedCanonicalType(Type type) const { return {}; }
 
+bool OriginType::supportsUnknownValue() const { return false; }
+
 //===----------------------------------------------------------------------===//
 // OriginSetType
 //===----------------------------------------------------------------------===//
@@ -1117,6 +1122,8 @@ LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value) const {
   }
   return failure();
 }
+
+bool OriginSetType::supportsUnknownValue() const { return false; }
 
 //===----------------------------------------------------------------------===//
 // RefType

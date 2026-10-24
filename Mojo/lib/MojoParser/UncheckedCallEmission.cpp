@@ -250,8 +250,8 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
       emitter.getStdlibOriginOf(compatibleOrigin, operand.expr->getLoc());
 
   Type compatibleVariadicPackType =
-      cast<StructDeclOp>(
-          expectedPackType.getDecl(emitter.shared)->getIfOperation())
+      cast<StructASTDecl>(expectedPackType.getDecl(emitter.shared))
+          ->getOp()
           .bindReference(paramBindings);
   auto compatibleRefType =
       actualRefType.getWithElement(compatibleVariadicPackType);
@@ -1245,11 +1245,11 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
     return;
 
   // Figure out what is getting called.
-  ASTDecl *calleeDecl =
+  DefASTDecl *calleeDecl =
       emitter.getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol());
   if (!calleeDecl)
     return;
-  auto calleeFunc = cast<FnOp>(calleeDecl->getIfOperation());
+  auto calleeFunc = calleeDecl->getOp();
 
   // The __del__ special function takes its operand as an owning reference,
   // and destroys it.  It is a bit silly, but you can call it directly on an
@@ -1642,9 +1642,9 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
     if (PValue pv = callee.getIfPValue()) {
       if (auto symbol = dyn_cast<SymbolConstantAttr>(pv.get())) {
         // Figure out what is getting called and include it.
-        if (ASTDecl *calleeDecl =
+        if (DefASTDecl *calleeDecl =
                 getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol())) {
-          auto calleeFunc = cast<FnOp>(calleeDecl->getIfOperation());
+          auto calleeFunc = calleeDecl->getOp();
 
           // Print "'Type' initializer" instead of just '__init__'.
           if (calleeFunc.getSpecialFunctionInfo().isInitializer()) {
@@ -1750,10 +1750,9 @@ static bool shouldEmitParameterCall(RValue callee,
   // inline.
   if (auto calleeSymbolCst = sugarDynCast<SymbolConstantAttr>(
           ParamOperatorAttr::stripRebind(callee.getIfPValue()))) {
-    if (ASTDecl *calleeDecl = shared.getDeclResolver().getDeclForFuncSymbol(
+    if (DefASTDecl *calleeDecl = shared.getDeclResolver().getDeclForFuncSymbol(
             calleeSymbolCst.getSymbol())) {
-      if (inlineLevelOrAutomatic(
-              cast<FnOp>(calleeDecl->getIfOperation()).getInlineLevel()) ==
+      if (inlineLevelOrAutomatic(calleeDecl->getOp().getInlineLevel()) ==
           InlineLevel::AlwaysBuiltin)
         return true;
     }

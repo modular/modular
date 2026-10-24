@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu import global_idx, lane_id
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
@@ -29,7 +28,7 @@ def kernel(
 
 
 def test_grid_dim(ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size
     var output_host = ctx.enqueue_create_host_buffer[.float32](buffer_size)
     for i in range(buffer_size):
@@ -43,7 +42,7 @@ def test_grid_dim(ctx: DeviceContext) raises:
         output_buffer,
         Int32(buffer_size),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=block_size,
     )
 
     ctx.enqueue_copy(output_host, output_buffer)
@@ -51,7 +50,7 @@ def test_grid_dim(ctx: DeviceContext) raises:
 
     for i in range(buffer_size):
         assert_equal(
-            output_host[i] % Float32(WARP_SIZE), Float32(i % WARP_SIZE)
+            output_host[i] % Float32(block_size), Float32(i % block_size)
         )
 
 

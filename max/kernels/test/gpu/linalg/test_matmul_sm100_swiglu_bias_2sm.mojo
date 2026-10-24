@@ -83,7 +83,9 @@ def swiglu_bias_reference(
                 + bias_ptr[2 * h + 1].cast[.float32]()
             )
             var sigmoid = recip(Float32(1.0) + exp(-gate))
-            ref_ptr.store(m * H + h, (gate * sigmoid * up).cast[.bfloat16]())
+            ref_ptr.unsafe_store(
+                m * H + h, (gate * sigmoid * up).cast[.bfloat16]()
+            )
 
 
 def test_swiglu_bias[
@@ -95,9 +97,9 @@ def test_swiglu_bias[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime dtype = DType.bfloat16
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
     var H = N // 2
 
     print(

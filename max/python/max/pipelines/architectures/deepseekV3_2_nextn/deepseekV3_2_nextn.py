@@ -35,6 +35,7 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
+from max.nn.graph_groups import SparseIndices
 from max.nn.kernels import mtp_eh_norm
 from max.nn.kv_cache import (
     KVCacheParamInterface,
@@ -48,6 +49,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
+from max.nn.transformer import DecoderOutputs
 from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
@@ -216,7 +218,7 @@ class DeepseekV3_2NextN(Module):
         reuse_prev_topk: bool = False,
         selection_lag: int = 0,
         split_prefix: str = "draft",
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("host_input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
@@ -350,7 +352,7 @@ class DeepseekV3_2NextN(Module):
         h = layer_outs[:n_devs]
         topk_indices = layer_outs[n_devs : 2 * n_devs]
 
-        postprocess = deepseek_logits_postprocess(
+        outputs = deepseek_logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets_,
             all_logits_input_row_offsets=all_logits_input_row_offsets,
@@ -368,9 +370,10 @@ class DeepseekV3_2NextN(Module):
             vocab_size=self.config.vocab_size,
         )
 
-        # Append the per-device physical rows so the unified MTP module can
-        # gather and reuse them across subsequent draft steps.
-        return (*postprocess, *topk_indices)
+        # The per-device physical rows, so the unified MTP module can gather
+        # and reuse them across subsequent draft steps.
+        outputs["topk_indices"] = SparseIndices(rows=tuple(topk_indices))
+        return outputs
 
     def input_types(
         self, kv_params: KVCacheParamInterface

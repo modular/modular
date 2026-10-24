@@ -51,11 +51,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    DimLike,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     Weight,
     ops,
@@ -65,7 +68,12 @@ from max.nn.comm import Allreduce
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
-from max.nn.state_space import gated_delta_conv1d_fwd, kda_decode
+from max.nn.state_space import (
+    gated_delta_conv1d_fwd,
+    kda_chunk,
+    kda_chunk_supports_head_dims,
+    kda_decode,
+)
 from max.nn.state_space.kimi_delta import (
     KDA_GATE_LOWER_BOUND,
     KdaGateMode,
@@ -84,6 +92,28 @@ Pinned here so both recurrence ops, the cache's declared leaves and the memory
 planner cannot disagree; it also matches the ``[num_rows, num_v_heads, key_dim,
 val_dim]`` layout Qwen3.5's recurrent state cache declares.
 """
+
+
+_CHUNK_MIN_COMPUTE_CAPABILITY = 100
+"""Lowest NVIDIA compute capability (``sm_100`` -> 100) ``kda_chunk`` builds for."""
+
+
+def _chunk_servable(head_dim: int) -> bool:
+    """Whether prefill can take ``kda_chunk`` on this accelerator.
+
+    The op's NVIDIA kernels only instantiate on SM100+, and its AMD path takes
+    bf16 q/k/v where this layer feeds float32, so everything else keeps the
+    sequential recurrence for prefill.
+    """
+    # TODO(KERN-3635): widen once kda_chunk compiles below SM100.
+    name = accelerator_architecture_name()
+    digits = name.removeprefix("sm_").rstrip("abcdefghijklmnopqrstuvwxyz")
+    return (
+        accelerator_api() == "cuda"
+        and digits.isdigit()
+        and int(digits) >= _CHUNK_MIN_COMPUTE_CAPABILITY
+        and kda_chunk_supports_head_dims(head_dim, head_dim)
+    )
 
 
 def _gate_mode(lower_bound: float | None) -> KdaGateMode:
@@ -470,24 +500,54 @@ class KimiDeltaAttention(Module, Shardable):
         a_log = self.A_log.to(device)
         dt_bias = ops.reshape(self.dt_bias.to(device), [heads, head_dim])
         state_indices = recurrent_row_id.cast(DType.int32)
-        # float32 out: the next stage is a float32 gated norm, so rounding to
-        # the compute dtype in between would cost a round trip for nothing.
-        core_out = kda_decode(
-            q,
-            k,
-            v,
-            raw_gate,
-            beta_logits,
-            a_log,
-            dt_bias,
-            input_row_offsets.cast(DType.int32),
-            recurrent_pool,
-            state_indices,
-            output_dtype=DType.float32,
-            gate_mode=self.gate_mode,
-            beta_mode="logits",
-            state_layout=STATE_LAYOUT,
-        )
+        cu_seqlens = input_row_offsets.cast(DType.int32)
+
+        # Both ops take the same tensors and differ only in how they walk the
+        # recurrence. q/k/v stay float32 into the chunk op too: its bf16
+        # compute-bound kernel is faster, but that rounding has not been
+        # validated at this layer's depth and context, so prefill keeps the
+        # numerics decode has. float32 out because the next stage is a
+        # float32 gated norm.
+        out_shape: list[DimLike] = [x.shape[0], heads, head_dim]
+
+        def _recurrence(chunked: bool) -> TensorValue:
+            op = kda_chunk if chunked else kda_decode
+            out = op(
+                q,
+                k,
+                v,
+                raw_gate,
+                beta_logits,
+                a_log,
+                dt_bias,
+                cu_seqlens,
+                recurrent_pool,
+                state_indices,
+                output_dtype=DType.float32,
+                gate_mode=self.gate_mode,
+                beta_mode="logits",
+                state_layout=STATE_LAYOUT,
+            )
+            return ops.rebind(out, out_shape, "kda recurrence output rebind")
+
+        # A speculative verify stays sequential, as Qwen3.5's does: a replay
+        # of the accepted prefix has to reproduce the forward's arithmetic.
+        if replay_capture is None and _chunk_servable(head_dim):
+            # Decided at runtime because `kda_chunk` reads `cu_seqlens` back
+            # to the host to build its chunk map. `ops.cond` branches are
+            # separate regions, so a decode batch (one token per sequence)
+            # never launches the prefill side, and the device graph captured
+            # for decode never contains that readback.
+            total_tokens = ops.shape_to_tensor(x.shape)[0]
+            batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+            core_out = ops.cond(
+                total_tokens > batch_size,
+                [TensorType(DType.float32, out_shape, device)],
+                lambda: _recurrence(chunked=True),
+                lambda: _recurrence(chunked=False),
+            )[0]
+        else:
+            core_out = _recurrence(chunked=False)
 
         # Normalize, scale by the learned weight, and only then gate. Gating
         # first is a different function of the same tensors.

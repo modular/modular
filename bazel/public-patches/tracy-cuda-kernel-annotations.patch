@@ -1,0 +1,50 @@
+diff --git a/public/tracy/TracyCUDA.hpp b/public/tracy/TracyCUDA.hpp
+index 2473f18..1e1f983 100644
+--- a/public/tracy/TracyCUDA.hpp
++++ b/public/tracy/TracyCUDA.hpp
+@@ -637,7 +637,7 @@ namespace tracy
+         }
+
+     protected:
+-        void EmitGpuZone(TracyTimestamp apiStart, TracyTimestamp apiEnd,
++        uint16_t EmitGpuZone(TracyTimestamp apiStart, TracyTimestamp apiEnd,
+             CUptiTimestamp gpuStart, CUptiTimestamp gpuEnd,
+             const tracy::SourceLocationData* pSrcLoc,
+             uint32_t cudaContextId, uint32_t cudaStreamId) {
+@@ -646,6 +646,7 @@ namespace tracy
+             uint16_t queryId = m_queryIdGen.fetch_add(2);
+             tracyAnnounceGpuTimestamp(apiStart, apiEnd, queryId, m_tracyGpuContext, pSrcLoc, timelineId);
+             tracySubmitGpuTimestamp(gpuStart, gpuEnd, queryId, m_tracyGpuContext);
++            return queryId;
+         }
+
+         void OnEventsProcessed() {
+@@ -1110,7 +1111,27 @@ namespace tracy
+                 if (!matchGraphActivityToAPICall(kernel9->correlationId, kernel9->graphId, apiCall)) {
+                     return matchError(kernel9->correlationId, "KERNEL");
+                 }
+-                apiCall.host->EmitGpuZone(apiCall.start, apiCall.end, kernel9->start, kernel9->end, getKernelSourceLocation(kernel9->name), kernel9->contextId, kernel9->streamId);
++                uint16_t queryId = apiCall.host->EmitGpuZone(apiCall.start, apiCall.end, kernel9->start, kernel9->end, getKernelSourceLocation(kernel9->name), kernel9->contextId, kernel9->streamId);
++                {
++                    uint32_t thread = tracy::GetThreadHandle();
++                    uint8_t ctx = apiCall.host->m_tracyGpuContext;
++                    struct { int64_t id; double value; } annots[] = {
++                        { 1, double(uint64_t(kernel9->gridX) * kernel9->gridY * kernel9->gridZ) },
++                        { 2, double(uint64_t(kernel9->blockX) * kernel9->blockY * kernel9->blockZ) },
++                        { 3, double(kernel9->registersPerThread) },
++                        { 4, double(uint64_t(kernel9->staticSharedMemory) + kernel9->dynamicSharedMemory) },
++                    };
++                    for (auto& a : annots) {
++                        auto* item = tracy::Profiler::QueueSerial();
++                        tracy::MemWrite( &item->hdr.type, tracy::QueueType::GpuZoneAnnotation );
++                        tracy::MemWrite( &item->zoneAnnotation.noteId, a.id );
++                        tracy::MemWrite( &item->zoneAnnotation.queryId, queryId );
++                        tracy::MemWrite( &item->zoneAnnotation.thread, thread );
++                        tracy::MemWrite( &item->zoneAnnotation.value, a.value );
++                        tracy::MemWrite( &item->zoneAnnotation.context, ctx );
++                        tracy::Profiler::QueueSerialFinish();
++                    }
++                }
+                 auto latency_ms = (kernel9->start - apiCall.cupti) / 1'000'000.0;
+                 tracyPlotBlip("Kernel Latency (ms)", kernel9->start, latency_ms);
+                 break;

@@ -138,9 +138,6 @@ struct LITLowerer {
         typeType(TypeType::get(
             symbolTables.getTopLevelSymbolTable().getOp()->getContext())) {}
 
-  /// Given a function, check to see if it is a top-level function.  If not,
-  /// lower it to a ParamDeclareRegionOp.
-  void lowerNestedFunction(FnOp func);
   /// Lower LIT dialect operations in a function body.
   void lowerLITOps(FnOp func, bool &hadErrors);
 
@@ -240,8 +237,6 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
                                          call.getOperands());
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
       b.replaceOpWithNewOp<HLCF::ReturnOp>(returnOp, returnOp.getResult());
-    } else if (auto funcOp = dyn_cast<FnOp>(op)) {
-      lowerNestedFunction(funcOp);
     }
   });
 }
@@ -381,35 +376,6 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
   getTopLevelSymbolTable().insert(newFunc, mainSymbolTablePosIter);
   func.erase();
   return success();
-}
-
-void LITLowerer::lowerNestedFunction(FnOp func) {
-  // Process a nested function by lowering it straight to a
-  // `kgen.param.declare.region`. Nested functions are denoted with an
-  // parameter declaration on the function declaration.
-  ParamDeclAttr decl = func.getParamDeclAttr();
-  assert(decl && "expected nested function to declare a parameter");
-
-  ImplicitLocOpBuilder b(func.getLoc(), func);
-
-  // The new param.declare.region will drop implicit lifetimes.
-  SmallVector<ParamDeclAttr> inputParams;
-  llvm::append_range(inputParams, extractImplicitOriginParams(func));
-  removeSingletonParamDecls(singletonTypeHelper, inputParams);
-
-  StringAttr sourceName = func.getSourceNameAttr();
-  if (!sourceName)
-    sourceName = decl.getName();
-  auto region = ParamDeclareRegionOp::create(
-      b, /*sym_name=*/nullptr, /*sym_visibility=*/nullptr, decl, sourceName,
-      func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
-      func.getInlineLevelAttr(), func.getLinkageNameAttr(), func.getFnAttrs(),
-      func.getFnArgAttrs());
-  // The convenience builder only takes a level, so an unfolded
-  // `@inline(expr)` has to be carried over separately.
-  region.setInlineLevelAttr(func.getInlineLevelAttr());
-  region.getBodyRegion().takeBody(func.getBodyRegion());
-  func.erase();
 }
 
 LogicalResult
@@ -1657,6 +1623,27 @@ static void populateTypeDomainRules(StructDecls &decls,
         return TypeParamAttr::get(*typeValueOr, *mlirTypeOr, *typeOr);
       });
 
+  // A KGEN struct with no domain yet is in a type-domain position. One the
+  // value domain already claimed keeps its domain.
+  // FIXME(MOCO-5118): See `StructDomain::Unset`.
+  replacer.asType.addRule([&replacer](
+                              KGEN::StructType type) -> FailureOr<Type> {
+    auto variadicOr =
+        replacer.asType.replaceParameter(type.getElementTypesVariadic());
+    auto isMemoryOnlyOr =
+        replacer.asType.replaceParameter(type.getIsMemoryOnly());
+    auto minAlignmentOr =
+        replacer.asType.replaceParameter(type.getMinAlignment());
+    if (failed(variadicOr) || failed(isMemoryOnlyOr) || failed(minAlignmentOr))
+      return failure();
+    StructDomain domain = type.getDomain() == StructDomain::Unset
+                              ? StructDomain::Layout
+                              : type.getDomain();
+    return KGEN::StructType::get(type.getContext(), *variadicOr,
+                                 *isMemoryOnlyOr, *minAlignmentOr,
+                                 type.getIsParamPack(), domain);
+  });
+
   // NOTE: Downcast becomes an no-op after lower-lit. However, we should
   // probably keep the attr till elaboration time after we preserve traits
   // properly in KGEN for a better error message.
@@ -1718,9 +1705,10 @@ static void populateTypeDomainRules(StructDecls &decls,
       return failure();
     auto mapped =
         ParamOperatorAttr::get(POC::VariadicPtrMap, *variadicOr, *addrSpaceOr);
-    return KGEN::StructType::get(ref.getContext(), mapped,
-                                 /*memOnly=*/false, /*minAlign*/ {},
-                                 /*isParamPack=*/true);
+    return KGEN::StructType::getLayoutDomain(ref.getContext(), mapped,
+                                             /*isMemoryOnly=*/{},
+                                             /*minAlignment=*/{},
+                                             /*isParamPack=*/true);
   });
 
   // !lit.ref -> !kgen.pointer
@@ -1898,6 +1886,17 @@ static void populateValueDomainRules(StructDecls &decls,
   replacer.asValue.addRule([=](TraitType traitType) -> FailureOr<Type> {
     return TypeValueType::get(
         TraitInstanceRefAttr::get(ctx, traitType.getSymbols(), typeType));
+  });
+
+  // A KGEN struct with no domain yet is in a value-domain position. Its
+  // elements are lowered when the type domain descends into this result.
+  // FIXME(MOCO-5118): See `StructDomain::Unset`.
+  replacer.asValue.addRule([](KGEN::StructType type) -> FailureOr<Type> {
+    if (type.getDomain() != StructDomain::Unset)
+      return type;
+    return KGEN::StructType::getValueDomain(
+        type.getContext(), type.getElementTypesVariadic(),
+        type.getIsMemoryOnly(), type.getMinAlignment(), type.getIsParamPack());
   });
 
   // A struct reference becomes a generator reference over the same parameter

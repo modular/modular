@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rust_kv_crates//:defs.bzl", "all_crate_deps")
+load("//rust_kv:test_compat.bzl", "GPU_PLATFORM")
+
+package(default_visibility = ["//rust_kv:consumers"])
+
+rust_library(
+    name = "kv-tier-connector",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+    target_compatible_with = GPU_PLATFORM,
+    deps = all_crate_deps(normal = True),
+)
+
+rust_test(
+    name = "kv-tier-connector-test",
+    crate = ":kv-tier-connector",
+    edition = "2024",
+    target_compatible_with = GPU_PLATFORM,
+)

@@ -34,7 +34,6 @@ from std.random import randn_float64, seed
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -314,7 +313,8 @@ def run_shape[
                 batch,
                 ceildiv(num_heads, heads_per_warp * warps_per_block),
             ),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=launch_ctx.default_device_info.warp_size
+            * warps_per_block,
         )
 
     @inline(.always)
@@ -354,7 +354,8 @@ def run_shape[
                 batch,
                 ceildiv(num_heads, heads_per_warp * warps_per_block),
             ),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=launch_ctx.default_device_info.warp_size
+            * warps_per_block,
         )
 
     @inline(.always)

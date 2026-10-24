@@ -156,6 +156,7 @@ async def lifespan(
             start_telemetry_consumer(settings)
         )
         METRICS.configure(client=metric_client)
+        METRICS.export_zero_client_disconnect_cancellations()
 
         # start model worker
 

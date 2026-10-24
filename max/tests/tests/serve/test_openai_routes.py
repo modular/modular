@@ -19,6 +19,7 @@ import json
 import logging
 import sys
 from collections.abc import Generator
+from pathlib import Path
 from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Literal, TypeVar
@@ -49,11 +50,20 @@ from max.pipelines.context import (
 from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
+    ModelManifest,
     PipelineConfig,
+    PipelineModel,
     PipelineRuntimeConfig,
 )
-from max.pipelines.lib.log_probabilities import _MAX_TOP_LOGPROBS
-from max.pipelines.lib.tokenizer import ALLOWED_IMAGE_FORMATS, open_image
+from max.pipelines.lib.log_probabilities import (
+    _MAX_TOP_LOGPROBS,
+    LogProbabilitiesMixin,
+)
+from max.pipelines.lib.tokenizer import (
+    ALLOWED_IMAGE_FORMATS,
+    TextTokenizer,
+    open_image,
+)
 from max.pipelines.modeling.types import (
     ImageContentPart,
     ParsedToolCallDelta,
@@ -66,6 +76,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
     VideoContentPart,
 )
+from max.pipelines.speculative import SpeculativeConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -118,6 +129,7 @@ from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse,
 )
+from max.serve.telemetry.metrics import ConversationTurn
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
 from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
@@ -126,6 +138,7 @@ from PIL import Image
 from pydantic import AnyUrl, ValidationError
 from sse_starlette.sse import AppStatus
 from starlette.types import Message, Scope
+from transformers import PretrainedConfig
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -474,6 +487,100 @@ async def test_completion_out_of_range_logprobs_returns_400(
     body = response.json()
     assert "logprobs" in body["error"]["message"]
     assert body["error"]["type"] == "invalid_request_error"
+
+
+# The row count of the Llama 3 embedding that matches the testdata tokenizer.
+_TESTDATA_VOCAB_SIZE = 128256
+
+
+@pytest.fixture
+def text_tokenizer_app(
+    fixture_testdatadirectory: Path, mock_pipeline_config: PipelineConfig
+) -> FastAPI:
+    """The echo model behind a real ``TextTokenizer``."""
+    tokenizer_config = MagicMock()
+    tokenizer_config.tokenizer_impl = None
+    tokenizer_config.draft_model = None
+    tokenizer_config.model.huggingface_config = PretrainedConfig(
+        vocab_size=_TESTDATA_VOCAB_SIZE
+    )
+    serving_settings = ServingTokenGeneratorSettings(
+        model_factory=EchoTokenGenerator,
+        pipeline_config=mock_pipeline_config,
+        tokenizer=TextTokenizer(
+            str(fixture_testdatadirectory), tokenizer_config
+        ),
+    )
+    settings = Settings(api_types=[APIType.OPENAI], use_heartbeat=False)
+    return fastapi_app(settings, serving_settings)
+
+
+@pytest.mark.asyncio
+async def test_completion_highest_token_ids_are_served(
+    text_tokenizer_app: FastAPI,
+) -> None:
+    """A special token and the last embedding row are served.
+
+    The last row is a reserved special token of the testdata tokenizer.
+    """
+    prompt = [128000, 9906, _TESTDATA_VOCAB_SIZE - 1]
+    async with AsyncTestClient(text_tokenizer_app) as client:
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": prompt, "max_tokens": 1},
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("bad_id", [-1, _TESTDATA_VOCAB_SIZE])
+@pytest.mark.asyncio
+async def test_completion_out_of_range_token_id_returns_400(
+    text_tokenizer_app: FastAPI, bad_id: int
+) -> None:
+    """An id past the embedding is a 400, not a failed batch in the worker."""
+    async with AsyncTestClient(text_tokenizer_app) as client:
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": [128000, bad_id]},
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["message"] == (
+        f"Prompt token id {bad_id} at position 1 is out of range. Token ids "
+        f"must be from 0 to {_TESTDATA_VOCAB_SIZE - 1}."
+    )
+    assert body["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_chat_prompt_tokens_out_of_range_returns_400(
+    text_tokenizer_app: FastAPI,
+) -> None:
+    """``prompt_tokens`` replaces the messages, so it is checked the same way."""
+    request = simple_openai_request(model_name="echo", content="hi")
+    request["prompt_tokens"] = [128000, _TESTDATA_VOCAB_SIZE]
+    async with AsyncTestClient(text_tokenizer_app) as client:
+        response = await client.post("/v1/chat/completions", json=request)
+
+    assert response.status_code == 400
+    assert "out of range" in response.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_embeddings_out_of_range_token_id_returns_400(
+    text_tokenizer_app: FastAPI,
+) -> None:
+    """The tokenizer's rejection is a client fault on embeddings too."""
+    async with AsyncTestClient(text_tokenizer_app) as client:
+        response = await client.post(
+            "/v1/embeddings",
+            json={"model": "echo", "input": [128000, _TESTDATA_VOCAB_SIZE]},
+        )
+
+    assert response.status_code == 400
+    assert "out of range" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -1098,8 +1205,8 @@ def test_set_batch_id_attributes_tags_both_bounds() -> None:
 
     _set_batch_id_attributes(span, [_chunk(10), _chunk(11), _chunk(12)])
 
-    span.set_attribute.assert_any_call("max.first_batch_id", 10)
-    span.set_attribute.assert_any_call("max.last_batch_id", 12)
+    span.set_attribute.assert_any_call("max.request.first_batch_id", 10)
+    span.set_attribute.assert_any_call("max.request.last_batch_id", 12)
 
 
 def test_set_batch_id_attributes_skips_unknown_bounds() -> None:
@@ -1690,6 +1797,102 @@ async def test_non_streaming_cancels_behind_middleware(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        pytest.param(
+            "/v1/chat/completions",
+            json.dumps(
+                simple_openai_request(model_name="echo", content="test data")
+                | {"stream": True}
+            ).encode(),
+            id="chat",
+        ),
+        pytest.param(
+            "/v1/completions",
+            json.dumps(
+                {"model": "echo", "prompt": "test data", "stream": True}
+            ).encode(),
+            id="completions",
+        ),
+    ],
+)
+async def test_streaming_cancels_pending_request_behind_middleware(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+    path: str,
+    body: bytes,
+) -> None:
+    """A streaming request whose client leaves before its first token is
+    cancelled. The worker never answers, as for a request still queued
+    behind full batches, so the SSE response never starts and cannot be the
+    one to notice the disconnect."""
+    pipeline, request_queue, cancel_queue = _echo_pipeline()
+    app = FastAPI()
+    app.state.pipeline = pipeline
+    app.state.pipeline_config = mock_pipeline_config
+    app.state.settings = Settings(
+        api_types=[APIType.OPENAI], use_heartbeat=False
+    )
+    register_request(app)
+    app.add_api_route(
+        "/v1/chat/completions",
+        openai_create_chat_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+    app.add_api_route(
+        "/v1/completions",
+        openai_create_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+
+    client_gone = asyncio.Event()
+    messages: list[Message] = [
+        {"type": "http.request", "body": body, "more_body": False}
+    ]
+
+    async def receive() -> Message:
+        if messages:
+            return messages.pop(0)
+        await client_gone.wait()
+        return {"type": "http.disconnect"}
+
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8000),
+        "app": app,
+    }
+    call = asyncio.create_task(app(scope, receive, send))
+    req = await asyncio.wait_for(request_queue.get(), timeout=5.0)
+    client_gone.set()
+
+    try:
+        cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+        assert cancel == [req.request_id]
+        await asyncio.wait_for(call, timeout=1.0)
+    finally:
+        call.cancel()
+    assert sent[0]["status"] == 499
+
+
+@pytest.mark.asyncio
 async def test_openai_chat_completion_non_streaming_maps_errors(
     mock_pipeline_config: PipelineConfig,
     patch_openai_metrics: None,
@@ -1974,12 +2177,47 @@ def test_conversation_turn(
     assert _conversation_turn(messages) == expected
 
 
-def test_record_request_end_labels_input_tokens_with_the_turn() -> None:
+def test_record_request_end_labels_token_counts_with_the_turn() -> None:
     with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
         record_request_end("/v1/chat/completions", 1.0, 3, 10, "later")
 
     metrics_mock.input_tokens.assert_called_once_with(10)
     metrics_mock.input_tokens_per_request.assert_called_once_with(10, "later")
+    metrics_mock.output_tokens.assert_called_once_with(3)
+    metrics_mock.output_tokens_per_request.assert_called_once_with(3, "later")
+
+
+def test_record_request_end_without_a_turn_leaves_token_counts_unlabelled() -> (
+    None
+):
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end("/v1/completions", 1.0, 3, 10)
+
+    metrics_mock.input_tokens_per_request.assert_called_once_with(10, None)
+    metrics_mock.output_tokens_per_request.assert_called_once_with(3, None)
+
+
+@pytest.mark.parametrize("turn", ["first", "later"])
+def test_record_request_end_labels_prefix_coverage_with_the_turn(
+    turn: ConversationTurn,
+) -> None:
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end(
+            "/v1/chat/completions", 1.0, 3, 8, turn, cached_tokens=6
+        )
+
+    metrics_mock.prefix_coverage_per_request.assert_called_once_with(75.0, turn)
+
+
+def test_record_request_end_skips_prefix_coverage_without_prompt_tokens() -> (
+    None
+):
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end(
+            "/v1/chat/completions", 1.0, 0, 0, "first", cached_tokens=0
+        )
+
+    metrics_mock.prefix_coverage_per_request.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1992,6 +2230,7 @@ async def test_openai_chat_completion_reports_the_conversation_turn() -> None:
             decoded_tokens="done",
             token_count=1,
             prompt_token_count=9,
+            cached_token_count=4,
         ),
     ]
     mock_pipeline = Mock()
@@ -2016,6 +2255,7 @@ async def test_openai_chat_completion_reports_the_conversation_turn() -> None:
     assert end_mock.call_count == 1
     assert end_mock.call_args.args[3] == 9
     assert end_mock.call_args.args[4] == "later"
+    assert end_mock.call_args.kwargs["cached_tokens"] == 4
 
 
 @pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
@@ -2250,6 +2490,141 @@ async def test_tool_call_finish_reason_reports_length_truncation(
     assert choice.finish_reason == expected_finish_reason
     assert choice.message.tool_calls is not None
     assert len(choice.message.tool_calls) == 2
+
+
+_QWEN_LOOKUP_CALL = (
+    "<tool_call>\n<function=lookup>\n"
+    "<parameter=zip_code>\n10001\n</parameter>\n"
+    "<parameter=count>\n7\n</parameter>\n"
+    "</function>\n</tool_call>\n"
+)
+
+
+def _lookup_tools() -> list[TextGenerationRequestTool]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Look something up",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "zip_code": {"type": "string"},
+                        "count": {"type": "integer"},
+                    },
+                },
+            },
+        }
+    ]
+
+
+async def _complete_with_qwen_parser(
+    parser: Qwen3_5ToolParser,
+    tools: list[TextGenerationRequestTool] | None,
+) -> dict[str, Any]:
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=GenerationStatus.END_OF_SEQUENCE,
+                decoded_tokens=_QWEN_LOOKUP_CALL,
+                token_count=24,
+                prompt_token_count=5,
+            )
+        ]
+    )
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, parser=parser, parse_tool_calls=True, tools=tools
+    )
+    response = await generator.complete([_make_mock_request()])
+    tool_calls = response.choices[0].message.tool_calls
+    assert tool_calls is not None and len(tool_calls) == 1
+    tool_call = tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageToolCall)
+    args = json.loads(tool_call.function.arguments)
+    assert isinstance(args, dict)
+    return args
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_tool_arguments_follow_the_tool_schema(
+    patch_openai_metrics: None,
+) -> None:
+    """A string-typed argument that looks like a number stays a string."""
+    args = await _complete_with_qwen_parser(
+        Qwen3_5ToolParser(), _lookup_tools()
+    )
+
+    assert args == {"zip_code": "10001", "count": 7}
+
+
+@pytest.mark.asyncio
+async def test_tool_schemas_do_not_leak_into_the_next_request(
+    patch_openai_metrics: None,
+) -> None:
+    """A reused parser must not decode a later request by an earlier schema."""
+    parser = Qwen3_5ToolParser()
+    with_schema = await _complete_with_qwen_parser(parser, _lookup_tools())
+    without_schema = await _complete_with_qwen_parser(parser, None)
+
+    assert with_schema["zip_code"] == "10001"
+    assert without_schema["zip_code"] == 10001  # schema-blind best effort
+
+
+@pytest.mark.asyncio
+async def test_streaming_tool_arguments_follow_the_tool_schema(
+    patch_openai_metrics: None,
+) -> None:
+    pieces = [
+        _QWEN_LOOKUP_CALL[i : i + 5]
+        for i in range(0, len(_QWEN_LOOKUP_CALL), 5)
+    ]
+    chunks = [
+        TokenGeneratorOutput(
+            status=(
+                GenerationStatus.END_OF_SEQUENCE
+                if i == len(pieces) - 1
+                else GenerationStatus.ACTIVE
+            ),
+            decoded_tokens=piece,
+            token_count=1,
+            prompt_token_count=5,
+        )
+        for i, piece in enumerate(pieces)
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        async def _gen() -> Any:
+            for chunk in chunks:
+                yield chunk
+
+        return _gen()
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=Qwen3_5ToolParser(),
+        parse_tool_calls=True,
+        tools=_lookup_tools(),
+    )
+    responses = [
+        CreateChatCompletionStreamResponse.model_validate_json(p)
+        async for p in await generator.stream(_make_mock_request())
+        if isinstance(p, str) and p != "[DONE]"
+    ]
+
+    arguments = "".join(
+        tool_call.function.arguments or ""
+        for response in responses
+        for choice in response.choices
+        for tool_call in choice.delta.tool_calls or []
+        if tool_call.function is not None
+    )
+    assert json.loads(arguments) == {"zip_code": "10001", "count": 7}
 
 
 async def _run_stream(
@@ -3808,7 +4183,8 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
 
     assert response.status_code == 400
     message = response.json()["error"]["message"]
-    assert "--no-enable-overlap-scheduler --force" in message
+    assert "--no-enable-overlap-scheduler to use logprobs" in message
+    assert "--force" not in message
     assert "--allow-unsupported-logprobs" in message
 
 
@@ -3837,6 +4213,161 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_dropped_when_flag
     assert choice.message.content == "logprobs please"
     # When logprobs is downgraded, the response carries no logprob content.
     assert choice.logprobs is None or not choice.logprobs.content
+
+
+@pytest_asyncio.fixture(scope="function")
+def speculative_app(fixture_tokenizer, mock_pipeline_config: PipelineConfig):  # noqa: ANN001, ANN201
+    pipeline_config = mock_pipeline_config.model_copy(
+        update={
+            "speculative": SpeculativeConfig(
+                speculative_method="eagle", num_speculative_tokens=3
+            )
+        }
+    )
+    serving_settings = ServingTokenGeneratorSettings(
+        model_factory=EchoTokenGenerator,
+        pipeline_config=pipeline_config,
+        tokenizer=EchoPipelineTokenizer(),
+    )
+    return fastapi_app(
+        Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
+        serving_settings,
+    )
+
+
+def _assert_speculative_logprobs_error(response: Any) -> None:
+    assert response.status_code == 400
+    message = response.json()["error"]["message"]
+    assert message.startswith(
+        "Log probabilities are not supported with speculative decoding."
+    )
+    assert "--no-enable-overlap-scheduler" not in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"enable_overlap_scheduler": False, "allow_unsupported_logprobs": False}],
+    indirect=True,
+)
+async def test_chat_completion_logprobs_with_speculative_decoding_rejected(
+    speculative_app,  # noqa: ANN001
+) -> None:
+    """Speculative decoding runs the overlap pipeline even with overlap off."""
+    async with AsyncTestClient(speculative_app) as client:
+        body = simple_openai_request(model_name="echo", content="hi")
+        body["logprobs"] = True
+        response = await client.post("/v1/chat/completions", json=body)
+
+    _assert_speculative_logprobs_error(response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"enable_overlap_scheduler": False, "allow_unsupported_logprobs": False}],
+    indirect=True,
+)
+async def test_completion_logprobs_with_speculative_decoding_rejected(
+    speculative_app,  # noqa: ANN001
+) -> None:
+    async with AsyncTestClient(speculative_app) as client:
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": "hi", "logprobs": 3},
+        )
+
+    _assert_speculative_logprobs_error(response)
+
+
+@pytest_asyncio.fixture(scope="function")
+def enable_echo_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
+    model = mock_pipeline_config.model.model_copy(update={"enable_echo": True})
+    serving_settings = ServingTokenGeneratorSettings(
+        model_factory=EchoTokenGenerator,
+        pipeline_config=mock_pipeline_config.model_copy(
+            update={"models": ModelManifest({"main": model})}
+        ),
+        tokenizer=EchoPipelineTokenizer(),
+    )
+    return fastapi_app(
+        Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
+        serving_settings,
+    )
+
+
+@pytest.mark.parametrize(
+    ("pipeline_model", "status_code"),
+    [(LogProbabilitiesMixin, 400), (PipelineModel, 200)],
+)
+@pytest.mark.asyncio
+async def test_completion_echo_logprobs_without_enable_echo(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    pipeline_model: type,
+    status_code: int,
+) -> None:
+    """Without ``--enable-echo`` a model has no prompt logits to score.
+
+    Only a model that computes log probabilities fails on that, so a model
+    that returns none serves the request.
+    """
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "architecture_for_config",
+        lambda *args, **kwargs: SimpleNamespace(pipeline_model=pipeline_model),
+    )
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": "hi", "echo": True, "logprobs": 1},
+        )
+
+    assert response.status_code == status_code
+    if status_code == 400:
+        body = response.json()
+        assert "--enable-echo" in body["error"]["message"]
+        assert body["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_completion_echo_logprobs_with_enable_echo_succeeds(
+    enable_echo_app: FastAPI,
+) -> None:
+    async with AsyncTestClient(enable_echo_app) as client:
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": "hi", "echo": True, "logprobs": 1},
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("logprobs", [None, 0])
+@pytest.mark.asyncio
+async def test_completion_echo_without_logprobs_is_not_forwarded(
+    app: FastAPI, logprobs: int | None
+) -> None:
+    """An echo row without logprobs must not ask the worker for prompt logits.
+
+    It would otherwise fail a batch it shares with a logprobs row.
+    """
+    async with AsyncTestClient(app) as client:
+        all_tokens = AsyncMock(side_effect=app.state.pipeline.all_tokens)
+        app.state.pipeline.all_tokens = all_tokens
+        body: dict[str, object] = {
+            "model": "echo",
+            "prompt": "hi",
+            "echo": True,
+        }
+        if logprobs is not None:
+            body["logprobs"] = logprobs
+        response = await client.post("/v1/completions", json=body)
+
+    assert response.status_code == 200
+    request = all_tokens.call_args.args[0]
+    assert isinstance(request, TextGenerationRequest)
+    assert not request.echo
 
 
 @pytest.mark.asyncio
@@ -3901,7 +4432,8 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
 
     assert response.status_code == 400
     message = response.json()["error"]["message"]
-    assert "--no-enable-overlap-scheduler --force" in message
+    assert "--no-enable-overlap-scheduler to use logprobs" in message
+    assert "--force" not in message
     assert "--allow-unsupported-logprobs" in message
 
 

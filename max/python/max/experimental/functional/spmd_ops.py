@@ -71,6 +71,7 @@ from ..sharding.rules import (
     conv2d_rule,
     conv2d_transpose_rule,
     conv3d_rule,
+    cumsum_rule,
     dequantize_rule,
     div_rule,
     flatten_rule,
@@ -1518,7 +1519,9 @@ matmul.__doc__ = """Performs matrix multiplication between two tensors.
 Treats the innermost two dimensions of each input as a matrix: ``lhs``
 of shape ``(..., M, K)`` and ``rhs`` of shape ``(..., K, N)`` produce
 an output of shape ``(..., M, N)``. The ``K`` dimensions must match.
-Any outer batch dimensions are broadcast.
+Any outer batch dimensions are broadcast. Both inputs must share a dtype,
+which the result keeps; use :func:`max.graph.ops.matmul` with ``out_dtype``
+to pick a different result dtype.
 
 When inputs are distributed across devices, the operation is sharded
 according to the matmul sharding rule.
@@ -1543,6 +1546,9 @@ Args:
 
 Returns:
     A tensor representing the matrix product of ``lhs`` and ``rhs``.
+
+Raises:
+    ValueError: If ``lhs`` and ``rhs`` have different dtypes.
 """
 
 #: Applies layer normalization. Distributed via SPMD.
@@ -3082,7 +3088,7 @@ softmax = functional(ops.softmax, rule=softmax_rule)
 logsoftmax = functional(ops.logsoftmax, rule=softmax_rule)
 #: Computes the cumulative sum along an axis. Distributed via SPMD.
 #: See :func:`max.graph.ops.cumsum` for details.
-cumsum = functional(ops.cumsum, rule=reduce_rule)
+cumsum = functional(ops.cumsum, rule=cumsum_rule)
 cumsum.__doc__ = """Computes the cumulative sum of a tensor along an axis.
 
 Args:
@@ -4210,17 +4216,8 @@ Args:
     input: The input tensor to resize.
     size: The desired output shape. Must have the same rank as ``input``.
     coordinate_transform_mode: How to map an output coordinate to an input
-        coordinate. Allowed values:
-
-        - ``0`` (``half_pixel``): Default. Shifts by 0.5 before
-          scaling, consistent with most deep learning frameworks.
-        - ``1`` (``align_corners``): Aligns the corner pixels of the input
-          and output so that the first and last coordinates are preserved
-          exactly.
-        - ``2`` (``asymmetric``): Applies no shift, mapping each output
-          coordinate to ``coordinate / scale``.
-        - ``3`` (``half_pixel_1D``): Like ``half_pixel``, except any axis
-          whose output size is ``1`` maps to coordinate ``0``.
+        coordinate, as a :class:`~max.graph.ops.CoordinateTransformMode`.
+        Defaults to ``CoordinateTransformMode.HALF_PIXEL``.
     antialias: When ``True``, applies an antialiasing filter when
         downscaling, which reduces aliasing artifacts by widening the tent
         filter support by ``1 / scale``. Has no effect when upscaling.
@@ -4231,8 +4228,9 @@ Returns:
     and the same dtype as ``input``.
 
 Raises:
-    ValueError: If ``coordinate_transform_mode`` isn't 0-3, or if ``size``
-        has a different rank than ``input``.
+    ValueError: If ``coordinate_transform_mode`` isn't a
+        ``CoordinateTransformMode``, or if ``size`` has a different rank than
+        ``input``.
 """
 resize_nearest.__doc__ = """Resizes a tensor using nearest-neighbor interpolation.
 
@@ -4257,29 +4255,20 @@ Args:
     input: The input tensor to resize.
     size: The desired output shape. Must have the same rank as ``input``.
     coordinate_transform_mode: How to map an output coordinate to an input
-        coordinate. Allowed values:
-
-        - ``0`` (``half_pixel``). Default.
-        - ``1`` (``align_corners``).
-        - ``2`` (``asymmetric``).
-        - ``3`` (``half_pixel_1D``).
-
-        See :func:`resize_linear` for a description of each mode.
+        coordinate, as a :class:`~max.graph.ops.CoordinateTransformMode`.
+        Defaults to ``CoordinateTransformMode.HALF_PIXEL``.
     round_mode: How to round the mapped coordinate to select the nearest
-        input sample. Allowed values:
-
-        - ``0`` (``HalfDown``, the default): ``ceil(x - 0.5)``.
-        - ``1`` (``HalfUp``): ``floor(x + 0.5)``.
-        - ``2`` (``Floor``): ``floor(x)``.
-        - ``3`` (``Ceil``): ``ceil(x)``.
+        input sample, as a :class:`~max.graph.ops.RoundMode`. Defaults to
+        ``RoundMode.HALF_DOWN``.
 
 Returns:
     A ``Tensor`` containing the resized tensor, with shape ``size``
     and the same dtype as ``input``.
 
 Raises:
-    ValueError: If ``coordinate_transform_mode`` isn't 0-3, ``round_mode``
-        isn't 0-3, or ``size`` has a different rank than ``input``.
+    ValueError: If ``coordinate_transform_mode`` isn't a
+        ``CoordinateTransformMode``, ``round_mode`` isn't a ``RoundMode``, or
+        ``size`` has a different rank than ``input``.
 """
 rms_norm.__doc__ = """Computes root mean square normalization over the last dimension of ``input``.
 

@@ -371,6 +371,28 @@ def test_print_workload_stats_prints_requests_sent(
     assert "100.00%" in out
 
 
+def test_print_workload_stats_sections_share_columns(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Input length lines up across sections; raw values add the spread."""
+    samples = ChatSamples(
+        chat_sessions=[_session((_user(100), 10), (_user(100), 10))]
+    )
+    print_workload_stats(samples, compute_workload_stats(samples))
+    lines = capsys.readouterr().out.splitlines()
+    headers = {
+        line.strip(): lines[i + 1].split()
+        for i, line in enumerate(lines)
+        if line.startswith("  Input length")
+    }
+    assert headers["Input length (per turn):"] == (
+        "count min mean std p5 p25 p50 p75 p90 p95 p99 max".split()
+    )
+    assert headers["Input length:"] == (
+        "count min mean p50 p75 p90 p95 p99 max".split()
+    )
+
+
 def test_print_workload_stats_without_stats_omits_requests_sent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

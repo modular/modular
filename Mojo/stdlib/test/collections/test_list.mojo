@@ -23,6 +23,7 @@ from test_utils import (
     NonMovable,
     Observable,
     TriviallyCopyableMoveCounter,
+    check_niches,
     check_write_to,
 )
 from std.testing import (
@@ -1457,6 +1458,24 @@ struct Pinned(not Movable):
 def test_list_non_movable() raises:
     var empty = List[Pinned]()
     assert_equal(len(empty), 0)
+
+
+def test_list_niche() raises:
+    comptime ListType = List[String]
+    assert_equal(ListType.niche_count(), Int.MAX)
+    assert_equal(size_of[Optional[ListType]](), size_of[ListType]())
+    check_niches[ListType]()
+
+    var some = Optional[ListType](["a", "b"])
+    assert_true(some)
+    assert_equal(some.value(), ["a", "b"])
+
+    var empty = Optional(ListType())
+    assert_true(empty)
+    assert_equal(len(empty.value()), 0)
+
+    var none = Optional[ListType](None)
+    assert_false(none)
 
 
 # ===-------------------------------------------------------------------===#

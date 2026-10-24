@@ -26,9 +26,7 @@ from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from .model_config import LayerKind, NemotronHConfig
 from .nemotron_h import NemotronH
 from .weight_adapters import (
-    permute_mamba_for_tp,
-    prepare_nvfp4_linears,
-    repeat_kv_heads_for_tp,
+    cast_router_gates,
     stack_bf16_experts,
     stack_nvfp4_experts,
 )
@@ -49,6 +47,7 @@ class NemotronHModel(
     ) -> NemotronHConfig:
         config = self.arch_config_as(NemotronHConfig)
         config.return_logits = self.return_logits
+        config.return_hidden_states = self.return_hidden_states
         config.quant_scheme.check_weights(state_dict.keys())
         return config
 
@@ -57,22 +56,13 @@ class NemotronHModel(
     ) -> dict[str, Any]:
         num_experts = model_config.num_experts
         w4a4_mixers = model_config.w4a4_mixers()
-        n = len(self.devices)
-        state_dict = stack_nvfp4_experts(
-            state_dict,
-            num_experts,
-            {m: model_config.shared_expert_slices(m) for m in w4a4_mixers},
-            n,
-        )
+        state_dict = stack_nvfp4_experts(state_dict, num_experts, w4a4_mixers)
         state_dict = stack_bf16_experts(
             state_dict,
             num_experts,
             model_config.mixers(LayerKind.MOE) - w4a4_mixers,
-            n,
         )
-        state_dict = permute_mamba_for_tp(state_dict, model_config, n)
-        state_dict = prepare_nvfp4_linears(state_dict, model_config, n)
-        return repeat_kv_heads_for_tp(state_dict, model_config, n)
+        return cast_router_gates(state_dict, model_config.router_gate_dtype)
 
     def _instantiate_module(self, model_config: NemotronHConfig) -> NemotronH:
         n_devices = len(self.devices)

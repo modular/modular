@@ -15,11 +15,31 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
+from max import tree
+from max.dtype import DType
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    Type,
+    Value,
+)
+from max.graph import Module as GraphModule
 from max.nn.attention.multi_latent_attention import (
     LatentAttentionWithRope,
 )
+from max.nn.comm import Signals
 from max.nn.embedding import Embedding
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.layer import Module
 from max.nn.linear import MLP, Linear
 from max.nn.moe import MoE
@@ -28,12 +48,48 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import Transformer, TransformerBlock
+from max.nn.transformer import DecoderOutputs, Transformer, TransformerBlock
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )
 
 from .model_config import DeepseekV2Config
+
+
+def deepseekV2_input_types(
+    devices: Sequence[DeviceRef], kv_params: KVCacheParamInterface
+) -> tuple[TensorType | BufferType, ...]:
+    """Returns the DeepseekV2 graph's input types.
+
+    The tokens, row offsets and ``return_n_logits``, all on the first device,
+    then one signal buffer per device when there are several, then the KV
+    cache.
+
+    Args:
+        devices: The devices the graph runs on.
+        kv_params: The KV cache parameters.
+    """
+    device_ref = devices[0]
+    signals = Signals(devices=devices).input_types() if len(devices) > 1 else []
+    return (
+        TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),
+        TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        ),
+        TensorType(DType.int64, shape=["return_n_logits"], device=device_ref),
+        *signals,
+        *kv_params.flattened_kv_inputs(),
+    )
+
+
+def unflatten_kv_collections(
+    kv_params: KVCacheParamInterface, kv_inputs: Iterable[Value[Any]]
+) -> list[PagedCacheValues]:
+    """Returns each device's KV cache collection from the flat KV inputs."""
+    return tree.leaves(
+        kv_params.unflatten_kv_inputs(iter(kv_inputs)),
+        leaf=KVCacheInputsPerDevice,
+    )
 
 
 class DeepseekV2(Transformer):
@@ -124,6 +180,62 @@ class DeepseekV2(Transformer):
             embedding=embedding_layer,
             kv_params=config.kv_params,
             rope=rope,
+        )
+        self.devices = config.devices
+
+    def input_types(self) -> tuple[TensorType | BufferType, ...]:
+        """Returns the graph's input types; see
+        :func:`deepseekV2_input_types`."""
+        return deepseekV2_input_types(self.devices, self.kv_params)
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Adapts the flat graph inputs to :meth:`__call__` by unflattening the
+        KV cache.
+
+        Args:
+            *input_types: The graph's input types, :meth:`input_types`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+
+        def forward(
+            tokens: Value[Any],
+            input_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            *kv_inputs: Value[Any],
+        ) -> DecoderOutputs:
+            kv_collections = unflatten_kv_collections(self.kv_params, kv_inputs)
+            return self(
+                tokens.tensor,
+                kv_collections[0],
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )
 
     def _get_mlp(self, config: DeepseekV2Config, i: int) -> Module:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Correctness tests for the Apple M5 int8 W8A8 matmul (`int8_matmul.mojo`).
 
-Three stages, all gated on Apple M5 (`compute_capability == 5`):
+Three stages, all gated on Apple M5 (`compute_capability >= 5`):
 
 - Stage 1 (`_run_gemm_vs_quant_ref`): the W8A8 GEMM+dequant kernel vs an fp32
   reference that applies the IDENTICAL symmetric-absmax int8 quant to A and B,
@@ -359,8 +359,8 @@ def test_end_to_end(ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     test_gemm(ctx)
     test_act_quant(ctx)

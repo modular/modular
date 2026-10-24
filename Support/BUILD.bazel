@@ -515,10 +515,10 @@ modular_cc_library(
         "//Mojo:__pkg__",
         "//mach/crates/max-sys-internal:__pkg__",
         "//max/internal/profiler:__pkg__",
-        "//max/lib/mcl:__pkg__",
-        "//max/python/max/_core/mcl:__subpackages__",
+        "//max/lib/max_license:__pkg__",
+        "//max/python/max/_core/max_license:__subpackages__",
         "//max/tests/internal/profiler:__pkg__",
-        "//plugins:device_backend_plugins",
+        "//plugins:__subpackages__",
     ],
     deps = [
         # Configuration backs the max-debug.profiling-enabled auto-start knob
@@ -595,9 +595,9 @@ PROFILING_DEPS = [
     # TracyCUDA.hpp inline functions) via on-demand dlopen of libcudart.so,
     # avoiding a hard NEEDED entry.
     "//:tracy_cuda_enabled": [
-        "//bazel/third-party:cuda_cupti_headers",
-        "//bazel/third-party:cuda_runtime_headers",
-        "//bazel/third-party:libcudart_stub",
+        "//bazel/public-patches:cuda_cupti_headers",
+        "//bazel/public-patches:cuda_runtime_headers",
+        ":libcudart_stub",
     ],
     "//conditions:default": [],
 }) + select({
@@ -605,7 +605,7 @@ PROFILING_DEPS = [
     # rocprofiler_headers is needed for compiling rocprofiler-sdk types
     # used in the Profiling sources.
     "//:tracy_rocm_enabled": [
-        "//bazel/third-party:rocprofiler_headers",
+        "//bazel/public-patches:rocprofiler_headers",
     ],
     "//conditions:default": [],
 })
@@ -702,7 +702,9 @@ modular_cc_library(
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Rewrite",
         "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TransformUtils",
     ],
 )
 
@@ -1066,6 +1068,7 @@ modular_cc_library(
     hdrs = glob(["include/Support/DebugInfoDialect/Transforms/*.h"]),
     deps = [
         ":Base",
+        ":Compiler",
         ":DebugInfoDialect",
         ":DebugInfoTransformPasses",
         "@llvm-project//llvm:BinaryFormat",
@@ -1088,6 +1091,7 @@ modular_cc_library(
     hdrs = glob(["include/Support/DebugInfoDialect/DebugInfoToLLVM/*.h"]),
     deps = [
         ":Base",
+        ":Compiler",
         ":DebugInfoDialect",
         ":DebugInfoToLLVMIncGen",
         ":DebugInfoTransforms",
@@ -1230,7 +1234,7 @@ modular_cc_library(
 mlir_nanobind(
     name = "MDialectNanobindInc",
     srcs = glob(["include/Support/MDialect/*.td"]),
-    allowlist = "//max/python/max/_core/mcl/modules/dialects:allowlist.txt",
+    allowlist = "//max/python/max/_core/max_license/modules/dialects:allowlist.txt",
     output_dir = "include/Support/MDialect/Nanobind",
     deps = [
         ":MTdFiles",
@@ -1249,4 +1253,149 @@ modular_nanobind_library(
         "@llvm-project//mlir:MLIRBindingsPythonNanobindHeaders",
         "@llvm-project//mlir:Support",
     ],
+)
+
+# On-demand CUDA runtime stub for Tracy GPU profiling and libkineto (Linux
+# only). The trampolines dlopen libcudart.so lazily; if it is absent each
+# returns cudaErrorInsufficientDriver so the consumer skips GPU profiling
+# rather than failing to load. Linking against this instead of libcudart.so
+# keeps the hard NEEDED entry out of the consumer's DSO.
+#
+# Declared here rather than in //bazel/third-party because the source is part
+# of the MAX License tier and ships with the source-available export, which
+# does not carry third-party.
+modular_shared_library(
+    name = "cudart_stub",
+    srcs = ["max_license/libcudart_stub.cpp"],
+    copts = ["-fvisibility=default"],
+    output_name = "cudart-stub",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = ["//bazel/public-patches:cuda_runtime_headers"],
+)
+
+alias(
+    name = "libcudart_stub",
+    actual = select({
+        "@platforms//os:linux": ":cudart_stub",
+        "//conditions:default": "//bazel/public-patches:empty_lib",
+    }),
+)
+
+# Static variant for the profiler plugin, which links the trampolines in so
+# libMAXProfilerPlugin.so stays a single self-contained file. alwayslink: the
+# symbols are referenced only by a sibling archive, so member inclusion must
+# not depend on link order.
+modular_cc_library(
+    name = "libcudart_stub_static",
+    srcs = ["max_license/libcudart_stub.cpp"],
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//max/internal/profiler:__pkg__"],
+    deps = ["//bazel/public-patches:cuda_runtime_headers"],
+    alwayslink = True,
+)
+
+# On-demand CUDA driver stub for Tracy GPU profiling and libkineto (Linux
+# only).
+#
+# Provides the CUDA driver API symbols that Tracy and libkineto-consuming
+# code call directly — cuGetErrorString and cuStreamIsCapturing for Tracy,
+# plus cuCtxGetCurrent for the M::Profiling CUDA-context probe — using the
+# same dlopen strategy as MLRT's CUDADriver (RTLD_NOW | RTLD_GLOBAL). The
+# real libcuda.so.1 is opened lazily on the first call; if it is absent the
+# functions return CUDA_ERROR_NOT_INITIALIZED so the consumer silently
+# skips GPU profiling.
+modular_shared_library(
+    name = "cuda_stub",
+    srcs = ["max_license/libcuda_stub.cpp"],
+    copts = ["-fvisibility=default"],
+    output_name = "cuda-stub",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+alias(
+    name = "libcuda_stub",
+    actual = select({
+        "@platforms//os:linux": ":cuda_stub",
+        "//conditions:default": "//bazel/public-patches:empty_lib",
+    }),
+)
+
+# On-demand CUPTI stub for Tracy GPU profiling and libkineto (Linux only).
+#
+# Provides every CUPTI API symbol that Tracy and libkineto link against via an
+# on-demand dlopen of libcupti.so (RTLD_NOW | RTLD_GLOBAL).  The real
+# libcupti.so is opened lazily on the first call; if it is absent every
+# function returns CUPTI_ERROR_NOT_INITIALIZED so the consumer silently skips
+# GPU profiling.  Tracy contributes 12 symbols; libkineto contributes ~44
+# additional ones across activity, callbacks, events, metrics, target, and
+# the Profiler API — see the file-level comment in libcupti_stub.cpp.
+modular_shared_library(
+    name = "cupti_stub",
+    srcs = ["max_license/libcupti_stub.cpp"],
+    copts = ["-fvisibility=default"],
+    output_name = "cupti-stub",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        # cuda_cupti_headers provides <cupti.h> plus the sub-headers (events,
+        # metrics, profiler_target, target) used by the trampolines'
+        # `decltype(&::name)` lookups.  cuda_runtime_headers is pulled in by
+        # cupti.h's `#include <cuda.h>` chain; it also supplies the synthesized
+        # `crt/host_config.h` (cuda_cudart.BUILD's crt_host_config_h genrule) on
+        # both x86_64 and aarch64, so no separate shim is needed.
+        "//bazel/public-patches:cuda_cupti_headers",
+        "//bazel/public-patches:cuda_runtime_headers",
+    ],
+)
+
+alias(
+    name = "libcupti_stub",
+    actual = select({
+        "@platforms//os:linux": ":cupti_stub",
+        "//conditions:default": "//bazel/public-patches:empty_lib",
+    }),
+)
+
+# Static variants of the CUDA driver and CUPTI stubs, for the profiler plugin;
+# see libcudart_stub_static above.
+modular_cc_library(
+    name = "libcuda_stub_static",
+    srcs = ["max_license/libcuda_stub.cpp"],
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//max/internal/profiler:__pkg__"],
+    alwayslink = True,
+)
+
+modular_cc_library(
+    name = "libcupti_stub_static",
+    srcs = ["max_license/libcupti_stub.cpp"],
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//max/internal/profiler:__pkg__"],
+    deps = [
+        "//bazel/public-patches:cuda_cupti_headers",
+        "//bazel/public-patches:cuda_runtime_headers",
+    ],
+    alwayslink = True,
+)
+
+# On-demand rocprofiler-sdk stub for Tracy GPU profiling (Linux only).
+#
+# Provides the eleven rocprofiler-sdk API symbols that Tracy calls directly via
+# an on-demand dlopen of librocprofiler-sdk.so (RTLD_NOW | RTLD_GLOBAL).  The
+# real librocprofiler-sdk.so is opened lazily on the first call; if it is
+# absent every function returns ROCPROFILER_STATUS_ERROR so Tracy silently
+# skips ROCm GPU profiling.
+modular_shared_library(
+    name = "rocprofiler_tracy_stub",
+    srcs = ["max_license/librocprofiler_tracy_stub.cpp"],
+    copts = ["-fvisibility=default"],
+    output_name = "rocprofiler-tracy-stub",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+alias(
+    name = "librocprofiler_tracy_stub",
+    actual = select({
+        "@platforms//os:linux": ":rocprofiler_tracy_stub",
+        "//conditions:default": "//bazel/public-patches:empty_lib",
+    }),
 )

@@ -13,10 +13,10 @@
 """EAGLE speculative decoding draft model for Llama 3."""
 
 from .arch import eagle3_llama_arch, eagle_llama_arch
-from .model import EagleLlama3Model
+from .model import EagleLlama3ArchConfig
 
 __all__ = [
-    "EagleLlama3Model",
+    "EagleLlama3ArchConfig",
     "eagle3_llama_arch",
     "eagle_llama_arch",
 ]

@@ -124,14 +124,8 @@ void KGEN::buildElaborateModulePipeline(
   if (options.debugLevel == CompilationOptions::kNoDebug)
     pm.addPass(DebugInfo::createDebugInfoStrip());
 
-  // Only outline closures just before elaboration - they aren't really
-  // necessary until elaboration happens.
-  pm.addPass(createOutlineClosures(OutlineClosuresOptions{
-      options.debugLevel != CompilationOptions::kNoDebug}));
-  if (options.optimizationLevel >= 1) {
-    // TODO(#20717): CSE cannot run before `OutlineClosures`.
+  if (options.optimizationLevel >= 1)
     pm.addNestedPass<GeneratorOp>(mlir::createCSEPass());
-  }
 #ifndef MODULAR_PRODUCTION
   pm.addPass(createVerifyParameters());
 #endif
@@ -186,9 +180,6 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
 
   // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
-
-  // Then immediately resolve compiler promises.
-  pm.addPass(createResolveCompilerPromises());
 
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());

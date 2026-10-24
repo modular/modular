@@ -26,16 +26,11 @@ real checkpoint; it lives in ``mach/docs/qwen38_27b/mtp-spec.md``.
 
 from __future__ import annotations
 
-import functools
-
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.mtp import Qwen3_5MTP
 from max.pipelines.architectures.qwen3_5.quantization import (
@@ -138,10 +133,7 @@ def _nvfp4_scheme() -> Qwen3_5QuantScheme | None:
     )
 
 
-def _build(
-    device: DeviceRef | None = None,
-    embed_tokens: VocabParallelEmbedding | None = None,
-) -> Qwen3_5MTP:
+def _build(device: DeviceRef | None = None) -> Qwen3_5MTP:
     """The draft head under a MIXED_PRECISION (packed-NVFP4) config."""
     device = DeviceRef.GPU(0) if device is None else device
     scheme = _nvfp4_scheme()
@@ -185,32 +177,7 @@ def _build(
     )
     assert config.dtype == DType.uint8
     assert config.compute_dtype == DType.bfloat16
-    return Qwen3_5MTP(
-        config,
-        embed_tokens=embed_tokens
-        if embed_tokens is not None
-        else VocabParallelEmbedding(
-            VOCAB, HIDDEN, config.compute_dtype, [device]
-        ),
-        rope=Llama3RotaryEmbedding(
-            dim=HIDDEN,
-            n_heads=HEADS,
-            theta=1e7,
-            max_seq_len=4096,
-            head_dim=int(HEAD_DIM * 0.25),
-            interleaved=True,
-            scaling_params=None,
-        ),
-        create_norm=functools.partial(
-            RMSNorm,
-            HIDDEN,
-            dtype=DType.bfloat16,
-            eps=EPS,
-            weight_offset=1.0,
-            multiply_before_cast=False,
-        ),
-        kv_layer_idx=0,
-    )
+    return Qwen3_5MTP(config)
 
 
 def test_weight_names_are_the_checkpoint_names() -> None:
@@ -222,7 +189,8 @@ def test_weight_names_are_the_checkpoint_names() -> None:
     """
     mtp = _build()
     names = set(mtp.raw_state_dict())
-    # `embed_tokens` is the target's table, injected rather than owned.
+    # `embed_tokens` is the target's table, which spec decoding shares onto
+    # the head.
     names.discard("embed_tokens.weight")
     assert names == CHECKPOINT_MTP_WEIGHTS
 
@@ -297,18 +265,3 @@ def test_the_norms_carry_the_unit_offset() -> None:
         block.self_attn.k_norm,
     ):
         assert norm.weight_offset == 1.0
-
-
-def test_the_embedding_table_is_shared_not_copied() -> None:
-    """`mtp_use_dedicated_embeddings: false`: one table, two consumers.
-
-    The checkpoint ships neither `mtp.embed_tokens` nor `mtp.lm_head`.
-    """
-    embed = VocabParallelEmbedding(
-        VOCAB, HIDDEN, DType.bfloat16, [DeviceRef.GPU(0)]
-    )
-    mtp = _build(embed_tokens=embed)
-    # Asserting after a reassignment would only prove Python allows it; the
-    # table has to survive `__init__` uncopied for the two graphs to
-    # reference one weight.
-    assert mtp.embed_tokens is embed

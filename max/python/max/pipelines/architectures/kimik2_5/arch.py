@@ -20,10 +20,8 @@ from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
 from .memory_planner import KimiK25MemoryPlanner
 from .model import KimiK2_5Model
-from .model_config import KimiK2_5Config, KimiK2_5TextConfig
+from .model_config import KimiK2_5Config
 from .tokenizer import KimiK2_5VLTokenizer
-from .unified_eagle_mha_pipeline_model import Eagle3MHAKimiK25Model
-from .unified_eagle_pipeline_model import Eagle3KimiK25Model
 
 kimik2_5_arch = SupportedArchitecture(
     name="KimiK25ForConditionalGeneration",
@@ -51,6 +49,23 @@ kimik2_5_arch = SupportedArchitecture(
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
     memory_planner=KimiK25MemoryPlanner,
+    # Its language model is DeepseekV3's, whose Eagle3 drafts it takes too.
+    # Its DFlash draft runs MHA over an MLA target, sharded like it.
+    draft_architectures={
+        "eagle": {
+            "Eagle3DeepseekV2ForCausalLM": "Eagle3DeepseekV3DraftModel",
+            "LlamaForCausalLMEagle3": "Eagle3MHADeepseekV3DraftModel",
+        },
+        "dflash": {
+            "DFlashDraftModel": "DFlashKimiK25DraftModel",
+            "LlamaForCausalLM": "DFlashKimiK25DraftModel",
+        },
+    },
+    spec_decode_graph_names={
+        "Eagle3DeepseekV3DraftModel": "eagle3_kimik25_graph",
+        "Eagle3MHADeepseekV3DraftModel": "eagle3_mha_kimik25_graph",
+        "dflash": "unified_dflash_kimi_k25_graph",
+    },
 )
 
 kimivl_arch = SupportedArchitecture(
@@ -79,48 +94,4 @@ kimivl_arch = SupportedArchitecture(
     memory_planner=KimiK25MemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
-)
-
-eagle3_kimik25_arch = SupportedArchitecture(
-    name="Eagle3DeepseekV2ForCausalLM",
-    task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4", "nvidia/Kimi-K2.6-NVFP4"],
-    default_encoding=KimiK2_5TextConfig.DEFAULT_ENCODING,
-    supported_encodings=KimiK2_5TextConfig.SUPPORTED_ENCODINGS,
-    multi_gpu_supported=True,
-    pipeline_model=Eagle3KimiK25Model,
-    tokenizer=KimiK2_5VLTokenizer,
-    context_type=KimiK2_5TextAndVisionContext,
-    default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
-    },
-    supports_empty_batches=True,
-    requires_max_batch_context_length=True,
-    config=KimiK2_5TextConfig,
-    tool_parser="kimik2_5",
-    reasoning_parser="kimik2_5",
-    memory_planner=KimiK25MemoryPlanner,
-)
-
-eagle3_mha_kimik25_arch = SupportedArchitecture(
-    name="Eagle3MHAKimiK25ForCausalLM",
-    task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4", "nvidia/Kimi-K2.6-NVFP4"],
-    default_encoding=KimiK2_5TextConfig.DEFAULT_ENCODING,
-    supported_encodings=KimiK2_5TextConfig.SUPPORTED_ENCODINGS,
-    multi_gpu_supported=True,
-    pipeline_model=Eagle3MHAKimiK25Model,
-    tokenizer=KimiK2_5VLTokenizer,
-    context_type=KimiK2_5TextAndVisionContext,
-    default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
-    },
-    supports_empty_batches=True,
-    requires_max_batch_context_length=True,
-    config=KimiK2_5TextConfig,
-    tool_parser="kimik2_5",
-    reasoning_parser="kimik2_5",
-    memory_planner=KimiK25MemoryPlanner,
 )

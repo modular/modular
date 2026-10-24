@@ -140,7 +140,7 @@ def test_case[
         score_threshold,
     )
 
-    for i in range(Int(selected_idxs.layout.shape[0]().value())):
+    for i in range(Int(selected_idxs.dim[0]())):
         print(selected_idxs[i, 0], end="")
         print(",", end="")
         print(selected_idxs[i, 1], end="")

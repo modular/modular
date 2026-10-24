@@ -16,7 +16,7 @@ from max.gpu import global_idx
 from std.testing import assert_equal
 
 from max.gpu.host import DeviceContext
-from max.gpu.host.device_context import DeviceExternalFunction
+from max.gpu.host import DeviceExternalFunction
 from max.gpu.host.compile import _compile_code
 
 

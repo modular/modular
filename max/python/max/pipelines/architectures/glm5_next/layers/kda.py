@@ -77,8 +77,8 @@ class KdaReplayInputs(NamedTuple):
     to land the pools on the accepted prefix instead. Every op feeding these
     tensors is causal or pointwise, so re-running the kernels over the accepted
     rows from the pre-verify state reproduces the state the verify pass held at
-    that length -- the argument Qwen3.5's
-    ``unified_mtp_qwen3_5/state_rollback.py`` rests on.
+    that length -- the argument Qwen3.5's rollback in
+    ``speculative/gated_delta_rollback.py`` rests on.
 
     What does not carry over from Qwen3.5 is the shape of ``raw_gate``: KDA's
     forget gate is one value per *channel* per head, not one scalar per head,

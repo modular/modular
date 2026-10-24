@@ -92,19 +92,19 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     # Allocate input and output buffers.
     var input_alloc = alloc(
         AllocLayout[Scalar[input_type], alignment=.of_bytes[alignment]()](
-            count=num_copies * input_alloc_size
+            length=num_copies * input_alloc_size
         )
     ).into_managed()
     var input_ptr = input_alloc.unsafe_ptr()
     var filter_alloc = alloc(
         AllocLayout[Scalar[filter_type], alignment=.of_bytes[alignment]()](
-            count=num_copies * filter_alloc_size
+            length=num_copies * filter_alloc_size
         )
     ).into_managed()
     var filter_ptr = filter_alloc.unsafe_ptr()
     var output_alloc = alloc(
         AllocLayout[Scalar[output_type], alignment=.of_bytes[alignment]()](
-            count=num_copies * output_alloc_size
+            length=num_copies * output_alloc_size
         )
     ).into_managed()
     var output_ptr = output_alloc.unsafe_ptr()
@@ -116,15 +116,18 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    comptime if spec.static_info.rank == 1:
-        pad_w = Index(spec.pad[0], spec.pad[1])
-    elif spec.static_info.rank == 2:
-        pad_h = Index(spec.pad[0], spec.pad[1])
-        pad_w = Index(spec.pad[2], spec.pad[3])
-    elif spec.static_info.rank == 3:
-        pad_d = Index(spec.pad[0], spec.pad[1])
-        pad_h = Index(spec.pad[2], spec.pad[3])
-        pad_w = Index(spec.pad[4], spec.pad[5])
+    comptime match spec.static_info.rank:
+        case 1:
+            pad_w = Index(spec.pad[0], spec.pad[1])
+        case 2:
+            pad_h = Index(spec.pad[0], spec.pad[1])
+            pad_w = Index(spec.pad[2], spec.pad[3])
+        case 3:
+            pad_d = Index(spec.pad[0], spec.pad[1])
+            pad_h = Index(spec.pad[2], spec.pad[3])
+            pad_w = Index(spec.pad[4], spec.pad[5])
+        case _:
+            pass
 
     var conv_shape = ConvShape[spec.static_info.rank](
         n=spec.n,
@@ -264,9 +267,9 @@ def main() raises:
 
     comptime fp32_1d = ConvSpecStatic(
         rank=1,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
     @inline(.always)
@@ -299,9 +302,9 @@ def main() raises:
 
     comptime fp32_2d = ConvSpecStatic(
         rank=2,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
     @inline(.always)
@@ -340,9 +343,9 @@ def main() raises:
 
     comptime fp32_3d = ConvSpecStatic(
         rank=3,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
     @inline(.always)

@@ -1,0 +1,17 @@
+# config.json: the real checkpoint's config, copied verbatim. No weights.
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+filegroup(
+    name = "testdata",
+    testonly = True,
+    srcs = ["config.json"],
+    visibility = [
+        "//max/tests/integration/architectures/deepseekV41:__pkg__",
+        "//max/tests/integration/kv_cache:__pkg__",
+    ],
+)

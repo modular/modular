@@ -256,6 +256,8 @@ def fa4_mma[
     # Key-split and non-WS keep `PARTIAL_K`.
     comptime CUT_LAST_TILE = PARTIAL_K or config.ws_shared_key
 
+    # `tmem_addr` passed in by register (read once post-barrier in the kernel
+    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var q_smem = smem.q_smem()
 
     var s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
@@ -334,16 +336,14 @@ def fa4_mma[
 
     # Called after consumer_s[*].wait(phase), which orders the vote write
     # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.
-    @__parameter
     @inline(.always)
-    def blasst_should_skip(wg: UInt32, phase: UInt32) -> Bool:
+    def blasst_should_skip(wg: UInt32, phase: UInt32) {imm} -> Bool:
         return blasst_vote_unanimous(blasst_vote, wg, phase)
 
-    @__parameter
     @inline(.always)
     def _commit(
-        mbar: UnsafePointer[address_space=.SHARED, ...],
-    ):
+        mbar: Pointer[address_space=.SHARED, ...],
+    ) {imm}:
         """Arrive at mbar: multicast for pair-CTA, local elect for single."""
         comptime if config.pair_cta:
             if e != 0:
@@ -419,7 +419,6 @@ def fa4_mma[
     # and `CUT_LAST_TILE == PARTIAL_K` for every caller of the two gated
     # wrappers below (`CUT_LAST_TILE` adds only `ws_shared_key`, which implies
     # `use_ws`). Assert it rather than comment it.
-    @__parameter
     @inline(.always)
     def _pv[
         partial: Bool = False
@@ -433,7 +432,7 @@ def fa4_mma[
         *,
         valid_k_mmas: UInt32 = 0,
         wg: UInt32 = 0,
-    ):
+    ) {imm}:
         comptime assert not config.use_ws, (
             "_pv is the non-WS P@V; warp-specialized configs route through"
             " _pv_ws"
@@ -485,7 +484,6 @@ def fa4_mma[
     #
     # `CUT_LAST_TILE`, not `PARTIAL_K`: the two are equal wherever these are
     # instantiated (see `_pv`'s assert), and one constant beats two.
-    @__parameter
     @inline(.always)
     def _pv_tile0(
         s_tmem: UInt32,
@@ -497,7 +495,7 @@ def fa4_mma[
         v_eff: UInt32,
         *,
         wg: UInt32 = 0,
-    ):
+    ) {imm}:
         comptime if CUT_LAST_TILE:
             _pv[partial=True](
                 s_tmem,
@@ -516,7 +514,6 @@ def fa4_mma[
     # contract the last tile only on their final trip and pass
     # `iter_count == 0`, taking a full contraction otherwise; epilogue sites
     # take the default and the ternary folds.
-    @__parameter
     @inline(.always)
     def _pv_final(
         s_tmem: UInt32,
@@ -530,7 +527,7 @@ def fa4_mma[
         *,
         wg: UInt32 = 0,
         is_last: Bool = True,
-    ):
+    ) {imm}:
         comptime if CUT_LAST_TILE:
             var vkm = _vkm_final(v_eff, total_iters) if is_last else UInt32(
                 UMMA1Type.num_k_mmas
@@ -563,9 +560,15 @@ def fa4_mma[
     # because the dispatch below is the last statement in the function -- keep
     # it last if anything is ever appended here.
 
-    @__parameter
     @inline(.always)
-    def _body_1q():
+    def _body_1q() {
+        mut consumer_s1,
+        mut o1_tmem,
+        mut pipeline_o1,
+        mut s1_tmem,
+        mut v_eff_keys,
+        imm,
+    }:
         # Cross-stage P is 2Q-only (`CrossP_enabled` requires `num_q == 2`
         # and `not use_ws`), so its QK0-first schedule and `rel_slot` release
         # cursor live only in `_body_2q`. Assert it rather than comment it: if
@@ -824,9 +827,10 @@ def fa4_mma[
             # release/step/wait/capture idiom repeated across the 1Q path.
             # `consumer_mbar(idx)` with the current index is identical to the
             # no-arg `consumer_mbar()` (which forwards `state.index()`).
-            @__parameter
             @inline(.always)
-            def _advance_kv(release_idx: UInt32) -> UInt32:
+            def _advance_kv(
+                release_idx: UInt32,
+            ) {mut kv_pipeline, imm} -> UInt32:
                 _commit(kv_pipeline.consumer_mbar(release_idx))
                 kv_pipeline.state.step()
                 kv_pipeline.consumer_wait()
@@ -839,9 +843,8 @@ def fa4_mma[
             # with manual K/Q bases and c_scale 0->1 -- NOT `mma[stage_idx=1]`,
             # which adds an internal +BK0 offset assuming one contiguous tile
             # (would read OOB). Empty (no-op) when num_qk_stages==1.
-            @__parameter
             @inline(.always)
-            def _qk_extra(q_base: MMASmemDescriptorPair, s_tmem: UInt32):
+            def _qk_extra(q_base: MMASmemDescriptorPair, s_tmem: UInt32) {imm}:
                 comptime for d in range(1, config.num_qk_stages):
                     var kd_idx = _advance_kv(kv_pipeline.state.index())
                     UMMA0Type.mma[stage_idx=0](
@@ -872,9 +875,8 @@ def fa4_mma[
             # `_v_wait_rest`: wait the remaining v_subslots-1 V ring
             # sub-slots (produced consecutively right after the first). Leaves
             # the ring state at the last of them. Empty when v_subslots==1.
-            @__parameter
             @inline(.always)
-            def _v_wait_rest():
+            def _v_wait_rest() {mut kv_pipeline}:
                 comptime if not v_sk_inline_lifecycle:
                     comptime for d in range(1, v_subslots):
                         kv_pipeline.state.step()
@@ -882,9 +884,8 @@ def fa4_mma[
 
             # `_v_release_rest`: release the v_subslots-1 V sub-slots after
             # v_idx0 (ring-adjacent). Empty when v_subslots==1.
-            @__parameter
             @inline(.always)
-            def _v_release_rest(v_idx0: UInt32):
+            def _v_release_rest(v_idx0: UInt32) {imm}:
                 comptime if not v_sk_inline_lifecycle:
                     comptime for d in range(1, v_subslots):
                         _commit(
@@ -903,9 +904,8 @@ def fa4_mma[
             # producer by exactly one slot -- the desync class that lands on the
             # right slot with the right phase and returns WRONG DATA instead of
             # hanging.
-            @__parameter
             @inline(.always)
-            def _v_release_first(v_idx0: UInt32):
+            def _v_release_first(v_idx0: UInt32) {imm}:
                 comptime if not v_sk_inline_lifecycle:
                     _commit(kv_pipeline.consumer_mbar(v_idx0))
 
@@ -937,7 +937,6 @@ def fa4_mma[
             # hoisted, each ring position released as its MMAs issue, `v_idx0`
             # unread -- the caller's wait leaves the cursor on (0, 0) and every
             # later one is a bare step off it. See its own comment block below.
-            @__parameter
             @inline(.always)
             def _pv_ws[
                 partial: Bool
@@ -950,7 +949,7 @@ def fa4_mma[
                 c_scale: UInt32,
                 valid_k_mmas: UInt32,
                 wg: UInt32 = 0,
-            ):
+            ) {mut kv_pipeline, imm}:
                 comptime if v_sk_inline_lifecycle:
                     # ---- Shared-key: key chunks outer, depth tiles inner ----
                     #
@@ -1033,7 +1032,7 @@ def fa4_mma[
                         BK=BN,
                         swizzle_mode=P_SWIZZLE,
                         is_k_major=True,
-                    ](smem.p_smem() + wg * UInt32(BM * BN))
+                    ](smem.p_smem().unsafe_offset(wg * UInt32(BM * BN)))
 
                     for c in range(live_chunks):
                         # P columns advance by ONE key chunk per `c`;
@@ -1200,7 +1199,6 @@ def fa4_mma[
             # descriptor; the two disagree only on how a ring index becomes an
             # operand, so the dispatch lives here rather than at all five call
             # sites. Takes the ring INDEX -- the one form both arms express.
-            @__parameter
             @inline(.always)
             def _pv_kv[
                 partial: Bool = False
@@ -1214,7 +1212,7 @@ def fa4_mma[
                 *,
                 valid_k_mmas: UInt32 = 0,
                 wg: UInt32 = 0,
-            ):
+            ) {imm}:
                 comptime if config.use_ws:
                     _pv_ws[partial](
                         s_tmem,
@@ -1244,7 +1242,6 @@ def fa4_mma[
             # shared-key, where producer and consumer have to cut the same key
             # chunks -- which is exactly why this arm needs its own pair rather
             # than reusing the fa4_mma-scope wrappers.
-            @__parameter
             @inline(.always)
             def _pv_kv_tile0(
                 s_tmem: UInt32,
@@ -1256,7 +1253,7 @@ def fa4_mma[
                 v_eff: UInt32,
                 *,
                 wg: UInt32 = 0,
-            ):
+            ) {imm}:
                 comptime if CUT_LAST_TILE:
                     _pv_kv[partial=True](
                         s_tmem,
@@ -1279,7 +1276,6 @@ def fa4_mma[
                         wg=wg,
                     )
 
-            @__parameter
             @inline(.always)
             def _pv_kv_final(
                 s_tmem: UInt32,
@@ -1292,7 +1288,7 @@ def fa4_mma[
                 total_iters: UInt32,
                 *,
                 wg: UInt32 = 0,
-            ):
+            ) {imm}:
                 comptime if CUT_LAST_TILE:
                     _pv_kv[partial=True](
                         s_tmem,
@@ -1769,9 +1765,8 @@ def fa4_mma[
             )
             _commit(pipeline_o1.producer_mbar())
 
-    @__parameter
     @inline(.always)
-    def _body_2q():
+    def _body_2q() {imm}:
         comptime if config.use_shared_kv:
             # ---- Shared KV mode ----
             # In shared mode, K_nope and V alternate in a single StagedPipeline.

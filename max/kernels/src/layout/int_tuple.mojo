@@ -62,64 +62,9 @@ from std.builtin.range import _StridedRange
 from std.memory import dealloc, unsafe_memcpy, ThinAllocation
 from std.memory.alloc import Layout as AllocLayout
 from std.collections import check_bounds
-from std.utils.numerics import max_finite
 from std.utils import IndexList
 from layout.coord import ComptimeInt, Coord, CoordLike
-from .layout import Layout
 from . import math as layout_math
-
-
-def _get_index_type(address_space: AddressSpace) -> DType:
-    """Returns int32 for shared/constant GPU memory, index otherwise."""
-    if address_space in (
-        AddressSpace.SHARED,
-        AddressSpace.CONSTANT,
-    ):
-        return DType.int32
-    else:
-        return DType.int64
-
-
-def _get_index_type(layout: Layout) -> DType:
-    """Returns int32 if layout size fits in int32 range, int64 otherwise."""
-    if layout.cosize() <= Int(max_finite[.int32]()):
-        return DType.int32
-
-    return DType.int64
-
-
-def _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
-    """Selects index type based on layout and address space."""
-    if layout.all_dims_known():
-        return _get_index_type(layout)
-    else:
-        return _get_index_type(address_space)
-
-
-def _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
-    """Returns int32 if layout fits in int32 range or index type is int32, otherwise index.
-    """
-    if layout.all_dims_known() and layout.cosize() < Int(max_finite[.int32]()):
-        return DType.int32
-    else:
-        var dtype = _get_index_type(address_space)
-        return DType.int32 if dtype == .int32 else DType.int64
-
-
-def _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
-    """Returns int32 if shape fits in uint32 range or address space is shared/constant, otherwise index.
-    """
-
-    if layout.all_dims_known():
-        var shape = layout.shape.flatten()
-
-        for i in range(len(shape)):
-            if shape[i].value() > Int(max_finite[.int32]()):
-                return DType.int64
-
-        return DType.int32
-    else:
-        return _get_index_type(address_space)
 
 
 struct IntArray(ImplicitlyCopyable, RegisterPassable):
@@ -143,7 +88,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             size: Number of integers to allocate space for. Defaults to 0.
         """
         if size > 0:
-            self._data = alloc(AllocLayout[Int](count=size)).unsafe_leak()
+            self._data = alloc(AllocLayout[Int](length=size)).unsafe_leak()
         else:
             self._data = {}
         self._size = size
@@ -160,7 +105,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = copy._size
         if copy.owning():
             var size = copy.size()
-            self._data = alloc(AllocLayout[Int](count=size)).unsafe_leak()
+            self._data = alloc(AllocLayout[Int](length=size)).unsafe_leak()
             self.copy_from(0, copy, size)
         else:
             self._data = copy._data
@@ -176,7 +121,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             dealloc(
                 ThinAllocation(
                     unsafe_owned_ptr=self._data.unsafe_value()
-                ).unsafe_with_layout(AllocLayout[Int](count=self.size()))
+                ).unsafe_with_layout(AllocLayout[Int](length=self.size()))
             )
 
     @inline(.nodebug)
@@ -248,7 +193,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         """
         if self._data and source._data:
             unsafe_memcpy(
-                dest=self._data.unsafe_value() + offset,
+                dest=self._data.unsafe_value().unsafe_offset(offset),
                 src=source._data.unsafe_value(),
                 count=size,
             )
@@ -267,8 +212,8 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         """
         if self._data and source._data:
             unsafe_memcpy(
-                dest=self._data.unsafe_value() + dst_offset,
-                src=source._data.unsafe_value() + src_offset,
+                dest=self._data.unsafe_value().unsafe_offset(dst_offset),
+                src=source._data.unsafe_value().unsafe_offset(src_offset),
                 count=size,
             )
 
@@ -279,20 +224,6 @@ comptime UNKNOWN_VALUE = -1
 This constant is used throughout the `IntTuple` system to represent dimensions
 that are not known at compile time or have not been specified.
 """
-
-
-def create_unknown_int_tuple(rank: Int) -> IntTuple:
-    """Creates an IntTuple of the given rank with all UNKNOWN_VALUE entries.
-
-    Args:
-        rank: The number of dimensions.
-
-    Returns:
-        An IntTuple with `rank` elements, all set to UNKNOWN_VALUE.
-    """
-    var result = IntTuple(rank)
-    _to_unknown(result)
-    return result
 
 
 struct _IntTupleIter[origin: ImmOrigin](
@@ -516,9 +447,9 @@ struct IntTuple(
               less than `MinimumValue`, assertion fails with an error message.
             - Structure validation performed when assertions are enabled.
         """
-        self._store = IntArray(elements.size + 1)
-        self._store[0] = elements.size
-        for i in range(elements.size):
+        self._store = IntArray(elements.length + 1)
+        self._store[0] = elements.length
+        for i in range(elements.length):
             var value = elements[i]
             debug_assert(
                 value >= Self.MinimumValue,
@@ -2688,32 +2619,6 @@ def fill_like(src: IntTuple, val: Int) -> IntTuple:
     return val
 
 
-def propagate_unknown(src: IntTuple, target: IntTuple) -> IntTuple:
-    """
-    Propagates unknown dimensions from the target `IntTuple` to the source `IntTuple`.
-
-    This function creates a new `IntTuple` by combining the source and target `IntTuple`s,
-    preserving unknown dimensions (UNKNOWN_VALUE) from the target while using values
-    from the source for known dimensions.
-
-    Args:
-        src: The source `IntTuple` containing known dimension values.
-        target: The target `IntTuple` that may contain unknown dimensions (UNKNOWN_VALUE).
-
-    Returns:
-        A new `IntTuple` with unknown dimensions from target and known dimensions from src.
-    """
-    if is_tuple(target):
-        var dim = IntTuple()
-        for d in zip(src, target):
-            dim.append(propagate_unknown(d[0], d[1]))
-        return dim
-
-    if target == UNKNOWN_VALUE:
-        return target.owned_copy()
-    return src.owned_copy()
-
-
 def reverse(src: IntTuple) -> IntTuple:
     """
     Reverses the order of elements in an `IntTuple`, recursively.
@@ -2942,7 +2847,7 @@ def coord_to_int_tuple[
             result.append(coord_to_int_tuple(value[i].tuple()))
         else:
             # Convert value elements to integers
-            result.append(IntTuple(Int(value[i].value())))
+            result.append(IntTuple(Int(value[i])))
 
     return result
 

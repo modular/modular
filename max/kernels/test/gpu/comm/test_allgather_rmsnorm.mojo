@@ -78,13 +78,13 @@ def _gathered_value[in_dtype: DType](row: Int, col: Int) -> Scalar[in_dtype]:
 def _rms_norm_full[
     in_dtype: DType,
     num_cols: Int,
+    epsilon: Float32,
+    weight_offset: Float32,
 ](
     rows: Int,
     src: DeviceBuffer[in_dtype],
     dst: DeviceBuffer[in_dtype],
     gamma: DeviceBuffer[in_dtype],
-    epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
     ctx: DeviceContext,
 ) raises:
     """Standalone `rms_norm_gpu` over one full `[rows, num_cols]` tensor, M3
@@ -116,24 +116,23 @@ def _rms_norm_full[
     )
 
     @inline(.always)
-    @__copy_capture(src_view)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        return src_view.raw_load[width=width](src_view.layout(coords))
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var src_view} -> SIMD[in_dtype, width]:
+        return src_view.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(dst_view)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        dst_view.raw_store[width=width, alignment=alignment](
-            dst_view.layout(coords), val
-        )
+    ](coords: Coord, val: SIMD[in_dtype, width]) {var dst_view} -> None:
+        dst_view.store[alignment=alignment](coords, val)
 
-    rms_norm_gpu[2, input_fn, output_fn, multiply_before_cast=True](
-        Coord(Index(rows, num_cols)), gamma_view, epsilon, weight_offset, ctx
-    )
+    rms_norm_gpu[
+        2,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](input_fn, output_fn, Coord(Index(rows, num_cols)), gamma_view, ctx)
 
 
 def _run_case[
@@ -167,8 +166,9 @@ def _run_case[
     var config = ReduceScatterConfig[in_dtype, ngpus](
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](0.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(0.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
     var full_n = num_rows * num_cols
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -282,13 +282,11 @@ def _run_case[
                 _allgather_full[in_dtype, ngpus, num_cols](
                     in_shards, sum_full, config, rank_sigs, list_of_ctx[i], i
                 )
-                _rms_norm_full[in_dtype, num_cols](
+                _rms_norm_full[in_dtype, num_cols, epsilon, weight_offset_f32](
                     num_rows,
                     sum_full[i],
                     normed[i],
                     gamma_dev[i],
-                    epsilon,
-                    weight_offset,
                     list_of_ctx[i],
                 )
 
@@ -540,7 +538,7 @@ def _allgather_full[
         comptime for src in range(group_size):
             var start = config.rank_unit_start(src)
             world_out_views[dev * group_size + src] = OutViewType(
-                dev_base + start * num_cols,
+                dev_base.unsafe_offset(start * num_cols),
                 row_major(Coord(Index(config.rank_units(src), num_cols))),
             )
     allgather[group_size=group_size](
@@ -591,9 +589,10 @@ def _run_prod_oracle_case[
     var config = ReduceScatterConfig[in_dtype, group_size](
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
-    var epsilon = Float32(1e-6)
+    comptime epsilon = Float32(1e-6)
     # M3 input_layernorm is Gemma-style: weight_offset=1.0, mbc=True.
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
     var full_n = num_rows * num_cols
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -719,13 +718,11 @@ def _run_prod_oracle_case[
                     list_of_ctx[i],
                     i,
                 )
-                _rms_norm_full[in_dtype, num_cols](
+                _rms_norm_full[in_dtype, num_cols, epsilon, weight_offset_f32](
                     num_rows,
                     sum_full[i],
                     normed[i],
                     gamma_dev[i],
-                    epsilon,
-                    weight_offset,
                     list_of_ctx[i],
                 )
 
@@ -775,13 +772,11 @@ def _run_prod_oracle_case[
     # its local-rank-0 device) is the reference for all of the group's devices.
     for g in range(num_groups):
         var lead = g * group_size
-        _rms_norm_full[in_dtype, num_cols](
+        _rms_norm_full[in_dtype, num_cols, epsilon, weight_offset_f32](
             num_rows,
             ag_ref[lead],
             prod[lead],
             gamma_dev[lead],
-            epsilon,
-            weight_offset,
             list_of_ctx[lead],
         )
     for g in range(num_groups):
@@ -940,8 +935,9 @@ def _run_interleaved_barrier_case[
         axis_size=world_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var shard_n = rows_per_dev * num_cols
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[List[Scalar[in_dtype]]](capacity=ngpus)
@@ -1199,8 +1195,9 @@ def _run_asymmetric_fuse_gate_case[
         "asymmetric fuse gate: groups must straddle AG_NORM_FUSE_THRESHOLD",
     )
 
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var gamma_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -1341,7 +1338,7 @@ def _run_asymmetric_fuse_gate_case[
                 ](sum_full[dev].unsafe_ptr())
                 comptime for src in range(group_size):
                     world_out_views[dev * group_size + src] = FullType(
-                        dev_base + src * dev_rows * num_cols,
+                        dev_base.unsafe_offset(src * dev_rows * num_cols),
                         row_major(Coord(Index(dev_rows, num_cols))),
                     )
             allgather[group_size=group_size](
@@ -1351,13 +1348,11 @@ def _run_asymmetric_fuse_gate_case[
                 list_of_ctx[i],
                 i,
             )
-            _rms_norm_full[in_dtype, num_cols](
+            _rms_norm_full[in_dtype, num_cols, epsilon, weight_offset_f32](
                 group_size * rows_of(i),
                 sum_full[i],
                 normed[i],
                 gamma_dev[i],
-                epsilon,
-                weight_offset,
                 list_of_ctx[i],
             )
             comptime if quant:
@@ -1365,14 +1360,14 @@ def _run_asymmetric_fuse_gate_case[
                     list_of_ctx[i], quant_view, scale_view, normed_view
                 )
 
-        # `@__copy_capture` is mandatory: without it these reach the device as
-        # host-stack pointers and the stores land out of bounds.
-        @__copy_capture(quant_view, scale_view)
-        @__parameter
+        # The `{var}` copies are mandatory: captured by reference, these reach
+        # the device as host-stack pointers and the stores land out of bounds.
         @inline(.always)
         def mx_epilogue[
             width: Int
-        ](row: Int, col: Int, val: SIMD[in_dtype, width]):
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) {
+            var quant_view, var scale_view
+        }:
             var quantized: SIMD[.float8_e4m3fn, width]
             var e8m0: Float8_e8m0fnu
             # The block max is a cross-lane reduction: lanes past `num_cols`
@@ -1383,17 +1378,12 @@ def _run_asymmetric_fuse_gate_case[
                 SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
             ](val)
             if col < num_cols:
-                quant_view.store[width=width](Coord(row, col), quantized)
+                quant_view.store((row, col), quantized)
                 if col % MXFP8_SF_VECTOR_SIZE == 0:
-                    scale_view.store(
-                        Coord(row, col // MXFP8_SF_VECTOR_SIZE), e8m0
-                    )
+                    scale_view.store((row, col // MXFP8_SF_VECTOR_SIZE), e8m0)
 
         comptime if quant:
-            _dispatch_ag_norm_quant[
-                quant_epilogue=mx_epilogue,
-                group_size=group_size,
-            ](
+            _dispatch_ag_norm_quant[group_size=group_size](
                 world_shards,
                 normed_view,
                 sum_view,
@@ -1402,6 +1392,7 @@ def _run_asymmetric_fuse_gate_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                mx_epilogue,
                 two_launch,
                 my_rank=i,
             )
@@ -1484,8 +1475,9 @@ def _run_rank_validation_case[
     var rows_per_dev = 4
     var group_rows = group_size * rows_per_dev
     var world_rows = ngpus * rows_per_dev
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=group_size)

@@ -1,0 +1,30 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_cc_test(
+    name = "CommonDriverTests",
+    srcs = glob(
+        ["*.cpp"],
+        exclude = ["DebugAllocPoisonTest.cpp"],
+    ),
+    deps = [
+        "//GraphCompiler:CommonDriver",
+        "//GraphCompiler:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_cc_test(
+    name = "DebugAllocPoisonTest",
+    size = "small",
+    srcs = ["DebugAllocPoisonTest.cpp"],
+    env = {
+        "MODULAR_DEBUG_DEVICE_ALLOCATOR": "uninitialized-poison",
+    },
+    deps = [
+        "//GraphCompiler:DeviceDriver",
+        "//MLRT/unittests/Driver:TestUtils",
+        "//Support:ML",
+    ],
+)

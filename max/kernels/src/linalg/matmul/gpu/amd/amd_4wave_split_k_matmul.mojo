@@ -38,14 +38,12 @@ from std.utils import Index
 from max.gpu import block_dim, global_idx, grid_dim
 from max.gpu.host import DeviceBuffer, DeviceContext
 
-from layout import Coord, Idx, TileTensor
+from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    apply_elementwise_epilogue,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -62,10 +60,11 @@ from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
 def _split_k_reduce_kernel[
     num_splits: Int,
     c_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    c_layout: TensorLayout,
+    c_engine: TensorEngine,
 ](
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     total_elems: Int32,
     elems_per_split: Int32,
     n_dim: Int32,
@@ -76,22 +75,14 @@ def _split_k_reduce_kernel[
     so split `s`'s element `(m, n)` lives at
     `scratch[s * M*N + m*N + n] = scratch[s * elems_per_split + tid]`
     when threads walk the flat M*N index space.
-
-    When `elementwise_lambda_fn` is set, the reduced f32 value at
-    flat index `tid` is delivered to the lambda with global
-    coords `(tid // N, tid % N)` instead of being stored to `c_ptr`.
-    The lambda fires exactly once per output cell (on the reduced
-    sum, not on each partial), which is the correct epilogue semantics
-    for split-K.
     """
     _split_k_reduce_impl[
         num_splits,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](
         scratch,
-        c_ptr,
+        c,
         total_elems,
         elems_per_split,
         n_dim,
@@ -104,26 +95,28 @@ def _split_k_reduce_kernel[
 def _split_k_reduce_kernel_epilogue_fn[
     num_splits: Int,
     c_type: DType,
+    c_layout: TensorLayout,
+    c_engine: TensorEngine,
     EpilogueFnType: ElementwiseEpilogueFn,
 ](
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     total_elems: Int32,
     elems_per_split: Int32,
     n_dim: Int32,
     epilogue_fn: EpilogueFnType,
 ):
     """Same as `_split_k_reduce_kernel`, delivering each reduced value to
-    `epilogue_fn` instead of `c_ptr`. Launch with `host_arg=epilogue_fn`.
+    `epilogue_fn` instead of `c`. Launch with
+    `host_args=(epilogue_fn,)`.
     """
     _split_k_reduce_impl[
         num_splits,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=True,
         has_compute_fn=False,
     ](
         scratch,
-        c_ptr,
+        c,
         total_elems,
         elems_per_split,
         n_dim,
@@ -136,26 +129,28 @@ def _split_k_reduce_kernel_epilogue_fn[
 def _split_k_reduce_kernel_compute_fn[
     num_splits: Int,
     c_type: DType,
+    c_layout: TensorLayout,
+    c_engine: TensorEngine,
     ComputeFnType: ElementwiseComputeFn,
 ](
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     total_elems: Int32,
     elems_per_split: Int32,
     n_dim: Int32,
     compute_fn: ComputeFnType,
 ):
     """Same as `_split_k_reduce_kernel`, storing `compute_fn` of each
-    reduced value into `c_ptr`. Launch with `host_arg=compute_fn`.
+    reduced value into `c`. Launch with
+    `host_args=(compute_fn,)`.
     """
     _split_k_reduce_impl[
         num_splits,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=False,
         has_compute_fn=True,
     ](
         scratch,
-        c_ptr,
+        c,
         total_elems,
         elems_per_split,
         n_dim,
@@ -167,17 +162,18 @@ def _split_k_reduce_kernel_compute_fn[
 @inline(.always)
 def _split_k_reduce_impl[
     c_type: DType,
+    c_layout: TensorLayout,
+    c_engine: TensorEngine,
     EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
     //,
     num_splits: Int,
     *,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     total_elems: Int32,
     elems_per_split: Int32,
     n_dim: Int32,
@@ -193,24 +189,19 @@ def _split_k_reduce_impl[
         var acc = Float32(0.0)
         comptime for s in range(num_splits):
             acc += scratch[s * _elems_per_split + tid]
-        comptime if Bool(elementwise_lambda_fn) or has_epilogue_fn:
+        comptime if has_epilogue_fn:
             var m = tid // _n_dim
             var n = tid - m * _n_dim
-            apply_elementwise_epilogue[
-                elementwise_lambda_fn, alignment=align_of[Scalar[c_type]]()
-            ](
-                epilogue_fn,
-                (m, n),
-                SIMD[c_type, 1](acc.cast[c_type]()),
+            epilogue_fn[c_type, 1, alignment=align_of[Scalar[c_type]]()](
+                (m, n), SIMD[c_type, 1](acc.cast[c_type]())
             )
         else:
+            var m = tid // _n_dim
+            var n = tid - m * _n_dim
             var out = acc.cast[c_type]()
             comptime if has_compute_fn:
-                var m = tid // _n_dim
-                out = compute_fn[c_type, 1, alignment=1](
-                    (m, tid - m * _n_dim), out
-                )
-            c_ptr[tid] = out
+                out = compute_fn[c_type, 1, alignment=1]((m, n), out)
+            c.store((m, n), out)
         tid += stride
 
 
@@ -268,7 +259,6 @@ def amd_4wave_split_k_matmul[
     block_m_override: Int = 0,
     block_n_override: Int = 0,
     block_k_override: Int = 0,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
@@ -290,21 +280,21 @@ def amd_4wave_split_k_matmul[
     `num_splits=4`, it beats hipBLASLt at M=64–256 by ~10–25%. Above
     M ≈ 256, the plain `structured_4wave_matmul` is faster.
 
-    Note: epilogue fusion via `elementwise_lambda_fn` may tip the
-    decision toward this kernel even when raw matmul is close to
-    vendor, since it saves a separate elementwise launch.
+    Note: epilogue fusion through the `epilogue_fn` or `compute_fn`
+    overloads may tip the decision toward this kernel even when raw
+    matmul is close to vendor, since it saves a separate elementwise
+    launch.
 
     Pre-allocate `workspace = SplitKWorkspace[num_splits](ctx, M*N)`
     and re-use across calls with the same shape. The workspace holds
     `num_splits * M * N` f32 partials; the final output (FP8 / bf16 /
     fp16, which matches `c_type`) is reduced into `c` by the reduce kernel.
 
-    When `elementwise_lambda_fn` is set, the reduce kernel fires the
-    lambda once per output cell on the reduced f32 sum and skips the
-    write to `c`. The matmul kernels themselves do not see the lambda
-    (they always write f32 partials to the workspace), which is the
-    correct semantics: the lambda must observe the FINAL value, not
-    the per-split partials.
+    The epilogue overloads apply their closure in the reduce kernel,
+    once per output cell on the reduced f32 sum. The matmul kernels
+    themselves do not see the closure (they always write f32 partials
+    to the workspace), which is the correct semantics: the closure must
+    observe the FINAL value, not the per-split partials.
 
     Parameters:
         a_type: Element type of `a`.
@@ -321,8 +311,6 @@ def amd_4wave_split_k_matmul[
             multiple of MMA_K and satisfy
             `(K / num_splits) % (2*BK) == 0`. Valid: 32, 64, 128 for
             bf16/fp16; 128 for FP8.
-        elementwise_lambda_fn: Optional fused epilogue applied once per
-            cell on the reduced f32 sum.
 
     Args:
         a: Input tile-tensor for A.
@@ -340,7 +328,6 @@ def amd_4wave_split_k_matmul[
         block_m_override=block_m_override,
         block_n_override=block_n_override,
         block_k_override=block_k_override,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](a, b, c, no_epilogue_fn, no_compute_fn, ctx, workspace=workspace)
@@ -397,7 +384,6 @@ def amd_4wave_split_k_matmul[
         block_m_override=block_m_override,
         block_n_override=block_n_override,
         block_k_override=block_k_override,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=True,
         has_compute_fn=False,
     ](a, b, c, epilogue_fn, no_compute_fn, ctx, workspace=workspace)
@@ -454,7 +440,6 @@ def amd_4wave_split_k_matmul[
         block_m_override=block_m_override,
         block_n_override=block_n_override,
         block_k_override=block_k_override,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=False,
         has_compute_fn=True,
     ](a, b, c, no_epilogue_fn, compute_fn, ctx, workspace=workspace)
@@ -474,7 +459,6 @@ def _amd_4wave_split_k_matmul_impl[
     block_m_override: Int,
     block_n_override: Int,
     block_k_override: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
@@ -593,48 +577,58 @@ def _amd_4wave_split_k_matmul_impl[
             launch_split_k[config_128]()
 
     # Reduce + cast on the same (default) stream — naturally serialized
-    # after the split-K launch. When `elementwise_lambda_fn` is set,
-    # the reduce kernel fires the lambda per cell instead of writing
-    # to c — but c.ptr is still passed so the no-lambda branch can
-    # store there.
+    # after the split-K launch. With `epilogue_fn`, the reduce kernel
+    # fires it per cell instead of writing to c, but c is still
+    # passed so the other branches can store there.
     comptime block_dim_x: Int = 256
     var total_elems = M * N
     var num_blocks = ceildiv(total_elems, block_dim_x)
     comptime if has_epilogue_fn:
         comptime reduce_kernel = _split_k_reduce_kernel_epilogue_fn[
-            num_splits, c_type, EpilogueFnType
+            num_splits,
+            c_type,
+            type_of(c).LayoutType,
+            type_of(c).Engine,
+            EpilogueFnType,
         ]
         ctx.enqueue_function[reduce_kernel](
             workspace.scratch.unsafe_ptr(),
-            c.ptr,
+            c,
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            host_arg=epilogue_fn,
+            host_args=(epilogue_fn,),
             grid_dim=(num_blocks,),
             block_dim=(block_dim_x,),
         )
     elif has_compute_fn:
         comptime reduce_kernel = _split_k_reduce_kernel_compute_fn[
-            num_splits, c_type, ComputeFnType
+            num_splits,
+            c_type,
+            type_of(c).LayoutType,
+            type_of(c).Engine,
+            ComputeFnType,
         ]
         ctx.enqueue_function[reduce_kernel](
             workspace.scratch.unsafe_ptr(),
-            c.ptr,
+            c,
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(num_blocks,),
             block_dim=(block_dim_x,),
         )
     else:
         comptime reduce_kernel = _split_k_reduce_kernel[
-            num_splits, c_type, elementwise_lambda_fn=elementwise_lambda_fn
+            num_splits,
+            c_type,
+            type_of(c).LayoutType,
+            type_of(c).Engine,
         ]
         ctx.enqueue_function[reduce_kernel](
             workspace.scratch.unsafe_ptr(),
-            c.ptr,
+            c,
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),

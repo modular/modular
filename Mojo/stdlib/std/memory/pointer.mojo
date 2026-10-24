@@ -28,7 +28,6 @@ from std.memory import Pointer
 from std.sys import (
     align_of,
     bit_width_of,
-    is_apple_gpu,
     is_gpu,
     is_nvidia_gpu,
     size_of,
@@ -327,7 +326,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Float32](count=4))
+    var allocation = alloc(Layout[Float32](length=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
         ptr.unsafe_store(i, Float32(i))
@@ -341,7 +340,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=8))
+    var allocation = alloc(Layout[Int32](length=8))
     var ptr = allocation.unsafe_ptr()
     var vec = SIMD[.int32, 4](1, 2, 3, 4)
     ptr.unsafe_store(0, vec)
@@ -355,7 +354,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=3))
+    var allocation = alloc(Layout[Int32](length=3))
     var ptr = allocation.unsafe_ptr()
     ptr.unsafe_offset(0)[] = 10  # offset by 0, then dereference to write
     ptr.unsafe_offset(1)[] = 20  # offset by 1, then dereference to write
@@ -841,7 +840,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=4))
+        var allocation = alloc(Layout[Int32](length=4))
         var ptr = allocation.unsafe_ptr()
         var end = ptr.unsafe_offset(3)
         print(end - ptr)  # => 3
@@ -1222,7 +1221,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=4))
+        var allocation = alloc(Layout[Int32](length=4))
         var ptr = allocation.unsafe_ptr()
         var end = ptr.unsafe_offset(3)
         print(end.offset_from(ptr))  # => 3
@@ -1387,7 +1386,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=8))
+        var allocation = alloc(Layout[Int32](length=8))
         var p = allocation.unsafe_ptr()
         p.unsafe_store(0, SIMD[.int32, 4](1, 2, 3, 4))
         var v = p.unsafe_load[width=4]()
@@ -1754,7 +1753,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Float32](count=4))
+        var allocation = alloc(Layout[Float32](length=4))
         var p = allocation.unsafe_ptr()
         var vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
         p.unsafe_store(vec)
@@ -2036,9 +2035,9 @@ struct Pointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        comptime if is_apple_gpu():
-            # `Int(self)` would erase the address space; on Apple AIR the
-            # resulting GENERIC load silently reads zero (MOCO-3762).
+        comptime if not CurrentPlugin.has_generic_address_space:
+            # The vector path below rebuilds lane pointers from `Int(self)`,
+            # which loses the address space, so load through `self` instead.
             var result = default
             comptime for i in range(width):
                 if mask[i]:
@@ -2133,8 +2132,11 @@ struct Pointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        comptime if is_apple_gpu():
-            # See `gather` for the address-space rationale (MOCO-3762).
+        comptime if not CurrentPlugin.has_generic_address_space or (
+            Self.address_space != .GENERIC and Self.address_space != .GLOBAL
+        ):
+            # `Int(self)` on a shared or local pointer is an offset into its
+            # window, not a generic address; see `unsafe_gather`.
             comptime for i in range(width):
                 if mask[i]:
                     self.unsafe_store[alignment=alignment](
@@ -2703,6 +2705,4 @@ struct Pointer[
         """
         __get_address_as_uninit_lvalue(
             self.unsafe_address_space_cast[.GENERIC]()._mlir_value
-        ) = __get_address_as_owned_value(
-            src.unsafe_address_space_cast[.GENERIC]()._mlir_value
-        )
+        ) = __get_address_as_owned_value(src._mlir_value)

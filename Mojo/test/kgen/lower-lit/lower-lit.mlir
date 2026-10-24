@@ -136,51 +136,6 @@ lit.fn @call_generic(%p: index) {
 
 
 //===----------------------------------------------------------------------===//
-// Nested Functions
-//===----------------------------------------------------------------------===//
-
-lit.struct.decl @StructWithNestedFn<a_param> {
-  // CHECK-LABEL: kgen.generator @"StructWithNestedFn::topLevelFunction"<a_param, b_param>() -> index
-  lit.fn @topLevelFunction<b_param>() -> index {
-    // CHECK: kgen.param.declare.region nestedFunction = () -> index
-    lit.fn nestedFunction() -> index {
-      hlcf.unreachable
-    }
-    // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
-    kgen.param.declare b: !lit.generator<() -> index> = <nestedFunction>
-
-    // CHECK: kgen.param.declare.region paramNestedFunc = <c_param>()
-    lit.fn paramNestedFunc<c_param>() {
-      hlcf.return
-    }
-    // CHECK: kgen.param.declare c: () -> () = <bind_params(:<index>() -> () paramNestedFunc, 2)>
-    kgen.param.declare c: !lit.generator<() -> ()> = <bind_params(:!lit.generator<<"c_param": index>() -> ()> paramNestedFunc, 2)>
-
-    %idx0_0 = index.constant 0
-    hlcf.return %idx0_0 : index
-  }
-}
-
-// CHECK-LABEL: kgen.struct.generator @StructWithNestedFn<a_param>
-
-// CHECK-LABEL: kgen.generator @topFunc
-lit.fn @topFunc() {
-  // CHECK: kgen.param.declare.region midFunc
-  lit.fn midFunc() {
-    // CHECK: kgen.param.declare.region botFunc
-    lit.fn botFunc() {
-      hlcf.return
-    }
-    // CHECK: declare bot: () -> () = <botFunc>
-    kgen.param.declare bot: !lit.generator<() -> ()> = <botFunc>
-    hlcf.return
-  }
-  // CHECK: declare mid: () -> () = <midFunc>
-  kgen.param.declare mid: !lit.generator<() -> ()> = <midFunc>
-  hlcf.return
-}
-
-//===----------------------------------------------------------------------===//
 // Imports
 //===----------------------------------------------------------------------===//
 
@@ -475,16 +430,6 @@ lit.fn @metadata(%a: i32, %b: i32) attributes {
   fnArgAttrs = [[], ["llvm.someattr", 2 : index]],
   fnAttrs = ["llvm.someattr", 3 : index]
 } {
-  // CHECK: kgen.param.declare.region metadataNested
-  lit.fn metadataNested(%c: i32, %d: i32) attributes {
-    fnArgAttrs = [[], ["llvm.someattr", 4 : index]],
-    fnAttrs = ["llvm.someattr",  5 : index]
-  } {
-    // CHECK-NEXT: hlcf.return
-    hlcf.return
-  // CHECK-NEXT{LITERAL}: fnArgAttrs = [[], ["llvm.someattr", 4 : index]]
-  // CHECK-SAME: fnAttrs = ["llvm.someattr", 5 : index]
-  }
   hlcf.return
 }
 
@@ -551,16 +496,8 @@ lit.struct.decl @Mem   {
 // CHECK-LABEL: kgen.generator @getThing
 // CHECK-SAME:(%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result)
 lit.fn @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !kgen.none {
-  // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !kgen.pointer<struct<() memoryOnly>> byref_result) capturing
-  lit.fn localTest[mut lt](%__result__[__result__]: !lit.ref<!Mem, mut lt> byref_result, |) capturing -> !kgen.none {
-    // CHECK-NEXT: call @"Mem::__init__"(%arg1)
-    %1 = lit.call @Mem::@__init__[mut lt](%__result__) : !lit.generator<[1]("self": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
-    %none = kgen.param.constant: none = <#kgen.none>
-    hlcf.return %none : !kgen.none
-  }
-  // CHECK: }
-  // CHECK-NEXT: kgen.call_param[(!kgen.pointer<struct<() memoryOnly>> byref_result) capturing -> !kgen.none: localTest](%arg0)
-  %0 = lit.call [!lit.generator<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut abc](%res)
+  // CHECK-NEXT: call @"Mem::__init__"(%arg0)
+  %0 = lit.call @Mem::@__init__[mut abc](%res) : !lit.generator<[1]("self": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
   hlcf.return %none : !kgen.none
 }

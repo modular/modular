@@ -1,0 +1,75 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+UCX_TEST_DEPS = [
+    "//MLRT/unittests/Driver/NIXL:TestCommon",
+    "//Support:Base",
+    "@llvm-project//llvm:Support",
+    "@nixl_upstream//:nixl_api_headers",
+    "@nixl_upstream//:nixl_runtime",
+]
+
+# Enable verbose NIXL logging to debug plugin load issues in CI. INFO level
+# exposes dlerror() messages from loadPluginFromPath which are otherwise silent.
+UCX_TEST_ENV = {
+    "NIXL_LOG_LEVEL": "INFO",
+}
+
+modular_cc_test(
+    name = "TransferTests",
+    size = "medium",
+    srcs = ["TransferTests.cpp"],
+    env = UCX_TEST_ENV,
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    # NVIDIA or AMD, never Apple: Apple GPUs only exist on macOS, and
+    # NIXL/UCX is Linux-only.
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = UCX_TEST_DEPS,
+)
+
+modular_cc_test(
+    name = "MetadataExchangeTests",
+    size = "medium",
+    srcs = ["MetadataExchangeTests.cpp"],
+    env = UCX_TEST_ENV,
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    # NVIDIA or AMD, never Apple: Apple GPUs only exist on macOS, and
+    # NIXL/UCX is Linux-only.
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = UCX_TEST_DEPS,
+)
+
+modular_cc_test(
+    name = "ErrorHandlingTests",
+    size = "medium",
+    srcs = ["ErrorHandlingTests.cpp"],
+    env = UCX_TEST_ENV,
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    # NVIDIA or AMD, never Apple: Apple GPUs only exist on macOS, and
+    # NIXL/UCX is Linux-only.
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = UCX_TEST_DEPS,
+)
+
+modular_cc_test(
+    name = "ConcurrencyTests",
+    size = "medium",
+    srcs = ["ConcurrencyTests.cpp"],
+    env = UCX_TEST_ENV,
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    # NVIDIA or AMD, never Apple: Apple GPUs only exist on macOS, and
+    # NIXL/UCX is Linux-only.
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = UCX_TEST_DEPS,
+)

@@ -428,6 +428,12 @@ class StructuredOutputHelper:
             isinstance(parser_cls, type)
             and issubclass(parser_cls, StructuralTagToolParser)
         ):
+            # A standalone parser (not a ``StructuralTagToolParser``) can
+            # still declare a flat ``CALL_BEGIN``, as Qwen 3.5 does; without a
+            # start tag a ``tool_choice=auto`` grammar is never enforced.
+            call_begin = getattr(parser_cls, "CALL_BEGIN", None)
+            if isinstance(call_begin, str) and call_begin:
+                return (call_begin, None)
             return (None, None)
 
         if parser_cls.SECTION_BEGIN and parser_cls.SECTION_END:

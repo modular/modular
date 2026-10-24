@@ -49,12 +49,16 @@ from eval_common import (
     ChatClient,
     GenParams,
     append_github_env,
-    build_chat_kwargs,
+    chat_completion,
+    dump_config,
     dump_jsonl,
     dump_score,
     finish_stats,
     load_gated,
     make_client,
+    prepare_out_dir,
+    response_fields,
+    resumable_config,
     run_parallel,
     select_rows,
     self_judge,
@@ -115,9 +119,7 @@ def infer(
     question = sample["question"]
     reference = sample["answer"].strip()
     messages = build_messages(question, root_preamble, system_prompt)
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(model, messages, params)
-    )
+    resp = chat_completion(client, model, messages, params)
     prediction = strip_think(resp.choices[0].message.content)
     correct = self_judge(
         client,
@@ -145,6 +147,7 @@ def infer(
             if resp.usage and resp.usage.completion_tokens_details
             else None
         ),
+        **response_fields(resp.choices[0]),
     }
 
 
@@ -190,6 +193,7 @@ def run_eval(
     root_preamble: str,
     system_prompt: str,
     out_dir: str | None = None,
+    resume: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Runs HLE over ``indexed_dataset`` (one pass) and returns results + score.
 
@@ -212,12 +216,19 @@ def run_eval(
         return {
             "prompt_index": prompt_index,
             "question": sample["question"][:120],
+            "reference": sample["answer"].strip(),
             "error": str(exc),
             "correct": False,
         }
 
     results, _errors = run_parallel(
-        indexed_dataset, fn, on_error, workers, "HLE", out_dir=out_dir
+        indexed_dataset,
+        fn,
+        on_error,
+        workers,
+        "HLE",
+        out_dir=out_dir,
+        resume=resume,
     )
     return results, score(results, len(indexed_dataset))
 
@@ -268,6 +279,12 @@ def run_eval(
     default="HLE",
     help="Prefix for the GITHUB_ENV metric keys the job summary reads.",
 )
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Keep the finished rows already in --out-dir and run only the rest. "
+    "Refuses when they were produced with different options.",
+)
 def main(
     base_url: str,
     model: str,
@@ -282,12 +299,28 @@ def main(
     root_preamble: str,
     system_prompt: str,
     metric_prefix: str,
+    resume: bool,
 ) -> None:
     """Runs HLE against a running OpenAI-compatible server and scores it."""
+    prepare_out_dir(
+        out_dir,
+        resumable_config(click.get_current_context().params),
+        resume,
+    )
     client = make_client(base_url)
-    indexed_dataset = select_rows(load_hle_dataset(), sample_size, row_ids)
+    dataset = load_hle_dataset()
+    indexed_dataset = select_rows(dataset, sample_size, row_ids)
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
+    )
+    dump_config(
+        out_dir,
+        base_url,
+        params,
+        indexed_dataset,
+        dataset,
+        system_prompt=system_prompt,
+        root_preamble=root_preamble,
     )
     results, summary = run_eval(
         client,
@@ -298,6 +331,7 @@ def main(
         root_preamble,
         system_prompt,
         out_dir=out_dir,
+        resume=resume,
     )
     dump_jsonl(out_dir, results)
     dump_score(out_dir, summary)

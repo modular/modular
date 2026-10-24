@@ -352,7 +352,7 @@ def run_mma_test_runtime_transpose(ctx: DeviceContext) raises:
 
 def _skip(name: String):
     print("==", name)
-    print("SKIP: requires Apple M5 + Metal 4")
+    print("SKIP: requires Apple M5 or newer + Metal 4")
 
 
 def _skip_all():

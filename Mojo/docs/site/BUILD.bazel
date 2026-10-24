@@ -2,9 +2,9 @@ load("@rules_multirun//:defs.bzl", "multirun")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "pkg_files", "strip_prefix")
 
-# gazelle:default_visibility //oss/modular/docs:__subpackages__
+# gazelle:default_visibility //visibility:private
 
-package(default_visibility = ["//oss/modular/docs:__subpackages__"])
+package(default_visibility = ["//visibility:private"])
 
 # -----------------------------------------------------------------------------
 # Targets cheat sheet

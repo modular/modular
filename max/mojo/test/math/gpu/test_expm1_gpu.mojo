@@ -12,32 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import expm1, inf, isinf, isnan, nan
-from std.ffi import external_call
 from std.memory import bitcast
-from std.sys import default_accelerator, simd_width_of
+from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import assert_equal, assert_true, TestSuite
+from test_utils.math import libm_call
 
 from std.utils.coord import Coord
 
 # Sweep ends just past the overflow threshold log(MAX_FINITE) of each dtype.
 comptime expm1_f64_sweep_hi = 720.0
 comptime expm1_f32_sweep_hi = 95.0
-
-
-def _libm_expm1[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
-    """Host libm `expm1` in the given precision, the oracle for the GPU result.
-    """
-    comptime if dtype == .float32:
-        return rebind[Scalar[dtype]](
-            external_call["expm1f", Float32](rebind[Float32](x))
-        )
-    else:
-        return rebind[Scalar[dtype]](
-            external_call["expm1", Float64](rebind[Float64](x))
-        )
+comptime expm1_libm = libm_call["expm1f", "expm1"]
 
 
 def _ulp_distance[
@@ -88,7 +76,7 @@ def _check[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, expm1(val))
 
@@ -100,7 +88,7 @@ def _check[
     with out_device.map_to_host() as out_host:
         for i in range(length):
             var x = inputs[i]
-            var expected = _libm_expm1(x)
+            var expected = expm1_libm(x)
             var host = expm1(x)
             var gpu_ulp = _ulp_distance(out_host[i], expected)
             var host_ulp = _ulp_distance(host, expected)
@@ -233,14 +221,14 @@ def _check_half_subnormals[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         out_ptr.unsafe_store(idx, expm1(in_ptr.unsafe_load(idx)))
 
     elementwise[1, target="gpu"](func, Coord(n), ctx)
     with out_device.map_to_host() as out_host:
         for i in range(n):
             var x = bitcast[dtype](bits[i])
-            var expected = _libm_expm1(x.cast[.float64]()).cast[dtype]()
+            var expected = expm1_libm(x.cast[.float64]()).cast[dtype]()
             assert_equal(
                 bitcast[utype](out_host[i]),
                 bitcast[utype](expected),

@@ -813,7 +813,9 @@ class StackedMoE(Module, Shardable):
         strategy = NvMxf4f8Strategy(self.quant_config, DType.float8_e4m3fn)
 
         def quantize(
-            activations: TensorValue, indices: TensorValue | None = None
+            activations: TensorValue,
+            indices: TensorValue | None = None,
+            indices_divisor: int = 1,
         ) -> tuple[TensorValue, TensorValue]:
             return strategy.grouped_quantize(
                 activations,
@@ -823,6 +825,7 @@ class StackedMoE(Module, Shardable):
                 scales_offsets,
                 routing.expert_ids,
                 indices=indices,
+                indices_divisor=indices_divisor,
             )
 
         def experts(
@@ -843,12 +846,10 @@ class StackedMoE(Module, Shardable):
                 estimated_total_m=estimated_total_m,
             )
 
-        gather = ops.cast(
-            routing.token_expert_order // self.num_experts_per_token,
-            DType.int32,
-        )
         gate_up = experts(
-            quantize(x, gather), self._gate_up_weight, self._gate_up_scale
+            quantize(x, routing.token_expert_order, self.num_experts_per_token),
+            self._gate_up_weight,
+            self._gate_up_scale,
         )
         hidden = self._apply_gated_activation(gate_up, routing)
         down = experts(quantize(hidden), self._down_weight, self._down_scale)

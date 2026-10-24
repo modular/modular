@@ -62,7 +62,6 @@ from .grouped_1d1d_matmul_kernel import (
     SwiGLUOutput,
 )
 from ..structured_kernels.row_scales import NullRowScales, RowScales
-from std.memory import UnsafePointer
 
 
 def grouped_matmul_block_scaled[
@@ -182,7 +181,7 @@ def grouped_matmul_block_scaled[
     # expert slots are all published but hold no tokens. C's extent is
     # deliberately not tested -- a zero-element C is legitimate wherever the
     # local output store has been elided.
-    if num_active_experts == 0 or Int(a_device.layout.shape[0]().value()) == 0:
+    if num_active_experts == 0 or Int(a_device.dim[0]()) == 0:
         return
 
     comptime assert transpose_b, "Only support transposed B"
@@ -211,8 +210,6 @@ def grouped_matmul_block_scaled[
         1,
         2,
     ), "Only support cta_group == 1 or 2"
-
-    comptime assert config.k_group_size == 1, "Only support k_group_size == 1"
 
     comptime assert config.num_split_k == 1, "Only support split_k == 1"
 
@@ -424,9 +421,7 @@ def grouped_matmul_block_scaled[
 
     # _b_scales: 6D -> 4D uint16 (1, num_experts*N_groups, K_groups, sf_atom_u16)
     # Global view always uses sf_atom_u16 (full atom); TMA tile may be smaller.
-    var sfb_dim0 = Int(_b_scales.layout.shape[0]().value()) * Int(
-        _b_scales.layout.shape[1]().value()
-    )
+    var sfb_dim0 = Int(_b_scales.dim[0]()) * Int(_b_scales.dim[1]())
     var sfb_4d_shape = Coord(
         Idx[1],
         Int64(sfb_dim0),
@@ -481,7 +476,7 @@ def grouped_matmul_block_scaled[
         Engine=t.Engine,
         address_space=t.address_space,
     ]:
-        var shape = Coord(Int64(t.layout.shape[0]().value()))
+        var shape = Coord(Int64(t.dim[0]()))
         var stride = Coord(Idx[1])
         return {
             t._unsafe_storage_cast[
@@ -563,11 +558,9 @@ def grouped_matmul_block_scaled[
             Int32(num_active_experts),
             UInt32(K),
             # AB_swapped: SFB data comes from a_scales.
-            rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
-                a_scales.ptr
-            ),
-            Int32(Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS),
-            Int32(Int(a_scales.layout.shape[1]().value())),
+            rebind[ImmPointer[Scalar[sfa_dtype], ImmutAnyOrigin]](a_scales.ptr),
+            Int32(Int(a_scales.dim[1]()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(a_scales.dim[1]())),
             swiglu_out,
             trace_buf,
             row_scales,
@@ -642,11 +635,11 @@ def grouped_matmul_block_scaled[
             Int32(num_active_experts),
             UInt32(K),
             # Non-swapped: SFB data comes from _b_scales.
-            rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
                 _b_scales.ptr
             ),
-            Int32(Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS),
-            Int32(Int(_b_scales.layout.shape[2]().value())),
+            Int32(Int(_b_scales.dim[2]()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(_b_scales.dim[2]())),
             swiglu_out,
             trace_buf,
             row_scales,

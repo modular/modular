@@ -81,9 +81,9 @@ def test_matmul_sm90_swapAB_comparison[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     # Convert SM90 configs to base configs for the kernel
     comptime base_config = config.to_base_config()
@@ -107,21 +107,21 @@ def test_matmul_sm90_swapAB_comparison[
 
     # Host allocations
     var a_host_alloc = alloc(
-        AllocLayout[Scalar[a_type]](count=a_size)
+        AllocLayout[Scalar[a_type]](length=a_size)
     ).into_managed()
     var b_host_alloc = alloc(
-        AllocLayout[Scalar[b_type]](count=b_size)
+        AllocLayout[Scalar[b_type]](length=b_size)
     ).into_managed()
     var c_normal_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_normal_host_ptr: UnsafePointer[
+    var c_normal_host_ptr: MutPointer[
         Scalar[c_type], origin_of(c_normal_host_alloc)
     ] = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_swapAB_host_ptr: UnsafePointer[
+    var c_swapAB_host_ptr: MutPointer[
         Scalar[c_type], origin_of(c_swapAB_host_alloc)
     ] = c_swapAB_host_alloc.unsafe_ptr()
 
@@ -477,9 +477,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
             when `has_compute_fn` is set.
     """
     comptime transpose_b = True
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     # Build compile-time configs directly using BaseMatmulConfig
     comptime base_config = BaseMatmulConfig[
@@ -525,21 +525,21 @@ def test_matmul_sm90_swapAB_comparison_v2[
 
     # Host allocations
     var a_host_alloc = alloc(
-        AllocLayout[Scalar[a_type]](count=a_size)
+        AllocLayout[Scalar[a_type]](length=a_size)
     ).into_managed()
     var b_host_alloc = alloc(
-        AllocLayout[Scalar[b_type]](count=b_size)
+        AllocLayout[Scalar[b_type]](length=b_size)
     ).into_managed()
     var c_normal_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_normal_host_ptr: UnsafePointer[
+    var c_normal_host_ptr: MutPointer[
         Scalar[c_type], origin_of(c_normal_host_alloc)
     ] = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_swapAB_host_ptr: UnsafePointer[
+    var c_swapAB_host_ptr: MutPointer[
         Scalar[c_type], origin_of(c_swapAB_host_alloc)
     ] = c_swapAB_host_alloc.unsafe_ptr()
 

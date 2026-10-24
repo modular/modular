@@ -912,10 +912,11 @@ interaction in the LSP.
 
 The block text is not parsed as-is. `wrapExpressionText` synthesizes a whole
 Mojo program around it — an import preamble, a `struct __mojo_repl_context__` of
-persistent variables, a wrapper `def`, an `__mojo_repl_expr_impl__` def, and the
-user's body indented inside a nested
-`@__parameter def __mojo_repl_expr_body__` — then adds *that* as a new buffer
-and parses it.
+persistent variables, a wrapper `def`, and an `__mojo_repl_expr_impl__` def
+whose body is the user's code — then adds *that* as a new buffer and parses
+it. Persistent variables are `mut` arguments of `__mojo_repl_expr_impl__`,
+except the ones the block redeclares with `var`/`ref`, which become fresh
+locals instead.
 
 The new buffer is added to the document's **single, shared `SourceMgr`** — the
 same one the generalized parse uses (the persistent `MojoParserContext` is built
@@ -929,14 +930,12 @@ and why `translateParserLoc` must map such locs back into the main file's
 docstring region (Divergence 3). These buffers accumulate for the document
 version's lifetime and are discarded when an edit builds a fresh `MojoDocument`.
 
-```456:471:Mojo/lib/MojoTooling/ParserDriverREPL.cpp
-  // Splat out the main body code inside of a nested def. This will allow for us
-  // to redefine previous variables transparently.
-  exprOS << "  var __mojo_repl_expr_failed = True\n"
-            "  @__parameter\n"
-            "  def __mojo_repl_expr_body__() raises -> None:\n";
+```502:508:Mojo/lib/MojoTooling/ParserDriverREPL.cpp
+  exprOS << "  var __mojo_repl_expr_failed = True\n";
+
+  // The following is the other chunk of code just written by the user.
   for (StringRef code : mainBodyCode) {
-    exprOS << "    ";
+    exprOS << "  ";
     emitAndMapCode(code);
   }
 ```

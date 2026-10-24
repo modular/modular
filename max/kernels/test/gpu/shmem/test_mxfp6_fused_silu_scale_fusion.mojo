@@ -265,7 +265,7 @@ def _run_check[
             for k in range(hidden_size):
                 var g = input_h[m * input_dim + k].cast[.float32]()
                 var u = input_h[m * input_dim + hidden_size + k].cast[
-                    DType.float32
+                    .float32
                 ]()
                 var want: Float32
                 comptime if clamp_activation:

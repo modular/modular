@@ -1,0 +1,557 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Guards the architecture registry (pipelines/architectures/__init__.py),
+# speculator selection (pipelines/lib/arch_lookup.py) and reasoning-parser
+# lookup (pipelines/lib/reasoning.py).
+modular_py_test(
+    name = "test_arch_registration",
+    srcs = ["test_arch_registration.py"],
+    deps = [
+        "//max/python/max/graph",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards pipelines/architectures/hf_config_shims.py.
+modular_py_test(
+    name = "test_hf_config_shim",
+    srcs = ["test_hf_config_shim.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("transformers"),
+    ],
+)
+
+# Guards EOS resolution (pipelines/lib/tokenizer.py) and the fallback
+# sampling defaults (pipelines/context SamplingParams).
+modular_py_test(
+    name = "test_generation_defaults",
+    srcs = ["test_generation_defaults.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+# Guards the shared KV cache parameters (nn/kv_cache KVCacheParams and
+# MultiKVCacheParams) and pipelines/lib KVCacheConfig.
+modular_py_test(
+    name = "test_kv_leaves",
+    srcs = ["test_kv_leaves.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("transformers"),
+    ],
+)
+
+# Guards the KV cache budget in pipelines/lib/memory_estimation.py
+# (MemoryEstimator) and the planner interface in
+# pipelines/kv_cache/memory_planner.py.
+modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "dsml_fixtures",
+    testonly = True,
+    srcs = ["dsml_fixtures.py"],
+    imports = ["."],
+    deps = ["//max/python/max/pipelines/architectures/deepseekV41"],
+)
+
+# Guards the streaming section/call scanner in pipelines/lib/tool_parsing.py
+# (StructuralTagToolParser) and the deepseekV4 DSML parser
+# (pipelines/architectures/deepseekV4/tool_parser.py) that V4.1 subclasses.
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    deps = [
+        ":dsml_fixtures",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards the tool-call grammar route in pipelines/lib (generate_tool_call_grammar
+# -> structured_output_backend.build_xgrammar_tool_grammar, the _xgrammar
+# deepseek_v41 tag and the xgrammar.patch deepseek_v41_xml style), the
+# region markers from pipeline_variants/utils.py, and GrammarEnforcementState
+# in pipelines/context.
+modular_py_test(
+    name = "test_tool_call_grammar",
+    srcs = ["test_tool_call_grammar.py"],
+    deps = [
+        ":dsml_fixtures",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+# Guards the deepseekv4 reasoning parser
+# (pipelines/architectures/deepseekV4/reasoning.py), the thinking-region
+# wrapper in pipelines/lib/registry.py and GrammarEnforcementState in
+# pipelines/context.
+modular_py_test(
+    name = "test_reasoning_constrained_decoding",
+    size = "small",
+    srcs = ["test_reasoning_constrained_decoding.py"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+# Guards multi-part message content in pipelines/modeling/types.py
+# (TextGenerationRequestMessage).
+modular_py_test(
+    name = "test_encoding",
+    srcs = ["test_encoding.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+# Guards chunking and processed-length tracking in pipelines/context
+# (TokenBuffer, TextContext).
+modular_py_test(
+    name = "test_engram_lookback",
+    srcs = ["test_engram_lookback.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+    ],
+)
+
+# Guards pipelines/lib/log_probabilities.py (LogProbabilitiesMixin and its
+# graph).
+modular_py_test(
+    name = "test_log_probabilities",
+    srcs = ["test_log_probabilities.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# Guards the graph-spec load (pipelines/lib graph_specs and PipelineModel
+# load_graphs) around the deferred weight loads.
+modular_py_test(
+    name = "test_load_graphs",
+    srcs = ["test_load_graphs.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards the overlap spec-decode step order the DSpark verify lookback relies
+# on: pipelines/lib/pipeline_variants/overlap_text_generation.py (the
+# in-flight marks and the realized cache lengths) and
+# pipelines/lib/pipeline_variants/utils.py
+# (update_spec_decode_context_and_prepare_responses).
+modular_py_test(
+    name = "test_dspark_engram_lookback_overlap",
+    srcs = ["test_dspark_engram_lookback_overlap.py"],
+    args = [
+        "-k",
+        "cpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+# Runs the GPU cases of the same file: the lookback graph on the GPU and the
+# graph-capture replay. The CPU target above runs the CPU cases.
+modular_py_test(
+    name = "test_dspark_engram_lookback_overlap_gpu",
+    srcs = ["test_dspark_engram_lookback_overlap.py"],
+    args = [
+        "-k",
+        "'gpu or replay'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+# Guards graph capture and replay input binding in
+# pipelines/lib/graph_capture.py (ServeGraphCaptureRunner), and the
+# data-parallel splits from pipelines/lib/utils.py
+# (compute_data_parallel_splits) under UnifiedSpecDecodeBatchProcessor.
+modular_py_test(
+    name = "test_serve_capture_inputs",
+    srcs = ["test_serve_capture_inputs.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# Holds mo.matmul.mxfp8.cluster_splitk (Kernels/lib/graph_compiler, built
+# by layers/mxfp8_matmul.py) to the production MXFP8 matmul, bit for bit,
+# through a graph at every DeepSeek-V4.1 weight shape: cluster split-K, the
+# pair-CTA GEMM and the block-scaled fallback.
+modular_py_test(
+    name = "test_mxfp8_matmul_op_gpu",
+    size = "large",
+    srcs = ["test_mxfp8_matmul_op_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    # Needs mo.matmul.mxfp8.cluster_splitk, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+# Guards strict state-dict loading (nn/layer Module.load_state_dict) and
+# weight sharding (graph Weight.shard).
+modular_py_test(
+    name = "test_weight_adapters",
+    srcs = ["test_weight_adapters.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+# Guards that the trunk and DSpark drafter rotary tables cover speculative
+# positions past max_seq_len (nn/kv_cache spec_decode_cache_slack), and that
+# memory_planner.py reserves the candidate keep step the graph builds. CPU only.
+modular_py_test(
+    name = "test_position_capacity",
+    srcs = ["test_position_capacity.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Guards strict state-dict loading (nn/layer Module.load_state_dict).
+modular_py_test(
+    name = "test_dspark_weight_adapter",
+    srcs = ["test_dspark_weight_adapter.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Guards the shared spec-decode graph (pipelines/speculative block_driver.py
+# and spec_input_types.py), SpeculativeConfig, the KV cache input types from
+# nn/kv_cache MultiKVCacheParams, and the expert-parallel graph inputs from
+# nn/comm/ep EPBatchManager. Traces only, but needs a GPU because
+# the MXFP8 scale layout follows the host's accelerator.
+modular_py_test(
+    name = "test_unified_dspark_construction",
+    size = "large",
+    srcs = ["test_unified_dspark_construction.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    # Needs mo.engram.hash_gather and mo.engram.hash_gather_shard, registered
+    # only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Security check of model code: the host-shared Engram copy is never
+# attached through a registry directory, record or provider process that
+# another local user could control; the loader falls back to a private copy
+# instead. Also covers the copy's lifecycle (create, attach, stale/partial)
+# and the checkpoint page-cache drop. It guards no shared MAX code. CPU only.
+modular_py_test(
+    name = "test_engram_shared_host",
+    srcs = ["test_engram_shared_host.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+# Under data parallelism a device must skip other replicas' image rows; a
+# wrapped index overwrites its last token row.
+modular_py_test(
+    name = "test_vision_merge_rows",
+    srcs = ["test_vision_merge_rows.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "prefill_glue_cases",
+    testonly = True,
+    srcs = ["prefill_glue_cases.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Guards the compressor's bf16 projection against the float32 one it
+# replaces.
+modular_py_test(
+    name = "test_prefill_glue_gpu",
+    srcs = ["test_prefill_glue_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":prefill_glue_cases",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        requirement("torch"),
+    ],
+)
+
+# Manual A/B of the compressor's bf16 projection and the CSA2 index list at
+# the model's rows. See the docstring of bench_prefill_glue.py; run it under the
+# nsys wrapper for kernel time per arm.
+modular_py_test(
+    name = "bench_prefill_glue",
+    size = "enormous",
+    srcs = ["bench_prefill_glue.py"],
+    # Its inputs live in torch, which gets 10% of gpu-memory by default.
+    env = {"MODULAR_TORCH_MEMORY_PERCENT": "0.3"},
+    exec_properties = {
+        "test.resources:gpu-memory": "48",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    main = "bench_prefill_glue.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":prefill_glue_cases",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/profiler",
+        requirement("torch"),
+    ],
+)
+
+# Guards mo.matmul.mxfp8.rope_tail (Kernels/lib/graph_compiler/mxfp8_rope.mojo)
+# against the MXFP8 matmul followed by apply_rope_tail.
+modular_py_test(
+    name = "test_mxfp8_rope_tail_gpu",
+    srcs = ["test_mxfp8_rope_tail_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        requirement("numpy"),
+    ],
+)
+
+# Guards DeepseekV41Query.call_fused (the fused q/kv norm and MXFP8 quantize)
+# against DeepseekV41Query.__call__ plus kv_norm and a separate quantize.
+modular_py_test(
+    name = "test_query_fused_norm_quant_gpu",
+    srcs = ["test_query_fused_norm_quant_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Checks the absolute-slot boundary used by trimmed decoder SWA reads.
+modular_py_test(
+    name = "test_swa_floor",
+    # It compiles several graphs and times out frequently at the default
+    # `moderate` timeout (300s), so it gets `long` and runs in postsubmit only.
+    timeout = "long",
+    srcs = ["test_swa_floor.py"],
+    tags = ["postsubmit"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+# The fused mHC step at the sublayers that used to run it unfused
+# (deepseekV41.py), against the unfused gates and collapse.
+modular_py_test(
+    name = "test_first_streams_gpu",
+    srcs = ["test_first_streams_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

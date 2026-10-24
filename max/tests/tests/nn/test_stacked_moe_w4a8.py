@@ -283,7 +283,8 @@ def test_forward_builds_the_w4a8_graph() -> None:
         assert call.kwargs["estimated_total_m"] is not None
     assert quantize.call_count == 2
     gate_up_quantize, down_quantize = quantize.call_args_list
-    assert gate_up_quantize.kwargs["indices"] is not None
+    assert gate_up_quantize.kwargs["indices"].dtype == DType.uint32
+    assert gate_up_quantize.kwargs["indices_divisor"] == TOP_K
     assert down_quantize.kwargs["indices"] is None
     for call in quantize.call_args_list:
         assert call.kwargs["scales_type"] == DType.float8_e8m0fnu

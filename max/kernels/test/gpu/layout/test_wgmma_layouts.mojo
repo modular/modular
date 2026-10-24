@@ -37,10 +37,10 @@ from std.memory import bitcast
 # Preserve the column-major logical fill order used by the printed oracle.
 def _arange_2d_col_major_tensor(t: TileTensor[mut=True, ...]):
     var size = t.num_elements()
+    var rows = Int(t.dim[0]())
 
     for i in range(size):
-        var idx = t.layout(Coord(i))
-        t.ptr[idx] = Scalar[t.dtype](i)
+        t.store((i % rows, i // rows), Scalar[t.dtype](i))
 
 
 def wgmma_tf32_tf32_f32_kernel[
@@ -1363,9 +1363,9 @@ def wgmma_kernel[
 
     var c_reg = SIMD[.float32, 4](0)
 
-    comptime M = Int(a_layout.shape[0]().value())
-    comptime K = Int(a_layout.shape[1]().value())
-    comptime N = Int(c_layout.shape[1]().value())
+    comptime M = Int(a_layout.shape[0]())
+    comptime K = Int(a_layout.shape[1]())
+    comptime N = Int(c_layout.shape[1]())
 
     comptime b_tile_dim0 = N if transpose_b else WMMA_K
     comptime b_tile_dim1 = WMMA_K if transpose_b else N

@@ -13,7 +13,7 @@
 """Layers specific to the DeepSeek-V4-Flash architecture."""
 
 from .attention import DeepseekV4Attention
-from .cache import CacheLeaf, DeepseekV4Cache
+from .cache import CacheLeaf, DeepseekV4Cache, LayerIndex
 from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .dspark import (
@@ -31,6 +31,7 @@ from .moe import (
     DeepseekV4Expert,
     DeepseekV4Gate,
     DeepseekV4MoE,
+    DeepseekV4SharedExpert,
     sqrt_softplus,
 )
 from .quantization import fp4_qat_quantize, fp8_qat_quantize
@@ -51,6 +52,8 @@ __all__ = [
     "DeepseekV4Indexer",
     "DeepseekV4MoE",
     "DeepseekV4RotaryEmbedding",
+    "DeepseekV4SharedExpert",
+    "LayerIndex",
     "RaggedRows",
     "WindowRows",
     "apply_rope_tail",

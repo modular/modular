@@ -77,9 +77,8 @@ def im2col_load_kernel[
             address_space=.SHARED,
             alignment=128,
             name="im2col_smem",
-        ]()
-        + barrier_offset
-    ).bitcast[SharedMemBarrier]()
+        ]().unsafe_offset(barrier_offset)
+    ).unsafe_bitcast[SharedMemBarrier]()
 
     # Thread 0 initializes barrier and issues TMA load
     if thread_idx.x == 0:
@@ -184,7 +183,7 @@ def im2col_reference[
                     + iw * in_channels
                     + c
                 )
-                val = input.load(input_idx)
+                val = input.unsafe_load(input_idx)
 
             output[m_local * BK + k_local] = val
 

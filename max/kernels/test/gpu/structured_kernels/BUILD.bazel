@@ -18,6 +18,8 @@ _EXTRA_CONSTRAINTS = {
     "test_mha_i2i_repro.mojo": ["//:mi355_gpu"],
     "test_mha_i2i_random_ref.mojo": ["//:mi355_gpu"],
     "test_mla_prefill_v2.mojo": ["//:mi355_gpu"],
+    # 16-byte global_load_lds is gfx950-only.
+    "test_global_load_to_lds.mojo": ["//:mi355_gpu"],
     "test_sub_tile_loader_lds_smoke.mojo": [
         "//:has_gpu",
         "//:amd_gpu",

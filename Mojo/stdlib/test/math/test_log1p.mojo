@@ -13,11 +13,7 @@
 
 from std.builtin.dtype import _integral_type_of
 from std.math import log1p
-from std.math.math import (
-    _call_libm,
-    _is_subnormal_bits,
-    _narrow_f32_to_bf16_bits,
-)
+from std.math.math import _call_libm
 from std.sys import bit_width_of
 from std.testing import TestSuite, assert_equal, assert_true
 from std.utils.numerics import FPUtils, inf, isinf, isnan, nan, neg_inf
@@ -274,39 +270,6 @@ def test_log1p_narrow() raises:
         _assert_ulp_vs_libm["log1p"](h, log1p(h), 1)
         var b = x.cast[.bfloat16]()
         _assert_ulp_vs_libm["log1p"](b, log1p(b), 1)
-
-
-def test_is_subnormal_bits() raises:
-    comptime min_normal = Float32(1.17549435e-38)
-    var tiny = Float32(from_bits=UInt32(1))
-    var x = SIMD[DType.float32, 8](
-        0, -0.0, tiny, -tiny, 1.1e-38, min_normal, -min_normal, 1
-    )
-    var want = SIMD[DType.bool, 8](
-        False, False, True, True, True, False, False, False
-    )
-    assert_equal(_is_subnormal_bits(x), want)
-    var h = SIMD[DType.float16, 4](0, 6e-8, 6.2e-5, 1)
-    assert_equal(
-        _is_subnormal_bits(h), SIMD[DType.bool, 4](False, True, False, False)
-    )
-
-
-def test_narrow_f32_to_bf16_bits() raises:
-    # Low 16 bits hit exact ties (0x8000) and values just below and above;
-    # the high bits sweep subnormal and small normal bfloat16 results.
-    var checked = 0
-    for hi in range(0, 0x0200, 3):
-        for lo in [0, 1, 0x7FFF, 0x8000, 0x8001, 0xFFFF, 0x1234]:
-            var bits = UInt32(hi << 16 | lo)
-            for sign in [UInt32(0), UInt32(0x80000000)]:
-                var x = Float32(from_bits=bits | sign)
-                var got = _narrow_f32_to_bf16_bits(x)
-                var want = x.cast[.bfloat16]()
-                assert_equal(got.to_bits(), want.to_bits())
-                checked += 1
-    assert_true(checked > 300)
-    assert_true(isnan(_narrow_f32_to_bf16_bits(nan[DType.float32]())))
 
 
 def main() raises:

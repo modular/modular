@@ -43,7 +43,12 @@ from max.gpu.sync import (
     cp_async_bulk_wait_group,
     umma_arrive_leader_cta,
 )
-from max.gpu.compute.arch.tcgen05 import tcgen05_fence_after, tcgen05_ld
+from max.gpu.compute.arch.tcgen05 import (
+    tcgen05_dealloc,
+    tcgen05_fence_after,
+    tcgen05_ld,
+    tcgen05_release_allocation_lock,
+)
 from max.gpu.primitives.cluster import block_rank_in_cluster
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
@@ -149,6 +154,9 @@ def depth512_scale_write_output[
     comptime num_batches = o_cols_per_phase // batch_size
     comptime assert o_cols_per_phase % batch_size == 0
 
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
+
     # Output SMEM base (reuses Q buffer).
     var o_smem = smem.o_smem[output_type]()
     # O SMEM is staged in 64-column SWIZZLE_128B k-blocks, the layout of the
@@ -195,9 +203,11 @@ def depth512_scale_write_output[
                 var col = col_base + col_offset + base
                 var o_k_block = col // o_sw_K
                 var o_inner = Int(m_row) * o_sw_K + col % o_sw_K
-                (o_smem + o_k_block * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-                    UInt32
-                ]().store(packed)
+                (
+                    o_smem.unsafe_offset(o_k_block * BM * o_sw_K).unsafe_offset(
+                        o_swizzle(o_inner)
+                    )
+                ).unsafe_bitcast[UInt32]().unsafe_store(packed)
 
     comptime if config.split_o:
         comptime ov_quarter = config.ov_depth // 4
@@ -309,7 +319,8 @@ def depth512_softmax[
 
     Args:
         smem: Shared-memory allocator holding S/P/O buffers and barriers.
-        tmem_addr: Base TMEM address for S and O tiles.
+        tmem_addr: Base TMEM address for S and O tiles (read once post
+            cluster_sync).
         seq_id: Sequence index for mask evaluation.
         score_row: Row offset of the query tile within the sequence.
         num_keys: Number of valid key columns for masking.
@@ -376,6 +387,8 @@ def depth512_softmax[
         sink_raw = sink_weights.value()[q_head_idx].cast[accum_dtype]() / scale
 
     # ---- TMEM addresses --------------------------------------------------
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var s_even_tmem = tmem_addr + UInt32(config.TMEM_S_even)
     var s_odd_tmem = tmem_addr + UInt32(config.TMEM_S_odd)
 
@@ -521,11 +534,12 @@ def depth512_softmax[
     # Follows FA4 pattern: double-buffer TMEM loads across batches so that
     # masking + max of batch N overlaps with the TMEM load of batch N+1.
 
-    @__parameter
     @inline(.always)
     def load_mask_max_impl[
         *, mask_strategy: MaskStrategy
-    ](s_tmem: UInt32, kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+    ](s_tmem: UInt32, kv_row: UInt32) {mut s, imm} -> StaticTuple[
+        Float32, max_unroll
+    ]:
         """Load effective_bn columns of S from TMEM, apply mask, compute partial
         row_max as a StaticTuple for reduction.
 
@@ -592,11 +606,10 @@ def depth512_softmax[
 
         return vrow_max
 
-    @__parameter
     @inline(.always)
     def init_load_mask_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> Float32:
+    ](kv_row: UInt32) {imm} -> Float32:
         """Load S, mask, return partial max (scalar)."""
         return maximum(
             load_mask_max_impl[mask_strategy=mask_strategy](s_even_tmem, kv_row)
@@ -605,7 +618,7 @@ def depth512_softmax[
     @inline(.always)
     def load_mask_max[
         mask_strategy: MaskStrategy
-    ](s_tmem: UInt32, kv_row: UInt32, old_max: Float32) -> Float32:
+    ](s_tmem: UInt32, kv_row: UInt32, old_max: Float32) {imm} -> Float32:
         """Load S, mask, return partial max combined with old_max."""
         return maximum(
             load_mask_max_impl[mask_strategy=mask_strategy](s_tmem, kv_row),
@@ -687,9 +700,13 @@ def depth512_softmax[
                 comptime assert effective_bn % p_sw_K == 0
                 comptime r = base % p_sw_K
                 var p_inner = Int(m_row) * p_sw_K + r
-                (p_smem + p_k_block * BM * p_sw_K + p_swizzle(p_inner)).bitcast[
-                    UInt32
-                ]().store(bitcast[.uint32, 4](vals))
+                (
+                    p_smem.unsafe_offset(p_k_block * BM * p_sw_K).unsafe_offset(
+                        p_swizzle(p_inner)
+                    )
+                ).unsafe_bitcast[UInt32]().unsafe_store(
+                    bitcast[.uint32, 4](vals)
+                )
 
         # Batch 0: compute exp.
         comptime for idx in range(p_batch):
@@ -735,9 +752,8 @@ def depth512_softmax[
     tcgen05_fence_after()
 
     var partial_max: Float32 = peel_mask[
-        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies),
-        init_load_mask_max,
-    ](mask_iters, kv_row)
+        rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies)
+    ](init_load_mask_max, mask_iters, kv_row)
 
     umma_arrive_leader_cta(pipeline_s_even.consumer_mbar())
     pipeline_s_even.step()
@@ -877,8 +893,8 @@ def depth512_softmax[
                 break
             var cur_mask_status = mask.status(
                 seq_id,
-                Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                Index[dtype=DType.int32](PairBM_mask, BN),
+                Index[dtype=.int32](Int(score_row), Int(kv_row)),
+                Index[dtype=.int32](PairBM_mask, BN),
             )
             if cur_mask_status == TileMaskStatus.FULL_MASK:
                 continue
@@ -899,7 +915,9 @@ def depth512_softmax[
     ].O_mma_hi_offset if config.split_o else Depth512MBars[
         config.num_kv_stages, config.split_o
     ].O_mma_lo_offset
-    var o_mma_done_mbar: MBarType = mbars.mbar_base + o_mma_done_offset
+    var o_mma_done_mbar: MBarType = mbars.mbar_base.unsafe_offset(
+        o_mma_done_offset
+    )
     o_mma_done_mbar[].wait(o_phase)
     tcgen05_fence_after()
 
@@ -919,4 +937,12 @@ def depth512_softmax[
             num_output_rows,
             out_head_idx,
             out_row_idx,
+        )
+
+    # TMEM deallocation: all other warps (correction, MMA, load) are done
+    # with TMEM by this point. Only warp 0 needs to deallocate.
+    if tid // UInt32(WARP_SIZE) == 0:
+        tcgen05_release_allocation_lock[Int32(config.cta_group)]()
+        tcgen05_dealloc[Int32(config.cta_group)](
+            tmem_addr, UInt32(config.sm100_tmem_cols)
         )

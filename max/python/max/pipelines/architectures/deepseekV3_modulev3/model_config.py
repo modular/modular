@@ -38,6 +38,8 @@ from max.pipelines.modeling.config_enums import (
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from ..deepseekV3.model_config import mla_kv_cache_quant_config
+
 
 @dataclass(kw_only=True)
 class DeepseekV3Config(ArchConfigWithKVCache):
@@ -181,6 +183,13 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            # Only an NVFP4 latent needs scales; the FP8 cache keeps its
+            # scale-free layout, which exported graphs' input specs record.
+            kvcache_quant_config=mla_kv_cache_quant_config(
+                cache_dtype, huggingface_config.qk_rope_head_dim
+            )
+            if cache_dtype == DType.uint8
+            else None,
             # A V3.2 indexer cache paired with this one carries these too, and
             # the pair must agree.
             speculative_method=pipeline_config.speculative.speculative_method

@@ -20,11 +20,11 @@ comptime NUM_THREADS_PER_BLOCK = 128
 
 @inline(.always)
 def loadTile(
-    T: UnsafePointer[Float32, _],
+    T: Pointer[Float32, _],
     lda: Int,
     maxRow: Int,
     maxCol: Int,
-    T_s: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
+    T_s: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
     ldas: Int,
     height: Int,
     width: Int,

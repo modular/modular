@@ -17,8 +17,14 @@ from unittest import mock
 import pytest
 from max.serve.config import Settings
 from max.serve.telemetry import common, metrics
-from opentelemetry.metrics import get_meter_provider
+from max.support._telemetry import drop_metrics_matching
+from opentelemetry.metrics import (
+    NoOpCounter,
+    NoOpMeterProvider,
+    get_meter_provider,
+)
 from opentelemetry.metrics._internal.instrument import (
+    _ProxyCounter,
     _ProxyGauge,
     _ProxyHistogram,
     _ProxyInstrument,
@@ -166,6 +172,87 @@ def test_tokens_per_request_histograms() -> None:
     m_output.commit()  # Should not raise
 
 
+@pytest.mark.parametrize(
+    "method",
+    [
+        "input_tokens_per_request",
+        "output_tokens_per_request",
+        "prefix_coverage_per_request",
+    ],
+)
+@pytest.mark.parametrize(
+    ("turn", "expected_attributes"),
+    [
+        pytest.param(None, {"model": "m"}, id="no_turn"),
+        pytest.param("first", {"model": "m", "turn": "first"}, id="first"),
+        pytest.param("later", {"model": "m", "turn": "later"}, id="later"),
+    ],
+)
+def test_tokens_per_request_carry_the_turn_when_given(
+    method: str,
+    turn: metrics.ConversationTurn | None,
+    expected_attributes: dict[str, str],
+) -> None:
+    client = mock.Mock()
+    async_metrics = metrics._AsyncMetrics()
+    async_metrics.configure(client, extra_attributes={"model": "m"})
+
+    getattr(async_metrics, method)(7, turn)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert measurement.value == 7
+    assert measurement.attributes == expected_attributes
+    assert async_metrics.extra_attributes == {"model": "m"}
+
+
+@pytest.mark.parametrize(
+    ("method", "value", "instrument", "is_gauge"),
+    [
+        ("dkv_settle_queue_depth", 3, "maxserve.dkv.settle_queue_depth", True),
+        (
+            "dkv_settle_queue_oldest_age_ms",
+            2.5,
+            "maxserve.dkv.settle_queue_oldest_age_ms",
+            True,
+        ),
+        (
+            "dkv_owner_releases_halted",
+            1,
+            "maxserve.dkv.owner_releases_halted",
+            True,
+        ),
+        (
+            "dkv_settle_jobs_finished",
+            9,
+            "maxserve.dkv.settle_jobs_finished",
+            False,
+        ),
+    ],
+)
+def test_dkv_settle_metrics_record_on_their_own_instruments(
+    method: str, value: float, instrument: str, is_gauge: bool
+) -> None:
+    """Each settle metric lands on its own instrument, the levels as gauges.
+
+    The finished count is a per-window delta, so it is a counter. A gauge would
+    keep only the last window's count and drop the rest.
+    """
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    getattr(recorder, method)(value)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (measurement.instrument_name, measurement.value) == (
+        instrument,
+        value,
+    )
+    assert (
+        isinstance(metrics.SERVE_METRICS[instrument], _ProxyGauge) == is_gauge
+    )
+
+
 def _is_histogram(inst: object) -> bool:
     """True if a SERVE_METRICS instrument is a Histogram.
 
@@ -230,7 +317,6 @@ def test_log_spaced_bucket_ranges() -> None:
         (common.HISTOGRAM_LATENCY_BUCKETS_MS, 1.0, 8 * 60 * 60 * 1000.0, 1.5),
         (common.HISTOGRAM_COUNT_BUCKETS, 1.0, 100_000_000.0, 1.5),
         (common.HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS, 10.0, 1_000_000.0, 1.5),
-        (common.HISTOGRAM_BATCH_SIZE_BUCKETS, 1.0, 512.0, 1.5),
         (common.HISTOGRAM_GIB_PER_S_BUCKETS, 0.1, 800.0, 2.0),
     ):
         # The leading 0 keeps exact zeros out of the smallest real bucket.
@@ -241,6 +327,21 @@ def test_log_spaced_bucket_ranges() -> None:
         # significant digits nudges individual steps either side of the ratio.
         ratio = (buckets[-1] / buckets[1]) ** (1 / (len(buckets) - 2))
         assert ratio <= max_ratio
+
+
+def test_batch_size_buckets_are_linear_then_log_spaced() -> None:
+    """Pins one bucket per batch size through 20, then 5% steps out to 512.
+
+    Batch sizes are integers, so the linear run gives each small size its own
+    bucket, and the 5% ladder above it keeps a batch at a max_batch_size cap
+    within a few requests instead of a 50%-wide bucket.
+    """
+    buckets = common.HISTOGRAM_BATCH_SIZE_BUCKETS
+    assert buckets[:21] == (0.0, *(float(size) for size in range(1, 21)))
+    assert buckets[-1] == 512.0
+    tail = buckets[20:]
+    ratio = (tail[-1] / tail[0]) ** (1 / (len(tail) - 1))
+    assert ratio <= 1.05
 
 
 def test_percent_buckets_tighten_near_saturation() -> None:
@@ -358,7 +459,7 @@ def _synthetic_metrics_data(
 ) -> MetricsData:
     """Builds a minimal MetricsData tree wrapping the given data payloads.
 
-    Exercises common._drop_metrics_matching (shared by both reader guards)
+    Exercises drop_metrics_matching (shared by both reader guards)
     directly, without needing a real MeterProvider/exporter -- these are
     frozen dataclasses, cheap to construct by hand.
     """
@@ -454,8 +555,8 @@ def _metric_data_types(filtered: MetricsData | None) -> list[type]:
 
 
 def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
-    """common._drop_metrics_matching is the shared primitive behind both
-    reader guards: _SkipExponentialHistogramsPrometheusReader filters out
+    """drop_metrics_matching is the shared primitive behind both reader
+    guards: SkipExponentialHistogramsPrometheusReader filters out
     ExponentialHistogram data (so Prometheus never sees a shape it can't
     render), and _ExponentialShadowOnlyReader filters out the classic
     Histogram data (so the OTLP endpoint carries only the shadow metric,
@@ -468,8 +569,8 @@ def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
         _exponential_histogram_payload(),
     )
 
-    # Mirrors _SkipExponentialHistogramsPrometheusReader's filter.
-    prometheus_bound = common._drop_metrics_matching(
+    # Mirrors SkipExponentialHistogramsPrometheusReader's filter.
+    prometheus_bound = drop_metrics_matching(
         data, lambda m: isinstance(m.data, ExponentialHistogram)
     )
     assert set(_metric_data_types(prometheus_bound)) == {
@@ -478,7 +579,7 @@ def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
     }
 
     # Mirrors _ExponentialShadowOnlyReader's filter.
-    otlp_bound = common._drop_metrics_matching(
+    otlp_bound = drop_metrics_matching(
         data, lambda m: isinstance(m.data, ExplicitHistogramData)
     )
     assert set(_metric_data_types(otlp_bound)) == {
@@ -489,7 +590,7 @@ def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
     # Neither guard drops everything, and a None input passes through as
     # None (both readers' _receive_metrics skip the export call in that
     # case, matching the base SDK's own no-op-on-None convention).
-    assert common._drop_metrics_matching(None, lambda m: True) is None
+    assert drop_metrics_matching(None, lambda m: True) is None
 
 
 def test_block_level_metrics_are_gauges() -> None:
@@ -531,6 +632,18 @@ def test_connector_refusal_counters_record() -> None:
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
 
 
+def test_dkv_fail_open_counters_are_counters() -> None:
+    """The dKV fail-open meters are counters, since each publish is a delta."""
+    common.configure_metrics(Settings())
+    for name in (
+        "maxserve.dkv.prepare_load_degraded",
+        "maxserve.dkv.load_with_plan_degraded",
+        "maxserve.dkv.load_with_plan_expired",
+    ):
+        assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name
+        metrics.MaxMeasurement(name, 7).commit()  # Should not raise
+
+
 def test_tool_call_conformance_error_counter() -> None:
     """The tool-call conformance counter records with a bounded 'outcome' tag."""
     common.configure_metrics(Settings())
@@ -561,6 +674,40 @@ def test_structured_output_grammar_rejection_counter() -> None:
         metrics.METRICS.structured_output_grammar_rejection(
             kind
         )  # Should not raise
+
+
+def test_client_disconnect_cancellation_counter() -> None:
+    """The disconnect counter records with a bounded 'phase' tag."""
+    common.configure_metrics(Settings())
+    assert (
+        "maxserve.request.client_disconnect_cancellations"
+        in metrics.SERVE_METRICS
+    )
+    for phase in ("before_response", "during_response"):
+        metrics.METRICS.client_disconnect_cancellation(
+            phase
+        )  # Should not raise
+    metrics.METRICS.export_zero_client_disconnect_cancellations()
+
+
+def test_disconnect_phases_are_exported_at_zero() -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+    recorder.export_zero_client_disconnect_cancellations()
+    sent = [call.args[0] for call in client.send_measurement.call_args_list]
+    assert [(m.instrument_name, m.value, m.attributes) for m in sent] == [
+        (
+            "maxserve.request.client_disconnect_cancellations",
+            0,
+            {"model": "m", "phase": "before_response"},
+        ),
+        (
+            "maxserve.request.client_disconnect_cancellations",
+            0,
+            {"model": "m", "phase": "during_response"},
+        ),
+    ]
 
 
 def test_tool_call_requests_counter() -> None:
@@ -612,3 +759,136 @@ def test_batch_metrics_with_batch_type_attribute() -> None:
         4.9,
         attributes={"batch_type": "TG"},
     ).commit()
+
+
+def test_create_counter_accepts_a_no_op_meter() -> None:
+    """A no-op provider's counter does not fail the import of serve metrics.
+
+    The dKV counters are created at import, so a host that installs a no-op
+    or disabled meter provider first gets a counter that is neither the
+    proxy nor the SDK one, and recording through it is skipped later.
+    """
+    with mock.patch.object(
+        metrics, "_meter", NoOpMeterProvider().get_meter("t")
+    ):
+        counter = metrics._create_counter("test.counter", "A test counter.")
+
+    assert isinstance(counter, NoOpCounter)
+
+
+@pytest.mark.parametrize(
+    ("prompt_tokens", "bucket"),
+    [
+        (0, "0-8k"),
+        (8191, "0-8k"),
+        (8192, "8k-32k"),
+        (32767, "8k-32k"),
+        (32768, "32k-64k"),
+        (65536, "64k-128k"),
+        (131072, "128k-256k"),
+        (262143, "128k-256k"),
+        (262144, "256k-plus"),
+        (1_000_000, "256k-plus"),
+    ],
+)
+def test_prompt_length_bucket_edges(prompt_tokens: int, bucket: str) -> None:
+    """Each bucket includes its lower bound, in 1024-token k."""
+    assert metrics._prompt_length_bucket(prompt_tokens) == bucket
+
+
+def test_ttft_by_prompt_length_carries_the_bucket() -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.ttft_by_prompt_length(125.0, 20_000)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (
+        measurement.instrument_name,
+        measurement.value,
+        measurement.attributes,
+    ) == (
+        "maxserve.time_to_first_token_by_prompt_length",
+        125.0,
+        {"model": "m", "prompt_length": "8k-32k"},
+    )
+    assert recorder.extra_attributes == {"model": "m"}
+    assert isinstance(
+        metrics.SERVE_METRICS["maxserve.time_to_first_token_by_prompt_length"],
+        _ProxyHistogram,
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "value", "instrument"),
+    [
+        (
+            "connector_cordon_wait_time",
+            42.5,
+            "maxserve.cache.connector_cordon_wait_time",
+        ),
+        (
+            "connector_cordon_passes",
+            3,
+            "maxserve.cache.connector_cordon_passes",
+        ),
+    ],
+)
+def test_connector_cordon_metrics_are_histograms(
+    method: str, value: float, instrument: str
+) -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    getattr(recorder, method)(value)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (
+        measurement.instrument_name,
+        measurement.value,
+        measurement.attributes,
+    ) == (instrument, value, {"model": "m"})
+    assert isinstance(metrics.SERVE_METRICS[instrument], _ProxyHistogram)
+
+
+@pytest.mark.parametrize("reason", ["budget", "max_pending", "held"])
+def test_connector_lookup_admission_stop_carries_the_reason(
+    reason: metrics.LookupAdmissionStop,
+) -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.connector_lookup_admission_stop(reason)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (
+        measurement.instrument_name,
+        measurement.value,
+        measurement.attributes,
+    ) == (
+        "maxserve.cache.connector_lookup_admission_stops",
+        1,
+        {"model": "m", "reason": reason},
+    )
+    assert isinstance(
+        metrics.SERVE_METRICS[
+            "maxserve.cache.connector_lookup_admission_stops"
+        ],
+        _ProxyCounter,
+    )
+
+
+def test_scheduler_step_time_is_a_separate_histogram() -> None:
+    name = "maxserve.scheduler.batch_step_time"
+    assert _is_histogram(metrics.SERVE_METRICS[name])
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+    recorder.scheduler_batch_step_time(3.0, "CE")
+    measurement = client.send_measurement.call_args.args[0]
+    assert measurement.instrument_name == name
+    assert measurement.value == 3.0
+    assert measurement.attributes == {"model": "m", "batch_type": "CE"}

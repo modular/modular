@@ -29,7 +29,7 @@
 * `ExplicitDestroy`
 """
 
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.memory import MaybeUninit
 from std.os import abort
 from std.reflection import call_location
@@ -40,9 +40,10 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy("Use .destroy() to consume `ExplicitDestroy`")
 @fieldwise_init
-struct ExplicitDestroy(not Deinitable, Movable):
+struct ExplicitDestroy(
+    not Deinitable else "Use .destroy() to consume `ExplicitDestroy`", Movable
+):
     """Test type that is explicitly-destroyed."""
 
     var value: Int
@@ -58,9 +59,13 @@ struct ExplicitDestroy(not Deinitable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy("Use .destroy() to consume `ExplicitDestroyKey`")
 @fieldwise_init
-struct ExplicitDestroyKey(not Deinitable, Equatable, Hashable, Movable):
+struct ExplicitDestroyKey(
+    not Deinitable else "Use .destroy() to consume `ExplicitDestroyKey`",
+    Equatable,
+    Hashable,
+    Movable,
+):
     """Linear key type for testing linear-keyed containers: `Movable`,
     `Hashable`, and `Equatable`, but explicitly-destroyed (not
     `Deinitable`)."""
@@ -100,10 +105,12 @@ struct ExplicitDestroyKey(not Deinitable, Equatable, Hashable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy("Use .destroy() to consume `CopyableExplicitDestroyKey`")
 @fieldwise_init
 struct CopyableExplicitDestroyKey(
-    Copyable, not Deinitable, Equatable, Hashable
+    Copyable,
+    not Deinitable else "Use .destroy() to consume `CopyableExplicitDestroyKey`",
+    Equatable,
+    Hashable,
 ):
     """Linear key type that is nonetheless `Copyable`: `Copyable`, `Hashable`,
     and `Equatable`, but explicitly-destroyed (not `Deinitable`).
@@ -580,7 +587,7 @@ struct PinnedExplicitDelOnly(not Deinitable, not Movable):
 
 
 @fieldwise_init
-struct Pinned(not Movable):
+struct Pinned(Defaultable, not Movable):
     """Utility testing container which is non-movable."""
 
     var data: Int

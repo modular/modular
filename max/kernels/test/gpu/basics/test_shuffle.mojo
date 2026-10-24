@@ -14,7 +14,6 @@
 import max.gpu.primitives.warp as warp
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.warp import (
     shuffle_down,
@@ -28,9 +27,7 @@ from std.testing import assert_equal
 def kernel_wrapper[
     dtype: DType,
     simd_width: Int,
-    kernel_fn: def(SIMD[dtype, simd_width]) capturing -> SIMD[
-        dtype, simd_width
-    ],
+    kernel_fn: def(SIMD[dtype, simd_width]) thin -> SIMD[dtype, simd_width],
 ](device_ptr: MutPointer[Scalar[dtype], MutAnyOrigin]):
     var val = device_ptr.unsafe_load[width=simd_width](
         thread_idx.x * simd_width
@@ -44,9 +41,7 @@ def kernel_wrapper[
 def _kernel_launch_helper[
     dtype: DType,
     simd_width: Int,
-    kernel_fn: def(SIMD[dtype, simd_width]) capturing -> SIMD[
-        dtype, simd_width
-    ],
+    kernel_fn: def(SIMD[dtype, simd_width]) thin -> SIMD[dtype, simd_width],
 ](
     host_ptr: MutPointer[Scalar[dtype], _],
     buffer_size: Int,
@@ -67,7 +62,7 @@ def _kernel_launch_helper[
 def _shuffle_idx_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
     comptime constant_add: Scalar[dtype] = 42
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
@@ -129,10 +124,10 @@ def test_shuffle_idx_uint(ctx: DeviceContext) raises:
 def _shuffle_up_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
     comptime constant_add: Scalar[dtype] = 42
-    comptime offset = WARP_SIZE // 2
+    comptime offset = block_size // 2
 
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
@@ -202,10 +197,10 @@ def test_shuffle_up_uint(ctx: DeviceContext) raises:
 def _shuffle_down_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
     comptime constant_add: Scalar[dtype] = 42
-    comptime offset = WARP_SIZE // 2
+    comptime offset = block_size // 2
 
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
@@ -275,10 +270,10 @@ def test_shuffle_down_uint(ctx: DeviceContext) raises:
 def _shuffle_xor_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
     comptime constant_add: Scalar[dtype] = 42
-    comptime offset = WARP_SIZE // 2
+    comptime offset = block_size // 2
 
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
@@ -343,7 +338,7 @@ def _warp_reduce_launch_helper[
     dtype: DType,
     simd_width: Int,
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
     comptime offset = 1
 
@@ -391,7 +386,7 @@ def test_warp_reduce_fp16_packed(ctx: DeviceContext) raises:
 def _warp_sum_launch_helper[
     dtype: DType,
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](block_size)
     for i in range(block_size):
         host_ptr[i] = Scalar[dtype](i)
@@ -407,7 +402,7 @@ def _warp_sum_launch_helper[
     for i in range(block_size):
         assert_equal(
             host_ptr[i],
-            Scalar[dtype](WARP_SIZE * (WARP_SIZE - 1) // 2),
+            Scalar[dtype](block_size * (block_size - 1) // 2),
         )
 
 
@@ -425,7 +420,7 @@ def _lane_group_sum_broadcast_stride1_helper[
     simd_width: Int,
     num_lanes: Int,
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
 
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
@@ -454,15 +449,16 @@ def _lane_group_sum_broadcast_stride1_helper[
 
 
 def test_lane_group_sum_stride1(ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     # Full warp
-    _lane_group_sum_broadcast_stride1_helper[.float32, 1, WARP_SIZE](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float32, 1, warp_size](ctx)
     # Sub-warp sizes
     comptime for num_lanes in [2, 4, 8, 16, 32]:
         _lane_group_sum_broadcast_stride1_helper[.float32, 1, num_lanes](ctx)
     # 64-bit (NVIDIA shuffle doesn't support float64)
     comptime if ctx.target.is_amd_gpu():
         _lane_group_sum_broadcast_stride1_helper[.float64, 1, 4](ctx)
-        _lane_group_sum_broadcast_stride1_helper[.float64, 1, WARP_SIZE](ctx)
+        _lane_group_sum_broadcast_stride1_helper[.float64, 1, warp_size](ctx)
 
 
 def test_lane_group_sum_stride1_half(
@@ -479,7 +475,7 @@ def _lane_group_max_broadcast_stride1_helper[
     simd_width: Int,
     num_lanes: Int,
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
 
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
@@ -504,8 +500,9 @@ def _lane_group_max_broadcast_stride1_helper[
 
 
 def test_lane_group_max(ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     # Full warp
-    _lane_group_max_broadcast_stride1_helper[.float32, 1, WARP_SIZE](ctx)
+    _lane_group_max_broadcast_stride1_helper[.float32, 1, warp_size](ctx)
     # Sub-warp sizes
     comptime for num_lanes in [2, 4, 8, 16, 32]:
         _lane_group_max_broadcast_stride1_helper[.float32, 1, num_lanes](ctx)
@@ -515,7 +512,7 @@ def test_lane_group_max(ctx: DeviceContext) raises:
     # 64-bit (NVIDIA shuffle doesn't support float64)
     comptime if ctx.target.is_amd_gpu():
         _lane_group_max_broadcast_stride1_helper[.float64, 1, 4](ctx)
-        _lane_group_max_broadcast_stride1_helper[.float64, 1, WARP_SIZE](ctx)
+        _lane_group_max_broadcast_stride1_helper[.float64, 1, warp_size](ctx)
 
 
 def _lane_group_reduce_launch_helper[
@@ -525,7 +522,7 @@ def _lane_group_reduce_launch_helper[
     stride: Int,
     broadcast: Bool = False,
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
 
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
@@ -570,7 +567,7 @@ def test_lane_group_reduce_fp32(ctx: DeviceContext) raises:
     # CDNA4+ permlane path
     comptime if ctx.target.is_amd_gpu():
         comptime for stride in [16, 32]:
-            comptime num_lanes = WARP_SIZE // stride
+            comptime num_lanes = ctx.default_device_info.warp_size // stride
             comptime if num_lanes >= 2:
                 _lane_group_reduce_launch_helper[
                     DType.float32, 1, num_lanes, stride, broadcast=True
@@ -599,7 +596,7 @@ def _lane_group_min_broadcast_helper[
     num_lanes: Int,
     stride: Int = 1,
 ](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size * simd_width
 
     var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
@@ -635,8 +632,9 @@ def _lane_group_min_broadcast_helper[
 
 
 def test_lane_group_min(ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     # Full warp
-    _lane_group_min_broadcast_helper[.float32, 1, WARP_SIZE](ctx)
+    _lane_group_min_broadcast_helper[.float32, 1, warp_size](ctx)
     # Sub-warp sizes
     comptime for num_lanes in [2, 4, 8, 16, 32]:
         _lane_group_min_broadcast_helper[.float32, 1, num_lanes](ctx)
@@ -646,14 +644,14 @@ def test_lane_group_min(ctx: DeviceContext) raises:
     # 64-bit (NVIDIA shuffle doesn't support float64)
     comptime if ctx.target.is_amd_gpu():
         _lane_group_min_broadcast_helper[.float64, 1, 4](ctx)
-        _lane_group_min_broadcast_helper[.float64, 1, WARP_SIZE](ctx)
+        _lane_group_min_broadcast_helper[.float64, 1, warp_size](ctx)
     # Stride > 1 (exercises shuffle_xor fallback path)
     _lane_group_min_broadcast_helper[.float32, 1, 4, stride=8](ctx)
 
     # CDNA4+ permlane path
     comptime if ctx.target.is_amd_gpu():
         comptime for stride in [16, 32]:
-            comptime num_lanes = WARP_SIZE // stride
+            comptime num_lanes = warp_size // stride
             comptime if num_lanes >= 2:
                 _lane_group_min_broadcast_helper[
                     .float32, 1, num_lanes, stride

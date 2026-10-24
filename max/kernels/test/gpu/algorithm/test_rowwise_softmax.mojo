@@ -23,7 +23,6 @@ from builtin_kernels.rowwise_softmax import softmax
 from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
-from std.utils.index import Index
 
 
 def _check[
@@ -35,22 +34,21 @@ def _check[
     rand[dtype](data_h.as_span())
     var data_d = ctx.enqueue_create_buffer[dtype](n)
     var out_d = ctx.enqueue_create_buffer[dtype](n)
-    var data_buf = TileTensor(data_d, row_major(Coord(Index(rows, cols))))
-    var out_t = TileTensor(out_d, row_major(Coord(Index(rows, cols))))
+    var data_buf = TileTensor(data_d, row_major((rows, cols)))
+    var out_t = TileTensor(out_d, row_major((rows, cols)))
     ctx.enqueue_copy(data_d, data_h)
 
     @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        # `alignment` counts elements; `raw_load` takes bytes.
-        return data_buf.raw_load[
+        # `alignment` counts elements; `load` takes bytes.
+        return data_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     softmax[dtype, 2, target="gpu", logsoftmax=logsoftmax](
-        input_fn, Coord(Index(rows, cols)), cols, out_t, 1, ctx
+        input_fn, Coord(rows, cols), cols, out_t, 1, ctx
     )
     ctx.enqueue_copy(res, out_d)
     ctx.synchronize()

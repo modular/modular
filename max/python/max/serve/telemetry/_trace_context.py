@@ -22,9 +22,9 @@ from enum import Enum
 from typing import TypeVar
 
 from max.pipelines.context import BaseContextType, TextContext
-from max.serve.telemetry import common as telemetry
-from max.serve.telemetry.common import (
-    _capture_request_context,
+from max.serve.telemetry import _tracing
+from max.serve.telemetry._log_context import (
+    capture_request_context,
     request_trace_ctx,
 )
 from opentelemetry import propagate as otel_propagate
@@ -142,7 +142,7 @@ def start_server_span(
                 "url.scheme": scheme,
             },
         )
-    _capture_request_context(request_id, inbound, server_span)
+    capture_request_context(request_id, inbound, server_span)
     return server_span
 
 
@@ -177,6 +177,9 @@ def set_phase_parent(span: otel_trace.Span) -> None:
     fans out to copy the context when they are created. Does nothing for the
     span the no-op tracer returns when tracing is off.
     """
+    # Fast path for tracing off; the validity check below rejects it too.
+    if span is otel_trace.INVALID_SPAN:
+        return
     # Gates on validity, not recording: a sampled-out span is non-recording
     # but must still parent the phase spans.
     span_context = span.get_span_context()
@@ -207,9 +210,11 @@ def inject_trace_carrier(context: BaseContextType) -> None:
     parent = _phase_parent_ctx.get()
     if parent is None:
         parent = request_trace_ctx.get()
+        if parent is None and not _tracing.trace_level_header_enabled:
+            return
     carrier: dict[str, str] = {}
     otel_propagate.inject(carrier, context=parent)
-    if telemetry._trace_level_header_enabled:
+    if _tracing.trace_level_header_enabled:
         level = request_trace_level.get()
         if level is not None:
             carrier[TRACE_LEVEL_HEADER] = level.value

@@ -38,7 +38,7 @@ trait ExplicitDestroyEmptyMsgOnDeinitable(Deinitable):
 
 
 # expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
-# expected-note @+2 {{Use a `not Deinitable` conformance to opt out of implicit deletion. `@explicit_destroy` is no longer required.}}
+# expected-note @+2 {{Use a `not Deinitable` conformance to opt out of implicit deletion. `@explicit_destroy` is deprecated.}}
 @explicit_destroy
 trait BareExplicitDestroyTrait:
     def consume(deinit self):
@@ -65,7 +65,7 @@ trait NonStringArgExplicitDestroyTrait:
 
 
 # expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
-# expected-note @+2 {{Use a `not Deinitable` conformance to opt out of implicit deletion. `@explicit_destroy` is no longer required.}}
+# expected-note @+2 {{Use a `not Deinitable` conformance to opt out of implicit deletion. `@explicit_destroy` is deprecated.}}
 @explicit_destroy
 struct UnconditionalDefault(Movable where False):
     pass
@@ -84,7 +84,7 @@ struct NonStringArgExplicitDestroy:
 
 
 # expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
-# expected-note @+2 {{Use a `not Deinitable` conformance to opt out of implicit deletion. `@explicit_destroy` is no longer required.}}
+# expected-note @+2 {{Use a `not Deinitable` conformance to opt out of implicit deletion. `@explicit_destroy` is deprecated.}}
 @explicit_destroy
 struct ConditionalDefault[cond: Bool](Deinitable where cond, Movable where False):
     pass
@@ -94,6 +94,44 @@ struct ConditionalDefault[cond: Bool](Deinitable where cond, Movable where False
 # expected-note @+2 {{Add a `not Deinitable` conformance or remove `@explicit_destroy`}}
 @explicit_destroy("some error")
 struct UnconditionalCustom(Movable where False):
+    pass
+
+
+# ===----------------------------------------------------------------------=== #
+# `@explicit_destroy("...")` on a struct is deprecated
+# ===----------------------------------------------------------------------=== #
+
+
+# expected-warning @below {{'@explicit_destroy' is deprecated; use an 'else' message on the 'Deinitable' conformance}}
+@explicit_destroy("use consume()")
+# expected-note @below {{add 'else "use consume()"' to this conformance}}
+struct DeprecatedNot(not Deinitable):
+    pass
+
+
+# expected-warning @below {{'@explicit_destroy' is deprecated; use an 'else' message on the 'Deinitable' conformance}}
+@explicit_destroy("use consume()")
+struct DeprecatedWhereFalse(
+    # expected-note @below {{add 'else "use consume()"' to this conformance}}
+    Deinitable where False,
+):
+    pass
+
+
+# expected-warning @below {{'@explicit_destroy' is deprecated; use an 'else' message on the 'Deinitable' conformance}}
+@explicit_destroy("use deinit_with()")
+struct DeprecatedConditional[cond: Bool](
+    # expected-note @below {{add 'else "use deinit_with()"' to this conformance}}
+    Deinitable where cond,
+):
+    pass
+
+
+# A long message is shortened in the note.
+# expected-warning @below {{'@explicit_destroy' is deprecated; use an 'else' message on the 'Deinitable' conformance}}
+@explicit_destroy("call `release()` before the end of every scope")
+# expected-note @below {{add 'else "call `release()` before the end of ev..."' to this conformance}}
+struct DeprecatedLongMessage(not Deinitable):
     pass
 
 

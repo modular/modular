@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Config for MiMo-V2.6-Flash (``MiMoV2ForCausalLM``).
 
-The model runs FP8 W8A8 dense linears and W4A8 experts, with Q/K (192) and V
-(128) zero-padded to a 256-wide KV cache for the fast attention kernels.
+The model runs FP8 W8A8 dense linears and W4A8 MXFP4 experts, with Q/K (192)
+and V (128) zero-padded to a 256-wide KV cache for the fast attention kernels.
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from .layers.attention import QkvChunkLayout
 from .quant import MiMoV2QuantScheme, moe_layers, parse_quant_scheme
-from .weight_adapters import QkvChunkLayout, qkv_chunk_layout
 
 SLIDING = "sliding_attention"
 FULL = "full_attention"
@@ -69,6 +69,43 @@ def layer_types(huggingface_config: AutoConfig) -> list[str]:
     ]
 
 
+def qkv_chunk_layout(config: AutoConfig, sliding: bool) -> QkvChunkLayout:
+    """Returns the chunk layout of ``qkv_proj`` for one attention type.
+
+    The chunk count is the tensor-parallel degree the checkpoint was saved
+    at, which is the full-attention KV head count, ``num_key_value_heads``
+    (4). A different count misreads the full-attention scale grids, which
+    then fail the load on their shape.
+
+    Args:
+        config: The checkpoint's top-level Hugging Face config.
+        sliding: Whether the layer is sliding-window.
+
+    Returns:
+        The layout.
+    """
+
+    def attn(key: str) -> int:
+        # As in the reference: sliding layers read ``swa_<key>`` if present.
+        value = getattr(config, f"swa_{key}", None) if sliding else None
+        return int(getattr(config, key) if value is None else value)
+
+    heads, kv_heads = attn("num_attention_heads"), attn("num_key_value_heads")
+    head_dim, v_head_dim = attn("head_dim"), attn("v_head_dim")
+    chunks = config.num_key_value_heads
+    if heads % chunks or kv_heads % chunks:
+        raise ValueError(
+            f"MiMo-V2: {heads} query and {kv_heads} KV heads do not split "
+            f"into {chunks} qkv_proj chunks."
+        )
+    return QkvChunkLayout(
+        chunks=chunks,
+        q_rows=heads * head_dim // chunks,
+        k_rows=kv_heads * head_dim // chunks,
+        v_rows=kv_heads * v_head_dim // chunks,
+    )
+
+
 def attention_head_dim(huggingface_config: AutoConfig) -> int:
     """Returns the KV cache head dim, :data:`KV_HEAD_DIM`.
 
@@ -87,9 +124,9 @@ def attention_head_dim(huggingface_config: AutoConfig) -> int:
 def validate_devices(device_specs: Sequence[DeviceSpec]) -> None:
     """Raises unless every device is an NVIDIA SM100 (B200-class) GPU.
 
-    The W4A8 experts' grouped matmul and MXFP8 activation quantize are SM100
-    kernels; elsewhere the graph fails late, with an error that does not name
-    the cause.
+    The W4A8 experts' grouped MXFP8 quantize and MXFP4 matmul are SM100 kernels;
+    elsewhere the graph fails late, with an error that does not name the
+    cause.
 
     Args:
         device_specs: The devices to run on.
@@ -202,6 +239,17 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     kv_params: KVCacheParamInterface
     max_seq_len: int
 
+    fused_sliding_qkv: bool = False
+    """Whether sliding-window layers prepare Q, K and V with the fused
+    chunked QKV op instead of separate cache stores and RoPE. Experimental
+    and off by default."""
+    fused_full_qkv: bool = False
+    """Whether full-attention layers use fused chunked QKV preparation.
+    Experimental and off by default, independently of sliding fusion."""
+    use_subgraphs: bool = True
+    """Whether the MoE layers of each attention type share one compiled
+    subgraph."""
+
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     target_layer_ids: list[int] | None = None
@@ -289,12 +337,14 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             model_config.kv_cache,
             cache_dtype,
         )
-        return cls.from_huggingface_config(
+        config = cls.from_huggingface_config(
             huggingface_config,
             devices=devices,
             kv_params=kv_params,
             max_seq_len=max_seq_len,
         )
+        config.use_subgraphs = model_config.use_subgraphs
+        return config
 
     @classmethod
     def from_huggingface_config(
@@ -318,8 +368,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
         Raises:
             ValueError: If the config describes a variant this implementation
-                does not handle, or a quantization other than the NVFP4
-                export's.
+                does not handle, or a quantization other than Xiaomi's.
         """
         hf = huggingface_config
         _validate(hf)
@@ -329,8 +378,8 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             FULL: qkv_chunk_layout(hf, sliding=False),
         }
         for group, layout in layouts.items():
-            # Every rank must hold whole qkv_proj chunks for the FP8 block
-            # grid to stay aligned with its shard.
+            # Every rank holds whole qkv_proj chunks, whose FP8 block grid
+            # it pads to.
             if layout.chunks % num_devices:
                 raise ValueError(
                     f"MiMo-V2: {num_devices} devices do not divide the "
@@ -340,6 +389,12 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             raise ValueError(
                 f"MiMo-V2: expert width {hf.moe_intermediate_size} does not "
                 f"split into whole 128-row scale granules over {num_devices} "
+                "devices."
+            )
+        if hf.intermediate_size % (128 * num_devices):
+            raise ValueError(
+                f"MiMo-V2: dense width {hf.intermediate_size} does not split "
+                f"into whole 128-row scale granules over {num_devices} "
                 "devices."
             )
         rotary_dim = int(hf.head_dim * hf.partial_rotary_factor)

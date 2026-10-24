@@ -122,6 +122,33 @@ def b(n: Int) -> Int:
     return n
 
 
+# The blocking dependence is one level away from the SCC.
+struct Tree(ImplicitlyCopyable):
+    var kid: Optional[ArcPointer[Tree]]
+
+    def __init__(out self, kid: Optional[ArcPointer[Tree]]):
+        self.kid = kid
+
+    comptime leaf = Tree(None)
+
+
+def c(n: Int) -> Int:
+    if n == 0:
+        return d(n)
+    return n
+
+
+def d(n: Int) -> Int:
+    _ = make_tree(n + 1)
+    return c(n + 1)
+
+
+def make_tree(n: Int) -> Tree:
+    if n == 1:
+        return Tree.leaf
+    return make_tree(n - 1)
+
+
 def main() raises:
     # CHECK: "ok"
     print(Value(Value.STRING, Payload(Str("ok"))).to_string())
@@ -138,3 +165,6 @@ def main() raises:
 
     # CHECK: 0
     print(a(0))
+
+    # CHECK: 1
+    print(c(0))

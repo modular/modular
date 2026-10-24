@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -21,8 +21,18 @@ import pytest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
+from max.nn.transformer import ReturnLogits
+from max.pipelines.architectures.gemma3multimodal.model import (
+    Gemma3_MultiModalModel,
+)
+from max.pipelines.architectures.gemma3multimodal_modulev3.model import (
+    Gemma3MultiModalModelV3,
+)
+from max.pipelines.architectures.internvl.model import InternVLModel
 from max.pipelines.context import LogProbabilities
+from max.pipelines.lib import ModelInputs, ModelOutputs
 from max.pipelines.lib.log_probabilities import (
+    LogProbabilitiesMixin,
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
 )
@@ -751,3 +761,120 @@ def test_compute_log_probabilities_batch_mixed_top_n_no_echo(
     assert output[2] is not None
     assert len(output[2].token_log_probabilities) == 1
     assert 1 in output[2].top_log_probabilities[0]  # sampled token
+
+
+@dataclass(kw_only=True)
+class _PerDeviceOffsetsInputs(ModelInputs):
+    tokens: Buffer
+    input_row_offsets: list[Buffer]
+
+
+@dataclass
+class _MixinState:
+    """The attributes the mixin reads from its pipeline model."""
+
+    _logprobs_device: CPU
+    _logprobs_model: Model
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+
+
+@pytest.mark.parametrize(
+    "model_cls",
+    [InternVLModel, Gemma3_MultiModalModel, Gemma3MultiModalModelV3],
+)
+def test_vision_models_use_the_mixin(model_cls: type) -> None:
+    """The vision models inherit ``LogProbabilitiesMixin``'s implementation."""
+    assert issubclass(model_cls, LogProbabilitiesMixin)
+    assert (
+        model_cls.compute_log_probabilities
+        is LogProbabilitiesMixin.compute_log_probabilities
+    )
+
+
+@pytest.mark.parametrize(
+    ("return_logits", "batch_echo"),
+    [
+        (ReturnLogits.LAST_TOKEN, [False, False]),
+        (ReturnLogits.ALL, [True, False]),
+    ],
+)
+def test_mixin_reads_per_device_row_offsets(
+    cpu_device: CPU,
+    cpu_session: InferenceSession,
+    cpu_model: Model,
+    return_logits: ReturnLogits,
+    batch_echo: list[bool],
+) -> None:
+    """Reads row offsets given as one buffer per device."""
+    compute: Callable[..., list[LogProbabilities | None]] = (
+        LogProbabilitiesMixin.compute_log_probabilities
+    )
+
+    full_logits = return_logits == ReturnLogits.ALL
+    rng = np.random.default_rng(0)
+    items = []
+    for seq_len, echo in zip([3, 2], batch_echo, strict=True):
+        row_logits = rng.normal(size=(seq_len, 4)).astype(np.float32)
+        items.append(
+            InputBatchItem(
+                logits=row_logits if full_logits else None,
+                next_token_logits=row_logits[-1],
+                tokens=rng.integers(0, 4, size=seq_len),
+                sampled_token=int(np.argmax(row_logits[-1])),
+                top_n=2,
+                echo=echo,
+            )
+        )
+    packed = PackedInput.from_items(items)
+    offsets = Buffer.from_numpy(packed.input_row_offsets)
+    next_token_logits = Buffer.from_numpy(packed.next_token_logits)
+    logits = (
+        next_token_logits
+        if packed.logits is None
+        else Buffer.from_numpy(packed.logits)
+    )
+
+    output = compute(
+        _MixinState(cpu_device, cpu_model, return_logits),
+        cpu_session,
+        _PerDeviceOffsetsInputs(
+            tokens=Buffer.from_numpy(packed.tokens.astype(np.uint32)),
+            input_row_offsets=[offsets, offsets],
+        ),
+        ModelOutputs(logits=logits, next_token_logits=next_token_logits),
+        Buffer.from_numpy(packed.sampled_tokens),
+        batch_top_n=list(packed.batch_top_n),
+        batch_echo=list(packed.batch_echo),
+    )
+
+    for item, log_probs in zip(items, output, strict=True):
+        verify_output(item, log_probs)
+
+
+def test_mixin_rejects_echo_without_full_logits(
+    cpu_device: CPU, cpu_session: InferenceSession, cpu_model: Model
+) -> None:
+    """Echo needs the prompt logits that only ``enable_echo`` keeps.
+
+    The pipeline lets this ``ValueError`` through, so serve rejects such
+    requests before they reach the worker.
+    """
+    compute: Callable[..., list[LogProbabilities | None]] = (
+        LogProbabilitiesMixin.compute_log_probabilities
+    )
+    logits = Buffer.from_numpy(np.zeros((2, 4), dtype=np.float32))
+    offsets = Buffer.from_numpy(np.array([0, 3, 5], dtype=np.uint32))
+
+    with pytest.raises(ValueError, match="enable_echo"):
+        compute(
+            _MixinState(cpu_device, cpu_model),
+            cpu_session,
+            _PerDeviceOffsetsInputs(
+                tokens=Buffer.from_numpy(np.arange(5, dtype=np.uint32)),
+                input_row_offsets=[offsets],
+            ),
+            ModelOutputs(logits=logits, next_token_logits=logits),
+            Buffer.from_numpy(np.zeros(2, dtype=np.uint32)),
+            batch_top_n=[0, 1],
+            batch_echo=[True, False],
+        )

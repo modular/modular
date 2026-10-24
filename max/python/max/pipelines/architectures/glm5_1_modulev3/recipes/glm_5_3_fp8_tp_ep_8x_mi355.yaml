@@ -1,0 +1,44 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 8x MI355 recipe for GLM-5.3 (FP8) on the ModuleV3 architecture.
+#
+# max_length derivation:
+#   Per-GPU HBM at device_memory_utilization 0.9 = 288 GiB * 0.9 ≈ 259.2 GiB.
+#   Weights per GPU at EP8 = 703.7 GiB / 8 ≈ 88.0 GiB (already loaded).
+#   Available for KV/indexer caches ≈ 259.2 - 88.0 = 171.2 GiB.
+#   Per-token MLA latent KV footprint:
+#     78 layers * 576 bytes/token/layer (latent 512 + rope 64) = 44,928 B/token.
+#   Per-token indexer K-cache footprint (21 "full" layers):
+#     21 layers * 128 bytes/token/layer = 2,688 B/token.
+#   Total per-token cache = 47,616 B/token.
+#   171.2 GiB / 47,616 B/token ≈ 3,597,714 tokens.
+#   Cap to the B200 setting (192000) for parity and headroom for batch/OOM jitter.
+model:
+  model_path: zai-org/GLM-5.3
+  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
+  quantization_encoding: float8_e4m3fn
+  data_parallel_degree: 1
+  max_length: 192000
+  kv_cache:
+    kv_cache_format: float8_e4m3fn
+    device_memory_utilization: 0.9
+    enable_prefix_caching: false  # prefix-cache determinism unverified on MI355
+
+runtime:
+  ep_size: 8
+  max_batch_input_tokens: 8192
+  max_batch_size: 32
+  prefer_module_v3: true
+
+sampling:
+  enable_structured_output: true

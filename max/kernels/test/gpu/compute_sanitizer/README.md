@@ -68,6 +68,19 @@ Knobs: `CS_JOBS` (local parallelism), `CS_GPU` (pin to one physical GPU),
 `CS_RESULTS_DIR`, `COMPUTE_SANITIZER` (path to the binary). For the stress tool:
 `STRESS_REPS`, `STRESS_JOBS`.
 
+Exit status — the script doubles as the lane's CI gate, so its status
+distinguishes *what it found* from *whether it measured anything*:
+
+| Exit   | Meaning                                                                    |
+|--------|----------------------------------------------------------------------------|
+| 0      | Ran, and no test log held a violation marker (only coverage gaps, if any)  |
+| 1      | Ran, and at least one test log held a violation marker                     |
+| 2      | Did **not** run: bazel executed zero tests (total build failure)           |
+
+Exit 1 is a finding; exit 2 is a broken lane. The distinction matters because a
+run that executed nothing cannot be read as "clean" — see KERN-3802, where a
+total build failure reported green because no test.log existed to hold a marker.
+
 ## Design notes
 
 - **Line tables, not full debug info.** The harness compiles with
@@ -114,6 +127,11 @@ Knobs: `CS_JOBS` (local parallelism), `CS_GPU` (pin to one physical GPU),
   real grader of the no-initialization contract: a dropped select or a missing
   `-inf` LSE write now propagates NaN into the output and trips the test's own
   assert.
+- **`initcheck` runs with `-D VENDOR_BLAS_ZERO_WORKSPACE=true`.** cuBLAS's
+  split-K reduction reads workspace bytes it never wrote, so the vendor-BLAS
+  matmul (`linalg/matmul/vendor/blas.mojo`) hands it a zeroed workspace in
+  this lane only. Other builds keep cuBLAS's own workspace, because zeroing
+  costs a 32 MiB memset on every call.
 - **`synccheck` cannot report usefully on SM100.** A warp-specialized kernel
   rendezvouses two warpgroups with `named_barrier[2 * WARPGROUP_SIZE](id)` —
   `bar.sync id, 256` — and PTX lets the participating warps arrive at
@@ -128,6 +146,15 @@ Knobs: `CS_JOBS` (local parallelism), `CS_GPU` (pin to one physical GPU),
 - **No known-failure list.** A lane either reports nothing or the finding gets
   fixed. There is no file of parked targets to rot, which is also why the
   `synccheck` noise is not suppressed.
+- **The gate needs a coverage half, not just a findings half.** Marker hits
+  alone cannot tell "no test reported a violation" from "no test ran", and the
+  two are opposite conclusions. The sweep therefore also asserts bazel's own
+  executed-test tally and fails (exit 2) at zero, whatever the markers say. It
+  is not a floor on the count: a manual dispatch may sweep a single target.
+  Partial coverage gaps stay ungated on purpose — a handful of targets that
+  fail to build or emit `Internal Sanitizer Error` is a triage item, while
+  *every* target failing to build is a lane that reported nothing it measured.
+  KERN-3802.
 - **Operational.** GPU tests need `--local_resources=gpu-memory=1000` locally;
   exclude `mojo_filecheck_test` (can't run under `--run_under`) and perf
   benchmarks (pathologically slow under `racecheck`); never

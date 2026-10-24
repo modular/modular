@@ -17,13 +17,14 @@ min-p. Greedy rows take an argmax on every target, and the test pins its rules
 exactly: the lowest tied index wins (`numpy.argmax`), NaN never wins, and an
 all-NaN or all -inf row returns 0. On AMD, the large-vocabulary cases split
 each row across several blocks. Rows with k > 1 in the same batch must still
-land inside their top-k set.
+land inside their top-k set, and a sampled row draws the same token whether
+its neighbours are greedy or sampled.
 """
 
 from std.random import random_float64, seed
 from std.utils.numerics import inf, nan, neg_inf
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, HostBuffer
 from layout import TileTensor, row_major
 from nn.topk import fused_token_sampling_gpu
 
@@ -96,22 +97,21 @@ def _num_greater(rows: TileTensor[...], b: Int, idx: Int) -> Int:
     return count
 
 
-def _check[
+def _draw[
     dtype: DType
 ](
     ctx: DeviceContext,
-    label: String,
+    in_host: HostBuffer[dtype],
+    batch: Int,
     vocab: Int,
-    kinds: List[Int],
     ks: List[Int],
     max_k: Int,
+    mut samples: List[Int],
     temperature: Float32 = 1.0,
     top_p: Float32 = 1.0,
     min_p: Float32 = 0.0,
-    tie_idxs: List[Int] = [],
 ) raises:
-    var batch = len(kinds)
-    var in_host = ctx.enqueue_create_host_buffer[dtype](batch * vocab)
+    """Samples every row once."""
     var k_host = ctx.enqueue_create_host_buffer[DType.int64](batch)
     var temp_host = ctx.enqueue_create_host_buffer[DType.float32](batch)
     var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](batch)
@@ -120,9 +120,7 @@ def _check[
     var out_host = ctx.enqueue_create_host_buffer[DType.int64](batch)
     ctx.synchronize()
 
-    var in_rows = TileTensor(in_host, row_major(batch, vocab))
     for b in range(batch):
-        _fill_row(in_rows, b, kinds[b], tie_idxs)
         k_host[b] = Int64(ks[b])
         temp_host[b] = temperature
         top_p_host[b] = top_p
@@ -168,8 +166,57 @@ def _check[
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
+    samples.clear()
     for b in range(batch):
-        var got = Int(out_host[b])
+        samples.append(Int(out_host[b]))
+
+    _ = in_dev^
+    _ = k_dev^
+    _ = temp_dev^
+    _ = top_p_dev^
+    _ = min_p_dev^
+    _ = seed_dev^
+    _ = out_dev^
+
+
+def _check[
+    dtype: DType
+](
+    ctx: DeviceContext,
+    label: String,
+    vocab: Int,
+    kinds: List[Int],
+    ks: List[Int],
+    max_k: Int,
+    temperature: Float32 = 1.0,
+    top_p: Float32 = 1.0,
+    min_p: Float32 = 0.0,
+    tie_idxs: List[Int] = [],
+) raises:
+    var batch = len(kinds)
+    var in_host = ctx.enqueue_create_host_buffer[dtype](batch * vocab)
+    ctx.synchronize()
+
+    var in_rows = TileTensor(in_host, row_major(batch, vocab))
+    for b in range(batch):
+        _fill_row(in_rows, b, kinds[b], tie_idxs)
+
+    var samples = List[Int]()
+    _draw[dtype](
+        ctx,
+        in_host,
+        batch,
+        vocab,
+        ks,
+        max_k,
+        samples,
+        temperature=temperature,
+        top_p=top_p,
+        min_p=min_p,
+    )
+
+    for b in range(batch):
+        var got = samples[b]
         var desc = String(
             label,
             ": dtype=",
@@ -198,13 +245,61 @@ def _check[
         if got != expected:
             raise Error(desc + " expected the first argmax " + String(expected))
 
-    _ = in_dev^
-    _ = k_dev^
-    _ = temp_dev^
-    _ = top_p_dev^
-    _ = min_p_dev^
-    _ = seed_dev^
-    _ = out_dev^
+
+def _check_sampled_rows_unchanged[dtype: DType](ctx: DeviceContext) raises:
+    """Greedy rows next to a sampled row do not change what it draws.
+
+    Each row draws from its own seed, so a sampled row has to land on the same
+    token whether its neighbours are greedy (k == 1, the argmax shortcut) or
+    sampled.
+    """
+    comptime batch = 4
+    var in_host = ctx.enqueue_create_host_buffer[dtype](batch * LARGE_VOCAB)
+    ctx.synchronize()
+    var in_rows = TileTensor(in_host, row_major(batch, LARGE_VOCAB))
+    for b in range(batch):
+        _fill_row(in_rows, b, FILL_RANDOM, [])
+
+    var mixed = List[Int]()
+    var sampled = List[Int]()
+    for temperature in [Float32(0.6), Float32(1.0), Float32(1.4)]:
+        _draw[dtype](
+            ctx,
+            in_host,
+            batch,
+            LARGE_VOCAB,
+            [20, 1, -1, 1],
+            -1,
+            mixed,
+            temperature=temperature,
+            top_p=0.9,
+        )
+        _draw[dtype](
+            ctx,
+            in_host,
+            batch,
+            LARGE_VOCAB,
+            [20, 50, -1, 50],
+            -1,
+            sampled,
+            temperature=temperature,
+            top_p=0.9,
+        )
+        for b in [0, 2]:
+            if mixed[b] != sampled[b]:
+                raise Error(
+                    String(
+                        "sampled row ",
+                        b,
+                        " dtype=",
+                        dtype,
+                        " drew ",
+                        mixed[b],
+                        " beside greedy rows but ",
+                        sampled[b],
+                        " beside sampled rows",
+                    )
+                )
 
 
 def _run_dtype[dtype: DType](ctx: DeviceContext) raises:
@@ -300,6 +395,7 @@ def _run_dtype[dtype: DType](ctx: DeviceContext) raises:
         [1, 1, 1, 1],
         1,
     )
+    _check_sampled_rows_unchanged[dtype](ctx)
 
 
 def main() raises:

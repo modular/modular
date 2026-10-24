@@ -1,0 +1,38 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "unified_dflash_mimo_v2_modulev3",
+    srcs = glob(["**/*.py"]),
+    # ``max.tree`` reaches this package through the lib's re-exports, which
+    # static import analysis cannot follow.
+    ignore_unresolved_imports = [
+        "max.tree",
+    ],
+    deps = [
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        # The target reuses the ModuleV3 base architecture's layers, adapter
+        # and config; the mask and the block-drafter math are ported from the
+        # graph-API drafter.
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        # mask_padded_tail, for the verify and draft logits;
+        # split_replicated_batch, for the DP verify's batch split.
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/profiler",
+    ],
+)

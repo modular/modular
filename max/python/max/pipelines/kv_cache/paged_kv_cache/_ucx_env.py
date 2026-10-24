@@ -30,6 +30,13 @@ hosts carry extra 2X HDR ConnectX-7 ports (apparently for NVLink fabric
 management) that report an active InfiniBand port, but GPUDirect RDMA through
 them fails with a remote access error. When IB is present but none of it is
 GPU-local, UCX is kept off IB entirely.
+
+That makes one host able to produce two configs: a worker on a GPU with a local
+IB device pins it, and a worker on a GPU without one runs ``UCX_TLS=^ib``. NIXL
+creates endpoints with peer-failure handling, which the shared-memory
+transports lack, so the two need a common network transport for active
+messages. On such a mixed host the pinned worker also enables ``tcp`` on the
+host's Ethernet interfaces, which the ``^ib`` worker uses too.
 """
 
 from __future__ import annotations
@@ -53,6 +60,7 @@ class _UcxDevice(Protocol):
 
 
 _PCI_DEVICES_ROOT = Path("/sys/bus/pci/devices")
+_NET_CLASS_ROOT = Path("/sys/class/net")
 _IB_CLASS_ROOT = Path("/sys/class/infiniband")
 _VERBS_DEV_ROOT = Path("/dev/infiniband")
 _VERBS_CLASS_ROOT = Path("/sys/class/infiniband_verbs")
@@ -117,7 +125,7 @@ def _plugin_lacks_ib() -> bool:
     return plugin_dir is not None and Path(plugin_dir).name == "cuda"
 
 
-def default_ucx_tls(*, gdr_copy: bool | None = None) -> str:
+def default_ucx_tls(*, gdr_copy: bool | None = None, tcp: bool = False) -> str:
     """Returns the default ``UCX_TLS`` transport list for GPU transfers.
 
     Covers every good path and omits the ones that hang on a multi-NIC box
@@ -129,12 +137,17 @@ def default_ucx_tls(*, gdr_copy: bool | None = None) -> str:
     Args:
         gdr_copy: Whether to include the ``gdr_copy`` transport. Defaults to
             probing ``/dev/gdrdrv``.
+        tcp: Whether to include ``tcp``, for reaching same-host peers that
+            run without InfiniBand. Callers must also restrict
+            ``UCX_NET_DEVICES`` so it does not span every NIC.
     """
     if gdr_copy is None:
         gdr_copy = _GDRDRV_NODE.exists()
     transports = ["cuda_ipc", "cuda_copy", "rc", "sm", "self"]
     if gdr_copy:
         transports.append("gdr_copy")
+    if tcp:
+        transports.append("tcp")
     return ",".join(transports)
 
 
@@ -264,6 +277,66 @@ def local_ib_device(
     return best_device
 
 
+_NVIDIA_VENDOR_ID = "0x10de"
+# PCI class codes for a VGA controller (0x0300) and a 3D controller (0x0302);
+# the latter is how datacenter GPUs enumerate. NVSwitches are bridges (0x0680).
+_GPU_CLASS_PREFIXES = ("0x0300", "0x0302")
+
+
+def _host_gpu_bus_ids(
+    *, pci_devices_root: Path = _PCI_DEVICES_ROOT
+) -> list[str]:
+    """Returns the PCIe bus ids of every NVIDIA GPU on the host.
+
+    Reads sysfs rather than CUDA, which only enumerates the GPUs in
+    ``CUDA_VISIBLE_DEVICES``. Same-host peers can drive the others.
+    """
+    try:
+        entries = sorted(pci_devices_root.iterdir())
+    except OSError:
+        return []
+    bus_ids = []
+    for entry in entries:
+        try:
+            vendor = (entry / "vendor").read_text().strip()
+            pci_class = (entry / "class").read_text().strip()
+        except OSError:
+            continue
+        if vendor == _NVIDIA_VENDOR_ID and pci_class.startswith(
+            _GPU_CLASS_PREFIXES
+        ):
+            bus_ids.append(entry.name)
+    return bus_ids
+
+
+def _host_has_gpu_without_local_ib() -> bool:
+    """Returns whether a same-host peer may run with ``UCX_TLS=^ib``."""
+    return any(local_ib_device(bus) is None for bus in _host_gpu_bus_ids())
+
+
+def _ethernet_netdevs(*, net_class_root: Path = _NET_CLASS_ROOT) -> list[str]:
+    """Returns the names of the host's up Ethernet interfaces.
+
+    Skips loopback and IPoIB. A pod's address may live on any of these (an
+    IPv6 pod IP on ``eth0`` next to an IPv4 egress link), so all are kept.
+    """
+    try:
+        entries = sorted(net_class_root.iterdir())
+    except OSError:
+        return []
+    names = []
+    for entry in entries:
+        try:
+            if (entry / "type").read_text().strip() != "1":  # ARPHRD_ETHER
+                continue
+            operstate = (entry / "operstate").read_text().strip()
+        except OSError:
+            continue
+        if entry.name != "lo" and operstate in ("up", "unknown"):
+            names.append(entry.name)
+    return names
+
+
 def _shared_path_len(a: str, b: str) -> int:
     """Number of leading ``/``-separated components two paths share."""
     shared = 0
@@ -280,10 +353,13 @@ def configure_ucx_env(device: _UcxDevice) -> None:
     Applies :func:`default_ucx_tls` and, for CUDA devices, the GPU-local IB
     device from :func:`local_ib_device`. If IB devices exist but none is local
     to the GPU, sets ``UCX_TLS=^ib`` instead so UCX keeps its other transports
-    but stays off those devices. All of these use ``setdefault`` semantics, so
-    a value the operator exported explicitly is never overridden. Best-effort:
-    any failure to resolve the NIC leaves ``UCX_NET_DEVICES`` unset, which the
-    transfer engine's inter-node check then reports.
+    but stays off those devices. When the host also has a GPU without a local
+    IB device, a pinned worker adds ``tcp`` on the host's Ethernet interfaces
+    so a ``^ib`` peer on that GPU can still connect to it. All of these use
+    ``setdefault`` semantics, so a value the operator exported explicitly is
+    never overridden. Best-effort: any failure to resolve the NIC leaves
+    ``UCX_NET_DEVICES`` unset, which the transfer engine's inter-node check
+    then reports.
     """
     # These defaults name CUDA and InfiniBand transports. AMD (ROCm) UCX
     # exposes rocm_* transports instead, so forcing this UCX_TLS there would
@@ -316,6 +392,11 @@ def configure_ucx_env(device: _UcxDevice) -> None:
             return
         net_device = local_ib_device(bus_id)
         remote_ib = net_device is None and bool(_ib_devices())
+        tcp_netdevs = (
+            _ethernet_netdevs()
+            if net_device is not None and _host_has_gpu_without_local_ib()
+            else []
+        )
     except Exception:
         # Never let topology probing break agent creation; the operator can
         # always set UCX_NET_DEVICES explicitly.
@@ -335,12 +416,17 @@ def configure_ucx_env(device: _UcxDevice) -> None:
         return
     if net_device is None:
         return
-    os.environ["UCX_NET_DEVICES"] = net_device
-    os.environ.setdefault("UCX_TLS", default_ucx_tls())
+    os.environ["UCX_NET_DEVICES"] = ",".join([net_device, *tcp_netdevs])
+    os.environ.setdefault("UCX_TLS", default_ucx_tls(tcp=bool(tcp_netdevs)))
     logger.info(
         "Auto-selected UCX_NET_DEVICES=%s (InfiniBand device local to GPU %s "
         "at %s)",
-        net_device,
+        os.environ["UCX_NET_DEVICES"],
         device.id,
         bus_id,
     )
+    if tcp_netdevs:
+        logger.info(
+            "A GPU on this host has no local InfiniBand device; enabled tcp "
+            "so its UCX_TLS=^ib workers can connect to this one."
+        )

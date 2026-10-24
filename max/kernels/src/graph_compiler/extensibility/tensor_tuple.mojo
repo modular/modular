@@ -53,8 +53,8 @@ struct TensorTuple[*Ts: AnyType](
 
     ```mojo
     def execute[
-        Outs: TypeList[Trait=Output & DenseTensor, ...],
-        Ins: TypeList[Trait=Input & DenseTensor, ...],
+        Outs: TypeList[Trait=Output & TileTensorable, ...],
+        Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
         target: StaticString,
     ](outputs: TensorTuple[*Outs], inputs: TensorTuple[*Ins], ctx: DeviceContext):

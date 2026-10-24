@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import _external_call_const
 from std.math import (
     atan,
     atan2,
@@ -25,11 +24,14 @@ from std.math import (
     pi,
     sin,
 )
-from std.math.math import _call_libm, _narrow_f32_to_bf16_bits
+from std.math.math import _call_libm
 from std.testing import TestSuite, assert_true
 from std.utils.numerics import FPUtils
 
+from test_utils.math import libm_call_binary
+
 comptime log2_10 = 3.321928094887362
+comptime atan2_libm = libm_call_binary["atan2f", "atan2"]
 
 
 def _ulp_diff[
@@ -55,18 +57,6 @@ def _max_ulp[dtype: DType](name: StaticString) -> Int:
     comptime if dtype in (DType.float32, DType.float64):
         return 2 if name.startswith("atan2") else 1
     return 1
-
-
-def _libm_atan2[
-    dtype: DType
-](y: Scalar[dtype], x: Scalar[dtype]) -> Scalar[
-    dtype
-] where dtype.is_floating_point():
-    comptime if dtype == .float64:
-        return _external_call_const["atan2", Float64](y, x).cast[dtype]()
-    return _external_call_const["atan2f", Float32](
-        y.cast[.float32](), x.cast[.float32]()
-    ).cast[dtype]()
 
 
 def _check[
@@ -216,7 +206,7 @@ def _check_atan2[dtype: DType]() raises where dtype.is_floating_point():
     for i in range(len(ys)):
         var y = ys[i].cast[dtype]()
         var x = xs[i].cast[dtype]()
-        _check("atan2", atan2(y, x), _libm_atan2(y, x), ys[i], xs[i], worst)
+        _check("atan2", atan2(y, x), atan2_libm(y, x), ys[i], xs[i], worst)
     print(t"atan2 {dtype} max ulp vs libm: {worst}")
 
 
@@ -279,29 +269,7 @@ def test_atan2_simd() raises:
     var got = atan2(ys, xs)
     var worst = 0
     for i in range(8):
-        _check("atan2 simd", got[i], _libm_atan2(ys[i], xs[i]), 0.0, 0.0, worst)
-
-
-def test_narrow_f32_to_bf16_bits() raises:
-    var state = UInt64(0x9E3779B97F4A7C15)
-    for i in range(1024):
-        state = state * 6364136223846793005 + 1442695040888963407
-        var bits = (state >> 32).cast[DType.uint32]()
-        # Every fourth input is an exact tie and every fourth a subnormal.
-        if i % 4 == 0:
-            bits = (bits & 0xFFFF0000) | 0x8000
-        elif i % 4 == 1:
-            bits = bits & 0x807FFFFF
-        var x = Float32(from_bits=bits)
-        var got = _narrow_f32_to_bf16_bits(x)
-        var want = x.cast[DType.bfloat16]()
-        if isnan(x):
-            assert_true(isnan(got), String(t"nan lost for bits {bits}"))
-        else:
-            assert_true(
-                got.to_bits() == want.to_bits(),
-                String(t"bits {bits}: got {got}, expected {want}"),
-            )
+        _check("atan2 simd", got[i], atan2_libm(ys[i], xs[i]), 0.0, 0.0, worst)
 
 
 def main() raises:

@@ -1,0 +1,15 @@
+# llm-fuzz tests a Mach deployment cannot pass, one `scenario:test` per line.
+#
+# The orchestrator in front of Mach drops `logprobs`, `top_logprobs` and
+# `n > 1` with a warning instead of rejecting them, so these tests see a 200
+# without the fields they asked for. Remove an entry once Mach supports or
+# rejects the parameter.
+#
+# Apply on top of a model's own list:
+#   utils/run-llm-fuzz.sh --max-serve-url <url> \
+#     --exclude-file max/tests/integration/accuracy/llm_fuzz/configs/mach-known-failures.txt ...
+
+openai_spec_compliance:logprobs_structure
+openai_spec_compliance:n_multiple_choices
+openrouter_tests:n_multiple_choices
+openrouter_tests:top-logprobs

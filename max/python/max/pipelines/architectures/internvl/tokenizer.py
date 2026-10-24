@@ -24,6 +24,7 @@ from max.pipelines.lib import (
     float32_to_bfloat16_as_uint16,
     resolve_eos_token_ids,
 )
+from max.pipelines.lib.tokenizer import resolve_token_id_bound
 from PIL import Image
 from transformers import (
     AutoConfig,
@@ -571,6 +572,9 @@ class InternVLTokenizer(TextAndVisionTokenizer):
 
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
         self._reasoning_parser_name: str | None = (

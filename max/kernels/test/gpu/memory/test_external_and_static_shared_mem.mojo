@@ -18,6 +18,7 @@ from max.gpu import thread_idx
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 
@@ -38,7 +39,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 
-    var res_host_ptr = alloc[Float32](16)
+    var res_host_ptr = unsafe_alloc[Float32](16)
     var res_device = ctx.enqueue_create_buffer[.float32](16)
 
     for i in range(16):
@@ -62,7 +63,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         assert_equal(res_host_ptr[i], Float32(2 * i))
 
     _ = res_device
-    res_host_ptr.free()
+    res_host_ptr.unsafe_free()
 
 
 def main() raises:

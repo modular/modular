@@ -23,12 +23,24 @@ Tests `persistent_topk_block` (`topk_bitonic.mojo`) in isolation:
 
 from std.builtin.device_passable import DeviceTypeEncoder
 from std.collections import Set
-from max.gpu.host import DeviceContext
+from max.gpu.host import (
+    DeviceContext,
+    DeviceGraph,
+    DeviceGraphBuilder,
+    get_gpu_target,
+)
+from max.gpu.host.compile import _compile_code
 from std.math import max
 from std.memory import bitcast
 from std.random import seed
 from std.testing import assert_equal, assert_true
 
+from nn.attention.gpu.nvidia.topk_cluster import (
+    _choose_topk_cluster_size,
+    _ctopk_max_rows,
+    _topk_cluster_kernel,
+    topk_cluster_split,
+)
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
     RowBound,
@@ -1649,15 +1661,15 @@ def test_unordered_small_n(ctx: DeviceContext) raises:
 struct _MirrorSink(TopkSink):
     """Writes each slot to `out` and a row-dependent image of it to `mirror`."""
 
-    var out: UnsafePointer[Int32, MutUntrackedOrigin]
-    var mirror: UnsafePointer[Int32, MutUntrackedOrigin]
+    var out: MutPointer[Int32, MutUntrackedOrigin]
+    var mirror: MutPointer[Int32, MutUntrackedOrigin]
     var row: Int
 
     @inline(.always)
     def __init__(
         out self,
-        out_ptr: UnsafePointer[Int32, MutAnyOrigin],
-        mirror: UnsafePointer[Int32, MutUntrackedOrigin],
+        out_ptr: MutPointer[Int32, MutAnyOrigin],
+        mirror: MutPointer[Int32, MutUntrackedOrigin],
         row: Int,
     ):
         self.out = out_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
@@ -1687,20 +1699,20 @@ struct _MirrorBound(RowBound):
     comptime device_type: AnyType = Self
     comptime Sink = _MirrorSink
 
-    var bounds: UnsafePointer[Int32, ImmUntrackedOrigin]
-    var mirror: UnsafePointer[Int32, MutUntrackedOrigin]
+    var bounds: ImmPointer[Int32, ImmUntrackedOrigin]
+    var mirror: MutPointer[Int32, MutUntrackedOrigin]
 
     def __init__(
         out self,
-        bounds: UnsafePointer[Int32, ImmutAnyOrigin],
-        mirror: UnsafePointer[Int32, MutAnyOrigin],
+        bounds: ImmPointer[Int32, ImmutAnyOrigin],
+        mirror: MutPointer[Int32, MutAnyOrigin],
     ):
         self.bounds = bounds.unsafe_origin_cast[ImmUntrackedOrigin]()
         self.mirror = mirror.unsafe_origin_cast[MutUntrackedOrigin]()
 
     @inline(.always)
     def row(
-        self, row: Int, out_idxs: UnsafePointer[Int32, MutAnyOrigin]
+        self, row: Int, out_idxs: MutPointer[Int32, MutAnyOrigin]
     ) -> Tuple[Int, _MirrorSink]:
         return (Int(self.bounds[row]), _MirrorSink(out_idxs, self.mirror, row))
 
@@ -2562,6 +2574,1208 @@ def test_short_row_beside_long_row_bf16(ctx: DeviceContext) raises:
     print("PASS test_short_row_beside_long_row_bf16")
 
 
+# ===----------------------------------------------------------------------=== #
+# Cluster-cooperative kernel (`topk_cluster.mojo`): the direct entry point the
+# dispatch routes to, the dispatch gate itself, and device-graph capture.
+#
+# The kernel serves the `ordered=False, deterministic=False` contract only, so
+# every check here runs on `_check_score_valid_row` -- the strongest predicate
+# that contract carries: every column strictly above the K-th largest score is
+# selected, everything else ties it exactly, the count is exact, and `-1` tails
+# sit past each row's live columns. Nothing about the arrangement or which
+# plateau members survive is asserted, because nothing about them is promised.
+# ===----------------------------------------------------------------------=== #
+
+
+def _run_and_check_cluster[
+    in_dtype: DType = .float32,
+    use_bounds: Bool = True,
+    via_dispatch: Bool = False,
+    use_tma: Bool = False,
+    nan_rows: Bool = False,
+](
+    ctx: DeviceContext,
+    scores_host: List[Float32],  # B * N flat, row-major
+    N: Int,
+    K: Int,
+    B: Int,
+    bounds: List[Int],  # live length per row (all `N` when `use_bounds=False`)
+    cluster_size: Int,
+    label: String,
+) raises:
+    """Launch the cluster top-k and validate the nd contract row by row.
+
+    `cluster_size` is the caller's, not the dispatch's, so the direct-entry
+    tests pin the kernel instantiation they mean to reach regardless of what
+    `_choose_topk_cluster_size` would pick. `via_dispatch` instead goes through
+    `persistent_topk_block_split`, whose gate picks the cluster (and both
+    `cluster_size` and `use_tma` are then ignored); shapes the gate rejects
+    keep the histogram selects, which serve the same contract, so they
+    validate identically. `use_tma` pins the streaming flavor's load path --
+    the launcher clamps it to the plain loads wherever the bulk copy cannot
+    serve the shape, so an arm labeled TMA is only exercised as such on a
+    target and stride that allow it. Columns at or past each row's bound are
+    the caller's to poison; a read past a bound displaces a live selection
+    and surfaces as an out-of-bound index. `nan_rows` swaps the contract for
+    `_check_nan_row`'s weaker one, for rows outside the contract.
+    """
+    assert K <= PERSISTENT_TOPK_MAX_N, "K exceeds selection width"
+    assert len(scores_host) == B * N, "scores_host length mismatch"
+    assert len(bounds) == B, "bounds length mismatch"
+
+    var scores_dev = ctx.enqueue_create_buffer[in_dtype](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
+    idxs_dev.enqueue_fill(Int32(-2))  # sentinel to catch unwritten slots
+    var bounds_dev = ctx.enqueue_create_buffer[.int32](B)
+
+    with scores_dev.map_to_host() as buf:
+        for i in range(B * N):
+            buf[i] = scores_host[i].cast[in_dtype]()
+            comptime if nan_rows and in_dtype == .bfloat16:
+                # A cast canonicalizes NaNs; keep the payload's top half so
+                # an all-ones f32 NaN stays all ones.
+                var v = scores_host[i]
+                if v != v:
+                    buf[i] = bitcast[in_dtype, 1](
+                        UInt16(bitcast[.uint32, 1](v)[0] >> 16)
+                    )[0]
+    with bounds_dev.map_to_host() as buf:
+        for b in range(B):
+            buf[b] = Int32(bounds[b])
+
+    if use_bounds:
+        if via_dispatch:
+            persistent_topk_block_split[ordered=False, deterministic=False](
+                ctx,
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    scores_dev.unsafe_ptr()
+                ),
+                rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+                N,
+                K,
+                total_seq_len=B,
+                row_bounds=Optional(
+                    RowBoundsPtr(
+                        rebind[ImmPointer[Int32, ImmutAnyOrigin]](
+                            bounds_dev.unsafe_ptr()
+                        )
+                    )
+                ),
+            )
+        else:
+            topk_cluster_split[RB=RowBoundsPtr](
+                ctx,
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    scores_dev.unsafe_ptr()
+                ),
+                rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+                N,
+                K,
+                total_seq_len=B,
+                row_bounds=Optional(
+                    RowBoundsPtr(
+                        rebind[ImmPointer[Int32, ImmutAnyOrigin]](
+                            bounds_dev.unsafe_ptr()
+                        )
+                    )
+                ),
+                cluster_size=cluster_size,
+                use_tma=use_tma,
+            )
+    else:
+        if via_dispatch:
+            persistent_topk_block_split[ordered=False, deterministic=False](
+                ctx,
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    scores_dev.unsafe_ptr()
+                ),
+                rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+                N,
+                K,
+                total_seq_len=B,
+            )
+        else:
+            topk_cluster_split(
+                ctx,
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    scores_dev.unsafe_ptr()
+                ),
+                rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+                N,
+                K,
+                total_seq_len=B,
+                row_bounds=None,
+                cluster_size=cluster_size,
+                use_tma=use_tma,
+            )
+    ctx.synchronize()
+
+    var idxs_host = ctx.enqueue_create_host_buffer[.int32](B * K)
+    ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
+    ctx.synchronize()
+
+    var seen_scores = _as_read[in_dtype](scores_host)
+    for b in range(B):
+        var bound = min(bounds[b], N)
+        var live = min(K, bound)
+        for k in range(live, K):
+            var idx = Int(idxs_host[b * K + k])
+            assert_true(
+                idx == -1,
+                String(
+                    "[",
+                    label,
+                    "] row ",
+                    b,
+                    " tail slot ",
+                    k,
+                    " = ",
+                    idx,
+                    " (expected -1 past bound ",
+                    bound,
+                    ")",
+                ),
+            )
+        if live == 0:
+            continue
+        var row_scores = List[Float32](capacity=bound)
+        for i in range(bound):
+            row_scores.append(seen_scores[b * N + i])
+        var row_idxs = List[Int](capacity=live)
+        for k in range(live):
+            row_idxs.append(Int(idxs_host[b * K + k]))
+        comptime if nan_rows:
+            _check_nan_row(row_scores, row_idxs, bound, label, b)
+        else:
+            _check_score_valid_row(row_scores, row_idxs, bound, live, label, b)
+
+    _ = scores_dev
+    _ = idxs_dev
+    _ = bounds_dev
+    _ = idxs_host
+
+
+def _check_nan_row(
+    scores: List[Float32],
+    idxs: List[Int],
+    bound: Int,
+    label: String,
+    row: Int,
+) raises:
+    """What a row holding NaN scores is still owed: every slot is `-1` or a
+    distinct live column, and every non-NaN column is selected (the callers
+    keep those fewer than `K`, so each lies strictly above the threshold)."""
+    var seen = Set[Int]()
+    for k in range(len(idxs)):
+        var idx = idxs[k]
+        if idx == -1:
+            continue
+        assert_true(
+            idx >= 0 and idx < bound,
+            String("[", label, "] row ", row, " slot ", k, " = ", idx),
+        )
+        assert_true(
+            idx not in seen,
+            String("[", label, "] row ", row, " repeats column ", idx),
+        )
+        seen.add(idx)
+    for c in range(bound):
+        if scores[c] == scores[c]:
+            assert_true(
+                c in seen,
+                String("[", label, "] row ", row, " drops column ", c),
+            )
+
+
+def _cluster_bounds(N: Int, K: Int) -> List[Int]:
+    """Bounds at the row gate's interesting edges: full, one short, half,
+    `K` from both sides, a one-column row and a dead row."""
+    var bounds: List[Int] = [
+        N,
+        N - 1,
+        N // 2,
+        K + 1,
+        K,
+        max(K - 1, 1),
+        1,
+        0,
+    ]
+    for b in range(len(bounds)):
+        bounds[b] = min(bounds[b], N)
+    return bounds^
+
+
+def test_topk_cluster_band(ctx: DeviceContext) raises:
+    """The kernel at both score dtypes, both flavors, and every cluster size.
+
+    The streaming shapes are those whose slices exceed the single-pass
+    staging at their dtype (51872 f32, 103744 bf16), so every round and the
+    scatter re-read the slice: f32 at `N=163840, CS=2` (81920), at
+    `N=550000, CS=10` (55000) and at `N=163840, CS=3` (54616); bf16 at
+    `N=900000, CS=8` (112504), at `N=1100000, CS=10` (110000) and at
+    `N=327680, CS=3` (109232). Each runs twice, once per streaming load path:
+    the plain-load prefetch arm and the `cp.async.bulk` pipeline arm (the
+    launcher clamps the latter to the former wherever it cannot serve the
+    shape, so on a non-SM100 target the pair still passes, twice over the
+    same code). One more run at one column wider than the first shape leaves
+    most rows' slices off 16 B, which only the plain loads' per-element
+    flavor serves. The single-pass shapes cover every other cluster size, the
+    non-powers of two at strides that leave a remainder of 16 B units to
+    spread over the ranks; round 0's one global read is all they pay.
+    `N=103744, CS=2` fills the f32 staging exactly, and `N=103752` puts its
+    full rows' slices one 16 B unit past it while `_cluster_bounds`' shorter
+    rows stay single-pass, so one launch runs both flavors.
+    `bf16, N=107232, CS=4` is the GLM decode shape. The bounds arm covers the
+    trivial path (bounds at/below `K`), select-all tails and dead rows; the
+    unbounded arm covers the plain entry point.
+    """
+    comptime K = 2048
+    comptime for dt in [DType.float32, DType.bfloat16]:
+        for shape in [
+            (8193, 2),
+            (32769, 4),
+            (107232, 4),
+            (122880, 8),
+            (163840, 10),
+            (49160, 3),
+            (98312, 5),
+            (107232, 6),
+            (163848, 10),
+            (103744, 2),
+            (103752, 2),
+        ]:
+            var N = shape[0]
+            var cs = shape[1]
+            var B = 8
+            var bounds = _cluster_bounds(N, K)
+            var scores = _poisoned_bounded_scores(
+                B, N, bounds, 0xC1E50000 + UInt32(N)
+            )
+            _run_and_check_cluster[dt](
+                ctx,
+                scores,
+                N,
+                K,
+                B,
+                bounds,
+                cs,
+                String("cluster_n", N),
+            )
+        var streaming: List[Tuple[Int, Int]]
+        comptime if dt == DType.float32:
+            streaming = [(163840, 2), (550000, 10), (163840, 3)]
+        else:
+            streaming = [(900000, 8), (1100000, 10), (327680, 3)]
+        for si in range(len(streaming)):
+            var N = streaming[si][0]
+            var cs = streaming[si][1]
+            var bounds = _cluster_bounds(N, K)
+            var scores = _poisoned_bounded_scores(
+                8, N, bounds, 0xC1E5F231 + UInt32(N + cs)
+            )
+            _run_and_check_cluster[dt](
+                ctx,
+                scores,
+                N,
+                K,
+                8,
+                bounds,
+                cs,
+                String("cluster_streaming_n", N, "_cs", cs),
+            )
+            _run_and_check_cluster[dt, use_tma=True](
+                ctx,
+                scores,
+                N,
+                K,
+                8,
+                bounds,
+                cs,
+                String("cluster_streaming_tma_n", N, "_cs", cs),
+            )
+            if si == 0:
+                var Nu = N + 1
+                var bounds_u = _cluster_bounds(Nu, K)
+                _run_and_check_cluster[dt](
+                    ctx,
+                    _poisoned_bounded_scores(8, Nu, bounds_u, 0xC1E5F232),
+                    Nu,
+                    K,
+                    8,
+                    bounds_u,
+                    cs,
+                    String("cluster_streaming_unaligned_n", Nu, "_cs", cs),
+                )
+        # One unbounded arm: the plain kernel entry over the full stride.
+        var full = List[Int](length=8, fill=32769)
+        _run_and_check_cluster[dt, use_bounds=False](
+            ctx,
+            _lcg_scores(8, 32769, 0xC1EF0000, 100.0),
+            32769,
+            K,
+            8,
+            full,
+            4,
+            "cluster_unbounded",
+        )
+    print("PASS test_topk_cluster_band")
+
+
+def test_topk_cluster_ties(ctx: DeviceContext) raises:
+    """The distributions whose threshold lands inside a plateau.
+
+    All-equal, a plateau straddling `K`, a masked tail over coarse levels, and
+    a wide NEGATIVE plateau (the shape that reached `_hsel_exact_key` in the
+    selects, kept here so the cluster path's own score-half resolution is held
+    to the same stimulus). All exactly representable at bf16, so the f32 arm
+    and the bf16 arm select over the same values. Each runs at a width rank 0
+    selects alone (12289) and at one the cluster splits (40963).
+    """
+    comptime K = 2048
+    comptime B = 4
+    comptime for dt in [DType.float32, DType.bfloat16]:
+        for N in [12289, 40963]:
+            var eq = List[Float32](capacity=B * N)
+            for _ in range(B * N):
+                eq.append(Float32(1.5))
+            _run_and_check_cluster[dt](
+                ctx,
+                eq,
+                N,
+                K,
+                B,
+                List[Int](length=B, fill=N),
+                4,
+                "clu_all_equal",
+            )
+
+            var plateau = List[Float32](capacity=B * N)
+            for _b in range(B):
+                for c in range(N):
+                    if c < K - 200:
+                        plateau.append(Float32(10.0))
+                    elif c < K + 400:
+                        plateau.append(Float32(5.0))
+                    else:
+                        plateau.append(Float32(-1.0))
+            _run_and_check_cluster[dt](
+                ctx,
+                plateau,
+                N,
+                K,
+                B,
+                List[Int](length=B, fill=N),
+                4,
+                "clu_plateau",
+            )
+
+            var masked = List[Float32](capacity=B * N)
+            for b in range(B):
+                var valid = N - 1500 * b
+                for c in range(N):
+                    if c < valid:
+                        masked.append(Float32((c * 37 + b * 11) % 17) / 16.0)
+                    else:
+                        masked.append(Float32(-3.0e38))
+            var m_bounds = List[Int](capacity=B)
+            for b in range(B):
+                m_bounds.append(N - 1500 * b)
+            _run_and_check_cluster[dt](
+                ctx, masked, N, K, B, m_bounds, 4, "clu_masked"
+            )
+
+            _run_and_check_cluster[dt](
+                ctx,
+                _wide_negative_plateau(B, N, 2040, 4096),
+                N,
+                K,
+                B,
+                List[Int](length=B, fill=N),
+                4,
+                "clu_neg_plateau",
+            )
+
+        # All-equal at CS 10 with every rank's tie class capped at K: the
+        # packed counts' tie half sums to 10 * K, its widest reach.
+        comptime N10 = 10 * 4096
+        _run_and_check_cluster[dt](
+            ctx,
+            List[Float32](length=2 * N10, fill=Float32(1.5)),
+            N10,
+            K,
+            2,
+            List[Int](length=2, fill=N10),
+            10,
+            "clu_all_equal_cs10",
+        )
+    print("PASS test_topk_cluster_ties")
+
+
+def _cand_noise(row: Int, c: Int) -> Float32:
+    """A deterministic value in `[0, 1)` per `(row, column)`."""
+    return Float32((c * 2654435761 + row * 40503) % 1000003) / 1000003.0
+
+
+def _cand_rows(kind: Int, B: Int, N: Int, bounds: List[Int]) -> List[Float32]:
+    """Rows shaped to steer the cluster kernel's candidate path.
+
+    Each `kind` places round 0's split bin (`_ctopk_key0`, 16 bins per
+    octave) where one branch of the candidate protocol has to handle it:
+
+    0. Dense: every third column ties at 2.0, with distinct values just
+       above it in the same bin, so the bin holds far more than rank 0's
+       list and the multi-round path refines it.
+    1. One peer over its cap: 1500 distinct candidates in the last 1500 live
+       columns (the last rank's slice), under the total cap but past one
+       peer's, so the counts verdict sends the cluster to the multi-round
+       path after the candidate scatter.
+    2. A candidate path exact plateau on a peer: 1000 candidates in the last
+       rank's slice, 200 distinct above a 300-wide plateau and 500 below,
+       with the threshold cut inside the plateau.
+    3. Kind 2 inside rank 0's slice, so rank 0's own list carries them.
+    4. The saturated top bin: 1365 distinct scores past 2^16, so the
+       refinement starts 30 bits wide and runs several rounds.
+    5. The bin just below zero: 1560 distinct negative scores under 2^-16
+       in magnitude, beside 410 positives and a deep negative floor.
+
+    Kinds 4 and 5 are meant for `K = 1024`; the others for `K = 2048`.
+    The periodic columns' periods scale with `N // 32768`, so a longer row
+    keeps the same split-bin population. Columns at or past a row's bound
+    are poisoned to `1e30`.
+    """
+    var sc = max(1, N // 32768)
+    var out = List[Float32](capacity=B * N)
+    for b in range(B):
+        var L = bounds[b]
+        for c in range(N):
+            var v: Float32
+            var u = _cand_noise(b, c)
+            if c >= L:
+                v = 1.0e30
+            elif kind == 0:
+                if c % 3 == 0:
+                    v = 2.0
+                elif c % 97 == 1:
+                    v = 2.0 + Float32(c % 1000) * 1.0e-5
+                else:
+                    v = u * 1.8 - 0.9
+            elif kind == 1 or kind == 2 or kind == 3:
+                var n_c = 1500 if kind == 1 else 1000
+                var c0 = 0 if kind == 3 else L - n_c
+                var j = c - c0
+                if j >= 0 and j < n_c:
+                    if kind == 1:
+                        v = 1.0 + Float32(j) * Float32(1.0 / 32768.0)
+                    elif j < 200:
+                        v = 1.05 - Float32(j) * Float32(1.0 / 65536.0)
+                    elif j < 500:
+                        v = 1.02
+                    else:
+                        v = 1.0 + Float32(j - 500) * Float32(1.0 / 65536.0)
+                elif c % (19 * sc) == 0:
+                    v = 50.0 + u
+                else:
+                    v = u * 0.5
+            elif kind == 4:
+                if c % (24 * sc) == 0:
+                    v = 7.0e4 * Float32(1.0 + Float32(c // (24 * sc)) * 2.5e-3)
+                else:
+                    v = u * 2.0 - 1.0
+            else:
+                if c % (80 * sc) == 0:
+                    v = 1.0 + Float32(c // sc) * 1.0e-5
+                elif c % (21 * sc) == 1:
+                    v = -(1.0e-7 + Float32(c % 997) * 1.0e-10)
+                else:
+                    v = -50.0 - Float32(c % 100)
+            out.append(v)
+    return out^
+
+
+def test_topk_cluster_candidates(ctx: DeviceContext) raises:
+    """The candidate path and both of its fallbacks, at every cluster size.
+
+    `_cand_rows` steers round 0's split bin into each branch: the dense
+    bin that skips the candidate scatter, a single peer whose list overflows
+    after it, an exact plateau cut on a peer's and on rank 0's candidates,
+    and the two window-edge bins whose refinement runs wide. Each case runs
+    at both dtypes and every cluster size, on one full row and one bounded
+    row; at CS 10 the last rank's slice (about 3480 columns) still holds
+    kind 1's 1500 candidates past a peer's cap and kind 2's 1000 under it,
+    and nine peers share rank 0's list. The candidate-path kinds also run on
+    `test_topk_cluster_band`'s streaming shapes (and at CS 10), over both
+    streaming load paths, where the candidate scatter re-reads the slice
+    from global rather than from the staging.
+    """
+    comptime N = 34816
+    comptime B = 2
+    var bounds: List[Int] = [N, N - 1003]
+    comptime for dt in [DType.float32, DType.bfloat16]:
+        for kind in range(6):
+            var K = 1024 if kind >= 4 else 2048
+            var scores = _cand_rows(kind, B, N, bounds)
+            for cs in [2, 3, 4, 5, 6, 8, 10, 16]:
+                _run_and_check_cluster[dt](
+                    ctx,
+                    scores,
+                    N,
+                    K,
+                    B,
+                    bounds,
+                    cs,
+                    String("clu_cand", kind, "_cs", cs),
+                )
+        var s_shapes: List[Tuple[Int, Int]]
+        comptime if dt == DType.float32:
+            s_shapes = [(163840, 2), (550000, 10)]
+        else:
+            s_shapes = [(900000, 8), (1100000, 10)]
+        for shape in s_shapes:
+            _cand_streaming[dt](ctx, shape[0], shape[1])
+    print("PASS test_topk_cluster_candidates")
+
+
+def _cand_streaming[dt: DType](ctx: DeviceContext, sN: Int, scs: Int) raises:
+    """`test_topk_cluster_candidates`' kinds 1-5 at a streaming shape."""
+    comptime B = 2
+    var sbounds: List[Int] = [sN, sN - 5003]
+    for kind in range(1, 6):
+        var K = 1024 if kind >= 4 else 2048
+        var scores = _cand_rows(kind, B, sN, sbounds)
+        _run_and_check_cluster[dt](
+            ctx,
+            scores,
+            sN,
+            K,
+            B,
+            sbounds,
+            scs,
+            String("clu_cand", kind, "_streaming_cs", scs),
+        )
+        _run_and_check_cluster[dt, use_tma=True](
+            ctx,
+            scores,
+            sN,
+            K,
+            B,
+            sbounds,
+            scs,
+            String("clu_cand", kind, "_streaming_tma_cs", scs),
+        )
+
+
+def test_topk_cluster_nan_pad(ctx: DeviceContext) raises:
+    """Rows of negative NaNs beside fewer than `K` finite scores.
+
+    At this length (2596 live columns) rank 0 selects the row alone. Its
+    fp16 conversion returns every NaN as the positive canonical NaN, so the
+    coarse bin takes its sign from the score: an all-ones NaN must bin
+    lowest, as its `phi` is, or the finite columns fall below the NaNs and
+    are dropped. bf16's 8-column groups leave the row's last group partial,
+    so its dead columns (`0x7FFF`) sit beside the NaNs' bin 0 and must stay
+    out of every class. This pins what such a row is still owed
+    (`_check_nan_row`): no column past the bound, no column twice, every
+    non-NaN column kept. The NaNs keep their all-ones bits at bf16 (see
+    `_run_and_check_cluster`).
+    """
+    comptime K = 2048
+    var neg_nan = bitcast[.float32, 1](UInt32(0xFFFFFFFF))[0]
+    comptime N = 2600
+    comptime bound = 2596
+    var row = List[Float32](capacity=N)
+    for c in range(N):
+        if c >= bound:
+            row.append(Float32(1.0e30))
+        elif c < 652 and not (328 <= c and c < 338):
+            row.append(Float32(1 + c % 13))
+        else:
+            row.append(neg_nan)
+    comptime B = 2
+    var scores = List[Float32](capacity=B * N)
+    for _ in range(B):
+        scores.extend(row.copy())
+    var bounds = List[Int](length=B, fill=bound)
+    _run_and_check_cluster[.float32, nan_rows=True](
+        ctx, scores, N, K, B, bounds, 8, "clu_nan_f32_cs8"
+    )
+    for cs in [2, 4, 8]:
+        _run_and_check_cluster[.bfloat16, nan_rows=True](
+            ctx, scores, N, K, B, bounds, cs, String("clu_nan_bf16_cs", cs)
+        )
+    print("PASS test_topk_cluster_nan_pad")
+
+
+def test_topk_cluster_stress(ctx: DeviceContext) raises:
+    """Many rows, every cluster size, both dtypes, repeated launches.
+
+    The cluster protocol runs one cluster barrier in round 0, whose arrive
+    releases only shared::cta writes, then gathers round 0's own histogram
+    from every peer; the candidate path's counts travel by `st.async` on
+    each rank's mbarrier and the peers' candidate pairs by `st.async` on
+    rank 0's, with no closing cluster barrier, and peers exit as soon as
+    their columns are out. A race there shows up as a miscounted bin or a
+    missing candidate on some row of some launch, not on every one. So each
+    single-pass arm is 64 rows with varied bounds (every 16th row a trivial
+    `count <= K` row beside full ones), launched three times: twice over
+    distinct LCG scores and once over 17 coarse levels, whose plateaus put
+    the split on a heavily tied bin cut first-come. A streaming arm repeats
+    the two stimuli at CS 2 and 8 over both load paths.
+    """
+    comptime K = 2048
+    comptime N = 49139
+    comptime B = 64
+    var bounds = List[Int](capacity=B)
+    for b in range(B):
+        bounds.append(K if b % 16 == 15 else N - (b * 7919) % 16000)
+    comptime for dt in [DType.float32, DType.bfloat16]:
+        for cs in [2, 3, 4, 5, 6, 8, 10, 16]:
+            for rep in range(3):
+                var seed = UInt32(0x57E50000 + cs * 16 + rep)
+                var scores = _poisoned_bounded_scores(B, N, bounds, seed)
+                if rep == 1:
+                    for b in range(B):
+                        for c in range(bounds[b]):
+                            scores[b * N + c] = (
+                                Float32((c * 37 + b * 11) % 17) / 16.0
+                            )
+                _run_and_check_cluster[dt](
+                    ctx,
+                    scores,
+                    N,
+                    K,
+                    B,
+                    bounds,
+                    cs,
+                    String("clu_stress_cs", cs, "_rep", rep),
+                )
+        # The streaming flavor under the same stimuli: every slice of a
+        # full-length row exceeds the single-pass staging (51872 f32, 103744
+        # bf16 elements) at CS 2 and 8, so each round's barrier is followed by
+        # a slot refill (TMA) or a fresh global pass, and the scatter streams
+        # too.
+        comptime NS = 420000 if dt == DType.float32 else 840000
+        comptime BS = 12
+        var s_bounds = List[Int](capacity=BS)
+        for b in range(BS):
+            s_bounds.append(K if b % 6 == 5 else NS - (b * 7919) % 4096)
+        for cs in [2, 8]:
+            for rep in range(2):
+                var scores = _poisoned_bounded_scores(
+                    BS, NS, s_bounds, UInt32(0x57E5A000 + cs * 16 + rep)
+                )
+                if rep == 1:
+                    for b in range(BS):
+                        for c in range(s_bounds[b]):
+                            scores[b * NS + c] = (
+                                Float32((c * 37 + b * 11) % 17) / 16.0
+                            )
+                _run_and_check_cluster[dt](
+                    ctx,
+                    scores,
+                    NS,
+                    K,
+                    BS,
+                    s_bounds,
+                    cs,
+                    String("clu_stress_stream_cs", cs, "_rep", rep),
+                )
+                _run_and_check_cluster[dt, use_tma=True](
+                    ctx,
+                    scores,
+                    NS,
+                    K,
+                    BS,
+                    s_bounds,
+                    cs,
+                    String("clu_stress_stream_tma_cs", cs, "_rep", rep),
+                )
+    print("PASS test_topk_cluster_stress")
+
+
+def _solo_tie_rows(
+    B: Int, N: Int, L: Int, n_above: Int, n_bin: Int, spread: Bool
+) -> List[Float32]:
+    """Rows of `L` live columns (the rest poisoned) whose threshold bin holds
+    `n_bin` columns below `n_above` clear winners, scattered over the row:
+    one value (`spread=False`) or distinct f32 values inside one fp16 bin
+    (`spread=True`, which bf16 rounds back into one value)."""
+    var scores = List[Float32](capacity=B * N)
+    for b in range(B):
+        for c in range(N):
+            var p = (c * 7 + b * 13) % L
+            if c >= L:
+                scores.append(Float32(1.0e30))
+            elif p < n_above:
+                scores.append(Float32(10.0))
+            elif p < n_above + n_bin:
+                var d = Float32(p - n_above) * Float32(1.0e-5)
+                scores.append(Float32(5.0) + (d if spread else Float32(0.0)))
+            else:
+                scores.append(Float32(-1.0))
+    return scores^
+
+
+def _solo_saturated_rows(
+    B: Int, N: Int, L: Int, n_top: Int, n_low: Int
+) -> List[Float32]:
+    """Rows of `L` live columns (the rest poisoned) with `n_top` scores of
+    `1e20` and `n_low` of `1e10` scattered over the rest of `-1`: both round
+    to fp16 infinity, one coarse bin, but differ in their exponent byte."""
+    var scores = List[Float32](capacity=B * N)
+    for b in range(B):
+        for c in range(N):
+            var p = (c * 7 + b * 13) % L
+            if c >= L:
+                scores.append(Float32(1.0e30))
+            elif p < n_top:
+                scores.append(Float32(1.0e20))
+            elif p < n_top + n_low:
+                scores.append(Float32(1.0e10))
+            else:
+                scores.append(Float32(-1.0))
+    return scores^
+
+
+def test_topk_cluster_solo(ctx: DeviceContext) raises:
+    """Rows rank 0 selects alone (live length at most 32768 at cluster sizes
+    up to 4, 24576 from 5 to 8) and the rows just past it, at every cluster
+    size and both dtypes.
+
+    Lengths straddle each payload width (4096-column groups at f32, 8192 at
+    bf16; 1, 2, 3, 4, 6 or 8 of them) and the cap; `K` runs from 1 to the
+    selection width. The tie arms reach each way the threshold bin
+    resolves: an exact fill, the rank on exact keys (bins up to 128 columns,
+    equal and distinct keys), and the radix rounds (wider bins, a plateau the
+    last round cuts, and a bracket that fills the row in the first round).
+    Odd strides keep the row bases unaligned. Strides rank 0 covers take the
+    launch without a cluster, through both entry points (bounded and
+    unbounded), and the mixed batch puts both paths in one launch. A `K` of
+    0 must launch nothing.
+    """
+    comptime N = 32800
+    var lengths: List[Int] = [
+        2049,
+        4095,
+        4096,
+        4097,
+        8191,
+        8192,
+        8193,
+        12288,
+        12289,
+        16383,
+        16384,
+        16385,
+        24576,
+        24577,
+        32767,
+        32768,
+        32769,
+        32800,
+    ]
+    comptime for dt in [DType.float32, DType.bfloat16]:
+        for cs in [2, 4, 8]:
+            for k in [1, 100, 2047, 2048]:
+                var B = len(lengths)
+                var scores = _poisoned_bounded_scores(
+                    B, N, lengths, 0x5010_0000 + UInt32(cs * 4099 + k)
+                )
+                _run_and_check_cluster[dt](
+                    ctx,
+                    scores,
+                    N,
+                    k,
+                    B,
+                    lengths,
+                    cs,
+                    String("solo_k", k, "_cs", cs),
+                )
+        comptime K = 2048
+        # Every cluster size: each one instantiates its own payload widths,
+        # and each needs every arm.
+        for cs in [2, 4, 8]:
+            for L in [4096, 16384, 32768]:
+                var lens = List[Int](length=4, fill=L)
+                for shape in [
+                    (K - 100, 100),
+                    (K - 10, 40),
+                    (K - 40, 128),
+                    (K - 60, 129),
+                    (K - 200, 3000),
+                ]:
+                    for spread in [False, True]:
+                        _run_and_check_cluster[dt](
+                            ctx,
+                            _solo_tie_rows(4, N, L, shape[0], shape[1], spread),
+                            N,
+                            K,
+                            4,
+                            lens,
+                            cs,
+                            String(
+                                "solo_ties_cs",
+                                cs,
+                                "_",
+                                L,
+                                "_",
+                                shape[0],
+                                "_",
+                                shape[1],
+                                "_",
+                                spread,
+                            ),
+                        )
+                # Past fp16's range every score shares the top bin, so the
+                # radix rounds see two exponents and the first round's
+                # bracket fills the row exactly: the early exit.
+                _run_and_check_cluster[dt](
+                    ctx,
+                    _solo_saturated_rows(4, N, L, K, 1000),
+                    N,
+                    K,
+                    4,
+                    lens,
+                    cs,
+                    String("solo_radix_exit_cs", cs, "_", L),
+                )
+        # An odd stride: row bases are not 16 B aligned, so the loads take
+        # their scalar path on every row but the first.
+        comptime NO = 16391
+        var odd: List[Int] = [NO, 4097, 12289, 2049]
+        _run_and_check_cluster[dt](
+            ctx,
+            _poisoned_bounded_scores(len(odd), NO, odd, 0x5010_0DD5),
+            NO,
+            K,
+            len(odd),
+            odd,
+            4,
+            "solo_odd_stride",
+        )
+        # A stride no longer than rank 0's reach launches without the
+        # cluster, one CTA per row; the odd one keeps row bases unaligned.
+        # At 8 ranks 24576 is the reach and 32768 launches the cluster, its
+        # full rows split and its short ones on rank 0.
+        # The unbounded arm is `persistent_topk_block_split(row_bounds=None)`'s
+        # route there.
+        for stride in [16384, 12291, 24576, 32768]:
+            var short: List[Int] = [stride, stride - 1, 12289, 4097, 2049, 2048]
+            var ss = _poisoned_bounded_scores(
+                len(short), stride, short, 0x5010_5000 + UInt32(stride)
+            )
+            var full = List[Int](length=8, fill=stride)
+            var fs = _lcg_scores(8, stride, 0x5010_F000 + UInt32(stride), 100.0)
+            for cs in [2, 4, 8]:
+                _run_and_check_cluster[dt](
+                    ctx,
+                    ss,
+                    stride,
+                    K,
+                    len(short),
+                    short,
+                    cs,
+                    String("solo_unclustered_n", stride, "_cs", cs),
+                )
+                _run_and_check_cluster[dt, use_bounds=False](
+                    ctx,
+                    fs,
+                    stride,
+                    K,
+                    8,
+                    full,
+                    cs,
+                    String("solo_unbounded_n", stride, "_cs", cs),
+                )
+        # Mixed: short rows rank 0 takes beside long rows the cluster splits.
+        comptime NM = 107232
+        var mixed: List[Int] = [
+            NM,
+            3000,
+            32768,
+            NM - 5,
+            32769,
+            9000,
+            2049,
+            2048,
+        ]
+        var ms = _poisoned_bounded_scores(len(mixed), NM, mixed, 0x5010_BEEF)
+        for cs in [2, 4, 8]:
+            _run_and_check_cluster[dt](
+                ctx,
+                ms,
+                NM,
+                K,
+                len(mixed),
+                mixed,
+                cs,
+                String("solo_mixed_cs", cs),
+            )
+        # `K = 0` selects nothing: the launcher returns before any launch, so
+        # the output is never touched.
+        var guard = ctx.enqueue_create_buffer[.int32](4)
+        guard.enqueue_fill(Int32(-2))
+        var zs = ctx.enqueue_create_buffer[dt](4 * 16384)
+        zs.enqueue_fill(Scalar[dt](1))
+        topk_cluster_split(
+            ctx,
+            rebind[ImmPointer[Scalar[dt], ImmutAnyOrigin]](zs.unsafe_ptr()),
+            rebind[MutPointer[Int32, MutAnyOrigin]](guard.unsafe_ptr()),
+            16384,
+            0,
+            total_seq_len=4,
+            row_bounds=None,
+            cluster_size=4,
+        )
+        with guard.map_to_host() as g:
+            for i in range(4):
+                assert_true(
+                    g[i] == -2, String("K=0 wrote slot ", i, " = ", g[i])
+                )
+    print("PASS test_topk_cluster_solo")
+
+
+def test_topk_cluster_sm90_assembles() raises:
+    """The cluster kernel assembles for H100 (sm_90a), whose PTX is ISA 8.5.
+
+    The dispatch compiles the cluster tier on SM90, but the GPU tests run on
+    SM100, so an SM100-only instruction (such as the PTX 8.6
+    `fence...sync_restrict`) would otherwise break every H100 build of
+    `mla_index_fp8` unseen. The `object` emission runs ptxas, so this fails
+    at test build time. CS 2 and 8 take both arms of the round-0 barrier.
+    """
+    comptime for dt in [DType.bfloat16, DType.float32]:
+        comptime for cs in [2, 8]:
+            var obj = _compile_code[
+                _topk_cluster_kernel[dt, cs, False],
+                emission_kind="object",
+                target=get_gpu_target["sm_90a"](),
+            ]().asm
+            assert_true(obj.byte_length() > 0)
+    print("PASS test_topk_cluster_sm90_assembles")
+
+
+def test_topk_cluster_dispatch(ctx: DeviceContext) raises:
+    """The launcher's cluster gate, at the shapes it takes and the one it must
+    refuse.
+
+    24 rows at `N=107232, bf16` is the GLM decode shape; 8 rows at `f32` the
+    small batch; 74 rows is the gate's edge on B200; 75 must fall through to
+    the histogram selects, which serve the same contract and so validate the
+    same way -- the point of that arm is that the gate moves nothing else.
+    The other shapes reach CS 16, 10, 8, 6, 5 and 3 through the dispatch.
+
+    The row cap and the cluster-size table are pinned first, on B200's 148
+    SMs and on other SM counts, so a retune shows up here as a deliberate
+    edit.
+    """
+    assert_equal(_ctopk_max_rows[148](), 74, "row cap at sms=148")
+    assert_equal(_ctopk_max_rows[160](), 80, "row cap at sms=160")
+    assert_equal(_ctopk_max_rows[132](), 66, "row cap at sms=132")
+    # (rows, N, expected cluster size), per SM count.
+    var b200: List[Tuple[Int, Int, Int]] = [
+        (1, 107232, 16),
+        (7, 107232, 16),
+        (8, 107232, 8),
+        (7, 65536, 8),
+        (11, 163840, 10),
+        (12, 163840, 8),
+        (1, 81920, 10),
+        (7, 81920, 10),
+        (11, 81920, 10),
+        (1, 98304, 16),
+        (1, 65536, 8),
+        (1, 40960, 8),
+        (15, 107232, 8),
+        (16, 107232, 6),
+        (22, 107232, 6),
+        (23, 107232, 5),
+        (26, 107232, 5),
+        (27, 107232, 4),
+        (33, 107232, 4),
+        (34, 107232, 3),
+        (45, 107232, 3),
+        (46, 107232, 2),
+        (64, 107232, 2),
+        (74, 107232, 2),
+    ]
+    for t in b200:
+        assert_equal(
+            _choose_topk_cluster_size[148](t[0], t[1]),
+            t[2],
+            String("cluster size at rows=", t[0], " N=", t[1], " sms=148"),
+        )
+    # H100's GPC layout is not modeled: power-of-two sizes, flat estimate.
+    var h100: List[Tuple[Int, Int, Int]] = [
+        (1, 163840, 8),
+        (13, 163840, 8),
+        (14, 107232, 4),
+        (29, 107232, 4),
+        (30, 107232, 2),
+    ]
+    for t in h100:
+        assert_equal(
+            _choose_topk_cluster_size[132](t[0], t[1]),
+            t[2],
+            String("cluster size at rows=", t[0], " N=", t[1], " sms=132"),
+        )
+    var b300: List[Tuple[Int, Int, Int]] = [
+        (1, 163840, 16),
+        (16, 107232, 8),
+        (17, 107232, 6),
+    ]
+    for t in b300:
+        assert_equal(
+            _choose_topk_cluster_size[160](t[0], t[1]),
+            t[2],
+            String("cluster size at rows=", t[0], " N=", t[1], " sms=160"),
+        )
+
+    comptime K = 2048
+    comptime for dt in [DType.float32, DType.bfloat16]:
+        for shape in [
+            (24, 107232),
+            (4, 163840),
+            (10, 163840),
+            (8, 107232),
+            (16, 107232),
+            (40, 65536),
+            (8, 32769),
+            (74, 12288),
+            (75, 12288),
+            (71, 32771),
+        ]:
+            var B = shape[0]
+            var N = shape[1]
+            var bounds = List[Int](length=B, fill=N)
+            var scores = _poisoned_bounded_scores(
+                B, N, bounds, 0xD15A0000 + UInt32(B * 7919)
+            )
+            _run_and_check_cluster[dt, via_dispatch=True](
+                ctx,
+                scores,
+                N,
+                K,
+                B,
+                bounds,
+                4,
+                String("dispatch_b", B),
+            )
+        # The bounded arm through the dispatch: bounds vary per row, so the
+        # cluster's slice split must clamp at each row's live length.
+        var B = 24
+        var N = 107232
+        var bounds = _cluster_bounds(N, K)
+        while len(bounds) < B:
+            bounds.append(N)
+        var scores = _poisoned_bounded_scores(B, N, bounds, 0xD15AB0DE)
+        _run_and_check_cluster[dt, via_dispatch=True](
+            ctx, scores, N, K, B, bounds, 4, "dispatch_bounded"
+        )
+    print("PASS test_topk_cluster_dispatch")
+
+
+def test_topk_cluster_graph_capture(ctx: DeviceContext) raises:
+    """A captured device graph replays the cluster launch with its attributes.
+
+    Serving runs the indexer under device-graph capture, so the cluster path
+    is only usable if the launch attributes (the cluster dimension, the
+    shared-memory opt-in) survive capture and replay. One graph per
+    streaming load path -- the pipeline's capture is the arm that caught the
+    env-reading launcher, so it is pinned rather than assumed. Two replays
+    of each graph, each validated on its own: the nd contract does not
+    promise the same tie cut twice, so the replays are checked against the
+    predicate rather than against each other.
+    """
+    comptime K = 2048
+    comptime B = 8
+    # Two graphs, one per streaming load path. The plain arm's odd `N` keeps
+    # its stride unpadded, the TMA arm's padded one reaches the pipeline --
+    # and each must survive capture, so both variants' launch (attributes,
+    # mbarriers' shared-memory request and all) are held to replay.
+    comptime for N in [32769, 900000]:
+        var bounds = _cluster_bounds(N, K)
+        var scores = _poisoned_bounded_scores(
+            B, N, bounds, UInt32(0x6AFC0000 + N)
+        )
+
+        var scores_dev = ctx.enqueue_create_buffer[.bfloat16](B * N)
+        var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
+        var bounds_dev = ctx.enqueue_create_buffer[.int32](B)
+        with scores_dev.map_to_host() as buf:
+            for i in range(B * N):
+                buf[i] = scores[i].cast[.bfloat16]()
+        with bounds_dev.map_to_host() as buf:
+            for b in range(B):
+                buf[b] = Int32(bounds[b])
+
+        def build(mut builder: DeviceGraphBuilder) raises {imm}:
+            topk_cluster_split[RB=RowBoundsPtr](
+                builder.recording_context(),
+                rebind[ImmPointer[BFloat16, ImmutAnyOrigin]](
+                    scores_dev.unsafe_ptr()
+                ),
+                rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+                N,
+                K,
+                total_seq_len=B,
+                row_bounds=Optional(
+                    RowBoundsPtr(
+                        rebind[ImmPointer[Int32, ImmutAnyOrigin]](
+                            bounds_dev.unsafe_ptr()
+                        )
+                    )
+                ),
+                cluster_size=8,
+                use_tma=N % 8 == 0,
+            )
+
+        var graph = DeviceGraph.create(ctx, build)
+        var seen_scores = _as_read[.bfloat16](scores)
+        for replay in range(2):
+            idxs_dev.enqueue_fill(Int32(-2))
+            graph.replay()
+            ctx.synchronize()
+            var idxs_host = ctx.enqueue_create_host_buffer[.int32](B * K)
+            ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
+            ctx.synchronize()
+            for b in range(B):
+                var bound = bounds[b]
+                var live = min(K, bound)
+                for k in range(live, K):
+                    assert_true(
+                        Int(idxs_host[b * K + k]) == -1,
+                        String(
+                            "N ",
+                            N,
+                            " graph replay ",
+                            replay,
+                            " row ",
+                            b,
+                            " tail slot ",
+                            k,
+                            " is not -1",
+                        ),
+                    )
+                if live == 0:
+                    continue
+                var row_scores = List[Float32](capacity=bound)
+                for i in range(bound):
+                    row_scores.append(seen_scores[b * N + i])
+                var row_idxs = List[Int](capacity=live)
+                for k in range(live):
+                    row_idxs.append(Int(idxs_host[b * K + k]))
+                _check_score_valid_row(
+                    row_scores,
+                    row_idxs,
+                    bound,
+                    live,
+                    String("graph_replay", replay),
+                    b,
+                )
+            _ = idxs_host
+    print("PASS test_topk_cluster_graph_capture")
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_full_sort_n2048(ctx)
@@ -2625,4 +3839,18 @@ def main() raises:
         test_bf16_negative_plateau_resident(ctx)
         test_bf16_negative_levels_masked(ctx)
         test_short_row_beside_long_row_bf16(ctx)
+        comptime if (
+            ctx.target._is_sm_9x_or_newer()
+            and not ctx.target._is_sm_120x_or_newer()
+        ):
+            print("\n--- cluster-cooperative top-k (SM90+, non-SM12x) ---")
+            test_topk_cluster_band(ctx)
+            test_topk_cluster_ties(ctx)
+            test_topk_cluster_candidates(ctx)
+            test_topk_cluster_nan_pad(ctx)
+            test_topk_cluster_stress(ctx)
+            test_topk_cluster_solo(ctx)
+            test_topk_cluster_dispatch(ctx)
+            test_topk_cluster_graph_capture(ctx)
+            test_topk_cluster_sm90_assembles()
     print("ALL TESTS PASSED")

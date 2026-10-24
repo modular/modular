@@ -76,7 +76,7 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -93,5 +93,15 @@ modular_py_test(
         "//max/tests/integration/test_common:mef_precompile",
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/gpt_oss",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
     ],
 )

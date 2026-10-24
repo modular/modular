@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.math
-from std.memory import Alignment, alloc, dealloc, Layout, ThinAllocation
+from std.memory import Alignment, alloc, Layout
 from std.random import randint
 from std.time import sleep
 
@@ -290,9 +290,11 @@ def test_custom() raises:
     comptime N = 1024
     comptime alignment = Alignment.of_bytes[64]()
     comptime dtype = DType.int32
-    var xy_layout = Layout[Scalar[dtype], alignment=alignment](count=N)
-    var x = alloc(xy_layout).unsafe_leak()
-    var y = alloc(xy_layout).unsafe_leak()
+    var xy_layout = Layout[Scalar[dtype], alignment=alignment](length=N)
+    var x_alloc = alloc(xy_layout).into_managed()
+    var y_alloc = alloc(xy_layout).into_managed()
+    var x = x_alloc.unsafe_ptr()
+    var y = y_alloc.unsafe_ptr()
     randint[dtype](x, N, 0, 255)
     randint[dtype](y, N, 0, 255)
 
@@ -318,16 +320,6 @@ def test_custom() raises:
     )
 
     qb.dump_report()
-    dealloc(
-        ThinAllocation[Scalar[dtype]](unsafe_owned_ptr=x).unsafe_with_layout(
-            xy_layout
-        )
-    )
-    dealloc(
-        ThinAllocation[Scalar[dtype]](unsafe_owned_ptr=y).unsafe_with_layout(
-            xy_layout
-        )
-    )
 
 
 def test_all() raises:

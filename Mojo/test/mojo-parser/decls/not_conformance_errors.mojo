@@ -173,7 +173,7 @@ struct ElseWithoutCondition(
 # so writing both is ambiguous rather than redundant.
 
 
-# expected-error @below {{@explicit_destroy and the 'Deinitable' opt-out both give a message; keep only one}}
+# expected-error @below {{@explicit_destroy and the 'Deinitable' opt-out both give a message; remove '@explicit_destroy'}}
 @explicit_destroy("use consume()")
 struct DoubleLinearMessage(
     # expected-note @below {{opt-out message written here}}

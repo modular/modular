@@ -52,19 +52,19 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
 
     var q_alloc = alloc[Scalar[dtype]](
-        {count = q_shape.flattened_length()}
+        {length = q_shape.flattened_length()}
     ).into_managed()
     var k_alloc = alloc[Scalar[dtype]](
-        {count = kv_shape.flattened_length()}
+        {length = kv_shape.flattened_length()}
     ).into_managed()
     var v_alloc = alloc[Scalar[dtype]](
-        {count = kv_shape.flattened_length()}
+        {length = kv_shape.flattened_length()}
     ).into_managed()
     var mask_alloc = alloc[Scalar[dtype]](
-        {count = mask_shape.flattened_length()}
+        {length = mask_shape.flattened_length()}
     ).into_managed()
     var output_alloc = alloc[Scalar[dtype]](
-        {count = q_shape.flattened_length()}
+        {length = q_shape.flattened_length()}
     ).into_managed()
 
     rand(q_alloc.unsafe_span())
@@ -73,52 +73,50 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     rand(mask_alloc.unsafe_span())
 
     var q = (
-        TileTensor(q_alloc.unsafe_span(), row_major(q_alloc.layout().count()))
+        TileTensor(q_alloc.unsafe_span(), row_major(len(q_alloc)))
         .reshape(Coord(q_shape))
         .as_imm()
     )
     var k = (
-        TileTensor(k_alloc.unsafe_span(), row_major(k_alloc.layout().count()))
+        TileTensor(k_alloc.unsafe_span(), row_major(len(k_alloc)))
         .reshape(Coord(kv_shape))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var v = (
-        TileTensor(v_alloc.unsafe_span(), row_major(v_alloc.layout().count()))
+        TileTensor(v_alloc.unsafe_span(), row_major(len(v_alloc)))
         .reshape(Coord(kv_shape))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var mask = (
-        TileTensor(
-            mask_alloc.unsafe_span(), row_major(mask_alloc.layout().count())
-        )
+        TileTensor(mask_alloc.unsafe_span(), row_major(len(mask_alloc)))
         .reshape(Coord(mask_shape))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var output = TileTensor(
-        output_alloc.unsafe_span(), row_major(output_alloc.layout().count())
+        output_alloc.unsafe_span(), row_major(len(output_alloc))
     ).reshape(Coord(q_shape))
 
     @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         comptime assert _rank == 3
         return k.load[width=simd_width, alignment=align_of[dtype]()](Coord(idx))
 
     @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         comptime assert _rank == 3
         return v.load[width=simd_width, alignment=align_of[dtype]()](Coord(idx))
 
     @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         comptime assert _rank == 3
         return mask.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(idx)
@@ -130,7 +128,10 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     def flash_bench_fn(mut b: Bencher) {imm}:
         @inline(.always)
         def iter_fn[depth_static_dim: Int]() {imm}:
-            flash_attention[input_k_fn, input_v_fn, mask_fn](
+            flash_attention(
+                input_k_fn,
+                input_v_fn,
+                mask_fn,
                 q,
                 kv_shape,
                 kv_shape,

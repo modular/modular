@@ -1,0 +1,117 @@
+---
+title: Tensor realization
+description: Understand how MAX realizes tensors so you can reason about eager performance and write code the graph compiler can optimize.
+---
+
+In MAX, you can read the value of any
+[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) at any
+point in your code. This page explains the realization mechanics that make that
+possible.
+
+:::note
+
+This page provides optional background information that you don't necessarily
+need while writing models in MAX.
+
+:::
+
+## How MAX stores tensors
+
+A `Tensor` doesn't always carry a value, even though it appears to do so. Every
+`Tensor` is in one of two states:
+
+- **Realized**: the `Tensor` is backed by a buffer in memory.
+- **Unrealized**: the `Tensor` is backed by a symbolic graph value.
+
+*Realization* is the moment a tensor transitions from unrealized to realized,
+meaning some computation executes and produces a concrete buffer with
+values. Understanding when realization happens helps you reason about
+performance and write code the graph compiler can optimize.
+
+## How MAX realizes tensors
+
+When you call an op on a `Tensor`, MAX runs it inside a realization context,
+which is an object that constructs a graph that it can compile and run. If no
+context is active, MAX creates one for the duration of the call. By default,
+MAX runs the graph and turns its unrealized tensors into real ones when
+the context's scope exits.
+
+A bare op call like `y = F.relu(x)` runs in a one-op context
+that exits at the end of the statement, so `y` realizes immediately. Some
+functions widen this scope so multiple ops share one context and realize
+together at the function boundary. The next section covers how that works.
+
+:::note Lazy execution mode
+
+The
+[`F.lazy()`](/api/python/experimental.functional/#max.experimental.functional.lazy)
+context manager defers realization. Ops you call inside it build one graph, and
+their tensors stay unrealized after the block exits. MAX compiles and runs that
+graph when you read a tensor's values, for example with `item()` or
+`to_numpy()`. Printing an unrealized tensor shows its shape, dtype, and device
+without running the graph. Building a module inside `F.lazy()` defers the ops
+that initialize its weights, so MAX doesn't allocate weights that
+`Module.compile()` replaces with checkpoint values. Those ops run only if you
+read a tensor from that block.
+
+:::
+
+## Define a fusion region with `F.functional`
+
+A *fusion region* is a function whose ops all share one realization context, so
+they execute as a single graph that the graph compiler can fuse and optimize as
+a unit.
+
+You can manually define a fusion region with
+[`F.functional()`](/api/python/experimental.functional/#max.experimental.functional.functional).
+Apply it as a decorator on a method or call it directly to wrap a graph op. This
+example uses the decorator form on a module's `forward()` method, then calls the
+module:
+
+```python
+from max.experimental import functional as F
+from max.experimental.nn import Module, module_dataclass
+from max.experimental.tensor import Tensor
+
+
+@module_dataclass
+class MyLayer(Module[[Tensor], Tensor]):
+    weight: Tensor
+    bias: Tensor
+
+    @F.functional
+    def forward(self, x: Tensor) -> Tensor:
+        return x @ self.weight.T + self.bias
+
+
+layer = MyLayer(weight=Tensor.ones([3, 4]), bias=Tensor.zeros([3]))
+y = layer(Tensor.ones([2, 4]))
+print(y.shape)
+```
+
+The expected output is:
+
+```output
+[Dim(2), Dim(3)]
+```
+
+Built-in layers such as
+[`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/) call graph
+ops that MAX already wraps with `F.functional()`. To run a whole module as one
+graph, compile it with
+[`Module.compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile),
+which compiles `forward()` into a callable. Because of this, you don't typically
+need to use `F.functional()` yourself.
+
+## Next steps
+
+You just learned how MAX supports eager execution under the hood. For more
+advanced topics, see:
+
+- [Model bring-up workflow](/develop/model-bringup-workflow/): Implement a
+  model architecture with
+  [`max.experimental.nn`](/api/python/experimental.nn/) and compile it.
+- [Build custom ops](/develop/build-custom-ops/): Extend MAX with your own
+  ops.
+- [Trace execution](/develop/debugging-tracing/): See which ops MAX
+  launches, in what order, and on which device.

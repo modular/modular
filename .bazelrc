@@ -7,6 +7,20 @@ common --repo_env=MOJO_IGNORE_UNKNOWN_GPUS=1
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
+# Mirrors the root .bazelrc of the internal repo.
+build --host_copt=-DMODULAR_HOST_CFG=1
+# Tell MLIR where to bind its python bindings
+build --per_file_copt=max/python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --host_per_file_copt=max/python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --per_file_copt=external/.*llvm-project.*/Bindings/Python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --host_per_file_copt=external/.*llvm-project.*/Bindings/Python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+# Make symbols in TypeID visible
+build --per_file_copt=external/.*llvm-project/mlir/lib/Support/TypeID.cpp@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/mlir/lib/Support/TypeID.cpp@-fvisibility=default
+build --per_file_copt=external/.*llvm-project/llvm/lib/Support/FormatVariadic.cpp@-frtti
+build --host_per_file_copt=external/.*llvm-project/llvm/lib/Support/FormatVariadic.cpp@-frtti
+build --per_file_copt=external/.*llvm-project/third-party/unittest/.*@-frtti
+
 import %workspace%/bazel/internal/common.bazelrc
 
 # Load config generated from tools/bazel
@@ -18,15 +32,14 @@ build --compilation_mode=dbg
 build --//:modular_config=default
 
 build:ci --mojoprecompilecopt=-Werror
+# Match internal CI, which tests optimized builds.
+build:ci --compilation_mode=opt
 
 build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
 build:public-cache --build_metadata=VISIBILITY=PUBLIC
 build:public-cache --remote_downloader=grpcs://modular-public.buildbuddy.io
 build:public-cache --remote_cache=grpcs://modular-public.buildbuddy.io
-
-build:build-mojo --//:use_prebuilt_mojo_toolchain=false
-build:prebuilt-mojo --//:use_prebuilt_mojo_toolchain=true
 
 # Check for a local gitignored bazel config.
 # NOTE: Import this last so that local configs can override.

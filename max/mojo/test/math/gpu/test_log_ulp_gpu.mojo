@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp2, inf, isinf, isnan, log, nan
-from std.math.math import _call_libm, _log_accurate
-from std.sys import bit_width_of, default_accelerator, simd_width_of
+from std.math.math import _log_accurate
+from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import assert_equal, assert_true, TestSuite
+from test_utils.math import libm_call_f64
 
 from std.utils.coord import Coord
 
@@ -103,18 +104,6 @@ def _apply[
         return log(x)
 
 
-def _reference[
-    dtype: DType, //, name: StaticString
-](x: Scalar[dtype]) -> Scalar[dtype] where dtype.is_floating_point():
-    """Returns host libm in float64, rounded to `dtype`."""
-    comptime libm_name: StaticString = (
-        "log" if name == "log_accurate" else name
-    )
-    comptime if dtype == .float64:
-        return _call_libm[libm_name](x)
-    return _call_libm[libm_name](x.cast[.float64]()).cast[dtype]()
-
-
 def _inputs[
     dtype: DType, name: StaticString
 ]() -> List[Scalar[dtype]] where dtype.is_floating_point():
@@ -168,6 +157,9 @@ def _check[
     abs_tol: Float64 = 0.0,
 ) raises where dtype.is_floating_point():
     comptime pack_size = simd_width_of[dtype, target=ctx.target]()
+    comptime libm_name: StaticString = (
+        "log" if name == "log_accurate" else name
+    )
     var length = len(inputs)
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
@@ -183,7 +175,7 @@ def _check[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, _apply[name](val))
 
@@ -196,7 +188,7 @@ def _check[
     with out_device.map_to_host() as out_host:
         for i in range(length):
             var x = inputs[i]
-            var want = _reference[name](x)
+            var want = libm_call_f64[libm_name](x)
             var cpu_val = _apply[name](x)
             var gpu = _ulp_diff(out_host[i], want)
             var cpu = _ulp_diff(cpu_val, want)

@@ -1,0 +1,29 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_cc_test(
+    name = "MojoStubCompilerTest",
+    srcs = ["MojoStubCompilerTest.cpp"],
+    deps = [
+        "//GraphCompiler",
+        "//GraphCompiler:MOGGDialect",
+        "//GraphCompiler:Support",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//Support:MDialect",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_cc_test(
+    name = "ProfileScopeLabelsTest",
+    srcs = ["TestProfileScopeLabels.cpp"],
+    deps = [
+        "//GraphCompiler",
+        "//GraphCompiler:MOGGDialect",
+        "//GraphCompiler:Support",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//Support:MDialect",
+        "@llvm-project//mlir:IR",
+    ],
+)

@@ -11,9 +11,12 @@ modular_py_test(
     srcs = glob(
         ["test_*.py"],
         exclude = [
+            "test_artifact.py",
+            "test_export.py",
             "test_bounded_cache.py",
             "test_chat_encoder.py",
             "test_reasoning.py",
+            "test_graph_specs.py",
             "test_structured_output_backend.py",
         ],
     ),
@@ -28,12 +31,15 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/_entrypoints",
         "//max/python/max/_xgrammar",
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines:graph_input_stager",
@@ -47,12 +53,14 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/architectures/minimax_m2",
-        "//max/python/max/pipelines/architectures/unified_dflash_kimi_k25",
-        "//max/python/max/pipelines/architectures/unified_dflash_llama3",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3_embedding_modulev3",
+        "//max/python/max/pipelines/architectures/wan",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
@@ -60,10 +68,57 @@ modular_py_test(
         requirement("click"),
         requirement("cyclopts"),
         requirement("numpy"),
+        requirement("pillow"),
         requirement("pydantic"),
         requirement("pytest-mock"),
         requirement("pyyaml"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_artifact",
+    srcs = ["test_artifact.py"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/_artifact",
+        "//max/python/max/_artifact:model_artifact",
+        requirement("huggingface-hub"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_specs",
+    srcs = ["test_graph_specs.py"],
+    deps = [
+        "//max/python/max/_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_export",
+    srcs = ["test_export.py"],
+    deps = [
+        "//max/python/max/_artifact",
+        "//max/python/max/_artifact:export",
+        "//max/python/max/_artifact:model_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
     ],
 )
 

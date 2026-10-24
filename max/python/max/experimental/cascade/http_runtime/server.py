@@ -16,6 +16,15 @@ The server hosts an opened :py:class:`LocalRuntime` for the lifetime of the
 process. Each route translates to a single ``LocalRuntime`` primitive call;
 result ids are chosen by the client and used as-is.
 
+.. warning::
+
+    The pickle-over-HTTP transport is for local development and testing
+    only. It has no authentication, and the server unpickles request bodies
+    before validating them, so any peer that can reach it can execute
+    arbitrary code with the server process's privileges. Bind only to
+    loopback or a Unix socket, and never expose it to an untrusted network.
+    Do not use it for anything else.
+
 Endpoints (one per :py:class:`Runtime` wire primitive):
 
 * ``GET  /alive``                                       health check
@@ -225,7 +234,11 @@ cli = cyclopts.App()
 
 @cli.default
 def main(address: str = "http://127.0.0.1:50051") -> None:
-    """Run the Cascade HTTP runtime server bound to ``address``."""
+    """Run the Cascade HTTP runtime server bound to ``address``.
+
+    Local development and testing only; the server is unauthenticated and
+    unpickles request bodies. Keep ``address`` on loopback or a Unix socket.
+    """
     serve(address)
 
 

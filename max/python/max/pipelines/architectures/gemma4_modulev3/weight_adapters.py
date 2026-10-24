@@ -56,8 +56,8 @@ def convert_vision_state_dict_for_module(
 ) -> dict[str, WeightData]:
     """Vision slice, unprefixed.
 
-    The eager vision tower mirrors the graph tower's attribute names, so the
-    graph converter's output keys (``patch_embedder.*``, ``encoder.layers.*``,
+    The eager vision tower mirrors the graph tower's attribute names, so
+    the graph converter's output keys (``patch_embedder.*``, ``encoder.layers.*``,
     ``embed_vision.*``, ``std_bias``/``std_scale``) already match
     ``Gemma4VisionModel``'s parameter paths. Text-only checkpoints simply
     match no key, yielding an empty dict.

@@ -19,7 +19,7 @@ from max.pipelines.modeling.types import PipelineTask
 from . import weight_adapters
 from .memory_planner import DeepseekV4MemoryPlanner
 from .model import DeepseekV4Model
-from .model_config import DeepseekV4Config, dspark_draft_width
+from .model_config import DeepseekV4Config
 from .tokenizer import DeepseekV4Tokenizer
 
 deepseekV4_arch = SupportedArchitecture(
@@ -40,8 +40,8 @@ deepseekV4_arch = SupportedArchitecture(
     },
     config=DeepseekV4Config,
     memory_planner=DeepseekV4MemoryPlanner,
-    # Read only by the DSpark speculator, which inherits it.
-    checkpoint_draft_width=dspark_draft_width,
     reasoning_parser="deepseekv4",
     tool_parser="deepseekv4",
+    checkpoint_drafts={"dspark": "DSparkDeepseekV4DraftModel"},
+    spec_decode_graph_names={"dspark": "unified_dspark_deepseekV4"},
 )

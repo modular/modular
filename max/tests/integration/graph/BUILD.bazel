@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -24,6 +25,7 @@ _CPU_ONLY_TESTS = [
     "test_is_nan.py",
     "test_matmul_packed.py",
     "test_reduce_add.py",
+    "test_rowwise_fusion.py",
     "test_shard_and_stack.py",
     "test_symbolic_dimension_validation.py",
 ]
@@ -35,6 +37,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_buffer_create_init_gpu.py",
     "test_debug_config.py",
     "test_debug_config_integration.py",
+    "test_device_graph_side_stream_reclaim.py",
     "test_device_graph_synthesis.py",
     "test_engine_device_graph.py",
     "test_execution_spans.py",
@@ -46,7 +49,9 @@ _SEPARATE_TARGET_TESTS = [
     "test_mega_ffn_nvfp4_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_ir.py",
     "test_rowwise_reductions.py",
+    "test_rowwise_reductions_fuzz.py",
     "test_runtime_source_notes.py",
+    "test_nms.py",
     "test_scatter.py",
     "test_tile_based_fusion.py",
     "test_typical_llm_snifftest.py",
@@ -58,12 +63,15 @@ _GRAPH_COMMON_DATA = [
     "//max/tests/integration/Inputs/kernel_override_ops",
     "//max/tests/integration/Inputs/kernel_verification_ops",
     "//max/tests/integration/Inputs/test_user_op",
+    "//max/tests/integration/graph/testdata/bad_kernel_ops",
+    "//max/tests/integration/graph/testdata/bad_kernel_ops:__init__.mojo",
     "//max/tests/integration/graph/testdata/compile_config_ops",
     "//max/tests/integration/graph/testdata/counter_ops",
     "//max/tests/tests/graph/testdata",
 ]
 
 _GRAPH_COMMON_ENV = {
+    "MODULAR_BAD_KERNEL_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/bad_kernel_ops)",
     "MODULAR_COUNTER_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/counter_ops)",
     "MODULAR_KERNEL_OVERRIDE_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_override_ops)",
     "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
@@ -140,12 +148,19 @@ modular_py_test(
     # Every case compiles its own graph, which times the file out as one shard.
     per_test_shard_count = {
         "test_horizontal_fusion.py": 4,
+        "test_mamba2_fused_inputs.py": 4,
     },
     per_test_tags = {
         "test_epilogue_fusion.py": ["postsubmit"],
     },
+    per_test_target_compatible_with = {
+        # Needs kda_chunk, kda_decode, registered only by the closed-source kernels.
+        "test_kda_ops.py": REQUIRES_INTERNAL_KERNELS,
+    },
     precompile_mefs = True,
     precompile_shards = {
+        "test_mamba2_fused_inputs.py": 4,
+        "test_resize_linear.py": 4,
         "test_resize_nearest.py": 8,
     },
     tags = [
@@ -223,6 +238,32 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_nms",
+    srcs = [
+        "conftest.py",
+        "test_nms.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 
@@ -338,6 +379,7 @@ modular_py_test(
         "conftest.py",
         "test_matmul_packed.py",
         "test_reduce_add.py",
+        "test_rowwise_fusion.py",
         "test_shard_and_stack.py",
         "test_symbolic_dimension_validation.py",
     ],
@@ -457,6 +499,41 @@ modular_py_test(
     ],
 )
 
+# Property tests for sum, max, min and mean, on CPU and GPU. They replace the
+# kernel-level fuzzing of the hand-written reductions these ops used to run.
+# Each case compiles one graph in a CPU build action (`precompile_mefs`), and
+# hypothesis draws fixed (`derandomize`) extents and values for it.
+modular_py_test(
+    name = "test_rowwise_reductions_fuzz",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_rowwise_reductions_fuzz.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    precompile_mefs = True,
+    precompile_shards = 4,
+    shard_count = 4,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/tests/integration/test_common:reduction_graphs",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
 # CPU-only graph op tests (ASAN-only restriction unlike cpu_tests)
 modular_py_test(
     name = "cpu_graph_op_tests",
@@ -506,6 +583,35 @@ modular_py_test(
         "//conditions:default": [],
     }),
     precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+# A small VMM budget with fine granules, so filling the free budget after a
+# capture is cheap and the allocator's reuse of released memory is visible.
+modular_py_test(
+    name = "test_device_graph_side_stream_reclaim",
+    srcs = [
+        "conftest.py",
+        "test_device_graph_side_stream_reclaim.py",
+    ],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "2147483648",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "1",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+    },
+    # TODO(CENG-1259): Run on AMD too once HIP keeps side-stream views alive
+    # after capture; the fix this test covers is CUDA only.
+    gpu_constraints = ["//:nvidia_gpu"],
     tags = [
         "gpu",
     ],
@@ -578,6 +684,8 @@ modular_py_test(
     precompile_mefs = True,
     precompile_shards = 3,
     tags = ["gpu"],
+    # Needs mo.composite.mega_ffn_nvfp4, registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         ":mega_ffn_graphs",
         "//max/python/max/driver",
@@ -607,13 +715,15 @@ modular_py_test(
         "skip-ci-asan",
         "skip-ci-m7g",
         "skip-ci-ubsan",
+        "skip-external-ci",
     ],
     # The virtual CUDA (sm_100a) graphs need the NVPTX compiler to elaborate
     # kernels, which is Linux-only (CUDACompilationDevice).
+    # Needs mo.composite.mega_ffn_nvfp4, registered only by the closed-source kernels.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),
+    }) + REQUIRES_INTERNAL_KERNELS,
     deps = [
         ":mega_ffn_graphs",
         "//max/python/max/driver",

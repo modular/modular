@@ -75,12 +75,11 @@ struct BaseCompletionListener : public ParserListener {
 
 /// Returns true if the given member should be shown during lookup within
 /// `decl`. If `isModuleLookup` is true, we are looking up nested modules.
-static bool showDeclDuringLookup(MojoASTDeclRef declRef, StringRef &member,
-                                 MojoASTDeclRef child,
-                                 bool isModuleLookup = false) {
-  if (llvm::isa_and_present<PackageOp>(declRef.getIfOperation())) {
+static bool showDeclDuringLookup(ASTDecl *decl, StringRef &member,
+                                 ASTDecl *child, bool isModuleLookup = false) {
+  if (isa<PackageASTDecl>(decl)) {
     bool childIsPackageOrModule =
-        llvm::isa_and_present<FileModuleOp, PackageOp>(child.getIfOperation());
+        llvm::isa_and_present<FileModuleASTDecl, PackageASTDecl>(child);
     // If this is a module lookup, we only want to show non-init modules defined
     // within the package.
     if (isModuleLookup)
@@ -123,7 +122,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
       ParserConfig config(&ctx, parserContext->getCompilationOptions());
       MojoParserContext importContext(sourceMgr, config);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
-        if (auto decl = module.getDecl())
+        if (auto decl = getPublicDecl(module))
           results.back().documentation =
               decl->getFullMarkdownString(*parserContext);
       }
@@ -162,33 +161,30 @@ struct CodeCompletionListener : public BaseCompletionListener {
   /// Notify the listener that an import of a module within the given package is
   /// currently being resolved.
   void onImport(ResolveInputDeclFn getPackageDecl, SMLoc importLoc) override {
-    MojoASTDeclRef packageDecl = getPackageDecl();
+    ASTDecl *packageDecl = getPackageDecl();
 
     // A package's submodules are unlisted children: they live in the
-    // module-state cache and the package IR, not in declsInScope (which is what
-    // getChildren() iterates below). Thus we enumerate them from the cache
+    // module-state cache and the package IR, not in declsInScope. Thus we
+    // enumerate them from the cache
     // instead. This lets a relative import (`from . import X`) complete any
     // sibling module or sub-package.
-    if (auto pkgOp =
-            dyn_cast_or_null<PackageOp>(packageDecl.getIfOperation())) {
+    if (auto *package = dyn_cast<PackageASTDecl>(packageDecl)) {
       SharedState &shared = parserContext->getSharedState();
-      for (ASTDecl *sub : shared.getNestedModuleDecls(pkgOp)) {
-        MojoASTDeclRef subRef(sub);
-        StringAttr nameAttr =
-            TypeSwitch<Operation *, StringAttr>(subRef.getIfOperation())
-                .Case<FileModuleOp, PackageOp>(
-                    [](auto m) { return m.getDeclName(); })
-                .Default(StringAttr());
+      for (ModuleASTDecl *sub : shared.getNestedModuleDecls(package->getOp())) {
+        StringAttr nameAttr = TypeSwitch<Operation *, StringAttr>(sub->getOp())
+                                  .Case<FileModuleOp, PackageOp>(
+                                      [](auto m) { return m.getDeclName(); })
+                                  .Default(StringAttr());
         if (!nameAttr || nameAttr.getValue() == "__init__")
           continue;
-        addCompletionForOp(nameAttr.getValue(), subRef);
+        addCompletionForOp(nameAttr.getValue(), sub);
       }
       return;
     }
 
-    for (MojoASTDeclRef::ChildEntry child : packageDecl.getChildren()) {
-      StringRef name = child.getName();
-      MojoASTDeclRef childDecl = *child.getDecls().begin();
+    for (auto [nameAttr, children] : packageDecl->getDeclsInScope()) {
+      StringRef name = nameAttr.getValue();
+      ASTDecl *childDecl = children.front();
       if (!showDeclDuringLookup(packageDecl, name, childDecl,
                                 /*isModuleLookup=*/true))
         continue;
@@ -203,15 +199,15 @@ struct CodeCompletionListener : public BaseCompletionListener {
   /// up.
   void onMemberLookup(ResolveInputDeclFn getDeclFn, llvm::SMLoc lookupLoc,
                       bool searchParentScopes) override {
-    MojoASTDeclRef decl = getDeclFn();
+    ASTDecl *decl = getDeclFn();
 
-    auto collectDeclChildren = [&](MojoASTDeclRef decl) {
+    auto collectDeclChildren = [&](ASTDecl *decl) {
       // Snapshot the child list: adding a completion for an import placeholder
       // resolves decls lazily, which can grow this scope's decl map (e.g. a
-      // module importing from itself) and invalidate a live child iterator.
-      SmallVector<std::pair<StringRef, MojoASTDeclRef>> children;
-      for (MojoASTDeclRef::ChildEntry child : decl.getChildren())
-        children.emplace_back(child.getName(), *child.getDecls().begin());
+      // module importing from itself) and invalidate a live scope iterator.
+      SmallVector<std::pair<StringRef, ASTDecl *>> children;
+      for (auto [name, decls] : decl->getDeclsInScope())
+        children.emplace_back(name.getValue(), decls.front());
 
       for (auto &[name, childDecl] : children) {
         if (!showDeclDuringLookup(decl, name, childDecl))
@@ -229,27 +225,28 @@ struct CodeCompletionListener : public BaseCompletionListener {
     // An import gate's own scope holds only the submodules explicitly imported
     // through it; the imported entity's own members live in its target module.
     // Enumerate the gate's nested children, then resolve to the target.
-    if (auto importOp = dyn_cast_or_null<ImportOp>(decl.getIfOperation())) {
+    if (auto *importDecl = dyn_cast<ImportASTDecl>(decl);
+        importDecl && importDecl->getIfResolvedOp()) {
+      ImportOp importOp = importDecl->getIfResolvedOp();
       collectDeclChildren(decl);
       SharedState &shared = parserContext->getSharedState();
       SMLoc importLoc = shared.diags.convertLocToSMLoc(importOp->getLoc());
-      ASTDecl &target = shared.importModule(
+      ModuleASTDecl &target = shared.importModule(
           SharedState::ImportPath::fromAttr(importOp.getModulePath()),
           /*currentPackage=*/PackageOp(), importLoc);
       (void)shared.getDeclResolver().resolveBody(target, importLoc);
-      decl = MojoASTDeclRef(&target);
+      decl = &target;
     }
 
     // A package's own scope is empty; its public surface lives in its
     // __init__. Redirect a package target to its __init__ so member access
     // (`pkg.<...>`) completes exactly what __init__ re-exports.
-    if (auto pkgOp = dyn_cast_or_null<PackageOp>(decl.getIfOperation())) {
+    if (auto *package = dyn_cast<PackageASTDecl>(decl)) {
       SharedState &shared = parserContext->getSharedState();
-      SMLoc loc = shared.diags.convertLocToSMLoc(pkgOp->getLoc());
-      if (auto initOrFail =
-              shared.getDeclResolver().bodyResolvePackageInit(*decl, loc);
+      SMLoc loc = shared.diags.convertLocToSMLoc(package->getOp()->getLoc());
+      if (auto initOrFail = package->resolveInitModule(loc);
           succeeded(initOrFail) && *initOrFail)
-        decl = MojoASTDeclRef(*initOrFail);
+        decl = *initOrFail;
     }
 
     // Collect all of the decls in the current scope.
@@ -259,24 +256,24 @@ struct CodeCompletionListener : public BaseCompletionListener {
     // Collect all of the decls in the current scope and all parent scopes.
     do {
       collectDeclChildren(decl);
-      decl = decl.getParent();
+      decl = decl->getParentDecl();
     } while (
-        !llvm::isa_and_present<PackageOp, ModuleOp>(decl.getIfOperation()));
+        !llvm::isa_and_present<PackageASTDecl, TopLevelModuleASTDecl>(decl));
   }
 
   /// Resolve the decl bound by an unresolved import to the decl it names within
   /// its defining module, or null if it can't be found. Resolution happens in
   /// the imported module's scope; the scope containing `importOp` is not
   /// modified.
-  MojoASTDeclRef resolveImportedDecl(UnresolvedImportOp importOp) {
+  ASTDecl *resolveImportedDecl(UnresolvedImportOp importOp) {
     SharedState &shared = parserContext->getSharedState();
     SMLoc loc = shared.diags.convertLocToSMLoc(importOp->getLoc());
-    ASTDecl &module = shared.importModule(
+    ModuleASTDecl &module = shared.importModule(
         SharedState::ImportPath::fromAttr(importOp.getModulePathAttr()),
         importOp->getParentOfType<PackageOp>(), loc);
     StringAttr declName = importOp.getDeclNameAttr();
     if (!declName)
-      return MojoASTDeclRef(&module);
+      return &module;
     LookupResult result =
         shared.lookupAndResolveDecl(declName.getValue(), loc, module,
                                     /*searchParentScopes=*/false,
@@ -284,20 +281,19 @@ struct CodeCompletionListener : public BaseCompletionListener {
     if (!result.isSuccess()) {
       // The name may be a submodule of a package rather than a symbol in its
       // scope.
-      return MojoASTDeclRef(
-          shared.tryImportSubModule(module, declName.getValue(), loc));
+      return shared.tryImportSubModule(module, declName.getValue(), loc);
     }
-    return MojoASTDeclRef(result.getIfSuccess().front());
+    return result.getIfSuccess().front();
   }
 
   /// Utility function to add a completion result for the given decl. An
   /// optional filter that returns which operations should be considered.
-  void addCompletionForOp(StringRef name, MojoASTDeclRef declRef,
+  void addCompletionForOp(StringRef name, ASTDecl *decl,
                           function_ref<bool(Operation *)> filter = {}) {
-    if (!addedResults.insert({&*declRef, name}).second)
+    if (!addedResults.insert({decl, name}).second)
       return;
 
-    Operation *op = declRef.getIfOperation();
+    Operation *op = decl->getIfOperation();
     if (!op || (filter && !filter(op)))
       return;
 
@@ -319,14 +315,18 @@ struct CodeCompletionListener : public BaseCompletionListener {
     // placeholder, which would complete as an unknown kind. Peek at the decl it
     // names in its defining module for the kind.
     if (auto importOp = dyn_cast<UnresolvedImportOp>(op)) {
-      if (MojoASTDeclRef target = resolveImportedDecl(importOp);
-          target && target.getIfOperation())
-        kind = kindForOp(target.getIfOperation());
+      if (ASTDecl *target = resolveImportedDecl(importOp)) {
+        if (Operation *targetOp = target->getIfOperation())
+          kind = kindForOp(targetOp);
+      }
     }
 
     CodeCompletionResult result(name, kind);
-    if (auto decl = declRef.getDecl())
-      result.documentation = decl->getFullMarkdownString(*parserContext);
+    if (auto *function = dyn_cast<DefASTDecl>(decl))
+      result.documentation =
+          getFunctionFullMarkdownString(*function, *parserContext);
+    else if (auto publicDecl = getPublicDecl(decl))
+      result.documentation = publicDecl->getFullMarkdownString(*parserContext);
     results.emplace_back(result);
   }
 
@@ -382,28 +382,30 @@ struct SignatureHelpListener : public BaseCompletionListener {
     result.activeParameter = *operandIndex;
 
     // Collect the signatures for each of the decls.
-    for (MojoASTDeclRef decl : decls) {
-      std::unique_ptr<PublicDecl> publicDecl = decl.getDecl();
-      if (!publicDecl)
+    for (ASTDecl *decl : decls) {
+      auto *function = dyn_cast<DefASTDecl>(decl);
+      if (!function)
         continue;
-      if (auto *fnDecl = dyn_cast<PublicFunctionDecl>(publicDecl.get())) {
-        if (operands.size() > fnDecl->getArguments().size())
-          continue;
-
-        // If this is the first function and it's a method, bump the active
-        // parameter past the self argument.
-        if (result.signatures.empty() && fnDecl->isMethod())
+      SmallVector<ASTDecl *> argumentDecls = function->getUserArgDecls();
+      if (operands.size() > argumentDecls.size())
+        continue;
+      if (result.signatures.empty()) {
+        FnOp fnOp = function->getOp();
+        if (!fnOp.getIsStatic() && isa<StructDeclOp>(fnOp->getParentOp()))
           ++result.activeParameter;
-
-        SignatureHelpResult::Signature signature;
-        SmallVector<std::pair<unsigned, unsigned>> argOffsets;
-        signature.label = fnDecl->getDeclarationSnippet(
-            *parserContext,
-            /*parameterOffsets=*/nullptr, &argOffsets);
-        addDeclDocAndParametersToSignature(*parserContext, signature, *fnDecl,
-                                           fnDecl->getArguments(), argOffsets);
-        result.signatures.emplace_back(std::move(signature));
       }
+      SignatureHelpResult::Signature signature;
+      SmallVector<std::pair<unsigned, unsigned>> argOffsets;
+      signature.label = getFunctionDeclarationSnippet(
+          *function, *parserContext,
+          /*parameterOffsets=*/nullptr, &argOffsets);
+      signature.documentation =
+          getFunctionFullMarkdownString(*function, *parserContext);
+      for (const auto &[argumentDecl, offset] :
+           llvm::zip(argumentDecls, argOffsets))
+        signature.parameters.push_back(
+            {offset, ArgumentInfo::getMarkdownDocString(*argumentDecl)});
+      result.signatures.emplace_back(std::move(signature));
     }
   }
 
@@ -427,23 +429,43 @@ struct SignatureHelpListener : public BaseCompletionListener {
     result.activeParameter = *paramIndex;
 
     // Collect the signatures for each of the decls.
-    for (MojoASTDeclRef declRef : decls) {
-      std::unique_ptr<PublicDecl> publicDecl = declRef.getDecl();
+    for (ASTDecl *decl : decls) {
+      if (auto *function = dyn_cast<DefASTDecl>(decl)) {
+        SmallVector<ParameterInfo, kTypicalParameterCount> functionParameters =
+            getFunctionParameters(*function);
+        if (parameters.size() > functionParameters.size())
+          continue;
+        SignatureHelpResult::Signature signature;
+        SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
+        signature.label = getFunctionDeclarationSnippet(
+            *function, *parserContext, &paramOffsets);
+        signature.documentation =
+            getFunctionFullMarkdownString(*function, *parserContext);
+        for (const auto &[parameter, offset] :
+             llvm::zip(functionParameters, paramOffsets))
+          signature.parameters.push_back(
+              {offset, parameter.getMarkdownDocString()});
+        result.signatures.emplace_back(std::move(signature));
+        continue;
+      }
+
+      auto *structDecl = dyn_cast<StructASTDecl>(decl);
+      if (!structDecl)
+        continue;
+      std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(decl);
       if (!publicDecl)
         continue;
-      TypeSwitch<PublicDecl *>(publicDecl.get())
-          .Case<PublicFunctionDecl, PublicStructDecl>([&](auto *publicDecl) {
-            if (parameters.size() > publicDecl->getParameters().size())
-              return;
-            SignatureHelpResult::Signature signature;
-            SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
-            signature.label = publicDecl->getDeclarationSnippet(*parserContext,
-                                                                &paramOffsets);
-            addDeclDocAndParametersToSignature(
-                *parserContext, signature, *publicDecl,
-                publicDecl->getParameters(), paramOffsets);
-            result.signatures.emplace_back(std::move(signature));
-          });
+      SmallVector<ParameterInfo, kTypicalParameterCount> structParameters =
+          getStructParameters(*structDecl);
+      if (parameters.size() > structParameters.size())
+        continue;
+      SignatureHelpResult::Signature signature;
+      SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
+      signature.label = getStructDeclarationSnippet(*structDecl, *parserContext,
+                                                    &paramOffsets);
+      addDeclDocAndParametersToSignature(*parserContext, signature, *publicDecl,
+                                         structParameters, paramOffsets);
+      result.signatures.emplace_back(std::move(signature));
     }
   }
 

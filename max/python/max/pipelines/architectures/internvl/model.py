@@ -19,17 +19,14 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max import tree
-from max.driver import Buffer, Device, DLPackArray
-from max.dtype import DType
+from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, Module, TensorType, Type
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
 )
-from max.nn.comm import Signals
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
@@ -37,9 +34,11 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
-    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
+    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import InternVLBatchProcessor
@@ -52,6 +51,9 @@ from .weight_adapters import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+# The vision and language graphs compile into one artifact.
+_COMPILE_GROUP = "internvl"
 
 
 @dataclass
@@ -106,8 +108,9 @@ def assert_image_embeddings_invariant(
 
 
 class InternVLModel(
+    LogProbabilitiesMixin,
     AlwaysSignalBuffersMixin,
-    MultiGraphPipelineModelWithKVCache[TextAndVisionContext],
+    PipelineModelWithKVCache[TextAndVisionContext, InternVLConfig, Model],
 ):
     """An InternVL pipeline model for multimodal text generation."""
 
@@ -116,11 +119,8 @@ class InternVLModel(
         InternVLBatchProcessor
     )
 
-    vision_model: Model | None
-    """The compiled vision model for processing images."""
-
-    language_model: Model
-    """The compiled language model for text generation."""
+    _vision_weights_dict: dict[str, WeightData]
+    _language_weights_dict: dict[str, WeightData]
 
     def __init__(
         self,
@@ -147,7 +147,17 @@ class InternVLModel(
             memory_plan=memory_plan,
         )
 
-        self.vision_model, self.language_model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def vision_model(self) -> Model:
+        """The compiled vision model for processing images."""
+        return self._models[GraphRole.VISION]
+
+    @property
+    def language_model(self) -> Model:
+        """The compiled language model for text generation."""
+        return self._models[GraphRole.DECODER]
 
     def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
@@ -184,210 +194,53 @@ class InternVLModel(
         )
         return internvl_config
 
-    def _build_vision_graph(
-        self,
-        config: InternVLConfig,
-        state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Build the vision model graph for processing images."""
-        # Define input types for the vision model
-        # Use static dimensions from the vision config
-        image_size = config.vision_config.image_size
-        patch_size = config.vision_config.patch_size
-        # Calculate number of patches in each dimension
-        height_patches = image_size // patch_size
-        width_patches = image_size // patch_size
+    def graph_specs(self, model_config: InternVLConfig) -> dict[str, GraphSpec]:
+        """Returns the vision encoder and the decoder, in one compile group."""
+        return {
+            GraphRole.VISION: self._vision_spec(
+                model_config, self._vision_weights_dict
+            ),
+            GraphRole.DECODER: self._language_spec(
+                model_config, self._language_weights_dict
+            ),
+        }
 
-        # Expect pre-extracted patches from the tokenizer.
-        # Use bfloat16 to match the tokenizer's output.
-        pixel_values_types = [
-            TensorType(
-                DType.bfloat16,
-                shape=[
-                    "batch_size",
-                    height_patches,
-                    width_patches,
-                    3,
-                    patch_size,
-                    patch_size,
-                ],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        # Create signal types for distributed communication
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+    def _vision_spec(
+        self, config: InternVLConfig, state_dict: dict[str, WeightData]
+    ) -> GraphSpec:
+        vision_model = InternVLVisionModel(config)
+        vision_model.load_state_dict(
+            state_dict=state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=True,
         )
-
-        # Initialize graph with input types
-        with Graph(
+        return GraphSpec(
+            vision_model,
             "internvl_vision",
-            input_types=[*pixel_values_types, *signals.input_types()],
-            module=module,
-        ) as graph:
-            # Build vision model architecture.
-            vision_model = InternVLVisionModel(config)
-            vision_model.load_state_dict(
-                state_dict=state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-                strict=True,
-            )
-
-            # Unpack inputs (one per device).
-            pixel_values = [
-                inp.tensor for inp in graph.inputs[: len(self.devices)]
-            ]
-
-            # Extract signal buffers (one per device).
-            signal_buffers = [
-                inp.buffer for inp in graph.inputs[len(self.devices) :]
-            ]
-
-            # Execute vision model: pixel_values -> image_embeddings.
-            image_embeddings = vision_model(pixel_values, signal_buffers)
-
-            # Set graph outputs.
-            graph.output(*image_embeddings)
-
-            return graph, vision_model.state_dict()
-
-    def _language_graph_input_types(self) -> tuple[Type[Any], ...]:
-        # Generate DeviceRef.
-        device_ref = DeviceRef.from_device(self.devices[0])
-
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+            vision_model.input_types(),
+            weights=vision_model.state_dict(),
+            group=_COMPILE_GROUP,
         )
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-
-        # Construct Graph Inputs
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
+    def _language_spec(
+        self, config: InternVLConfig, state_dict: dict[str, WeightData]
+    ) -> GraphSpec:
+        language_model = InternVLLanguageModel(
+            config, _get_image_context_token_id(self.huggingface_config)
         )
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        # Add image embeddings type - one per device, can be empty for text-only inputs
-        image_embeddings_types = [
-            TensorType(
-                self.dtype,
-                shape=[
-                    "num_image_tokens",
-                    self.huggingface_config.llm_config.hidden_size,
-                ],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        # Add image token indices type
-        image_token_indices_types = [
-            TensorType(
-                DType.int32,
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        # Flatten kv types for each device
-        flattened_kv_types = tree.leaves(kv_inputs)
-
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        language_model.load_state_dict(
+            state_dict=state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
         )
-
-        return (
-            tokens_type,
-            return_n_logits_type,
-            *input_row_offsets_types,
-            *image_embeddings_types,
-            *image_token_indices_types,
-            *signals.input_types(),
-            *flattened_kv_types,
-        )
-
-    def _build_language_graph(
-        self,
-        config: InternVLConfig,
-        state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Build the language model graph for text generation with image embeddings."""
-        # Initialize graph with input types.
-        with Graph(
+        return GraphSpec(
+            language_model,
             "internvl_language",
-            input_types=self._language_graph_input_types(),
-            module=module,
-        ) as graph:
-            image_context_token_id = _get_image_context_token_id(
-                self.huggingface_config
-            )
-            language_model = InternVLLanguageModel(
-                config, image_context_token_id
-            )
-            language_model.load_state_dict(
-                state_dict=state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-            )
-
-            # Unpack inputs.
-            tokens, return_n_logits, *variadic_args = graph.inputs
-
-            # Extract input_row_offsets (one per device).
-            input_row_offsets = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract image embeddings (one per device).
-            image_embeddings = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract image token indices.
-            image_token_indices = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Multi-GPU passes a signal buffer per device: unmarshal these.
-            signal_buffers = [
-                v.buffer for v in variadic_args[: len(self.devices)]
-            ]
-
-            # Unmarshal the remaining arguments, which are for KV cache.
-            kv_cache = self._unflatten_kv_inputs(
-                variadic_args[len(self.devices) :]
-            )
-
-            # Execute language model: text + image embeddings -> logits
-            outputs = language_model(
-                tokens=tokens.tensor,
-                signal_buffers=signal_buffers,
-                kv_collections=kv_cache,
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets,
-                image_embeddings=image_embeddings,
-                image_token_indices=image_token_indices,
-            )
-
-            graph.output(*outputs)
-
-            return graph, language_model.state_dict()
+            language_model.input_tree(self.kv_params),
+            weights=language_model.state_dict(),
+            group=_COMPILE_GROUP,
+        )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the InternVL model with the prepared inputs."""

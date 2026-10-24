@@ -36,7 +36,7 @@ barriers (the Apple idiom). fp32 is shuffled at width 1 -- the only width the
 Apple shuffle intrinsic supports for non-half dtypes.
 """
 
-from max.gpu import WARP_SIZE, lane_id
+from max.gpu import lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.warp import shuffle_xor
 from std.sys.info import _accelerator_arch
@@ -125,7 +125,7 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
         max_dev.unsafe_ptr(),
         sum_dev.unsafe_ptr(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     var max_host = ctx.enqueue_create_host_buffer[.float32](MMA_DIM)
@@ -163,7 +163,7 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
+    if ctx.compute_capability() < 5:
         print("SKIP: Apple M5 required (16x16 simdgroup MMA fragment)")
         return
     test_frag_row_reduce(ctx)

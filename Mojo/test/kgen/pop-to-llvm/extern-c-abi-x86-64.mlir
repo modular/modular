@@ -70,6 +70,12 @@
 //   H2  arg_attrs_two_reg         argAttrs on two-reg struct  → attr on first register
 //   H3  arg_attrs_sret            argAttrs with sret return   → attr shifted past sret ptr
 //
+// Group I - Narrow integer extension (MOCO-5051)
+//   I1  arg_narrow_ints           ui8, si16, bool, si32 args  -> zeroext, signext, zeroext, none
+//                                 on the call and the declaration; si8 result unmarked
+//   I2  arg_single_field_structs  {si8}, {ui16}, {bool} args  -> i8, i16, i8, unmarked
+//                                 {si8} result                -> i8, unmarked
+//
 // Group F — Vector type fields: SSE classification (regression guards)
 //   F1  arg_vec2xf32_struct       {vector<2xf32>}       correct: f64 (SSE)
 //   F2  arg_vec2xf32_and_f64      {vector<2xf32>,f64}   correct: SSEPair(f64,f64)
@@ -412,7 +418,7 @@ llvm.func @ret_sse_pair() {
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_sret
 llvm.func @ret_sret() {
-  // CHECK: llvm.call @c_d4(%{{.*}}) : (!llvm.ptr) -> ()
+  // CHECK: llvm.call @c_d4(%{{.*}}) : (!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}) -> ()
   // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i64, i64, i64)>
   %r = pop.external_call @c_d4() : () -> !llvm.struct<(i64, i64, i64)>
   llvm.return
@@ -787,4 +793,50 @@ llvm.func @arg_sse_rollback(%a: f64, %b: f64, %c: f64, %d: f64, %e: f64, %f: f64
   llvm.return
 }
 // CHECK: llvm.func @c_r6(f64, f64, f64, f64, f64, f64, f64, !llvm.ptr {llvm.byval = !llvm.struct<(f64, f64)>})
+}
+
+//===----------------------------------------------------------------------===//
+// Group I: Narrow integer extension
+//
+// Rule: clang extends a narrow integer at the producer and
+// relies on it at the consumer. The sign comes from the POP dtype, so the
+// operands arrive as KGEN scalars, as they do from a real compile. Only the
+// arguments are marked: a mark on the result would let LLVM assume the callee
+// extended it, but a C struct flattened to a bare Mojo integer comes back with
+// unspecified upper bits.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// I1: ui8, si16, bool and si32 arguments, si8 result.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_narrow_ints
+llvm.func @arg_narrow_ints(%a: i8, %b: i16, %c: i1, %d: i32) {
+  %u8 = builtin.unrealized_conversion_cast %a : i8 to !kgen.scalar<ui8>
+  %s16 = builtin.unrealized_conversion_cast %b : i16 to !kgen.scalar<si16>
+  %bool = builtin.unrealized_conversion_cast %c : i1 to !kgen.scalar<bool>
+  %s32 = builtin.unrealized_conversion_cast %d : i32 to !kgen.scalar<si32>
+  // CHECK: llvm.call @c_i1(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i8 {llvm.zeroext}, i16 {llvm.signext}, i1 {llvm.zeroext}, i32) -> i8
+  %r = pop.external_call @c_i1(%u8, %s16, %bool, %s32) : (!kgen.scalar<ui8>, !kgen.scalar<si16>, !kgen.scalar<bool>, !kgen.scalar<si32>) -> !kgen.scalar<si8>
+  llvm.return
+}
+// CHECK: llvm.func @c_i1(i8 {llvm.zeroext}, i16 {llvm.signext}, i1 {llvm.zeroext}, i32) -> i8
+}
+
+// -----
+
+// I2: {si8}, {ui16} and {bool} arguments, {si8} result. clang coerces a struct
+// of one narrow integer to an integer of its size and does not extend it, so
+// the coerced integers get no mark, whatever the sign of the field.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_single_field_structs
+llvm.func @arg_single_field_structs(%a: !llvm.struct<(i8)>, %b: !llvm.struct<(i16)>, %c: !llvm.struct<(i1)>) {
+  %s8 = builtin.unrealized_conversion_cast %a : !llvm.struct<(i8)> to !kgen.struct<(scalar<si8>)>
+  %u16 = builtin.unrealized_conversion_cast %b : !llvm.struct<(i16)> to !kgen.struct<(scalar<ui16>)>
+  %bool = builtin.unrealized_conversion_cast %c : !llvm.struct<(i1)> to !kgen.struct<(scalar<bool>)>
+  // CHECK: llvm.call @c_i2(%{{.*}}, %{{.*}}, %{{.*}}) : (i8, i16, i8) -> i8
+  %r = pop.external_call @c_i2(%s8, %u16, %bool) : (!kgen.struct<(scalar<si8>)>, !kgen.struct<(scalar<ui16>)>, !kgen.struct<(scalar<bool>)>) -> !kgen.struct<(scalar<si8>)>
+  llvm.return
+}
+// CHECK: llvm.func @c_i2(i8, i16, i8) -> i8
 }

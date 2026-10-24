@@ -51,7 +51,6 @@ from nn.attention.gpu.sparse_index_fp8_sm100 import (
     fp8_index_score_sm100,
 )
 from nn.attention.mha_operand import MHAOperand, RaggedMHAOperand
-from std.sys.info import _has_blackwell_tcgen05
 from std.testing import assert_equal
 
 comptime NUM_HEADS = 32
@@ -333,9 +332,9 @@ def test_kscale_war(
 
 
 def main() raises:
-    comptime if not _has_blackwell_tcgen05():
-        return
     seed(7)
     with DeviceContext() as ctx:
+        if not ctx.target._has_blackwell_tcgen05():
+            return
         test_kscale_war(4, 1024, 4096, 4, ctx)
         test_kscale_war(1, 8192, 0, 4, ctx)

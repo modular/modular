@@ -69,6 +69,10 @@ class DFlashKimiK25DraftConfig:
     kv_params: KVCacheParams
     rope_scaling: dict[str, Any]
     target_layer_ids: list[int]
+    mask_token_id: int = 0
+    """The token the block's drafted slots stand for."""
+    block_size: int = 0
+    """The block the draft was trained on: its anchor and its drafts."""
 
     residual_multiplier: float = 1.0
     attention_multiplier: float | None = None
@@ -253,6 +257,9 @@ class _DFlashKimiK25Layer(Module):
 class DFlashKimiK25(Module):
     """DFlash draft transformer for a Kimi K2.5 (MLA) target."""
 
+    supports_zero_draft_rows = False
+    ctx_at_draft_cache_length = True
+
     def __init__(self, config: DFlashKimiK25DraftConfig) -> None:
         super().__init__()
         if config.num_hidden_layers <= 0:
@@ -347,35 +354,35 @@ class DFlashKimiK25(Module):
         self.embed_tokens: Any = None
         self.lm_head: Any = None
 
-    def project_target_hidden(
-        self, target_hs_concat: Sequence[TensorValue]
-    ) -> list[TensorValue]:
-        if len(target_hs_concat) != len(self.config.devices):
-            raise ValueError(
-                f"Expected {len(self.config.devices)} per-device target "
-                f"hidden tensors, got {len(target_hs_concat)}."
-            )
-        fc_outs = forward_sharded_layers(self.fc_shards, list(target_hs_concat))
-        return forward_sharded_layers(self.hidden_norm_shards, fc_outs)
-
     def _freqs_cis_per_device(self) -> list[TensorValue]:
         return [
             self.rope.freqs_cis.to(device) for device in self.config.devices
         ]
 
-    def materialize_kv(
+    def materialize(
         self,
-        ctx_hidden: Sequence[TensorValue],
+        target_hidden: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         kv_collections: Sequence[PagedCacheValues],
+        signal_buffers: Sequence[BufferValue],
     ) -> None:
+        del signal_buffers
         num_devices = len(self.config.devices)
+        if len(target_hidden) != num_devices:
+            raise ValueError(
+                f"Expected {num_devices} per-device target hidden tensors, got"
+                f" {len(target_hidden)}."
+            )
+        ctx_hidden = forward_sharded_layers(
+            self.hidden_norm_shards,
+            forward_sharded_layers(self.fc_shards, list(target_hidden)),
+        )
         if not all(
             len(seq) == num_devices
             for seq in (ctx_hidden, input_row_offsets, kv_collections)
         ):
             raise ValueError(
-                "All per-device inputs to materialize_kv must have length "
+                "All per-device inputs to materialize must have length "
                 f"equal to the number of devices ({num_devices})."
             )
         freqs_cis = self._freqs_cis_per_device()
@@ -395,12 +402,18 @@ class DFlashKimiK25(Module):
                 offsets_list,
             )
 
+    def mask_embeddings(
+        self, target_mask: Sequence[TensorValue]
+    ) -> list[TensorValue]:
+        """Returns the target's embedding of the mask token, as trained."""
+        return list(target_mask)
+
     def forward_block(
         self,
         input_embeds: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedCacheValues],
         input_row_offsets: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
         num_devices = len(self.config.devices)
         if not all(
@@ -435,21 +448,22 @@ class DFlashKimiK25(Module):
     def __call__(
         self,
         block_embeds: Sequence[TensorValue],
-        ctx_hidden: Sequence[TensorValue],
+        target_hidden: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
         ctx_kv_collections: Sequence[PagedCacheValues],
         block_kv_collections: Sequence[PagedCacheValues],
         ctx_input_row_offsets: Sequence[TensorValue],
         block_input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
-        self.materialize_kv(
-            ctx_hidden=ctx_hidden,
-            input_row_offsets=ctx_input_row_offsets,
-            kv_collections=ctx_kv_collections,
+        self.materialize(
+            target_hidden,
+            ctx_input_row_offsets,
+            ctx_kv_collections,
+            signal_buffers,
         )
         return self.forward_block(
-            input_embeds=block_embeds,
-            signal_buffers=signal_buffers,
-            kv_collections=block_kv_collections,
-            input_row_offsets=block_input_row_offsets,
+            block_embeds,
+            block_kv_collections,
+            block_input_row_offsets,
+            signal_buffers,
         )

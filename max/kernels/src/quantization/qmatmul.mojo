@@ -37,8 +37,11 @@ from linalg.arch.cpu.vnni_intrinsics import (
     pmaddubs,
     pmaddw,
 )
-from linalg.matmul import elementwise_epilogue_type
-from linalg.utils import partition_work
+from linalg.utils import (
+    ElementwiseEpilogueFn,
+    no_epilogue_fn,
+    partition_work,
+)
 from std.memory import (
     alloc,
     bitcast,
@@ -130,12 +133,14 @@ def matmul_qint4_pack_b[
 
 def _quantize_a_block[
     group_size: Int, aq_type: DType, dtype: DType
-](a_ptr: ImmPointer[Scalar[dtype], _]) -> Tuple[
+](a: TileTensor[mut=False, dtype, ...], row: Int, col: Int) -> Tuple[
     SIMD[aq_type, group_size], Float32
 ]:
     comptime a_zero_point = 128 if aq_type.is_unsigned() else 0
 
-    var fp_data = a_ptr.unsafe_load[width=group_size]()
+    var fp_data = a.load[width=group_size, alignment=align_of[dtype]()](
+        Coord(row, col)
+    )
     var max_value = abs(fp_data).reduce_max()
     var scale = (max_value / 127.0).cast[.float32]()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
@@ -180,12 +185,10 @@ def _quantize_a_buffer[
     for ko in range(0, K, K_BATCH_SIZE):
         var ko_count = min(K_BATCH_SIZE, K - ko)
 
-        var am_ptr = a.ptr.unsafe_offset(ko)
-
         @inline(.always)
         def process_rows[
             tile_m: Int
-        ](m: Int) {mut am_ptr, mut a_quant_ptr, mut a_scale_ptr, imm}:
+        ](m: Int) {mut a_quant_ptr, mut a_scale_ptr, imm}:
             for row in range(tile_m):
                 var ak_quant_ptr = a_quant_ptr.unsafe_offset(
                     row * aq_interleave
@@ -197,7 +200,7 @@ def _quantize_a_buffer[
                     var scale: Float32
                     (quant_data, scale) = _quantize_a_block[
                         group_size, aq_type
-                    ](am_ptr.unsafe_offset(ki))
+                    ](a, m + row, ko + ki)
 
                     # Interleave this local block to the output buffer.
                     #
@@ -221,8 +224,6 @@ def _quantize_a_buffer[
 
                     ak_scale_ptr.unsafe_store(scale)
                     ak_scale_ptr = ak_scale_ptr.unsafe_offset(tile_m)
-
-                am_ptr = am_ptr.unsafe_offset(K)
 
             a_quant_ptr = a_quant_ptr.unsafe_offset(tile_m * ko_count)
             a_scale_ptr = a_scale_ptr.unsafe_offset(
@@ -981,7 +982,8 @@ def _matmul_qint4_m_1[
     group_size: Int,
     aq_type: DType,
     b_layout: TensorLayout = RowMajorLayout[ComptimeInt[2]],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    has_epilogue_fn: Bool = False,
 ](
     a_quant: TileTensor[mut=False, aq_type, address_space=.GENERIC, ...],
     a_scale: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
@@ -994,6 +996,7 @@ def _matmul_qint4_m_1[
     ],
     c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext.CPU] = None,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ):
     comptime assert a_quant.rank == 2
     comptime assert a_scale.rank == 2
@@ -1048,10 +1051,10 @@ def _matmul_qint4_m_1[
 
             c_float.store(c.ptr.unsafe_offset(c.layout(Coord(Idx[0], n))), N)
 
-            comptime if case .Some(func) = elementwise_lambda_fn:
+            comptime if has_epilogue_fn:
                 comptime for nn in range(tile_n):
                     var val = c_float[0, nn]
-                    func[.float32, simd_width]((0, n + nn * simd_width), val)
+                    epilogue_fn[alignment=1]((0, n + nn * simd_width), val)
 
         tile[[2, 1]](0, ceildiv(task_n_count, simd_width), process_cols)
 
@@ -1063,7 +1066,8 @@ def _matmul_qint4_m_any[
     group_size: Int,
     aq_type: DType,
     b_layout: TensorLayout = RowMajorLayout[ComptimeInt[2]],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    has_epilogue_fn: Bool = False,
 ](
     a_quant: TileTensor[mut=False, aq_type, address_space=.GENERIC, ...],
     a_scale: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
@@ -1076,6 +1080,7 @@ def _matmul_qint4_m_any[
     ],
     c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext.CPU] = None,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = align_of[SIMD[.float32, simd_width]]()
@@ -1205,11 +1210,11 @@ def _matmul_qint4_m_any[
                     # otherwise we give intermediate results.
                     var last_k_iter = ceildiv(K, K_BATCH_SIZE) - 1
                     if ko == last_k_iter * K_BATCH_SIZE:
-                        comptime if case .Some(func) = elementwise_lambda_fn:
+                        comptime if has_epilogue_fn:
                             comptime for mm in range(tile_m):
                                 comptime for nn in range(tile_n):
                                     var val = c_float[mm, nn]
-                                    func[.float32, simd_width](
+                                    epilogue_fn[alignment=1](
                                         (m + mm, n + nn * simd_width), val
                                     )
 
@@ -1224,7 +1229,8 @@ def _matmul_qint4[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
     b_layout: TensorLayout = RowMajorLayout[ComptimeInt[2]],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    has_epilogue_fn: Bool = False,
 ](
     a: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b: TileTensor[
@@ -1236,6 +1242,7 @@ def _matmul_qint4[
     ],
     c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext.CPU] = None,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = Alignment.of[SIMD[.float32, simd_width]]()
@@ -1247,9 +1254,9 @@ def _matmul_qint4[
     comptime aq_type = kernel.aq_type()
 
     var a_quant_base = alloc(
-        AllocLayout[Scalar[aq_type], alignment=alignment](count=M * K)
+        AllocLayout[Scalar[aq_type], alignment=alignment](length=M * K)
     )
-    var a_scale_base = alloc(AllocLayout[Float32](count=M * k_groups))
+    var a_scale_base = alloc(AllocLayout[Float32](length=M * k_groups))
 
     var a_quant_ptr: MutPointer[
         Scalar[aq_type], origin_of(a_quant_base._alloc)
@@ -1263,13 +1270,13 @@ def _matmul_qint4[
     kernel.quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     if M == 1:
-        _matmul_qint4_m_1[
-            kernel, group_size, elementwise_lambda_fn=elementwise_lambda_fn
-        ](a_quant, a_scale, b, c, ctx)
+        _matmul_qint4_m_1[kernel, group_size, has_epilogue_fn=has_epilogue_fn](
+            a_quant, a_scale, b, c, ctx, epilogue_fn
+        )
     else:
         _matmul_qint4_m_any[
-            kernel, group_size, elementwise_lambda_fn=elementwise_lambda_fn
-        ](a_quant, a_scale, b, c, ctx)
+            kernel, group_size, has_epilogue_fn=has_epilogue_fn
+        ](a_quant, a_scale, b, c, ctx, epilogue_fn)
 
     dealloc(a_quant_base^)
     dealloc(a_scale_base^)
@@ -1277,7 +1284,6 @@ def _matmul_qint4[
 
 def matmul_qint4[
     group_size: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
@@ -1292,7 +1298,6 @@ def matmul_qint4[
 
     Parameters:
         group_size: Number of elements per quantization group.
-        elementwise_lambda_fn: Optional epilogue applied to each output element.
 
     Args:
         a: Input A tensor in float32.
@@ -1300,13 +1305,61 @@ def matmul_qint4[
         c: Output C tensor in float32.
         ctx: Optional device context for parallel execution.
     """
+    _matmul_qint4_dispatch[group_size](a, b, c, ctx)
 
+
+def matmul_qint4[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    group_size: Int,
+](
+    a: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: Optional[DeviceContext.CPU] = None,
+):
+    """Same as the plain overload, also passing each output element to
+    `epilogue_fn`.
+
+    The kernel uses `c` as its accumulator, so it is written either way.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        group_size: Number of elements per quantization group.
+
+    Args:
+        a: Input A tensor in float32.
+        b: Input B tensor holding packed uint8 int4 weights.
+        c: Output C tensor in float32.
+        epilogue_fn: Epilogue called with each final output element.
+        ctx: Optional device context for parallel execution.
+    """
+    _matmul_qint4_dispatch[group_size, has_epilogue_fn=True](
+        a, b, c, ctx, epilogue_fn
+    )
+
+
+@inline(.always)
+def _matmul_qint4_dispatch[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    //,
+    group_size: Int,
+    *,
+    has_epilogue_fn: Bool = False,
+](
+    a: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    ctx: Optional[DeviceContext.CPU] = None,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+):
     def kernel_dispatch[kernel: _MatmulQInt4Kernel]() {imm}:
         return _matmul_qint4[
             kernel,
             group_size=group_size,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](a, b, c, ctx)
+            has_epilogue_fn=has_epilogue_fn,
+        ](a, b, c, ctx, epilogue_fn)
 
     comptime if CompilationTarget.has_vnni():
         kernel_dispatch[_MatmulQInt4Kernel_x86_vnni]()

@@ -18,7 +18,7 @@ These APIs are imported automatically, just like builtins.
 
 from std.builtin.rebind import downcast
 import std.format._utils as fmt
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.reflection import reflect
 from std.collections import check_bounds, check_slice_bounds
 from std.collections._asan_annotations import (
@@ -35,10 +35,12 @@ from std.memory.alloc import (
     Layout,
 )
 from std.memory import (
+    MaybeUninit,
     Pointer,
     unsafe_memcpy,
     unsafe_uninit_move_n,
 )
+from std.utils._nicheable import NicheIndex, UnsafeNicheable, _FieldNiche
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -149,22 +151,22 @@ struct _ListIterOwned[T: Movable & Deinitable](
         return (iter_len, {iter_len})
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `List` of"
-    " non-`Deinitable` elements"
-)
 @stable(since="1.0")
 struct List[T: AnyType, /](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy a `List` of"
+        " non-`Deinitable` elements"
+    ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Iterable,
     IterableOwned where conforms_to(T, Deinitable & Movable),
     Movable,
     Sized,
+    UnsafeNicheable,
     Writable where conforms_to(T, Writable),
 ):
     """A dynamically-allocated and resizable list.
@@ -419,7 +421,7 @@ struct List[T: AnyType, /](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._storage = alloc(Layout[Self.T](count=capacity))
+            self._storage = alloc(Layout[Self.T](length=capacity))
         else:
             self._storage = Self._dangling_storage()
         self._len = 0
@@ -532,7 +534,7 @@ struct List[T: AnyType, /](
     def _dangling_storage() -> Allocation[Self.T]:
         return ThinAllocation(
             unsafe_owned_ptr=Self._PointerType.unsafe_dangling()
-        ).unsafe_with_layout(Layout[Self.T](count=0))
+        ).unsafe_with_layout(Layout[Self.T](length=0))
 
     @staticmethod
     @inline(.always)
@@ -807,6 +809,26 @@ struct List[T: AnyType, /](
             fmt.TypeNames[Self.T](),
         ).fields(write_fields)
 
+    comptime _Niche = _FieldNiche[Self, "_storage"]
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def niche_count() -> Int:
+        return Self._Niche.niche_count()
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
+        Self._Niche.write_niche[index](memory)
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
+        return Self._Niche.classify_niche(memory)
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -839,7 +861,7 @@ struct List[T: AnyType, /](
     def _realloc(
         mut self, new_capacity: Int
     ) where conforms_to(Self.T, Movable):
-        var new_storage = alloc(Layout[Self.T](count=new_capacity))
+        var new_storage = alloc(Layout[Self.T](length=new_capacity))
         _ = (
             new_storage.storage()
             ._unchecked_subspan(start=0, end=len(self))
@@ -906,6 +928,7 @@ struct List[T: AnyType, /](
         self._len += 1
 
     @inline(.always)
+    @stable(since="1.2")
     def insert(
         mut self, i: Int, var value: Self.T, /
     ) where conforms_to(Self.T, Movable):
@@ -1355,6 +1378,7 @@ struct List[T: AnyType, /](
             raise "ValueError: Given element is not in list"
         return result.value()
 
+    @stable(since="1.2")
     def clear(
         mut self,
     ) where conforms_to(Self.T, Deinitable):
@@ -1390,7 +1414,7 @@ struct List[T: AnyType, /](
 
         A list that never allocated has no storage to hand over, so the
         returned `Allocation` wraps a dangling pointer and a `Layout` with a
-        `count` of zero. Check `layout().count()` before deallocating it.
+        `length` of zero. Check its `len()` before deallocating it.
 
         Examples:
 

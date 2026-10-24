@@ -37,7 +37,7 @@ from std.collections.string.iterators import (
     GraphemeIndicesIter,
     GraphemeSliceIter,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.format._utils import _TotalWritableBytes, _FlushingWriteBuffer
 from std.math import align_down
 from std.os import PathLike, abort
@@ -47,7 +47,8 @@ from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
-from std.memory import unsafe_memcmp, pack_bits
+from std.memory import unsafe_memcmp, pack_bits, MaybeUninit
+from std.utils._nicheable import NicheIndex, UnsafeNicheable, _FieldNiche
 from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
@@ -105,6 +106,7 @@ struct StringSpan[origin: ImmOrigin](
     KeyElement,
     PathLike,
     TrivialRegisterPassable,
+    UnsafeNicheable,
     Writable,
 ):
     """An immutable, non-owning view into encoded string data.
@@ -534,6 +536,26 @@ struct StringSpan[origin: ImmOrigin](
             raise cpy.unsafe_get_error()
         return PythonObject(from_owned=unicode)
 
+    comptime _Niche = _FieldNiche[Self, "_slice"]
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def niche_count() -> Int:
+        return Self._Niche.niche_count()
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
+        Self._Niche.write_niche[index](memory)
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
+        return Self._Niche.classify_niche(memory)
+
     # ===------------------------------------------------------------------===#
     # Operator dunders
     # ===------------------------------------------------------------------===#
@@ -578,6 +600,17 @@ struct StringSpan[origin: ImmOrigin](
             If the `StringSpan` is equal to the input in length and contents.
         """
         return self == StringSpan(rhs)
+
+    def __eq__(self, rhs: StringLiteral) -> Bool:
+        """Verify if a `StringSpan` is equal to a `StringLiteral`.
+
+        Args:
+            rhs: The `StringLiteral` to compare against.
+
+        Returns:
+            If the `StringSpan` is equal to the input in length and contents.
+        """
+        return self == StaticString(rhs)
 
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
@@ -625,6 +658,19 @@ struct StringSpan[origin: ImmOrigin](
 
         Args:
             rhs: The `StringSpan` to compare against.
+
+        Returns:
+            If the `StringSpan` is not equal to the input in length and
+            contents.
+        """
+        return not self == rhs
+
+    @inline(.always)
+    def __ne__(self, rhs: StringLiteral) -> Bool:
+        """Verify if a `StringSpan` is not equal to a `StringLiteral`.
+
+        Args:
+            rhs: The `StringLiteral` to compare against.
 
         Returns:
             If the `StringSpan` is not equal to the input in length and

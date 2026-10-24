@@ -35,11 +35,13 @@ import numpy as np
 import pytest
 from max.driver import (
     Accelerator,
+    Buffer,
     DeviceSpec,
     accelerator_api,
     accelerator_count,
 )
 from max.dtype import DType
+from max.experimental import functional as F
 from max.experimental.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
@@ -120,19 +122,18 @@ def device_spec() -> DeviceSpec:
 
 @pytest.fixture
 def vae(device_spec: DeviceSpec) -> Vae:
-    """Eagerly-constructed ``Vae`` with zero-initialised weights.
+    """Lazily-constructed ``Vae`` with zero-initialised weights.
 
-    Function-scoped so each test gets a fresh ``Vae``.  Mojo kernel
-    caching across tests keeps the per-test construction cost low
-    after the first invocation, and per-test isolation avoids
-    CUDA-state pollution that surfaces when GPU tests share a long-
-    lived Module with structural-only tests.
+    Lazy, as the pipeline builds it: an allocation on the device would
+    stop the ``precompile_mefs`` record run before the compile test
+    reaches its compile.
     """
-    return Vae(
-        huggingface_config=_tiny_flux2_vae_config(),
-        quantization_encoding="bfloat16",
-        device_specs=[device_spec],
-    )
+    with F.lazy():
+        return Vae(
+            huggingface_config=_tiny_flux2_vae_config(),
+            quantization_encoding="bfloat16",
+            device_specs=[device_spec],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +372,17 @@ def test_vae_wrapper_compile(vae: Vae, device_spec: DeviceSpec) -> None:
     h_carrier_type = TensorType(DType.bfloat16, shape=[4], device=device_ref)
     w_carrier_type = TensorType(DType.bfloat16, shape=[4], device=device_ref)
 
+    # Host zeros, because binding the lazy parameters would run eager
+    # ops that the interpreter compiles on the fly on the GPU worker.
+    weights = {
+        name: Buffer.zeros([int(d) for d in param.shape], param.dtype)
+        for name, param in wrapper.parameters
+    }
     compiled = wrapper.compile(
-        image_type, latents_type, h_carrier_type, w_carrier_type
+        image_type,
+        latents_type,
+        h_carrier_type,
+        w_carrier_type,
+        weights=weights,
     )
     assert compiled is not None

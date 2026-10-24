@@ -6,6 +6,7 @@ load(
     "modular_py_test",
     "requirement",
 )
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -50,6 +51,9 @@ modular_py_test(
 modular_py_test(
     name = "test_memory_planner",
     srcs = ["test_memory_planner.py"],
+    tags = ["skip-external-ci"],
+    # Needs mega_ffn.ep_fused_plan (fused EP MoE), registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -60,6 +64,20 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/glm5_1_modulev3",
         "//max/python/max/pipelines/architectures/unified_mtp_glm5_2",
         "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_modulev3_nvfp4_kv",
+    srcs = ["test_modulev3_nvfp4_kv.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/architectures/unified_mtp_glm5_2_modulev3",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -106,6 +124,7 @@ modular_py_test(
         exclude = [
             "test_chat_template.py",
             "test_memory_planner.py",
+            "test_modulev3_nvfp4_kv.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
         ],

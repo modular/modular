@@ -557,6 +557,14 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
 
     // MlirType is omitted if same as typeValue.
     #kgen.type<!myTypeValue> : !kgen.type
+
+    // A type value that holds the same value in both the value and layout
+    // domains:
+    #kgen.type<!kgen.struct<[index] value>, !kgen.struct<(index)>>
+
+    // A type value that holds more than its layout is kept.
+    #kgen.type<!kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(f32)>]] value>,
+               !kgen.struct<(struct<(f32)>)>>
     ```
   }];
 
@@ -990,40 +998,6 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
     FailureOr<TypedAttr> simplify(ConformanceOp witnessTable,
                                   ParameterEvaluator *evaluator = nullptr) const;
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// CompileOffloadClosureAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_CompileOffloadClosureAttr : KGEN_ExprAttr<"CompileOffloadClosure",
-    "compile_offload_closure", [ContextuallyEvaluatedAttrInterface]> {
-  let summary = "Compile offload closure for a given target.";
-  let description = [{
-    The `#kgen.compile_offload_closure` attribute is used to compile offload
-    closures for a given target.
-
-    Example:
-
-    ```mlir
-    #kgen.compile_offload_closure<
-      #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
-      #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>
-    > : !kgen.string
-    ```
-  }];
-
-  let parameters = (ins
-    "TypedAttr":$target,
-    "TypedAttr":$func,
-    AttributeSelfTypeParameter<"", "Type">:$type
-  );
-
-  let assemblyFormat = [{
-    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,` $func `>`
-  }];
-
-  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2725,11 +2699,17 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_LinkDependencyArrayAttr : ArrayOfAttr<KGENDialect,
-  "LinkDependencyArray", "link.dependencies", "FlatSymbolRefAttr"> {
+  "LinkDependencyArray", "link.dependencies", "SymbolRefAttr"> {
   let summary = "List of references to link dependencies.";
   let description = [{
     The `#kgen.link.dependencies` attribute represents a list of link
-    dependencies, which are flat symbol references.
+    dependencies.
+
+    Example:
+
+    ```mlir
+    #kgen<link.dependencies[@std, @namespace::@sub]>
+    ```
   }];
 }
 
@@ -3405,6 +3385,10 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
 
     /// For a MemberAlias sugar, return the base type.
     Type getMemberAliasType() const;
+
+    /// Return the alias declaration for this sugar. Handles both `MyAlias`
+    /// and `MyAlias[T]` syntaxes.
+    ParamDeclRefAttr getAliasDeclRef() const;
 
     static TypedAttr getAlwaysInlineBuiltin(TypedAttr sugared,
                                             TypedAttr expanded) {

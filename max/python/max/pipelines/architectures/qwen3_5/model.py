@@ -14,35 +14,26 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
 from max import tree
-from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    Module,
-    TensorType,
-)
 from max.graph.buffer_utils import cast_tensors_to
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    RecurrentStateInputsPerDevice,
-    recurrent_leaf,
-)
+from max.nn.kv_cache import KVCacheParamInterface, recurrent_leaf
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
-    CompilationTimer,
     ModelInputs,
     ModelOutputs,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -52,10 +43,12 @@ from ..qwen3vl_moe.context import Qwen3VLTextAndVisionContext
 from .batch_processor import Qwen3_5BatchProcessor
 from .model_config import Qwen3_5Config
 from .qwen3_5 import Qwen3_5
-from .state_cache import ATTN_CACHE_KEY, STATE_CACHE_KEY
 from .vision_packing import Qwen3_5VisionInputs, pack_uncached_images
 
 logger = logging.getLogger("max.pipelines")
+
+# The language and vision graphs compile into one artifact.
+_COMPILE_GROUP = "qwen3_5"
 
 
 @dataclass
@@ -167,6 +160,23 @@ def _check_weights_match(expected: set[str], provided: set[str]) -> None:
         )
 
 
+def _loaded_module(
+    config: Qwen3_5Config, state_dict: dict[str, Any]
+) -> Qwen3_5:
+    module = Qwen3_5(config)
+    _check_weights_match(
+        expected=set(module.raw_state_dict().keys()),
+        provided=set(state_dict.keys()),
+    )
+    module.load_state_dict(
+        state_dict,
+        override_quantization_encoding=True,
+        weight_alignment=1,
+        strict=False,
+    )
+    return module
+
+
 class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     """Qwen3.5 pipeline model implementation.
 
@@ -186,8 +196,9 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     # Vision model (None for text-only checkpoints)
     vision_model: Model | None = None
-    _vision_state_dict: dict[str, DLPackArray] | None = None
-    _nn_model: Any = None
+    _models: Mapping[str, Model]
+    # The adapted checkpoint, which `graph_specs` loads into the modules.
+    _checkpoint: dict[str, Any]
     _session: InferenceSession | None = None
 
     # Model dtype and hidden size (set during graph build, used for empty buffers)
@@ -208,6 +219,60 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     # always has the right input count. Cached: see empty_vision_embeddings.
     _empty_vision_embeddings: list[Buffer] | None = None
 
+    @classmethod
+    def build_module(
+        cls, context: ModelLoadContext
+    ) -> tuple[Qwen3_5, Qwen3_5Config]:
+        """Builds the hybrid model from the checkpoint ``context`` names.
+
+        A caller that sized the cache passes its KV params. A module that
+        encodes no images builds no vision tower, but keeps the 3-axis
+        positions of a checkpoint that has one.
+        """
+        state_dict = parse_state_dict_from_weights(
+            context.pipeline_config, context.weights, context.adapter
+        )
+        config = cls._finalized_config(context, state_dict)
+        return _loaded_module(config, state_dict), config
+
+    @classmethod
+    def _finalized_config(
+        cls, context: ModelLoadContext, state_dict: dict[str, Any]
+    ) -> Qwen3_5Config:
+        huggingface_config = context.huggingface_config
+        config = Qwen3_5Config.initialize_from_config(
+            context.pipeline_config,
+            huggingface_config,
+            max_seq_len=context.max_seq_len,
+        )
+        if context.kv_params is not None:
+            assert isinstance(context.kv_params, KVCacheParamInterface)
+            config.kv_params = context.kv_params
+        if not context.encodes_images:
+            # Tokens after an image still take its positions.
+            config.mrope_without_encoder = config.vision_config is not None
+            config.vision_config = None
+        config.finalize(
+            huggingface_config=Qwen3_5Config._get_text_config(
+                huggingface_config
+            ),
+            state_dict=state_dict,
+            return_logits=context.return_logits,
+            return_hidden_states=context.return_hidden_states,
+            norm_method=cls.norm_method,
+            attention_bias=cls.attention_bias,
+        )
+        if context.target_layer_ids:
+            config.target_layer_ids = list(context.target_layer_ids)
+
+        # finalize() reads tie_word_embeddings from the text sub-config,
+        # which inherits PretrainedConfig's default of True.  The correct
+        # value lives on the top-level config.
+        config.tie_word_embeddings = getattr(
+            huggingface_config, "tie_word_embeddings", False
+        )
+        return config
+
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         self._session = session
@@ -225,35 +290,16 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
             ).to(self.devices[0])
 
-        with CompilationTimer("model") as timer:
-            module = Module()
-            state_dict = self._load_state_dict()
-            language_graph = self._build_language_graph(
-                state_dict, module=module
-            )
-            # Text-only checkpoints have no vision tower, hence no vision graph.
-            vision_graph = (
-                self._build_vision_graph(module=module)
-                if self._vision_state_dict is not None
-                else None
-            )
-            timer.mark_build_complete()
-            models = session.load_all(
-                module,
-                weights_registry={
-                    **self.state_dict,
-                    **(self._vision_state_dict or {}),
-                },
-            )
-            model = models[language_graph.name]
-            self.vision_model = (
-                models[vision_graph.name] if vision_graph is not None else None
-            )
+        self._models = self.load_graphs(session)
+        self.vision_model = self._models.get(GraphRole.VISION)
+        # The modules hold what they need of it; keeping the checkpoint would
+        # pin its host copies for the model's lifetime.
+        self._checkpoint = {}
 
         if self._num_linear_layers > 0 and not is_virtual_device_mode():
             self.check_state_budget()
 
-        return model
+        return self._models[GraphRole.DECODER]
 
     def check_state_budget(self) -> None:
         """Checks the state the cache declares against what planning budgeted.
@@ -352,280 +398,68 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             ]
         return self._empty_vision_embeddings
 
-    def _build_vision_graph(self, module: Module) -> Graph:
-        """Build the vision encoder graph for processing images."""
-        assert isinstance(self._nn_model, Qwen3_5), (
-            "_build_vision_graph called before _build_graph"
-        )
-        vision_encoder = self._nn_model.vision_encoder
-        assert vision_encoder is not None, (
-            "_build_vision_graph called but no vision encoder"
-        )
+    def _load_state_dict(self) -> dict[str, Any]:
+        self._checkpoint = super()._load_state_dict()
+        return self._checkpoint
 
-        patch_dim = vision_encoder.patch_embed.patch_dim
-
-        # Input types - one per device (currently single-device only; see arch.py)
-        pixel_values_types = [
-            TensorType(
-                DType.float32,
-                shape=["vision_seq_len", patch_dim],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-        # The bilinear position grid is interpolated once per FRAME while
-        # pixels and rotary ids carry one row per temporal PATCH, so these two
-        # are sum(h * w) long against pixel_values' sum(t * h * w). Binding
-        # them to `vision_seq_len` would be an over-constraint that only holds
-        # for still images (t == 1) and rejects every clip.
-        weights_types = [
-            TensorType(
-                DType.float32,
-                shape=[4, "vision_pos_len", 1],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-        indices_types = [
-            TensorType(
-                DType.int64,
-                shape=[4, "vision_pos_len"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-        rot_pos_ids_types = [
-            TensorType(
-                DType.int32,
-                shape=["vision_seq_len", 2],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-        max_grid_size_types = [
-            TensorType(DType.int32, shape=[], device=DeviceRef.CPU())
-            for _ in self.devices
-        ]
-        grid_thw_types = [
-            TensorType(
-                DType.int64,
-                shape=["n_images", 3],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-        cu_seqlens_types = [
-            TensorType(
-                DType.uint32,
-                shape=["n_seqlens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-        max_seqlen_types = [
-            TensorType(DType.uint32, shape=[1], device=DeviceRef.CPU())
-            for _ in self.devices
-        ]
-
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Qwen3_5Config:
+        return self._finalized_config(
+            ModelLoadContext.from_pipeline_model(self), state_dict
         )
 
-        with Graph(
-            "qwen3_5_vision",
-            input_types=(
-                *pixel_values_types,
-                *weights_types,
-                *indices_types,
-                *rot_pos_ids_types,
-                *max_grid_size_types,
-                *grid_thw_types,
-                *cu_seqlens_types,
-                *max_seqlen_types,
-                *signals.input_types(),
-            ),
-            module=module,
-        ) as graph:
-            all_inputs = graph.inputs
-            n = len(self.devices)
-
-            pixel_values_list = [inp.tensor for inp in all_inputs[:n]]
-            weights_list = [inp.tensor for inp in all_inputs[n : 2 * n]]
-            indices_list = [inp.tensor for inp in all_inputs[2 * n : 3 * n]]
-            rot_pos_ids_list = [inp.tensor for inp in all_inputs[3 * n : 4 * n]]
-            max_grid_size_list = [
-                inp.tensor for inp in all_inputs[4 * n : 5 * n]
-            ]
-            grid_thw_list = [inp.tensor for inp in all_inputs[5 * n : 6 * n]]
-            cu_seqlens_list = [inp.tensor for inp in all_inputs[6 * n : 7 * n]]
-            max_seqlen_list = [inp.tensor for inp in all_inputs[7 * n : 8 * n]]
-            signal_buffers = [inp.buffer for inp in all_inputs[8 * n :]]
-
-            # Qwen3.5 does not use deepstack (intermediate visual features
-            # injected at multiple LM depths) — that is a Qwen3VL-MoE feature.
-            image_embeddings, _ = vision_encoder(
-                pixel_values=pixel_values_list,
-                idxs=indices_list,
-                weights=weights_list,
-                grid_thw=grid_thw_list,
-                rot_pos_ids=rot_pos_ids_list,
-                max_grid_size=max_grid_size_list,
-                cu_seqlens=cu_seqlens_list,
-                max_seqlen=max_seqlen_list,
-                signal_buffers=signal_buffers,
-            )
-            assert image_embeddings is not None
-
-            graph.output(*image_embeddings)
-            return graph
-
-    def _build_language_graph(
-        self,
-        state_dict: dict[str, Any],
-        module: Module,
-    ) -> Graph:
-        full_state_dict = state_dict
-
-        model_config = Qwen3_5Config.initialize_from_config(
-            self.pipeline_config,
-            self.huggingface_config,
-            max_seq_len=self.max_seq_len,
-        )
-        model_config.finalize(
-            huggingface_config=Qwen3_5Config._get_text_config(
-                self.huggingface_config
-            ),
-            state_dict=full_state_dict,
-            return_logits=self.return_logits,
-            norm_method=self.norm_method,
-            attention_bias=self.attention_bias,
+    def graph_specs(self, model_config: Qwen3_5Config) -> dict[str, GraphSpec]:
+        """Returns the decoder, and the vision encoder unless the checkpoint
+        is text-only, in one compile group."""
+        nn_model = _loaded_module(model_config, self._checkpoint)
+        input_types = self._bind_graph_inputs(
+            nn_model.input_tree(self.kv_params)
         )
 
-        # finalize() reads tie_word_embeddings from the text sub-config,
-        # which inherits PretrainedConfig's default of True.  The correct
-        # value lives on the top-level config.
-        model_config.tie_word_embeddings = getattr(
-            self.huggingface_config, "tie_word_embeddings", False
-        )
-        nn_model = Qwen3_5(model_config)
-
-        graph_inputs = nn_model.input_types(self.kv_params)
-
-        _check_weights_match(
-            expected=set(nn_model.raw_state_dict().keys()),
-            provided=set(full_state_dict.keys()),
-        )
-
-        nn_model.load_state_dict(
-            full_state_dict,
-            override_quantization_encoding=True,
-            weight_alignment=1,
-            strict=False,
-        )
-
-        # Split processed state dict into vision and LM parts.
-        # Vision keys keep their "vision_encoder." prefix because the graph
-        # resolves weights relative to nn_model (the root), so the registry
-        # must match those fully-qualified paths.
+        # Split the processed state dict into vision and LM parts. Vision
+        # keys keep their "vision_encoder." prefix: the weights are named
+        # from nn_model, the root, when it loads them.
         processed = nn_model.state_dict()
         vision_prefix = "vision_encoder."
-        self._vision_state_dict = {
+        vision_state_dict = {
             k: v for k, v in processed.items() if k.startswith(vision_prefix)
-        } or None
+        }
         self.state_dict = {
             k: v
             for k, v in processed.items()
             if not k.startswith(vision_prefix)
         }
-        # Keep a reference so _build_vision_graph can access vision_encoder
-        self._nn_model = nn_model
 
-        num_devices = len(self.devices)
         self._num_linear_layers = len(nn_model.linear_layer_indices)
         self._hidden_size = model_config.hidden_size
         self._model_dtype = model_config.compute_dtype
         self._state_dtype = model_config.state_dtype
         self._accounted_state_bytes = model_config._per_request_state_bytes()
 
-        has_vision = nn_model.vision_encoder is not None
-        # Vision adds image_embeddings + image_token_indices, per device.
-        vision_input_count = 2 * num_devices if has_vision else 0
-        # M-RoPE adds one shared [3, total_seq_len] positions tensor.
+        vision_encoder = nn_model.vision_encoder
         self._mrope_enabled = nn_model.mrope_enabled
         if isinstance(self._batch_processor, Qwen3_5BatchProcessor):
             self._batch_processor.mrope_enabled = self._mrope_enabled
-            self._batch_processor.vision_enabled = has_vision
-        position_ids_count = 1 if nn_model.mrope_enabled else 0
+            self._batch_processor.vision_enabled = vision_encoder is not None
 
-        with Graph(
-            "qwen3_5",
-            input_types=graph_inputs,
-            module=module,
-        ) as graph:
-            tokens, input_row_offsets, return_n_logits, *variadic_args = (
-                graph.inputs
+        specs: dict[str, GraphSpec] = {
+            GraphRole.DECODER: GraphSpec(
+                nn_model,
+                "qwen3_5",
+                input_types,
+                weights=self.state_dict,
+                group=_COMPILE_GROUP,
             )
-
-            # Extract signal buffers
-            signal_buffers = [v.buffer for v in variadic_args[:num_devices]]
-
-            # The state child sits inside the KV slice, so one unflatten
-            # resolves both.
-            kv_start = num_devices
-            kv_count = (
-                len(variadic_args)
-                - num_devices
-                - vision_input_count
-                - position_ids_count
+        }
+        # Text-only checkpoints have no vision tower, hence no vision graph.
+        if vision_encoder is not None:
+            specs[GraphRole.VISION] = GraphSpec(
+                vision_encoder,
+                "qwen3_5_vision",
+                vision_encoder.input_types(),
+                weights=vision_state_dict,
+                group=_COMPILE_GROUP,
             )
-            kv_cache_inputs = variadic_args[kv_start : kv_start + kv_count]
-            kv_tree = self.kv_params.unflatten_kv_inputs(iter(kv_cache_inputs))
-
-            assert isinstance(kv_tree, dict)
-            kv_collections = tree.leaves(
-                kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
-            )
-            state = tree.leaves(
-                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
-            )
-
-            idx = kv_start + kv_count
-
-            # Extract vision inputs (only present for multimodal models)
-            image_embeddings_g = None
-            image_token_indices_g = None
-            if has_vision:
-                image_embeddings_g = [
-                    variadic_args[idx + d].tensor for d in range(num_devices)
-                ]
-                image_token_indices_g = [
-                    variadic_args[idx + num_devices + d].tensor
-                    for d in range(num_devices)
-                ]
-                idx += vision_input_count
-
-            position_ids_g = (
-                variadic_args[idx].tensor if position_ids_count else None
-            )
-
-            assert state, (
-                "Qwen3.5 graph requires linear attention layers; the cache"
-                " declared no recurrent state child"
-            )
-            outputs = nn_model(
-                tokens.tensor,
-                kv_collections,
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-                signal_buffers,
-                list(state),
-                image_embeddings_g,
-                image_token_indices_g,
-                position_ids_g,
-            )
-
-            graph.output(*outputs)
-            return graph
+        return specs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Qwen3_5Inputs)

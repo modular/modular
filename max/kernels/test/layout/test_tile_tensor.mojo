@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.utils.index import IndexList
 from layout import (
     ComptimeInt,
     Coord,
@@ -23,7 +22,7 @@ from layout import (
     Layout,
     UNKNOWN_VALUE,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout, blocked_product
 from layout.tile_tensor import _SubscriptArgs, _subscript_static_offset
 from std.builtin.builtin_slice import ContiguousSlice
 from layout.swizzle import Swizzle
@@ -324,8 +323,8 @@ def test_tensor_span_constructor() raises:
 def test_fill() raises:
     var stack = Array[UInt32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]()).fill(1)
-    for i in range(Int(tensor.layout.shape[0]().value())):
-        for j in range(Int(tensor.layout.shape[1]().value())):
+    for i in range(Int(tensor.dim[0]())):
+        for j in range(Int(tensor.dim[1]())):
             assert_equal(tensor[i, j], 1)
 
 
@@ -333,8 +332,8 @@ def test_fill_large() raises:
     # layout._fillers.BATCH_SIZE is 2048, so we do 4096
     var stack = Array[UInt32, 4096](fill=0)
     var tensor = TileTensor(stack, row_major[2048, 2]()).fill(1)
-    for i in range(Int(tensor.layout.shape[0]().value())):
-        for j in range(Int(tensor.layout.shape[1]().value())):
+    for i in range(Int(tensor.dim[0]())):
+        for j in range(Int(tensor.dim[1]())):
             assert_equal(tensor[i, j], 1)
 
 
@@ -494,7 +493,7 @@ def test_slice_3d() raises:
 
     # Test that it's a view
     sliced_3d[Coord(Idx[0], Idx[0], Idx[0])] = 999
-    assert_equal(tensor_3d[Coord(Idx[1], Idx[1], Idx[1])], 999)
+    assert_equal(tensor_3d[Idx[1], Idx[1], Idx[1]], 999)
 
 
 # def test_slice_runtime_shapes() raises:
@@ -570,7 +569,7 @@ def test_slice_dynamic() raises:
 
     # Verify it's a view
     sliced[Coord(Idx[0], Idx[0])] = 99
-    assert_equal(tensor_2d[Coord(Idx[1], Idx[1])], 99)
+    assert_equal(tensor_2d[Idx[1], Idx[1]], 99)
 
 
 def test_vectorize() raises:
@@ -596,19 +595,19 @@ def test_vectorize() raises:
 
     # Verify that vectorized[i, j] returns a SIMD vector starting at the (i,j) block
     # Block (0, 0) starts at element 0 - check first element of the SIMD vector
-    assert_equal(vectorized[Coord(Idx[0], Idx[0])][0], 0)
+    assert_equal(vectorized[Idx[0], Idx[0]][0], 0)
 
     # Block (0, 1) starts at element 4 (column offset by vector width)
-    assert_equal(vectorized[Coord(Idx[0], Idx[1])][0], 4)
+    assert_equal(vectorized[Idx[0], Idx[1]][0], 4)
 
     # Block (1, 0) starts at element 64 (row offset by vector height * row stride)
-    assert_equal(vectorized[Coord(Idx[1], Idx[0])][0], 64)
+    assert_equal(vectorized[Idx[1], Idx[0]][0], 64)
 
     # Block (1, 1) starts at element 68
-    assert_equal(vectorized[Coord(Idx[1], Idx[1])][0], 68)
+    assert_equal(vectorized[Idx[1], Idx[1]][0], 68)
 
     # Block (3, 3) is the last block, starts at element 3*64 + 3*4 = 204
-    assert_equal(vectorized[Coord(Idx[3], Idx[3])][0], 204)
+    assert_equal(vectorized[Idx[3], Idx[3]][0], 204)
 
 
 def test_vectorize_non_square() raises:
@@ -704,10 +703,10 @@ def test_vectorize_fully_runtime_dims() raises:
     assert_equal(vectorized.layout.stride[0]().value(), 64)
     assert_equal(vectorized.layout.stride[1]().value(), 4)
 
-    assert_equal(vectorized[Coord(Idx[0], Idx[0])][0], 0)
-    assert_equal(vectorized[Coord(Idx[0], Idx[1])][0], 4)
-    assert_equal(vectorized[Coord(Idx[1], Idx[0])][0], 64)
-    assert_equal(vectorized[Coord(Idx[3], Idx[3])][0], 204)
+    assert_equal(vectorized[Idx[0], Idx[0]][0], 0)
+    assert_equal(vectorized[Idx[0], Idx[1]][0], 4)
+    assert_equal(vectorized[Idx[1], Idx[0]][0], 64)
+    assert_equal(vectorized[Idx[3], Idx[3]][0], 204)
 
 
 def test_distribute_runtime_dims() raises:
@@ -780,44 +779,6 @@ def test_indexing() raises:
     var tensor = TileTensor(stack, row_major[2, 2]())
     assert_equal(tensor[Int32(0), Int64(0)], 1)
     assert_equal(tensor[Int(1), Int64(0)], 3)
-
-
-def test_to_layout_tensor_square() raises:
-    var stack: Array[UInt8, 4] = [1, 2, 3, 4]
-    var tensor = TileTensor(stack, row_major[2, 2]()).to_layout_tensor()
-    assert_equal(materialize[tensor.layout](), Layout.row_major(2, 2))
-    assert_equal(tensor.rank, 2)
-    assert_equal(
-        rebind[IndexList[2]](tensor.runtime_layout.shape.value.canonicalize()),
-        IndexList[2](2, 2),
-    )
-
-
-def test_to_layout_tensor_3d() raises:
-    var stack = Array[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = TileTensor(stack, row_major[64, 8, 4]())
-    var lt = tensor.to_layout_tensor()
-    assert_equal(materialize[lt.layout](), Layout.row_major(64, 8, 4))
-    assert_equal(lt.rank, 3)
-    assert_equal(
-        rebind[IndexList[3]](lt.runtime_layout.shape.value.canonicalize()),
-        IndexList[3](64, 8, 4),
-    )
-
-
-def test_to_layout_tensor_3d_dynamic() raises:
-    var stack = Array[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = TileTensor(stack, row_major(Idx[64], Idx[8], Int(4)))
-    var lt = tensor.to_layout_tensor()
-    assert_equal(
-        materialize[lt.layout](),
-        Layout.row_major(64, 8, UNKNOWN_VALUE),
-    )
-    assert_equal(lt.rank, 3)
-    assert_equal(
-        rebind[IndexList[3]](lt.runtime_layout.shape.value.canonicalize()),
-        IndexList[3](64, 8, 4),
-    )
 
 
 def test_coalesce_2d() raises:
@@ -907,7 +868,7 @@ def test_coalesce_element_size() raises:
         assert_equal(coalesced[i], Int32(i))
 
 
-def test_load_store_linear_row_major() raises:
+def test_load_store_row_major() raises:
     # 3x4 row-major: strides are (4, 1)
     var data = Array[Int32, 12](fill=0)
     for i in range(12):
@@ -915,28 +876,28 @@ def test_load_store_linear_row_major() raises:
 
     var tensor = TileTensor(data, row_major(Idx[3], Idx[4]))
 
-    # Verify load_linear at known positions.
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 0))), 0)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 3))), 30)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 0))), 40)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 3))), 110)
+    # Verify load at known positions.
+    assert_equal(Int(tensor.load[1](coord[0, 0])), 0)
+    assert_equal(Int(tensor.load[1](coord[0, 3])), 30)
+    assert_equal(Int(tensor.load[1](coord[1, 0])), 40)
+    assert_equal(Int(tensor.load[1](coord[2, 3])), 110)
 
     # Verify vectorized load (width=2).
-    var vec = tensor.load_linear[2](IndexList[2](1, 0))
+    var vec = tensor.load[2](coord[1, 0])
     assert_equal(Int(vec[0]), 40)
     assert_equal(Int(vec[1]), 50)
 
-    # Verify store_linear.
-    tensor.store_linear(IndexList[2](0, 1), Int32(999))
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 1))), 999)
+    # Verify store.
+    tensor.store(coord[0, 1], Int32(999))
+    assert_equal(Int(tensor.load[1](coord[0, 1])), 999)
 
     # Verify vectorized store (width=2).
-    tensor.store_linear(IndexList[2](2, 0), SIMD[.int32, 2](77, 88))
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 0))), 77)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 1))), 88)
+    tensor.store(coord[2, 0], SIMD[.int32, 2](77, 88))
+    assert_equal(Int(tensor.load[1](coord[2, 0])), 77)
+    assert_equal(Int(tensor.load[1](coord[2, 1])), 88)
 
 
-def test_load_store_linear_non_trivial_stride() raises:
+def test_load_store_non_trivial_stride() raises:
     # 2x3 column-major: shape (2,3), strides (1,2) — non-contiguous access
     var data = Array[Int32, 6](fill=0)
     for i in range(6):
@@ -962,16 +923,16 @@ def test_load_store_linear_non_trivial_stride() raises:
     # (1,1) -> offset 3 -> data[3] = 3
     # (0,2) -> offset 4 -> data[4] = 4
     # (1,2) -> offset 5 -> data[5] = 5
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 0))), 0)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 0))), 1)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 1))), 2)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 1))), 3)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 2))), 4)
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 2))), 5)
+    assert_equal(Int(tensor.load[1](coord[0, 0])), 0)
+    assert_equal(Int(tensor.load[1](coord[1, 0])), 1)
+    assert_equal(Int(tensor.load[1](coord[0, 1])), 2)
+    assert_equal(Int(tensor.load[1](coord[1, 1])), 3)
+    assert_equal(Int(tensor.load[1](coord[0, 2])), 4)
+    assert_equal(Int(tensor.load[1](coord[1, 2])), 5)
 
     # Store and verify.
-    tensor.store_linear(IndexList[2](1, 1), Int32(42))
-    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 1))), 42)
+    tensor.store(coord[1, 1], Int32(42))
+    assert_equal(Int(tensor.load[1](coord[1, 1])), 42)
     # Verify underlying data: offset 3 should be 42.
     assert_equal(Int(data[3]), 42)
 
@@ -1010,11 +971,11 @@ def test_linear_idx_type_recomputed_after_tile() raises:
     var stack = Array[Int32, 256](fill=0)
     var tensor = TileTensor(stack, row_major[16, 16]())
     # Original: cosize=256, int32
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    assert_equal(type_of(tensor).linear_idx_type, .int32)
 
     # After tiling: new layout has smaller cosize, still int32
     var tiled = tensor.tile[4, 4]((Idx[0], Idx[0]))
-    assert_equal(type_of(tiled).linear_idx_type, DType.int32)
+    assert_equal(type_of(tiled).linear_idx_type, .int32)
     _ = tiled
 
 
@@ -1022,12 +983,12 @@ def test_linear_idx_type_recomputed_after_distribute() raises:
     """After distribute(), linear_idx_type is recomputed from the new layout."""
     var stack = Array[Int32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]())
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    assert_equal(type_of(tensor).linear_idx_type, .int32)
 
     comptime thread_layout = row_major(Idx[2], Idx[2])
     var frag = tensor.distribute[thread_layout=thread_layout](0)
     # Distributed fragment: shape [2,2], strides [8,2] -> cosize = (2-1)*8 + (2-1)*2 + 1 = 11
-    assert_equal(type_of(frag).linear_idx_type, DType.int32)
+    assert_equal(type_of(frag).linear_idx_type, .int32)
     _ = frag
 
 
@@ -1035,11 +996,11 @@ def test_linear_idx_type_recomputed_after_vectorize() raises:
     """After vectorize(), linear_idx_type is recomputed from the new layout."""
     var stack = Array[Int32, 256](fill=0)
     var tensor = TileTensor(stack, row_major[16, 16]())
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    assert_equal(type_of(tensor).linear_idx_type, .int32)
 
     var vectorized = tensor.vectorize[4, 4]()
     # Vectorized: shape [4,4], strides [64,4] -> cosize = (4-1)*64 + (4-1)*4 + 1 = 205
-    assert_equal(type_of(vectorized).linear_idx_type, DType.int32)
+    assert_equal(type_of(vectorized).linear_idx_type, .int32)
     _ = vectorized
 
 
@@ -1081,11 +1042,11 @@ def test_transpose_is_view() raises:
 
     # Modify through transposed view: trans[1, 0] -> tensor[0, 1]
     trans[Coord(Idx[1], Idx[0])] = 42
-    assert_equal(tensor[Coord(Idx[0], Idx[1])], 42)
+    assert_equal(tensor[Idx[0], Idx[1]], 42)
 
     # Modify through original: tensor[1, 2] -> trans[2, 1]
     tensor[Coord(Idx[1], Idx[2])] = 99
-    assert_equal(trans[Coord(Idx[2], Idx[1])], 99)
+    assert_equal(trans[Idx[2], Idx[1]], 99)
 
 
 def test_transpose_square() raises:
@@ -1179,6 +1140,131 @@ def test_num_elements_nested_layout() raises:
         ),
     )
     assert_equal(runtime_leaf.num_elements(), 2 * 16 * tiles * 16)
+
+
+def _blocked_offset(row: Int, col: Int) -> Int:
+    """Offset of (row, col) in a 3x5 row-major grid of row-major 4x4
+    blocks."""
+    return (row // 4 * 5 + col // 4) * 16 + row % 4 * 4 + col % 4
+
+
+def test_tile_nested_layout() raises:
+    """Test tile on nested modes, indexed first leaf first like crd2idx."""
+    var data = Array[Int32, 240](fill_with=lambda (i: Int) -> Int32: Int32(i))
+    var static_blocks = TileTensor(
+        data, blocked_product(row_major[4, 4](), row_major[3, 5]())
+    )
+    var row_stride = 4
+    var block_col_stride = 16
+    var runtime_blocks = TileTensor(
+        data,
+        TileLayout(
+            Coord(Coord(Idx[4], Idx[3]), Coord(Idx[4], Idx[5])),
+            Coord(Coord(row_stride, Idx[80]), Coord(Idx[1], block_col_stride)),
+        ),
+    )
+    for i in range(3):
+        for j in range(5):
+            var a = static_blocks.tile[4, 4](i, j)
+            var b = runtime_blocks.tile[4, 4](i, j)
+            for r in range(4):
+                for c in range(4):
+                    var expected = _blocked_offset(i * 4 + r, j * 4 + c)
+                    assert_equal(Int(a[r, c]), expected)
+                    assert_equal(Int(b[r, c]), expected)
+
+    # A tile smaller than a block lies within the first leaf.
+    for i in range(6):
+        for j in range(10):
+            var half = static_blocks.tile[2, 2](i, j)
+            for r in range(2):
+                for c in range(2):
+                    assert_equal(
+                        Int(half[r, c]),
+                        _blocked_offset(i * 2 + r, j * 2 + c),
+                    )
+
+
+def _row_pair_offset(row: Int, col: Int) -> Int:
+    """Offset of (row, col) in a 96x64 grid of 32x32 tiles, each pairing two
+    rows per 32-bit word, tiles row-major."""
+    return (
+        row % 2
+        + (row // 2) % 16 * 64
+        + row // 32 * 2048
+        + col % 32 * 2
+        + col // 32 * 1024
+    )
+
+
+def test_tile_nested_row_pair_grid() raises:
+    """Test tile keeps the leaves a tile spans."""
+    var data = Array[Int32, 6144](fill_with=lambda (i: Int) -> Int32: Int32(i))
+    var row_tiles = 3
+    var row_pair_stride = 64
+    var static_grid = TileTensor(
+        data,
+        TileLayout(
+            Coord(Coord(Idx[2], Idx[16], Idx[3]), Coord(Idx[32], Idx[2])),
+            Coord(Coord(Idx[1], Idx[64], Idx[2048]), Coord(Idx[2], Idx[1024])),
+        ),
+    )
+    var runtime_grid = TileTensor(
+        data,
+        TileLayout(
+            Coord(Coord(Idx[2], Idx[16], row_tiles), Coord(Idx[32], Idx[2])),
+            Coord(
+                Coord(Idx[1], row_pair_stride, Int(2048)),
+                Coord(Idx[2], Idx[1024]),
+            ),
+        ),
+    )
+    for t0 in range(3):
+        for t1 in range(2):
+            var a = static_grid.tile[32, 32](Coord(t0, t1))
+            var b = runtime_grid.tile[32, 32](Coord(t0, t1))
+            for r in range(32):
+                for c in range(32):
+                    var expected = _row_pair_offset(t0 * 32 + r, t1 * 32 + c)
+                    assert_equal(Int(a[Coord(r, c)]), expected)
+                    assert_equal(Int(b[Coord(r, c)]), expected)
+    assert_equal(
+        String(static_grid.tile[32, 32](coord[1, 1]).layout),
+        "(((2, 16), 32):((1, 64), 2))",
+    )
+
+    # A tile can end inside a leaf: 16 rows keep (2, 8) of (2, 16, 3).
+    var half = static_grid.tile[16, 32](coord[3, 1])
+    assert_equal(String(half.layout), "(((2, 8), 32):((1, 64), 2))")
+    for r in range(16):
+        for c in range(32):
+            assert_equal(
+                Int(half[Coord(r, c)]), _row_pair_offset(48 + r, 32 + c)
+            )
+
+    # Flat indices address the leaves of a nested tile.
+    var tile = static_grid.tile[32, 32](coord[2, 0])
+    tile[1, 3, 5] = -1
+    assert_equal(data[_row_pair_offset(64 + 7, 5)], -1)
+    # One index per mode works too.
+    tile[6, 5] = -2
+    assert_equal(data[_row_pair_offset(64 + 6, 5)], -2)
+
+
+def test_slice_nested_layout() raises:
+    """Test that slice indexes the flattened leaves of a nested layout."""
+    var data = Array[Int32, 1024](fill_with=lambda (i: Int) -> Int32: Int32(i))
+    var tensor = TileTensor(
+        data,
+        TileLayout(
+            Coord(Coord(Idx[2], Idx[16]), Idx[32]),
+            Coord(Coord(Idx[1], Idx[64]), Idx[2]),
+        ),
+    )
+    var column = tensor.slice[:, :, 5]()
+    for r in range(2):
+        for p in range(16):
+            assert_equal(Int(column[r, p]), r + 64 * p + 10)
 
 
 def test_select_4d_to_2d() raises:

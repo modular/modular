@@ -35,9 +35,9 @@ void SourceNames::processDecorators(Operation *op,
       ASTDecl *decoratorDecl =
           shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
       if (decoratorDecl)
-        if (auto decoratorFunc =
-                dyn_cast_or_null<FnOp>(decoratorDecl->getIfOperation()))
-          return getSourceName(decoratorFunc);
+        if (auto *decoratorFunc = dyn_cast<DefASTDecl>(decoratorDecl))
+          if (decoratorFunc->getOp())
+            return getSourceName(decoratorFunc->getOp());
     }
     return {};
   };
@@ -126,7 +126,7 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
   if (auto declRef = dyn_cast<StructType>(type)) {
     ASTDecl &decl =
         shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-    StructDeclOp op = cast<StructDeclOp>(decl.getIfOperation());
+    StructDeclOp op = cast<StructASTDecl>(decl).getOp();
     SourceNameAttr name = getSourceName(op);
     // Add the parameter values.
     SmallVector<StringAttr> paramValues;
@@ -186,11 +186,7 @@ void SharedState::setLocationDebugScope(FnOp funcOp) {
       llvm::map_to_vector(funcOp.getArgumentTypes(), mapUnresolvedType),
       llvm::map_to_vector(funcOp.getResultTypes(), mapUnresolvedType));
 
-  // The linkage name is derived either from the symbol name or the param decl
-  // name, if it's a nested function.
   StringAttr linkageName = funcOp.getSymNameAttr();
-  if (!linkageName)
-    linkageName = funcOp.getParamDeclAttr().getName();
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard = diBuilder->pushSubprogram(
       getSourceName(funcOp), linkageName, diBuilder->createFile(fileLineCol),

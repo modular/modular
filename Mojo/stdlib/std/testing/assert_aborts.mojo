@@ -146,8 +146,8 @@ def _run(f: Some[def() raises]) raises:
     with open(getenv(_OUTPUT_ENV), "w") as out_file:
         var fd = Int32(out_file._get_raw_fd())
         # redirect stdout/stderr to the output file
-        _ = dup2(fd, stdout.value)
-        _ = dup2(fd, stderr.value)
+        _ = dup2(fd, stdout._value)
+        _ = dup2(fd, stderr._value)
     f()
 
 

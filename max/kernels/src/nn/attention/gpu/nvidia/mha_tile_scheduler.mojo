@@ -114,10 +114,10 @@ struct SeqInfo(TrivialRegisterPassable):
 
         comptime if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
-            var ptr = rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](
+            var ptr = rebind[ImmPointer[UInt32, ImmutAnyOrigin]](
                 valid_length.value()
             )
-            var seq = ptr.load[width=2](batch_idx)
+            var seq = ptr.unsafe_load[width=2](batch_idx)
             var start_of_seq = warp.broadcast(seq[0])
             var end_of_seq = warp.broadcast(seq[1])
             var seq_len = end_of_seq - start_of_seq
@@ -166,14 +166,14 @@ struct MHATileState(TrivialRegisterPassable):
     var idx: UInt32
 
     @__allow_legacy_any_origin_fields
-    var sidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED]
+    var sidx_ptr: MutPointer[UInt32, MutAnyOrigin, address_space=.SHARED]
     var max_idx: UInt32
 
     @inline(.always)
     def __init__(
         out self,
         idx: UInt32,
-        sidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
+        sidx_ptr: MutPointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         max_idx: UInt32,
     ):
         self.idx = idx
@@ -449,7 +449,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
+        ptr: MutPointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         """Create the initial state object.
@@ -496,7 +496,7 @@ struct MHASchedule(EnumLike, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -712,7 +712,7 @@ struct TransientScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
+        ptr: MutPointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(0, ptr, 1)
@@ -845,7 +845,7 @@ struct TileScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
+        ptr: MutPointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(
@@ -889,7 +889,7 @@ struct QueuedTileScheduler[
 
     # Linear work tile index i.e. idx-th work among all possible workload.
     @__allow_legacy_any_origin_fields
-    var gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.GLOBAL]
+    var gidx_ptr: MutPointer[UInt32, MutAnyOrigin, address_space=.GLOBAL]
 
     comptime may_advance: Bool = True
     comptime mha_schedule: MHASchedule = Self.schedule
@@ -897,9 +897,9 @@ struct QueuedTileScheduler[
     @inline(.always)
     def __init__(
         out self,
-        gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin],
+        gidx_ptr: MutPointer[UInt32, MutAnyOrigin],
     ):
-        self.gidx_ptr = gidx_ptr.address_space_cast[.GLOBAL]()
+        self.gidx_ptr = gidx_ptr.unsafe_address_space_cast[.GLOBAL]()
 
     @inline(.always)
     def get_current_work_info[
@@ -951,7 +951,9 @@ struct QueuedTileScheduler[
                     if not state.is_valid(idx):
                         comptime if sync == MHASchedulerSynchronization.NONE:
                             state.idx = idx
-                            state.sidx_ptr.store(offset=pipeline_idx, val=idx)
+                            state.sidx_ptr.unsafe_store(
+                                offset=pipeline_idx, val=idx
+                            )
                             return None
 
                         else:
@@ -964,7 +966,7 @@ struct QueuedTileScheduler[
                         if seq_info.is_valid():
                             comptime if sync == MHASchedulerSynchronization.NONE:
                                 state.idx = idx
-                                state.sidx_ptr.store(
+                                state.sidx_ptr.unsafe_store(
                                     offset=pipeline_idx, val=idx
                                 )
                                 # tma with producer doesn't need to sync
@@ -972,7 +974,7 @@ struct QueuedTileScheduler[
                             else:
                                 break
 
-                state.sidx_ptr.store(offset=pipeline_idx, val=idx)
+                state.sidx_ptr.unsafe_store(offset=pipeline_idx, val=idx)
 
             # producer needs to sync before loading
             comptime if sync == MHASchedulerSynchronization.PRODUCER:
@@ -982,7 +984,7 @@ struct QueuedTileScheduler[
             barrier()
 
         # when !ALL, consumers rely on `async_copy_arrive`
-        state.idx = warp.broadcast(state.sidx_ptr.load(pipeline_idx))
+        state.idx = warp.broadcast(state.sidx_ptr.unsafe_load(pipeline_idx))
         if not state.is_valid():
             return None
         return ts.unsafe_seq_info[
@@ -1009,7 +1011,7 @@ struct QueuedTileScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
+        ptr: MutPointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         var state = MHATileState(
@@ -1017,7 +1019,7 @@ struct QueuedTileScheduler[
         )
 
         if thread_idx.x == 0:
-            state.sidx_ptr.store(state.idx)
+            state.sidx_ptr.unsafe_store(state.idx)
         return state
 
     @inline(.always)

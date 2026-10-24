@@ -22,7 +22,7 @@ from typing import Any, Generic, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
-from max._core_mojo import block_hasher, block_hasher_sha256
+from max import _kv_core
 from max._kv_core import InsufficientBlocksError as InsufficientBlocksError
 from max._kv_core import LittleKVCacheBlock as LittleKVCacheBlock
 from max.nn.kv_cache.cache_params import KVHashAlgo
@@ -78,18 +78,28 @@ def hash_request_tokens(
     seed: bytes | None = None,
     salt: str | None = None,
 ) -> list[bytes]:
-    """Hash the tokens of a request using the Mojo implementation.
+    """Hash the tokens of a request using the Rust implementation.
 
     Token hash overrides let callers replace one placeholder token per media
-    item with a content hash while computing prefix-cache keys.
-
-    This method should leave the contents of the array unchanged on return.
+    item with a content hash while computing prefix-cache keys. They are
+    applied inside the hasher, so the contents of the array are left unchanged.
 
     `seed`/`salt` apply to both algos: for `sha256` they
     combine into the 256-bit chain root (a cryptographic guarantee); for
     `ahash64` they seed AHash's runtime keyed state (fast, non-cryptographic
     -- best-effort collision resistance, not a cryptographic guarantee).
     """
+    if token_ids.ndim != 1:
+        raise ValueError(
+            f"token_ids must be a 1D array, found {token_ids.ndim}D array"
+        )
+    if block_size <= 0:
+        raise ValueError(
+            f"block_size must be greater than 0, found {block_size}"
+        )
+    if algo not in ("ahash64", "sha256"):
+        raise ValueError(f"unknown algo={algo}")
+
     overrides_in_slice: dict[int, int] = {}
     if token_hash_overrides:
         if prefix_length == -1:
@@ -105,54 +115,23 @@ def hash_request_tokens(
                     )
                 overrides_in_slice[idx] = override.token_hash
 
-    # Temporarily replace the selected placeholder tokens with content hashes.
-    # All validation above happens before mutation so errors cannot leak
-    # modified tokens.
-    token_to_reset: dict[int, int] = {}
-    try:
-        for idx, token_hash in overrides_in_slice.items():
-            token_to_reset[idx] = token_ids[idx]
-            token_ids[idx] = token_hash
+    # The hasher reads tokens as native-endian 4- or 8-byte integers (8-byte
+    # ones are narrowed to int32 there). Everything else is widened here.
+    if token_ids.dtype.itemsize not in (4, 8) or not token_ids.dtype.isnative:
+        token_ids = token_ids.astype(np.int32)
 
-        hash_vals: list[bytes]
-        if algo == "ahash64":
-            ph_bytes_ahash = (
-                DEFAULT_PARENT_HASH if parent_hash is None else parent_hash
-            )
-            if seed is not None or salt is not None:
-                effective_seed = _make_root_parent_hash(seed, salt)
-                hash_vals = block_hasher(
-                    token_ids, block_size, ph_bytes_ahash, seed=effective_seed
-                )
-            else:
-                hash_vals = block_hasher(token_ids, block_size, ph_bytes_ahash)
-
-        elif algo == "sha256":
-            if parent_hash is None:
-                ph_bytes = _make_root_parent_hash(seed, salt)
-            elif isinstance(parent_hash, bytes):
-                if len(parent_hash) != 32:
-                    raise ValueError(
-                        f"algo={algo} requires 32-byte parent_hash, got "
-                        f"{len(parent_hash)}"
-                    )
-                ph_bytes = parent_hash
-            else:
-                raise TypeError(
-                    "algo=sha256 requires bytes parent_hash, got "
-                    f"{type(parent_hash).__name__}"
-                )
-
-            hash_vals = block_hasher_sha256(token_ids, block_size, ph_bytes)
-        else:
-            raise ValueError(f"unknown algo={algo}")
-
-        assert len(hash_vals) == len(token_ids) // block_size
-        return hash_vals
-    finally:
-        # Restore any mutated media tokens, even on error.
-        for idx, token in token_to_reset.items():
-            token_ids[idx] = token
+    hash_vals: list[bytes] = _kv_core.hash_block_tokens(
+        algo,
+        token_ids.tobytes(),
+        token_ids.dtype.itemsize,
+        block_size,
+        parent_hash,
+        seed,
+        salt,
+        list(overrides_in_slice.items()),
+    )
+    assert len(hash_vals) == len(token_ids) // block_size
+    return hash_vals
 
 
 class FreeListNode(Protocol):

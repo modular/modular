@@ -1,0 +1,54 @@
+---
+title: Intro to custom ops
+sidebar_label: Overview
+pagination_label: Intro to custom ops
+description: Extend MAX with custom Mojo kernels for operations the library
+  doesn't provide
+---
+
+Custom operations (custom ops) run a
+[Mojo](https://mojolang.org/docs/manual) kernel from a MAX model. Write one when
+the library lacks an operation, or a fusion the compiler does not find, and the
+built-in layers cannot express it.
+
+In a ModuleV3 model, call the op from a layer's `forward()` with
+[`F.custom()`](/api/python/experimental.functional/#max.experimental.functional.custom)
+and compose that layer like any other; the
+[custom layer guide](/develop/layers/#wrap-a-custom-op) shows the wrapper. If
+you construct a graph directly with `max.graph`, call
+[`ops.custom()`](/api/python/graph.ops/#max.graph.ops.custom) instead.
+
+## What a custom op is
+
+A custom op is a Mojo function that computes a result, called from the graph by
+name. The compiler schedules it and places it on a device like any other op. An
+elementwise op can fuse with the ops around it; any other op runs as its own
+step.
+
+## Custom ops in PyTorch
+
+[`CustomOpLibrary`](/api/python/generated/max.experimental.torch.CustomOpLibrary/)
+in [`max.experimental.torch`](/api/python/experimental.torch/) compiles a Mojo
+kernel and passes PyTorch tensors to it, so a PyTorch model can call the kernel
+without moving to MAX. The
+[Extending PyTorch with custom operations in Mojo](https://github.com/modular/modular/tree/main/max/examples/pytorch_custom_ops)
+example has a complete kernel.
+
+## Examples and reference
+
+The
+[custom ops examples](https://github.com/modular/modular/tree/main/max/examples/custom_ops)
+in the repository cover several kernels, and
+[GPU programming with Mojo](/gpu/architecture/) covers the Mojo side. The
+[custom ops API](/api/python/graph.ops/#max.graph.ops.custom) and
+[`F.custom()`](/api/python/experimental.functional/#max.experimental.functional.custom)
+document the Python calls.
+
+## Next steps
+
+- [Build custom ops for GPUs](/develop/build-custom-ops/): a complete Mojo
+  kernel and its Python wrapper.
+- [Optimize a matmul custom op](/develop/custom-ops-matmul/): a kernel taken
+  from a naive implementation to a tuned one.
+- [Write a custom layer](/develop/layers/): wrapping an operation in a layer
+  your model can compose.

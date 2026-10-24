@@ -28,17 +28,14 @@ if they are reversed, so both are asserted by construction here:
   language model (``linear_attn.norm`` is the sole exception in Qwen3.5, and
   the draft has none).
 
-The embedding table and ``lm_head`` are shared with the target
-(``mtp_use_dedicated_embeddings: false``; the checkpoint ships neither
-``mtp.embed_tokens`` nor ``mtp.lm_head``). ``embed_tokens`` is injected by the
-caller so the two graphs reference one weight; ``lm_head`` stays with the
-caller because the draft's output projection is the target's **NVFP4** head
-while the draft body is BF16.
+The head embeds and projects through the target's embedding table and
+``lm_head`` (``mtp_use_dedicated_embeddings: false``; the checkpoint ships
+neither ``mtp.embed_tokens`` nor ``mtp.lm_head``), which spec decoding shares
+onto it. The output projection is the target's **NVFP4** head while the draft
+body is BF16.
 """
 
 from __future__ import annotations
-
-from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import (
@@ -52,12 +49,10 @@ from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.transformer import forward_sharded_layers
 
 from .model_config import Qwen3_5Config
-from .qwen3_5 import Qwen3_5FullAttentionBlock
+from .qwen3_5 import Qwen3_5FullAttentionBlock, norm_factory, rotary_embedding
 
 
 class Qwen3_5MTP(Module):
@@ -69,23 +64,12 @@ class Qwen3_5MTP(Module):
     rather than over the whole draft prefill.
     """
 
-    def __init__(
-        self,
-        config: Qwen3_5Config,
-        embed_tokens: VocabParallelEmbedding,
-        rope: Llama3RotaryEmbedding,
-        create_norm: Callable[..., RMSNorm],
-        kv_layer_idx: int,
-    ) -> None:
-        """Builds the draft head against an already-built target.
+    def __init__(self, config: Qwen3_5Config, kv_layer_idx: int = 0) -> None:
+        """Builds the draft head.
 
         Args:
             config: The target's config; the draft reuses its hidden size,
-                head geometry and ``compute_dtype``.
-            embed_tokens: The target's embedding table, shared not copied.
-            rope: The target's rotary embedding, shared not copied.
-            create_norm: The target's norm factory, which carries the
-                ``(1 + w)`` offset and the norm dtype.
+                head geometry, norms and ``compute_dtype``.
             kv_layer_idx: The draft layer's index in the KV cache it writes.
                 The draft owns its own single-layer cache group, so this is 0
                 unless the caller appends the draft to the target's cache.
@@ -98,8 +82,16 @@ class Qwen3_5MTP(Module):
         compute_dtype = config.compute_dtype
         self.kv_layer_idx = kv_layer_idx
 
-        self.embed_tokens = embed_tokens
+        self.embed_tokens = VocabParallelEmbedding(
+            config.vocab_size,
+            config.hidden_size,
+            compute_dtype,
+            config.devices,
+        )
+        # The head reads only the static table, 3-axis positions or not.
+        rope = rotary_embedding(config, mrope=False)
         self.rope = rope
+        create_norm = norm_factory(config)
 
         self.pre_fc_norm_embedding = create_norm()
         self.pre_fc_norm_embedding.sharding_strategy = replicate

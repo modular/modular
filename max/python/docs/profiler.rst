@@ -19,7 +19,6 @@ Submodules
 
    max.profiler.cpu
    max.profiler.gpu
-   max.profiler.oneshot
 
 .. toctree::
    :maxdepth: 1
@@ -27,7 +26,6 @@ Submodules
 
    profiler.cpu
    profiler.gpu
-   profiler.oneshot
 
 Tracing
 -------

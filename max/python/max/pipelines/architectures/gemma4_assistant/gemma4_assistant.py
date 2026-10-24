@@ -28,12 +28,13 @@ from max.graph import (
 )
 from max.nn.attention import MHAMaskVariant, num_heads_for_device
 from max.nn.comm.allreduce import Allreduce
+from max.nn.graph_groups import HiddenStates
 from max.nn.kernels import cross_attention_ragged, rope_ragged
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.rotary_embedding import Llama3RotaryEmbedding, RotaryEmbedding
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.transformer import DecoderOutputs, ReturnHiddenStates
 from max.nn.transformer.distributed_transformer import (
     distributed_logits_postprocess,
     forward_sharded_layers,
@@ -403,6 +404,9 @@ class Gemma4Assistant(Module):
     back to the backbone dimension for logits computation.
     """
 
+    has_own_lm_head = True
+    """Its head is tied to its own embedding, not the target's head."""
+
     def __init__(
         self,
         config: Gemma4AssistantConfig,
@@ -590,7 +594,7 @@ class Gemma4Assistant(Module):
         kv_input_row_offsets: Sequence[TensorValue],
         q_max_seq_len: TensorValue,
         rope_cache_lengths: Sequence[TensorValue] | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         n_devs = len(self.devices)
 
         kv_by_type: list[Sequence[PagedCacheValues]] = [
@@ -654,8 +658,8 @@ class Gemma4Assistant(Module):
             return_hidden_states=ReturnHiddenStates.NONE,
         )
 
-        # Append 5376-dim hidden states (from post_projection) to the
-        # output tuple so callers can feed them to the next MTP step.
+        # The 5376-dim hidden states (from post_projection), so callers can
+        # feed them to the next MTP step.
         hs_tuple = extract_hs(
             return_hidden_states=self.return_hidden_states,
             last_token_hs_distributed=[
@@ -667,4 +671,8 @@ class Gemma4Assistant(Module):
             all_hs_distributed=h_out,
         )
 
-        return logits_result + hs_tuple
+        if hs_tuple:
+            logits_result["hidden_states"] = HiddenStates(
+                {self.return_hidden_states.value: hs_tuple}
+            )
+        return logits_result

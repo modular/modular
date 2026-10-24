@@ -1,0 +1,1121 @@
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
+
+# gazelle:default_visibility //visibility:private
+
+package(
+    default_visibility = ["//visibility:private"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+AMDGPU_GRAPH_CAPTURE_ARCHES = [
+    "gfx950",
+]
+
+GRAPH_CAPTURE_HSACO_DATA = [
+    ":graph_capture_vec_add_{}_hsaco".format(arch)
+    for arch in AMDGPU_GRAPH_CAPTURE_ARCHES
+]
+
+[
+    # Generate HSA code object to load in GraphCaptureTest.
+    genrule(
+        name = "graph_capture_vec_add_{}_hsaco".format(arch),
+        srcs = ["graph_capture_vec_add.amdgpu.ll"],
+        outs = ["graph_capture_vec_add_{}.hsaco".format(arch)],
+        cmd = "$(location @llvm-project//llvm:llc) " +
+              "-mtriple=amdgcn-amd-amdhsa " +
+              "-mcpu={} ".format(arch) +
+              "-filetype=obj $< -o $@.o && " +
+              "$(location @llvm-project//lld:ld.lld) -shared $@.o -o $@ && " +
+              "rm -f $@.o",
+        tools = [
+            "@llvm-project//lld:ld.lld",
+            "@llvm-project//llvm:llc",
+        ],
+    )
+    for arch in AMDGPU_GRAPH_CAPTURE_ARCHES
+]
+
+modular_cc_library(
+    name = "DeviceGraphTestUtils",
+    testonly = True,
+    hdrs = ["DeviceGraphTestUtils.h"],
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//Support:Base",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//third-party/unittest:gtest",
+    ],
+)
+
+# Header adding test helpers for using gtest with `ErrorOr<T>`.
+modular_cc_library(
+    name = "TestUtils",
+    testonly = True,
+    hdrs = [
+        "TestUtils.h",
+    ],
+    visibility = [
+        "//GraphCompiler:__subpackages__",
+        "//MLRT/unittests/Driver/NIXL:__subpackages__",
+        "//plugins/internal-trainium/runtime/test:__pkg__",
+    ],
+    deps = [
+        "@llvm-project//third-party/unittest:gmock",
+    ],
+)
+
+modular_cc_test(
+    name = "GPUMemoryManagerTest",
+    size = "medium",
+    srcs = [
+        "GPUMemoryManagerTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    env = {
+        # Set up consistent memory manager environment for testing
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+        # This test exercises the classic freelist allocator (chunk sizing,
+        # alignment); pin VMM off so the NVIDIA default-on does not reroute it
+        # through the single-arena VMM path (which ignores chunk_percent).
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MemoryManagerVMMTest",
+    size = "medium",
+    srcs = [
+        "MemoryManagerVMMTest.cpp",
+    ],
+    env = {
+        # Enable the VMM defragmenting allocator process-wide (config is parsed
+        # once per process and cannot be toggled per-test). 256 MiB granules and
+        # chunk_percent=25 give 4 chunks in the 4 GiB test pool; only-mode
+        # removes the driver backdoor so a successful large allocation can only
+        # have come from defrag.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "256",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "25",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    # NVIDIA-only for now. VMM is opt-in rather than refused on AMD as of
+    # GEX-4056, so this could run there too, but it has not been validated on
+    # AMD and HIP caps total VMM-mapped memory per process (see
+    # MemoryManager::onDevice) -- enabling it needs a budget clamp first.
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MemoryManagerVMMDeviceCreateTest",
+    size = "medium",
+    srcs = [
+        "MemoryManagerVMMDeviceCreateTest.cpp",
+    ],
+    env = {
+        # Request the VMM defragmenting allocator process-wide (config is parsed
+        # once per process). This target is the positive case: a device built via
+        # Device::create() must actually enable VMM, which is the path GEX-3860
+        # silently disabled.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "256",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MemoryManagerVMMDeviceCreateNegativeTest",
+    size = "medium",
+    srcs = [
+        "MemoryManagerVMMDeviceCreateTest.cpp",
+    ],
+    env = {
+        # Negative control: with VMM explicitly disabled, the same Device::create()
+        # path must leave the device's MemoryManager with VMM off. This pins the
+        # behavior to the config so a future change that hardcodes VMM on would be
+        # caught rather than passing the positive target by accident.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "False",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "256",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MemoryManagerVMMControlTest",
+    size = "medium",
+    srcs = [
+        "MemoryManagerVMMControlTest.cpp",
+    ],
+    env = {
+        # VMM explicitly disabled (this is the control for MemoryManagerVMMTest):
+        # the fragmented-pool request must fail without defrag.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "False",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "25",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# Shared env for the OOM condition tests. Small VMM budget with 32 MiB granules
+# so the conditions trigger cheaply; only-mode disables the driver backdoor so a
+# miss surfaces as an error rather than a fallthrough.
+_MEMORY_MANAGER_OOM_ENV = {
+    "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+    "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "32",
+    "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "268435456",  # 256 MiB
+    "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
+    "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+    "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+}
+
+# One target per condition. The device MemoryManager is a process-wide singleton,
+# so each condition runs in its own process to guarantee a clean starting state
+# (a shared process lets one condition's leftover stream/free-list state perturb
+# the next).
+[
+    modular_cc_test(
+        name = "MemoryManagerOom{}Test".format(suffix),
+        size = "medium",
+        srcs = [
+            "MemoryManagerOomTest.cpp",
+        ],
+        args = ["--gtest_filter=MemoryManagerOomTest.{}".format(test)],
+        env = _MEMORY_MANAGER_OOM_ENV,
+        gpu_constraints = select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        tags = ["gpu"],
+        deps = [
+            ":TestUtils",
+            "//MLRT:Driver/DeviceContextImpl",
+            "//Support:Base",
+            "@llvm-project//llvm:Support",
+        ],
+    )
+    for suffix, test in [
+        ("Genuine", "GenuineOutOfMemory"),
+        ("Pending", "PendingMemoryBlocksUntilSync"),
+        ("PendingRecovered", "PendingMemoryRecoveredWithoutCallerSync"),
+        ("Fragmented", "FragmentedPartialGranulesBlockWholeGranule"),
+        ("Reclaimable", "SnapshotCountsReclaimableGranule"),
+    ]
+]
+
+# The drain retry turned off. Its own target because the setting is read once
+# when the device MemoryManager is constructed, so it cannot vary per test
+# within a process.
+modular_cc_test(
+    name = "MemoryManagerOomDrainRetriesOffTest",
+    size = "medium",
+    srcs = [
+        "MemoryManagerOomTest.cpp",
+    ],
+    args = ["--gtest_filter=MemoryManagerOomTest.DrainRetriesZeroDisablesTheRetry"],
+    env = _MEMORY_MANAGER_OOM_ENV | {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_DRAIN_RETRIES": "0",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MemoryManagerOomMeasurementTest",
+    size = "medium",
+    srcs = [
+        "MemoryManagerOomMeasurementTest.cpp",
+    ],
+    env = {
+        # 2 MiB pages so sub-page / mid-page regions are cheap to construct; the
+        # budget is set programmatically via makeCache. Self-check off: the test
+        # deliberately builds an unusual mixed state.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "False",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# Pure classifier/formatter tests: no device, so no gpu tag or env.
+modular_cc_test(
+    name = "MemoryManagerOomClassifyTest",
+    size = "small",
+    srcs = [
+        "MemoryManagerOomClassifyTest.cpp",
+    ],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The VA condition needs an arena reserved at exactly the physical budget
+# (va_factor 1), so it gets its own target: with the default oversized
+# reservation there is always a large free run at the frontier and the VA gate
+# is unreachable.
+modular_cc_test(
+    name = "MemoryManagerOomVaTest",
+    size = "medium",
+    srcs = [
+        "MemoryManagerOomVaTest.cpp",
+    ],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "268435456",  # 256 MiB
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_VA_FACTOR": "1",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The driver-backdoor path: MEMORY_MANAGER_ONLY is deliberately unset, so a
+# manager miss falls through to the driver instead of surfacing
+# allocationMissError. Diagnostics on, since this asserts the accounting
+# attached to the driver's own failure.
+# The size-rejection shape: cheap, needs only a small capped budget.
+modular_cc_test(
+    name = "MemoryManagerOomBackdoorTest",
+    size = "medium",
+    srcs = [
+        "MemoryManagerOomBackdoorTest.cpp",
+    ],
+    args = ["--gtest_filter=*DriverRefusalIsNotedOnTheManagersReason"],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "32",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "268435456",  # 256 MiB
+        # common.bazelrc sets MEMORY_MANAGER_ONLY for every test; this target
+        # exists to exercise the fallthrough, so it switches it back off.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "False",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The classified shape: needs the whole device, since the condition is the
+# device being exhausted while the manager still has budget. No MEMORY_MANAGER_
+# SIZE cap, so the budget defaults to ~90% of device free and the manager keeps
+# headroom while an untracked allocation exhausts the device.
+modular_cc_test(
+    name = "MemoryManagerOomBackdoorClassifiedTest",
+    size = "large",
+    srcs = [
+        "MemoryManagerOomBackdoorTest.cpp",
+    ],
+    args = ["--gtest_filter=*ClassifiedMissCarriesTheBackdoorNote"],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "False",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    exec_properties = {
+        # Consumes essentially all device memory, so reserve a whole GPU to
+        # keep it off shared devices.
+        "test.resources:gpu-memory": "180",
+    },
+    # NVIDIA-only. The 180 GiB reservation is a whole B200 but only part of an
+    # MI355X, so other tests share the device. Separately, HIP does not
+    # reliably refuse a small VMM allocation once hipMalloc has driven free
+    # memory to zero: it either backs the 64 MiB request anyway or crashes
+    # inside HIP while mapping it. Requiring a GPU also keeps this off CPU
+    # lanes, which could not schedule the reservation.
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MemoryManagerOomSideChannelTest",
+    size = "large",
+    srcs = [
+        "MemoryManagerOomSideChannelTest.cpp",
+    ],
+    env = {
+        # No budget cap: the MM budget defaults to ~90% of device free, so it
+        # keeps headroom while an untracked chunkAlloc exhausts the device.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    exec_properties = {
+        # Consumes essentially all device memory (the untracked side-channel
+        # allocation), so reserve a whole GPU to keep it off shared devices.
+        "test.resources:gpu-memory": "180",
+    },
+    # As above: reserving GPU memory has to be paired with requiring a GPU, or
+    # a CPU lane schedules it and fails before the test runs.
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "GPUMemoryManagerFallthroughTest",
+    size = "medium",
+    srcs = [
+        "GPUMemoryManagerFallthroughTest.cpp",
+    ],
+    env = {
+        # Small cache (4MB) so allocations > 4MB fall through to the device
+        # driver instead of being served from the memory manager's chunk cache.
+        # This exercises the fallthrough path fixed in GEX-2965.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "4194304",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
+        # Disable memory-manager-only mode so the fallthrough path is reachable.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+        # The fallthrough-to-driver path only exists in the classic allocator
+        # (`if (!vmmEnabled_)`); the VMM arena has no fallthrough. Pin VMM off so
+        # the NVIDIA default-on does not bypass the path this test covers.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "GPUMemoryManagerOnlyTest",
+    size = "small",
+    srcs = [
+        "GPUMemoryManagerOnlyTest.cpp",
+    ],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "16777216",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "25",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+        # This test pins a small (16 MiB) chunked pool; VMM ignores chunk_percent
+        # and rounds up to a 256 MiB granule, so pin VMM off to keep the classic
+        # chunk sizing this test asserts against.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "False",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "DeviceAffinityTest",
+    size = "small",
+    srcs = ["DeviceAffinityTest.cpp"],
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//MLRT:Driver/DeviceAffinity",
+        # DeviceAffinity's GPU-to-CPU-core inference calls into
+        # M::Driver::Device, whose definitions live in the impl library.
+        "//MLRT:Driver/DeviceContextImpl",
+    ],
+)
+
+modular_cc_test(
+    name = "DeviceAffinityConfigTest",
+    size = "small",
+    srcs = ["DeviceAffinityConfigTest.cpp"],
+    env = {
+        # Read once and cached, so it must be set before the process starts.
+        # Device 0 names a worker inside an 8-thread pool, device 1 does not.
+        "MODULAR_RUNTIME_DEVICE_TASK_CPU_IDS": "3,9999",
+    },
+    deps = [
+        "//MLRT:Driver/DeviceAffinity",
+        "//MLRT:Driver/DeviceContextImpl",
+    ],
+)
+
+modular_cc_test(
+    name = "KernelLoadGateTest",
+    size = "small",
+    srcs = ["KernelLoadGateTest.cpp"],
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:Support",
+        "//MLRT:Driver/KernelLoadGate",
+    ],
+)
+
+modular_cc_test(
+    name = "DeviceContextTest",
+    size = "small",
+    srcs = [
+        "DeviceContextTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "AsyncValueFromDeviceBufferTest",
+    size = "small",
+    srcs = ["AsyncValueFromDeviceBufferTest.cpp"],
+    # The HAL backend creates even the CPU context through a driver plugin;
+    # the legacy backend ignores the variable.
+    data = ["//Target:CPUPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so)",
+    },
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:RuntimeGlobals",
+        # Carries AsyncRT_AsyncValue_createFromDeviceBuffer for both backends.
+        "//MLRT:Driver/DeviceContext",
+        "//AsyncRT:Runtime",
+        "//Support:Base",
+        "//Support:TypeID",
+    ],
+)
+
+modular_cc_test(
+    name = "VirtualDeviceContextTest",
+    size = "small",
+    srcs = [
+        "ScopedEnvVar.h",
+        "VirtualDeviceContextTest.cpp",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + select({
+        # Reaches into the legacy implementation's own headers
+        # (Virtual/VirtualDeviceContext.h, CUDA/CUDACompilationDevice.h), which
+        # only :Driver/DeviceContextImplCpp exports -- and under
+        # --config=hal-device-context the :Driver/DeviceContextImpl alias does
+        # not resolve to it. HALVirtualDeviceTest below is the backend-agnostic
+        # counterpart that does run in both lanes.
+        "//:hal_device_context_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The virtual (compile-only) device contract, asserted through the public
+# Device/DeviceContext API so it holds against BOTH backends: the legacy
+# VirtualDeviceContext in the default config and the HAL shim's guards under
+# --config=hal-device-context. Needs no GPU and no driver plugin -- the virtual
+# branch fires before any plugin is opened.
+modular_cc_test(
+    name = "HALVirtualDeviceTest",
+    size = "small",
+    srcs = ["HALVirtualDeviceTest.cpp"],
+    # Virtual mode needs a CompilationDevice for the configured api, and CUDA's
+    # is the only one that exists (Metal hard-errors -- FIXME: MOCO-2411); its
+    # NVPTX compilation driver is Linux-only.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "TraceMetadataTest",
+    size = "small",
+    srcs = ["TraceMetadataTest.cpp"],
+    local_defines = ["MODULAR_TESTING"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "RedzoneFreeDeadlockTest",
+    # This is a regression test for a deadlock.
+    # Treat a timeout as a failure, not a flake.
+    size = "small",
+    srcs = ["RedzoneFreeDeadlockTest.cpp"],
+    env = {
+        # Redzone checks are what force the device read-back and synchronize.
+        "MODULAR_DEBUG_DEVICE_ALLOCATOR": "out-of-bounds",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
+
+modular_cc_test(
+    name = "SelectStreamSiblingFreeListTest",
+    size = "medium",
+    srcs = ["SelectStreamSiblingFreeListTest.cpp"],
+    env = {
+        # The sibling drain is only reached on a VMM allocation miss, so the
+        # budget is pinned small (1 GiB, 32 MiB granules) and only-mode removes
+        # the driver backdoor: the pressure thread's 16 MiB blocks exhaust the
+        # pool within a few dozen allocations and miss for real. Without this
+        # the test allocates against the whole device and never enters the path
+        # it exists to race against.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "32",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "1073741824",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "25",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    # NVIDIA-only for now: same reason as MemoryManagerVMMTest above. The miss
+    # path this races against exists on AMD too now that VMM is opt-in there,
+    # but running it on AMD is unvalidated.
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
+
+modular_cc_test(
+    name = "HostMemoryInfoTest",
+    srcs = ["HostMemoryInfoTest.cpp"],
+    target_compatible_with = select({
+        # Links the legacy :Driver/DeviceContextImplCpp directly, which is
+        # compiled without MODULAR_HAL_DEVICE_CONTEXT; under
+        # --config=hal-device-context consumers compile DeviceContext.h
+        # against the HAL declarations, so this legacy-only target is
+        # skipped in that lane (VirtualDeviceContextTest pattern above).
+        "//:hal_device_context_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImplCpp",
+        "//Support:Base",
+    ],
+)
+
+modular_cc_test(
+    name = "HostUnifiedMemoryTest",
+    srcs = ["HostUnifiedMemoryTest.cpp"],
+    env = {
+        # Exercise percentage-based planning instead of the test runner's
+        # small fixed allocator budget.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "90",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }) + select({
+        # Legacy-only target, skipped in the HAL lane; see HostMemoryInfoTest
+        # above.
+        "//:hal_device_context_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImplCpp",
+    ],
+)
+
+modular_cc_test(
+    name = "GPUDeviceContextTest",
+    size = "small",
+    srcs = [
+        "GPUDeviceContextTest.cpp",
+        "HostMapping.h",
+    ],
+    # Setup environment ensuring that the memory manager is properly configured
+    # for the tests being run.
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "1073741824",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
+        # Log memory manager operations for debugging.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "true",
+        # These tests exercise the host memory manager, so give them 8GB
+        # to use for the tests.
+        "MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_SIZE": "8589934592",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        # MEMORY_MANAGER_ONLY=true requires an enabled memory manager, but
+        # on macOS the Metal memory manager is disabled on CI workers.
+        # MetalGPUDeviceContextTest covers macOS without this env override.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+    ],
+)
+
+# This is a temporary test for the Metal device context. It will be removed once has_gpu is updated to include metal.
+# The goal for it is to test the Metal device context implementation on macos.
+# TODO(amir): remove this test once has_gpu is updated to include metal.
+modular_cc_test(
+    name = "MetalGPUDeviceContextTest",
+    size = "small",
+    srcs = [
+        "GPUDeviceContextTest.cpp",
+        "HostMapping.h",
+    ],
+    gpu_constraints = ["//:apple_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+    ],
+)
+
+modular_cc_test(
+    name = "MetalDeviceContextTest",
+    size = "medium",
+    srcs = [
+        "HostMapping.h",
+        "MetalDeviceContextTest.cpp",
+    ],
+    gpu_constraints = ["//:apple_gpu"],
+    # FIXME(GEX-3391): Metal GPU computation produces wrong results on
+    # BuildBuddy remote macOS workers. Excluded from CI wildcard runs.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "@metal-cpp//:metal-cpp",
+    ],
+)
+
+modular_cc_test(
+    name = "CUDADeviceContextTest",
+    size = "small",
+    srcs = [
+        "CUDADeviceContextTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    args = ["--gtest_filter=-*SymmetricPool*"],
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The symmetric pool tests need two GPUs and allocate multi-device multicast
+# memory, which alone takes longer than the small-test budget. One binary per
+# test: the pool registry is process-wide and create-once, so a test can only
+# start from an empty registry in a fresh process.
+[
+    modular_cc_test(
+        name = "CUDADeviceContextSymmetricPool{}Test".format(test),
+        size = "medium",
+        srcs = [
+            "CUDADeviceContextTest.cpp",
+            "ScopedEnvVar.h",
+        ],
+        args = ["--gtest_filter=CUDADeviceContextTest.SymmetricPool{}".format(test)],
+        gpu_constraints = [
+            "//:nvidia_gpu",
+            "//:has_multi_gpu",
+        ],
+        tags = ["gpu"],
+        deps = [
+            ":TestUtils",
+            "//MLRT:Driver/CompilationDeviceImpl",
+            "//MLRT:Driver/DeviceContextImpl",
+            "//Support:Base",
+            "@llvm-project//llvm:Support",
+        ],
+    )
+    for test in [
+        "CreateOnceAndLookup",
+        "FailedCreateLeavesNothingBehind",
+    ]
+]
+
+# Its own binary on purpose: the invariant it checks is that a process which
+# has only counted devices has not called cuInit, which no test sharing a
+# binary with CUDA-using tests can observe.
+modular_cc_test(
+    name = "CUDADeviceCountTest",
+    size = "small",
+    srcs = ["CUDADeviceCountTest.cpp"],
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "GraphCaptureTest",
+    size = "small",
+    srcs = [
+        "GraphCaptureTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    data = GRAPH_CAPTURE_HSACO_DATA,
+    exec_properties = {
+        # Measured peak GPU memory: ~628 MB, set to 2x for safety margin.
+        "test.resources:gpu-memory": "1.3",
+    },
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": ["//:has_gpu"],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":DeviceGraphTestUtils",
+        ":TestUtils",
+        "//AsyncRT:Runtime",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "DeviceGraphBuilderTest",
+    size = "small",
+    srcs = ["DeviceGraphBuilderTest.cpp"],
+    data = GRAPH_CAPTURE_HSACO_DATA,
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": ["//:has_gpu"],
+    }),
+    tags = ["gpu"],
+    deps = [
+        ":DeviceGraphTestUtils",
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "GraphCaptureMultiDeviceTest",
+    size = "small",
+    srcs = ["GraphCaptureMultiDeviceTest.cpp"],
+    exec_properties = {
+        # Measured peak GPU memory: ~628 MB, set to 2x for safety margin.
+        "test.resources:gpu-memory": "1.3",
+    },
+    gpu_constraints = [
+        "//:nvidia_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:Runtime",
+        "//MLRT:Driver/DeviceContextImpl",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "CUDAMultiDeviceContextTest",
+    size = "small",
+    srcs = [
+        "CUDADeviceContextTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    args = ["--gtest_filter=-*SymmetricPool*"],
+    gpu_constraints = [
+        "//:nvidia_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "GPUDeviceTest",
+    size = "small",
+    srcs = ["GPUDeviceTest.cpp"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+    ],
+)
+
+modular_cc_test(
+    name = "GPUHealthcheckTest",
+    size = "small",
+    srcs = [
+        "GPUHealthcheckTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MultiGPUDeviceTest",
+    size = "small",
+    srcs = ["MultiGPUDeviceTest.cpp"],
+    gpu_constraints = ["//:has_multi_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Buffer",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MemoryManagerTest",
+    size = "small",
+    srcs = [
+        "MemoryManagerTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    env = {
+        # Set up consistent memory manager environment for testing
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "25",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "25",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+    },
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "MemoryManagerChunkGrowthTest",
+    size = "small",
+    srcs = [
+        "MemoryManagerChunkGrowthTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    # Chunk growth tests require a functional GPU memory manager; on macOS CI
+    # workers the Metal memory manager is disabled (max_cache_size=0).
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)

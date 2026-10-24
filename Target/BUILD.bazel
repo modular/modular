@@ -1,0 +1,305 @@
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_cc_test")
+
+# gazelle:default_visibility //MLRT:__subpackages__
+
+package(default_visibility = ["//MLRT:__subpackages__"])
+
+# Host-side plugin loader: dlopen/dlsym wrapper that loads HAL plugin .so
+# files at runtime and exposes them via the M::Driver::Plugin C++ API.
+modular_cc_library(
+    name = "DriverPlugin",
+    srcs = [
+        "lib/DriverPlugin/DriverPlugin.cpp",
+        "lib/DriverPlugin/setup_driver_functions.inc",
+    ],
+    hdrs = [
+        "include/Target/DriverPlugin.h",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//SDK:HAL",
+        "//Support:Base",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# Simulate independent development by an external HW vendor with minimal
+# dependence on mono-repo code and bazel rules.
+modular_cc_binary(
+    # avoids the `lib` prefix; plugins are not traditional libs
+    name = "CUDAPlugin.so",
+    srcs = glob([
+        "lib/CUDA/*.cpp",
+        "lib/CUDA/*.h",
+        "lib/CUDA/Loader/*.cpp",
+        "lib/CUDA/Loader/*.h",
+        "lib/CUDA/Loader/*.inc",
+    ]),
+    linkshared = True,
+    linkstatic = False,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":Support",
+        "//SDK:HAL",
+        "//bazel/public-patches:CUDAHeaders",
+        "//bazel/public-patches:NVMLHeaders",
+        "@dlpack",
+        "@llvm-project//llvm:Support",
+        "@tl_expected",
+    ],
+)
+
+modular_cc_library(
+    name = "DriverPluginTests",
+    testonly = True,
+    srcs = ["test/PluginTest.cpp"],
+    hdrs = ["test/Fixture.h"],
+    copts = ["-Wno-global-constructors"],
+    visibility = [
+        "//MLRT:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
+    deps = [
+        "//SDK:HAL",
+        "@llvm-project//third-party/unittest:gtest",
+    ],
+    alwayslink = True,
+)
+
+modular_cc_test(
+    name = "CUDAPluginTest",
+    size = "large",
+    srcs = [
+        "lib/CUDA/Error.h",
+        "test/CUDAPluginTest.cpp",
+        "test/Fixture.h",
+    ],
+    data = [":CUDAPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "$(location :CUDAPlugin.so)",
+    },
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":DriverPluginTests",
+        "//bazel/public-patches:CUDAHeaders",
+        "//bazel/public-patches:NVMLHeaders",
+        "@tl_expected",
+    ],
+)
+
+# Cross-device (peer) copy test on NVIDIA. Needs two GPUs, so it is gated on
+# has_multi_gpu and lives in its own target rather than burdening the
+# single-GPU CUDAPluginTest with a multi-GPU requirement.
+modular_cc_test(
+    name = "CUDAPeerCopyTest",
+    # ~40s suite (generic DriverPluginTests plus the two 2-GPU CopyInterDevice
+    # tests). Only runs when the toolchain SHA invalidates it; under
+    # full-invalidation contention on a shared multi-GPU node it can exceed
+    # small's 60s cap, so use medium for margin. (Does not affect scheduling
+    # queue time, which is a separate multi-GPU pool-capacity concern.)
+    size = "medium",
+    srcs = ["test/Fixture.h"],
+    data = [":CUDAPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "$(location :CUDAPlugin.so)",
+    },
+    gpu_constraints = [
+        "//:nvidia_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":DriverPluginTests",
+        "@tl_expected",
+    ],
+)
+
+modular_cc_binary(
+    # avoids the `lib` prefix; plugins are not traditional libs
+    name = "HIPPlugin.so",
+    srcs = glob(
+        [
+            "lib/HIP/*.cpp",
+            "lib/HIP/*.h",
+        ],
+        allow_empty = False,
+    ),
+    linkopts = ["-ldl"],
+    linkshared = True,
+    linkstatic = False,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":Support",
+        "//SDK:HAL",
+        "@dlpack",
+        "@hip_include//:hip_headers",
+        "@llvm-project//llvm:Support",
+        "@tl_expected",
+    ],
+)
+
+modular_cc_test(
+    name = "HIPPluginTest",
+    size = "small",
+    srcs = [
+        "lib/HIP/Error.h",
+        "test/Fixture.h",
+        "test/HIPPluginTest.cpp",
+    ],
+    data = [":HIPPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "$(location :HIPPlugin.so)",
+    },
+    gpu_constraints = ["//:amd_gpu"],
+    # run manually for now, as this isn't quite up to full impl coverage
+    tags = [
+        "gpu",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":DriverPluginTests",
+        "@hip_include//:hip_headers",
+        "@tl_expected",
+    ],
+)
+
+# Cross-device (peer) copy test on AMD. Needs two GPUs, so it is gated on
+# has_multi_gpu and lives in its own target (mirrors CUDAPeerCopyTest).
+modular_cc_test(
+    name = "HIPPeerCopyTest",
+    size = "small",
+    srcs = ["test/Fixture.h"],
+    data = [":HIPPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "$(location :HIPPlugin.so)",
+    },
+    gpu_constraints = [
+        "//:amd_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":DriverPluginTests",
+        "@tl_expected",
+    ],
+)
+
+modular_cc_binary(
+    name = "MetalPlugin.so",
+    srcs = glob([
+        "lib/Metal/*.cpp",
+        "lib/Metal/*.h",
+    ]),
+    # IOKit + CoreFoundation are used to read the AGXAccelerator
+    # `gpu-core-count` for the MULTIPROCESSOR_COUNT device attribute.
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-Wl,-framework,IOKit",
+            "-Wl,-framework,CoreFoundation",
+        ],
+        "//conditions:default": [],
+    }),
+    linkshared = True,
+    linkstatic = False,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":Support",
+        "//SDK:HAL",
+        "//Support:Base",
+        "@dlpack",
+        "@metal-cpp//:metal-cpp",
+        "@tl_expected",
+    ],
+)
+
+modular_cc_test(
+    name = "MetalPluginTest",
+    size = "small",
+    srcs = [
+        "lib/Metal/Common.h",
+        "test/Fixture.h",
+        "test/MetalPluginTest.cpp",
+    ],
+    data = [":MetalPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "$(location :MetalPlugin.so)",
+    },
+    gpu_constraints = ["//:apple_gpu"],
+    tags = ["gpu"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":DriverPluginTests",
+        "@tl_expected",
+    ],
+)
+
+modular_cc_binary(
+    # avoids the `lib` prefix; plugins are not traditional libs
+    name = "CPUPlugin.so",
+    srcs = glob([
+        "lib/CPU/*.cpp",
+        "lib/CPU/*.h",
+    ]),
+    linkshared = True,
+    linkstatic = False,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":Support",
+        "//AsyncRT:Runtime",
+        "//SDK:HAL",
+        "//Support:Base",
+        "@dlpack",
+        "@llvm-project//llvm:Support",
+        "@tl_expected",
+    ],
+)
+
+modular_cc_test(
+    name = "CPUPluginTest",
+    size = "small",
+    srcs = [
+        "lib/CPU/Common.h",
+        "test/CPUPluginTest.cpp",
+        "test/Fixture.h",
+    ],
+    data = [":CPUPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "$(location :CPUPlugin.so)",
+    },
+    visibility = ["//visibility:private"],
+    deps = [
+        ":DriverPluginTests",
+        "@dlpack",
+        "@tl_expected",
+    ],
+)
+
+modular_cc_library(
+    name = "Support",
+    srcs = glob(["lib/Support/*.cpp"]),
+    hdrs = glob(["lib/Support/*.h"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK:HAL",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "SupportTest",
+    size = "small",
+    srcs = ["test/SupportTest.cpp"],
+    copts = ["-Wno-nonportable-include-path"],
+    deps = [
+        ":Support",
+        "//SDK:HAL",
+        "@llvm-project//llvm:Support",
+    ],
+)

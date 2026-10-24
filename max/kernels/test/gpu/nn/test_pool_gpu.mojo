@@ -433,10 +433,17 @@ def assert_allclose[
     h_output_ref: TileTensor[dtype, ...],
     h_output_gpu: TileTensor[dtype, ...],
 ) raises:
+    var ref_flat = h_output_ref.reshape(
+        row_major(h_output_ref.layout.product())
+    )
+    var gpu_flat = h_output_gpu.reshape(
+        row_major(h_output_gpu.layout.product())
+    )
     try:
         for i in range(h_output_ref.layout.product()):
             assert_almost_equal(
-                h_output_ref.raw_load(i), h_output_gpu.raw_load(i)
+                ref_flat.load[width=1]((i,)),
+                gpu_flat.load[width=1]((i,)),
             )
     except e:
         print(e)

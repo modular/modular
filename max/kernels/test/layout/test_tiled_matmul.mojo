@@ -117,8 +117,8 @@ struct MMA_Vec(TiledOp):
             for var n in range(N):
 
                 def dot[width: Int](k: Int) {imm}:
-                    dst.store[width=width, alignment=align_of[dst.dtype]()](
-                        Coord(m, n),
+                    dst.store[alignment=align_of[dst.dtype]()](
+                        (m, n),
                         rebind[SIMD[dst.dtype, width]](
                             dst.load[
                                 width=width, alignment=align_of[dst.dtype]()

@@ -32,7 +32,42 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max/_entrypoints",
         "//max/python/max/_entrypoints:pipelines",
+        "//max/python/max/pipelines",
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_export",
+    size = "large",
+    srcs = ["test_pipelines_cli_export.py"],
+    data = [
+        "//max/tests/integration/test_common:pipeline_model_dummy_graph_specs",
+        "//max/tests/integration/test_common/test_llama",
+    ],
+    env = {
+        "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/test_common:pipeline_model_dummy_graph_specs",
+        "TEST_LLAMA_REPO": (
+            "max/tests/integration/test_common/test_llama"
+        ),
+    },
+    # Imported by --custom-architectures at runtime.
+    ignore_extra_deps = [
+        "//max/tests/integration/test_common:pipeline_model_dummy_graph_specs",
+    ],
+    tags = [
+        "no-sandbox",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/_artifact:model_artifact",
+        "//max/python/max/_entrypoints:pipelines",
+        "//max/tests/integration/test_common:pipeline_model_dummy_graph_specs",
+        requirement("click"),
     ],
 )
 

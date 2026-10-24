@@ -19,6 +19,7 @@ modular_eager_py_test(
         "test_module.py",
         "test_module_typing.py",
         "test_print_hook.py",
+        "test_print_hook_compile_weights.py",
         "test_qkv_linear.py",
         "test_sequential.py",
         "test_subgraph.py",
@@ -42,6 +43,9 @@ modular_eager_py_test(
         "test_module.py": ["skip-external-ci"],
         "test_module_typing.py": ["skip-external-ci"],
         "test_print_hook.py": ["skip-external-ci"],
+        "test_print_hook_compile_weights.py": ["skip-external-ci"],
+        # QUA-1038
+        "test_subgraph.py": ["manual"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -51,6 +55,7 @@ modular_eager_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
         "//max/python/max/experimental/testing",
@@ -77,6 +82,25 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
+    ],
+)
+
+modular_eager_py_test(
+    name = "rotary_embedding_gpu_tests",
+    srcs = ["rope/test_rotary_embedding_gpu.py"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )
 
@@ -175,6 +199,71 @@ modular_py_test(
         "//max/python/max/experimental/nn",
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "quant_silu_tests",
+    size = "large",
+    srcs = ["test_quant_silu_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": ["//:has_gpu"],
+    }),
+    deps = [
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "grouped_matmul_silu_nvfp4_tests",
+    size = "large",
+    # The 256-expert case takes ~6.5 minutes to compile on an idle B200, so it
+    # needs more than `large`'s 15 minutes of headroom on a contended worker.
+    timeout = "long",
+    srcs = ["test_grouped_matmul_silu_nvfp4_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    # Each case compiles its own graphs, and the 256-expert one takes
+    # minutes; shard so they compile in parallel rather than in series. One
+    # shard per case, since an empty shard fails the target.
+    shard_count = 3,
+    tags = [
+        "gpu",
+    ],
+    # NVFP4 grouped matmuls are validated on B200 only.
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
+        requirement("numpy"),
     ],
 )
 

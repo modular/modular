@@ -297,15 +297,15 @@ lit.fn @does_memcpy<l: !lit.origin<true>, l2: !lit.origin<true>>
 // CHECK-LABEL: kgen.generator @takes_pack<types: param_list<type>>
 lit.fn @takes_pack
 <life: !lit.origin<true>, types: !kgen.param_list<!kgen.type>>
-// CHECK-SAME: (%arg0: !kgen.struct<variadic_ptr_map(:param_list<type> types, 42) isParamPack>)
+// CHECK-SAME: (%arg0: !kgen.struct<variadic_ptr_map(:param_list<type> types, 42) isParamPack layout>)
 // CHECK-SAME: sourceParamList = #kgen.pog_list<[<"life", pos_or_kw, not_vararg>, <"types", pos_or_kw, not_vararg>]>
 (%args: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>) {
 
-  // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[0] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack>
+  // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[0] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack layout>
   // CHECK-NEXT: kgen.rebind [[E]] : !kgen.param<{{.*}}> to !kgen.pointer
   %v1 = lit.ref.pack.extract %args[0]: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>
 
-  // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[1] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack>
+  // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[1] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack layout>
   // CHECK-NEXT: kgen.rebind [[E]] : !kgen.param<{{.*}}> to !kgen.pointer
   %v2 = lit.ref.pack.extract %args[1]: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>
 

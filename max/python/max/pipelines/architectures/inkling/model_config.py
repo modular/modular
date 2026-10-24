@@ -24,7 +24,6 @@ from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.kv_cache import (
     KVCacheParams,
-    MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
 )
@@ -328,38 +327,6 @@ def parse_inkling_mtp_config(
     )
 
 
-def nest_inkling_mtp_kv_params(
-    target: MultiKVCacheParams,
-    mtp: InklingMTPConfig,
-    n_depths: int,
-) -> MultiKVCacheParams:
-    """Wraps backbone caches under ``target`` and adds per-depth ``draft`` caches.
-
-    Idempotent when ``target`` is already the nested MTP tree.
-    """
-    if "target" in target.children and "draft" in target.children:
-        return target
-    n_local = sum(mtp.local_flags(n_depths))
-    n_global = n_depths - n_local
-    draft_children: dict[str, MHAKVCacheParams] = {}
-    for key, count in (
-        (GLOBAL_ATTENTION, n_global),
-        (LOCAL_ATTENTION, n_local),
-    ):
-        if count == 0:
-            continue
-        child = target.child(key, MHAKVCacheParams)
-        draft_children[key] = replace(child, num_layers=count)
-    if not draft_children:
-        raise ValueError("Inkling MTP built zero draft attention layers")
-    return MultiKVCacheParams.from_params(
-        {
-            "target": target,
-            "draft": MultiKVCacheParams.from_params(draft_children),
-        }
-    )
-
-
 @dataclass(kw_only=True)
 class InklingConfig(ArchConfigWithKVCache):
     """Top-level Inkling config wrapping the text and vision backbones."""
@@ -388,7 +355,8 @@ class InklingConfig(ArchConfigWithKVCache):
     use_subgraphs: bool = True
 
     mtp: InklingMTPConfig | None = None
-    """Set on the unified MTP path; the text-only architecture leaves it None."""
+    """Set under the ``mtp`` speculative method, for the depths the checkpoint
+    ships; ``None`` otherwise."""
 
     def __post_init__(self) -> None:
         # Caught here so a mismatched checkpoint fails at config time with the
@@ -491,13 +459,6 @@ class InklingConfig(ArchConfigWithKVCache):
                 ),
             }
         )
-        if mtp_depths:
-            assert mtp is not None
-            # TODO(thomas.borstad): give the draft its own dispatch metadata
-            # (declare `speculative_method="mtp"`) instead of replaying the
-            # verify metadata over zeroed cache lengths; that changes the
-            # graph's input signature.
-            attention = nest_inkling_mtp_kv_params(attention, mtp, mtp_depths)
         state = RecurrentStateParams(
             # The ring must cover a rollback of up to mtp_depths tokens.
             regions=conv_state_regions(

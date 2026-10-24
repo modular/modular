@@ -31,6 +31,7 @@
 from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from std.math import isnan
+from std.memory.alloc import unsafe_alloc
 
 
 def copy_uninitialized(
@@ -51,7 +52,7 @@ def main() raises:
         ctx.enqueue_function[copy_uninitialized](
             src, dst, grid_dim=(1,), block_dim=(n,)
         )
-        var dst_host = alloc[Float32](n)
+        var dst_host = unsafe_alloc[Float32](n)
         ctx.enqueue_copy(dst_host, dst)
         ctx.synchronize()
         var nan_count = 0
@@ -61,11 +62,9 @@ def main() raises:
         # Under poison, every lane reads poisoned `src` and copies NaN to `dst`.
         if nan_count != n:
             raise Error(
-                "expected all "
-                + String(n)
-                + " elements to be NaN under poison; got "
-                + String(nan_count)
+                t"expected all {n} elements to be NaN under poison; got"
+                t" {nan_count}"
             )
         _ = src
         _ = dst
-        dst_host.free()
+        dst_host.unsafe_free()

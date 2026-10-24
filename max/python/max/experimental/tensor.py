@@ -21,8 +21,8 @@ and execute using the MAX runtime.
 **Key Features:**
 
 - **Eager semantics**: Operations give immediate results for quick iteration and feedback.
-- **High performance**: All operations use high-performance Mojo implementations
-    compiled specifically for the available hardware.
+- **Performance**: Each operation runs a Mojo implementation compiled for the
+    hardware this process detects.
 - **Automatic compilation**: Tensors are compiled and optimized automatically.
     Operations may be easily fused into larger graphs to take advantage of
     the graph compiler's automatic fusions.
@@ -138,6 +138,9 @@ from max.graph import (
     ops,
 )
 from max.graph import TensorType as TensorType  # re-exported
+from max.graph._api_boundary import (
+    register_api_boundaries as _register_api_boundaries,
+)
 from max.graph.ops.constant import NestedArray, Number
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
@@ -576,6 +579,22 @@ class Tensor(DLPackArray, HasTensorValue):
         result = y + zeros
         print(result)
 
+    A tensor can span several devices. It reports a global shape folded from
+    the per-device shapes, and each device holds its own value: a slice, a
+    full copy, one term of a pending sum, or, on an ``Unknown`` axis, a value
+    with no known relation to its peers. Its
+    :class:`~max.experimental.sharding.DeviceMapping` records which. Ops
+    accept a distributed tensor the way they accept any other tensor, and
+    reshard it when their sharding rule requires a different placement.
+    These accessors read one local buffer and raise :class:`ValueError` on a
+    distributed tensor: :attr:`storage`, :attr:`state`, :attr:`device`,
+    :attr:`driver_tensor`, ``__dlpack__``, ``__dlpack_device__``, and
+    ``bool(tensor)``. Awaiting the tensor raises the same error, and
+    :attr:`type` raises :class:`TypeError` and points at :attr:`layout`.
+    :meth:`item` raises unless every mesh axis is replicated. Use
+    :attr:`local_shards` for the per-device values, and :meth:`materialize` or
+    :meth:`to_numpy` to gather the whole array into one.
+
     A tensor is either *realized* (backed by a concrete
     :class:`~max.driver.Buffer` in memory) or *unrealized* (backed by a
     symbolic graph value). MAX realizes tensors by running pre-compiled Mojo
@@ -629,6 +648,10 @@ class Tensor(DLPackArray, HasTensorValue):
         sharding rule. The new placement is a trusted claim; ensure it is
         correct to prevent incorrect downstream results.
 
+        The mapping is checked against this tensor's mesh and nothing else: a
+        placement may name an axis the shards do not have, or a shape the
+        shards do not match, and the tensor keeps the claim.
+
         Args:
             mapping: The mapping to claim, on this tensor's mesh.
 
@@ -651,7 +674,12 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def is_distributed(self) -> bool:
-        """Returns ``True`` if this tensor spans multiple devices."""
+        """Returns ``True`` when the tensor's mesh holds more than one device.
+
+        That is a property of the mesh, not of the values: a fully replicated
+        tensor on a four-device mesh reports ``True``, and a tensor on a
+        one-device mesh reports ``False`` whatever its placement.
+        """
         return self._mapping.mesh.num_devices > 1
 
     @property
@@ -661,18 +689,24 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def placements(self) -> tuple[Placement, ...]:
-        """Returns per-axis placement descriptors.
+        """Returns one placement per mesh axis.
 
-        For :class:`~max.experimental.sharding.NamedMapping`,
-        this converts to placements on the fly.  Raises
-        :class:`~max.experimental.sharding.ConversionError`
-        if the spec contains compiler-only annotations.
+        A :class:`~max.experimental.sharding.NamedMapping` carries the
+        placements its spec resolved to when it was built, so this is a plain
+        read. A spec that names one mesh axis for two tensor dimensions, or an
+        axis that is both unreduced and sharded, raises
+        :class:`~max.experimental.sharding.ConversionError` at construction.
         """
         return self._mapping.placements
 
     @property
     def num_shards(self) -> int:
-        """Returns the number of shards (1 for an unsharded tensor)."""
+        """Returns the number of per-device values.
+
+        That is the device count of the mesh, and 1 for a tensor on a single
+        device. A replicated distributed tensor reports one value per device
+        even though every value holds the whole array.
+        """
         if self._storages is not None:
             return len(self._storages)
         if self._state is not None:
@@ -681,16 +715,18 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def local_shards(self) -> tuple[Tensor, ...]:
-        """Returns per-device shard views as independent unsharded Tensors.
+        """Returns one unsharded tensor per device.
 
-        Each returned Tensor is a lightweight, standalone, unsharded Tensor
-        backed by a single shard's storage or graph value.  They can be
-        passed directly to ``F.*`` ops or used as ``Module`` parameters.
+        Each entry is a lightweight, unsharded Tensor backed by a single
+        shard's storage or graph value. They can be passed directly to ``F.*``
+        ops or used as ``Module`` parameters. The entries wrap the tensor's own
+        buffers rather than copies, so a write through one reaches the parent.
 
-        For realized sharded tensors, each shard wraps one ``driver.Buffer``.
-        For unrealized sharded tensors, each shard wraps one ``GraphValue``
-        from the shared ``RealizationState``.
-        For unsharded tensors, returns a 1-tuple containing ``self``.
+        A realized distributed tensor gives one entry per ``driver.Buffer``; an
+        unrealized one gives one entry per ``GraphValue`` of the shared
+        realization state. On a replicated tensor every entry holds the whole
+        array, so read ``.shape`` on the entry for the per-device shape. A
+        tensor on a single device returns ``(self,)``.
         """
         if not self.is_distributed:
             return (self,)
@@ -710,14 +746,14 @@ class Tensor(DLPackArray, HasTensorValue):
         """Returns per-shard graph values directly from the realization state.
 
         For unrealized tensors (both distributed and single-device), returns
-        the underlying ``GraphValue``s (``TensorValue | BufferValue``) without
+        the underlying graph values (``TensorValue | BufferValue``) without
         wrapping in intermediate Tensor objects.
 
         For realized tensors, creates graph values via ``__tensorvalue__()``
         on each shard.
 
-        This is the primary way to access graph-level shard values for
-        custom dispatch rules and SPMD loops.
+        Read this to reach the per-device graph values that custom dispatch
+        rules and single-program multiple-data (SPMD) loops build on.
         """
         if self._state is not None:
             return self._state.values
@@ -736,7 +772,11 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def storage(self) -> driver.Buffer | None:
-        """Returns the single backing buffer (unsharded tensors only)."""
+        """Returns the single backing buffer (unsharded tensors only).
+
+        Raises:
+            ValueError: If the tensor is distributed.
+        """
         self._check_not_distributed("storage")
         if self._storages is None:
             return None
@@ -749,7 +789,11 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def state(self) -> RealizationState | None:
-        """Returns the realization state (unsharded tensors only)."""
+        """Returns the realization state (unsharded tensors only).
+
+        Raises:
+            ValueError: If the tensor is distributed.
+        """
         self._check_not_distributed("state")
         return self._state
 
@@ -1634,6 +1678,13 @@ class Tensor(DLPackArray, HasTensorValue):
     def shape(self) -> graph.Shape:
         """Gets the global (logical) shape of the tensor.
 
+        A distributed tensor folds its shape from the per-device shapes, and
+        this works for unrealized tensors too. A sharded axis reports a
+        per-shard dim that records the global extent, readable with
+        ``global_dim``; an ``Unknown`` axis whose per-device sizes differ
+        keeps those sizes; and ``Replicated`` copies that disagree raise
+        :class:`ValueError`.
+
         Returns:
             The global shape of the tensor.
         """
@@ -1892,7 +1943,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Returns:
             The scalar value from the tensor. The return type matches the tensor's
-            dtype (such as float for float32, int for int32).
+            dtype (such as ``float`` for ``float32``, ``int`` for ``int32``).
 
         Raises:
             TypeError: If the tensor contains more than one element.
@@ -1933,20 +1984,23 @@ class Tensor(DLPackArray, HasTensorValue):
         This method supports three target types:
 
         1. **Device**: Transfers a single-device tensor to the target device.
-           A distributed tensor is gathered onto the device. For realized
-           tensors, performs a direct driver-level transfer via
-           :meth:`~max.driver.Buffer.to`. For unrealized tensors, inserts a
-           :func:`~max.graph.ops.transfer_to` op into the computation graph.
+           A realized tensor moves with :meth:`~max.driver.Buffer.to`; an
+           unrealized one gets a :func:`~max.graph.ops.transfer_to` op. A
+           distributed tensor is allreduced and allgathered into a full copy
+           first, then moved.
 
         2. **DeviceMapping**: Reassigns the tensor's device mesh and placements.
            For single-device mappings, equivalent to ``.to(device)``.
-           For multi-device mappings on an unsharded tensor, distributes the
-           tensor across the mesh using the shard collective.
+           For multi-device mappings on a tensor on one device, the host slices
+           each device's part and transfers it, with no collective.
 
-        3. **DeviceMesh**: Replaces the device mesh while keeping existing
-           placements. For unsharded tensors targeting a multi-device mesh,
-           creates a fully replicated mapping. For distributed tensors,
-           transfers shards to the new mesh devices.
+        3. **DeviceMesh**: Replaces the device mesh. Placements are kept, except
+           that a tensor whose mapping is a
+           :class:`~max.experimental.sharding.NamedMapping` re-resolves its
+           named spec against the new mesh, so names the new mesh lacks become
+           :class:`~max.experimental.sharding.Replicated`. For unsharded
+           tensors targeting a multi-device mesh, creates a fully replicated
+           mapping.
 
         .. code-block:: python
 
@@ -1972,11 +2026,20 @@ class Tensor(DLPackArray, HasTensorValue):
                   keeping existing placements (or fully replicated for
                   unsharded tensors).
                 - :class:`~max.experimental.sharding.DeviceMapping`: New mesh
-                  and placements; triggers shard collective for multi-device.
+                  and placements.
 
         Returns:
-            Tensor: A tensor on the specified target. Returns ``self`` if no
-            transfer is needed.
+            A tensor on the specified target. Returns ``self`` when a
+            realized tensor is already on the target device; an unrealized
+            tensor on that device comes back as a new tensor with a transfer
+            op.
+
+        Raises:
+            TypeError: If ``target`` is none of the three types.
+            ShardingError: If the move would change an
+                :class:`~max.experimental.sharding.Unknown` placement, or a
+                target would split a size-1 axis.
+            NotImplementedError: If no collective performs the change.
         """
         mapping: DeviceMapping
         if isinstance(target, Device):
@@ -1999,20 +2062,32 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.transfer_to(self, mapping)
 
     def materialize(self) -> Tensor:
-        """Gather a distributed tensor into a single local tensor.
+        """Gathers a distributed tensor into one local tensor on CPU.
 
-        Allreduces Partial axes, allgathers Sharded axes, and transfers
-        the result to CPU.  Returns ``self`` unchanged for non-distributed
-        tensors.
+        Allreduces every ``Partial`` axis, allgathers every ``Sharded`` axis,
+        then transfers the single copy to CPU. Returns ``self`` unchanged, on
+        its own device, when the tensor is not distributed.
+
+        Raises:
+            ShardingError: If an
+                :class:`~max.experimental.sharding.Unknown` placement would
+                have to change.
         """
         if not self.is_distributed:
             return self
         return _transfer_to(self, CPU())
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
-        """Convert this tensor to a NumPy array.
+        """Converts this tensor to a NumPy array.
 
-        Materializes distributed tensors and transfers to CPU if needed.
+        Gathers a distributed tensor through the same allreduce and allgather
+        path as :meth:`materialize`, and moves a single-device tensor to CPU
+        when it is stored elsewhere.
+
+        Raises:
+            ShardingError: If an
+                :class:`~max.experimental.sharding.Unknown` placement would
+                have to change.
         """
         _validation_hooks.device_transfer("Tensor.to_numpy()", self, CPU())
         t = _transfer_to(self, CPU()) if self.is_distributed else self
@@ -2727,3 +2802,7 @@ from max.experimental import functional as F  # isort: skip
 # partially-initialized package (circular import guard).
 _buffer_store_slice = lambda *a, **kw: F.buffer_store_slice(*a, **kw)
 _transfer_to = lambda *a, **kw: F.transfer_to(*a, **kw)
+
+
+# A tensor's operators and methods create ops (see `max.graph._api_boundary`).
+_register_api_boundaries(vars(Tensor), "max")

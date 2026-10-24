@@ -23,7 +23,6 @@ from max.gpu import (
     block_dim,
     block_idx,
     thread_idx,
-    WARP_SIZE,
     lane_id,
     warp_id,
 )
@@ -38,6 +37,7 @@ from max.gpu.sync import (
     mbarrier_try_wait_parity_shared,
 )
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -90,10 +90,14 @@ def global_reduction_kernel[
     accum_type: DType,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: def[width: Int, _rank: Int](
-        idx: IndexList[_rank]
-    ) capturing -> SIMD[dtype, width],
-](d_out: MutPointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, _rank: Int](idx: IndexList[_rank]) -> SIMD[dtype, width],
+](
+    d_out: MutPointer[Scalar[accum_type], MutAnyOrigin],
+    num_cols_dev: Int32,
+    input_fn: InputFnType,
+):
     # `Int` is not device-passable; widen the fixed-width arg.
     var num_cols = Int(num_cols_dev)
     var tid = thread_idx.x
@@ -138,7 +142,7 @@ def tma_reduction_kernel[
     # Create barrier for TMA transfer from GMEM to SMEM.
     var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
 
-    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).unsafe_bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:
@@ -159,7 +163,7 @@ def tma_reduction_kernel[
     var vec_data = SIMD[accum_type, simd_width](0)
     var idx = thread_idx.x * simd_width
     if idx < cols:
-        vec_data = shmem.load[width=simd_width](idx).cast[accum_type]()
+        vec_data = shmem.unsafe_load[width=simd_width](idx).cast[accum_type]()
     var local_sum = vec_data.reduce_add()
 
     # Block reduction of local sums.
@@ -174,11 +178,12 @@ def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
 ](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,) raises:
     var n = rows * cols
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime simd_width = simd_width_of[dtype, target=ctx.target]()
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // warp_size
     comptime accum_type = get_accum_type[dtype]()
 
-    var h_data = alloc[Scalar[dtype]](n)
+    var h_data = unsafe_alloc[Scalar[dtype]](n)
     var expected_sum = Scalar[accum_type](0)
     rand[dtype](h_data, n)
     for i in range(n):
@@ -189,17 +194,17 @@ def test_tma_block_reduce[
 
     var grid_dim = rows
     var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
-        WARP_SIZE * max_warps_per_block,
+        ceildiv(ceildiv(cols, simd_width), warp_size) * warp_size,
+        warp_size * max_warps_per_block,
     )
 
-    var result_host = alloc[Scalar[accum_type]](grid_dim)
+    var result_host = unsafe_alloc[Scalar[accum_type]](grid_dim)
     var d_out = ctx.enqueue_create_buffer[accum_type](grid_dim)
     ctx.enqueue_memset(d_out, 0)
 
     # Define the kernel launch function for benchmarking
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {imm} -> None:
+    def kernel_launch(ctx: DeviceContext) raises {mut d_data, imm} -> None:
         comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype, 2](
                 d_data,
@@ -226,12 +231,10 @@ def test_tma_block_reduce[
             var data_buf = TileTensor(d_data, row_major(rows, cols))
 
             # Change the input function to match RMS norm pattern
-            @__copy_capture(data_buf)
             @inline(.always)
-            @__parameter
             def input_fn_2d[
                 width: Int, _rank: Int
-            ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
+            ](idx: IndexList[_rank]) {var data_buf} -> SIMD[dtype, width]:
                 var coord = Coord(idx)
                 comptime assert data_buf.flat_rank >= coord.flat_rank
                 return data_buf.load[width=width](coord)
@@ -241,12 +244,13 @@ def test_tma_block_reduce[
                 accum_type,
                 simd_width,
                 max_warps_per_block,
-                input_fn_2d,
+                type_of(input_fn_2d),
             ]
 
             ctx.enqueue_function[kernel](
                 d_out,
                 Int32(cols),  # num_cols
+                host_args=(input_fn_2d,),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
             )
@@ -291,8 +295,8 @@ def test_tma_block_reduce[
         atol=1e-2,
     )
 
-    h_data.free()
-    result_host.free()
+    h_data.unsafe_free()
+    result_host.unsafe_free()
     _ = d_data
     _ = d_out
 

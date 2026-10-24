@@ -17,7 +17,7 @@ Powers the ``--profile`` flag on ``max pipelines generate`` and
 ``max pipelines benchmark``. The implementation is split across siblings:
 
 - :mod:`._backend` — host capability detection
-- :mod:`._cuda` — ``cudaProfilerStart``/``Stop`` bracketing
+- :mod:`._cuda` — ``cuProfilerStart``/``Stop`` bracketing
 - :mod:`._cprofile` — Python/CPU summary rendering
 - :mod:`._nsys` — Nsight Systems re-exec and kernel-summary rendering
 - :mod:`._runner` — top-level orchestrators wired by the CLI handlers

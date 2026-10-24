@@ -132,7 +132,7 @@ def fused_bias_residual_matmul_dispatch_sm100[
         dtype, width
     ]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row = 0 if epilogue_is_1d else Int(idx[0].value())
+        var row = 0 if epilogue_is_1d else Int(idx[0])
         return val + rebind[SIMD[dtype, width]](
             epilogue_tensor.load[
                 width=width, alignment=alignment * size_of[c_type]()

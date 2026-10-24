@@ -81,16 +81,16 @@ kgen.func @f_reference() {
 
 // -----
 
-// COM: Don't do anything for kgen.create_closure's callee.
-// CHECK-LABEL: kgen.func @closure_callee(%arg0: index, %arg1: index) capturing -> index
- kgen.func @closure_callee(%arg0: index, %arg1: index) capturing -> index {
+// COM: Don't do anything for kgen.create_func_ptr's callee.
+// CHECK-LABEL: kgen.func @closure_callee(%arg0: index, %arg1: index) -> index
+ kgen.func @closure_callee(%arg0: index, %arg1: index) -> index {
    hlcf.return %arg1: index
  }
 
  kgen.func @closure_caller() -> index {
    %idx0 = index.constant 0
-   %0 = kgen.create_closure[(index, index) capturing -> index: @closure_callee](%idx0)
-   %1 = kgen.call_indirect %0(%idx0) : (index) capturing -> index
+   %0 = kgen.create_func_ptr[(index, index) -> index: @closure_callee]()
+   %1 = kgen.call_indirect %0(%idx0, %idx0) : (index, index) -> index
    hlcf.return %1: index
  }
 
@@ -153,5 +153,24 @@ kgen.func @arg_metadata_follows_live_args(
 // CHECK-LABEL: kgen.func export @calls_arg_metadata_follows_live_args
 kgen.func export @calls_arg_metadata_follows_live_args(%arg: index) -> index {
   %0 = kgen.call @arg_metadata_follows_live_args(%arg, %arg, %arg, %arg) : (index, index, index, index) -> index
+  hlcf.return %0: index
+}
+
+// -----
+
+// COM: A dead argument that flows only into pure ops whose final result is
+// COM: dead (never used) must not crash the pass. The value is not provably
+// COM: live, so the argument and the dead pure op are removed.
+// CHECK-LABEL: kgen.func @dead_end_pure_chain() -> index
+kgen.func @dead_end_pure_chain(%dead_arg: index) -> index {
+  %0 = index.add %dead_arg, %dead_arg
+  %1 = index.constant 0
+  hlcf.return %1: index
+}
+
+// CHECK-LABEL: kgen.func export @calls_dead_end_pure_chain
+kgen.func export @calls_dead_end_pure_chain(%arg: index) -> index {
+  // CHECK: kgen.call @dead_end_pure_chain() : () -> index
+  %0 = kgen.call @dead_end_pure_chain(%arg) : (index) -> index
   hlcf.return %0: index
 }

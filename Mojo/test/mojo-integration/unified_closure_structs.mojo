@@ -16,7 +16,7 @@
 from std.sys import argv
 
 
-# COM: Test the capturing effect is propagated through to trait methods
+# COM: A struct with state conforms to a closure trait through `__call__`.
 trait DefinesClosure(def(z: Int) -> Int):
     pass
 

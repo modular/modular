@@ -18,14 +18,6 @@ from std.testing import TestSuite
 from std.utils import IndexList
 from std.utils.numerics import min_or_neg_inf
 
-comptime _map_fn_type = def[rank: Int](IndexList[rank]) capturing -> Tuple[
-    IndexList[rank],
-    IndexList[rank],
-]
-comptime load_fn_type = def[dtype: DType, rank: Int, simd_width: Int](
-    IndexList[rank]
-) capturing -> SIMD[dtype, simd_width]
-
 
 def _linear_index[
     rank: Int

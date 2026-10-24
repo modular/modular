@@ -416,7 +416,6 @@ def KGEN_FuncType : KGENType<"Func", "func", [
 
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }
-    bool isCapturing() const { return getFnEffects().isCapturing(); }
     bool isRefResult() const { return getFnEffects().isRefResult(); }
     bool isCABI() const { return getFnEffects().isCABI(); }
 
@@ -774,9 +773,10 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     This type represents a struct. A struct contains element types arranged in
     their order of declaration and a flag indicating register-passability.
 
-    This is the "anonymous" version of `!kgen.concrete_source_struct` that
-    strips away all information except for those necessary for understanding the
-    memory layout of the data it describes.
+    This is the "anonymous" version of `!kgen.struct_inst`. As a
+    layout, it strips away all information except for those necessary for
+    understanding the memory layout of the data it describes. See "Layouts and
+    value representations" below.
 
     The element types are stored as a `TypedAttr` which can be either:
     - A concrete `ParamListAttr` with resolved types
@@ -809,6 +809,51 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
       %0: !kgen.struct<(Ts)>,
     ) { hlcf.return }
     ```
+
+    #### Layouts and value representations
+
+    A struct is in one of two domains, determined by the `domain` attribute:
+
+    - A layout describes memory. Each element is reduced to the layout half of
+      its type constant.
+    - A value representation is the type value half of a type constant. It
+      preserves each element as-is.
+
+    Before LowerLIT, a struct can also have no domain. LowerLIT gives it
+    one by its position: a layout where it describes memory, and a value
+    representation where it is a type value. After LowerLIT, every struct has
+    a domain.
+
+    The sugared syntax denotes the domain:
+
+    - `(...)` is a list of types. It makes a layout; this is most common case.
+    - `[...]` or a parameter expression is a parameter value. It has no domain
+      yet. Add the `layout` keyword to make a layout, or the `value` keyword
+      to make a value representation.
+
+    ```mlir
+    // Layouts.
+    !kgen.struct<(index, f32)>
+    !kgen.struct<(T)>
+    !kgen.struct<Ts layout>
+
+    // Value representations.
+    !kgen.struct<[T] value>
+    !kgen.struct<Ts value>
+    !kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>]] value>
+
+    // No domain yet.
+    !kgen.struct<[T]>
+    !kgen.struct<Ts>
+
+    // A type constant pairs the value representation with the layout.
+    #kgen.type<!kgen.struct<[T] value>, !kgen.struct<(T)>>
+    ```
+
+    The printer uses `(...)` for each layout whose elements are all known.
+    Thus `!kgen.struct<[T] layout>` prints as `!kgen.struct<(T)>`, and
+    `#kgen.type<!kgen.struct<[index] value>, !kgen.struct<(index)>>` folds to
+    `#kgen.type<!kgen.struct<(index)>>`.
   }];
 
   let parameters = (ins
@@ -828,7 +873,11 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 
     // This is true when this corresponds to a variadic parameter pack. This is
     // looked at by ArgConvention lowering to know when it can flatten a pack.
-    "bool":$isParamPack
+    "bool":$isParamPack,
+
+    // Whether the struct is a memory layout (the type domain), a value
+    // representation (the value domain), or undecided.
+    "StructDomain":$domain
   );
   // Use hasCustomAssemblyFormat since we need to handle empty struct specially.
   let hasCustomAssemblyFormat = 1;
@@ -838,11 +887,19 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
   let skipDefaultBuilders = 1;
   let builders = [
     // Main builder with TypedAttr isMemoryOnly - implemented in KGENTypes.cpp.
-    // minAlignment defaults to 1 (no explicit alignment) when TypedAttr{} is passed.
+    // It builds a struct with no domain yet; `getLayoutDomain` and
+    // `getValueDomain` build one with a domain. minAlignment defaults to 1 (no
+    // explicit alignment) when TypedAttr{} is passed.
     TypeBuilder<(ins "TypedAttr":$variadic,
                      CArg<"TypedAttr", "{}">:$isMemoryOnly,
                      CArg<"TypedAttr", "{}">:$minAlignment,
                      CArg<"bool", "false">:$isParamPack), [{}]>,
+    // Builder that takes every flag, for rebuilding an existing struct.
+    TypeBuilder<(ins "TypedAttr":$variadic,
+                     "TypedAttr":$isMemoryOnly,
+                     "TypedAttr":$minAlignment,
+                     "bool":$isParamPack,
+                     "StructDomain":$domain), [{}]>,
     // Convenience builder with bool isMemoryOnly (wraps in BoolAttr).
     TypeBuilder<(ins "TypedAttr":$variadic,
                      "bool":$isMemoryOnly,
@@ -891,7 +948,22 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     /// this reflects the instantiated convention.
     bool isDefinitelyMemoryOnly() const;
 
-    /// Builders with explicit context.
+    /// Builds a layout struct, which reduces each element to its layout half.
+    static StructType getLayoutDomain(MLIRContext *context, TypedAttr variadic,
+                                      TypedAttr isMemoryOnly = {},
+                                      TypedAttr minAlignment = {},
+                                      bool isParamPack = false);
+
+    /// Builds a value struct, which keeps each element whole.
+    static StructType getValueDomain(MLIRContext *context, TypedAttr variadic,
+                                     TypedAttr isMemoryOnly = {},
+                                     TypedAttr minAlignment = {},
+                                     bool isParamPack = false);
+
+    bool isLayoutDomain() const { return getDomain() == StructDomain::Layout; }
+    bool isValueDomain() const { return getDomain() == StructDomain::Value; }
+
+    /// Builders with explicit context. A list of types is always a layout.
     static StructType get(MLIRContext *context, ArrayRef<Type> types,
                           bool isMemoryOnly = false,
                           TypedAttr minAlignment = {});

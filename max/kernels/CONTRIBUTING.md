@@ -1,61 +1,38 @@
 # MAX accelerator library contributor guide
 
 Thank you for your interest in contributing to the MAX accelerator library!
-We’re excited to welcome external contributors to help build high-performance
-CPU and GPU kernels in Mojo.
+The library follows the [MAX contributor
+handbook](/max/docs/contributing/README.md), which sets the policy for every
+area of MAX and describes the [contribution
+process](/max/docs/contributing/contribution-process.md).
 
-## Contributing to the accelerator library
+## Changes we accept
 
-The accelerator library powers key components of MAX and Mojo, and
-contributions here can have a meaningful impact across the AI ecosystem. Before
-jumping in, please take a moment to review our contribution guidelines and
-processes.
+Today the library accepts *bug fixes* only. See the [kernels contribution
+area](/max/docs/contributing/contribution-areas.md#kernels) for the current
+policy. A fix needs a test that checks results against a reference, and a fix
+for a performance regression needs a
+[`kbench`](/max/docs/kernel-benchmarking.md) result on the hardware it
+targets.
 
-We welcome contributions across a wide range of functionality, but **if you’re
-proposing a change that could affect the performance of the core kernel
-library**, we ask that you first go through our [proposal process](#proposals).
+We plan to open the library to new kernels and other larger changes over time,
+with a proposal process for changes that could affect the performance of the
+core kernel library. Until then, if you have a kernel in mind, [open an
+issue](https://github.com/modular/modular/issues) describing it so we can
+discuss where it fits.
 
-### Changes we accept
+## Developing in the library
 
-We welcome contributions across all hardware platforms and are particularly
-interested in Blackwell, Hopper, MI3xx, and other data center GPUs.
+Run the tests for the kernel you changed rather than the whole library:
 
-In particular, we welcome contributions of the following kernels:
+```bash
+./bazelw test //max/kernels/test/linalg/...
+```
 
-- Batched matrix multiplication (BMM)
-- Multi-head latent attention (MLA)
-- Mixture of experts (MOE)
-- Non-maximum suppression (NMS)
-- Grouped matrix multiplication
-- 2D convolutions
-- General matrix-vector multiply (GEMV) on Hopper
-
-## Proposals
-
-If you’re interested in making a significant change (one that doesn’t fall into
-the [list of changes we accept](#changes-we-accept) above), your first step is
-a written proposal. The proposal process:
-
-- Ensures feedback from the widest possible set of community members
-- Maintains an audit trail of important design decisions
-- Provides rationale for changes that impact long-term performance or
-architecture
-
-**To submit a proposal, create a GitHub Pull Request that adds a document to the
-[`modular/Mojo/proposals`](https://github.com/modular/modular/tree/main/Mojo/proposals)
-directory.**
-
-Contributors are encouraged to react with a 👍 to proposal PRs if they support
-the high-level direction. Proposals are reviewed and assigned to accelerator
-library leads. A proposal can be merged once the lead approves, all blocking
-issues are resolved, and relevant decisions are incorporated. If a lead chooses
-to defer or reject the proposal, they will explain the reasoning and close the
-PR. This process is inspired by successful practices in other open source
-communities.
-
-## Submitting pull requests
-
-For details about how to submit a pull request, see the repo's
-[primary contributing guide](../../CONTRIBUTING.md).
+GPU tests live under `max/kernels/test/gpu` and need the hardware they target.
+If you can only test on one of the GPUs a change affects, say so in the PR.
+For benchmarking and profiling, see [kernel benchmarking with
+`kbench`](/max/docs/kernel-benchmarking.md) and [kernel profiling with Nsight
+Compute](/max/docs/kernel-profiling.md).
 
 Thank you for your contributions! ❤️

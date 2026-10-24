@@ -160,17 +160,6 @@ kgen.generator @const_string(%arg0: !kgen.pointer<i8>) -> !kgen.struct<(i8, poin
   hlcf.return %2 : !kgen.struct<(i8, pointer<i8>)>
 }
 
-kgen.generator @parameter_closure() -> index {
-  %0 = pop.compiler.global_load "named_global" : index
-  hlcf.return %0 : index
-}
-
-kgen.generator @region_parameter(%arg0: index) -> index {
-  pop.compiler.global_store "named_global", %arg0 : index
-  %0 = kgen.call @parameter_closure() : () -> index
-  hlcf.return %0 : index
-}
-
 kgen.generator @store_undef() -> index {
   %0 = pop.stack_allocation 1 x index
   %1 = kgen.param.constant = <#interp.uninitmem>
@@ -400,9 +389,6 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<(i8, pointer<i8>)> = <apply(
     :(!kgen.pointer<i8>) -> !kgen.struct<(i8, pointer<i8>)> @const_string,
     #interp.memref<{[(#string, const_global, [], [])], []}, 0, 2>)>
-
-  // CHECK-NEXT: <1>
-  kgen.param.constant = <apply(:(index) -> index @region_parameter, 1)>
 
   // COM: The value is garbage. Just make sure the function interprets.
   // CHECK-NEXT: <{{.*}}>

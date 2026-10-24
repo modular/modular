@@ -103,11 +103,11 @@ def _attend_key[
     heads_per_warp: Int,
     round_p: Bool,
 ](
-    k: SIMD[DType.float32, lane_width],
-    q: Array[SIMD[DType.float32, lane_width], heads_per_warp],
+    k: SIMD[.float32, lane_width],
+    q: Array[SIMD[.float32, lane_width], heads_per_warp],
     mut m: Array[Float32, heads_per_warp],
     mut l: Array[Float32, heads_per_warp],
-    mut acc: Array[SIMD[DType.float32, lane_width], heads_per_warp],
+    mut acc: Array[SIMD[.float32, lane_width], heads_per_warp],
 ):
     """One online-softmax step for every head this warp owns.
 
@@ -127,7 +127,7 @@ def _attend_key[
         var p = exp(s - m[i])
         l[i] = l[i] + p
         comptime if round_p:
-            p = p.cast[DType.bfloat16]().cast[DType.float32]()
+            p = p.cast[.bfloat16]().cast[.float32]()
         acc[i] = acc[i] + p * k
 
 
@@ -173,13 +173,13 @@ def _latent_sparse_attention_gpu_kernel[
     var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
     var d0 = lane * lane_width
 
-    var q = Array[SIMD[DType.float32, lane_width], heads_per_warp](
-        fill=SIMD[DType.float32, lane_width](0)
+    var q = Array[SIMD[.float32, lane_width], heads_per_warp](
+        fill=SIMD[.float32, lane_width](0)
     )
     var m = Array[Float32, heads_per_warp](fill=min_or_neg_inf[DType.float32]())
     var l = Array[Float32, heads_per_warp](fill=Float32(0))
-    var acc = Array[SIMD[DType.float32, lane_width], heads_per_warp](
-        fill=SIMD[DType.float32, lane_width](0)
+    var acc = Array[SIMD[.float32, lane_width], heads_per_warp](
+        fill=SIMD[.float32, lane_width](0)
     )
     comptime for i in range(heads_per_warp):
         var h = h0 + i
@@ -187,13 +187,13 @@ def _latent_sparse_attention_gpu_kernel[
             q[i] = (
                 q_ptr.unsafe_load[width=lane_width](
                     t * Int(q_stride0) + h * Int(q_stride1) + d0
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 * scale
             )
 
     var start = max(pos - window + 1, 0)
     for p in range(start, pos + 1):
-        var k = swa_cache.load[width=lane_width, output_dtype=DType.float32](
+        var k = swa_cache.load[width=lane_width, output_dtype=.float32](
             b, 0, p, d0
         )
         _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
@@ -206,7 +206,7 @@ def _latent_sparse_attention_gpu_kernel[
         )
         if e < 0:
             continue
-        var k = comp_cache.load[width=lane_width, output_dtype=DType.float32](
+        var k = comp_cache.load[width=lane_width, output_dtype=.float32](
             b, 0, e, d0
         )
         _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
@@ -238,7 +238,7 @@ def _cpu_attend[
     for d in range(head_dim):
         s += (
             qh[unsafe_offset=d]
-            * cache.load[width=1, output_dtype=DType.float32](b, 0, key, d)[0]
+            * cache.load[width=1, output_dtype=.float32](b, 0, key, d)[0]
         )
     if s > m:
         var corr = exp(m - s)
@@ -250,7 +250,7 @@ def _cpu_attend[
     l += p
     for d in range(head_dim):
         acc[unsafe_offset=d] += (
-            p * cache.load[width=1, output_dtype=DType.float32](b, 0, key, d)[0]
+            p * cache.load[width=1, output_dtype=.float32](b, 0, key, d)[0]
         )
 
 
@@ -284,8 +284,8 @@ def _latent_sparse_attention_cpu[
 ):
     """Scalar reference path; the same math as the GPU kernel, one key at a time.
     """
-    var acc_alloc = alloc(AllocLayout[Float32](count=head_dim))
-    var qh_alloc = alloc(AllocLayout[Float32](count=head_dim))
+    var acc_alloc = alloc(AllocLayout[Float32](length=head_dim))
+    var qh_alloc = alloc(AllocLayout[Float32](length=head_dim))
     var acc = rebind[Pointer[Float32, MutAnyOrigin]](acc_alloc.unsafe_ptr())
     var qh = rebind[Pointer[Float32, MutAnyOrigin]](qh_alloc.unsafe_ptr())
     for t in range(num_rows):
@@ -358,7 +358,7 @@ def _sm100_decode_plan_kernel[
     one, a token-count bound that means nothing for compressed entries, so
     `row_lengths` holds the list length itself and the clamp never cuts it.
     """
-    var t = Int(block_idx.x)
+    var t = block_idx.x
     var lane = Int(lane_id())
     var b = _batch_of_row(t, row_offsets, Int(num_batches))
     var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
@@ -553,7 +553,7 @@ def _latent_sparse_attention_sm100[
         Int32(idx_stride0),
         Int32(idx_stride1),
         grid_dim=num_rows,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     var comp_view = _flat_row_view(
@@ -653,6 +653,7 @@ def latent_sparse_attention_ragged_paged[
     comptime swa_t = type_of(swa_cache)
     comptime comp_t = type_of(comp_cache)
     comptime head_dim = swa_t.kv_params.head_size
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime assert (
         comp_t.kv_params.head_size == head_dim
     ), "window and compressed leaves must share the latent width"
@@ -660,7 +661,7 @@ def latent_sparse_attention_ragged_paged[
         swa_t.kv_params.num_heads == 1 and comp_t.kv_params.num_heads == 1
     ), "the latent leaves hold a single shared head"
     comptime assert (
-        head_dim % WARP_SIZE == 0
+        head_dim % warp_size == 0
     ), "head_dim must be a multiple of the warp size"
     comptime assert output.flat_rank == 3 and q.flat_rank == 3
     comptime assert comp_indices.flat_rank == 2
@@ -804,5 +805,5 @@ def latent_sparse_attention_ragged_paged[
             Int32(idx_stride1),
             scale,
             grid_dim=(num_rows, ceildiv(num_heads, heads_per_block)),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=warp_size * warps_per_block,
         )

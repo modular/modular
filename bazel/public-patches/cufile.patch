@@ -1,0 +1,8 @@
+--- include/cufile.h
++++ include/cufile.h
+@@ -67,5 +67,4 @@ extern "C"
+ #include <stdbool.h>
+ 
+-#include <cuda.h>
+ #include <arpa/inet.h>
+ #include <sys/socket.h>

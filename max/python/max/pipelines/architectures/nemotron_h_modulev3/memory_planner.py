@@ -98,8 +98,9 @@ def _replicated_bytes(config: NemotronHConfig) -> int:
 
     Those are the embedding, the block norms and the final norm, the MoE
     routers, the W4A4 experts' global scales and the MLP mixers. The
-    MLP mixers load in their stored format, the routers and
-    global scales in float32 and the rest in BF16.
+    MLP mixers load in their stored format, the router gates in
+    :attr:`NemotronHConfig.router_gate_dtype`, the routers' score biases and
+    the global scales in float32, and the rest in BF16.
     """
     hidden = config.hidden_size
     # The embedding, every block's norm and the final norm.
@@ -109,8 +110,9 @@ def _replicated_bytes(config: NemotronHConfig) -> int:
         size += _linear_bytes(config, f"{mixer}.down_proj")
     w4a4_mixers = config.w4a4_mixers()
     for mixer in config.mixers(LayerKind.MOE):
-        # The router weight and its score bias.
-        size += 4 * config.num_experts * (hidden + 1)
+        # The router gate weight and its float32 score bias.
+        gate_bytes = config.router_gate_dtype.size_in_bytes
+        size += config.num_experts * (gate_bytes * hidden + 4)
         if mixer in w4a4_mixers:
             # One global scale per stacked expert, in both projections.
             experts = config.num_experts + config.shared_expert_slices(mixer)
@@ -119,7 +121,7 @@ def _replicated_bytes(config: NemotronHConfig) -> int:
 
 
 def _repeated_kv_bytes(config: NemotronHConfig) -> int:
-    """Returns the BF16 bytes the repeated KV heads add to the checkpoint."""
+    """Returns the BF16 bytes the repeated KV heads add on the devices."""
     extra_heads = config.sharded_kv_heads - config.num_key_value_heads
     num_attention = config.layer_kinds.count(LayerKind.ATTENTION)
     # Two bytes per element, in both the k and v projections.

@@ -325,13 +325,14 @@ kgen.generator @unknown_region_op() {
   pop.store %idx0, %alloc0 : !kgen.pointer<index>
   pop.store %idx1, %alloc1 : !kgen.pointer<index>
 
-  // CHECK: region Fn
-  kgen.param.declare.region Fn = (%arg0: index) -> (index, index) {
+  // CHECK: "test.region"
+  "test.region"() ({
+  ^bb0(%arg0: index):
     pop.store %arg0, %alloc1 : !kgen.pointer<index>
     %0 = pop.load %alloc1 : !kgen.pointer<index>
     %1 = pop.load %alloc0 : !kgen.pointer<index>
-    hlcf.return %0, %1 : index, index
-  }
+    "test.yield"(%0, %1) : (index, index) -> ()
+  }) : () -> ()
 
   hlcf.return
 }

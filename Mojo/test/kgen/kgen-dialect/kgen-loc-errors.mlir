@@ -90,25 +90,6 @@ kgen.func @foo() {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<sourceName = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-
-#loc1 = loc("foo.mlir":44:1)
-#loc2 = loc("foo.mlir":325:11)
-#loc4 = loc(fused<#subprogram>[#loc1])
-#loc5 = loc(fused<#subprogram1>[#loc2])
-
-kgen.func @foo() {
-  %0 = kgen.stage_closure = () {
-    hlcf.return loc(#loc5)
-  // CHECK: foo.mlir:325:11: error: 'kgen.stage_closure' op must have callsite location
-  } loc(#loc5)
-  kgen.call_indirect %0() : () -> () loc(#loc4)
-  hlcf.return loc(#loc4)
-} loc(#loc4)
-
-// -----
-
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)
 #subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>

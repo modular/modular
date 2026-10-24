@@ -217,7 +217,12 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         other_size: Int,
         //,
         *,
-    ](out self, *, resized_from: BitSet[other_size], truncate_set_bits: ()):
+    ](
+        out self,
+        *,
+        resized_from: BitSet[other_size],
+        truncate_set_bits: Tuple[],
+    ):
         """Initializes a BitSet by copying from a BitSet of a different size.
 
         When narrowing, bits at or above `size` are dropped; when widening, the

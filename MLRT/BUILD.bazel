@@ -1,0 +1,982 @@
+load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library", "mojo_shared_library", "pkg_files")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
+load("//bazel:tablegen.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "td_library")
+
+# gazelle:default_visibility //MLRT:consumers
+# gazelle:default_features layering_check,parse_headers
+
+package(
+    default_visibility = ["//MLRT:consumers"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+package_group(
+    name = "consumers",
+    packages = [
+        "-//Support/...",
+        "//...",
+    ],
+)
+
+pkg_files(
+    name = "docs",
+    srcs = [
+        ":GRTDialect.doc",
+        ":MEFDialect.doc",
+    ],
+    prefix = "MLRT/GraphRT/docs",
+)
+
+# Core targets
+
+modular_cc_library(
+    name = "Core",
+    srcs = glob(["lib/Core/*.cpp"]),
+    hdrs = glob(["include/MLRT/Core/*.h"]),
+    deps = [
+        "//AsyncRT:Runtime",
+        "//Support:Base",
+    ],
+)
+
+modular_cc_library(
+    name = "Core/IO",
+    srcs = glob([
+        "lib/Core/IO/*.cpp",
+    ]),
+    hdrs = glob([
+        "include/MLRT/Core/IO/*.h",
+    ]),
+    tags = [ALLOW_UNUSED_TAG],  # TODO: Remove once this library is used
+    deps = [
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:Filesystem",
+        "@llvm-project//llvm:Support",
+    ] + select({
+        "//:linux_x86_64": ["@libcufile_x86_64//:libcufile"],
+        "//:linux_aarch64": ["@libcufile_aarch64//:libcufile"],
+        "//conditions:default": [],
+    }),
+)
+
+modular_cc_library(
+    name = "Core/Tensor",
+    srcs = glob(["lib/Core/Tensor/*.cpp"]),
+    hdrs = glob(["include/MLRT/Core/Tensor/*.h"]),
+    deps = [
+        ":Core",
+        "//AsyncRT:Runtime",
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:ML",
+        "//Support:Profiling",
+        "//Support:ProfilingRanges",
+        "//Support:TimeProfiler",
+        "//Support:TypeID",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# GraphRT targets
+
+td_library(
+    name = "GraphRT/MEFTdFiles",
+    srcs = glob(["include/MLRT/GraphRT/MEFDialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        "//Support:MTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
+        "@llvm-project//mlir:FunctionInterfacesTdFiles",
+    ],
+)
+
+gentbl_mlir_dialect(
+    name = "GraphRT/MEFDialectIncGen",
+    dialect = "mef",
+    td_file = "include/MLRT/GraphRT/MEFDialect/MEF.td",
+    deps = [":GraphRT/MEFTdFiles"],
+)
+
+gentbl_cc_library(
+    name = "GraphRT/MEFNonStrictInterface",
+    includes = ["include"],
+    tbl_outs = [
+        (
+            [
+                "-gen-op-interface-decls",
+            ],
+            "include/MLRT/GraphRT/MEFDialect/MEFNonStrictInterface.h.inc",
+        ),
+        (
+            [
+                "-gen-op-interface-defs",
+            ],
+            "include/MLRT/GraphRT/MEFDialect/MEFNonStrictInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/MLRT/GraphRT/MEFDialect/MEFNonStrictInterface.td",
+    deps = [
+        ":GraphRT/MEFTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "GraphRT/MEFChainIndicatesFinishedInterface",
+    includes = ["include"],
+    tbl_outs = [
+        (
+            [
+                "-gen-op-interface-decls",
+            ],
+            "include/MLRT/GraphRT/MEFDialect/MEFChainIndicatesFinishedInterface.h.inc",
+        ),
+        (
+            [
+                "-gen-op-interface-defs",
+            ],
+            "include/MLRT/GraphRT/MEFDialect/MEFChainIndicatesFinishedInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/MLRT/GraphRT/MEFDialect/MEFChainIndicatesFinishedInterface.td",
+    deps = [
+        ":GraphRT/MEFTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "GraphRT/MEFTypeInterfaces",
+    includes = ["include"],
+    tbl_outs = [
+        (
+            [
+                "-gen-type-interface-decls",
+            ],
+            "include/MLRT/GraphRT/MEFDialect/MEFTypeInterfaces.h.inc",
+        ),
+        (
+            [
+                "-gen-type-interface-defs",
+            ],
+            "include/MLRT/GraphRT/MEFDialect/MEFTypeInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/MLRT/GraphRT/MEFDialect/MEFTypeInterfaces.td",
+    deps = [
+        ":GraphRT/MEFTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/MEFDialect",
+    srcs = glob(["lib/GraphRT/MEFDialect/*.cpp"]),
+    hdrs = glob(["include/MLRT/GraphRT/MEFDialect/*.h"]),
+    deps = [
+        ":GraphRT/MEFChainIndicatesFinishedInterface",
+        ":GraphRT/MEFDialectIncGen",
+        ":GraphRT/MEFNonStrictInterface",
+        ":GraphRT/MEFTypeInterfaces",
+        "//Support:Base",
+        "//Support:Compiler",
+        "//Support:MDialect",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:BytecodeOpInterface",
+        "@llvm-project//mlir:ControlFlowInterfaces",
+        "@llvm-project//mlir:FunctionInterfaces",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+td_library(
+    name = "GraphRT/GRTTdFiles",
+    srcs = glob(["include/MLRT/GraphRT/GRTDialect/*.td"]),
+    includes = ["includes"],
+    deps = [
+        ":GraphRT/MEFTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
+        "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
+    ],
+)
+
+gentbl_mlir_dialect(
+    name = "GraphRT/GRTDialectIncGen",
+    dialect = "grt",
+    td_file = "include/MLRT/GraphRT/GRTDialect/GRT.td",
+    deps = [":GraphRT/GRTTdFiles"],
+)
+
+gentbl_cc_library(
+    name = "GraphRT/GRTChainInterface",
+    includes = ["include"],
+    tbl_outs = [
+        (
+            [
+                "-gen-op-interface-decls",
+            ],
+            "include/MLRT/GraphRT/GRTDialect/GRTChainInterface.h.inc",
+        ),
+        (
+            [
+                "-gen-op-interface-defs",
+            ],
+            "include/MLRT/GraphRT/GRTDialect/GRTChainInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/MLRT/GraphRT/GRTDialect/GRTChainInterface.td",
+    deps = [
+        ":GraphRT/GRTTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "GraphRT/GRTControlFlowInterface",
+    includes = ["include"],
+    tbl_outs = [
+        (
+            [
+                "-gen-op-interface-decls",
+            ],
+            "include/MLRT/GraphRT/GRTDialect/GRTControlFlowInterface.h.inc",
+        ),
+        (
+            [
+                "-gen-op-interface-defs",
+            ],
+            "include/MLRT/GraphRT/GRTDialect/GRTControlFlowInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/MLRT/GraphRT/GRTDialect/GRTControlFlowInterface.td",
+    deps = [
+        ":GraphRT/GRTTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "GraphRT/GRTExtendsLifetimeInterface",
+    includes = ["include"],
+    tbl_outs = [
+        (
+            [
+                "-gen-op-interface-decls",
+            ],
+            "include/MLRT/GraphRT/GRTDialect/GRTExtendsLifetimeInterface.h.inc",
+        ),
+        (
+            [
+                "-gen-op-interface-defs",
+            ],
+            "include/MLRT/GraphRT/GRTDialect/GRTExtendsLifetimeInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/MLRT/GraphRT/GRTDialect/GRTExtendsLifetimeInterface.td",
+    deps = [
+        ":GraphRT/GRTTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "GraphRT/GRTMayAliasInterface",
+    includes = ["include"],
+    tbl_outs = [
+        (
+            [
+                "-gen-op-interface-decls",
+            ],
+            "include/MLRT/GraphRT/GRTDialect/GRTMayAliasInterface.h.inc",
+        ),
+        (
+            [
+                "-gen-op-interface-defs",
+            ],
+            "include/MLRT/GraphRT/GRTDialect/GRTMayAliasInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/MLRT/GraphRT/GRTDialect/GRTMayAliasInterface.td",
+    deps = [
+        ":GraphRT/GRTTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/GRTDialect",
+    srcs = glob(["lib/GraphRT/GRTDialect/*.cpp"]),
+    hdrs = glob(["include/MLRT/GraphRT/GRTDialect/*.h"]),
+    deps = [
+        ":GraphRT/GRTChainInterface",
+        ":GraphRT/GRTControlFlowInterface",
+        ":GraphRT/GRTDialectIncGen",
+        ":GraphRT/GRTExtendsLifetimeInterface",
+        ":GraphRT/GRTMayAliasInterface",
+        ":GraphRT/MEFDialect",
+        "//Support:Base",
+        "//Support:Compiler",
+        "//Support:MDialect",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ControlFlowInterfaces",
+        "@llvm-project//mlir:FunctionInterfaces",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:InferTypeOpInterface",
+        "@llvm-project//mlir:SideEffectInterfaces",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/MEFToMLIR",
+    srcs = glob(["lib/GraphRT/MEFToMLIR/*.cpp"]),
+    hdrs = ["include/MLRT/GraphRT/MEFToMLIR.h"],
+    deps = [
+        ":GraphRT/MEF",
+        ":GraphRT/MEFDialect",
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:Compiler",
+        "//Support:MDialect",
+        "//Support:ML",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:AsmParser",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:QuantOps",
+        "@llvm-project//mlir:TranslateLib",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/MLIRToMEF",
+    srcs = glob(["lib/GraphRT/MLIRToMEF/*.cpp"]),
+    hdrs = ["include/MLRT/GraphRT/MLIRToMEF.h"],
+    deps = [
+        ":GraphRT/MEF",
+        ":GraphRT/MEFDialect",
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:MDialect",
+        "//Support:ML",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:QuantOps",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TranslateLib",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/GRTRuntime",
+    srcs = glob(["lib/GraphRT/GRTRuntime/*.cpp"]),
+    hdrs = ["include/MLRT/GraphRT/GRTTestcase.h"],
+    deps = [
+        ":GraphRT/MEFExecutor",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:Support",
+        "//Support:Base",
+        "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/MEF",
+    srcs = glob(["lib/GraphRT/MEF/*.cpp"]),
+    hdrs = glob(["include/MLRT/GraphRT/MEF/*.h"]),
+    deps = [
+        "//Support:Base",
+        "//Support:ML",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/MEFExecutor",
+    srcs = glob(["lib/GraphRT/MEFExecutor/*.cpp"]),
+    hdrs = glob(["include/MLRT/GraphRT/MEFExecutor/*.h"]),
+    textual_hdrs = glob(["lib/GraphRT/MEFExecutor/*.h"]),
+    deps = [
+        ":GraphRT/MEF",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:Support",
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:ML",
+        "//Support:Profiling",
+        "//Support:ProfilingRanges",
+        "//Support:TimeProfiler",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/Primitives",
+    srcs = glob(["lib/GraphRT/Primitives/*.cpp"]),
+    hdrs = ["include/MLRT/GraphRT/Primitives.h"],
+    deps = [
+        ":GraphRT/MEFExecutor",
+        "//AsyncRT:Runtime",
+        "//Support:ML",
+        "//Support:MicroBenchmark",
+        "//Support:Threading",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
+    name = "GraphRT/AllDialects",
+    hdrs = ["include/MLRT/GraphRT/InitAllDialects.h"],
+    deps = [
+        ":GraphRT/GRTDialect",
+        ":GraphRT/MEFDialect",
+        "//Support:Base",
+    ],
+)
+
+# Driver targets
+
+# A leaf with no device-context dependency, so it can be taken from both the
+# legacy and the HAL device-context builds. MEFModel needs it under
+# --config=hal-device-context, where the legacy declarations are compiled out.
+modular_cc_library(
+    name = "Driver/KernelLoadGate",
+    srcs = ["lib/Driver/DeviceContext/KernelLoadGate.cpp"],
+    hdrs = ["include/MLRT/Driver/DeviceContext/KernelLoadGate.h"],
+    includes = ["include"],
+    visibility = ["//MLRT:consumers"],
+    deps = [
+        "//AsyncRT:Runtime",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# Shared device-to-worker affinity logic used by both the graph compiler
+# (MGPPrimitives) and the Mojo cpuDevice (via CompilerRT). Lives in the Driver
+# layer (rather than AsyncRT) because it depends on Driver/DeviceContextAPI, so
+# that //AsyncRT stays a clean leaf with no edge back into the Driver code.
+modular_cc_library(
+    name = "Driver/DeviceAffinity",
+    srcs = ["lib/Driver/DeviceContext/DeviceAffinity.cpp"],
+    hdrs = ["include/MLRT/Driver/DeviceContext/DeviceAffinity.h"],
+    includes = ["include"],
+    visibility = ["//MLRT:consumers"],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//AsyncRT:Runtime",
+        "//Support:Base",
+        "//Support:Configuration",
+        "//Support:Threading",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# Header-only target for DeviceContext/CompilationDevice interfaces.
+# Broken out so that //Target:DriverPlugin can depend on these headers
+# without creating a circular dependency with Driver/DeviceContextImpl.
+modular_cc_library(
+    name = "Driver/DeviceContextAPI",
+    hdrs = [
+        "include/MLRT/Driver/DeviceContext/CompilationDevice.h",
+        "include/MLRT/Driver/DeviceContext/DeviceAPINames.h",
+        "include/MLRT/Driver/DeviceContext/DeviceContext.h",
+        "include/MLRT/Driver/DeviceContext/DeviceGraphBuilder.h",
+        "include/MLRT/Driver/DeviceContext/ErrorMacros.h",
+        "include/MLRT/Driver/DeviceContext/HALDeviceContext.h",
+        "include/MLRT/Driver/DeviceContext/LaunchTraceEntry.h",
+        "include/MLRT/Driver/DeviceContext/LaunchTraceRegistry.h",
+    ],
+    # Switches DeviceContext.h to the HAL shim declarations. Propagated from the
+    # target that provides the header rather than a global `--copt`, which would
+    # rekey every C++ action including LLVM onto a separate build cache
+    # (DRIV-340). Targets that must keep the legacy declarations undefine it in
+    # their own `copts`.
+    defines = select({
+        "//:hal_device_context_enabled": ["MODULAR_HAL_DEVICE_CONTEXT=1"],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Base",
+        "//Support:Buffer",
+        "//Support:Configuration",
+        "//Support:SymbolExport",
+        "//Support:TypeID",
+        "@dlpack",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The AsyncRT_Device* C-ABI bindings for Mojo plus the legacy DeviceContext
+# implementation. Linked into :Driver/DeviceContext in the default
+# configuration. Under --config=hal-device-context nothing links it: the
+# runtime DeviceContext is the HAL shim, and the compiler family uses the
+# legacy-DeviceContext-free Driver/CompilationDeviceImpl + Driver/CompilerDeviceArch.
+modular_cc_library(
+    name = "Driver/AsyncRTMojoBindings",
+    srcs = ["lib/Driver/DeviceContext/MojoBindings.cpp"],
+    hdrs = ["include/MLRT/Driver/DeviceContext/BinaryID.h"],
+    # Always compiles against the legacy DeviceContext declarations (see the
+    # Driver/DeviceContextImplCpp comment).
+    copts = ["-UMODULAR_HAL_DEVICE_CONTEXT"],
+    deps = [
+        ":Driver/DeviceContextImplCpp",
+        ":Driver/KernelLoadGate",
+        "//AsyncRT:Runtime",
+        "//Support:Base",
+        "//Support:BinaryID",
+        "//Support:Buffer",
+        "//Support:Configuration",
+        "//Support:Profiling",
+        "//Support:ProfilingRanges",
+        "//Support:SymbolExport",
+        "//Support:TimeProfiler",
+        "@dlpack",
+        "@llvm-project//llvm:Support",
+    ],
+    alwayslink = True,
+)
+
+# Minimal, plugin-direct provider of `M::Driver::Device::getAcceleratorArchOrEmpty`
+# for the Mojo/KGEN compiler family, so those binaries can detect the target
+# accelerator arch WITHOUT linking the DeviceContext runtime. dlopens the driver
+# plugin and queries device 0 over the `M_driver_*` C ABI directly. Only built
+# under --config=hal-device-context, where the compiler family links it (alongside
+# Driver/CompilationDeviceImpl for PTX->cubin) in place of the DeviceContext runtime.
+modular_cc_library(
+    name = "Driver/CompilerDeviceArch",
+    srcs = ["lib/Driver/DeviceContext/CompilerDeviceArch.cpp"],
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = [
+        "//Kernels/tools/max_license/gpu-query:__pkg__",
+        "//Mojo:__subpackages__",
+    ],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//SDK:HAL",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+    alwayslink = True,
+)
+
+# The DeviceContext runtime shared library. Toolchain-side consumers
+# (//Mojo:CompilerRT, the mojo toolchain implicit deps) drop this target under
+# --config=hal-device-context: the HAL arm reaches @mojo//:std, which would
+# cycle back into the toolchain.
+# Mojo bindings for the kernel-load gate. Its own target because both
+# DeviceContext implementations need it: the gate's entry points tolerate a
+# context without one, so a collective links on any backend, whereas each
+# backend's own bindings are linked only under its configuration.
+modular_cc_library(
+    name = "Driver/KernelLoadGateBindings",
+    srcs = ["lib/Driver/DeviceContext/KernelLoadGateBindings.cpp"],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        ":Driver/KernelLoadGate",
+        "//AsyncRT:Runtime",
+        "//Support:Base",
+        "//Support:Profiling",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+    # Nothing in C++ references these exports (they exist for Mojo
+    # external_call), so without alwayslink the linker drops the object.
+    alwayslink = True,  # keep
+)
+
+modular_shared_library(
+    name = "Driver/DeviceContext",
+    srcs = [],
+    hdrs = [
+        "include/MLRT/Driver/DeviceContext/BinaryID.h",
+        "include/MLRT/Driver/DeviceContext/CompilationDevice.h",
+        "include/MLRT/Driver/DeviceContext/DeviceAPINames.h",
+        "include/MLRT/Driver/DeviceContext/DeviceContext.h",
+        "include/MLRT/Driver/DeviceContext/HALDeviceContext.h",
+    ],
+    output_name = "AsyncRTMojoBindings",
+    deps = [
+        ":Driver/DeviceContextAPI",
+        ":Driver/KernelLoadGateBindings",
+        ":Driver/MojoRuntimeBindingsImpl",
+        "//AsyncRT:Runtime",
+        "//Support:Base",
+        "//Support:BinaryID",
+        "//Support:Buffer",
+        "//Support:Configuration",
+        # The profiler host glue makes this DSO's copy of the range shim able
+        # to load/adopt the profiler plugin. Required for the device-init
+        # activation trigger: in Python processes the MLRT device contexts
+        # (and their activatePendingTrace() call sites) resolve into THIS
+        # DSO, not libmax, and a glue-less copy would silently drop the
+        # notification — on AMD that permanently forfeits GPU recording
+        # (rocprofiler tool registration must precede the first HIP call).
+        "//Support:ProfilerHostGlue",
+        "//Support:SymbolExport",
+        "//Support:TypeID",
+        "@dlpack",
+        "@llvm-project//llvm:Support",
+    ] + select({
+        # Carries the implementation matching the
+        # MODULAR_HAL_DEVICE_CONTEXT declaration switch: the HAL shim (and its
+        # MojoHAL exports) under --config=hal-device-context, the legacy DeviceContext
+        # implementation plus its AsyncRT_Device* Mojo bindings otherwise.
+        "//:hal_device_context_enabled": [":Driver/DeviceContextImplHAL"],
+        "//conditions:default": [":Driver/AsyncRTMojoBindings"],
+    }),
+)
+
+alias(
+    name = "Driver/DeviceContextImpl",
+    actual = select({
+        # Under --config=hal-device-context the implementation is the HAL shim
+        # over the Mojo HAL DeviceContext; the legacy C++ implementation is
+        # not linked. The HAL shim reaches @mojo//:std, so compiler-family
+        # targets (//Mojo:CompilerRT, the toolchain implicit deps) drop
+        # //MLRT:Driver/DeviceContext under this flag.
+        "//:hal_device_context_enabled": ":Driver/DeviceContextImplHAL",
+        "//conditions:default": ":Driver/DeviceContextImplCpp",
+    }),
+    visibility = [
+        "//AsyncRT:__subpackages__",
+        "//GraphCompiler:__subpackages__",
+        "//MLRT:__subpackages__",
+        "//max/python/max/_core/max_license:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
+)
+
+# The Mojo side of the HAL C++ compatibility layer. The C++ shim links this
+# and forwards each DeviceContext.h method to a MojoHAL_* symbol. Only
+# meaningful under --config=hal-device-context.
+mojo_shared_library(
+    name = "Driver/HALDeviceContextExports",
+    srcs = ["lib/Driver/DeviceContext/HAL/hal_device_context_exports.mojo"],
+    shared_lib_name = "libHALDeviceContextMojo.so",
+    tags = [ALLOW_UNUSED_TAG],
+    # The exports reach into HAL-specific DeviceContext internals, which only
+    # exist when std's DeviceContext is the HAL implementation.
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Depends on HAL's `max` directly rather than through //max:max_mojo. This target
+    # only builds under --config=hal-device-context, where that alias always
+    # selects this very target, so the two are equivalent here -- but the alias
+    # also names the non-HAL `max`, which now depends on
+    # Driver/DeviceContext, and Driver/DeviceContext selects this library back
+    # under the HAL branch. No single configuration closes that loop, yet it is
+    # a cycle in the unconfigured graph that `bazel query` reports.
+    deps = [
+        "//max/mojo/max/_driver/max_license:max",
+        "@mojo//:std",
+    ],
+)
+
+# HAL replacement for the DeviceContext C++ API: a pure shim over the Mojo HAL
+# DeviceContext (MojoHAL_* exports), implementing the HALDeviceContext.h
+# declarations that DeviceContext.h dispatches to under
+# --config=hal-device-context.
+# Backend-independent runtime bindings (MojoBindings.cpp): symbols Mojo
+# programs may call (AsyncRT_AsyncValue_*, MLRT_TaskIdForDevice),
+# regardless of which DeviceContext implementation is active. Linked into the
+# Driver/DeviceContext shared library under both configurations.
+modular_cc_library(
+    name = "Driver/MojoRuntimeBindingsImpl",
+    srcs = ["lib/Driver/DeviceContext/MojoRuntimeBindings.cpp"],
+    deps = [
+        ":Core/Tensor",
+        ":Driver/DeviceAffinity",
+        "//AsyncRT:Runtime",
+        "//Support:Base",
+        "//Support:Profiling",
+        "//Support:ProfilingRanges",
+        "//Support:SymbolExport",
+    ],
+    # Nothing in C++ references these exports (they exist for Mojo
+    # external_call), so without alwayslink the linker drops the object.
+    alwayslink = True,  # keep
+)
+
+# Shared-library form of the std runtime bindings for the Mojo toolchain's
+# runtime environment under --config=hal-device-context, where the toolchain
+# does not link the DeviceContext runtime that normally carries them (see
+# bazel/internal implicit_deps).
+modular_shared_library(
+    name = "Driver/MojoRuntimeBindings",
+    srcs = [],
+    output_name = "MojoRuntimeBindings",
+    tags = [ALLOW_UNUSED_TAG],
+    # Only meaningful under --config=hal-device-context.
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        # The gate's bindings ride along here rather than in
+        # MojoRuntimeBindingsImpl: that one is linked under both
+        # configurations, including into the Mojo toolchain's runtime, where
+        # pulling in the DeviceContext API would drag packages the open-source
+        # export excludes.
+        ":Driver/KernelLoadGateBindings",
+        ":Driver/MojoRuntimeBindingsImpl",
+    ],
+)
+
+# The launch-trace registry the device backends record into, and that
+# `max.driver.begin_launch_trace` reads. Split out of
+# Driver/DeviceContextImplCpp so both DeviceContext implementations carry it:
+# the entry type and the registry are backend-independent, and the Python
+# driver bindings reference them under either flag setting (the HAL shim simply
+# never records, leaving the trace empty).
+modular_cc_library(
+    name = "Driver/LaunchTraceRegistry",
+    srcs = ["lib/Driver/DeviceContext/LaunchTraceRegistry.cpp"],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//Support:Base",
+        "//Support:HashUtils",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+    alwayslink = True,
+)
+
+modular_cc_library(
+    name = "Driver/DeviceContextImplHAL",
+    srcs = ["lib/Driver/DeviceContext/HAL/HALDeviceContext.cpp"],
+    hdrs = ["include/MLRT/Driver/DeviceContext/BinaryID.h"],
+    visibility = [
+        "//GraphCompiler:__subpackages__",
+        "//Kernels/tools/max_license/gpu-query:__pkg__",
+        "//MLRT:__subpackages__",
+    ],
+    deps = [
+        ":Core/Tensor",
+        ":Driver/CompilationDeviceImpl",
+        ":Driver/DeviceContextAPI",
+        ":Driver/HALDeviceContextExports",
+        ":Driver/LaunchTraceRegistry",
+        "//AsyncRT:Runtime",
+        "//Support:Base",
+        "//Support:BinaryID",
+        "//Support:Configuration",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+    alwayslink = True,
+)
+
+modular_cc_library(
+    name = "Driver/DeviceContextImplCpp",
+    srcs = [
+        "lib/Driver/DeviceContext/CPU/CpuDeviceContext.cpp",
+        "lib/Driver/DeviceContext/CUDA/CUDADeviceContext.cpp",
+        "lib/Driver/DeviceContext/CUDA/CUDADeviceGraphBuilder.cpp",
+        "lib/Driver/DeviceContext/CUDA/CUDADriver.cpp",
+        "lib/Driver/DeviceContext/DeviceContext.cpp",
+        "lib/Driver/DeviceContext/DeviceGraphBuilder.cpp",
+        "lib/Driver/DeviceContext/HIP/HIPDeviceContext.cpp",
+        "lib/Driver/DeviceContext/HIP/HIPDeviceGraphBuilder.cpp",
+        "lib/Driver/DeviceContext/HIP/HIPDriver.cpp",
+        "lib/Driver/DeviceContext/HostMemoryInfo.cpp",
+        "lib/Driver/DeviceContext/MemoryManager.cpp",
+        "lib/Driver/DeviceContext/Metal/MetalDeviceContext.cpp",
+        "lib/Driver/DeviceContext/Metal/MetalDriver.cpp",
+        "lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.cpp",
+    ],
+    hdrs = [
+        "include/MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h",
+        "include/MLRT/Driver/DeviceContext/CompilationDevice.h",
+        "include/MLRT/Driver/DeviceContext/DeviceAPINames.h",
+        "include/MLRT/Driver/DeviceContext/DeviceContext.h",
+        "include/MLRT/Driver/DeviceContext/DeviceGraphBuilder.h",
+        "include/MLRT/Driver/DeviceContext/ErrorMacros.h",
+        "lib/Driver/DeviceContext/CUDA/CUDADeviceContext.h",
+        "lib/Driver/DeviceContext/CUDA/CUDADeviceGraphBuilder.h",
+        "lib/Driver/DeviceContext/CUDA/CUDADriver.h",
+        "lib/Driver/DeviceContext/CUDA/CUDADriver.inc",
+        "lib/Driver/DeviceContext/HIP/HIPDeviceContext.h",
+        "lib/Driver/DeviceContext/HIP/HIPDeviceGraphBuilder.h",
+        "lib/Driver/DeviceContext/HIP/HIPDriver.h",
+        "lib/Driver/DeviceContext/HIP/HIPDriver.inc",
+        "lib/Driver/DeviceContext/HostMemoryInfo.h",
+        "lib/Driver/DeviceContext/MemoryManager.h",
+        "lib/Driver/DeviceContext/Metal/MetalDeviceContext.h",
+        "lib/Driver/DeviceContext/Metal/MetalDriver.h",
+        "lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.h",
+    ],
+    # This IS the legacy DeviceContext implementation: it always compiles against
+    # the legacy declarations, even under --config=hal-device-context -- rule
+    # copts land after Driver/DeviceContextAPI's propagated `defines`, so this -U
+    # wins (pinned by a static_assert in DeviceContext.cpp). Under the flag its
+    # objects only reach binaries through libAsyncRTMojoBindings.so, whose
+    # exports flag-mode binaries must not link (see the GraphCompiler dep
+    # selects).
+    copts = ["-UMODULAR_HAL_DEVICE_CONTEXT"],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-Wl,-framework,IOKit",
+        ],
+        "//conditions:default": [],
+    }),
+    local_defines = select({
+        "@platforms//os:linux": ["MODULAR_LINUX"],
+        "//conditions:default": [],
+    }),
+    visibility = [
+        "//AsyncRT:__subpackages__",
+        "//GraphCompiler:__subpackages__",
+        "//Kernels:__subpackages__",
+        "//MLRT:__subpackages__",
+        "//Mojo:__subpackages__",
+        "//max/python/max/_core/max_license:__subpackages__",
+    ],
+    deps = [
+        ":Driver/CompilationDeviceImpl",
+        ":Driver/DeviceAffinity",
+        ":Driver/DeviceContextAPI",
+        ":Driver/KernelLoadGate",
+        ":Driver/LaunchTraceRegistry",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:Support",
+        "//SDK:HAL",
+        "//Support:Base",
+        "//Support:Buffer",
+        "//Support:Configuration",
+        "//Support:DLFcn",
+        "//Support:HashUtils",
+        "//Support:ML",
+        "//Support:Profiling",
+        "//Support:ProfilingRanges",
+        "//Support:SymbolExport",
+        "//Support:TimeProfiler",
+        "//Support:TypeID",
+        "//Target:DriverPlugin",
+        "@dlpack",
+        "@llvm-project//llvm:Support",
+    ] + select({
+        "@platforms//os:macos": ["@metal-cpp//:metal-cpp"],
+        "//conditions:default": [],
+    }),
+    alwayslink = True,
+)
+
+# The kernel-compilation target abstraction (CompilationDevice) plus the
+# vendor compilation drivers and NVML. Independent of which DeviceContext
+# implementation is active: shared by both Driver/DeviceContextImplCpp and
+# Driver/DeviceContextImplHAL.
+modular_cc_library(
+    name = "Driver/CompilationDeviceImpl",
+    srcs = [
+        "lib/Driver/DeviceContext/CUDA/CUDACompilationDevice.cpp",
+        "lib/Driver/DeviceContext/CUDA/CUDACompilationDriver.cpp",
+        "lib/Driver/DeviceContext/CUDA/NVML.cpp",
+        "lib/Driver/DeviceContext/CompilationDevice.cpp",
+        "lib/Driver/DeviceContext/HIP/HIPCompilationDevice.cpp",
+    ],
+    hdrs = [
+        "lib/Driver/DeviceContext/CUDA/CUDACompilationDevice.h",
+        "lib/Driver/DeviceContext/CUDA/CUDACompilationDriver.h",
+        "lib/Driver/DeviceContext/CUDA/CUDACompilationDriver.inc",
+        "lib/Driver/DeviceContext/CUDA/NVML.h",
+        "lib/Driver/DeviceContext/CUDA/NVML.inc",
+        "lib/Driver/DeviceContext/HIP/HIPCompilationDevice.h",
+    ],
+    # NVPTX is dlopened at runtime by CUDACompilationDriver, so it ships in
+    # runfiles rather than becoming a NEEDED entry on everything that can
+    # compile PTX.
+    data = select({
+        "@platforms//os:linux": ["//bazel/public-patches:NVPTX"],
+        "//conditions:default": [],
+    }),
+    local_defines = select({
+        "@platforms//os:linux": ["MODULAR_LINUX"],
+        "//conditions:default": [],
+    }),
+    visibility = [
+        "//GraphCompiler:__subpackages__",
+        # Compiler-family tools link this directly under
+        # --config=hal-device-context (PTX->cubin without the legacy DeviceContext runtime).
+        "//Mojo:__subpackages__",
+        "//MLRT:__subpackages__",
+    ],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//Support:Base",
+        "//Support:BazelRunfiles",
+        "//Support:Buffer",
+        "//Support:Configuration",
+        "//Support:DLFcn",
+        "//Support:Profiling",
+        "//Support:ProfilingRanges",
+        "//Support:SymbolExport",
+        "//Target:DriverPlugin",
+        "@llvm-project//llvm:Support",
+    ],
+    alwayslink = True,
+)
+
+# ---------------------------------------------------------------------------
+# NIXL — sourced from upstream v1.1.0 via @nixl_upstream (Bazel http_archive).
+# All consumers point directly at @nixl_upstream//:… targets.
+# The fork sources under MLRT/{lib,include}/Driver/NIXL have been deleted.
+# ---------------------------------------------------------------------------
+
+# Minimal shared library that folds and re-exports the full NIXL symbol set for
+# dkv / disagg consumers that link against `libmixl.so` directly (e.g. the dkv
+# smoke test). Unlike libmax — which links libnixl.so dynamically via
+# @nixl_upstream//:nixl_runtime — libmixl statically folds the `:nixl*` alwayslink object libraries
+# so the symbols are exported from libmixl.so itself, preserving the existing dkv
+# link contract. This is the legacy consumption path; the production
+# dkv-connector links libnixl.so directly. Migrating dkv off libmixl onto
+# libnixl.so is tracked as a GEX-3826 follow-up.
+#
+# The transport plugins are not carried as runfiles here (modular_shared_library
+# takes no `data`); consumers build the `@nixl_upstream//:libplugin_*.so` targets
+# alongside libmixl (see dkv/tools/smoke-test/Dockerfile).
+modular_shared_library(
+    name = "libmixl",
+    srcs = [],
+    output_name = "mixl",
+    tags = [
+        "maybe-unused",
+        "no-clang-tidy",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@nixl_upstream//:nixl_api_headers",
+    ] + select({
+        "//:linux_x86_64": [
+            "@nixl_upstream//:nixl",
+            "@nixl_upstream//:nixl_common",
+            "@nixl_upstream//:nixl_infra",
+            "@nixl_upstream//:nixl_serdes",
+            "@nixl_upstream//:nixl_stream",
+        ],
+        "//conditions:default": [],
+    }),
+)

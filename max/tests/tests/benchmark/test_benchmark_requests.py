@@ -20,6 +20,7 @@ import os
 import time
 from collections.abc import AsyncIterator
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from max.benchmark.benchmark_serving import validate_task_and_endpoint
@@ -1961,3 +1962,88 @@ def test_stream_recorder_cancel_discards_partial_measurement() -> None:
     assert output.ttft == 0.0
     assert output.itl == []
     assert output.request_submit_time is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chat", [False, True])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "special_only",
+        "measured",
+        "missing_usage",
+        "zero_usage",
+        "missing_done",
+        "http_error",
+        "stream_error",
+    ],
+)
+async def test_cache_warmup_empty_stream_requires_completed_generation(
+    chat: bool,
+    case: str,
+    mock_aiohttp_session: MagicMock,
+    mock_openai_env: None,
+    mocker: MockerFixture,
+) -> None:
+    request_input = RequestFuncInput(
+        model="test-model",
+        session_id=None,
+        sampling=SamplingConfig(),
+        prompt="shared prefix",
+        images=[],
+        api_url="http://localhost:8000/"
+        + ("chat/completions" if chat else "completions"),
+        prompt_len=2,
+        max_tokens=1,
+        ignore_eos=True,
+        is_cache_warmup=case != "measured",
+    )
+    choice: dict[str, object] = {"delta": {}} if chat else {"text": ""}
+    events = [json.dumps({"choices": [choice]})]
+    if case != "missing_usage":
+        events.append(
+            json.dumps(
+                {
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 2,
+                        "completion_tokens": 0 if case == "zero_usage" else 1,
+                    },
+                }
+            )
+        )
+    if case == "stream_error":
+        events.append(json.dumps({"error": {"message": "generation failed"}}))
+    if case != "missing_done":
+        events.append("[DONE]")
+
+    async def stream() -> AsyncIterator[bytes]:
+        for event in events:
+            yield f"data: {event}\n\n".encode()
+
+    response = mocker.AsyncMock()
+    response.status = 400 if case == "http_error" else 200
+    response.reason = "Bad Request"
+    response.content = stream()
+    mock_aiohttp_session.setup_post_response(response)
+    driver = (
+        OpenAIChatCompletionsRequestDriver()
+        if chat
+        else OpenAICompletionsRequestDriver()
+    )
+    result = await driver.request(request_input)
+
+    assert result.success == (case == "special_only")
+    assert result.generated_text == ""
+    if result.success:
+        assert result.server_token_stats.completion_tokens == 1
+        assert result.latency > 0
+        assert result.error == ""
+    else:
+        assert result.error
+    payload = mock_aiohttp_session.post.call_args.kwargs["json"]
+    assert "is_cache_warmup" not in payload
+    assert payload["max_tokens"] == 1
+    # Without it the server sends no usage chunk, and the warmup cannot tell a
+    # special-token-only generation from an empty one.
+    assert payload["stream_options"] == {"include_usage": True}

@@ -981,13 +981,13 @@ paths:
       operationId: createDecisions
       summary: Create decisions
       description: |
-        Answers typed questions about an input with a probability for every
-        option, read from the model's next-token scores at the answer position.
-        No text is generated, so `usage.completion_tokens` is always 0. Each
-        question is rendered as its own chat prompt, so adding or reordering
-        questions never changes another question's answer. Any text generation
-        model serves this endpoint. The wire format matches SGLang's
-        `/v1/decisions`.
+        Scores a set of options for each question and returns a probability
+        for each option, without generating text. MAX derives these
+        probabilities from the model's next-token scores at the answer
+        position. Each question is evaluated independently in its own prompt.
+        Any text-generation model with a chat template can serve this endpoint.
+        If the checkpoint includes `decider_config.json`, MAX uses the
+        decider prompt format.
       x-codeSamples:
         - lang: curl
           source: |
@@ -1024,27 +1024,29 @@ paths:
                 $ref: '#/components/schemas/CreateDecisionsResponse'
         '400':
           description: |
-            The request is invalid for this model: blank input, duplicate
-            option names, an answer label that is not a single token, a prompt
-            that exceeds the context length, a thinking-enabled chat template,
-            or a server that uses speculative decoding, LoRA, or variable
-            logits.
+            The server or model can't answer the request. For example, the
+            model ID is unknown, an answer label isn't a single token, a
+            prompt exceeds the context length, the request turns on thinking,
+            `prompt_format_version` doesn't match the server's version, a
+            decider model gets more than 10 options, or the server uses
+            speculative decoding, LoRA, or variable logits.
         '422':
           description: |
-            The body does not match the schema (for example, a blank input, an
-            unknown field, or more than 64 questions).
+            The request body doesn't match the schema. For example, a text
+            field is blank, two questions share an `id`, two options share a
+            name, the body has an unknown field, or the request has more than
+            64 questions.
 
   /v1/systemone:
     post:
       operationId: createSystemOne
       summary: Create System One answers
       description: |
-        Answers System One `noul` (yes/no), `choice`, and `score` questions with
-        the same label scorer as `/v1/decisions`, so System One clients can
-        point at a MAX server. Any text generation model serves this endpoint.
-        Fields that exist only on `/v1/decisions`
-        (`temperature`, `prompt_format_version`, `return_prompt_token_ids`) are
-        refused.
+        Answers System One `noul` (yes/no), `choice`, and `score` questions
+        using the same scoring path as `/v1/decisions`. This endpoint
+        lets System One clients use a MAX server without changing their
+        request format. Any model that supports `/v1/decisions` also
+        supports this endpoint, which uses the model's default temperature.
       requestBody:
         required: true
         content:
@@ -1060,15 +1062,15 @@ paths:
                 $ref: '#/components/schemas/SystemOneResponse'
         '400':
           description: |
-            The request is invalid for this model: an unknown model, an answer
-            label that is not a single token, a prompt that exceeds the context
-            length, or a server that uses speculative decoding, LoRA, or
-            variable logits.
+            The server or model can't answer the request. For example, the
+            model ID is unknown, an answer label isn't a single token, a
+            prompt exceeds the context length, or the server uses speculative
+            decoding, LoRA, or variable logits.
         '422':
           description: |
-            The body does not match the schema (for example, an unknown
-            question type, too many options or levels, or more than 64
-            questions).
+            The request body doesn't match the schema. For example, a question
+            type is unknown, a question has too many options or levels, or the
+            request has more than 64 questions.
 
   /v1/audio/speech:
     post:
@@ -1201,6 +1203,143 @@ paths:
                   sample rate.
         '400':
           description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/load_lora_adapter:
+    post:
+      operationId: loadLoraAdapter
+      summary: Load a LoRA adapter
+      description: |
+        Loads a LoRA adapter from a local path into a serving instance
+        started with the `--enable-lora` argument. After the adapter loads,
+        its name appears in the [models list](/rest-api/list-models) and
+        you can pass it as the `model` value in inference requests.
+
+        For adapter requirements, such as supported base models, weight
+        format, and layer targets, see the
+        [LoRA adapters guide](/serve/lora-adapters).
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/load_lora_adapter \
+              -H "Content-Type: application/json" \
+              -d '{
+                    "lora_name": "example",
+                    "lora_path": "/path/to/lora-adapter"
+                  }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadLoraAdapterRequest'
+      responses:
+        '200':
+          description: |
+            The adapter loaded. Loading a name that is already in use
+            from the same path also returns `200`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoraAdapterResponse'
+              examples:
+                success:
+                  summary: Adapter loaded
+                  value:
+                    status: "success"
+                    message: "LoRA adapter 'example' loaded successfully"
+        '400':
+          description: |
+            The adapter path does not exist locally, the adapter directory
+            is invalid, or the request body is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |
+            An adapter with the same name is already loaded from a
+            different path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: An internal error prevented the adapter from loading.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: |
+            The serving instance was started without LoRA enabled.
+            Restart it with `--enable-lora`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/unload_lora_adapter:
+    post:
+      operationId: unloadLoraAdapter
+      summary: Unload a LoRA adapter
+      description: |
+        Unloads a previously loaded LoRA adapter by name. Unloading removes
+        the adapter from the [models list](/rest-api/list-models), and
+        inference requests that name it fail.
+
+        For the workflow around loading and unloading adapters, see the
+        [LoRA adapters guide](/serve/lora-adapters).
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/unload_lora_adapter \
+              -H "Content-Type: application/json" \
+              -d '{
+                    "lora_name": "example"
+                  }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnloadLoraAdapterRequest'
+      responses:
+        '200':
+          description: The adapter unloaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoraAdapterResponse'
+              examples:
+                success:
+                  summary: Adapter unloaded
+                  value:
+                    status: "success"
+                    message: "LoRA adapter 'example' unloaded successfully"
+        '400':
+          description: The request body is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No adapter with that name is loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: An internal error prevented the adapter from unloading.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: |
+            The serving instance was started without LoRA enabled.
+            Restart it with `--enable-lora`.
           content:
             application/json:
               schema:
@@ -1855,8 +1994,9 @@ components:
       properties:
         input:
           description: |
-            The text (a string, object, or array) the questions are about.
-            Objects and arrays are rendered into the prompt as compact JSON.
+            The text to evaluate, specified as a string, JSON object, or JSON
+            array. The value can't be blank. MAX serializes objects and arrays
+            as JSON in the prompt.
           oneOf:
             - type: string
             - type: object
@@ -1866,9 +2006,10 @@ components:
           minItems: 1
           maxItems: 64
           description: |
-            Typed questions with distinct `id`s. A `choice` has 2-26 options
-            labeled A-Z, a `score` has 2-10 levels labeled 0-9, and a `yes_no`
-            is answered by the labels yes and no.
+            The questions to answer. Specify 1 to 64 questions, each with a
+            unique `id`. A `choice` question must have 2 to 26 options, and a
+            `score` question must have 2 to 10 levels. Decider models support
+            at most 10 options per `choice` question.
           items:
             oneOf:
               - $ref: '#/components/schemas/DecisionChoiceQuestion'
@@ -1883,37 +2024,56 @@ components:
         temperature:
           type: number
           exclusiveMinimum: 0
-          default: 1.0
           description: |
-            Divides the label scores before the softmax. It scales
-            `probabilities` only, not `label_mass`.
+            The softmax temperature used to calculate `probabilities`. Higher
+            values distribute probability more evenly across candidates, while
+            lower values concentrate probability on the most likely candidate.
+            This parameter doesn't affect `label_mass`. If omitted, chat models
+            use `1.0`, and decider models use the per-question-type temperatures
+            defined in `decider_config.json`.
         chat_template_kwargs:
           type: object
           description: |
-            Extra chat template arguments. Thinking is turned off by default
-            and may not be turned on.
+            Additional arguments to pass to the model's chat template. MAX merges
+            these arguments with the default values. MAX always disables thinking
+            and returns `400` if this parameter enables it. Decider models don't
+            use chat templates and return `400` if this parameter is specified
+            with any value.
         prompt_format_version:
           type: integer
           description: |
-            Pins the server-owned prompt wording. A different version than the
-            one served is rejected.
+            The prompt format version the request expects. Set it to detect a
+            server whose prompt wording differs from the one you tested. The
+            chat format is version 1, and the decider format is version 2. If
+            the value doesn't match the server's version, MAX returns `400`.
         return_prompt_token_ids:
           type: boolean
           default: false
           description: |
-            Returns the exact prompt and label token IDs scored for each answer.
+            Whether to add `prompt_token_ids` and `label_token_ids` to each
+            answer so you can reproduce the scores offline. Decider models can
+            return `400` for `score` questions because they score each level
+            as a separate prompt.
         model:
           type: string
-          description: ID of the model to use.
+          description: |
+            The ID of the model to use. Defaults to the served model. An
+            unknown ID returns `400`.
 
     DecisionChoiceQuestion:
       type: object
       required: [id, type, question, options]
       properties:
-        id: {type: string}
+        id:
+          type: string
+          description: |
+            A unique ID for the question. The response uses it as the key in
+            `answers`.
         type: {type: string, enum: [choice]}
         question:
-          description: The question text (string, object, or array).
+          description: |
+            The question to answer, as a string, JSON object, or JSON array.
+            It can't be blank.
         options:
           type: array
           minItems: 2
@@ -1922,35 +2082,58 @@ components:
             type: object
             required: [name]
             properties:
-              name: {type: string}
-              description: {}
+              name:
+                type: string
+                description: |
+                  The option name, which the response uses as a key in
+                  `probabilities` and as the value of `choice`. Names must be
+                  unique, ignoring case and surrounding whitespace, and can't
+                  contain line breaks or control characters.
+              description:
+                description: |
+                  An optional description of the option, as a string, JSON
+                  object, or JSON array.
 
     DecisionScoreQuestion:
       type: object
       required: [id, type, question, levels]
       properties:
-        id: {type: string}
+        id:
+          type: string
+          description: |
+            A unique ID for the question. The response uses it as the key in
+            `answers`.
         type: {type: string, enum: [score]}
         question:
-          description: The question text (string, object, or array).
+          description: |
+            The question to answer, as a string, JSON object, or JSON array.
+            It can't be blank.
         levels:
           type: array
           minItems: 2
           maxItems: 10
-          description: Level descriptions, labeled 0-9 in order.
+          description: |
+            The level descriptions, in order. MAX labels the first level 0,
+            the second level 1, and so on.
 
     DecisionYesNoQuestion:
       type: object
       required: [id, type, question]
       properties:
-        id: {type: string}
+        id:
+          type: string
+          description: |
+            A unique ID for the question. The response uses it as the key in
+            `answers`.
         type: {type: string, enum: [yes_no]}
         question:
-          description: The question text (string, object, or array).
+          description: |
+            The question to answer, as a string, JSON object, or JSON array.
+            It can't be blank.
         yes:
-          description: Optional description of the yes answer.
+          description: An optional description of what makes the answer yes.
         "no":
-          description: Optional description of the no answer.
+          description: An optional description of what makes the answer no.
 
     SystemOneRequest:
       type: object
@@ -1958,11 +2141,12 @@ components:
       properties:
         state:
           description: |
-            The text (a string, object, or array) the questions are about. It
-            may be empty.
+            The text that the questions are about, as a string, JSON object,
+            or JSON array. It can be empty.
         model:
           type: string
-          description: ID of the model to use.
+          description: |
+            The ID of the model to use. An unknown ID returns `400`.
         questions:
           type: object
           minProperties: 1
@@ -1982,8 +2166,10 @@ components:
         chat_template_kwargs:
           type: object
           description: |
-            Extra chat template arguments. Thinking is turned off by default
-            and may not be turned on.
+            Extra arguments for the model's chat template, merged over the
+            defaults. MAX always turns thinking off and returns `400` if the
+            request turns it on. Decider models don't use a chat template and
+            return `400` for any value.
 
     SystemOneNoulQuestion:
       type: object
@@ -2034,11 +2220,12 @@ components:
         answers:
           type: object
           description: |
-            Answers keyed by question ID. A `noul` answer has `noul` (the
-            probability of yes), a `choice` answer has `choice`, `confidence`,
-            and `probabilities`, and a `score` answer has `score`,
-            `confidence`, `legend`, and `probabilities`. Each also has
-            `x_label_mass`, the full-vocabulary probability of the labels.
+            Answers keyed by question ID. A `noul` answer includes `noul`, the
+            probability of yes. A `choice` answer includes `choice`,
+            `confidence`, and `probabilities`. A `score` answer includes
+            `score`, `confidence`, `legend`, and `probabilities`. Every answer
+            also includes `type` and `x_label_mass`, the model's total
+            next-token probability across the answer labels.
           additionalProperties:
             type: object
             required: [type, x_label_mass]
@@ -2052,7 +2239,7 @@ components:
             input_tokens: {type: integer}
             output_tokens:
               type: integer
-              description: Always 0, since nothing is generated.
+              description: Always 0 because the endpoint doesn't generate text.
 
     CreateDecisionsResponse:
       type: object
@@ -2080,41 +2267,58 @@ components:
                 additionalProperties:
                   type: number
                 description: |
-                  Probability of each candidate, summing to 1 over the
-                  candidates. This is a softmax of label scores, not a
-                  guarantee of correctness.
+                  The probability of each candidate, keyed by option name,
+                  level index, or `yes` and `no`. The values sum to 1. They
+                  come from a softmax over the label scores, so they rank the
+                  candidates against each other. They don't measure how
+                  likely the answer is to be correct.
               label_mass:
                 type: number
                 description: |
-                  Full-vocabulary probability of all answer labels at the
-                  answer position. A low value means the model wanted to say
-                  something other than a label.
+                  The model's total next-token probability across the answer
+                  labels at the answer position. A value near 1 means the
+                  model answered with a label. A low value means the model
+                  wanted to respond with something else.
               choice:
                 type: string
-                description: The most probable option (`choice` questions).
+                description: |
+                  The most probable option name. Present for `choice`
+                  questions.
               score:
                 type: number
-                description: Expected level (`score` questions).
+                description: |
+                  The probability-weighted average of the level indices,
+                  where the first level is 0. Present for `score` questions.
               prompt_token_ids:
                 type: array
                 items: {type: integer}
+                description: |
+                  The token IDs of the scored prompt. Present when
+                  `return_prompt_token_ids` is `true`.
               label_token_ids:
                 type: array
                 items: {type: integer}
+                description: |
+                  The token ID of each candidate in `probabilities`, in the
+                  same order. Present when `return_prompt_token_ids` is
+                  `true`.
         usage:
           type: object
           required: [prompt_tokens, completion_tokens, total_tokens]
           properties:
             prompt_tokens:
               type: integer
+              description: |
+                The total prompt tokens across all scored prompts. MAX scores
+                each question as its own prompt.
             completion_tokens:
               type: integer
-              description: Always 0, since nothing is generated.
+              description: Always 0 because the endpoint doesn't generate text.
             total_tokens:
               type: integer
             prompt_tokens_details:
               type: object
-              description: Present when the server reports prefix-cache hits.
+              description: Present when prefix caching is enabled.
               properties:
                 cached_tokens:
                   type: integer
@@ -2266,3 +2470,47 @@ components:
           type: string
           enum: [ok, unavailable]
           description: The health status of the service
+    LoadLoraAdapterRequest:
+      type: object
+      description: |
+        Request to load a LoRA adapter into a serving instance started
+        with the `--enable-lora` argument.
+      required:
+        - lora_name
+        - lora_path
+      properties:
+        lora_name:
+          type: string
+          description: |
+            Name that identifies the adapter in inference requests.
+        lora_path:
+          type: string
+          description: |
+            Local path to the adapter directory. Remote repositories
+            are not supported.
+    UnloadLoraAdapterRequest:
+      type: object
+      description: |
+        Request to unload a previously loaded LoRA adapter.
+      required:
+        - lora_name
+      properties:
+        lora_name:
+          type: string
+          description: |
+            Name of the adapter to unload, as given to
+            `POST /v1/load_lora_adapter`.
+    LoraAdapterResponse:
+      type: object
+      description: |
+        Result of a LoRA adapter load or unload request.
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          description: The result of the operation.
+        message:
+          type: string
+          description: A human-readable status message.

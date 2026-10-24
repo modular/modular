@@ -36,7 +36,6 @@ through a single body: MMA shape and BK select on dtype.
 from std.bit import log2_floor
 from std.math import ceildiv
 from std.sys import align_of, size_of, llvm_intrinsic
-from std.sys.intrinsics import readfirstlane
 from std.utils import Index, IndexList, StaticTuple
 from std.collections import Array
 from std.utils.numerics import get_accum_type
@@ -50,7 +49,7 @@ from max.gpu import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
-from max.gpu.intrinsics import AMDBufferResource
+from max.gpu.intrinsics import AMDBufferResource, readfirstlane
 from max.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
@@ -69,8 +68,6 @@ from structured_kernels.amd_tile_io_conv import TileLoaderLDSIm2col
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -410,7 +407,6 @@ struct AMD4WaveMatmul[
     config: MatmulKernelConfig,
     /,
     enable_swizzle: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Hand-written 4-warp 2x2 inline-MMA matmul for AMD MI355X.
 
@@ -425,7 +421,6 @@ struct AMD4WaveMatmul[
         c_type: Output C element type.
         config: MatmulKernelConfig with block/warp/mma shapes.
         enable_swizzle: Enable LDS bank conflict avoidance.
-        elementwise_lambda_fn: Optional epilogue.
     """
 
     comptime BM = Self.config.block_shape[0]
@@ -843,8 +838,7 @@ struct AMD4WaveMatmul[
         """Same as `run` without split-K, storing the output through
         `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             a_layout: Logical layout of `a`.
@@ -892,8 +886,7 @@ struct AMD4WaveMatmul[
         """Same as `run` without split-K, storing `compute_fn(idx, value)`
         into `c`.
 
-        Launch with `host_arg=compute_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             a_layout: Logical layout of `a`.
@@ -1292,23 +1285,19 @@ struct AMD4WaveMatmul[
         # the matmul kernel writes f32 partials to a stacked workspace
         # at row `split_id * M + pid_m * BM + m_global_base` while the
         # in-bounds gate uses the LOGICAL row `m + m_global_base` — the
-        # two coincide for non-split-K. Lambda mode requires the lambda
-        # to fire on the FINAL value, so split-K + lambda is rejected
-        # at comptime; the reduce kernel applies the lambda there.
+        # two coincide for non-split-K. An output closure must fire on
+        # the FINAL value, so split-K + closure is rejected at comptime;
+        # the reduce kernel applies the closure there.
         comptime quad_m_mmas = Self.quadrant_m_mmas
         comptime quad_n_mmas = Self.quadrant_n_mmas
 
-        comptime if Bool(Self.elementwise_lambda_fn):
+        comptime if has_epilogue_fn or has_compute_fn:
             comptime assert num_splits == 1, (
-                "elementwise epilogue is not supported with split-K"
+                "an output closure is not supported with split-K"
                 " (would fire on each partial, not the reduced output)"
             )
 
-        var c_writer = RegTileEpilogue[
-            Self.c_type,
-            c_frag_size,
-            elementwise_lambda_fn=Self.elementwise_lambda_fn,
-        ](c)
+        var c_writer = RegTileEpilogue[Self.c_type, c_frag_size](c)
 
         if m < M and n < N:
             var c_reg = mma_op.accum_tile()
@@ -1334,11 +1323,10 @@ struct AMD4WaveMatmul[
                             + n_within * MMA_N
                             + lane_group * c_frag_size
                         )
-                        var v = (
-                            c_reg.tile[1, c_frag_size](m_mma, n_mma)
-                            .raw_load[width=c_frag_size](0)
-                            .cast[Self.c_type]()
-                        )
+                        var v = c_reg.load[
+                            width=c_frag_size,
+                            alignment=align_of[Self.accum_dtype](),
+                        ](Coord(m_mma, n_mma * c_frag_size)).cast[Self.c_type]()
                         comptime if has_epilogue_fn:
                             c_writer.store_with_epilogue_fn(
                                 epilogue_fn, v, m=m_dram, n=n_global
@@ -1368,25 +1356,20 @@ struct AMD4WaveMatmul[
         a_engine: TensorEngine,
         b_engine: TensorEngine,
         c_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
         has_residual: Bool = False,
-        # Pre-residual fused compute lambda (SM100 reference:
-        # `D = lambda(Conv(A,B)) + beta * C`). Fires on the post-cast
-        # `c_type` MMA output, BEFORE the residual FMA. Signature
-        # `(Coord, SIMD) capturing -> SIMD`. Use for bias / ReLU /
-        # SiLU / GELU fusion. The post-residual store-site lambda is
-        # the existing struct-level `Self.elementwise_lambda_fn` and
-        # fires after the residual FMA (or directly on the MMA output
-        # when `has_residual=False`).
-        elementwise_compute_lambda_fn: Optional[
-            elementwise_compute_lambda_type
-        ] = None,
+        has_epilogue_fn: Bool = False,
+        has_compute_fn: Bool = False,
     ](
         a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
-        source_ptr: UnsafePointer[Scalar[Self.c_type], ImmutAnyOrigin],
+        source_ptr: ImmPointer[Scalar[Self.c_type], ImmutAnyOrigin],
         source_row_stride: Int32,
         beta: Float32,
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         """Runs the 4-wave kernel as a 2D convolution via implicit-GEMM.
 
@@ -1418,17 +1401,16 @@ struct AMD4WaveMatmul[
             a_engine: `TensorEngine` of `a`.
             b_engine: `TensorEngine` of `b`.
             c_engine: `TensorEngine` of `c`.
+            EpilogueFnType: Type of `epilogue_fn`.
+            ComputeFnType: Type of `compute_fn`.
             has_residual: When True, prefetch + FMA in `source * beta`
                 during the epilogue. When False, the residual args are
                 unused and the epilogue is identical to the no-residual
                 kernel (dead-code-eliminated by the compiler).
-            elementwise_compute_lambda_fn: Optional pre-residual fused
-                compute lambda. Fires on the post-cast `c_type` MMA
-                output BEFORE the residual FMA, matching the SM100
-                `D = lambda(Conv(A,B)) + beta * C` ordering. Use for
-                bias / ReLU / SiLU / GELU fusion. Signature
-                `(Coord, SIMD) capturing -> SIMD`. When unset,
-                the comptime branch dead-code-eliminates.
+            has_epilogue_fn: Whether `epilogue_fn` stores each output
+                chunk instead of the kernel.
+            has_compute_fn: Whether `compute_fn` transforms each output
+                chunk before the residual add.
 
         Args:
             a: Input tile-tensor for A (NHWC activations).
@@ -1441,6 +1423,12 @@ struct AMD4WaveMatmul[
             source_row_stride: Element stride of the residual's row
                 dimension. Unused when `has_residual=False`.
             beta: Residual scale. Unused when `has_residual=False`.
+            epilogue_fn: Post-residual epilogue that stores each output
+                chunk, matching the SM100 `D = lambda(Conv(A,B)) + beta * C`
+                ordering. Used when `has_epilogue_fn` is set.
+            compute_fn: Pre-residual compute epilogue (bias / ReLU / SiLU
+                / GELU) applied to the post-cast `c_type` MMA output.
+                Used when `has_compute_fn` is set.
         """
         Self.validate_config()
         var _source_row_stride = Int(source_row_stride)
@@ -1888,17 +1876,11 @@ struct AMD4WaveMatmul[
         # the matmul kernel writes f32 partials to a stacked workspace
         # at row `split_id * M + pid_m * BM + m_global_base` while the
         # in-bounds gate uses the LOGICAL row `m + m_global_base` — the
-        # two coincide for non-split-K. Lambda mode requires the lambda
-        # to fire on the FINAL value, so split-K + lambda is rejected
-        # at comptime; the reduce kernel applies the lambda there.
+        # two coincide for non-split-K. An output closure must fire on
+        # the FINAL value, so split-K + closure is rejected at comptime;
+        # the reduce kernel applies the closure there.
         comptime quad_m_mmas = Self.quadrant_m_mmas
         comptime quad_n_mmas = Self.quadrant_n_mmas
-
-        comptime if Bool(Self.elementwise_lambda_fn):
-            comptime assert num_splits == 1, (
-                "elementwise epilogue is not supported with split-K"
-                " (would fire on each partial, not the reduced output)"
-            )
 
         # Residual prefetch: when `has_residual`, bulk-issue per-lane
         # `buffer_load_*` for source[m_logical, n_global] into a VGPR
@@ -1965,11 +1947,7 @@ struct AMD4WaveMatmul[
 
         _emit_framework_body()
 
-        var c_writer = RegTileEpilogue[
-            Self.c_type,
-            c_frag_size,
-            elementwise_lambda_fn=Self.elementwise_lambda_fn,
-        ](c)
+        var c_writer = RegTileEpilogue[Self.c_type, c_frag_size](c)
 
         # Drain prefetched loads before the first `v_pk_fma_f32` reads
         # the prefetched array. By now the main loop's MMAs have given
@@ -2002,20 +1980,17 @@ struct AMD4WaveMatmul[
                             + n_within * MMA_N
                             + lane_group * c_frag_size
                         )
-                        var v = (
-                            c_reg.tile[1, c_frag_size](m_mma, n_mma)
-                            .raw_load[width=c_frag_size](0)
-                            .cast[Self.c_type]()
-                        )
-                        # Pre-residual fused compute lambda — matches
+                        var v = c_reg.load[
+                            width=c_frag_size,
+                            alignment=align_of[Self.accum_dtype](),
+                        ](Coord(m_mma, n_mma * c_frag_size)).cast[Self.c_type]()
+                        # Pre-residual fused compute closure — matches
                         # SM100 `D = lambda(Conv(A,B)) + beta * C`
                         # semantics. Fires on the post-cast `c_type`
                         # MMA output (use cases: bias / ReLU / SiLU /
                         # GELU before the skip add).
-                        comptime if case .Some(
-                            _compute_fn
-                        ) = elementwise_compute_lambda_fn:
-                            v = _compute_fn[
+                        comptime if has_compute_fn:
+                            v = compute_fn[
                                 alignment=align_of[
                                     SIMD[Self.c_type, c_frag_size]
                                 ]()
@@ -2026,7 +2001,12 @@ struct AMD4WaveMatmul[
                             ].cast[.float32]()
                             var fused_f32 = v.cast[.float32]() + beta * skip
                             v = fused_f32.cast[Self.c_type]()
-                        c_writer.store(v, m=m_dram, n=n_global)
+                        comptime if has_epilogue_fn:
+                            c_writer.store_with_epilogue_fn(
+                                epilogue_fn, v, m=m_dram, n=n_global
+                            )
+                        else:
+                            c_writer.store(v, m=m_dram, n=n_global)
 
 
 @inline(.always)
@@ -2040,7 +2020,6 @@ def structured_4wave_matmul[
     block_n_override: Int = 0,
     block_k_override: Int = 0,
     dump_asm_path: StaticString = "",
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
@@ -2077,8 +2056,8 @@ def structured_4wave_matmul[
 
     These were chosen on raw matmul throughput. The dispatcher may
     legitimately route through 4-wave even when raw matmul is a bit
-    slower than a non-fusable vendor BLAS, because
-    `elementwise_lambda_fn` can fuse epilogues (bias, GELU, scale,
+    slower than a non-fusable vendor BLAS, because the `epilogue_fn`
+    and `compute_fn` overloads can fuse epilogues (bias, GELU, scale,
     residual) and save a separate elementwise kernel launch.
 
     FP8 keeps the original auto-pick (BM=64 for M ≤ 512, BM=128
@@ -2101,10 +2080,6 @@ def structured_4wave_matmul[
         dump_asm_path: If non-empty, dumps the compiled GCN assembly
             to the given file path. Only used for ASM-level
             diff-debugging.
-        elementwise_lambda_fn: Optional fused epilogue. When set, the
-            kernel's output store calls the lambda with global
-            `(m_global, n_global)` coords and a SIMD-of-`c_frag_size`
-            instead of writing to `c` directly.
 
     Args:
         a: Input tile-tensor for A.
@@ -2121,7 +2096,6 @@ def structured_4wave_matmul[
         block_n_override=block_n_override,
         block_k_override=block_k_override,
         dump_asm_path=dump_asm_path,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](a, b, c, no_epilogue_fn, no_compute_fn, ctx)
@@ -2174,7 +2148,6 @@ def structured_4wave_matmul[
         block_n_override=block_n_override,
         block_k_override=block_k_override,
         dump_asm_path="",
-        elementwise_lambda_fn=None,
         has_epilogue_fn=True,
         has_compute_fn=False,
     ](a, b, c, epilogue_fn, no_compute_fn, ctx)
@@ -2227,7 +2200,6 @@ def structured_4wave_matmul[
         block_n_override=block_n_override,
         block_k_override=block_k_override,
         dump_asm_path="",
-        elementwise_lambda_fn=None,
         has_epilogue_fn=False,
         has_compute_fn=True,
     ](a, b, c, no_epilogue_fn, compute_fn, ctx)
@@ -2247,7 +2219,6 @@ def _structured_4wave_matmul_impl[
     block_n_override: Int,
     block_k_override: Int,
     dump_asm_path: StaticString,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
@@ -2296,7 +2267,6 @@ def _structured_4wave_matmul_impl[
             c_type,
             config,
             enable_swizzle,
-            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         comptime kernel = kernel_type.run[
             type_of(a).LayoutType,
@@ -2324,7 +2294,7 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
-                host_arg=epilogue_fn,
+                host_args=(epilogue_fn,),
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )
@@ -2342,7 +2312,7 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
-                host_arg=compute_fn,
+                host_args=(compute_fn,),
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )

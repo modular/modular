@@ -24,7 +24,7 @@ from std._plugin import CurrentPlugin
 from std.collections import Array, List
 from std.collections.string.string_span import _unsafe_strlen
 from std.format.tstring import TString
-from std.io import FileDescriptor
+from std.io import RawFileDescriptor
 from std.ffi import c_char, c_int, external_call, get_errno
 from std.reflection import SourceLocation, call_location
 from std._gpu import thread_idx, block_idx
@@ -273,6 +273,10 @@ def _abort_report[
 
     comptime if is_apple_gpu():
         # FIXME: Remove after MOCO-3697 is fixed.
+        pass
+    elif is_gpu() and not CurrentPlugin.print_emit_fn:
+        # A GPU target without a print hook, such as one named only by its
+        # triple, has no way to report the message; `abort` still traps.
         pass
     elif is_gpu():
         # On GPU, gate the print to a single thread to avoid flooding the
@@ -648,7 +652,9 @@ def isatty(fd: Int) -> Bool:
         ```
     """
 
-    return FileDescriptor(c_int(fd)).isatty()
+    if fd < 0:
+        return False
+    return RawFileDescriptor(c_int(fd)).isatty()
 
 
 # ===----------------------------------------------------------------------=== #

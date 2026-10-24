@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Random-weight MiMo-V2 fixtures at production width, with HF references.
 
-Writes two checkpoints in the NVFP4 export's format, each with three decoder
-layers taken from the real schedule (layer 0: full attention and the dense
-MLP; layer 1: SWA and MoE; layer 5: full attention and MoE), all 256 experts
-and every width at its production value:
+Writes two checkpoints in Xiaomi's format, each with three decoder layers
+taken from the real schedule (layer 0: full attention and the dense MLP;
+layer 1: SWA and MoE; layer 5: full attention and MoE), all 256 experts and
+every width at its production value:
 
 * ``random``: weights drawn to match the real checkpoint's per-tensor
-  statistics. Dense F32 weights are exact FP8 128x128 block values and the
-  experts are NVFP4 codes with MXFP4-derived scales, as in the export.
+  statistics. Dense weights are FP8 with 128x128 block scales, ``qkv_proj``
+  in Xiaomi's chunk order, and the experts are MXFP4, as in the checkpoint.
 * ``beacon``: ``random`` with two beacons that make BF16-invisible errors
   visible. Token ``BEACON`` gets a large one-hot embedding and layer 1 a large
   K weight on that dim, so the beacon's key dominates every query that can see
@@ -40,9 +40,18 @@ With ``--tiny-goldens``, it instead runs the modeling code in float32 on the
 CPU on the ``tiny_fixture`` checkpoint and writes the goldens that
 ``test_serving_numerics_gpu.py`` scores MAX on: every row's logits for each
 prompt, with the fixture's digest. Rerun it whenever ``tiny_fixture.py``
-changes:
+changes.
 
-    make_random_fixture --real <NVFP4 export> \
+The modeling code targets transformers 5.3.0, the version the checkpoint's
+config records. The repo's pinned transformers renamed an argument of
+``create_causal_mask`` that it passes, so run it outside bazel, from this
+directory:
+
+    PYTHONPATH=. uv run --no-project --python 3.12 \
+        --with torch --with transformers==5.3.0 --with safetensors \
+        --with numpy --index https://download.pytorch.org/whl/cpu \
+        --index-strategy unsafe-best-match \
+        python make_random_fixture.py --real <checkpoint> \
         --tiny-goldens testdata/tiny_goldens.npz
 """
 
@@ -93,59 +102,26 @@ def _bf16(x: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(np.ascontiguousarray(x, np.float32)).bfloat16()
 
 
-def fp8_exact(w: np.ndarray) -> np.ndarray:
-    """F32 values that 128x128-block FP8 E4M3 represents exactly."""
-    r, c = w.shape
-    tiles = torch.from_numpy(w).reshape(r // 128, 128, c // 128, 128)
-    scale = tiles.abs().amax(dim=(1, 3), keepdim=True) / 448.0
-    codes = (tiles / scale).to(torch.float8_e4m3fn)
-    return (codes.float() * scale).reshape(r, c).numpy()
-
-
 def _qkv_rows(sliding: bool) -> tuple[int, int, int]:
     return (3072, 384, 256) if sliding else (3072, 192, 128)
 
 
-def _to_global(chunks: np.ndarray, sliding: bool) -> np.ndarray:
-    """Chunk order ``[4, q + k + v, H]`` -> the export's global ``[Q; K; V]``."""
-    q, k, _ = _qkv_rows(sliding)
-    return np.concatenate(
-        [
-            chunks[:, :q].reshape(-1, H),
-            chunks[:, q : q + k].reshape(-1, H),
-            chunks[:, q + k :].reshape(-1, H),
-        ]
-    )
+def _fp8(weight: np.ndarray, name: str) -> dict[str, torch.Tensor]:
+    """``weight`` as FP8 codes and their 128x128 block scales."""
+    codes, scales = tiny_fixture.fp8_blocks(weight)
+    return {
+        f"{name}.weight": torch.from_numpy(codes).view(torch.float8_e4m3fn),
+        f"{name}.weight_scale_inv": torch.from_numpy(scales),
+    }
 
 
-def _to_chunks(weight: np.ndarray, sliding: bool) -> np.ndarray:
-    q, k, v = _qkv_rows(sliding)
-    return np.concatenate(
-        [
-            weight[: 4 * q].reshape(4, q, H),
-            weight[4 * q : 4 * (q + k)].reshape(4, k, H),
-            weight[4 * (q + k) :].reshape(4, v, H),
-        ],
-        axis=1,
-    )
-
-
-def _exact_qkv(chunks: np.ndarray, sliding: bool) -> np.ndarray:
-    """Makes chunk-order rows FP8-exact per block, pad rows included."""
-    rows = chunks.shape[1]
-    padded = -(-rows // 128) * 128
-    full = np.zeros((4, padded, H), np.float32)
-    full[:, :rows] = chunks
-    full = fp8_exact(full.reshape(-1, H)).reshape(4, padded, H)
-    return _to_global(full[:, :rows], sliding)
-
-
-def _export_scales(e8m0: np.ndarray) -> np.ndarray:
-    """The converter's scales: E8M0 per 32 -> two E4M3 per 16, global 2^-8."""
-    exp = e8m0.astype(np.int16) - 127 + 8
-    assert exp.min() >= -9 and exp.max() <= 8
-    out = np.where(exp >= -6, (exp + 7) << 3, 1 << np.clip(exp + 9, 0, 7))
-    return np.repeat(out.astype(np.uint8), 2, axis=-1)
+def _fp8_qkv(chunks: np.ndarray, name: str) -> dict[str, torch.Tensor]:
+    """Chunk-order ``[4, q + k + v, H]`` as Xiaomi stores ``qkv_proj``."""
+    codes, scales = tiny_fixture.chunked_fp8_blocks(chunks)
+    return {
+        f"{name}.weight": torch.from_numpy(codes).view(torch.float8_e4m3fn),
+        f"{name}.weight_scale_inv": torch.from_numpy(scales),
+    }
 
 
 def make_random(real: Path, out: Path) -> None:
@@ -159,16 +135,6 @@ def make_random(real: Path, out: Path) -> None:
         vision_config=None,
         audio_config=None,
     )
-    config["quantization_config"]["quantized_layers"] = {
-        f"model.layers.{i}.mlp.experts.{e}.{p}": {
-            "quant_algo": "W4A16_NVFP4",
-            "group_size": 16,
-        }
-        for i, (_, moe) in enumerate(LAYERS)
-        if moe
-        for e in range(EXPERTS)
-        for p in ("gate_proj", "up_proj", "down_proj")
-    }
     (out / "config.json").write_text(json.dumps(config, indent=1))
     for f in ("configuration_mimo_v2.py", "modeling_mimo_v2.py"):
         shutil.copy(real / f, out / f)
@@ -191,10 +157,9 @@ def make_random(real: Path, out: Path) -> None:
             p + "post_attention_layernorm.weight": _bf16(
                 _normal(rng, H, 0.3, 0.1)
             ),
-            p + "self_attn.qkv_proj.weight": torch.from_numpy(
-                _exact_qkv(
-                    _normal(rng, (4, q + k + v, H), std=0.0078), bool(sliding)
-                )
+            **_fp8_qkv(
+                _normal(rng, (4, q + k + v, H), std=0.0078),
+                p + "self_attn.qkv_proj",
             ),
             p + "self_attn.o_proj.weight": _bf16(
                 _normal(rng, (H, 64 * 128), std=0.009)
@@ -210,9 +175,7 @@ def make_random(real: Path, out: Path) -> None:
                 ("up_proj", (DENSE_DIM, H)),
                 ("down_proj", (H, DENSE_DIM)),
             ):
-                t[p + f"mlp.{proj}.weight"] = torch.from_numpy(
-                    fp8_exact(_normal(rng, shape, std=0.0096))
-                )
+                t |= _fp8(_normal(rng, shape, std=0.0096), p + f"mlp.{proj}")
         else:
             t[p + "mlp.gate.weight"] = _bf16(
                 _normal(rng, (EXPERTS, H), std=0.028)
@@ -230,11 +193,9 @@ def make_random(real: Path, out: Path) -> None:
                     t[b + "weight"] = torch.from_numpy(
                         rng.integers(0, 256, (n, kk // 2), dtype=np.uint8)
                     )
-                    e8m0 = rng.integers(116, 122, (n, kk // 32), dtype=np.uint8)
                     t[b + "weight_scale"] = torch.from_numpy(
-                        _export_scales(e8m0)
-                    ).view(torch.float8_e4m3fn)
-                    t[b + "weight_scale_2"] = torch.tensor([2.0**-8])
+                        rng.integers(116, 122, (n, kk // 32), dtype=np.uint8)
+                    )
         save_file(t, str(out / f"model-layer{i}.safetensors"))
 
 
@@ -256,11 +217,15 @@ def make_beacon(random: Path, out: Path) -> None:
 
     t = _load(random / "model-layer1.safetensors")
     t["model.layers.1.input_layernorm.weight"][BEACON_DIM] = 1.0
-    name = "model.layers.1.self_attn.qkv_proj.weight"
+    name = "model.layers.1.self_attn.qkv_proj"
     q, k, _ = _qkv_rows(True)
-    chunks = _to_chunks(t[name].numpy().copy(), True)
+    chunks = tiny_fixture.chunked_fp8_decode(
+        t[f"{name}.weight"].view(torch.uint8).numpy(),
+        t[f"{name}.weight_scale_inv"].numpy(),
+        4,
+    )
     chunks[:, q : q + k, BEACON_DIM] = 1.0
-    t[name] = torch.from_numpy(_exact_qkv(chunks, True))
+    t |= _fp8_qkv(chunks, name)
     save_file(t, str(out / "model-layer1.safetensors"))
 
     t = _load(random / "model-layer2.safetensors")
@@ -283,8 +248,8 @@ def _load(path: Path) -> dict[str, torch.Tensor]:
         return {n: f.get_tensor(n) for n in f.keys()}  # noqa: SIM118
 
 
-class _NVFP4Expert(torch.nn.Module):
-    """``MiMoV2MLP.forward`` with weights decoded from NVFP4 on each use."""
+class _MXFP4Expert(torch.nn.Module):
+    """``MiMoV2MLP.forward`` with weights decoded from MXFP4 on each use."""
 
     def __init__(
         self,
@@ -304,9 +269,8 @@ class _NVFP4Expert(torch.nn.Module):
         values = torch.stack(
             [lut[(codes & 15).long()], lut[(codes >> 4).long()]], -1
         ).reshape(codes.shape[0], -1)
-        scale = getattr(self, f"{proj}_scale").view(torch.float8_e4m3fn)
-        scale = scale.float() * getattr(self, f"{proj}_scale_2")
-        return (values * scale.repeat_interleave(16, 1)).to(self.dtype_)
+        scale = torch.exp2(getattr(self, f"{proj}_scale").float() - 127)
+        return (values * scale.repeat_interleave(32, 1)).to(self.dtype_)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         gate = self.act_fn(F.linear(x, self.weight("gate")))
@@ -320,7 +284,9 @@ def reference_model(
 ) -> tuple[torch.nn.Module, dict[str, torch.Tensor]]:
     """Builds the checkpoint's own HF model on ``device`` in ``dtype``.
 
-    The routed experts decode their NVFP4 weights on each use. Returns the
+    The FP8 weights are decoded once, ``qkv_proj`` into the global ``[Q; K;
+    V]`` order the reference splits, and the routed experts decode their
+    MXFP4 weights on each use. Returns the
     model and a dict that its forward fills with the embedding, each decoder
     layer's output and the final norm's, for the first sequence.
     """
@@ -355,12 +321,25 @@ def reference_model(
     for i, layer in enumerate(m.layers):
         p = f"model.layers.{i}."
         attn = layer.self_attn
-        for name in ("qkv_proj", "o_proj"):
-            put(
-                getattr(attn, name),
-                "weight",
-                tensors[p + f"self_attn.{name}.weight"].to(dtype),
-            )
+        chunks = config.num_key_value_heads
+        qkv = tiny_fixture.chunked_fp8_decode(
+            tensors[p + "self_attn.qkv_proj.weight"].view(torch.uint8).numpy(),
+            tensors[p + "self_attn.qkv_proj.weight_scale_inv"].numpy(),
+            chunks,
+        )
+        q, k = attn.q_size // chunks, attn.k_size // chunks
+        qkv = np.concatenate(
+            [
+                part.reshape(-1, qkv.shape[-1])
+                for part in (qkv[:, :q], qkv[:, q : q + k], qkv[:, q + k :])
+            ]
+        )
+        put(attn.qkv_proj, "weight", torch.from_numpy(qkv).to(dtype))
+        put(
+            attn.o_proj,
+            "weight",
+            tensors[p + "self_attn.o_proj.weight"].to(dtype),
+        )
         if attn.attention_sink_bias is not None:
             put(
                 attn,
@@ -376,10 +355,14 @@ def reference_model(
         mlp = layer.mlp
         if not hasattr(mlp, "experts"):
             for proj in ("gate_proj", "up_proj", "down_proj"):
+                weight = tiny_fixture.fp8_decode(
+                    tensors[p + f"mlp.{proj}.weight"].view(torch.uint8).numpy(),
+                    tensors[p + f"mlp.{proj}.weight_scale_inv"].numpy(),
+                )
                 put(
                     getattr(mlp, proj),
                     "weight",
-                    tensors[p + f"mlp.{proj}.weight"].to(dtype),
+                    torch.from_numpy(weight).to(dtype),
                 )
             continue
         put(mlp.gate, "weight", tensors[p + "mlp.gate.weight"].to(dtype))
@@ -392,7 +375,7 @@ def reference_model(
         for e in range(config.n_routed_experts):
             b = f"{p}mlp.experts.{e}."
             experts.append(
-                _NVFP4Expert(
+                _MXFP4Expert(
                     mlp.experts[e].act_fn,
                     dtype,
                     {
@@ -403,7 +386,6 @@ def reference_model(
                         for field, key in (
                             ("codes", "weight"),
                             ("scale", "weight_scale"),
-                            ("scale_2", "weight_scale_2"),
                         )
                     },
                 )

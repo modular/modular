@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for resize operations."""
 
-from enum import Enum
+from enum import Enum, IntEnum
 
 from max._core.dialects import builtin, kgen, mo, rmo
 
@@ -41,10 +41,42 @@ class InterpolationMode(Enum):
         return self.value
 
 
+class CoordinateTransformMode(IntEnum):
+    """How a resize maps an output coordinate to an input coordinate."""
+
+    HALF_PIXEL = 0
+    """Shifts by 0.5 before scaling, consistent with most deep learning
+    frameworks."""
+    ALIGN_CORNERS = 1
+    """Aligns the corner pixels of the input and output so that the first and
+    last coordinates are preserved exactly."""
+    ASYMMETRIC = 2
+    """Applies no shift, mapping an output coordinate to
+    ``out_coord / scale``."""
+    HALF_PIXEL_1D = 3
+    """Like :attr:`HALF_PIXEL` on every axis, except any axis whose output
+    size is 1 maps to coordinate 0."""
+
+
+class RoundMode(IntEnum):
+    """How :func:`resize_nearest` rounds a mapped coordinate to an index."""
+
+    HALF_DOWN = 0
+    """``ceil(x - 0.5)``."""
+    HALF_UP = 1
+    """``floor(x + 0.5)``."""
+    FLOOR = 2
+    """``floor(x)``."""
+    CEIL = 3
+    """``ceil(x)``."""
+
+
 def resize_linear(
     input: TensorValueLike,
     size: ShapeLike,
-    coordinate_transform_mode: int = 0,
+    coordinate_transform_mode: CoordinateTransformMode = (
+        CoordinateTransformMode.HALF_PIXEL
+    ),
     antialias: bool = False,
 ) -> TensorValue:
     """Resizes a tensor using linear (bilinear) interpolation.
@@ -79,17 +111,8 @@ def resize_linear(
         input: The input symbolic tensor to resize.
         size: The desired output shape. Must have the same rank as ``input``.
         coordinate_transform_mode: How to map an output coordinate to an input
-            coordinate. Allowed values:
-
-            - ``0`` (``half_pixel``): Default. Shifts by 0.5 before
-              scaling, consistent with most deep learning frameworks.
-            - ``1`` (``align_corners``): Aligns the corner pixels of the input
-              and output so that the first and last coordinates are preserved
-              exactly.
-            - ``2`` (``asymmetric``): Applies no shift, mapping an output
-              coordinate to ``out_coord / scale``.
-            - ``3`` (``half_pixel_1D``): Like ``half_pixel`` on every axis,
-              except any axis whose output size is 1 maps to coordinate 0.
+            coordinate. Defaults to
+            :attr:`CoordinateTransformMode.HALF_PIXEL`.
         antialias: When ``True``, applies an antialiasing filter when
             downscaling, which reduces aliasing artifacts by widening the tent
             filter support by ``1 / scale``. Has no effect when upscaling.
@@ -100,15 +123,13 @@ def resize_linear(
         and the same dtype as ``input``.
 
     Raises:
-        ValueError: If ``coordinate_transform_mode`` isn't 0-3, or if ``size``
-            has a different rank than ``input``.
+        ValueError: If ``coordinate_transform_mode`` isn't a
+            :class:`CoordinateTransformMode`, or if ``size`` has a different
+            rank than ``input``.
     """
-    if coordinate_transform_mode not in (0, 1, 2, 3):
-        raise ValueError(
-            f"coordinate_transform_mode must be 0-3, got"
-            f" {coordinate_transform_mode}"
-        )
-
+    coordinate_transform_mode = CoordinateTransformMode(
+        coordinate_transform_mode
+    )
     input = TensorValue(input)
     size = Shape(size)
 
@@ -126,7 +147,7 @@ def resize_linear(
         input,
         shape_to_tensor(size),
         mo.CoordinateTransformModeAttr(
-            mo.CoordinateTransformMode(coordinate_transform_mode)
+            mo.CoordinateTransformMode(coordinate_transform_mode.value)
         ),
         builtin.BoolAttr(antialias),
         kgen.ParamDeclArrayAttr([]),
@@ -136,8 +157,10 @@ def resize_linear(
 def resize_nearest(
     input: TensorValueLike,
     size: ShapeLike,
-    coordinate_transform_mode: int = 0,
-    round_mode: int = 0,
+    coordinate_transform_mode: CoordinateTransformMode = (
+        CoordinateTransformMode.HALF_PIXEL
+    ),
+    round_mode: RoundMode = RoundMode.HALF_DOWN,
 ) -> TensorValue:
     """Resizes a tensor using nearest-neighbor interpolation.
 
@@ -166,38 +189,25 @@ def resize_nearest(
         input: The input symbolic tensor to resize.
         size: The desired output shape. Must have the same rank as ``input``.
         coordinate_transform_mode: How to map an output coordinate to an input
-            coordinate. Allowed values:
-
-            - ``0`` (``half_pixel``). Default.
-            - ``1`` (``align_corners``).
-            - ``2`` (``asymmetric``).
-            - ``3`` (``half_pixel_1D``).
-
-            See :func:`resize_linear` for a description of each mode.
+            coordinate. Defaults to
+            :attr:`CoordinateTransformMode.HALF_PIXEL`.
         round_mode: How to round the mapped coordinate to select the nearest
-            input sample. Allowed values:
-
-            - ``0`` (``HalfDown``, the default): ``ceil(x - 0.5)``.
-            - ``1`` (``HalfUp``): ``floor(x + 0.5)``.
-            - ``2`` (``Floor``): ``floor(x)``.
-            - ``3`` (``Ceil``): ``ceil(x)``.
+            input sample. Defaults to :attr:`RoundMode.HALF_DOWN`.
 
     Returns:
         A ``TensorValue`` representing the resized tensor, with shape ``size``
         and the same dtype as ``input``.
 
     Raises:
-        ValueError: If ``coordinate_transform_mode`` isn't 0-3, ``round_mode``
-            isn't 0-3, or ``size`` has a different rank than ``input``.
+        ValueError: If ``coordinate_transform_mode`` isn't a
+            :class:`CoordinateTransformMode`, ``round_mode`` isn't a
+            :class:`RoundMode`, or ``size`` has a different rank than
+            ``input``.
     """
-    if coordinate_transform_mode not in (0, 1, 2, 3):
-        raise ValueError(
-            f"coordinate_transform_mode must be 0-3, got"
-            f" {coordinate_transform_mode}"
-        )
-    if round_mode not in (0, 1, 2, 3):
-        raise ValueError(f"round_mode must be 0-3, got {round_mode}")
-
+    coordinate_transform_mode = CoordinateTransformMode(
+        coordinate_transform_mode
+    )
+    round_mode = RoundMode(round_mode)
     input = TensorValue(input)
     size = Shape(size)
 
@@ -215,9 +225,9 @@ def resize_nearest(
         input,
         shape_to_tensor(size),
         mo.CoordinateTransformModeAttr(
-            mo.CoordinateTransformMode(coordinate_transform_mode)
+            mo.CoordinateTransformMode(coordinate_transform_mode.value)
         ),
-        builtin.IntegerAttr(builtin.IntegerType(64), round_mode),
+        builtin.IntegerAttr(builtin.IntegerType(64), round_mode.value),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 

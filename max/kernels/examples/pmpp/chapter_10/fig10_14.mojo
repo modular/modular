@@ -15,6 +15,7 @@ from max.gpu import thread_idx, warp_id, WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from max.gpu.primitives.warp import shuffle_down
 from std.random import random_float64
 from std.math import abs
@@ -47,8 +48,8 @@ def warp_reduce(val: Float32) -> Float32:
 
 
 def warp_level_sum_reduction_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
 ):
     """Warp-level sum reduction kernel.
 
@@ -63,9 +64,9 @@ def warp_level_sum_reduction_kernel(
         address_space=.SHARED,
     ]()
 
-    var t = UInt32(thread_idx.x)
+    var t = thread_idx.x
     # Load data into shared memory with initial reduction
-    input_s[Int(t)] = input[Int(t)] + input[Int(t + BLOCK_DIM)]
+    input_s[t] = input[t] + input[t + BLOCK_DIM]
 
     # Unrolled reduction in shared memory until we reach warp level
     comptime LOG2_BLOCK_DIM = log2_floor(BLOCK_DIM)
@@ -75,15 +76,15 @@ def warp_level_sum_reduction_kernel(
     comptime for s in range(NUM_SHARED_ITERATIONS):
         comptime stride = BLOCK_DIM >> (s + 1)
         barrier()
-        if UInt32(thread_idx.x) < UInt32(stride):
-            input_s[Int(t)] += input_s[Int(t + UInt32(stride))]
+        if thread_idx.x < stride:
+            input_s[t] += input_s[t + stride]
 
     barrier()
 
     # Warp 0 does the final reduction using shuffle
     var warp_idx = warp_id()
     if warp_idx == 0:
-        var partial_sum = input_s[Int(t)]
+        var partial_sum = input_s[t]
         partial_sum = warp_reduce(partial_sum)
         if thread_idx.x == 0:
             output[0] = partial_sum
@@ -91,8 +92,8 @@ def warp_level_sum_reduction_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.
@@ -113,9 +114,9 @@ def main() raises:
     comptime N = BLOCK_DIM * 2
 
     # Host memory allocation
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](1)
-    var h_ref = alloc[Float32](1)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](1)
+    var h_ref = unsafe_alloc[Float32](1)
 
     # Initialize input with random values
     for i in range(N):
@@ -173,6 +174,6 @@ def main() raises:
         print("SUCCESS: CPU=", h_ref[0], ", GPU=", h_output[0], "match!")
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()

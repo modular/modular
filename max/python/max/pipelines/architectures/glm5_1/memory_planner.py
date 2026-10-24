@@ -20,6 +20,7 @@ from max.pipelines.architectures.deepseekV3.memory_planner import (
     _ep_max_rank_send_tokens_for_pipeline,
     fused_ep_moe_memory,
     fused_moe_counter_reserve_memory,
+    nvfp4_mla_prefill_convert_memory,
 )
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -33,7 +34,8 @@ class Glm5_1MemoryPlanner(PagedMemoryPlanner):
     counter reserve, which this model's EP config always gets, and the
     one-launch fused MoE workspace when ``MODULAR_EP_FUSED_MOE=1`` asks for
     it. The EP communication buffers and the rest of the counter buffers stay
-    unplanned here, as on main."""
+    unplanned here, as on main. Over an NVFP4 cache it also reserves the
+    sparse prefill's FP8 conversion scratch."""
 
     def estimate_activation_memory(
         self,
@@ -50,6 +52,8 @@ class Glm5_1MemoryPlanner(PagedMemoryPlanner):
             Estimated activation memory in bytes.
         """
         memory = super().estimate_activation_memory(
+            pipeline_config, huggingface_config
+        ) + nvfp4_mla_prefill_convert_memory(
             pipeline_config, huggingface_config
         )
         if pipeline_config.runtime.ep_size <= 1:

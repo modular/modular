@@ -121,7 +121,7 @@ def kernel_3[
     comptime assert (
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
@@ -137,10 +137,12 @@ def kernel_3[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var tma_mbar = (b_smem + b_size).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = b_smem.unsafe_offset(b_size).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
-    var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
+    var ptr_tmem_addr = mma_mbar.unsafe_offset(1).unsafe_bitcast[UInt32]()
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -204,7 +206,7 @@ def kernel_3[
                 comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
                 comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
                 var sub_a_smem_tile = TileTensor(
-                    a_smem + a_offset, sub_a_smem_layout
+                    a_smem.unsafe_offset(a_offset), sub_a_smem_layout
                 )
                 # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -216,7 +218,7 @@ def kernel_3[
                     (i * BK + k, block_idx.y * BM),
                 )
                 var sub_b_smem_tile = TileTensor(
-                    b_smem + b_offset, sub_b_smem_layout
+                    b_smem.unsafe_offset(b_offset), sub_b_smem_layout
                 )
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
@@ -277,7 +279,7 @@ def kernel_3[
 
     comptime num_warps = num_threads // WARP_SIZE
 
-    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -552,9 +554,8 @@ def test_blackwell_kernel_3[
         c_ref.to_host()
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host.unsafe_ptr(),
-            c_host_ref.unsafe_ptr(),
-            M * N,
+            c_host.as_span(),
+            c_host_ref.as_span(),
             atol=0.0001,
             rtol=rtol,
         )

@@ -938,14 +938,14 @@ class TestPagePoolSymbolicNamespace:
             kvcache_quant_config=KVCacheQuantizationConfig(
                 scale_dtype=DType.float8_e8m0fnu
             ),
+            stride_alignment=1,
         )
         leaves = leaf.leaves()
         scales = next(r for i, r in leaves.items() if i.endswith("/scales"))
-        # One scale per token here, so a row alone would let the planner pad to
-        # any byte and break `create_index_scale_tma_tile`.
+        # One scale per token here, so the values' alignment alone would let
+        # the planner pad to any byte and break `create_index_scale_tma_tile`.
         assert leaf.scale_row_bytes == 1
-        assert scales.row_bytes % 16 == 0
-        assert scales.bytes_per_page % scales.row_bytes == 0
+        assert scales.stride_alignment == 16
 
     def test_quantized_sibling_scales_page_dim_namespaced(self) -> None:
         def quant_leaf() -> KVCacheParams:

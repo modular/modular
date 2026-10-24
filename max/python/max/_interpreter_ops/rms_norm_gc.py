@@ -13,19 +13,13 @@
 
 """Graph-compiler rms_norm model cache for the MO interpreter.
 
-Covers ``ReduceRmsNormOp`` only. ``epsilon`` and ``weight_offset`` are runtime
-host (CPU) tensor operands on the MO op
-(``MO_SingleDeviceWithHostOperands<["epsilon", "weightOffset"]>``, confirmed
-in ``MOOps.td``), so both are graph inputs rather than baked constants --
-neither enters the cache key. ``multiply_before_cast`` is a genuine
-``BoolAttr`` (a compile-time MLIR attribute, not an operand -- also confirmed
-in ``MOOps.td``), so it rides in the cache key as a two-value variant,
-mirroring ``reduce_axis_gc``'s cumsum ``(exclusive, reverse)`` variant.
+Covers ``ReduceRmsNormOp`` only. ``epsilon``, ``weight_offset`` and
+``multiply_before_cast`` are compile-time attributes of the MO op, so all
+three ride in the cache key. ``epsilon`` and ``weight_offset`` are keyed by
+their ``f32`` bit patterns, which is exactly what the op stores.
 
-Built directly against ``mo.ReduceRmsNormOp`` (not the ``ops.rms_norm``
-graph-construction wrapper) for the same reason as ``layer_norm_gc``: that
-wrapper bakes ``epsilon``/``weight_offset`` in as Python constants at trace
-time.
+The precompile sweep covers the scalar values models use in practice (see
+``_SWEPT_SCALARS``); any other value compiles lazily on first use.
 
 Supported dtypes mirror the shared float set (see
 :func:`gc_compile.float_dtypes`), same policy as ``layer_norm_gc``.
@@ -34,56 +28,76 @@ Two compile modes, selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
 :func:`gc_compile.should_precompile`). Must not import from ``handlers.py``.
 """
 
+import struct
+
 from max import engine
 from max._core.dialects import builtin, kgen, mo
 from max._interpreter_ops import gc_compile
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Module, TensorType
+from max.graph.ops.rms_norm import _float32_attr
 
 canonical_rank2 = gc_compile.canonical_rank2
 
 _VARIANTS = (False, True)  # multiply_before_cast: Llama-style, Gemma-style
 
+# (epsilon, weight_offset) pairs the precompile sweep covers.
+_SWEPT_SCALARS = (
+    (1e-5, 0.0),
+    (1e-6, 0.0),
+    (1e-5, 1.0),
+    (1e-6, 1.0),
+)
 
-def _variant_tag(multiply_before_cast: bool) -> str:
-    return f"_mbc{int(multiply_before_cast)}"
+
+def _f32_bits(value: float) -> str:
+    return struct.pack("<f", value).hex()
 
 
 def _graph_name(
-    device: Device, dtype: DType, multiply_before_cast: bool
+    device: Device,
+    dtype: DType,
+    epsilon: float,
+    weight_offset: float,
+    multiply_before_cast: bool,
 ) -> str:
     return (
         f"rms_norm_{device.label}_{device.id}_{dtype.name}"
-        f"{_variant_tag(multiply_before_cast)}"
+        f"_eps{_f32_bits(epsilon)}_wo{_f32_bits(weight_offset)}"
+        f"_mbc{int(multiply_before_cast)}"
     )
 
 
 def _rms_norm_graph(
-    module: Module, device: Device, dtype: DType, multiply_before_cast: bool
+    module: Module,
+    device: Device,
+    dtype: DType,
+    epsilon: float,
+    weight_offset: float,
+    multiply_before_cast: bool,
 ) -> None:
     """Adds one fully-symbolic rank-2 rms_norm graph into *module* in-place."""
     device_ref = DeviceRef.from_device(device)
-    cpu = DeviceRef.CPU()
     graph = Graph(
-        _graph_name(device, dtype, multiply_before_cast),
+        _graph_name(
+            device, dtype, epsilon, weight_offset, multiply_before_cast
+        ),
         input_types=[
             TensorType(dtype, ["rows", "features"], device=device_ref),
             TensorType(dtype, ["features"], device=device_ref),
-            TensorType(DType.float32, [], device=cpu),
-            TensorType(dtype, [], device=cpu),
         ],
         module=module,
     )
     with graph:
-        x, weight, epsilon, weight_offset = (v.tensor for v in graph.inputs)
+        x, weight = (v.tensor for v in graph.inputs)
         result = Graph.current._add_op_generated(
             mo.ReduceRmsNormOp,
             result=TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
             input=x,
             weight=weight,
-            epsilon=epsilon,
-            weight_offset=weight_offset,
+            epsilon=_float32_attr(epsilon),
+            weight_offset=_float32_attr(weight_offset),
             multiply_before_cast=builtin.BoolAttr(multiply_before_cast),
             output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
@@ -105,8 +119,16 @@ class _RmsNormFamily(gc_compile.GCFamilySpec):
         if module is None:
             module = Module()
         for dtype in gc_compile.float_dtypes(device):
-            for multiply_before_cast in _VARIANTS:
-                _rms_norm_graph(module, device, dtype, multiply_before_cast)
+            for epsilon, weight_offset in _SWEPT_SCALARS:
+                for multiply_before_cast in _VARIANTS:
+                    _rms_norm_graph(
+                        module,
+                        device,
+                        dtype,
+                        epsilon,
+                        weight_offset,
+                        multiply_before_cast,
+                    )
         return module
 
 
@@ -115,7 +137,11 @@ gc_compile.register_family(_FAMILY)
 
 
 def rms_norm_model(
-    device: Device, dtype: DType, multiply_before_cast: bool
+    device: Device,
+    dtype: DType,
+    epsilon: float,
+    weight_offset: float,
+    multiply_before_cast: bool,
 ) -> engine.Model:
     """Returns the rms_norm Model for the given target.
 
@@ -125,9 +151,10 @@ def rms_norm_model(
     Args:
         device: The realized input's device.
         dtype: The realized input's dtype.
+        epsilon: The op's compile-time ``epsilon``.
+        weight_offset: The op's compile-time ``weight_offset``.
         multiply_before_cast: The op's compile-time ``multiply_before_cast``
-            flag (Gemma-style vs Llama-style); part of the cache key since it
-            is a compile-time MLIR attribute, not a runtime operand.
+            flag (Gemma-style vs Llama-style).
 
     Returns:
         The compiled :class:`~max.engine.Model`.
@@ -137,7 +164,9 @@ def rms_norm_model(
             ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not
             swept.
     """
-    key = _graph_name(device, dtype, multiply_before_cast)
+    key = _graph_name(
+        device, dtype, epsilon, weight_offset, multiply_before_cast
+    )
     model = _FAMILY.cache.get(key)
     if model is not None:
         return model
@@ -152,7 +181,9 @@ def rms_norm_model(
         )
 
     def build(module: Module) -> None:
-        _rms_norm_graph(module, device, dtype, multiply_before_cast)
+        _rms_norm_graph(
+            module, device, dtype, epsilon, weight_offset, multiply_before_cast
+        )
 
     return _FAMILY.model_for(
         key, device, build, unsupported_reason=check_supported

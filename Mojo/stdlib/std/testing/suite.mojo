@@ -101,7 +101,7 @@ struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, NoneType
     ].values
 
     @inline(.always)
@@ -394,8 +394,9 @@ struct _Test(Copyable):
     var name: StaticString
 
 
-@explicit_destroy("TestSuite must be destroyed via `run()`")
-struct TestSuite(not Deinitable, Movable):
+struct TestSuite(
+    not Deinitable else "TestSuite must be destroyed via `run()`", Movable
+):
     """A suite of tests to run.
 
     You can automatically collect and register test functions starting with

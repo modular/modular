@@ -30,6 +30,12 @@ modular_py_test(
     env = {
         "PYTHONPATH": "Init/integration-test/python",
     },
+    # The development signal handler is only installed in non-production builds.
+    target_compatible_with = select({
+        "//:modular_config_default": ["@platforms//:incompatible"],
+        "//:modular_config_production": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_test(
@@ -42,6 +48,12 @@ modular_py_test(
     env = {
         "PYTHONPATH": "Init/integration-test/python",
     },
+    # The development signal handler is only installed in non-production builds.
+    target_compatible_with = select({
+        "//:modular_config_default": ["@platforms//:incompatible"],
+        "//:modular_config_production": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 test_suite(

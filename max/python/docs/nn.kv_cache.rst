@@ -20,15 +20,22 @@ Cache configuration
    :template: autosummary/class.rst
 
    CacheLeafParamInterface
+   HostStagingAlloc
+   KVCacheAssignments
    KVCacheBuffer
+   KVCacheBufferInterface
    KVCacheParamInterface
    KVCacheParams
+   KVCacheGroupId
    MHAKVCacheParams
    MLAKVCacheParams
    MSAKVCacheParams
    KVCacheQuantizationConfig
    KVConnectorType
+   KVConnectorConfigInterface
+   NullKVConnectorConfig
    KVCacheMemory
+   MultiKVCacheBuffer
    MultiKVCacheParams
 
 Cache inputs
@@ -52,6 +59,8 @@ Recurrent state
    :toctree: generated
    :template: autosummary/class.rst
 
+   CacheLeafKind
+   KVLeafRegion
    PagedKVLeafRegion
    RecurrentKVLeafRegion
    RecurrentLeafInputs
@@ -59,6 +68,7 @@ Recurrent state
    RecurrentStateInputsPerDevice
    RecurrentStateParams
    RecurrentStateRegion
+   ScratchRecurrentKVLeafRegion
 
 Attention dispatch
 ------------------
@@ -92,6 +102,7 @@ Constants
    :toctree: generated
    :template: autosummary/data.rst
 
+   KVHashAlgo
    PACKED_PAGE_STRIDE
 
 Functions
@@ -106,6 +117,9 @@ Functions
    compute_max_seq_len_fitting_in_cache
    compute_num_device_blocks
    estimated_memory_size
+   max_pages_per_request
+   packed_page_stride
    padded_lut_cols
    recurrent_leaf
+   recurrent_leaves
    spec_decode_cache_slack

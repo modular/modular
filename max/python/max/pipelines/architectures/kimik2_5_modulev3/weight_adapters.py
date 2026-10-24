@@ -116,9 +116,8 @@ def _convert_merged_state_dict(
     Vision keys (``vision_tower.*``, ``mm_projector.*``,
     ``multi_modal_projector.*``) are renamed and cast to bfloat16.
     Language-model keys (``language_model.*``) are delegated to the DeepseekV3
-    ModuleV3 adapter, which performs the bf16 / FP8-block / NVFP4 weight-name
-    remapping the shared language tower requires (raw-MLA ``.weight`` strip,
-    ``.weight.data`` / ``.weight.weight_scale`` packing, ``mlp.gate`` router
+    ModuleV3 adapter, which performs the weight-name remapping the shared
+    language tower requires (raw-MLA ``.weight`` strip, ``mlp.gate`` router
     rename, MTP pruning, and kv-scale drop). All other keys are ignored.
 
     Args:

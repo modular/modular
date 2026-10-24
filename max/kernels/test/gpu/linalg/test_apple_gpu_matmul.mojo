@@ -17,7 +17,7 @@ Covers three paths:
 - The 8x8 `simdgroup_matrix` GEMM (`gemm_kernel_apple_8x8`), the M1-M4 dispatch
   path in `_matmul_gpu`. These tests run on any Apple GPU.
 - The M5 hardware-MMA simdgroup-tiled kernel (`AppleM5MatMul.run` /
-  `enqueue_apple_matmul`), which requires `compute_capability() == 5`. This
+  `enqueue_apple_matmul`), which requires `compute_capability() >= 5`. This
   includes the split-K path (`enqueue_apple_matmul_split_k` and the
   `force_split_k` flag), folded in here from the former `test_apple_split_k`.
 - The M5 small-batch GEMV (`apple/gemv.mojo`), which `_matmul_gpu` routes
@@ -76,7 +76,10 @@ def _launch[
     ](c_tt, a_tt, b_tt, ctx)
 
 
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from std.math import ceildiv
 
 
@@ -179,6 +182,7 @@ def _run_8x8_case[
         Int32(M),
         Int32(N),
         Int32(K),
+        host_args=(no_epilogue_fn, no_compute_fn),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NSG * WARP_SIZE,),
     )
@@ -215,10 +219,10 @@ def _run_8x8_case[
 def _run_8x8_bias_case[
     a_type: DType, c_type: DType, transpose_b: Bool
 ](ctx: DeviceContext, M: Int, N: Int, K: Int, name: String) raises:
-    """`gemm_kernel_apple_8x8` with a bias-add `elementwise_lambda_fn`, checked
-    against an fp32 host reference.
+    """`gemm_kernel_apple_8x8` with a bias-add `compute_fn`, checked against
+    an fp32 host reference.
 
-    Exercises the epilogue store path (`elementwise_lambda_fn` branch), and
+    Exercises the closure store path (`has_compute_fn` branch), and
     uses odd/ragged shapes to cover the epilogue at edge subtiles as well as
     the interior.
     """
@@ -253,25 +257,18 @@ def _run_8x8_bias_case[
     ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
-    var row_stride = N  # output is row_major(M, N)
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(d_ptr, bias_ptr, row_stride)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+    def bias_add[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
-        var bias = (bias_ptr + Int(coords[1].value())).load[width=w]()
-        var v_c = rebind[SIMD[c_type, w]](val)
-        (
-            d_ptr + Int(coords[0].value()) * row_stride + Int(coords[1].value())
-        ).store[alignment=alignment](v_c + bias)
+        # Kernel invokes with `dt == c_type`; rebind to add the c_type bias.
+        var bias = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
+        return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + bias)
 
     comptime kernel = gemm_kernel_apple_8x8[
         c_type,
@@ -284,9 +281,8 @@ def _run_8x8_bias_case[
         type_of(a_tt).Engine,
         type_of(b_tt).Engine,
         transpose_b,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            bias_epilogue
-        ),
+        ComputeFnType=type_of(bias_add),
+        has_compute_fn=True,
         BLOCK_M=BM,
         BLOCK_N=BN,
         NUM_SIMDGROUPS=NSG,
@@ -298,6 +294,7 @@ def _run_8x8_bias_case[
         Int32(M),
         Int32(N),
         Int32(K),
+        host_args=(no_epilogue_fn, bias_add),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NSG * WARP_SIZE,),
     )
@@ -796,7 +793,11 @@ def _host_matmul_nt[
 
 
 def _run_split_k_case[
-    in_type: DType, c_type: DType, transpose_b: Bool
+    in_type: DType,
+    c_type: DType,
+    transpose_b: Bool,
+    *,
+    compute: Bool = False,
 ](
     ctx: DeviceContext,
     M: Int,
@@ -813,7 +814,8 @@ def _run_split_k_case[
     launches `enqueue_apple_matmul_split_k` with that explicit split count;
     otherwise launches `enqueue_apple_matmul` with `force_split_k` (the single
     unified entry forcing the split-K route, even on shapes that would not
-    auto-route). Flat 1.0 abs tolerance (inputs in [-2, 2]).
+    auto-route). With `compute`, a `compute_fn` adds a per-column bias that
+    the kernel stores. Flat 1.0 abs tolerance (inputs in [-2, 2]).
     """
     if splits > 0:
         print("==", name, M, "x", N, "x", K, "split=", splits)
@@ -840,19 +842,74 @@ def _run_split_k_case[
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
     ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
-
-    if splits > 0:
-        enqueue_apple_matmul_split_k[
-            in_type=in_type, c_type=c_type, transpose_b=transpose_b
-        ](d_tt, a_tt, b_tt, ctx, splits)
-    else:
-        enqueue_apple_matmul[
-            in_type=in_type, c_type=c_type, transpose_b=transpose_b
-        ](d_tt, a_tt, b_tt, ctx, force_split_k)
-
     var d_host = ctx.enqueue_create_host_buffer[c_type](M * N)
-    ctx.enqueue_copy(d_host, d_dev)
-    ctx.synchronize()
+
+    comptime if compute:
+        var bias_host = ctx.enqueue_create_host_buffer[c_type](N)
+        for j in range(N):
+            bias_host[j] = random_si64(Int64(-2), Int64(2)).cast[c_type]()
+        var bias_dev = ctx.enqueue_create_buffer[c_type](N)
+        ctx.enqueue_copy(bias_dev, bias_host)
+        var bias_ptr = bias_dev.unsafe_ptr()
+
+        @inline(.always)
+        def bias_add[
+            dt: DType, w: SIMDLength, *, alignment: Int
+        ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
+            comptime assert (
+                coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[
+                width=w
+            ]()
+            return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + b)
+
+        if splits > 0:
+            enqueue_apple_matmul_split_k[
+                in_type=in_type,
+                c_type=c_type,
+                transpose_b=transpose_b,
+                has_compute_fn=True,
+            ](d_tt, a_tt, b_tt, ctx, splits, compute_fn=bias_add)
+        else:
+            enqueue_apple_matmul[
+                in_type=in_type,
+                c_type=c_type,
+                transpose_b=transpose_b,
+                has_compute_fn=True,
+            ](d_tt, a_tt, b_tt, ctx, force_split_k, compute_fn=bias_add)
+        ctx.enqueue_copy(d_host, d_dev)
+        ctx.synchronize()
+        _ = bias_dev^
+        _check_split_k_result[in_type, c_type, transpose_b](
+            a_host.unsafe_ptr(),
+            b_host.unsafe_ptr(),
+            d_host.unsafe_ptr(),
+            bias_host.as_span(),
+            M,
+            N,
+            K,
+        )
+    else:
+        if splits > 0:
+            enqueue_apple_matmul_split_k[
+                in_type=in_type, c_type=c_type, transpose_b=transpose_b
+            ](d_tt, a_tt, b_tt, ctx, splits)
+        else:
+            enqueue_apple_matmul[
+                in_type=in_type, c_type=c_type, transpose_b=transpose_b
+            ](d_tt, a_tt, b_tt, ctx, force_split_k)
+        ctx.enqueue_copy(d_host, d_dev)
+        ctx.synchronize()
+        _check_split_k_result[in_type, c_type, transpose_b](
+            a_host.unsafe_ptr(),
+            b_host.unsafe_ptr(),
+            d_host.unsafe_ptr(),
+            Span[Scalar[c_type], ImmStaticOrigin](),
+            M,
+            N,
+            K,
+        )
 
     # DRIV-199 workaround: keep device buffers alive past `synchronize`, else
     # ASAP destruction frees them mid-kernel and the suite flakes.
@@ -860,15 +917,31 @@ def _run_split_k_case[
     _ = b_dev^
     _ = d_dev^
 
+
+def _check_split_k_result[
+    in_type: DType, c_type: DType, transpose_b: Bool
+](
+    a_ptr: ImmPointer[Scalar[in_type], ...],
+    b_ptr: ImmPointer[Scalar[in_type], ...],
+    d_ptr: ImmPointer[Scalar[c_type], ...],
+    bias: Span[Scalar[c_type], _],
+    M: Int,
+    N: Int,
+    K: Int,
+) raises:
+    """Checks `D` against an fp32 host matmul plus `bias[j]` when `bias` is
+    non-empty. Flat 1.0 abs tolerance (inputs in [-2, 2])."""
     var pass_ = True
     for i in range(M):
         for j in range(N):
             var exp = _host_matmul_nt[in_type, in_type](
-                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+                a_ptr, b_ptr, M, N, K, i, j
             ) if transpose_b else _host_matmul_nn[in_type, in_type](
-                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+                a_ptr, b_ptr, M, N, K, i, j
             )
-            var got = Float32(d_host[i * N + j])
+            if len(bias) > 0:
+                exp += Float32(bias[j])
+            var got = Float32(d_ptr[i * N + j])
             if abs(got - exp) > Float32(1.0):
                 if pass_:
                     print("FAIL:", i, j, "got", got, "exp", exp)
@@ -1671,24 +1744,18 @@ def _run_bias_epilogue_test[
     var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(d_ptr, bias_ptr)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+    def bias_add[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
-        var v_c = rebind[SIMD[c_type, w]](val)
-        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
-            alignment=alignment
-        ](v_c + b)
+        # Kernel invokes with `dt == c_type`; rebind to add the c_type bias.
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
+        return rebind[SIMD[dt, w]](rebind[SIMD[c_type, w]](val) + b)
 
     # Mojo `comptime if` does not lift `var` bindings out of branches, so
     # inline both enqueue calls.
@@ -1698,20 +1765,16 @@ def _run_bias_epilogue_test[
             in_type=in_type,
             c_type=c_type,
             transpose_b=True,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                bias_epilogue
-            ),
-        ](d_tt, a_tt, b_tt, ctx)
+            has_compute_fn=True,
+        ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_add)
     else:
         var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(K, N))
         enqueue_apple_matmul[
             in_type=in_type,
             c_type=c_type,
             transpose_b=False,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                bias_epilogue
-            ),
-        ](d_tt, a_tt, b_tt, ctx)
+            has_compute_fn=True,
+        ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_add)
 
     var d_host = ctx.enqueue_create_host_buffer[c_type](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -1763,8 +1826,7 @@ def _run_bias_epilogue_test[
 
 
 def test_kernel_128_nt_fp16_fp16_bias_epilogue(ctx: DeviceContext) raises:
-    """Bias-add via `elementwise_lambda_fn` — exercises column-coord propagation.
-    """
+    """Bias-add via `compute_fn` — exercises column-coord propagation."""
     _run_bias_epilogue_test[.float16, .float16, True](
         ctx, "test_kernel_128_nt_fp16_fp16_bias_epilogue"
     )
@@ -1875,7 +1937,7 @@ def test_kernel_128_nt_fp32_fp32_bias_epilogue(ctx: DeviceContext) raises:
 def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     ctx: DeviceContext,
 ) raises:
-    """ReLU composed into `elementwise_lambda_fn` — mirrors MXF-369's
+    """ReLU composed into `compute_fn` — mirrors MXF-369's
     `compute_lambda_wrapper` composition.
     """
     print("== test_kernel_128_nt_fp16_fp16_relu_compose_epilogue")
@@ -1900,31 +1962,21 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(N, K))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
-
-    @__parameter
     @inline(.always)
-    @__copy_capture(d_ptr)
-    def relu_compose_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+    def relu_compose[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) -> SIMD[dt, w]:
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var relu_val = max(v_fp16, SIMD[.float16, w](0))
-        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
-            alignment=alignment
-        ](relu_val)
+        return max(val, SIMD[dt, w](0))
 
     enqueue_apple_matmul[
         in_type=.float16,
         c_type=.float16,
         transpose_b=True,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            relu_compose_epilogue
-        ),
-    ](d_tt, a_tt, b_tt, ctx)
+        has_compute_fn=True,
+    ](d_tt, a_tt, b_tt, ctx, compute_fn=relu_compose)
 
     var d_host = ctx.enqueue_create_host_buffer[.float16](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -1955,7 +2007,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
 def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     ctx: DeviceContext,
 ) raises:
-    """Chained bias-then-ReLU composed into one `elementwise_lambda_fn`."""
+    """Chained bias-then-ReLU composed into one `compute_fn`."""
     print("== test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue")
     comptime M = 128
     comptime N = 128
@@ -1985,34 +2037,26 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(N, K))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(d_ptr, bias_ptr)
-    def bias_relu_compose_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+    def bias_relu_compose[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
         var biased = v_fp16 + b
-        var activated = max(biased, SIMD[.float16, w](0))
-        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
-            alignment=alignment
-        ](activated)
+        return rebind[SIMD[dt, w]](max(biased, SIMD[.float16, w](0)))
 
     enqueue_apple_matmul[
         in_type=.float16,
         c_type=.float16,
         transpose_b=True,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            bias_relu_compose_epilogue
-        ),
-    ](d_tt, a_tt, b_tt, ctx)
+        has_compute_fn=True,
+    ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_relu_compose)
 
     var d_host = ctx.enqueue_create_host_buffer[.float16](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -2044,7 +2088,8 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
 def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     ctx: DeviceContext,
 ) raises:
-    """Bounded epilogue + lambda — proves OOB rows/cols never invoke the lambda.
+    """Bounded store + `compute_fn` at ragged M/N/K — OOB rows/cols are never
+    stored.
     """
     print("== test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue")
     comptime M = 100
@@ -2075,32 +2120,25 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(N, K))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(d_ptr, bias_ptr)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+    def bias_add[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
-        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
-            alignment=alignment
-        ](v_fp16 + b)
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
+        return rebind[SIMD[dt, w]](v_fp16 + b)
 
     enqueue_apple_matmul[
         in_type=.float16,
         c_type=.float16,
         transpose_b=True,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            bias_epilogue
-        ),
-    ](d_tt, a_tt, b_tt, ctx)
+        has_compute_fn=True,
+    ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_add)
 
     var d_host = ctx.enqueue_create_host_buffer[.float16](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -2189,8 +2227,8 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn(ctx: DeviceContext) raises:
 def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     ctx: DeviceContext,
 ) raises:
-    """Lambda epilogue, non-mult-of-4 N (130): exercises the unaligned store
-    stride through the user-lambda path.
+    """`compute_fn`, non-mult-of-4 N (130): exercises the unaligned store
+    stride through the closure path.
     """
     print("== test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue")
     comptime M = 64
@@ -2221,32 +2259,25 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(K, N))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(d_ptr, bias_ptr)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+    def bias_add[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_ptr} -> SIMD[dt, w]:
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        var b = bias_ptr.unsafe_offset(Int(coords[1])).unsafe_load[width=w]()
         var v_c = rebind[SIMD[.float16, w]](val)
-        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
-            alignment=alignment
-        ](v_c + b)
+        return rebind[SIMD[dt, w]](v_c + b)
 
     enqueue_apple_matmul[
         in_type=.float16,
         c_type=.float16,
         transpose_b=False,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            bias_epilogue
-        ),
-    ](d_tt, a_tt, b_tt, ctx)
+        has_compute_fn=True,
+    ](d_tt, a_tt, b_tt, ctx, compute_fn=bias_add)
 
     var d_host = ctx.enqueue_create_host_buffer[.float16](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -2403,8 +2434,8 @@ def _run_gemv_case[
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var col = Int(coords[1].value())
-        var out = val.cast[.float32]() + bias_ptr.load[width=width](col)
+        var col = Int(coords[1])
+        var out = val.cast[.float32]() + bias_ptr.unsafe_load[width=width](col)
         return out.cast[dtype]()
 
     comptime if compute:
@@ -2539,8 +2570,7 @@ def _run_gemv_dispatch_case[
 ](ctx: DeviceContext, m: Int, name: String) raises:
     """Runs `_matmul_gpu[transpose_b=True]` at `[m, N, K]` and checks it.
 
-    With `bias`, the output is written by an elementwise epilogue that adds a
-    per-column bias, which checks the `(row, col)` coordinates the kernel
+    With `bias`, a compute epilogue adds a per-column bias to the output, which checks the `(row, col)` coordinates the kernel
     hands the epilogue. With `sampled`, the weight gets the hash fill and the
     host reference checks every 1021st column plus the last 256.
     """
@@ -2574,26 +2604,17 @@ def _run_gemv_dispatch_case[
     var bias_tt = TileTensor(bias_d, row_major(Idx[N])).as_imm()
 
     @inline(.always)
-    @__copy_capture(c_tt, bias_tt)
-    def bias_epilogue[
-        dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+    def bias_compute[
+        dt: DType, w: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dt, w]) {var bias_tt} -> SIMD[dt, w]:
         comptime assert (
             coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
         var b = bias_tt.load[width=w, alignment=alignment]((coords[1],))
-        c_tt.store[alignment=alignment](
-            coords,
-            (val.cast[.float32]() + b).cast[c_type](),
-        )
+        return (val.cast[.float32]() + b).cast[dt]()
 
     comptime if bias:
-        _matmul_gpu[
-            transpose_b=True,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                bias_epilogue
-            ),
-        ](c_tt, a_tt, w_tt, ctx)
+        _matmul_gpu[transpose_b=True](c_tt, a_tt, w_tt, bias_compute, ctx)
     else:
         _matmul_gpu[transpose_b=True](c_tt, a_tt, w_tt, ctx)
     ctx.enqueue_copy(c_h, c_d)
@@ -2628,6 +2649,10 @@ def test_gemv_dispatch(ctx: DeviceContext) raises:
     _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 1, "bias m1")
     _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 3, "bias m3")
     _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 8, "bias m8")
+    # Past the GEMV, the bias epilogue reaches the tiled matmul's
+    # `epilogue_fn` store path.
+    _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 9, "bias m9 tiled")
+    _run_gemv_dispatch_case[256, 1024, bias=True](ctx, 100, "bias m100 tiled")
     # K below the GEMV's K floor stays on the tiled matmul. At K = 512 the
     # floor depends on M: M = 4 takes the GEMV and M = 8 the tiled matmul.
     _run_gemv_dispatch_case[256, 128](ctx, 4, "k128")
@@ -2691,7 +2716,7 @@ def main() raises:
         ctx, 65, 129, 64, "8x8 bf16 nt odd-mn"
     )
 
-    # Bias-add `elementwise_lambda_fn` epilogue (clean interior, odd NT edges,
+    # Bias-add `compute_fn` (clean interior, odd NT edges,
     # and the NN odd-N load edge combined with the epilogue store).
     _run_8x8_bias_case[.bfloat16, .bfloat16, True](
         ctx, 128, 128, 64, "8x8 bias nt"
@@ -2716,10 +2741,10 @@ def main() raises:
     )
 
     # M5 hardware-MMA path (`AppleM5MatMul` / `enqueue_apple_matmul`): Apple M5.
-    if ctx.compute_capability() != 5:
+    if ctx.compute_capability() < 5:
         print(
             "SKIP: M5 hardware-MMA matmul tests require Apple M5"
-            " (compute_capability == 5)"
+            " (compute_capability >= 5)"
         )
         return
     test_kernel_single_tile_nn_fp16(ctx)
@@ -2797,6 +2822,32 @@ def main() raises:
     )
     _run_split_k_case[.float16, .bfloat16, True](
         ctx, 96, 160, 2048, "force nt large-k", force_split_k=True
+    )
+    # Value closures through the split-K reduce.
+    _run_split_k_case[.float16, .float32, False, compute=True](
+        ctx, 100, 200, 2048, "splitk compute_fn ragged", splits=4
+    )
+    _run_split_k_case[.bfloat16, .float16, True, compute=True](
+        ctx, 96, 96, 3072, "splitk compute_fn nt", splits=4
+    )
+    # fp16 out: a bf16 `compute_fn` rounds twice (the C store, then the bias
+    # add), and at |C| ~ 256 one bf16 ulp is 2.0, past the 1.0 tolerance.
+    _run_split_k_case[.float16, .float16, True, compute=True](
+        ctx, 96, 160, 2048, "force compute_fn nt", force_split_k=True
+    )
+    # `compute_fn` on the single-pass tiled route: interior, ragged M/N/K,
+    # and an N that is not a multiple of 4 (the width-1 edge store).
+    _run_split_k_case[.float16, .float32, True, compute=True](
+        ctx, 128, 128, 128, "tiled compute_fn nt"
+    )
+    _run_split_k_case[.bfloat16, .bfloat16, False, compute=True](
+        ctx, 128, 128, 128, "tiled compute_fn nn bf16"
+    )
+    _run_split_k_case[.float16, .float16, True, compute=True](
+        ctx, 100, 100, 97, "tiled compute_fn ragged"
+    )
+    _run_split_k_case[.float16, .float16, False, compute=True](
+        ctx, 64, 130, 64, "tiled compute_fn odd-n"
     )
 
     test_gemv_configs(ctx)

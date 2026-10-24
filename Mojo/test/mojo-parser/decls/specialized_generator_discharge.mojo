@@ -71,13 +71,13 @@ struct IntableStruct(Intable, Movable where False):
 
 def use_trivial_dischargeable():
     # CHECK-LABEL: lit.fn @"use_trivial_dischargeable
-    # CHECK: lit.alias.decl *"z_trivial{{.*}}": !AnyType = <!PlainStruct>
+    # CHECK: lit.alias.decl *"z_trivial{{.*}}": !AnyType = <sugar_preserved({{.*}}, !PlainStruct)>
     comptime z_trivial = trivial_passthrough[PlainStruct]
 
 
 def use_intable_dischargeable():
     # CHECK-LABEL: lit.fn @"use_intable_dischargeable
-    # CHECK: lit.alias.decl *"z_intable{{.*}}": !AnyType = <!IntableStruct>
+    # CHECK: lit.alias.decl *"z_intable{{.*}}": !AnyType = <sugar_preserved({{.*}}, !IntableStruct)>
     comptime z_intable = intable_passthrough[IntableStruct]
 
 

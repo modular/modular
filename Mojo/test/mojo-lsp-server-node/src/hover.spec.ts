@@ -646,8 +646,8 @@ def function[type: TrivialRegisterPassable](arg: type):
       "test:///test.mojo",
       `
 def function[
-    func: def (Int) capturing -> Int
-]() -> def (Int) capturing -> Int:
+    func: def (Int) thin -> Int
+]() -> def (Int) thin -> Int:
     pass
 `
     );
@@ -658,7 +658,7 @@ def function[
       {
         kind: "markdown",
         value:
-          "```mojo\n(function) def function[func: def(Int) capturing thin -> Int]() -> def(Int) capturing thin -> Int\n```",
+          "```mojo\n(function) def function[func: def(Int) thin -> Int]() -> def(Int) thin -> Int\n```",
       }
     );
   });

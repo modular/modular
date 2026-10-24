@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -21,6 +22,7 @@ from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
+    Partial,
     Placement,
     Replicated,
 )
@@ -72,3 +74,28 @@ def assert_no_shadowed_tests(cls: type) -> None:
             f"{name} in {', '.join(who)}" for name, who in hidden.items()
         )
     )
+
+
+def make_partial_distinct(
+    fragment_fn: Callable[[int], np.ndarray[Any, Any]],
+    mesh: DeviceMesh,
+) -> Tensor:
+    """Creates a 1-axis Partial tensor whose per-device fragments differ.
+
+    ``make_partial`` copies identical data to every device, which hides
+    per-rank identity: an op that sums fragments looks the same as one
+    that mishandles them. This places each device's own fragment from
+    ``fragment_fn(rank)`` on that device and labels the set Partial: the
+    tensor's value is the sum of the fragments.
+    """
+    if mesh.ndim != 1:
+        raise ValueError(
+            f"make_partial_distinct needs a 1-axis mesh; got {mesh.ndim}."
+        )
+    shards = []
+    for rank, device in enumerate(mesh.devices):
+        fragment = Tensor(fragment_fn(rank))
+        if fragment.device != device:
+            fragment = Tensor(storage=fragment.driver_tensor.to(device))
+        shards.append(fragment.driver_tensor)
+    return Tensor._from_shards(tuple(shards), DeviceMapping(mesh, (Partial(),)))

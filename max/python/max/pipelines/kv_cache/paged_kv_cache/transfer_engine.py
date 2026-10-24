@@ -221,14 +221,14 @@ def _validate_tensor_shape(tensors: Sequence[Buffer]) -> int:
     """
     first_tensor = tensors[0]
     first_shape = tuple(first_tensor.shape)
-    # TODO(MXSERV-502): `_build_group_descriptors` uses one number as both the
-    # page stride and the copy length, which a padded leaf needs separated.
+    # `_build_group_descriptors` uses one number as both the page stride and
+    # the copy length, so a padded leaf hands over its contiguous padded grid.
     for i, tensor in enumerate(tensors):
         if not tensor.is_contiguous:
             raise ValueError(
                 f"NIXL group tensor {i} is not contiguous (shape "
-                f"{tuple(tensor.shape)}, strides {tuple(tensor.strides)}): "
-                "padded KV pages cannot be transferred yet (MXSERV-502)."
+                f"{tuple(tensor.shape)}, strides {tuple(tensor.strides)}), so "
+                "its page stride is not its copy length."
             )
     for i, tensor in enumerate(tensors[1:], 1):
         if tuple(tensor.shape) != first_shape:
@@ -543,7 +543,6 @@ class TensorAgent:
     def create_agent(
         cls,
         agent_name: str,
-        listen_port: int,
         tensors: Sequence[Buffer],
         memory_type: nixl.MemoryType,
         backend_type: NixlBackendType = "ucx",
@@ -552,7 +551,6 @@ class TensorAgent:
 
         Args:
             agent_name: Unique name for this agent.
-            listen_port: TCP port for the NIXL listener.
             tensors: This shard's buffers, one per NIXL group, group-major
                 (such as ``[main_values, main_scales, draft_values,
                 draft_scales]``). All must share the same device. Must be
@@ -578,8 +576,12 @@ class TensorAgent:
                 # - It helps with async notification delivery.
                 # - It enables overlapping transfers from multiple agents.
                 use_prog_thread=True,
-                use_listen_thread=True,
-                listen_port=listen_port,
+                # Metadata is exchanged out of band, so the listener is
+                # unused. Without it there is no port for another process
+                # to take first.
+                use_listen_thread=False,
+                # NIXL sets STRICT on its own only when the listener runs.
+                sync_mode=nixl.ThreadSyncMode.STRICT,
             ),
         )
 
@@ -597,6 +599,10 @@ class TensorAgent:
 
         # All groups for one shard live on the same device.
         device = tensors[0].device
+        # A peer can write to these buffers when it loads our metadata, so
+        # finish queued copies into them first.
+        if not device.is_host:
+            device.synchronize()
         try:
             plugin_params = agent.get_plugin_params(upstream_backend_type)
         except Exception as e:
@@ -2184,7 +2190,6 @@ class KVTransferEngine(TransferEngine):
                 ]
                 tensor_agent = TensorAgent.create_agent(
                     agent_name=f"{name}_{replica_idx}_{tp_idx}",
-                    listen_port=available_port(),
                     tensors=shard_tensors,
                     memory_type=memory_type,
                     backend_type=backend_type,

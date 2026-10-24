@@ -1,0 +1,109 @@
+// RUN: mo-opt %s --mo-shape-inference --gc-pipeline=constant-fold=false -o %t.mlir
+// RUN: python3 %mo_vs_numpy_py -n Elementwise -f %t.mlir | FileCheck %s
+
+// CHECK: All MO values match numpy
+
+module {
+  mo.graph @serving_default<D0, D1, D2, D3, D4, D5, D6, D7>(%arg0: !mo.tensor<[D0, D1, D2, D3], f32>, %arg1: !mo.tensor<[D4, D5, D6, D7], f32>) -> !mo.tensor<[D0, D1, D2, D3], f32> attributes {argument_names = ["input_1", "input_2"], result_names = ["lambda"]} {
+    %0 = mo.constant <#M.dense_array<-5.000000e-01> : tensor<f32>> : !mo.tensor<[], f32>
+    %1 = mo.constant <#M.dense_array<5.000000e-01> : tensor<f32>> : !mo.tensor<[], f32>
+    %2 = mo.abs(%arg0) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %3 = mo.exp(%2) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %4 = mo.shape_of(%arg0) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %5 = mo.shape_of(%3) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %6 = mo.broadcast_shape(%4, %5) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %7 = mo.broadcast_to(%arg0, %6) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %8 = mo.broadcast_to(%3, %6) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %9 = mo.greater(%7, %8) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[D0, D1, D2, D3], bool>
+    %10 = mo.rebind(%9) : !mo.tensor<[D0, D1, D2, D3], bool> -> !mo.tensor<[D0, D1, D2, D3], bool>
+    %11 = mo.rebind(%arg0) : !mo.tensor<[D0, D1, D2, D3], f32> -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %12 = mo.rebind(%3) : !mo.tensor<[D0, D1, D2, D3], f32> -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %13 = mo.select(%10, %11, %12) : (!mo.tensor<[D0, D1, D2, D3], bool>, !mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %14 = mo.tanh(%arg1) : !mo.tensor<[D4, D5, D6, D7], f32>
+    %15 = mo.shape_of(%arg0) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %16 = mo.shape_of(%14) : (!mo.tensor<[D4, D5, D6, D7], f32>) -> !mo.tensor<[4], si64>
+    %17 = mo.broadcast_shape(%15, %16) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %18 = mo.broadcast_to(%arg0, %17) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %19 = mo.broadcast_to(%14, %17) : (!mo.tensor<[D4, D5, D6, D7], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %20 = mo.sub(%18, %19) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %21 = mo.shape_of(%20) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %22 = mo.shape_of(%arg0) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %23 = mo.broadcast_shape(%21, %22) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %24 = mo.broadcast_to(%20, %23) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %25 = mo.broadcast_to(%arg0, %23) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %26 = mo.mul(%24, %25) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %27 = mo.erf(%26) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %28 = mo.shape_of(%arg0) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %29 = mo.shape_of(%1) : (!mo.tensor<[], f32>) -> !mo.tensor<[0], si64>
+    %30 = mo.broadcast_shape(%28, %29) : (!mo.tensor<[4], si64>, !mo.tensor<[0], si64>) -> !mo.tensor<[4], si64>
+    %31 = mo.broadcast_to(%arg0, %30) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %32 = mo.broadcast_to(%1, %30) : (!mo.tensor<[], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %33 = mo.max(%31, %32) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %34 = mo.shape_of(%3) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %35 = mo.shape_of(%33) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %36 = mo.broadcast_shape(%34, %35) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %37 = mo.broadcast_to(%3, %36) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %38 = mo.broadcast_to(%33, %36) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %39 = mo.add(%37, %38) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %40 = mo.shape_of(%arg0) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %41 = mo.shape_of(%0) : (!mo.tensor<[], f32>) -> !mo.tensor<[0], si64>
+    %42 = mo.broadcast_shape(%40, %41) : (!mo.tensor<[4], si64>, !mo.tensor<[0], si64>) -> !mo.tensor<[4], si64>
+    %43 = mo.broadcast_to(%arg0, %42) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %44 = mo.broadcast_to(%0, %42) : (!mo.tensor<[], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %45 = mo.min(%43, %44) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %46 = mo.shape_of(%39) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %47 = mo.shape_of(%45) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %48 = mo.broadcast_shape(%46, %47) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %49 = mo.broadcast_to(%39, %48) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %50 = mo.broadcast_to(%45, %48) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %51 = mo.add(%49, %50) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %52 = mo.shape_of(%13) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %53 = mo.shape_of(%51) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %54 = mo.broadcast_shape(%52, %53) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %55 = mo.broadcast_to(%13, %54) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %56 = mo.broadcast_to(%51, %54) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %57 = mo.add(%55, %56) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %58 = mo.ceil(%57) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %59 = mo.floor(%57) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %60 = mo.log(%57) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %61 = mo.log1p(%57) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %62 = mo.rsqrt(%57) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %63 = mo.shape_of(%57) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %64 = mo.shape_of(%60) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %65 = mo.broadcast_shape(%63, %64) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %66 = mo.broadcast_to(%57, %65) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %67 = mo.broadcast_to(%60, %65) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %68 = mo.add(%66, %67) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %69 = mo.shape_of(%68) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %70 = mo.shape_of(%62) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %71 = mo.broadcast_shape(%69, %70) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %72 = mo.broadcast_to(%68, %71) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %73 = mo.broadcast_to(%62, %71) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %74 = mo.add(%72, %73) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %75 = mo.shape_of(%74) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %76 = mo.shape_of(%61) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %77 = mo.broadcast_shape(%75, %76) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %78 = mo.broadcast_to(%74, %77) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %79 = mo.broadcast_to(%61, %77) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %80 = mo.add(%78, %79) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %81 = mo.shape_of(%80) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %82 = mo.shape_of(%58) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %83 = mo.broadcast_shape(%81, %82) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %84 = mo.broadcast_to(%80, %83) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %85 = mo.broadcast_to(%58, %83) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %86 = mo.add(%84, %85) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %87 = mo.shape_of(%86) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %88 = mo.shape_of(%59) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %89 = mo.broadcast_shape(%87, %88) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %90 = mo.broadcast_to(%86, %89) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %91 = mo.broadcast_to(%59, %89) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %92 = mo.add(%90, %91) : !mo.tensor<[D0, D1, D2, D3], f32>
+    %93 = mo.shape_of(%27) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %94 = mo.shape_of(%92) : (!mo.tensor<[D0, D1, D2, D3], f32>) -> !mo.tensor<[4], si64>
+    %95 = mo.broadcast_shape(%93, %94) : (!mo.tensor<[4], si64>, !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64>
+    %96 = mo.broadcast_to(%27, %95) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %97 = mo.broadcast_to(%92, %95) : (!mo.tensor<[D0, D1, D2, D3], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D0, D1, D2, D3], f32>
+    %98 = mo.add(%96, %97) : !mo.tensor<[D0, D1, D2, D3], f32>
+    mo.output %98 : !mo.tensor<[D0, D1, D2, D3], f32>
+  }
+}

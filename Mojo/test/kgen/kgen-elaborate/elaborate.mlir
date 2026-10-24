@@ -1063,11 +1063,11 @@ kgen.generator @callee<a>(%arg0: index) {
 }
 
 kgen.generator @entry(%arg0: index) {
-  // CHECK: create_closure[(index) -> (): @"callee,a=1"]
-  kgen.create_closure[(index) -> (): @callee<1>]()
+  // CHECK: create_func_ptr[(index) -> (): @"callee,a=1"]
+  kgen.create_func_ptr[(index) -> (): @callee<1>]()
   kgen.param.declare fn: (index) -> () = <@callee<2>>
-  // CHECK: create_closure[(index) -> (): @"callee,a=2"]
-  kgen.create_closure[(index) -> (): fn](%arg0)
+  // CHECK: create_func_ptr[(index) -> (): @"callee,a=2"]
+  kgen.create_func_ptr[(index) -> (): fn]()
   hlcf.return
 }
 
@@ -1104,23 +1104,23 @@ kgen.generator @main() {
 
 // -----
 
-kgen.generator @take_closure(%arg0: !kgen.generator<(index) capturing -> index>, %arg1: index) {
-  %0 = kgen.call_indirect %arg0(%arg1) : (index) capturing -> index
+kgen.generator @take_closure(%arg0: !kgen.generator<(index) -> index>, %arg1: index) {
+  %0 = kgen.call_indirect %arg0(%arg1) : (index) -> index
   hlcf.return
 }
 
 // COM: Ensure that regions lifted by OutlineClosures pass are not erased
-// CHECK-LABEL: kgen.func @"foo_k,N=5,M=3"() capturing -> !kgen.scalar<index> {
-kgen.generator @foo_k<N, M>() capturing -> !kgen.scalar<index> {
+// CHECK-LABEL: kgen.func @"foo_k,N=5,M=3"() -> !kgen.scalar<index> {
+kgen.generator @foo_k<N, M>() -> !kgen.scalar<index> {
   %0 = kgen.param.constant: scalar<index> = <0>
   hlcf.return %0 : !kgen.scalar<index>
 }
 
 // CHECK-LABEL: kgen.func @"foo,N=5"(%arg0: !kgen.scalar<index>) {
 kgen.generator @foo<N>(%arg0: !kgen.scalar<index>) {
-  kgen.param.declare k: <index>() capturing -> !kgen.scalar<index> = <@foo_k<N, ?>>
-  // CHECK: kgen.create_closure[() capturing -> !kgen.scalar<index>: @"foo_k,N=5,M=3"]()
-  %1 = kgen.create_closure[() capturing -> !kgen.scalar<index>: bind_params(:<index>() capturing -> !kgen.scalar<index> k, 3)]()
+  kgen.param.declare k: <index>() -> !kgen.scalar<index> = <@foo_k<N, ?>>
+  // CHECK: kgen.create_func_ptr[() -> !kgen.scalar<index>: @"foo_k,N=5,M=3"]()
+  %1 = kgen.create_func_ptr[() -> !kgen.scalar<index>: bind_params(:<index>() -> !kgen.scalar<index> k, 3)]()
   hlcf.return
 }
 
@@ -1134,19 +1134,19 @@ kgen.generator @main() {
 }
 
 // COM: Ensure that staged closures follow the global store
-kgen.generator @take_bat(%arg0: !kgen.generator<(index) capturing -> index>) {
+kgen.generator @take_bat(%arg0: !kgen.generator<(index) -> index>) {
 	hlcf.return
 }
 
-kgen.generator @bat(%arg0: index) capturing -> index {
+kgen.generator @bat(%arg0: index) -> index {
 	hlcf.return %arg0 : index
 }
 
 // CHECK-LABEL: kgen.func @bat_binder
 kgen.generator @bat_binder(%arg0: index) {
-  // CHECK: kgen.create_closure[(index) capturing -> index: @bat]()
-	%2 = kgen.create_closure[(index) capturing -> index: h]()
-	kgen.param.declare h: (index) capturing -> index = <@bat>
+  // CHECK: kgen.create_func_ptr[(index) -> index: @bat]()
+	%2 = kgen.create_func_ptr[(index) -> index: h]()
+	kgen.param.declare h: (index) -> index = <@bat>
 	hlcf.return
 }
 
@@ -1285,7 +1285,7 @@ kgen.generator @kernel() {
 kgen.generator export @top() {
   // COM: Just check that the code compiles. The assembly is target-dependent.
   // CHECK: constant: struct
-  kgen.param.constant: struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @kernel>>
+  kgen.param.constant: struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @kernel>>
   hlcf.return
 }
 
@@ -1321,20 +1321,18 @@ kgen.generator @func_param<f: <index, index>() -> (index, index)>() -> index {
   hlcf.return %2 : index
 }
 
-!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)>
-
 // CHECK-LABEL: kgen.func export @get_linkage_name
 kgen.generator export @get_linkage_name() {
-  // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}no_params
-  %0 = kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @no_params>>
+  // CHECK-NEXT: constant: struct<(string, index)> = <{ "{{.*}}no_params
+  %0 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @no_params>>
   // CHECK-NEXT: constant: string = <"no_params">
   %1 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@no_params> : !kgen.generator<() -> ()>>>
-  // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}params,a=1,b=2
-  %2 = kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> (index, index) @params<1, 2>>>
+  // CHECK-NEXT: constant: struct<(string, index)> = <{ "{{.*}}params,a=1,b=2
+  %2 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> (index, index) @params<1, 2>>>
   // CHECK-NEXT: constant: string = <"params,a=1,b=2">
   %3 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@params<1, 2>> : !kgen.generator<() -> (index, index)>>>
-  // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}func_param,f=params
-  %4 = kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> index @func_param<:<index, index>() -> (index, index) @params>>>
+  // CHECK-NEXT: constant: struct<(string, index)> = <{ "{{.*}}func_param,f=params
+  %4 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> index @func_param<:<index, index>() -> (index, index) @params>>>
   // CHECK-NEXT: constant: string = <"func_param,f=params">
   %5 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@func_param<:<index, index>() -> (index, index) @params>> : !kgen.generator<() -> index>>>
   hlcf.return
@@ -1450,36 +1448,6 @@ kgen.generator export @get_type_name_of_parametric_ref() {
   kgen.param.constant: string = <#kgen.get_type_name<[pointer<typevalue<:!kgen.type #kgen.genref<@LinkedList<:type none>>>>, pointer<index>], #kgen.simd<false>:!kgen.scalar<bool>>>
   hlcf.return
 }
-
-// -----
-
-!capture = !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)>
-
-kgen.generator @lambda() capturing -> index {
-  %0 = pop.compiler.global_load "var" : index
-  hlcf.return %0 : index
-}
-
-kgen.generator @captures<f: () capturing -> index>() capturing -> index {
-  %0 = kgen.call_param[() capturing -> index: f]()
-  hlcf.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() {
-  // CHECK-NEXT: struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <{ "{{.*}}", 1, [[POPULATE:@.*]] }>
-  %0 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() capturing -> index @captures<:() capturing -> index @lambda>>>
-  hlcf.return
-}
-
-// CHECK: kgen.func [[POPULATE]](%arg0: !kgen.pointer<none>) capturing -> !kgen.none always_inline
-// CHECK: [[VAR:%.*]] = pop.compiler.global_load "var" : index
-// CHECK: [[ARG:%.*]] = pop.stack_allocation
-// CHECK: pop.store [[VAR]], [[ARG]]
-// CHECK: [[ARGCAST:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<pointer<none>>
-// CHECK: [[PTR:%.*]] = pop.offset [[ARGCAST]][%index0]
-// CHECK: [[RAW:%.*]] = pop.pointer.bitcast [[ARG]]
-// CHECK: pop.store [[RAW]], [[PTR]]
 
 // -----
 
@@ -1670,13 +1638,11 @@ kgen.generator @fma(%arg0: index, %arg1: index, %arg2: index) -> index {
   hlcf.return %1 : index
 }
 
-!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)>
-
 // CHECK-LABEL: kgen.func export @main
 kgen.generator export @main() {
   // CHECK: mul i64
   // CHECK: add i64
-  %0 = kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(index, index, index) -> (index) @fma>>
+  %0 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(index, index, index) -> (index) @fma>>
   hlcf.return
 }
 
@@ -1687,18 +1653,16 @@ kgen.generator @might_fail<succeed: !kgen.scalar<bool>>() {
   hlcf.return
 }
 
-!capture = !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)>
+!compiled = !kgen.struct<(string, index)>
 
 // CHECK-LABEL: @compile_assembly_conditional
 kgen.generator export @compile_assembly_conditional() {
-  // CHECK-NEXT: <{ "failed {{.*}}", -1, #interp.uninitmem }>
-  kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:!kgen.scalar<bool> false>>>
-  // CHECK-NEXT: <{ "{{.*}}", 0, [[CAP_FN:@.*]] }>
-  kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:!kgen.scalar<bool> true>>>
+  // CHECK-NEXT: <{ "failed {{.*}}", -1 }>
+  kgen.param.constant: !compiled = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:!kgen.scalar<bool> false>>>
+  // CHECK-NEXT: <{ "{{.*}}", 0 }>
+  kgen.param.constant: !compiled = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:!kgen.scalar<bool> true>>>
   hlcf.return
 }
-
-// CHECK: kgen.func [[CAP_FN]]
 
 // -----
 

@@ -27,8 +27,9 @@ from max.nn.kv_cache import (
     RecurrentKVLeafRegion,
     RecurrentStateParams,
     RecurrentStateRegion,
-    ScratchKVLeafRegion,
+    ScratchRecurrentKVLeafRegion,
 )
+from max.nn.kv_cache.cache_params import _ScratchPagedKVLeafRegion
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
@@ -358,7 +359,7 @@ def test_the_region_flag_is_what_puts_the_leaf_in_the_scratch_group() -> None:
     # than reaching for a leaf class at the call site.
     leaves = STATE_PARAMS.leaves()
 
-    assert isinstance(leaves[RING], ScratchKVLeafRegion)
+    assert isinstance(leaves[RING], ScratchRecurrentKVLeafRegion)
     assert leaves[RING].group_id == KVCacheGroupId.scratch()
     assert leaves[RING].blocks_to_reserve(99, enable_prefix_caching=True) == 1
     assert isinstance(leaves[REC], RecurrentKVLeafRegion)
@@ -375,3 +376,54 @@ def test_a_scratch_region_still_declares_its_pool_and_row_table() -> None:
 
     assert list(ring.pool.shape)[1:] == [8, 4]
     assert list(ring.live_row_ids.shape)[0] == 2
+
+
+def test_a_paged_view_scratch_leaf_stages_its_block_in_column_zero() -> None:
+    """A paged ring's one block fills column zero of the page table, however
+    deep the request's context runs."""
+    paged_ring = "ring/pages"
+    leaves = {
+        FULL: KVLeafInfo(1, KVCacheGroupId.full()),
+        paged_ring: KVLeafInfo(1, KVCacheGroupId.scratch()),
+    }
+    regions = {
+        FULL: PagedKVLeafRegion(
+            leaf_id=FULL,
+            group_id=KVCacheGroupId.full(),
+            bytes_per_page=1,
+            page_size=BLOCK_SIZE,
+        ),
+        paged_ring: _ScratchPagedKVLeafRegion(
+            leaf_id=paged_ring,
+            group_id=KVCacheGroupId.scratch(),
+            bytes_per_page=1,
+            page_size=BLOCK_SIZE,
+        ),
+    }
+    pools = create_pools(leaves, 999)
+    bm = JengaBlockManager(
+        pools=pools,
+        block_size=BLOCK_SIZE,
+        enable_prefix_caching=True,
+        groups=create_groups(
+            leaves, pools, BLOCK_SIZE, enable_prefix_caching=True
+        ),
+        leaves=regions,
+    )
+    ctx = make_ctx(32)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+    ring = regions[paged_ring]
+
+    plan = bm.groups[paged_ring].forward_blocks([ctx], [8])
+    ((shape, _),) = ring.staged_input_shapes(1, 8).values()
+    table = np.full(shape, 7, dtype=np.uint32)
+    ring.write_staged_inputs(plan[paged_ring], {paged_ring: table})
+
+    group = bm.groups[paged_ring]
+    assert isinstance(group, ScratchKVGroupCoordinator)
+    (block,) = group.rows[ctx.request_id][paged_ring]
+    assert table[0, 0] == block.bid
+    assert not table[0, 1:].any()
+    assert ring.blocks_to_reserve(8, enable_prefix_caching=True) == 1
+    assert not ring.cacheable

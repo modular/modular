@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
+from max.pipelines.lib.tokenizer import resolve_token_id_bound
 from transformers import AutoProcessor, AutoTokenizer
 
 if TYPE_CHECKING:
@@ -71,6 +72,9 @@ class PixtralTokenizer(TextAndVisionTokenizer):
         )
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
         self.enable_prefix_caching = (

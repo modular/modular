@@ -20,7 +20,7 @@ on-the-fly during memory loads.
 """
 
 from layout.tma_async import SharedMemBarrier, TMATensorTileIm2col
-from layout import Coord, TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor
 
 
 struct TileLoaderTMAIm2col[
@@ -62,11 +62,15 @@ struct TileLoaderTMAIm2col[
 
     @inline(.always)
     def load[
-        LayoutType: TensorLayout
+        LayoutType: TensorLayout, DestEngine: TensorEngine
     ](
         self,
         dest: TileTensor[
-            Self.dtype, LayoutType, MutAnyOrigin, address_space=.SHARED
+            Self.dtype,
+            LayoutType,
+            MutAnyOrigin,
+            Engine=DestEngine,
+            address_space=.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,
@@ -77,6 +81,7 @@ struct TileLoaderTMAIm2col[
         Parameters:
             LayoutType: `TensorLayout` of the destination shared-memory
                 tile.
+            DestEngine: `TensorEngine` backing the destination tile.
 
         Args:
             dest: Destination SMEM TileTensor tile.

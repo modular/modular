@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Portable NVFP4 -> bf16 weight-only dequant for the Apple M5 matmul (W4A16).
 
-SM100/Apple M5 (`compute_capability == 5`), but the math here is hardware-neutral
+SM100/Apple M5 (`compute_capability >= 5`), but the math here is hardware-neutral
 (plain LUT + scale, no PTX / MFMA intrinsics). FLUX.2-dev-NVFP4 stores Linear
 weights as packed E2M1 values with per-16-element FP8-E4M3 block scales; the
 goal is to keep them packed in DRAM and dequant to bf16 in-register at the
@@ -120,8 +120,8 @@ def fp4_materialize_kernel[
     var N = Int(out_w.dim[0]())
     var K = Int(out_w.dim[1]())
 
-    var n = Int(global_idx.y)
-    var k = Int(global_idx.x)
+    var n = global_idx.y
+    var k = global_idx.x
     if n >= N or k >= K:
         return
 

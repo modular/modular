@@ -51,8 +51,8 @@ from .config import LoRAConfig
 from .lora import ADAPTER_CONFIG_FILE, LoRAModel, _LoRALRUCache
 from .lora_types import LoRAStatus
 
-# ModuleV3 LoRA routing is three tensors, matching
-# ``max.experimental.nn.LoRA.set_lora_batch_info``.
+#: Number of routing tensors in ModuleV3 LoRA batch info, matching
+#: :meth:`max.experimental.nn.LoRA.set_lora_batch_info`.
 NUM_ROUTING_INPUTS = 3
 
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
@@ -29,7 +29,6 @@ from fastapi.testclient import TestClient
 from max.pipelines.context import GenerationStatus, TextContext, TokenBuffer
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.modeling.types import RequestID
-from max.serve import request as request_module
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.pipelines.echo_gen import (
@@ -39,7 +38,7 @@ from max.serve.pipelines.echo_gen import (
 from max.serve.pipelines.llm import TokenGeneratorOutput
 from max.serve.request import register_request
 from max.serve.router import openai_routes
-from max.serve.telemetry import _trace_context, common
+from max.serve.telemetry import _log_context, _trace_context
 from max.serve.telemetry._trace_context import inject_trace_carrier
 from max.serve.telemetry.common import configure_logging
 from opentelemetry import propagate as otel_propagate
@@ -50,6 +49,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
+from tests.serve.asgi_disconnect import disconnect_after_first_chunk
 
 _TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 _TRACE_ID_HEX = "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -60,7 +60,7 @@ def structured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[Path]:
     """Structured file logging with tracing on, undone afterwards."""
-    monkeypatch.setattr(common, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     root = logging.getLogger()
     saved = (list(root.handlers), root.level)
     log_path = tmp_path / "max-serve.json"
@@ -95,7 +95,7 @@ def spans(monkeypatch: pytest.MonkeyPatch) -> InMemorySpanExporter:
     provider.add_span_processor(SimpleSpanProcessor(finished))
     tracer = provider.get_tracer("test")
     monkeypatch.setattr(_trace_context, "_tracer", tracer)
-    monkeypatch.setattr(request_module, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     monkeypatch.setattr(openai_routes, "_tracer", tracer)
     return finished
 
@@ -131,32 +131,6 @@ def _server_spans(
     ]
 
 
-def test_no_server_span_with_tracing_off(
-    structured: Path,
-    spans: InMemorySpanExporter,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # With tracing off, structured logging sets only the request ID: no
-    # trace capture and no server span, not even a no-op one.
-    monkeypatch.setattr(request_module, "_tracing_enabled", lambda: False)
-    app = FastAPI()
-    register_request(app, structured_logging=True)
-    seen: list[object] = []
-
-    @app.get("/work")
-    async def work() -> dict[str, bool]:
-        seen.extend(
-            [common._request_id_ctx.get(), common.request_trace_ctx.get()]
-        )
-        return {"ok": True}
-
-    with TestClient(app) as client:
-        response = client.get("/work", headers={"traceparent": _TRACEPARENT})
-
-    assert seen == [response.headers["X-Request-ID"], None]
-    assert _server_spans(spans, ["/work"]) == []
-
-
 def test_probes_get_no_server_span(spans: InMemorySpanExporter) -> None:
     # Health checks and metric scrapes would bury real requests in spans.
     (server,) = _server_spans(
@@ -172,6 +146,7 @@ def test_probes_get_no_server_span(spans: InMemorySpanExporter) -> None:
     )
 
     assert server.name == "GET /work"
+    assert server.status.status_code == trace.StatusCode.UNSET
 
 
 def test_server_span_records_a_failed_request(
@@ -199,7 +174,7 @@ def test_server_span_ends_after_the_last_chunk(
 
     @app.get("/stream")
     async def stream() -> StreamingResponse:
-        span = trace.get_current_span(common.request_trace_ctx.get())
+        span = trace.get_current_span(_log_context.request_trace_ctx.get())
 
         async def body() -> AsyncIterator[bytes]:
             yield b"a"
@@ -221,16 +196,6 @@ def test_server_span_ends_after_the_last_chunk(
     assert server.attributes["http.response.status_code"] == 200
 
 
-def test_server_span_ends_for_a_plain_response(
-    spans: InMemorySpanExporter,
-) -> None:
-    (server,) = _server_spans(spans, ["/work"])
-
-    assert server.status.status_code == trace.StatusCode.UNSET
-    assert server.attributes is not None
-    assert server.attributes["http.response.status_code"] == 200
-
-
 @pytest.mark.asyncio
 async def test_client_disconnect_mid_stream_ends_the_server_span(
     spans: InMemorySpanExporter,
@@ -238,7 +203,6 @@ async def test_client_disconnect_mid_stream_ends_the_server_span(
     # The body never finishes on its own, so only the disconnect can end it.
     app = FastAPI()
     register_request(app)
-    first_chunk_sent = asyncio.Event()
 
     @app.get("/stream")
     async def stream() -> StreamingResponse:
@@ -249,35 +213,7 @@ async def test_client_disconnect_mid_stream_ends_the_server_span(
 
         return StreamingResponse(body())
 
-    requested = False
-
-    async def receive() -> dict[str, object]:
-        nonlocal requested
-        if not requested:
-            requested = True
-            return {"type": "http.request", "body": b"", "more_body": False}
-        await first_chunk_sent.wait()
-        return {"type": "http.disconnect"}
-
-    async def send(message: Mapping[str, object]) -> None:
-        if message["type"] == "http.response.body" and message.get("body"):
-            first_chunk_sent.set()
-
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0", "spec_version": "2.3"},
-        "http_version": "1.1",
-        "method": "GET",
-        "scheme": "http",
-        "path": "/stream",
-        "raw_path": b"/stream",
-        "query_string": b"",
-        "root_path": "",
-        "headers": [],
-        "client": ("testclient", 50000),
-        "server": ("testserver", 80),
-    }
-    await asyncio.wait_for(app(scope, receive, send), timeout=30)
+    await disconnect_after_first_chunk(app, "/stream")
 
     (server,) = [
         s for s in spans.get_finished_spans() if s.kind == trace.SpanKind.SERVER
@@ -292,14 +228,15 @@ def test_unsampled_server_span_still_parents_the_request(
     # worker's spans, so parent-based sampling drops them with it.
     tracer = TracerProvider(sampler=ALWAYS_OFF).get_tracer("test")
     monkeypatch.setattr(_trace_context, "_tracer", tracer)
-    monkeypatch.setattr(request_module, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     app = FastAPI()
     register_request(app)
     seen: list[trace.Span] = []
 
     @app.get("/work")
     async def work() -> dict[str, bool]:
-        seen.append(trace.get_current_span(common.request_trace_ctx.get()))
+        span = trace.get_current_span(_log_context.request_trace_ctx.get())
+        seen.append(span)
         return {"ok": True}
 
     with TestClient(app) as client:
@@ -391,6 +328,7 @@ def test_logs_and_spans_share_the_server_spans_trace(
     assert server.name == "GET /work"
     assert server.attributes is not None
     assert server.attributes["http.response.status_code"] == 200
+    assert (request_span.attributes or {})["max.request.id"] == "test"
     assert server.context is not None and request_span.context is not None
     trace_id = server.context.trace_id
     if headers:

@@ -13,7 +13,7 @@
 
 """Provides block-scaled quantization kernels for NVFP4, MXFP4, and MXFP8."""
 
-from std.math import align_up, ceildiv
+from std.math import align_up, ceildiv, rsqrt
 from std.math.uutils import uceildiv, udivmod, ufloordiv
 from std.memory import unsafe_stack_allocation
 from max.gpu import (
@@ -23,6 +23,7 @@ from max.gpu import (
     block_dim,
     global_idx,
     lane_id,
+    warp_id,
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
@@ -33,6 +34,7 @@ from layout import (
     Idx,
     RowMajorLayout,
     DefaultEngine,
+    ImmTileTensor,
     TensorEngine,
     TileTensor,
     row_major,
@@ -41,9 +43,15 @@ from layout.tile_layout import TensorLayout
 from std.collections import OptionalReg
 from std.logger import Logger
 from max.gpu.primitives import warp
-from max.gpu.primitives.warp import lane_group_max, shuffle_xor
+from max.gpu.primitives.warp import lane_group_max, shuffle_down, shuffle_xor
+from std.complex import ComplexSIMD
 from std.math import recip
 from .block_scaled_utils import compute_mxfp8_block_scale
+from .swiglu_activation import (
+    apply_swiglu_activation,
+    swiglu,
+    swiglu_activation_type,
+)
 from .fp4_utils import (
     cast_float_to_fp4e2m1_amd,
     cast_fp32_to_fp4e2m1,
@@ -64,10 +72,11 @@ from .fp4_utils import (
 )
 from max.gpu.host.info import B200, MI355X, _is_sm10x_gpu, _is_sm12x_gpu
 from std.utils import StaticTuple
-from std.collections import Optional
 from linalg.utils import (
-    elementwise_epilogue_type,
-    elementwise_compute_lambda_type,
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
 )
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
@@ -81,9 +90,13 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
 )
-from max.gpu.memory import external_memory, fence_async_view_proxy
+from max.gpu.memory import (
+    cp_async_bulk_prefetch,
+    external_memory,
+    fence_async_view_proxy,
+)
 from max.gpu.sync import barrier
-from std.sys import size_of, align_of, simd_width_of, get_defined_int
+from std.sys import size_of, align_of, get_defined_int
 from layout.swizzle import make_swizzle
 from max.algorithm import elementwise
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -94,7 +107,12 @@ from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
 )
 from max.gpu.primitives.grid_controls import PDLLevel
 from linalg.matmul.gpu.sm100_structured.default.dispatch import DISPATCH_HIT
-from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from max.runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 from std.collections.string.string_span import get_static_string
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
@@ -102,6 +120,28 @@ from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
+
+
+@inline(.always)
+def _rope_rotate[
+    dtype: DType, width: SIMDLength, //, *, inverse: Bool
+](val: SIMD[dtype, width], freq: SIMD[DType.float32, width]) -> SIMD[
+    dtype, width
+]:
+    """Rotates the interleaved `(re, im)` pairs of `val` by the `(cos, sin)`
+    pairs of `freq`, or by their conjugates when `inverse`, in fp32.
+
+    The arithmetic matches `rope_ragged`, so a rotation followed by a
+    quantize gives the same bytes as the two kernels in sequence.
+    """
+    var x_re, x_im = val.cast[DType.float32]().deinterleave()
+    var f_re, f_im = freq.deinterleave()
+    var f = ComplexSIMD(f_re, f_im)
+    comptime if inverse:
+        f = f.conj()
+    var r = ComplexSIMD(x_re, x_im) * f
+    return rebind[SIMD[dtype, width]](r.re.interleave(r.im).cast[dtype]())
+
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -119,6 +159,15 @@ def quantize_dynamic_scaled_fp4fp8[
     *,
     SF_VECTOR_SIZE: Int = 16,
     num_max_threads: Int = 512,
+    gated: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
+    rope_dim: Int = 0,
+    rope_head_dim: Int = 0,
+    rope_inverse: Bool = False,
+    rope_layout: TensorLayout = RowMajorLayout[
+        *Coord[Int64, Int64].element_types
+    ],
+    grid_by_occupancy: Bool = False,
 ](
     ctx: DeviceContext,
     output_tile: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
@@ -129,6 +178,9 @@ def quantize_dynamic_scaled_fp4fp8[
     num_cols: Int,
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
+    rope_freqs: OptionalReg[
+        TileTensor[.float32, rope_layout, ImmUnsafeAnyOrigin]
+    ] = None,
 ) raises:
     """Launches the SM100 kernel that quantizes BF16 input to NVFP4, MXFP4, or MXFP8 with per-block scale factors.
 
@@ -150,6 +202,17 @@ def quantize_dynamic_scaled_fp4fp8[
             (defaults to 16).
         num_max_threads: Maximum number of threads per block for the
             launch grid (defaults to 512).
+        gated: Whether each input row is `[gate | up]`, twice the output
+            width, and the kernel quantizes `activation(gate, up)` rounded
+            to `in_dtype` in place of the input.
+        activation: The gated activation; read only when `gated`.
+        rope_dim: Trailing columns of each head that the kernel rotates by
+            `rope_freqs` before it quantizes; 0 rotates nothing.
+        rope_head_dim: Columns per head; read only when `rope_dim > 0`.
+        rope_inverse: Whether to rotate by the conjugate of `rope_freqs`.
+        rope_layout: Layout of `rope_freqs` (inferred).
+        grid_by_occupancy: Whether to size the grid by the blocks an SM
+            holds at the kernel's register use, instead of by threads.
     Args:
         ctx: Device context used to enqueue the kernel.
         output_tile: Output tile for the quantized elements of shape
@@ -157,7 +220,8 @@ def quantize_dynamic_scaled_fp4fp8[
             `[num_rows, num_cols]` for MXFP8.
         scales_tile: Output tile for the per-block scale factors.
         input_tile: Input `bfloat16` activation tile of shape
-            `[num_rows, num_cols]`.
+            `[num_rows, num_cols]`, or `[num_rows, 2 * num_cols]` when
+            `gated`.
         num_cols: Number of columns in the input tensor before
             padding.
         num_cols_padded: Number of columns in the input tensor after
@@ -165,6 +229,10 @@ def quantize_dynamic_scaled_fp4fp8[
             are zeroed in the output and scales.
         tensor_sf: Tensor-wise scale factor applied to the
             quantization (defaults to 1.0).
+        rope_freqs: `[num_rows, rope_dim]` `float32` interleaved
+            `(cos, sin)` pairs, one row per input row; required when
+            `rope_dim > 0`. Each head's rotated columns are rounded to
+            `in_dtype` before they are quantized.
     """
     comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
         ctx.default_device_info
@@ -191,7 +259,7 @@ def quantize_dynamic_scaled_fp4fp8[
         )
     ), "output dtype should be uint8 for NVFP4/MXFP4 or float8_e4m3fn for MXFP8"
 
-    comptime N = input_tile.LayoutType.static_shape[1]
+    comptime N = input_tile.LayoutType.static_shape[1] // (2 if gated else 1)
 
     comptime if SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE:
         comptime assert N % SF_VECTOR_SIZE == 0, "N must be a multiple of 32"
@@ -208,16 +276,6 @@ def quantize_dynamic_scaled_fp4fp8[
         return
     var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
 
-    var block_dim = (
-        min(num_cols // ELEMENTS_PER_THREAD, num_max_threads),
-        1,
-        1,
-    )
-    var num_blocks_per_SM = max(
-        1, B200.gpu_info.threads_per_multiprocessor // block_dim[0]
-    )
-    var grid_dim = (min(num_rows_padded, num_SMs * num_blocks_per_SM), 1, 1)
-
     comptime kernel = quantize_dynamic_scaled_fp4fp8_kernel[
         out_dtype,
         scales_dtype,
@@ -228,7 +286,50 @@ def quantize_dynamic_scaled_fp4fp8[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
         num_max_threads=num_max_threads,
+        gated=gated,
+        activation=activation,
+        rope_dim=rope_dim,
+        rope_head_dim=rope_head_dim,
+        rope_inverse=rope_inverse,
+        rope_layout=rope_layout,
     ]
+
+    var block_dim = (
+        min(num_cols // ELEMENTS_PER_THREAD, num_max_threads),
+        1,
+        1,
+    )
+    var num_blocks_per_SM = max(
+        1, B200.gpu_info.threads_per_multiprocessor // block_dim[0]
+    )
+    comptime if grid_by_occupancy:
+        # One resident wave: a second, partial wave of blocks waits for the
+        # first one's rows.
+        var func = ctx.compile_function[kernel]()
+        num_blocks_per_SM = max(
+            1,
+            func.occupancy_max_active_blocks_per_multiprocessor(
+                block_dim[0], 0
+            ),
+        )
+    var num_slots = num_SMs * num_blocks_per_SM
+    var grid_x = min(num_rows_padded, num_slots)
+    # A row wider than one block's pass loops over its columns one load
+    # latency at a time. With few rows, more blocks per row issue those loads
+    # at once. Blocks past the real rows zero the padding rows' scales, so no
+    # block walks the padding alone. Up to one block per SM: with two, the
+    # pair on an SM can be one row's blocks, leaving half the SMs idle.
+    var col_blocks = min(
+        ceildiv(
+            align_up(num_cols_padded, SF_VECTOR_SIZE * SF_ATOM_K)
+            // ELEMENTS_PER_THREAD,
+            block_dim[0],
+        ),
+        max(1, num_slots // num_rows),
+    )
+    if col_blocks > 1:
+        grid_x = min(num_rows_padded, max(num_rows, num_SMs // col_blocks))
+    var grid_dim = (grid_x, col_blocks, 1)
 
     ctx.enqueue_function[kernel](
         output_tile,
@@ -237,6 +338,7 @@ def quantize_dynamic_scaled_fp4fp8[
         Int32(num_cols),
         Int32(num_cols_padded),
         tensor_sf,
+        rope_freqs,
         block_dim=block_dim,
         grid_dim=grid_dim,
         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -245,6 +347,9 @@ def quantize_dynamic_scaled_fp4fp8[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
+)
+@__name(
+    t"quantize_dynamic_scaled_fp4fp8_{out_dtype}_{scales_dtype}_{in_dtype}_sf{SF_VECTOR_SIZE}{"_gated" if gated else ""}{"_rope" if rope_dim > 0 else ""}",
 )
 def quantize_dynamic_scaled_fp4fp8_kernel[
     out_dtype: DType,
@@ -257,6 +362,14 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     SF_VECTOR_SIZE: Int = 16,
     ELEMENTS_PER_THREAD: Int = 8,
     num_max_threads: Int = 512,
+    gated: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
+    rope_dim: Int = 0,
+    rope_head_dim: Int = 0,
+    rope_inverse: Bool = False,
+    rope_layout: TensorLayout = RowMajorLayout[
+        *Coord[Int64, Int64].element_types
+    ],
 ](
     output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
     scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
@@ -264,9 +377,10 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     num_cols: Int32,
     num_cols_padded: Int32,
     tensor_sf: Float32,
+    rope_freqs: OptionalReg[
+        TileTensor[.float32, rope_layout, ImmUnsafeAnyOrigin]
+    ] = None,
 ):
-    var _num_cols = Int(num_cols)
-    var _num_cols_padded = Int(num_cols_padded)
     comptime assert SF_VECTOR_SIZE in (16, 32) and ELEMENTS_PER_THREAD == 8, (
         "Currently only supports NVFP4 (SF_VECTOR_SIZE = 16) and MXFP8"
         " (SF_VECTOR_SIZE = 32) with 8 elements per thread"
@@ -277,128 +391,175 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
         2,
         4,
     ), "NUM_THREADS_PER_SF must be 2 or 4"
-    comptime OUTPUT_WIDTH = 4 if out_dtype == DType.uint8 else 8
+    comptime OUTPUT_WIDTH = 4 if out_dtype == .uint8 else 8
 
     comptime assert (
         input_layout.static_shape[1] % ELEMENTS_PER_THREAD == 0
     ), "num_cols must be a multiple of ELEMENTS_PER_THREAD (8 for NVFP4/MXFP8)"
+    comptime if rope_dim > 0:
+        comptime assert not gated, "the gated and RoPE modes are exclusive"
+        # A thread's elements then lie all inside or all outside a head's
+        # rotated columns.
+        comptime assert (
+            rope_dim % ELEMENTS_PER_THREAD == 0
+            and rope_head_dim % ELEMENTS_PER_THREAD == 0
+            and rope_dim <= rope_head_dim
+            and input_layout.static_shape[1] % rope_head_dim == 0
+        ), "RoPE columns must split into whole heads of whole thread chunks"
 
-    var num_rows = Int(input.dim[0]())
-    var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
-    var num_sf_cols = align_up(_num_cols_padded, SF_VECTOR_SIZE * SF_ATOM_K)
+    # Unsigned 32-bit indices: with signed 64-bit Int, every loop bound,
+    # division and scale-offset term costs a multi-instruction sequence.
+    var num_rows = input.dim[0]().cast[DType.uint32]()
+    var num_rows_padded = align_up(num_rows, UInt32(SF_MN_GROUP_SIZE))
+    var num_sf_cols = align_up(
+        num_cols_padded.cast[DType.uint32](), UInt32(SF_VECTOR_SIZE * SF_ATOM_K)
+    )
 
-    var num_col_threads = _num_cols // ELEMENTS_PER_THREAD
-    var num_padded_col_threads = _num_cols_padded // ELEMENTS_PER_THREAD
-    var num_sf_threads = num_sf_cols // ELEMENTS_PER_THREAD
+    var num_col_threads = num_cols.cast[DType.uint32]() // UInt32(
+        ELEMENTS_PER_THREAD
+    )
+    var num_padded_col_threads = num_cols_padded.cast[DType.uint32]() // UInt32(
+        ELEMENTS_PER_THREAD
+    )
+    var num_sf_threads = num_sf_cols // UInt32(ELEMENTS_PER_THREAD)
 
-    with PDL():
-        for global_row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
-            var is_padded_row = global_row_idx >= num_rows
+    # Releasing at entry lets the block-scaled GEMM that consumes this output
+    # stream its weights while the quantize runs. A quantize that follows
+    # another one directly gets packed onto fewer SMs this way, but models
+    # place a GEMM after each quantize.
+    with PDL[overlap_at_beginning=True]():
+        var row = UInt32(block_idx.x)
+        while row < num_rows_padded:
+            # A block keeps one row's loads in flight, too few to hide DRAM
+            # latency at large M, so it pulls its next row into L2.
+            var pf_row = row + UInt32(grid_dim.x)
+            if thread_idx.x == 0 and block_idx.y == 0 and pf_row < num_rows:
+                cp_async_bulk_prefetch(
+                    input.ptr.unsafe_offset(
+                        Int(pf_row) * Int(input_layout.static_shape[1])
+                    ),
+                    Int32(input_layout.static_shape[1] * size_of[in_dtype]()),
+                )
+            var is_padded_row = row >= num_rows
+            var col_thread = UInt32(block_idx.y * block_dim.x + thread_idx.x)
+            while col_thread < num_sf_threads:
+                var col = col_thread * UInt32(ELEMENTS_PER_THREAD)
+                var owns_scale = col % UInt32(SF_VECTOR_SIZE) == 0
+                var sf_offset = scales.layout[linear_idx_type=.uint32](
+                    Coord(
+                        row // UInt32(SF_MN_GROUP_SIZE),
+                        col // UInt32(SF_VECTOR_SIZE * SF_ATOM_K),
+                        row % UInt32(SF_ATOM_M[0]),
+                        row % UInt32(SF_MN_GROUP_SIZE) // UInt32(SF_ATOM_M[0]),
+                        col // UInt32(SF_VECTOR_SIZE) % UInt32(SF_ATOM_K),
+                    )
+                )
 
-            for col_idx in range(thread_idx.x, num_sf_threads, block_dim.x):
-                var global_col_idx = col_idx * ELEMENTS_PER_THREAD
-
-                if is_padded_row:
-                    # This row is entirely padding, so zero out scale factors.
-                    # Note: Padding rows do NOT exist in the output tensor (which is sized [num_rows, K]),
-                    # they only exist in the scale factor tensor. Tensor cores expects these scale factors to be 0.
-                    # there will be accuracy issues if we don't zero out the scale factors for padding rows.
-                    if global_col_idx % SF_VECTOR_SIZE == 0:
-                        set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                            scales,
-                            global_row_idx,
-                            global_col_idx,
-                            Scalar[scales_dtype](0.0),
-                        )
-
-                else:
-                    # this is only needed if we do padding in the output tensor N dimension
+                if is_padded_row or col_thread >= num_col_threads:
+                    # Tensor cores read the scales of padding rows and
+                    # columns, so they must be 0. Padding rows only exist in
+                    # the scales tensor.
                     if (
-                        col_idx >= num_col_threads
-                        and col_idx < num_padded_col_threads
+                        not is_padded_row
+                        and col_thread < num_padded_col_threads
                     ):
-                        output.store[width=OUTPUT_WIDTH](
-                            Coord(Int(global_row_idx), col_idx * OUTPUT_WIDTH),
+                        output.store(
+                            (Int(row), Int(col_thread * UInt32(OUTPUT_WIDTH))),
                             SIMD[out_dtype, OUTPUT_WIDTH](0),
                         )
-
-                    if col_idx >= num_col_threads:
-                        if global_col_idx % SF_VECTOR_SIZE == 0:
-                            set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                                scales,
-                                global_row_idx,
-                                global_col_idx,
-                                Scalar[scales_dtype](0.0),
-                            )
-
-                    # This row contains actual data
-                    else:
-                        var input_vector = input.load[
-                            width=ELEMENTS_PER_THREAD
-                        ](Coord(Int(global_row_idx), Int(global_col_idx)))
-
-                        # each thread finds maximum value in its local 8 elements
-                        var thread_max = abs(input_vector).reduce_max()
-                        # find the maximum value among all 16 elements (two threads for 16)
-                        thread_max = max(shuffle_xor(thread_max, 1), thread_max)
-
-                        comptime if NUM_THREADS_PER_SF == 4:
-                            thread_max = max(
-                                shuffle_xor(thread_max, 2), thread_max
-                            )
-
-                        var group_max = thread_max.cast[.float32]()
-
-                        # get the scale factor for these 16/32 elements by dividing it by the maximum value of fp4-e2m1/fp8-e4m3
-                        var scale_factor: Float32
-                        scale_factor = tensor_sf * (
-                            group_max * recip(Float32(6.0))
-                        ) if out_dtype == .uint8 else (
-                            group_max * recip(Float32(448.0))
+                    if owns_scale:
+                        scales.raw_store(sf_offset, Scalar[scales_dtype](0.0))
+                else:
+                    var input_vector: SIMD[in_dtype, ELEMENTS_PER_THREAD]
+                    comptime if gated:
+                        comptime up_offset = input_layout.static_shape[1] // 2
+                        input_vector = apply_swiglu_activation[activation](
+                            input.load[width=ELEMENTS_PER_THREAD](
+                                (Int(row), Int(col))
+                            ),
+                            input.load[width=ELEMENTS_PER_THREAD](
+                                (Int(row), up_offset + Int(col))
+                            ),
                         )
+                    else:
+                        input_vector = input.load[width=ELEMENTS_PER_THREAD](
+                            (Int(row), Int(col))
+                        )
+                        comptime if rope_dim > 0:
+                            comptime rope_start = UInt32(
+                                rope_head_dim - rope_dim
+                            )
+                            var head_col = col % UInt32(rope_head_dim)
+                            if head_col >= rope_start:
+                                input_vector = _rope_rotate[
+                                    inverse=rope_inverse
+                                ](
+                                    input_vector,
+                                    rope_freqs.value().load[
+                                        width=ELEMENTS_PER_THREAD
+                                    ]((Int(row), Int(head_col - rope_start))),
+                                )
 
+                    # each thread finds maximum value in its local 8 elements
+                    var thread_max = abs(input_vector).reduce_max()
+                    # find the maximum value among all 16 elements (two threads for 16)
+                    thread_max = max(shuffle_xor(thread_max, 1), thread_max)
+
+                    comptime if NUM_THREADS_PER_SF == 4:
+                        thread_max = max(shuffle_xor(thread_max, 2), thread_max)
+
+                    var group_max = thread_max.cast[.float32]()
+
+                    var fp8_scale_factor: Scalar[scales_dtype]
+                    var output_scale = Float32(0.0)
+                    var block_is_dead = False
+                    comptime if out_dtype == .uint8:
+                        # get the scale factor for these 16 elements by dividing it by the maximum value of fp4-e2m1
                         # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know that scale_factor is always positive, so we can use E4M3 instead of UE4M3.
-                        var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+                        fp8_scale_factor = (
+                            tensor_sf * (group_max * recip(Float32(6.0)))
+                        ).cast[scales_dtype]()
 
                         # find the quantization scale factor for these 16 elements (scale_factor = scale_factor / tensor_sf)
                         # we divide input by this scale factor which is same as multiplying by the reciprocal of the scale factor
-                        var output_scale = Float32(0.0)
                         if group_max != 0:
                             output_scale = recip(
                                 fp8_scale_factor.cast[.float32]()
                                 * recip(tensor_sf)
-                            ) if out_dtype == .uint8 else (
-                                recip(fp8_scale_factor.cast[.float32]())
                             )
-
-                        # write back the scale factor
-                        if global_col_idx % SF_VECTOR_SIZE == 0:
-                            set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                                scales,
-                                global_row_idx,
-                                global_col_idx,
-                                fp8_scale_factor,
-                            )
-
-                        var input_f32 = (
-                            input_vector.cast[.float32]() * output_scale
+                    else:
+                        fp8_scale_factor, output_scale, block_is_dead = (
+                            compute_mxfp8_block_scale[scales_dtype](group_max)
                         )
 
-                        var output_vector: SIMD[out_dtype, OUTPUT_WIDTH]
+                    if owns_scale:
+                        scales.raw_store(sf_offset, fp8_scale_factor)
 
-                        comptime if out_dtype == .uint8:
-                            output_vector = bitcast[out_dtype, OUTPUT_WIDTH](
-                                cast_fp32_to_fp4e2m1(input_f32)
-                            )
-                        else:
-                            output_vector = rebind[
-                                SIMD[out_dtype, OUTPUT_WIDTH]
-                            ](input_f32.cast[out_dtype]())
+                    var input_f32 = input_vector.cast[.float32]() * output_scale
 
-                        output.store[width=OUTPUT_WIDTH](
-                            Coord(Int(global_row_idx), col_idx * OUTPUT_WIDTH),
-                            output_vector,
+                    var output_vector: SIMD[out_dtype, OUTPUT_WIDTH]
+
+                    comptime if out_dtype == .uint8:
+                        output_vector = bitcast[out_dtype, OUTPUT_WIDTH](
+                            cast_fp32_to_fp4e2m1(input_f32)
                         )
+                    else:
+                        output_vector = rebind[SIMD[out_dtype, OUTPUT_WIDTH]](
+                            input_f32.cast[out_dtype]()
+                        )
+
+                    # A dead MXFP8 block's multiplier is 0; storing zeros
+                    # avoids `inf * 0.0 = NaN`.
+                    if block_is_dead:
+                        output_vector = SIMD[out_dtype, OUTPUT_WIDTH](0)
+
+                    output.store(
+                        (Int(row), Int(col_thread * UInt32(OUTPUT_WIDTH))),
+                        output_vector,
+                    )
+
+                col_thread += UInt32(grid_dim.y * block_dim.x)
+            row += UInt32(grid_dim.x)
 
 
 @inline(.always)
@@ -518,9 +679,7 @@ def block_scales_interleave_fp4_kernel[
         for col_idx in range(thread_idx.x, num_col_padded, block_dim.x):
             var scale_factor = Scalar[scales_dtype](0.0)
             if row_idx < num_rows and col_idx < num_cols:
-                scale_factor = rebind[Scalar[scales_dtype]](
-                    input_scales[Int(row_idx), Int(col_idx)]
-                )
+                scale_factor = input_scales[Int(row_idx), Int(col_idx)]
 
             set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                 output_scales,
@@ -542,7 +701,6 @@ def naive_block_scaled_matmul[
     SF_VECTOR_SIZE: Int,
     accum_type: DType = .float32,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     BLOCK_DIM: Int = 16,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -574,8 +732,6 @@ def naive_block_scaled_matmul[
             `DType.float32`).
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
-        elementwise_lambda_fn: Optional epilogue lambda applied to the
-            matmul result (defaults to `None`).
         BLOCK_DIM: Thread block tile dimension in rows and columns
             (defaults to 16).
     Args:
@@ -701,7 +857,6 @@ def naive_block_scaled_matmul[
         scaling_kind=scaling_kind,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
     ctx.enqueue_function[kernel](
@@ -732,7 +887,6 @@ def naive_block_scaled_matmul_kernel[
     scaling_kind: UMMAKind,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
@@ -745,8 +899,7 @@ def naive_block_scaled_matmul_kernel[
 
     Both A and B must be in K-major format with 5D TCGEN scale-factor
     layouts. Each thread accumulates one output element by iterating over
-    K, applying per-block scale factors, and optionally invoking an
-    elementwise epilogue lambda.
+    K and applying per-block scale factors.
 
     Parameters:
         c_type: Element type of the output matrix `c`.
@@ -770,8 +923,6 @@ def naive_block_scaled_matmul_kernel[
             factor.
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
-        elementwise_lambda_fn: Optional epilogue lambda applied to the
-            matmul result (defaults to `None`).
     Args:
         c: Output matrix of shape `[M, N]`.
         a: LHS input matrix of shape `[M, K]` for FP8 or `[M, K//2]`
@@ -833,12 +984,8 @@ def naive_block_scaled_matmul_kernel[
                 accum += a_val * b_val * a_scale_val * b_scale_val
         else:
             # MXFP8: one float8 value per byte.
-            var a_val = rebind[Scalar[a_type]](a[row_idx, k // K_STEPS]).cast[
-                accum_type
-            ]()
-            var b_val = rebind[Scalar[b_type]](b[col_idx, k // K_STEPS]).cast[
-                accum_type
-            ]()
+            var a_val = a[row_idx, k // K_STEPS].cast[accum_type]()
+            var b_val = b[col_idx, k // K_STEPS].cast[accum_type]()
             var a_scale_val = abs(
                 rebind[Scalar[accum_type]](a_scale.cast[accum_type]())
             )
@@ -849,17 +996,16 @@ def naive_block_scaled_matmul_kernel[
 
     accum *= alpha.cast[accum_type]()
 
-    comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
-        elementwise_lambda[c_type, 1]((row_idx, col_idx), accum.cast[c_type]())
-    else:
-        c[Coord(row_idx, col_idx)] = accum.cast[c_type]()
+    c[row_idx, col_idx] = accum.cast[c_type]()
 
 
 @__llvm_arg_metadata(input_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(output_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
-@__name("quantize_dynamic_scaled_async_fp4_kernel")
-def quantize_dynamic_scaled_async_fp4_kernel[
+@__name(
+    t"quantize_dynamic_scaled_async_kernel_{output_dtype}_sf{SF_VECTOR_SIZE}"
+)
+def quantize_dynamic_scaled_async_kernel[
     input_dtype: DType,
     input_tile_shape: Coord,
     input_desc_shape: Coord,
@@ -886,18 +1032,20 @@ def quantize_dynamic_scaled_async_fp4_kernel[
     ],
     tensor_sf: Float32,  # tensor-wise scale factor
 ):
-    """GPU kernel that quantizes BF16 tiles to NVFP4 using TMA async copies and warp-specialized PDL.
+    """GPU kernel that quantizes BF16 tiles to NVFP4 or MXFP8 using TMA async copies and warp-specialized PDL.
 
-    One warpgroup issues TMA loads while another computes per-group scale
-    factors and packs FP4 elements, then stores results back via TMA
-    async stores.
+    One warp issues TMA loads while a warpgroup computes per-group scale
+    factors and quantizes, one row per thread, then stores results back via
+    TMA async stores. A CTA covers 128 rows and one scale atom's
+    `SF_ATOM_K` groups, loaded as `NUM_PIPELINES_STAGES` 64-column stages.
 
     Parameters:
         input_dtype: Element type of the input activation tensor.
-        input_tile_shape: Per-dimension shape of the input TMA tile.
+        input_tile_shape: Per-dimension shape of one stage's input TMA tile.
         input_desc_shape: Per-dimension descriptor shape of the input TMA
             tile.
-        output_dtype: Element type of the quantized output tensor.
+        output_dtype: Element type of the quantized output tensor: `uint8`
+            for NVFP4 or `float8_e4m3fn` for MXFP8.
         output_tile_shape: Per-dimension shape of the output TMA tile.
         output_desc_shape: Per-dimension descriptor shape of the output
             TMA tile.
@@ -909,17 +1057,20 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         output_swizzle_mode: `TensorMapSwizzle` mode for output TMA stores.
         scales_swizzle_mode: `TensorMapSwizzle` mode for scales TMA stores.
         SF_VECTOR_SIZE: Number of elements covered by each block scale
-            factor.
-        NUM_PIPELINES_STAGES: Number of pipeline stages for TMA
-            double-buffered async copies.
+            factor: 16 for NVFP4 or 32 for MXFP8.
+        NUM_PIPELINES_STAGES: Number of 64-column input stages a CTA
+            loads: 1 for NVFP4 or 2 for MXFP8.
     Args:
         input_tma_op: TMA tile descriptor for async input loads.
         output_tma_op: TMA tile descriptor for async output stores.
         scales_tma_op: TMA tile descriptor for async scale-factor stores.
-        tensor_sf: Tensor-wise scale factor applied to the quantization.
+        tensor_sf: Tensor-wise scale factor applied to the NVFP4
+            quantization; unused for MXFP8.
     """
+    comptime is_mxfp8 = output_dtype == .float8_e4m3fn
+
     var smem_storage = rebind[
-        UnsafePointer[Scalar[input_dtype], MutAnyOrigin, address_space=.SHARED]
+        MutPointer[Scalar[input_dtype], MutAnyOrigin, address_space=.SHARED]
     ](
         external_memory[
             Scalar[input_dtype],
@@ -937,32 +1088,48 @@ def quantize_dynamic_scaled_async_fp4_kernel[
 
     comptime SF_K_GROUP_SIZE: Int = SF_VECTOR_SIZE * Int(SF_ATOM_K)
     comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
+    comptime GROUPS_PER_STAGE = STAGE_GROUP_SIZE // SF_VECTOR_SIZE
+    # Output elements one 16-byte smem store holds.
+    comptime OUT_VEC = 16 // size_of[output_dtype]()
+    # Output elements one stage yields per row: packed FP4 halves them.
+    comptime STAGE_OUT_ELEMS = STAGE_GROUP_SIZE // (1 if is_mxfp8 else 2)
+    comptime OUT_ROW_ELEMS = STAGE_OUT_ELEMS * NUM_PIPELINES_STAGES
 
     comptime assert (
         STAGE_GROUP_SIZE == 64
-        and NUM_PIPELINES_STAGES == 1
-        and SF_VECTOR_SIZE == Int(NVFP4_SF_VECTOR_SIZE)
-    ), (
-        "STAGE_GROUP_SIZE must be 64 and NUM_PIPELINES_STAGES must be 1 and"
-        " SF_VECTOR_SIZE must be 16"
-    )
+    ), "a stage must be 64 input columns, the 128-byte swizzle span of bfloat16"
     comptime assert (
-        scales_dtype == NVFP4_SF_DTYPE
-    ), "scales_dtype must be float8_e4m3fn"
+        is_mxfp8
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        and scales_dtype == MXFP8_SF_DTYPE
+    ) or (
+        output_dtype == .uint8
+        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        and scales_dtype == NVFP4_SF_DTYPE
+    ), (
+        "expected NVFP4 (uint8 output, 16-wide float8_e4m3fn scales) or MXFP8"
+        " (float8_e4m3fn output, 32-wide float8_e8m0fnu scales)"
+    )
 
     var input_smem_ptr = smem_storage
-    var output_smem_ptr = (smem_storage + input_smem_tile_size).bitcast[
-        Scalar[output_dtype]
-    ]()
-    var scales_smem_ptr = (output_smem_ptr + output_smem_tile_size).bitcast[
-        Scalar[scales_dtype]
-    ]()
-    var mbar_ptr = scales_smem_ptr + scales_smem_tile_size
+    var output_smem_ptr = smem_storage.unsafe_offset(
+        input_smem_tile_size
+    ).unsafe_bitcast[Scalar[output_dtype]]()
+    var scales_smem_ptr = (
+        output_smem_ptr.unsafe_offset(output_smem_tile_size)
+    ).unsafe_bitcast[Scalar[scales_dtype]]()
+    var mbar_ptr = scales_smem_ptr.unsafe_offset(scales_smem_tile_size)
 
     var output_smem = TileTensor(output_smem_ptr, row_major(output_tile_shape))
     var scales_smem = TileTensor(scales_smem_ptr, row_major(scales_tile_shape))
+    var output_smem_flat = output_smem.reshape(
+        row_major[output_smem_tile_size]()
+    )
+    var scales_smem_flat = scales_smem.reshape(
+        row_major[scales_smem_tile_size]()
+    )
 
-    var tma_mbar = mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
 
     var local_row_idx = thread_idx.x
 
@@ -1013,12 +1180,14 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                     row_major(input_tile_shape),
                 )
 
-                tma_mbar[iter_idx].wait(tma_phase[iter_idx])
-                var quantized_elements = SIMD[.uint32, 8]()
+                var smem_tile_flat = smem_tile.reshape(
+                    row_major[input_stage_tile_size]()
+                )
 
-                comptime for group_idx in range(
-                    STAGE_GROUP_SIZE // SF_VECTOR_SIZE
-                ):
+                tma_mbar[iter_idx].wait(tma_phase[iter_idx])
+                var quantized_elements = SIMD[output_dtype, STAGE_OUT_ELEMS]()
+
+                comptime for group_idx in range(GROUPS_PER_STAGE):
                     var group_elements = SIMD[input_dtype, SF_VECTOR_SIZE]()
 
                     comptime for col_idx in range(SF_VECTOR_SIZE // 8):
@@ -1032,10 +1201,10 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                             input_dtype, input_swizzle_mode
                         ]()
                         var swizzle_idx = input_swizzle(swizzle_offset)
-                        var temp = smem_tile.ptr.load[
+                        var temp = smem_tile_flat.load[
                             width=8,
                             alignment=align_of[SIMD[input_dtype, 8]](),
-                        ](swizzle_idx)
+                        ]((swizzle_idx,))
 
                         group_elements = group_elements.insert[
                             offset=col_idx * 8
@@ -1045,57 +1214,79 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                         abs(group_elements).reduce_max().cast[.float32]()
                     )
 
-                    var scale_factor = (
-                        tensor_sf * group_max * recip(Float32(6.0))
-                    )
-                    var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+                    var fp8_scale_factor: Scalar[scales_dtype]
+                    var output_scale = Float32(0.0)
+                    comptime if is_mxfp8:
+                        var block_is_dead: Bool
+                        fp8_scale_factor, output_scale, block_is_dead = (
+                            compute_mxfp8_block_scale[scales_dtype](group_max)
+                        )
+                        # A dead block's multiplier is 0; zeroing avoids
+                        # storing `inf * 0.0 = NaN`.
+                        if block_is_dead:
+                            group_elements = type_of(group_elements)(0)
+                    else:
+                        fp8_scale_factor = (
+                            tensor_sf * group_max * recip(Float32(6.0))
+                        ).cast[scales_dtype]()
+                        if fp8_scale_factor.cast[.float32]() != 0:
+                            output_scale = recip(
+                                fp8_scale_factor.cast[.float32]()
+                                * recip(tensor_sf)
+                            )
 
                     scale_factors[
-                        iter_idx * NUM_PIPELINES_STAGES + group_idx
+                        iter_idx * GROUPS_PER_STAGE + group_idx
                     ] = fp8_scale_factor
 
-                    var output_scale = Float32(0.0)
-                    if fp8_scale_factor.cast[.float32]() != 0:
-                        output_scale = recip(
-                            fp8_scale_factor.cast[.float32]() * recip(tensor_sf)
-                        )
+                    var scaled = group_elements.cast[.float32]() * output_scale
+                    comptime if is_mxfp8:
+                        quantized_elements = quantized_elements.insert[
+                            offset=group_idx * SF_VECTOR_SIZE
+                        ](scaled.cast[output_dtype]())
+                    else:
+                        comptime for slice_idx in range(SF_VECTOR_SIZE // 8):
+                            quantized_elements = quantized_elements.insert[
+                                offset=(
+                                    group_idx * SF_VECTOR_SIZE + slice_idx * 8
+                                )
+                                // 2
+                            ](
+                                bitcast[output_dtype, 4](
+                                    cast_fp32_to_fp4e2m1(
+                                        scaled.slice[8, offset=slice_idx * 8]()
+                                    )
+                                )
+                            )
 
-                    comptime for slice_idx in range(2):
-                        var slice_elements = group_elements.slice[
-                            8, offset=slice_idx * 8
-                        ]()
-                        quantized_elements[
-                            group_idx * 2 + slice_idx
-                        ] = cast_fp32_to_fp4e2m1(
-                            slice_elements.cast[.float32]() * output_scale
-                        )
-
-                comptime for idx in range(2):
-                    var slice_elements = quantized_elements.slice[
-                        4, offset=idx * 4
-                    ]()
+                comptime for idx in range(STAGE_OUT_ELEMS // OUT_VEC):
                     comptime output_swizzle = make_swizzle[
                         output_dtype, output_swizzle_mode
                     ]()
                     var swizzle_offset = (
-                        local_row_idx * ufloordiv(STAGE_GROUP_SIZE, 2)
-                        + idx * SF_VECTOR_SIZE
+                        local_row_idx * OUT_ROW_ELEMS
+                        + iter_idx * STAGE_OUT_ELEMS
+                        + idx * OUT_VEC
                     )
                     var output_swizzle_idx = output_swizzle(swizzle_offset)
-                    output_smem.ptr.store[
-                        alignment=align_of[SIMD[output_dtype, SF_VECTOR_SIZE]]()
+                    output_smem_flat.store[
+                        alignment=align_of[SIMD[output_dtype, OUT_VEC]]()
                     ](
-                        output_swizzle_idx,
-                        bitcast[output_dtype, SF_VECTOR_SIZE](slice_elements),
+                        (output_swizzle_idx,),
+                        quantized_elements.slice[
+                            OUT_VEC, offset=idx * OUT_VEC
+                        ](),
                     )
 
-                scales_smem.ptr.store[
-                    alignment=align_of[SIMD[scales_dtype, SF_ATOM_K]]()
-                ](
+            scales_smem_flat.store[
+                alignment=align_of[SIMD[scales_dtype, SF_ATOM_K]]()
+            ](
+                (
                     (local_row_idx % 32) * 16
                     + (local_row_idx // 32) * SF_ATOM_K,
-                    scale_factors,
-                )
+                ),
+                scale_factors,
+            )
 
             named_barrier[128](1)
 
@@ -1115,7 +1306,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                 output_tma_op.async_store(
                     output_smem,
                     StaticTuple[UInt32, 2](
-                        UInt32(ufloordiv(block_idx.y * SF_K_GROUP_SIZE, 2)),
+                        UInt32(block_idx.y * OUT_ROW_ELEMS),
                         UInt32(block_idx.x) * UInt32(SF_MN_GROUP_SIZE),
                     ),
                 )
@@ -1143,69 +1334,85 @@ def quantize_dynamic_scaled_fp4_async[
     ],
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
-    """Launches the TMA-based NVFP4 quantization kernel on SM100 hardware.
+    """Launches the TMA-based NVFP4 or MXFP8 quantization kernel on SM100 hardware.
 
     Sets up TMA tile descriptors for input, output, and scales, then
-    enqueues the `quantize_dynamic_scaled_async_fp4_kernel` with
+    enqueues the `quantize_dynamic_scaled_async_kernel` with
     warp-specialized PDL.
 
     Parameters:
         input_dtype: Element type of the input activation tensor. Must
             be `bfloat16` (inferred).
-        output_dtype: Element type of the quantized output tensor. Must
-            be `uint8` for NVFP4 (inferred).
-        scales_dtype: Element type of the block scale-factor tensor.
-            Must be `float8_e4m3fn` for NVFP4 (inferred).
+        output_dtype: Element type of the quantized output tensor:
+            `uint8` for NVFP4 or `float8_e4m3fn` for MXFP8 (inferred).
+        scales_dtype: Element type of the block scale-factor tensor:
+            `float8_e4m3fn` for NVFP4 or `float8_e8m0fnu` for MXFP8
+            (inferred).
         SF_VECTOR_SIZE: Number of input elements covered by each block
-            scale factor. Must be 16 for NVFP4.
+            scale factor: 16 for NVFP4 or 32 for MXFP8.
     Args:
         ctx: Device context used to enqueue the kernel.
-        output_tensor_tile: Output tile for the quantized NVFP4 packed
-            `uint8` elements; the column count must be a multiple of
-            32 and half the input column count.
+        output_tensor_tile: Output tile for the quantized elements: packed
+            NVFP4 `uint8` with half the input columns, or MXFP8 with as
+            many columns as the input. Its column count must be a
+            multiple of 16 bytes.
         scales_tensor_tile: Output 5D scale-factor tile in the TCGEN
             interleaved layout.
         input_tensor_tile: Input `bfloat16` activation tile.
-        tensor_sf: Tensor-wise scale factor applied to the
-            quantization (defaults to 1.0).
+        tensor_sf: Tensor-wise scale factor applied to the NVFP4
+            quantization (defaults to 1.0); unused for MXFP8.
     """
     comptime assert input_dtype == .bfloat16, "input_dtype must be bfloat16"
 
+    comptime is_mxfp8 = output_dtype == .float8_e4m3fn
     comptime assert (
         output_dtype == .uint8
         and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
         and scales_dtype == NVFP4_SF_DTYPE
+    ) or (
+        is_mxfp8
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        and scales_dtype == MXFP8_SF_DTYPE
     ), (
-        "output dtype should be uint8 (fp4-e2m1fnX2) for NVFP4 and scales_dtype"
-        " must be float8_e4m3fn"
+        "expected NVFP4 (uint8 output, float8_e4m3fn scales) or MXFP8"
+        " (float8_e4m3fn output, float8_e8m0fnu scales)"
     )
 
     comptime input_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
-    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_32B  # 64 elements / 2 elements per uint8 = 32 elements per 32B
+    # One row of the output tile: 128 MXFP8 bytes, or 64 packed FP4 values
+    # in 32 bytes.
+    comptime output_swizzle_mode = (
+        TensorMapSwizzle.SWIZZLE_128B if is_mxfp8 else TensorMapSwizzle.SWIZZLE_32B
+    )
     comptime scales_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE  # 16 elements / 1 elements per float8_e4m3fn = 16 elements per 16B
 
     var M = Int(input_tensor_tile.dim[0]())
     var N = Int(input_tensor_tile.dim[1]())
 
     comptime output_N = output_tensor_tile.LayoutType.static_shape[1]
-    comptime assert (
-        output_N % 32 == 0
-    ), "output_tensor N must be a multiple of 32"
     comptime input_N = input_tensor_tile.LayoutType.static_shape[1]
+    comptime out_per_in = 1 if is_mxfp8 else 2
     comptime assert (
-        input_N // output_N == 2
-    ), "input_tensor N must be a multiple of 2 * output_tensor N"
+        output_N * size_of[output_dtype]() % 16 == 0
+    ), "output_tensor rows must be a multiple of 16 bytes"
+    comptime assert (
+        input_N == output_N * out_per_in
+    ), "input_tensor N must be output_tensor N times the elements a byte packs"
 
     comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
-    comptime NUM_PIPELINES_STAGES = 1
+    # A stage is 64 bfloat16 columns, the 128-byte swizzle span.
+    comptime STAGE_GROUP_SIZE = 64
+    comptime NUM_PIPELINES_STAGES = SF_K_GROUP_SIZE // STAGE_GROUP_SIZE
 
-    comptime input_tma_tile_shape = coord[128, SF_K_GROUP_SIZE]
+    comptime input_tma_tile_shape = coord[SF_MN_GROUP_SIZE, STAGE_GROUP_SIZE]
     var input_tma_op = create_tensor_tile[
         input_tma_tile_shape,
         swizzle_mode=input_swizzle_mode,
     ](ctx, input_tensor_tile)
 
-    comptime output_tma_tile_shape = coord[128, 32]
+    comptime output_tma_tile_shape = coord[
+        SF_MN_GROUP_SIZE, SF_K_GROUP_SIZE // out_per_in
+    ]
     var output_tma_op = create_tensor_tile[
         output_tma_tile_shape,
         swizzle_mode=output_swizzle_mode,
@@ -1220,14 +1427,13 @@ def quantize_dynamic_scaled_fp4_async[
 
     # The TMA box covers one (M1, K) atom, so the two innermost scale dims
     # are folded into a single contiguous extent for a rank-4 descriptor.
-    var scales_4d_tensor = TileTensor(
-        scales_tensor_tile.ptr,
+    var scales_4d_tensor = scales_tensor_tile.reshape(
         row_major(
             Int(scales_tensor_tile.dim[0]()),
             Int(scales_tensor_tile.dim[1]()),
             Idx[SF_ATOM_M[0]],
             Idx[SF_ATOM_M[1] * SF_ATOM_K],
-        ),
+        )
     )
 
     comptime scales_tma_tile_shape = coord[
@@ -1253,7 +1459,7 @@ def quantize_dynamic_scaled_fp4_async[
         SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K * size_of[scales_dtype]()
     )
 
-    comptime kernel = quantize_dynamic_scaled_async_fp4_kernel[
+    comptime kernel = quantize_dynamic_scaled_async_kernel[
         type_of(input_tma_op).dtype,
         type_of(input_tma_op).tile_shape,
         type_of(input_tma_op).desc_shape,
@@ -1289,6 +1495,99 @@ def quantize_dynamic_scaled_fp4_async[
     )
 
 
+@inline(.always)
+def _scale_tile_expert[
+    num_experts: Int
+](
+    row_offsets: ImmTileTensor[.uint32, ...],
+    scales_offsets: ImmTileTensor[.uint32, ...],
+    scale_tile_idx: Int,
+) -> Int:
+    """Returns the last expert whose scale tiles start at or before
+    `scale_tile_idx`.
+
+    The tiles of expert `e` start at
+    `row_offsets[e] // SF_MN_GROUP_SIZE + scales_offsets[e]`, and these
+    starts never decrease. A padding tile, between two experts' tiles or
+    past the last expert's, has no owner: this returns the expert before
+    it. Callers must check that the tile falls inside the returned expert's
+    `ceildiv(row_offsets[e + 1] - row_offsets[e], SF_MN_GROUP_SIZE)` tiles
+    before using it.
+
+    One warp does the search in two rounds and puts the result in shared
+    memory. Call this from all threads of the block, because it contains a
+    barrier.
+
+    Parameters:
+        num_experts: Number of experts in `scales_offsets`.
+
+    Args:
+        row_offsets: Row boundaries per expert, `[num_experts + 1]`.
+        scales_offsets: Per-expert offset into the scales tiles.
+        scale_tile_idx: The scale tile to find the expert of.
+
+    Returns:
+        The index of that expert.
+
+    Constraints:
+        `row_offsets` and `scales_offsets` must be rank 1, and
+        `ceildiv(num_experts, WARP_SIZE)` must not exceed `WARP_SIZE`.
+    """
+    comptime assert row_offsets.flat_rank == 1, "row_offsets must be rank 1"
+    comptime assert (
+        scales_offsets.flat_rank == 1
+    ), "scales_offsets must be rank 1"
+    comptime probe_stride = uceildiv(num_experts, WARP_SIZE)
+    # The second round gives one lane to each expert in a stride. A wider
+    # stride skips experts and returns the wrong one.
+    comptime assert probe_stride <= WARP_SIZE, (
+        "expert count exceeds what a two-round warp search covers; add a"
+        " round or widen the stride handling"
+    )
+    # Keep this slot in its own 16 bytes. No barrier separates its read from
+    # the next shared-memory write of the caller.
+    var search_smem = unsafe_stack_allocation[
+        1, Int32, alignment=16, address_space=.SHARED
+    ]()
+    if thread_idx.x < WARP_SIZE:
+        var lane = thread_idx.x
+        var target = scale_tile_idx
+
+        var coarse = lane * probe_stride
+        # Expert 0 always qualifies. This keeps the span at zero or more when
+        # the offsets do not start at zero.
+        var best = 0 if lane == 0 else -1
+        if coarse < num_experts:
+            if (
+                ufloordiv(
+                    Int(row_offsets.load[width=1]((coarse,))),
+                    SF_MN_GROUP_SIZE,
+                )
+                + Int(scales_offsets.load[width=1]((coarse,)))
+            ) <= target:
+                best = coarse
+        var span = Int(lane_group_max[WARP_SIZE](Int32(best)))
+
+        comptime if probe_stride > 1:
+            var fine = span + lane
+            var refined = span
+            if lane < probe_stride and fine < num_experts:
+                if (
+                    ufloordiv(
+                        Int(row_offsets.load[width=1]((fine,))),
+                        SF_MN_GROUP_SIZE,
+                    )
+                    + Int(scales_offsets.load[width=1]((fine,)))
+                ) <= target:
+                    refined = fine
+            span = Int(lane_group_max[WARP_SIZE](Int32(refined)))
+
+        if thread_idx.x == 0:
+            search_smem.unsafe_store(0, Int32(span))
+    barrier()
+    return Int(search_smem.unsafe_load(0))
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
@@ -1317,6 +1616,8 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         *Coord[Int64].element_types
     ],
     RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    row_indices_dtype: DType = .uint32,
+    row_index_divisor: Int = 1,
     num_threads: Int = 128,
     k_tiles_per_block: Int = 1,
 ](
@@ -1346,7 +1647,10 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     ],  # tensor-wise scale factor
     row_indices: OptionalReg[
         TileTensor[
-            .int32, row_indices_layout, ImmutAnyOrigin, Engine=RowIndicesEngine
+            row_indices_dtype,
+            row_indices_layout,
+            ImmutAnyOrigin,
+            Engine=RowIndicesEngine,
         ]
     ] = None,
 ):
@@ -1391,6 +1695,9 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_indices_layout: TileTensor layout of the optional source row
             indices tensor.
         RowIndicesEngine: Engine policy of the `row_indices` tensor.
+        row_indices_dtype: Integer element type of the `row_indices` tensor.
+        row_index_divisor: Divisor applied to each `row_indices` entry to get
+            the source row.
         num_threads: Number of threads per block in the launch grid
             (defaults to 128).
         k_tiles_per_block: Column tiles handled by one block. Batching them
@@ -1405,12 +1712,12 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_offsets: Contiguous row boundaries per expert of shape
             `[num_experts + 1]` as `uint32`, where range `i` spans
             rows `row_offsets[i]` through `row_offsets[i + 1]`.
-        row_indices: Optional source row indices of shape `[padded_rows]` as
-            `int32`. When present, permuted output row `i` reads input row
-            `row_indices[i]`, fusing the MoE expert permutation gather into
-            the quantize loads. The output layout and scale tiles are
-            unchanged; absent means the input is already in permuted row
-            order.
+        row_indices: Optional source row indices of shape `[padded_rows]`.
+            When present, permuted output row `i` reads input row
+            `row_indices[i] // row_index_divisor`, fusing the MoE expert
+            permutation gather into the quantize loads. The output layout and
+            scale tiles are unchanged; absent means the input is already in
+            permuted row order.
         scales_offsets: Per-expert offset into the scales tensor of
             shape `[num_experts]` as `uint32`.
         expert_ids: Expert ID for each active range of shape
@@ -1439,88 +1746,26 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
 
     var scale_tile_idx = block_idx.x
 
-    # Finds the expert id for the current block.
-    # row_offsets is of size num_experts + 1, scales_offsets is of size num_experts
-    # For a given expert_idx, it's corresponding scales tiles start at:
-    # row_offsets[expert_idx] // SF_MN_GROUP_SIZE + scales_offsets[expert_idx]
-    # and there will be ceildiv(row_offsets[expert_idx + 1] -
-    # row_offsets[expert_idx], SF_MN_GROUP_SIZE) scales tiles for this expert.
-    #
-    # The result is the same for every thread in the block, so one warp
-    # computes it and the rest read it from shared memory. The warp probes 32
-    # evenly spaced entries at once, then refines within the chosen span. Tile
-    # starts are non-decreasing, so the answer is the largest probed expert
-    # whose first tile is at or before this one.
-    comptime probe_stride = uceildiv(num_experts, WARP_SIZE)
-    # Refinement gives one lane to each entry of a probe stride. A stride
-    # wider than the warp leaves part of every span unsearched and returns a
-    # too-small expert, whose tile is then never written.
-    comptime assert probe_stride <= WARP_SIZE, (
-        "expert count exceeds what a two-round warp search covers; add a"
-        " round or widen the stride handling"
+    wait_on_dependent_grids()
+
+    var expert_idx = _scale_tile_expert[num_experts](
+        row_offsets, scales_offsets, scale_tile_idx
     )
-    # A separate allocation from the scale tiles below, and given its own
-    # alignment so the two cannot share a 16-byte region. The read of this
-    # slot is not barrier-separated from the scale-tile zero-fill, so an
-    # overlap would hand a late-arriving thread a zeroed expert index.
-    var search_smem = unsafe_stack_allocation[
-        1, Int32, alignment=16, address_space=.SHARED
-    ]()
-    if thread_idx.x < WARP_SIZE:
-        var lane = thread_idx.x
-        var target = Int(scale_tile_idx)
 
-        var coarse = lane * probe_stride
-        # Expert 0 always qualifies. Seeding lane 0 with it keeps the span
-        # non-negative for an offset table that does not start at zero; a
-        # negative span would index the offset arrays out of bounds.
-        var best = 0 if lane == 0 else -1
-        if coarse < num_experts:
-            if (
-                ufloordiv(
-                    Int(row_offsets.load[width=1](Coord(coarse))[0]),
-                    SF_MN_GROUP_SIZE,
-                )
-                + Int(scales_offsets.load[width=1](Coord(coarse))[0])
-            ) <= target:
-                best = coarse
-        var span = Int(lane_group_max[WARP_SIZE](Int32(best)))
-
-        comptime if probe_stride > 1:
-            var fine = span + lane
-            var refined = span
-            if lane < probe_stride and fine < num_experts:
-                if (
-                    ufloordiv(
-                        Int(row_offsets.load[width=1](Coord(fine))[0]),
-                        SF_MN_GROUP_SIZE,
-                    )
-                    + Int(scales_offsets.load[width=1](Coord(fine))[0])
-                ) <= target:
-                    refined = fine
-            span = Int(lane_group_max[WARP_SIZE](Int32(refined)))
-
-        if thread_idx.x == 0:
-            search_smem.store(0, Int32(span))
-    barrier()
-    var expert_idx = Int(search_smem.load(0))
-
-    var curr_expert_start = Int(row_offsets.load[width=1](Coord(expert_idx))[0])
-    var curr_expert_end = Int(
-        row_offsets.load[width=1](Coord(expert_idx + 1))[0]
-    )
+    var curr_expert_start = Int(row_offsets[expert_idx][0])
+    var curr_expert_end = Int(row_offsets[expert_idx + 1][0])
     var expert_tiles_start = ufloordiv(
         curr_expert_start, SF_MN_GROUP_SIZE
-    ) + Int(scales_offsets.load[width=1](Coord(expert_idx))[0])
+    ) + Int(scales_offsets[expert_idx][0])
     var expert_num_tiles = uceildiv(
         curr_expert_end - curr_expert_start, SF_MN_GROUP_SIZE
     )
-    # Padded tiles have no payload, so they exit above the PDL wait.
+    # Padded tiles have no payload, so they exit without releasing dependents.
     if scale_tile_idx >= expert_tiles_start + expert_num_tiles:
         return
 
-    var expert_id = expert_ids.load[width=1](Coord(expert_idx))[0]
-    var input_sf = sf_tensor.load[width=1](Coord(expert_id))[0]
+    var expert_id = expert_ids[expert_idx][0]
+    var input_sf = sf_tensor[expert_id][0]
 
     var token_start = (
         curr_expert_start
@@ -1538,164 +1783,166 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         address_space=.SHARED,
     ]()
 
-    with PDL():
-        comptime ELEMENTS_PER_THREAD = 8
-        comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
-        comptime OUTPUT_WIDTH = 4 if output_dtype == DType.uint8 else 8
-        comptime num_threads_per_row = SF_K_GROUP_SIZE // ELEMENTS_PER_THREAD
+    comptime ELEMENTS_PER_THREAD = 8
+    comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
+    comptime OUTPUT_WIDTH = 4 if output_dtype == .uint8 else 8
+    comptime num_threads_per_row = SF_K_GROUP_SIZE // ELEMENTS_PER_THREAD
 
-        # Threads span the block's column tiles as well as its rows. A row is
-        # num_threads_per_row threads wide, so a decode tile holding one routed
-        # row occupies eight threads of the 128 on its own.
-        comptime slots_per_iter = num_threads // num_threads_per_row
-        comptime rows_per_iter = slots_per_iter // k_tiles_per_block
-        comptime num_iters = SF_MN_GROUP_SIZE // rows_per_iter
-        # Both divisions truncate. A block covering a non-integral number of
-        # rows per pass leaves the remainder of every tile at its stale scale
-        # factor, with no runtime failure.
-        comptime assert (
-            slots_per_iter % k_tiles_per_block == 0
-            and rows_per_iter >= 1
-            and SF_MN_GROUP_SIZE % rows_per_iter == 0
-        ), (
-            "block threads, column tiles per block and the 128-row scale tile"
-            " must divide evenly, or rows are left unquantized"
-        )
+    # Threads span the block's column tiles as well as its rows. A row is
+    # num_threads_per_row threads wide, so a decode tile holding one routed
+    # row occupies eight threads of the 128 on its own.
+    comptime slots_per_iter = num_threads // num_threads_per_row
+    comptime rows_per_iter = slots_per_iter // k_tiles_per_block
+    comptime num_iters = SF_MN_GROUP_SIZE // rows_per_iter
+    # Both divisions truncate. A block covering a non-integral number of
+    # rows per pass leaves the remainder of every tile at its stale scale
+    # factor, with no runtime failure.
+    comptime assert (
+        slots_per_iter % k_tiles_per_block == 0
+        and rows_per_iter >= 1
+        and SF_MN_GROUP_SIZE % rows_per_iter == 0
+    ), (
+        "block threads, column tiles per block and the 128-row scale tile"
+        " must divide evenly, or rows are left unquantized"
+    )
 
-        # The shuffle masks below reach only bits within col_thread_idx, so a
-        # lane and its partner share a slot, and with it a column tile and a
-        # row. The reduction therefore stays inside one scale group.
-        var slot, col_thread_idx = udivmod(thread_idx.x, num_threads_per_row)
-        # This divisor order gives a warp one row and all its column tiles,
-        # so its global accesses cover one contiguous 512B span. The tiles sit
-        # a multiple of the bank count apart, so the scale store at the bottom
-        # of the loop serializes 4 ways, a few cycles against that load.
-        var row_in_iter, kt_local = udivmod(Int(slot), k_tiles_per_block)
+    # The shuffle masks below reach only bits within col_thread_idx, so a
+    # lane and its partner share a slot, and with it a column tile and a
+    # row. The reduction therefore stays inside one scale group.
+    var slot, col_thread_idx = udivmod(thread_idx.x, num_threads_per_row)
+    # This divisor order gives a warp one row and all its column tiles,
+    # so its global accesses cover one contiguous 512B span. The tiles sit
+    # a multiple of the bank count apart, so the scale store at the bottom
+    # of the loop serializes 4 ways, a few cycles against that load.
+    var row_in_iter, kt_local = udivmod(Int(slot), k_tiles_per_block)
 
-        var num_cols = input_tensor.dim(1)
-        var num_k_tiles = uceildiv(Int(num_cols), SF_K_GROUP_SIZE)
-        var k_idx = block_idx.y * k_tiles_per_block + kt_local
+    var num_cols = input_tensor.dim(1)
+    var num_k_tiles = uceildiv(Int(num_cols), SF_K_GROUP_SIZE)
+    var k_idx = block_idx.y * k_tiles_per_block + kt_local
 
-        var scales_smem = TileTensor(
-            smem_ptr.unsafe_offset(kt_local * scales_smem_tile_size),
-            row_major(scales_tile_shape),
-        )
-        var input_col = (
-            k_idx * SF_K_GROUP_SIZE + col_thread_idx * ELEMENTS_PER_THREAD
-        )
-        var output_col = (
-            ufloordiv(input_col, 2) if output_dtype == .uint8 else input_col
-        )
-        # A column tile beyond num_k_tiles starts at or after num_cols, so
-        # this single test also excludes tiles the input does not have. An
-        # invalid lane contributes a zero group max and skips its stores,
-        # leaving its scale slot at the zero written below.
-        var col_is_valid = Int(input_col) < Int(num_cols)
+    var scales_smem = TileTensor(
+        smem_ptr.unsafe_offset(kt_local * scales_smem_tile_size),
+        row_major(scales_tile_shape),
+    )
+    var scales_smem_flat = scales_smem.reshape(
+        row_major[Int(scales_tile_shape.product())]()
+    )
+    var input_col = (
+        k_idx * SF_K_GROUP_SIZE + col_thread_idx * ELEMENTS_PER_THREAD
+    )
+    var output_col = (
+        ufloordiv(input_col, 2) if output_dtype == .uint8 else input_col
+    )
+    # A column tile beyond num_k_tiles starts at or after num_cols, so
+    # this single test also excludes tiles the input does not have. An
+    # invalid lane contributes a zero group max and skips its stores,
+    # leaving its scale slot at the zero written below.
+    var col_is_valid = Int(input_col) < Int(num_cols)
 
-        # Padding rows must carry a zero scale factor, or the tensor cores
-        # read garbage from them. At decode nearly every row of a tile is
-        # padding, so the block clears every tile it owns in one contiguous
-        # pass over the whole region.
-        comptime assert (
-            scales_smem_tile_size * k_tiles_per_block
-        ) % num_threads == 0, (
-            "scale tile elements must divide evenly across the block, or the"
-            " tail of the region keeps stale scale factors"
-        )
-        comptime zeros_per_thread = (
-            scales_smem_tile_size * k_tiles_per_block
-        ) // num_threads
-        comptime assert (
-            zeros_per_thread & (zeros_per_thread - 1) == 0
-        ), "zero-fill store width must be a power of two"
-        smem_ptr.store(
-            thread_idx.x * zeros_per_thread,
-            SIMD[scales_dtype, zeros_per_thread](0),
-        )
-        barrier()
+    # Padding rows must carry a zero scale factor, or the tensor cores
+    # read garbage from them. At decode nearly every row of a tile is
+    # padding, so the block clears every tile it owns in one contiguous
+    # pass over the whole region.
+    comptime assert (
+        scales_smem_tile_size * k_tiles_per_block
+    ) % num_threads == 0, (
+        "scale tile elements must divide evenly across the block, or the"
+        " tail of the region keeps stale scale factors"
+    )
+    comptime zeros_per_thread = (
+        scales_smem_tile_size * k_tiles_per_block
+    ) // num_threads
+    comptime assert (
+        zeros_per_thread & (zeros_per_thread - 1) == 0
+    ), "zero-fill store width must be a power of two"
+    smem_ptr.unsafe_store(
+        thread_idx.x * zeros_per_thread,
+        SIMD[scales_dtype, zeros_per_thread](0),
+    )
+    barrier()
 
-        # num_tokens is uniform across the block, so the trip count is uniform
-        # and the shuffle reduction below keeps the full participation its
-        # member mask claims. At decode a tile holds one routed token and 127
-        # padding rows, so one iteration of num_iters runs.
-        var active_iters = min(num_iters, uceildiv(num_tokens, rows_per_iter))
-        for iter_idx in range(active_iters):
-            var local_row = iter_idx * rows_per_iter + row_in_iter
-            var is_valid = local_row < num_tokens and col_is_valid
+    # num_tokens is uniform across the block, so the trip count is uniform
+    # and the shuffle reduction below keeps the full participation its
+    # member mask claims. At decode a tile holds one routed token and 127
+    # padding rows, so one iteration of num_iters runs.
+    var active_iters = min(num_iters, uceildiv(num_tokens, rows_per_iter))
+    for iter_idx in range(active_iters):
+        var local_row = iter_idx * rows_per_iter + row_in_iter
+        var is_valid = local_row < num_tokens and col_is_valid
 
-            var input_vector = SIMD[input_dtype, ELEMENTS_PER_THREAD](0)
-            if is_valid:
-                var source_row = token_start + local_row
-                if case .Some(row_indices) = row_indices:
-                    source_row = Int(row_indices[source_row])
-                input_vector = input_tensor.load[width=ELEMENTS_PER_THREAD](
-                    (source_row, input_col)
-                )
+        var input_vector = SIMD[input_dtype, ELEMENTS_PER_THREAD](0)
+        if is_valid:
+            var source_row = token_start + local_row
+            if case .Some(row_indices) = row_indices:
+                source_row = Int(row_indices[source_row]) // row_index_divisor
+            input_vector = input_tensor.load[width=ELEMENTS_PER_THREAD](
+                (source_row, input_col)
+            )
 
-            var thread_max = abs(input_vector).reduce_max()
-            thread_max = max(shuffle_xor(thread_max, 1), thread_max)
-            comptime if NUM_THREADS_PER_SF == 4:
-                thread_max = max(shuffle_xor(thread_max, 2), thread_max)
-            var group_max = thread_max.cast[.float32]()
+        var thread_max = abs(input_vector).reduce_max()
+        thread_max = max(shuffle_xor(thread_max, 1), thread_max)
+        comptime if NUM_THREADS_PER_SF == 4:
+            thread_max = max(shuffle_xor(thread_max, 2), thread_max)
+        var group_max = thread_max.cast[.float32]()
 
-            var scale_factor: Float32
+        var scale_factor: Float32
+        comptime if output_dtype == .uint8:
+            scale_factor = input_sf * group_max * recip(Float32(6.0))
+        else:
+            scale_factor = group_max * recip(Float32(448.0))
+        var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+
+        var output_scale = Float32(0.0)
+        if group_max != 0:
             comptime if output_dtype == .uint8:
-                scale_factor = input_sf * group_max * recip(Float32(6.0))
+                output_scale = recip(
+                    fp8_scale_factor.cast[.float32]() * recip(input_sf)
+                )
             else:
-                scale_factor = group_max * recip(Float32(448.0))
-            var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+                output_scale = recip(fp8_scale_factor.cast[.float32]())
 
-            var output_scale = Float32(0.0)
-            if group_max != 0:
-                comptime if output_dtype == .uint8:
-                    output_scale = recip(
-                        fp8_scale_factor.cast[.float32]() * recip(input_sf)
-                    )
-                else:
-                    output_scale = recip(fp8_scale_factor.cast[.float32]())
-
-            if is_valid:
-                var global_row = token_start + local_row
-                var input_f32 = input_vector.cast[.float32]() * output_scale
-                var output_vector: SIMD[output_dtype, OUTPUT_WIDTH]
-                comptime if output_dtype == .uint8:
-                    output_vector = bitcast[output_dtype, OUTPUT_WIDTH](
-                        cast_fp32_to_fp4e2m1(input_f32)
-                    )
-                else:
-                    output_vector = rebind[SIMD[output_dtype, OUTPUT_WIDTH]](
-                        input_f32.cast[output_dtype]()
-                    )
-                output_tensor.store((global_row, output_col), output_vector)
-
-            if col_thread_idx % NUM_THREADS_PER_SF == 0:
-                var sf_group = col_thread_idx // NUM_THREADS_PER_SF
-                var smem_idx = (
-                    (local_row % 32) * 16
-                    + (local_row // 32) * SF_ATOM_K
-                    + sf_group
+        if is_valid:
+            var global_row = token_start + local_row
+            var input_f32 = input_vector.cast[.float32]() * output_scale
+            var output_vector: SIMD[output_dtype, OUTPUT_WIDTH]
+            comptime if output_dtype == .uint8:
+                output_vector = bitcast[output_dtype, OUTPUT_WIDTH](
+                    cast_fp32_to_fp4e2m1(input_f32)
                 )
-                scales_smem.ptr.store(smem_idx, fp8_scale_factor)
-
-        barrier()
-
-        # Every tile this block owns is in shared memory, so their stores go
-        # out as one group under a single wait.
-        if thread_idx.x == 0:
-            fence_async_view_proxy()
-            for kt in range(k_tiles_per_block):
-                var store_k_idx = block_idx.y * k_tiles_per_block + kt
-                if store_k_idx >= num_k_tiles:
-                    break
-                scales_tma_op.async_store_4d(
-                    TileTensor(
-                        smem_ptr.unsafe_offset(kt * scales_smem_tile_size),
-                        row_major(scales_tile_shape),
-                    ),
-                    (0, 0, store_k_idx, Int(scale_tile_idx)),
+            else:
+                output_vector = rebind[SIMD[output_dtype, OUTPUT_WIDTH]](
+                    input_f32.cast[output_dtype]()
                 )
-            scales_tma_op.commit_group()
-            scales_tma_op.wait_group[0]()
+            output_tensor.store((global_row, output_col), output_vector)
+
+        if col_thread_idx % NUM_THREADS_PER_SF == 0:
+            var sf_group = col_thread_idx // NUM_THREADS_PER_SF
+            var smem_idx = (
+                (local_row % 32) * 16 + (local_row // 32) * SF_ATOM_K + sf_group
+            )
+            scales_smem_flat.store((smem_idx,), fp8_scale_factor)
+
+    barrier()
+
+    # Every tile this block owns is in shared memory, so their stores go
+    # out as one group under a single wait.
+    if thread_idx.x == 0:
+        fence_async_view_proxy()
+        for kt in range(k_tiles_per_block):
+            var store_k_idx = block_idx.y * k_tiles_per_block + kt
+            if store_k_idx >= num_k_tiles:
+                break
+            scales_tma_op.async_store_4d(
+                TileTensor(
+                    smem_ptr.unsafe_offset(kt * scales_smem_tile_size),
+                    row_major(scales_tile_shape),
+                ),
+                (0, 0, store_k_idx, scale_tile_idx),
+            )
+        scales_tma_op.commit_group()
+        scales_tma_op.wait_group[0]()
+
+    launch_dependent_grids()
 
 
 def grouped_quantize_dynamic_scaled_fp4_async[
@@ -1714,6 +1961,8 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         *Coord[Int64].element_types
     ],
     RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    row_indices_dtype: DType = .uint32,
+    row_index_divisor: Int = 1,
 ](
     output_tensor: TileTensor[
         mut=True, output_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
@@ -1748,7 +1997,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     row_indices: OptionalReg[
         TileTensor[
             mut=False,
-            .int32,
+            row_indices_dtype,
             RowIndicesLayoutType,
             ImmutAnyOrigin,
             Engine=RowIndicesEngine,
@@ -1777,6 +2026,9 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         SfEngine: Engine policy of the `sf_tensor`.
         RowIndicesLayoutType: Layout of the optional `row_indices` tensor.
         RowIndicesEngine: Engine policy of the `row_indices` tensor.
+        row_indices_dtype: Integer element type of the `row_indices` tensor.
+        row_index_divisor: Divisor applied to each `row_indices` entry to get
+            the source row.
     Args:
         output_tensor: Output quantized tensor of packed FP4 `uint8`
             or `float8_e4m3fn` for MXFP8.
@@ -1793,11 +2045,17 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         sf_tensor: Per-expert tensor-wise scale factor of shape
             `[num_experts]` as `float32`.
         ctx: Device context used to enqueue the kernel.
-        row_indices: Optional source row indices of shape `[padded_rows]`
-            as `int32`. When present, permuted output row `i` reads input row
-            `row_indices[i]`, fusing the MoE expert permutation gather into
-            the quantize loads; the output stays in permuted row order.
+        row_indices: Optional source row indices of shape `[padded_rows]`.
+            When present, permuted output row `i` reads input row
+            `row_indices[i] // row_index_divisor`, fusing the MoE expert
+            permutation gather into the quantize loads; the output stays in
+            permuted row order.
     """
+    comptime assert (
+        row_indices_dtype.is_integral()
+    ), "row_indices must hold integers"
+    comptime assert row_index_divisor > 0, "row_index_divisor must be positive"
+
     # The kernel masks columns at 8-element lane granularity, so a column
     # count that is not a multiple of 8 would still load and store partially
     # out of bounds within the straddling lane.
@@ -1820,14 +2078,13 @@ def grouped_quantize_dynamic_scaled_fp4_async[
 
     # The TMA box covers one (M1, K) atom, so the two innermost scale dims
     # are folded into a single contiguous extent for a rank-4 descriptor.
-    var scales_4d_tensor = TileTensor(
-        scales_tensor.ptr,
+    var scales_4d_tensor = scales_tensor.reshape(
         row_major(
             Int(scales_tensor.dim[0]()),
             Int(scales_tensor.dim[1]()),
             Int(scales_tensor.dim[2]()),
             Int(scales_tensor.dim[3]()) * Int(scales_tensor.dim[4]()),
-        ),
+        )
     )
 
     comptime scales_tma_tile_shape = coord[
@@ -1883,6 +2140,8 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             SfEngine,
             RowIndicesLayoutType,
             RowIndicesEngine,
+            row_indices_dtype,
+            row_index_divisor,
             num_threads=BLOCK_THREADS,
             k_tiles_per_block=k_tiles_per_block,
         ]
@@ -1912,6 +2171,570 @@ def grouped_quantize_dynamic_scaled_fp4_async[
 
 
 ########################################################
+# Per-row-scaled NVFP4 quantization with the row amax in the kernel
+########################################################
+
+# A warp quantizes one row, and a block holds this many consecutive rows.
+# Small blocks spread decode's few hundred rows over many SMs.
+comptime _ROW_AMAX_ROWS_PER_BLOCK = 4
+# A lane loads 8 columns per chunk, so rows of up to 12 x 256 = 3072 columns
+# stay in registers between the amax and the quantize.
+comptime _ROW_AMAX_CACHED_CHUNKS = 12
+# The largest E2M1 value times the largest E4M3 value.
+comptime _NVFP4_ROW_RANGE = Float32(6.0 * 448.0)
+
+
+comptime nvfp4_row_input_fn_type = def[dtype: DType, width: SIMDLength](
+    SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Elementwise transform applied to each input vector before quantizing.
+
+`grouped_quantize_nvfp4_row_amax` quantizes `input_fn(x)` in place of `x`,
+for both the row amax and the payload; the result is rounded to the input
+dtype, as the graph op it replaces would round it. The graph op passes the
+Nemotron-H `relu(x) * relu(x)` built from `nn.activations.relu`.
+"""
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(rows_per_block * WARP_SIZE)
+    )
+)
+@__name("grouped_quantize_nvfp4_row_amax_kernel")
+def grouped_quantize_nvfp4_row_amax_kernel[
+    output_dtype: DType,
+    scales_dtype: DType,
+    input_dtype: DType,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    row_scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    row_offsets_layout: TensorLayout,
+    scales_offsets_layout: TensorLayout,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    RowScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    RowOffsetsEngine: TensorEngine,
+    ScalesOffsetsEngine: TensorEngine,
+    input_fn: Optional[nvfp4_row_input_fn_type],
+    row_indices_layout: TensorLayout = RowMajorLayout[
+        *Coord[Int64].element_types
+    ],
+    RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    row_indices_dtype: DType = .uint32,
+    row_index_divisor: Int = 1,
+    rows_per_block: Int = _ROW_AMAX_ROWS_PER_BLOCK,
+](
+    output_tensor: TileTensor[
+        output_dtype, output_layout, MutAnyOrigin, Engine=OutputEngine
+    ],
+    scales_tensor: TileTensor[
+        scales_dtype, scales_layout, MutAnyOrigin, Engine=ScalesEngine
+    ],
+    row_scales: TileTensor[
+        .bfloat16, row_scales_layout, MutAnyOrigin, Engine=RowScalesEngine
+    ],
+    input_tensor: TileTensor[
+        input_dtype, input_layout, ImmutAnyOrigin, Engine=InputEngine
+    ],
+    row_offsets: TileTensor[
+        .uint32, row_offsets_layout, ImmutAnyOrigin, Engine=RowOffsetsEngine
+    ],
+    scales_offsets: TileTensor[
+        .uint32,
+        scales_offsets_layout,
+        ImmutAnyOrigin,
+        Engine=ScalesOffsetsEngine,
+    ],
+    row_indices: OptionalReg[
+        TileTensor[
+            row_indices_dtype,
+            row_indices_layout,
+            ImmutAnyOrigin,
+            Engine=RowIndicesEngine,
+        ]
+    ] = None,
+):
+    """Quantizes BF16 rows to NVFP4, each with its own global scale.
+
+    This is the fusion of the graph-op chain
+
+    ```
+    amax = max(abs(f32(x)), axis=-1)
+    row_scale = bf16(max(amax / 2688, 1e-30))
+    scaled = bf16(f32(x) * (1 / f32(row_scale)))
+    grouped_quantize_dynamic_scaled_fp4(scaled, sf_tensor=1)
+    ```
+
+    with each rounding to BF16 kept, so that the payload and the block scales
+    match the chain bit for bit. A warp owns a row: it loads the row into
+    registers with 16-byte loads, reduces the row's amax, derives
+    `row_scale`, and quantizes the row in 16-element blocks from those
+    registers, so the row is read from memory once. Rows wider than the
+    register cache are read a second time for the quantize.
+
+    The grid scales with the rows rather than the scale tiles: the first
+    `ceildiv(rows, rows_per_block)` blocks give a warp to each output row,
+    which finds its expert, and so its scale tile, from the expert offsets
+    in one round of loads. One more block per allocated scale tile clears
+    the scale slots of that tile's padding rows, which must be zero. No two
+    warps write the same byte, and the scale stores go through
+    `scales_layout`.
+
+    Parameters:
+        output_dtype: Element type of the packed output (`uint8`).
+        scales_dtype: Element type of the block scales (`float8_e4m3fn`).
+        input_dtype: Element type of the input (`bfloat16`).
+        output_layout: Layout of `output_tensor`.
+        scales_layout: Layout of `scales_tensor`.
+        row_scales_layout: Layout of `row_scales`.
+        input_layout: Layout of `input_tensor`.
+        row_offsets_layout: Layout of `row_offsets`.
+        scales_offsets_layout: Layout of `scales_offsets`.
+        OutputEngine: Engine policy of the `output_tensor`.
+        ScalesEngine: Engine policy of the `scales_tensor`.
+        RowScalesEngine: Engine policy of `row_scales`.
+        InputEngine: Engine policy of the `input_tensor`.
+        RowOffsetsEngine: Engine policy of the `row_offsets` tensor.
+        ScalesOffsetsEngine: Engine policy of the `scales_offsets` tensor.
+        input_fn: Optional transform quantized in place of each input
+            vector, such as relu2.
+        row_indices_layout: Layout of the optional `row_indices`.
+        RowIndicesEngine: Engine policy of the `row_indices` tensor.
+        row_indices_dtype: Integer element type of `row_indices`.
+        row_index_divisor: Divisor applied to each `row_indices` entry to get
+            the source row.
+        rows_per_block: Rows (one per warp) each block quantizes.
+
+    Args:
+        output_tensor: Packed FP4 output, `[rows, K / 2]`.
+        scales_tensor: Block scales in the 5D tcgen interleaved layout.
+        row_scales: Each output row's BF16 global scale, `[rows]`.
+        input_tensor: BF16 input, `[source rows, K]`.
+        row_offsets: Row boundaries per expert, `[num_experts + 1]`.
+        scales_offsets: Per-expert offset into the scale tiles.
+        row_indices: Optional source row of each output row.
+    """
+    comptime assert row_offsets.flat_rank == 1, "row_offsets must be rank 1"
+    comptime assert (
+        scales_offsets.flat_rank == 1
+    ), "scales_offsets must be rank 1"
+    comptime assert row_scales.flat_rank == 1, "row_scales must be rank 1"
+    comptime assert scales_tensor.flat_rank == 5, "scales_tensor must be rank 5"
+    comptime assert scales_dtype == NVFP4_SF_DTYPE
+    comptime assert output_dtype == .uint8
+    comptime assert OutputEngine.element_size == 1
+    comptime assert ScalesEngine.element_size == 1
+    comptime assert RowScalesEngine.element_size == 1
+    comptime assert InputEngine.element_size == 1
+    comptime assert RowOffsetsEngine.element_size == 1
+    comptime assert ScalesOffsetsEngine.element_size == 1
+    comptime assert RowIndicesEngine.element_size == 1
+    comptime assert scales_offsets_layout.all_dims_known
+    comptime num_experts = scales_offsets_layout.static_shape[0]
+
+    comptime assert rows_per_block > 0, "rows_per_block must be positive"
+
+    comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
+    comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
+    comptime ELEMENTS_PER_THREAD = 8
+    comptime COLS_PER_PASS = WARP_SIZE * ELEMENTS_PER_THREAD
+    comptime CACHED_CHUNKS = _ROW_AMAX_CACHED_CHUNKS
+    comptime InVec = SIMD[input_dtype, ELEMENTS_PER_THREAD]
+
+    var num_cols = Int(input_tensor.dim(1))
+    var num_k_tiles = uceildiv(num_cols, SF_K_GROUP_SIZE)
+    var padded_cols = num_k_tiles * SF_K_GROUP_SIZE
+    var num_rows = Int(output_tensor.dim(0))
+    var num_row_blocks = uceildiv(num_rows, rows_per_block)
+    var warp_id = thread_idx.x // WARP_SIZE
+    var lane = thread_idx.x % WARP_SIZE
+
+    # The expert offsets can come from the kernel this one overlaps under
+    # PDL, so they are read after the wait.
+    with PDL():
+        if block_idx.x >= num_row_blocks:
+            # A tile block: clear the scale slots of the tile's padding rows,
+            # which must be zero.
+            var scale_tile_idx = block_idx.x - num_row_blocks
+            var expert_idx = _scale_tile_expert[num_experts](
+                row_offsets, scales_offsets, scale_tile_idx
+            )
+            var expert_start = Int(row_offsets[expert_idx][0])
+            var expert_end = Int(row_offsets[expert_idx + 1][0])
+            var tile_in_expert = scale_tile_idx - (
+                ufloordiv(expert_start, SF_MN_GROUP_SIZE)
+                + Int(scales_offsets[expert_idx][0])
+            )
+            # Tiles past the expert's last are never read by the matmul.
+            if tile_in_expert < uceildiv(
+                expert_end - expert_start, SF_MN_GROUP_SIZE
+            ):
+                var num_tokens = min(
+                    expert_end
+                    - expert_start
+                    - tile_in_expert * SF_MN_GROUP_SIZE,
+                    SF_MN_GROUP_SIZE,
+                )
+                # Atom row `lane` holds tile rows `lane + 32 * c` for the 4
+                # atom columns `c`; the first `valid_cols` carry tokens.
+                var valid_cols = min(
+                    SF_ATOM_M[1],
+                    ceildiv(max(num_tokens - lane, 0), SF_ATOM_M[0]),
+                )
+                # The scale stores go through `scales_layout`, so a strided
+                # view is honored.
+                for k_tile in range(warp_id, num_k_tiles, rows_per_block):
+                    for atom_col in range(valid_cols, SF_ATOM_M[1]):
+                        scales_tensor.store(
+                            (scale_tile_idx, k_tile, lane, atom_col, 0),
+                            SIMD[scales_dtype, SF_ATOM_K](0),
+                        )
+        else:
+            var row = block_idx.x * rows_per_block + warp_id
+            # The row's expert is the last one whose rows start at or
+            # before it. Each lane reads the offsets of a few experts, so
+            # the warp finds it in one round of loads.
+            comptime EXPERTS_PER_LANE = ceildiv(num_experts, WARP_SIZE)
+            var lane_expert = Int32(-1)
+            var lane_start = Int32(0)
+            var lane_scales_offset = Int32(0)
+            comptime for j in range(EXPERTS_PER_LANE):
+                var e = lane * EXPERTS_PER_LANE + j
+                if e < num_experts:
+                    var start = Int32(row_offsets[e][0])
+                    var offset = Int32(scales_offsets[e][0])
+                    if Int(start) <= row:
+                        lane_expert = Int32(e)
+                        lane_start = start
+                        lane_scales_offset = offset
+            var expert_idx = Int(
+                lane_group_max[num_lanes=WARP_SIZE](lane_expert)
+            )
+            var owner = lane_expert == Int32(expert_idx)
+            var expert_start = Int(
+                lane_group_max[num_lanes=WARP_SIZE](
+                    lane_start if owner else Int32(-1)
+                )
+            )
+            var expert_scales_offset = Int(
+                lane_group_max[num_lanes=WARP_SIZE](
+                    lane_scales_offset if owner else Int32(-1)
+                )
+            )
+            var rows_end = Int(row_offsets[num_experts][0])
+            if row < num_rows and row < rows_end and expert_idx >= 0:
+                var row_in_expert = row - expert_start
+                var scale_tile_idx = (
+                    ufloordiv(expert_start, SF_MN_GROUP_SIZE)
+                    + expert_scales_offset
+                    + ufloordiv(row_in_expert, SF_MN_GROUP_SIZE)
+                )
+                var row_in_tile = row_in_expert % SF_MN_GROUP_SIZE
+                # Tile row `r` sits at atom row `r % 32`, atom column
+                # `r // 32` of each k-tile's 32 x 4 x 4 scale atom.
+                var atom_row = row_in_tile % SF_ATOM_M[0]
+                var atom_col = row_in_tile // SF_ATOM_M[0]
+                var global_row = row
+                var source_row = global_row
+                if case .Some(row_indices) = row_indices:
+                    source_row = (
+                        Int(row_indices[global_row]) // row_index_divisor
+                    )
+
+                # Quantizes the 8 columns from `col` with the row's inverse
+                # scale. Called by the whole warp for a warp-uniform `col - 8 *
+                # lane`, with zeros past the end of the row, so that the scale
+                # columns the last k-tile does not fill are written as zero.
+                @always_inline
+                def quantize_chunk(
+                    v: InVec, col: Int, inv_row_scale: Float32
+                ) {imm}:
+                    var scaled = (v.cast[.float32]() * inv_row_scale).cast[
+                        input_dtype
+                    ]()
+                    var thread_max = abs(scaled).reduce_max()
+                    thread_max = max(shuffle_xor(thread_max, 1), thread_max)
+                    var group_max = thread_max.cast[.float32]()
+                    # The graph chain passes sf_tensor == 1, which these
+                    # multiplications and reciprocals leave exact.
+                    var scale_factor = group_max * recip(Float32(6.0))
+                    var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+                    var output_scale = Float32(0.0)
+                    if group_max != 0:
+                        output_scale = recip(
+                            fp8_scale_factor.cast[.float32]()
+                            * recip(Float32(1.0))
+                        )
+
+                    if col < num_cols:
+                        var scaled_f32 = scaled.cast[.float32]() * output_scale
+                        output_tensor.store(
+                            (global_row, col // 2),
+                            bitcast[output_dtype, 4](
+                                cast_fp32_to_fp4e2m1(scaled_f32)
+                            ),
+                        )
+                    # Lanes 8j..8j+7 cover the four 16-column blocks of one
+                    # k-tile; lane 8j gathers their four scale bytes, which are
+                    # contiguous in the atom, into one 4-byte store.
+                    var sf_byte = UInt32(
+                        bitcast[DType.uint8, 1](fp8_scale_factor)
+                    )
+                    var sf_word = (
+                        sf_byte
+                        | (shuffle_down(sf_byte, 2) << 8)
+                        | (shuffle_down(sf_byte, 4) << 16)
+                        | (shuffle_down(sf_byte, 6) << 24)
+                    )
+                    if col < padded_cols and lane % 8 == 0:
+                        scales_tensor.store(
+                            (
+                                scale_tile_idx,
+                                ufloordiv(col, SF_K_GROUP_SIZE),
+                                atom_row,
+                                atom_col,
+                                0,
+                            ),
+                            bitcast[scales_dtype, SF_ATOM_K](sf_word),
+                        )
+
+                var amax = Float32(0)
+                if num_cols <= CACHED_CHUNKS * COLS_PER_PASS:
+                    # Load the whole row first so that all loads are in flight
+                    # together, then quantize from registers.
+                    var chunks = Array[InVec, CACHED_CHUNKS](fill=InVec(0))
+                    comptime for c in range(CACHED_CHUNKS):
+                        var col = c * COLS_PER_PASS + lane * ELEMENTS_PER_THREAD
+                        if col < num_cols:
+                            var v = input_tensor.load[
+                                width=ELEMENTS_PER_THREAD
+                            ]((source_row, col))
+                            comptime if input_fn:
+                                comptime transform = input_fn.value()
+                                v = transform(v)
+                            chunks[c] = v
+                    comptime for c in range(CACHED_CHUNKS):
+                        amax = max(
+                            amax, abs(chunks[c]).reduce_max().cast[.float32]()
+                        )
+                    amax = lane_group_max[num_lanes=WARP_SIZE](amax)
+
+                    # The two BF16 roundings the graph chain makes: the row
+                    # scale, and the input divided by it. The reciprocal is a
+                    # true division so that it rounds as the chain's does.
+                    var row_scale = max(
+                        amax / _NVFP4_ROW_RANGE, Float32(1e-30)
+                    ).cast[.bfloat16]()
+                    var inv_row_scale = (
+                        Float32(1.0) / row_scale.cast[.float32]()
+                    )
+                    if lane == 0:
+                        row_scales[global_row] = row_scale
+
+                    comptime for c in range(CACHED_CHUNKS):
+                        if c * COLS_PER_PASS < padded_cols:
+                            quantize_chunk(
+                                chunks[c],
+                                c * COLS_PER_PASS + lane * ELEMENTS_PER_THREAD,
+                                inv_row_scale,
+                            )
+                else:
+                    # A row too wide for the registers: read it twice.
+                    for col0 in range(0, num_cols, COLS_PER_PASS):
+                        var col = col0 + lane * ELEMENTS_PER_THREAD
+                        if col < num_cols:
+                            var v = input_tensor.load[
+                                width=ELEMENTS_PER_THREAD
+                            ]((source_row, col))
+                            comptime if input_fn:
+                                comptime transform = input_fn.value()
+                                v = transform(v)
+                            amax = max(
+                                amax, abs(v).reduce_max().cast[.float32]()
+                            )
+                    amax = lane_group_max[num_lanes=WARP_SIZE](amax)
+
+                    var row_scale = max(
+                        amax / _NVFP4_ROW_RANGE, Float32(1e-30)
+                    ).cast[.bfloat16]()
+                    var inv_row_scale = (
+                        Float32(1.0) / row_scale.cast[.float32]()
+                    )
+                    if lane == 0:
+                        row_scales[global_row] = row_scale
+
+                    for col0 in range(0, padded_cols, COLS_PER_PASS):
+                        var col = col0 + lane * ELEMENTS_PER_THREAD
+                        var v = InVec(0)
+                        if col < num_cols:
+                            v = input_tensor.load[width=ELEMENTS_PER_THREAD](
+                                (source_row, col)
+                            )
+                            comptime if input_fn:
+                                comptime transform = input_fn.value()
+                                v = transform(v)
+                        quantize_chunk(v, col, inv_row_scale)
+
+
+def grouped_quantize_nvfp4_row_amax[
+    input_dtype: DType,
+    output_dtype: DType,
+    scales_dtype: DType,
+    //,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    RowScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    RowOffsetsEngine: TensorEngine,
+    ScalesOffsetsEngine: TensorEngine,
+    *,
+    input_fn: Optional[nvfp4_row_input_fn_type] = None,
+    RowIndicesLayoutType: TensorLayout = RowMajorLayout[
+        *Coord[Int64].element_types
+    ],
+    RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    row_indices_dtype: DType = .uint32,
+    row_index_divisor: Int = 1,
+    rows_per_block: Int = _ROW_AMAX_ROWS_PER_BLOCK,
+](
+    output_tensor: TileTensor[
+        mut=True, output_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
+    ],
+    scales_tensor: TileTensor[
+        mut=True,
+        scales_dtype,
+        address_space=.GENERIC,
+        ...,
+        Engine=ScalesEngine,
+    ],
+    row_scales: TileTensor[
+        mut=True, .bfloat16, address_space=.GENERIC, ..., Engine=RowScalesEngine
+    ],
+    input_tensor: TileTensor[
+        mut=False, input_dtype, address_space=.GENERIC, ..., Engine=InputEngine
+    ],
+    row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ..., Engine=RowOffsetsEngine
+    ],
+    scales_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        address_space=.GENERIC,
+        ...,
+        Engine=ScalesOffsetsEngine,
+    ],
+    ctx: DeviceContext,
+    row_indices: OptionalReg[
+        TileTensor[
+            mut=False,
+            row_indices_dtype,
+            RowIndicesLayoutType,
+            ImmutAnyOrigin,
+            Engine=RowIndicesEngine,
+        ]
+    ] = None,
+) raises:
+    """Quantizes grouped BF16 rows to NVFP4, each row with its own scale.
+
+    Equal to a chain of a row amax, `row_scale = bf16(max(amax / 2688,
+    1e-30))`, `bf16(x * (1 / row_scale))` and
+    `grouped_quantize_dynamic_scaled_fp4_async` with a tensor-wise scale of 1,
+    but in one kernel with the same bits out. `row_scales` is the matmul's
+    `a_row_scales`. SM100 only.
+
+    Parameters:
+        input_dtype: Element type of the input (inferred, `bfloat16`).
+        output_dtype: Element type of the packed output (inferred).
+        scales_dtype: Element type of the block scales (inferred).
+        OutputEngine: Engine policy of the `output_tensor`.
+        ScalesEngine: Engine policy of the `scales_tensor`.
+        RowScalesEngine: Engine policy of `row_scales`.
+        InputEngine: Engine policy of the `input_tensor`.
+        RowOffsetsEngine: Engine policy of the `row_offsets` tensor.
+        ScalesOffsetsEngine: Engine policy of the `scales_offsets` tensor.
+        input_fn: Optional elementwise transform quantized in place of the
+            input, such as relu2 (see `nvfp4_row_input_fn_type`).
+        RowIndicesLayoutType: Layout of the optional `row_indices` tensor.
+        RowIndicesEngine: Engine policy of the `row_indices` tensor.
+        row_indices_dtype: Integer element type of the `row_indices` tensor.
+        row_index_divisor: Divisor applied to each `row_indices` entry to get
+            the source row.
+        rows_per_block: Rows (one per warp) each block quantizes.
+
+    Args:
+        output_tensor: Packed FP4 output, `[rows, K / 2]`.
+        scales_tensor: Block scales, `[tiles, ceil(K / 64), 32, 4, 4]`.
+        row_scales: Each row's BF16 global scale, `[rows]`; may be strided.
+        input_tensor: BF16 input, `[source rows, K]`.
+        row_offsets: Row boundaries per expert, `[num_experts + 1]`.
+        scales_offsets: Per-expert offset into `scales_tensor`.
+        ctx: Device context used to enqueue the kernel.
+        row_indices: Optional source row of each output row; output row `i`
+            reads input row `row_indices[i] // row_index_divisor`.
+    """
+    comptime assert (
+        row_indices_dtype.is_integral()
+    ), "row_indices must hold integers"
+    comptime assert row_index_divisor > 0, "row_index_divisor must be positive"
+    debug_assert(
+        Int(input_tensor.dim(1)) % 8 == 0,
+        "num_cols must be a multiple of 8",
+    )
+    debug_assert(
+        Int(scales_tensor.dim[1]())
+        == uceildiv(Int(input_tensor.dim(1)), NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
+        "scales column-tile count must match the column count",
+    )
+
+    comptime kernel = grouped_quantize_nvfp4_row_amax_kernel[
+        output_dtype,
+        scales_dtype,
+        input_dtype,
+        output_tensor.LayoutType,
+        scales_tensor.LayoutType,
+        row_scales.LayoutType,
+        input_tensor.LayoutType,
+        row_offsets.LayoutType,
+        scales_offsets.LayoutType,
+        OutputEngine,
+        ScalesEngine,
+        RowScalesEngine,
+        InputEngine,
+        RowOffsetsEngine,
+        ScalesOffsetsEngine,
+        input_fn,
+        RowIndicesLayoutType,
+        RowIndicesEngine,
+        row_indices_dtype,
+        row_index_divisor,
+        rows_per_block,
+    ]
+    # Row blocks, one warp per output row, then one block per scale tile for
+    # its padding rows. An empty batch (no rows, so no tiles) has nothing to
+    # write, and a zero-sized grid would fail to launch.
+    var num_blocks = uceildiv(Int(output_tensor.dim(0)), rows_per_block) + Int(
+        scales_tensor.dim[0]()
+    )
+    if num_blocks == 0:
+        return
+    ctx.enqueue_function[kernel](
+        output_tensor,
+        scales_tensor,
+        row_scales,
+        input_tensor,
+        row_offsets,
+        scales_offsets,
+        row_indices,
+        grid_dim=(num_blocks, 1, 1),
+        block_dim=(rows_per_block * ctx.default_device_info.warp_size,),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+########################################################
 # SM100 Block Scaled matmul kernel dispatch
 ########################################################
 
@@ -1926,11 +2749,14 @@ def block_scaled_matmul_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     *,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
@@ -1939,13 +2765,15 @@ def block_scaled_matmul_with_epilogue[
     b_scales: TileTensor[mut=False, scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Our sm100 block scaled matmul kernel still does not support fusion of elementwise
     operations. This is a temporary implementation that uses our sm100 block scaled matmul
     kernel and dispatch a separate epilogue kernel to apply the elementwise
-    operations. Callers must allocate `c`; when an `elementwise_lambda_fn`
-    is supplied the matmul result is written into `c` and then read back
-    by the lambda.
+    operations. Callers must allocate `c`; with `has_epilogue_fn` or
+    `has_compute_fn` the matmul result is written into `c` and then read
+    back by the closure.
 
     Parameters:
         c_type: Element type of the output matrix (inferred).
@@ -1953,11 +2781,15 @@ def block_scaled_matmul_with_epilogue[
         b_type: Element type of the RHS input matrix (inferred).
         scales_dtype: Element type of the block scale-factor tensors
             (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         SF_VECTOR_SIZE: Number of elements covered by each block scale
             factor: 16 for NVFP4 or 32 for MXFP8.
         transpose_b: Whether `b` is stored transposed (defaults to `True`).
-        elementwise_lambda_fn: Optional epilogue lambda applied to the
-            matmul result after it is written to `c` (defaults to `None`).
+        has_epilogue_fn: Whether `epilogue_fn` receives the matmul result
+            after it is written to `c`.
+        has_compute_fn: Whether `compute_fn` transforms the matmul result
+            in `c`.
     Args:
         c: Output matrix of shape `[M, N]`.
         a: LHS input matrix of shape `[M, K]` for FP8 or `[M, K//2]` for
@@ -1970,6 +2802,10 @@ def block_scaled_matmul_with_epilogue[
             layout.
         tensor_sf: Scalar multiplier applied to the matmul result.
         ctx: Device context used to enqueue kernels.
+        epilogue_fn: With `has_epilogue_fn`, receives each output value
+            at its `(m, n)`.
+        compute_fn: With `has_compute_fn`, maps each output value before it
+            is stored back into `c`.
     """
 
     comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
@@ -1977,6 +2813,10 @@ def block_scaled_matmul_with_epilogue[
     ), "This kernel is only supported on SM100 or SM120"
 
     comptime assert transpose_b, "Only support transposed B"
+
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass at most one of the epilogue closure or compute closure"
 
     # The vendor (cuBLASLt) block-scaled backend supports both NVFP4
     # (float8_e4m3fn scales, 16-vector) and MXFP8 (float8_e8m0fnu scales,
@@ -2011,7 +2851,7 @@ def block_scaled_matmul_with_epilogue[
 
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
-    var _k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
+    var _k = Int(a.dim[1]()) * 2 if a_type == .uint8 else Int(a.dim[1]())
     if m == 0 or n == 0:
         return
 
@@ -2040,18 +2880,25 @@ def block_scaled_matmul_with_epilogue[
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
-        comptime if case .Some(epilogue) = elementwise_lambda_fn:
+        comptime if has_epilogue_fn or has_compute_fn:
             # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
-            comptime use_32b_simd = True
-            comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-                simd_width_of[c_type, target=ctx.target]()
-            )
+            comptime simd_size = 32 // size_of[c_type]()
 
-            def epilogue_wrapper[
+            def value_epilogue_wrapper[
                 simd_width: Int, alignment: Int = 1
-            ](idx: Coord) {var}:
+            ](idx: Coord) {var c, var epilogue_fn, var compute_fn}:
                 var c_val = c.load[width=simd_width](idx)
-                epilogue[c_type, simd_width, alignment=alignment](idx, c_val)
+                comptime if has_epilogue_fn:
+                    epilogue_fn[c_type, simd_width, alignment=alignment](
+                        idx, c_val
+                    )
+                else:
+                    c.store[alignment=alignment * size_of[c_type]()](
+                        idx,
+                        compute_fn[c_type, simd_width, alignment=alignment](
+                            idx, c_val
+                        ),
+                    )
 
             matmul[scales_type=scales_dtype](
                 ctx,
@@ -2064,7 +2911,11 @@ def block_scaled_matmul_with_epilogue[
                 transpose_b=True,
                 c_row_major=True,
             )
-            elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
+            elementwise[
+                simd_size,
+                target="gpu",
+                _trace_description="elementwise_block_scaled_matmul_epilogue",
+            ](value_epilogue_wrapper, (m, n), ctx)
         else:
             matmul[scales_type=scales_dtype](
                 ctx,
@@ -2090,15 +2941,18 @@ def block_scaled_matmul[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     *,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
     transpose_a: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
+    compute_fn_needs_vectors: Bool = False,
+    compute_fn_col_period: Int = 0,
+    compute_fn_col_start: Int = 0,
     pdl_level: PDLLevel = PDLLevel.OFF,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
@@ -2114,6 +2968,8 @@ def block_scaled_matmul[
     ],
     tensor_sf: Float32,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Dispatches the SM100 block-scaled matmul for NVFP4 or MXFP8, selecting between the Mojo heuristic kernel and the vendor fallback.
 
@@ -2127,18 +2983,27 @@ def block_scaled_matmul[
         b_type: Element type of the RHS input matrix (inferred).
         scales_dtype: Element type of the block scale-factor tensors
             (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         SF_VECTOR_SIZE: Number of elements covered by each block scale
             factor: 16 for NVFP4 or 32 for MXFP8.
         transpose_b: Whether `b_device` is stored transposed (defaults
             to `True`).
         transpose_a: Whether `a_device` is stored transposed (defaults
             to `False`).
-        elementwise_lambda_fn: Optional epilogue lambda applied to the
-            matmul result after it is written to `c_device` (defaults
-            to `None`).
-        elementwise_compute_lambda_fn: Optional compute lambda that
-            transforms the matmul result in-flight before storage
-            (defaults to `None`).
+        has_epilogue_fn: Whether `epilogue_fn` stores the output instead
+            of the kernel writing `c_device`.
+        has_compute_fn: Whether `compute_fn` maps each output value before
+            it is stored.
+        compute_fn_needs_vectors: Whether `compute_fn` reads each value
+            with its neighbors in the row, so it must get consecutive columns
+            rather than one element at a time.
+        compute_fn_col_period: When nonzero, `compute_fn` returns its
+            input unchanged at every column whose index modulo this
+            period is below `compute_fn_col_start`, so an unfused pass
+            visits only the remaining columns.
+        compute_fn_col_start: The first column of each period that
+            `compute_fn` may change.
         pdl_level: Programmatic dependency launch level for the
             heuristic dispatch kernel (defaults to `PDLLevel.OFF`).
         _trace_description: Extra label appended to the trace event
@@ -2157,6 +3022,10 @@ def block_scaled_matmul[
             TCGEN interleaved layout.
         tensor_sf: Scalar multiplier applied to the matmul result.
         ctx: Device context used to enqueue kernels.
+        epilogue_fn: With `has_epilogue_fn`, stores each output value at
+            its `(m, n)`. `c_device` still backs the vendor fallback.
+        compute_fn: With `has_compute_fn`, maps each output value before it
+            is stored into `c_device`.
     """
     comptime assert c_device.rank == 2 and c_device.flat_rank == 2
     comptime assert a_device.rank == 2 and a_device.flat_rank == 2
@@ -2211,7 +3080,7 @@ def block_scaled_matmul[
 
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
-    var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
+    var k = Int(a.dim[1]()) * 2 if a_type == .uint8 else Int(a.dim[1]())
 
     if m == 0 or n == 0:
         return
@@ -2235,33 +3104,9 @@ def block_scaled_matmul[
         "]",
     )
 
-    comptime assert (
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
-    ), "Either the epilogue lambda or the compute lambda can be used"
-
-    # vendor block scaled matmul kernels don't support compute lambda, so we wrap it around an epilogue lambda instead.
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c)
-    def compute_lambda_wrapper[
-        _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]):
-        comptime assert (
-            coords.rank == 2
-        ), "the matmul epilogue contract is rank 2"
-        comptime if case .Some(compute_lambda) = elementwise_compute_lambda_fn:
-            var output = compute_lambda(coords, val)
-            comptime assert (
-                output.dtype == c_type
-            ), "compute epilogue lambda output and c type mismatch"
-            c.store[alignment=alignment * size_of[c_type]()](
-                coords,
-                rebind[SIMD[c_type, _width]](output),
-            )
-
-    comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](
-        compute_lambda_wrapper
-    ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass at most one of the epilogue closure or compute closure"
 
     comptime static_N = c_device.static_shape[1]
     comptime static_K = a_device.static_shape[1] * (
@@ -2289,6 +3134,11 @@ def block_scaled_matmul[
         comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
         comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
         comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
+        # Two stages of an MMA_N = 256 accumulator fill all 512 TMEM columns
+        # before the scale factors, so N = 256 tiles need 1.
+        comptime NUM_ACCUM_STAGES = get_defined_int[
+            "TUNE_NUM_ACCUM_STAGES", 2
+        ]()
 
         comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
@@ -2305,6 +3155,7 @@ def block_scaled_matmul[
             cta_group=CTA_GROUP,
             AB_swapped=AB_SWAPPED,
             k_group_size=K_GROUP_SIZE,
+            num_accum_pipeline_stages=NUM_ACCUM_STAGES,
         )
 
         return blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -2316,13 +3167,26 @@ def block_scaled_matmul[
     comptime if get_defined_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
     ]():
-        var status = heuristic_and_outliers_dispatch[
+        var status = _heuristic_and_outliers_dispatch_any_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+            compute_fn_needs_vectors=compute_fn_needs_vectors,
+            compute_fn_col_period=compute_fn_col_period,
+            compute_fn_col_start=compute_fn_col_start,
             pdl_level=pdl_level,
-        ](c_device, a_device, b_device, a_scales, b_scales, tensor_sf, ctx)
+        ](
+            c_device,
+            a_device,
+            b_device,
+            a_scales,
+            b_scales,
+            tensor_sf,
+            epilogue_fn,
+            compute_fn,
+            ctx,
+        )
 
         if status == DISPATCH_HIT:
             logger.info("Executing SM100 Block Scaled matmul kernel")
@@ -2374,11 +3238,14 @@ def block_scaled_matmul[
         # compile time and control falls straight to the vendor fallback below.
         comptime if _is_sm10x_gpu(ctx.default_device_info):
             if m <= mojo_m_cap or is_mxfp8_scaling:
-                var status = heuristic_and_outliers_dispatch[
+                var status = _heuristic_and_outliers_dispatch_any_epilogue[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                    compute_fn_needs_vectors=compute_fn_needs_vectors,
+                    compute_fn_col_period=compute_fn_col_period,
+                    compute_fn_col_start=compute_fn_col_start,
                     pdl_level=pdl_level,
                 ](
                     c_device,
@@ -2387,6 +3254,8 @@ def block_scaled_matmul[
                     a_scales,
                     b_scales,
                     tensor_sf,
+                    epilogue_fn,
+                    compute_fn,
                     ctx,
                 )
                 if status == DISPATCH_HIT:
@@ -2397,13 +3266,11 @@ def block_scaled_matmul[
         # NVFP4 large-M shapes as well as MXFP8 shapes the heuristic config
         # table does not enumerate (e.g. the 30k-token prefill in KERN-3024,
         # whose M exceeds the table's M<=8192 build range).
-        #
-        # vendor matmul only supports epilogue lambda, so we wrap it around an
-        # epilogue lambda instead.
         block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ](
             c,
             a,
@@ -2412,7 +3279,61 @@ def block_scaled_matmul[
             b_scales,
             tensor_sf,
             ctx,
+            epilogue_fn,
+            compute_fn,
         )
+
+
+@inline(.always)
+def _heuristic_and_outliers_dispatch_any_epilogue[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+    compute_fn_needs_vectors: Bool,
+    compute_fn_col_period: Int,
+    compute_fn_col_start: Int,
+    pdl_level: PDLLevel,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
+    tensor_sf: Float32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises -> Int:
+    comptime if has_epilogue_fn:
+        return heuristic_and_outliers_dispatch[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            pdl_level=pdl_level,
+        ](c, a, b, a_scales, b_scales, tensor_sf, epilogue_fn, ctx)
+    elif has_compute_fn:
+        return heuristic_and_outliers_dispatch[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            pdl_level=pdl_level,
+            compute_fn_needs_vectors=compute_fn_needs_vectors,
+            compute_fn_col_period=compute_fn_col_period,
+            compute_fn_col_start=compute_fn_col_start,
+        ](c, a, b, a_scales, b_scales, tensor_sf, compute_fn, ctx)
+    else:
+        return heuristic_and_outliers_dispatch[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            pdl_level=pdl_level,
+        ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
 
 @inline(.always)
@@ -2435,7 +3356,7 @@ def quantize_dynamic_block_scaled[
 ) raises:
     """Dispatches dynamic block-scaled quantization to the appropriate hardware-specific kernel.
 
-    Routes to the SM100 NVFP4 TMA-async path, the SM100
+    Routes to the SM100 NVFP4 and MXFP8 TMA-async path, the SM100
     `quantize_dynamic_scaled_fp4fp8` path, or the AMD CDNA4 MXFP4 path
     based on the target device and scale-factor format.
 
@@ -2502,9 +3423,9 @@ def quantize_dynamic_block_scaled[
 
     comptime static_input_N = input_tensor.static_shape[1]
     comptime static_output_N = output_tensor.static_shape[1]
-    comptime is_nvfp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    comptime is_mxfp4 = out_dtype == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
-    comptime is_fp8 = out_dtype == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+    comptime is_nvfp4 = out_dtype == .uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    comptime is_mxfp4 = out_dtype == .uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+    comptime is_fp8 = out_dtype == .float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
     comptime assert is_nvfp4 or is_mxfp4 or is_fp8, "invalid scaling kind"
 
     comptime is_packed_fp4 = is_nvfp4 or is_mxfp4
@@ -2522,7 +3443,25 @@ def quantize_dynamic_block_scaled[
             scales_device.rank == 5 and scales_device.flat_rank == 5
         ), "SM100 requires rank-5 interleaved scales"
 
-        comptime if is_nvfp4 and static_input_N % 32 == 0:
+        comptime if (is_nvfp4 or is_fp8) and static_input_N % 32 == 0:
+            # One block a row keeps every SM busy at small M, where 128-row
+            # TMA tiles leave most SMs idle. Past this size the TMA kernel
+            # streams faster.
+            comptime if is_fp8 and static_input_N <= 8192:
+                if num_rows * num_cols <= 3 * 2**23:
+                    quantize_dynamic_scaled_fp4fp8[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                        num_max_threads=1024,
+                    ](
+                        ctx,
+                        output_tensor,
+                        scales_tensor,
+                        input_tensor,
+                        num_cols=Int(num_cols),
+                        num_cols_padded=Int(num_cols),
+                        tensor_sf=tensor_sf,
+                    )
+                    return
             quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                 ctx,
                 output_tensor,
@@ -2578,6 +3517,234 @@ def quantize_dynamic_block_scaled[
             "Unsupported hardware/format combination for block-scaled"
             " quantization"
         )
+
+
+def swiglu_quantize_dynamic_block_scaled[
+    out_dtype: DType,
+    scales_dtype: DType,
+    in_dtype: DType,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    activation: swiglu_activation_type,
+](
+    output_device: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
+    scales_device: TileTensor[
+        mut=True, scales_dtype, address_space=.GENERIC, ...
+    ],
+    gate_up_device: TileTensor[
+        mut=False, in_dtype, address_space=.GENERIC, ...
+    ],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Quantizes the gated activation of a `[gate | up]` input to NVFP4 or MXFP8 with block scales.
+
+    One kernel computes what `activation(gate, up)` rounded to `in_dtype`
+    and then `quantize_dynamic_block_scaled` would, without writing the
+    activation out. SM100 and SM120 only.
+
+    Parameters:
+        out_dtype: Element type of the quantized output (inferred). `uint8`
+            for NVFP4 or `float8_e4m3fn` for MXFP8.
+        scales_dtype: Element type of the block scales (inferred).
+            `float8_e4m3fn` for NVFP4 or `float8_e8m0fnu` for MXFP8.
+        in_dtype: Element type of the input (inferred). Must be `bfloat16`.
+        SF_VECTOR_SIZE: Elements per block scale: 16 for NVFP4, 32 for
+            MXFP8.
+        activation: The gated activation, applied to each `(gate, up)`
+            pair.
+
+    Args:
+        output_device: Quantized output of shape `[M, N // 2]` for packed
+            FP4 or `[M, N]` for MXFP8.
+        scales_device: Block scales in the 5D TCGEN interleaved layout.
+        gate_up_device: Input of shape `[M, 2 * N]`: `gate` in the first
+            `N` columns, `up` in the last `N`.
+        tensor_sf: Tensor-wise scale factor multiplied into each block
+            scale.
+        ctx: Device context used to enqueue the kernel.
+
+    Raises:
+        Error: If `output_device` is not `[M, N]` for MXFP8 or `[M, N // 2]`
+            for packed FP4.
+    """
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
+        ctx.default_device_info
+    ), "gated block-scaled quantization only runs on SM100 or SM120"
+    comptime assert (
+        output_device.rank == 2 and gate_up_device.rank == 2
+    ), "output and gate_up must be rank 2"
+    comptime assert (
+        scales_device.rank == 5 and scales_device.flat_rank == 5
+    ), "scales must be rank 5"
+    comptime assert (
+        gate_up_device.static_shape[1] % 2 == 0
+    ), "gate_up must hold equal gate and up halves"
+    # The kernel reduces each block's max across the lanes that hold it, so
+    # a partial last block would read a lane outside the row.
+    comptime assert (
+        gate_up_device.static_shape[1] // 2 % SF_VECTOR_SIZE == 0
+    ), "each gate_up half must be a whole number of scale blocks"
+
+    comptime is_fp8 = out_dtype == .float8_e4m3fn
+    var num_cols = Int(gate_up_device.dim(1)) // 2
+    var output_cols = num_cols if is_fp8 else num_cols // 2
+    if (
+        Int(output_device.dim(0)) != Int(gate_up_device.dim(0))
+        or Int(output_device.dim(1)) != output_cols
+    ):
+        raise Error(
+            "output must be [M, N] for MXFP8 or [M, N // 2] for packed FP4,"
+            " where gate_up is [M, 2 * N]"
+        )
+    if Int(gate_up_device.dim(0)) == 0 or num_cols == 0:
+        return
+
+    quantize_dynamic_scaled_fp4fp8[
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        num_max_threads=1024 if is_fp8 else 512,
+        gated=True,
+        activation=activation,
+    ](
+        ctx,
+        output_device.as_unsafe_any_origin(),
+        scales_device.as_unsafe_any_origin(),
+        gate_up_device.as_unsafe_any_origin(),
+        num_cols=num_cols,
+        num_cols_padded=num_cols,
+        tensor_sf=tensor_sf,
+    )
+
+
+def rope_quantize_dynamic_block_scaled[
+    out_dtype: DType,
+    scales_dtype: DType,
+    in_dtype: DType,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    head_dim: Int,
+    inverse: Bool,
+](
+    output_device: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
+    scales_device: TileTensor[
+        mut=True, scales_dtype, address_space=.GENERIC, ...
+    ],
+    input_device: TileTensor[mut=False, in_dtype, address_space=.GENERIC, ...],
+    freqs_device: TileTensor[
+        mut=False, DType.float32, address_space=.GENERIC, ...
+    ],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Rotates the trailing columns of each head by RoPE and quantizes the result to NVFP4 or MXFP8 with block scales.
+
+    One kernel computes what rotating each row's heads with `rope_ragged`'s
+    interleaved arithmetic and then `quantize_dynamic_block_scaled` would,
+    without writing the rotated input out. SM100 and SM120 only.
+
+    Parameters:
+        out_dtype: Element type of the quantized output (inferred). `uint8`
+            for NVFP4 or `float8_e4m3fn` for MXFP8.
+        scales_dtype: Element type of the block scales (inferred).
+            `float8_e4m3fn` for NVFP4 or `float8_e8m0fnu` for MXFP8.
+        in_dtype: Element type of the input (inferred). Must be `bfloat16`.
+        SF_VECTOR_SIZE: Elements per block scale: 16 for NVFP4, 32 for
+            MXFP8.
+        head_dim: Columns per head. The input's width is a whole number of
+            heads.
+        inverse: Whether to rotate by the conjugate of each frequency.
+
+    Args:
+        output_device: Quantized output of shape `[M, N // 2]` for packed
+            FP4 or `[M, N]` for MXFP8.
+        scales_device: Block scales in the 5D TCGEN interleaved layout.
+        input_device: Input of shape `[M, N]`.
+        freqs_device: `[M, rope_dim]` interleaved `(cos, sin)` pairs, one
+            row per input row. Each head's last `rope_dim` columns are
+            rotated.
+        tensor_sf: Tensor-wise scale factor multiplied into each block
+            scale.
+        ctx: Device context used to enqueue the kernel.
+
+    Raises:
+        Error: If `freqs_device` does not hold one row per input row, or
+            `output_device` is not `[M, N]` for MXFP8 or `[M, N // 2]` for
+            packed FP4.
+    """
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
+        ctx.default_device_info
+    ), "RoPE block-scaled quantization only runs on SM100 or SM120"
+    comptime assert (
+        output_device.rank == 2
+        and input_device.rank == 2
+        and freqs_device.rank == 2
+    ), "output, input and freqs must be rank 2"
+    comptime assert (
+        scales_device.rank == 5 and scales_device.flat_rank == 5
+    ), "scales must be rank 5"
+
+    # A dynamic width reads as -1, which would skip the rotation.
+    comptime assert (
+        freqs_device.static_shape[1] > 0 and head_dim > 0
+    ), "freqs must have a static width and head_dim must be positive"
+
+    comptime is_fp8 = out_dtype == .float8_e4m3fn
+    var num_cols = Int(input_device.dim(1))
+    var output_cols = num_cols if is_fp8 else num_cols // 2
+    if (
+        Int(output_device.dim(0)) != Int(input_device.dim(0))
+        or Int(output_device.dim(1)) != output_cols
+    ):
+        raise Error(
+            "output must be [M, N] for MXFP8 or [M, N // 2] for packed FP4,"
+            " where input is [M, N]"
+        )
+    if Int(input_device.dim(0)) == 0 or num_cols == 0:
+        return
+    if Int(freqs_device.dim(0)) != Int(input_device.dim(0)):
+        raise Error("freqs must hold one row per input row")
+
+    comptime FreqsTensor = TileTensor[
+        DType.float32, freqs_device.LayoutType, ImmUnsafeAnyOrigin
+    ]
+    var freqs = rebind[FreqsTensor](freqs_device.as_unsafe_any_origin())
+
+    def launch[num_max_threads: Int, grid_by_occupancy: Bool]() raises {imm}:
+        quantize_dynamic_scaled_fp4fp8[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            num_max_threads=num_max_threads,
+            rope_dim=freqs_device.static_shape[1],
+            rope_head_dim=head_dim,
+            rope_inverse=inverse,
+            rope_layout=freqs_device.LayoutType,
+            grid_by_occupancy=grid_by_occupancy,
+        ](
+            ctx,
+            output_device.as_unsafe_any_origin(),
+            scales_device.as_unsafe_any_origin(),
+            input_device.as_unsafe_any_origin(),
+            num_cols=num_cols,
+            num_cols_padded=num_cols,
+            tensor_sf=tensor_sf,
+            rope_freqs=freqs,
+        )
+
+    comptime if is_fp8:
+        # A 512-thread block fits three times an SM and a 1024-thread block
+        # once. The smaller blocks win at few rows and at many. Between
+        # them, one wave of the larger blocks wins up to about ten rows a
+        # block, then the two waves of a grid sized by threads.
+        var num_rows = Int(input_device.dim(0))
+        if num_rows <= 256 or num_rows > 4096:
+            launch[512, True]()
+        elif num_rows <= 1536:
+            launch[1024, True]()
+        else:
+            launch[1024, False]()
+    else:
+        launch[512, False]()
 
 
 @inline(.always)
@@ -2706,6 +3873,222 @@ def quantize_mxfp8_lane_group[
     return ((data * out_scale).cast[out_dtype](), e8m0_scale)
 
 
+comptime _MXFP8_Q_DTYPE = DType.float8_e4m3fn
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32((q_cols + kv_cols) // 8)
+    )
+)
+@__name("rms_norm_quantize_mxfp8_q_kv_kernel")
+def rms_norm_quantize_mxfp8_q_kv_kernel[
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    kv_layout: TensorLayout,
+    input_layout: TensorLayout,
+    q_gamma_layout: TensorLayout,
+    kv_gamma_layout: TensorLayout,
+    *,
+    q_cols: Int,
+    kv_cols: Int,
+](
+    output: TileTensor[_MXFP8_Q_DTYPE, output_layout, MutAnyOrigin],
+    scales: TileTensor[MXFP8_SF_DTYPE, scales_layout, MutAnyOrigin],
+    kv_output: TileTensor[DType.bfloat16, kv_layout, MutAnyOrigin],
+    input: TileTensor[DType.bfloat16, input_layout, ImmutAnyOrigin],
+    q_gamma: TileTensor[DType.bfloat16, q_gamma_layout, ImmutAnyOrigin],
+    kv_gamma: TileTensor[DType.bfloat16, kv_gamma_layout, ImmutAnyOrigin],
+    epsilon: Float32,
+    num_rows: Int32,
+):
+    comptime ELEMENTS_PER_THREAD = 8
+    comptime q_threads = q_cols // ELEMENTS_PER_THREAD
+    comptime q_warps = q_threads // WARP_SIZE
+    comptime num_warps = (q_cols + kv_cols) // ELEMENTS_PER_THREAD // WARP_SIZE
+    comptime assert (
+        q_cols % (ELEMENTS_PER_THREAD * WARP_SIZE) == 0
+        and kv_cols % (ELEMENTS_PER_THREAD * WARP_SIZE) == 0
+    ), "q and kv rows must be whole warps of 8-element chunks"
+    # Scale columns past the row's last block would need zeroing.
+    comptime assert (
+        q_cols % (MXFP8_SF_VECTOR_SIZE * SF_ATOM_K) == 0
+    ), "q row must be whole scale atoms"
+
+    var row = UInt32(block_idx.x)
+    var tid = UInt32(thread_idx.x)
+    var is_q = tid < UInt32(q_threads)
+    var col = (tid if is_q else tid - UInt32(q_threads)) * UInt32(
+        ELEMENTS_PER_THREAD
+    )
+    var sf_offset = scales.layout[linear_idx_type=.uint32](
+        Coord(
+            row // UInt32(SF_MN_GROUP_SIZE),
+            col // UInt32(MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
+            row % UInt32(SF_ATOM_M[0]),
+            row % UInt32(SF_MN_GROUP_SIZE) // UInt32(SF_ATOM_M[0]),
+            col // UInt32(MXFP8_SF_VECTOR_SIZE) % UInt32(SF_ATOM_K),
+        )
+    )
+
+    with PDL[overlap_at_beginning=True]():
+        if row >= UInt32(num_rows):
+            # Tensor cores read the scales of padding rows, so they must be 0.
+            if is_q and col % UInt32(MXFP8_SF_VECTOR_SIZE) == 0:
+                scales.raw_store(sf_offset, Scalar[MXFP8_SF_DTYPE](0.0))
+        else:
+            var x: SIMD[DType.float32, ELEMENTS_PER_THREAD] = input.load[
+                width=ELEMENTS_PER_THREAD
+            ]((Int(row), Int(col) + (0 if is_q else q_cols))).cast[.float32]()
+
+            # Loaded before the reduction so its latency overlaps the barrier.
+            var gamma: SIMD[DType.bfloat16, ELEMENTS_PER_THREAD]
+            if is_q:
+                gamma = q_gamma.load[width=ELEMENTS_PER_THREAD]((Int(col),))
+            else:
+                gamma = kv_gamma.load[width=ELEMENTS_PER_THREAD]((Int(col),))
+
+            # One reduction per row: q warps, then kv warps, of one block.
+            var warp_sums = unsafe_stack_allocation[
+                num_warps, DType.float32, address_space=.SHARED
+            ]()
+            var warp_ssq = warp.sum((x * x).reduce_add())
+            if lane_id() == 0:
+                warp_sums[warp_id()] = warp_ssq
+            barrier()
+            var ssq = Float32(0)
+            if is_q:
+                comptime for w in range(q_warps):
+                    ssq += warp_sums[w]
+            else:
+                comptime for w in range(q_warps, num_warps):
+                    ssq += warp_sums[w]
+            var inv_rms = rsqrt(
+                ssq / Float32(q_cols if is_q else kv_cols) + epsilon
+            )
+
+            # `rms_norm` rounds the normalized row to bfloat16 before it is
+            # quantized or stored.
+            var normed: SIMD[DType.bfloat16, ELEMENTS_PER_THREAD] = (
+                (x * inv_rms) * gamma.cast[.float32]()
+            ).cast[DType.bfloat16]()
+
+            if is_q:
+                var group_max = lane_group_max[
+                    num_lanes=MXFP8_SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
+                ](abs(normed).reduce_max()).cast[.float32]()
+                var e8m0_scale: Scalar[MXFP8_SF_DTYPE]
+                var out_scale: Float32
+                var block_is_dead: Bool
+                e8m0_scale, out_scale, block_is_dead = (
+                    compute_mxfp8_block_scale[MXFP8_SF_DTYPE](group_max)
+                )
+                var quantized = (normed.cast[.float32]() * out_scale).cast[
+                    _MXFP8_Q_DTYPE
+                ]()
+                # A dead block's multiplier is 0; store zeros, not inf * 0.
+                if block_is_dead:
+                    quantized = type_of(quantized)(0)
+                output.store((Int(row), Int(col)), quantized)
+                if col % UInt32(MXFP8_SF_VECTOR_SIZE) == 0:
+                    scales.raw_store(sf_offset, e8m0_scale)
+            else:
+                kv_output.store((Int(row), Int(col)), normed)
+
+
+def rms_norm_quantize_mxfp8_q_kv(
+    output_device: TileTensor[
+        mut=True, _MXFP8_Q_DTYPE, address_space=.GENERIC, ...
+    ],
+    scales_device: TileTensor[
+        mut=True, MXFP8_SF_DTYPE, address_space=.GENERIC, ...
+    ],
+    kv_output_device: TileTensor[
+        mut=True, DType.bfloat16, address_space=.GENERIC, ...
+    ],
+    input_device: TileTensor[
+        mut=False, DType.bfloat16, address_space=.GENERIC, ...
+    ],
+    q_gamma_device: TileTensor[
+        mut=False, DType.bfloat16, address_space=.GENERIC, ...
+    ],
+    kv_gamma_device: TileTensor[
+        mut=False, DType.bfloat16, address_space=.GENERIC, ...
+    ],
+    epsilon: Float32,
+    ctx: DeviceContext,
+) raises:
+    """RMS-normalizes the q and kv parts of each row and quantizes the q part to MXFP8 with block scales.
+
+    One block per row holds the whole `[q | kv]` row in registers. Its q warps
+    reduce the sum of squares of the q part, its kv warps that of the kv part.
+    The q part is quantized as `quantize_dynamic_block_scaled` would, and the
+    kv part is written normalized in bfloat16. Both normalized parts are
+    rounded to bfloat16 where `rms_norm` rounds them, so the bytes match the
+    unfused kernels up to the order of the sum of squares. SM100 and SM120
+    only.
+
+    Args:
+        output_device: Quantized q of shape `[M, q_cols]`.
+        scales_device: Block scales of q in the 5D TCGEN interleaved layout.
+        kv_output_device: Normalized kv of shape `[M, kv_cols]`.
+        input_device: Input of shape `[M, q_cols + kv_cols]`, q then kv.
+        q_gamma_device: The q weight, `[q_cols]`.
+        kv_gamma_device: The kv weight, `[kv_cols]`.
+        epsilon: Added to each mean square. Rounded to bfloat16 first, as
+            `rms_norm` does.
+        ctx: Device context used to enqueue the kernel.
+    """
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
+        ctx.default_device_info
+    ), "RMS norm MXFP8 quantization only runs on SM100 or SM120"
+    comptime assert (
+        output_device.rank == 2
+        and kv_output_device.rank == 2
+        and input_device.rank == 2
+        and q_gamma_device.rank == 1
+        and kv_gamma_device.rank == 1
+    ), "wrong tensor ranks"
+    comptime assert (
+        scales_device.rank == 5 and scales_device.flat_rank == 5
+    ), "scales must be rank 5"
+    comptime q_cols = output_device.static_shape[1]
+    comptime kv_cols = kv_output_device.static_shape[1]
+    comptime assert (
+        q_cols > 0
+        and kv_cols > 0
+        and input_device.static_shape[1] == q_cols + kv_cols
+    ), "the input must hold the static q and kv widths"
+
+    var num_rows = Int(input_device.dim(0))
+    if num_rows == 0:
+        return
+
+    comptime kernel = rms_norm_quantize_mxfp8_q_kv_kernel[
+        output_device.LayoutType,
+        scales_device.LayoutType,
+        kv_output_device.LayoutType,
+        input_device.LayoutType,
+        q_gamma_device.LayoutType,
+        kv_gamma_device.LayoutType,
+        q_cols=q_cols,
+        kv_cols=kv_cols,
+    ]
+    ctx.enqueue_function[kernel](
+        output_device.as_unsafe_any_origin(),
+        scales_device.as_unsafe_any_origin(),
+        kv_output_device.as_unsafe_any_origin(),
+        input_device.as_unsafe_any_origin(),
+        q_gamma_device.as_unsafe_any_origin(),
+        kv_gamma_device.as_unsafe_any_origin(),
+        epsilon.cast[DType.bfloat16]().cast[.float32](),
+        Int32(num_rows),
+        grid_dim=align_up(num_rows, SF_MN_GROUP_SIZE),
+        block_dim=(q_cols + kv_cols) // 8,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
@@ -2746,7 +4129,7 @@ def _quantize_mx_amd_kernel[
     element. Only the scale derivation and the store width differ.
     """
     # 2 for MXFP4 (nibble-packed), 1 for MXFP8 (one byte per element).
-    comptime elems_per_byte = 2 if out_dtype == DType.uint8 else 1
+    comptime elems_per_byte = 2 if out_dtype == .uint8 else 1
     var _num_rows = Int(num_rows)
     var _num_cols = Int(num_cols)
     comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
@@ -2765,7 +4148,7 @@ def _quantize_mx_amd_kernel[
 
             # 1. Load 8x BF16.
             var input_vector = input.load[ELEMENTS_PER_THREAD](
-                Coord(global_row_idx, global_col_idx)
+                (global_row_idx, global_col_idx)
             )
 
             # 2-6. Derive the E8M0 scale, convert, and store. MXFP4 rounds the
@@ -2780,9 +4163,7 @@ def _quantize_mx_amd_kernel[
                     DType.float8_e8m0fnu,
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](input_vector)
-                output.store[width=ELEMENTS_PER_THREAD](
-                    Coord(global_row_idx, global_col_idx), quantized
-                )
+                output.store((global_row_idx, global_col_idx), quantized)
             else:
                 var thread_max = lane_group_max[num_lanes=NUM_THREADS_PER_SF](
                     abs(input_vector).reduce_max()
@@ -2792,15 +4173,15 @@ def _quantize_mx_amd_kernel[
                 var packed = cast_float_to_fp4e2m1_amd(
                     input_vector, e8m0_scale.cast[.float32]()
                 )
-                output.store[width=4](
-                    Coord(global_row_idx, col_thread_idx * 4),
+                output.store(
+                    (global_row_idx, col_thread_idx * 4),
                     bitcast[out_dtype, 4](packed),
                 )
 
             # 7. First thread in the 4-thread group stores the scale.
             if global_col_idx % SF_VECTOR_SIZE == 0:
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
-                scales.store(Coord(global_row_idx, scale_col), e8m0_scale)
+                scales.store((global_row_idx, scale_col), e8m0_scale)
 
 
 @inline(.always)
@@ -2927,12 +4308,24 @@ def quantize_mx_amd[
 @__name("quantize_dynamic_block_scaled_mxfp4_kernel")
 def quantize_dynamic_block_scaled_mxfp4_kernel[
     in_dtype: DType,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
     *,
     elements_per_thread: Int,
 ](
-    output_ptr: UnsafePointer[UInt8, MutAnyOrigin],
-    output_scales_ptr: UnsafePointer[Float8_e8m0fnu, MutAnyOrigin],
-    input_ptr: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
+    output: TileTensor[
+        .uint8, output_layout, MutAnyOrigin, Engine=OutputEngine
+    ],
+    output_scales: TileTensor[
+        .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=ScalesEngine
+    ],
+    input: TileTensor[
+        in_dtype, input_layout, ImmutAnyOrigin, Engine=InputEngine
+    ],
     num_elements: Int32,
 ):
     var _num_elements = Int(num_elements)
@@ -2942,7 +4335,9 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
     if n >= _num_elements:
         return
 
-    var loaded_vec = input_ptr.load[width=8](n)
+    var loaded_vec = input.reshape(row_major(input.num_elements())).load[
+        width=8, alignment=align_of[in_dtype](), invariant=False
+    ]((n,))
     var thread_max = abs(loaded_vec).reduce_max().cast[.float32]()
     var group_max = warp.lane_group_max[num_lanes=threads_per_group](thread_max)
 
@@ -2950,10 +4345,12 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
     var scale_f32 = fp8_scale_factor.cast[.float32]()
 
     if thread_idx.x % threads_per_group == 0:
-        output_scales_ptr[n // MXFP4_SF_VECTOR_SIZE] = fp8_scale_factor
+        output_scales.reshape(row_major(output_scales.num_elements())).store(
+            (n // MXFP4_SF_VECTOR_SIZE,), fp8_scale_factor
+        )
 
-    output_ptr.store[alignment=4](
-        n // 2,
+    output.reshape(row_major(output.num_elements())).store[alignment=4](
+        (n // 2,),
         bitcast[.uint8, 4](cast_float_to_fp4e2m1_amd(loaded_vec, scale_f32)),
     )
 
@@ -2999,13 +4396,19 @@ def quantize_dynamic_block_scaled_mxfp4[
 
         comptime kernel = quantize_dynamic_block_scaled_mxfp4_kernel[
             in_dtype,
+            type_of(output).LayoutType,
+            type_of(output_scales).LayoutType,
+            type_of(input).LayoutType,
+            type_of(output).Engine,
+            type_of(output_scales).Engine,
+            type_of(input).Engine,
             elements_per_thread=elements_per_thread,
         ]
 
         ctx.enqueue_function[kernel](
-            output.ptr,
-            output_scales.ptr,
-            input.ptr,
+            output,
+            output_scales,
+            input,
             Int32(num_elements),
             grid_dim=ceildiv(num_elements // elements_per_thread, BLOCK_DIM),
             block_dim=BLOCK_DIM,
@@ -3018,11 +4421,16 @@ def _mxfp4_dotprod[
     //,
     BLOCK_N: Int,
 ](
-    c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c: TileTensor[mut=True, out_dtype, ...],
+    c_offset: Int,
+    a: TileTensor[mut=False, .uint8, ...],
+    a_offset: Int,
+    b: TileTensor[mut=False, .uint8, ...],
+    b_offset: Int,
+    a_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    a_scales_offset: Int,
+    b_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    b_scales_offset: Int,
     K: Int,
 ):
     @inline(.always)
@@ -3043,26 +4451,47 @@ def _mxfp4_dotprod[
 
     var k_groups = K // MXFP4_SF_VECTOR_SIZE
 
-    var a_local_ptr = a_ptr
-    var b_local_ptr = b_ptr
+    var a_flat = a.reshape(row_major(a.num_elements()))
+    var b_flat = b.reshape(row_major(b.num_elements()))
+    var a_scales_flat = a_scales.reshape(row_major(a_scales.num_elements()))
+    var b_scales_flat = b_scales.reshape(row_major(b_scales.num_elements()))
+
+    var a_local_offset = a_offset
+    var b_local_offset = b_offset
 
     var accum = SIMD[.float32, BLOCK_N](0)
 
     for ko in range(k_groups):
-        var a_scale = a_scales_ptr[ko].cast[.float32]()
+        var a_scale = (
+            a_scales_flat.load[width=1, invariant=False](
+                (a_scales_offset + ko,)
+            )
+        ).cast[.float32]()
         var b_scale = Array[_, BLOCK_N](
             fill_with_unrolled=lambda [bn: Int]() {
-                imm b_scales_ptr, imm k_groups, imm ko
-            } -> Float32: b_scales_ptr[bn * k_groups + ko].cast[.float32]()
+                imm b_scales_flat, imm b_scales_offset, imm k_groups, imm ko
+            } -> Float32: b_scales_flat.load[width=1, invariant=False](
+                (b_scales_offset + bn * k_groups + ko,)
+            ).cast[
+                .float32
+            ]()
         )
 
         comptime for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[.int32, 1](a_local_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](
+                a_flat.load[
+                    width=4, alignment=align_of[DType.uint8](), invariant=False
+                ]((a_local_offset + ki,))
+            )
             var b_data = Array[_, BLOCK_N](
                 fill_with_unrolled=lambda [bn: Int]() {
-                    imm b_local_ptr, imm K
+                    imm b_flat, imm b_local_offset, imm K
                 } -> Int32: bitcast[.int32, 1](
-                    b_local_ptr.load[width=4](bn * (K // 2) + ki)
+                    b_flat.load[
+                        width=4,
+                        alignment=align_of[DType.uint8](),
+                        invariant=False,
+                    ]((b_local_offset + bn * (K // 2) + ki,))
                 )
             )
 
@@ -3080,10 +4509,12 @@ def _mxfp4_dotprod[
                         accum[bn],
                     )
 
-        a_local_ptr += MXFP4_SF_VECTOR_SIZE // 2
-        b_local_ptr += MXFP4_SF_VECTOR_SIZE // 2
+        a_local_offset += MXFP4_SF_VECTOR_SIZE // 2
+        b_local_offset += MXFP4_SF_VECTOR_SIZE // 2
 
-    c_ptr.store(accum.cast[out_dtype]())
+    c.reshape(row_major(c.num_elements())).store[
+        alignment=align_of[out_dtype]()
+    ]((c_offset,), accum.cast[out_dtype]())
 
 
 @inline(.always)
@@ -3094,13 +4525,28 @@ def _mxfp4_dotprod_block_size(static_N: Int) -> Int:
 
 @__name("matmul_dynamic_block_scaled_amd_kernel")
 def matmul_dynamic_block_scaled_amd_kernel[
-    out_dtype: DType, BLOCK_N: Int
+    out_dtype: DType,
+    BLOCK_N: Int,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    a_scales_layout: TensorLayout,
+    b_scales_layout: TensorLayout,
+    CEngine: TensorEngine,
+    AEngine: TensorEngine,
+    BEngine: TensorEngine,
+    AScalesEngine: TensorEngine,
+    BScalesEngine: TensorEngine,
 ](
-    c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=CEngine],
+    a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=AEngine],
+    b: TileTensor[.uint8, b_layout, ImmutAnyOrigin, Engine=BEngine],
+    a_scales: TileTensor[
+        .float8_e8m0fnu, a_scales_layout, ImmutAnyOrigin, Engine=AScalesEngine
+    ],
+    b_scales: TileTensor[
+        .float8_e8m0fnu, b_scales_layout, ImmutAnyOrigin, Engine=BScalesEngine
+    ],
     M: Int32,
     N: Int32,
     K: Int32,
@@ -3117,11 +4563,16 @@ def matmul_dynamic_block_scaled_amd_kernel[
     var k_groups = _K // MXFP4_SF_VECTOR_SIZE
 
     _mxfp4_dotprod[BLOCK_N](
-        c_ptr + m * _N + n,
-        a_ptr + m * (_K // 2),
-        b_ptr + n * (_K // 2),
-        a_scales_ptr + m * k_groups,
-        b_scales_ptr + n * k_groups,
+        c,
+        m * _N + n,
+        a,
+        m * (_K // 2),
+        b,
+        n * (_K // 2),
+        a_scales,
+        m * k_groups,
+        b_scales,
+        n * k_groups,
         _K,
     )
 
@@ -3172,15 +4623,26 @@ def matmul_dynamic_block_scaled_amd[
             return
 
         comptime kernel = matmul_dynamic_block_scaled_amd_kernel[
-            out_dtype, BLOCK_N
+            out_dtype,
+            BLOCK_N,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
+            type_of(a_scales).LayoutType,
+            type_of(b_scales).LayoutType,
+            type_of(c).Engine,
+            type_of(a).Engine,
+            type_of(b).Engine,
+            type_of(a_scales).Engine,
+            type_of(b_scales).Engine,
         ]
 
         ctx.enqueue_function[kernel](
-            c.ptr,
-            a.ptr,
-            b.ptr,
-            a_scales.ptr,
-            b_scales.ptr,
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
             Int32(M),
             Int32(N),
             Int32(K),
@@ -3191,15 +4653,38 @@ def matmul_dynamic_block_scaled_amd[
 
 @__name("grouped_matmul_block_scaled_amd_kernel")
 def grouped_matmul_block_scaled_amd_kernel[
-    out_dtype: DType, BLOCK_N: Int
+    out_dtype: DType,
+    BLOCK_N: Int,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    a_scales_layout: TensorLayout,
+    b_scales_layout: TensorLayout,
+    row_offsets_layout: TensorLayout,
+    expert_ids_layout: TensorLayout,
+    CEngine: TensorEngine,
+    AEngine: TensorEngine,
+    BEngine: TensorEngine,
+    AScalesEngine: TensorEngine,
+    BScalesEngine: TensorEngine,
+    RowOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
 ](
-    c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
-    expert_ids_ptr: UnsafePointer[Int32, ImmutAnyOrigin],
+    c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=CEngine],
+    a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=AEngine],
+    b: TileTensor[.uint8, b_layout, ImmutAnyOrigin, Engine=BEngine],
+    a_scales: TileTensor[
+        .float8_e8m0fnu, a_scales_layout, ImmutAnyOrigin, Engine=AScalesEngine
+    ],
+    b_scales: TileTensor[
+        .float8_e8m0fnu, b_scales_layout, ImmutAnyOrigin, Engine=BScalesEngine
+    ],
+    row_offsets: TileTensor[
+        .uint32, row_offsets_layout, ImmutAnyOrigin, Engine=RowOffsetsEngine
+    ],
+    expert_ids: TileTensor[
+        .int32, expert_ids_layout, ImmutAnyOrigin, Engine=ExpertIdsEngine
+    ],
     num_active_experts: Int32,
     M: Int32,
     N: Int32,
@@ -3216,23 +4701,42 @@ def grouped_matmul_block_scaled_amd_kernel[
         return
 
     var expert_id = -1
+    var row_offsets_flat = row_offsets.reshape(
+        row_major(row_offsets.num_elements())
+    )
+    var expert_ids_flat = expert_ids.reshape(
+        row_major(expert_ids.num_elements())
+    )
     for i in range(_num_active_experts):
-        if m >= Int(row_offsets_ptr[i]) and m < Int(row_offsets_ptr[i + 1]):
-            expert_id = Int(expert_ids_ptr[i])
+        if m >= Int(
+            rebind[UInt32](row_offsets_flat.load[invariant=False]((i,)))
+        ) and m < Int(
+            rebind[UInt32](row_offsets_flat.load[invariant=False]((i + 1,)))
+        ):
+            expert_id = Int(
+                rebind[Int32](expert_ids_flat.load[invariant=False]((i,)))
+            )
             break
 
     if expert_id == -1:
-        c_ptr.store(m * _N + n, SIMD[out_dtype, BLOCK_N](0))
+        c.reshape(row_major(c.num_elements())).store[
+            alignment=align_of[out_dtype]()
+        ]((m * _N + n,), SIMD[out_dtype, BLOCK_N](0))
         return
 
     var k_groups = _K // MXFP4_SF_VECTOR_SIZE
 
     _mxfp4_dotprod[BLOCK_N](
-        c_ptr + m * _N + n,
-        a_ptr + m * (_K // 2),
-        b_ptr + (expert_id * _N + n) * (_K // 2),
-        a_scales_ptr + m * k_groups,
-        b_scales_ptr + (expert_id * _N + n) * k_groups,
+        c,
+        m * _N + n,
+        a,
+        m * (_K // 2),
+        b,
+        (expert_id * _N + n) * (_K // 2),
+        a_scales,
+        m * k_groups,
+        b_scales,
+        (expert_id * _N + n) * k_groups,
         _K,
     )
 
@@ -3292,17 +4796,32 @@ def grouped_matmul_block_scaled_amd[
             return
 
         comptime kernel = grouped_matmul_block_scaled_amd_kernel[
-            out_dtype, BLOCK_N
+            out_dtype,
+            BLOCK_N,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
+            type_of(a_scales).LayoutType,
+            type_of(b_scales).LayoutType,
+            type_of(row_offsets).LayoutType,
+            type_of(expert_ids).LayoutType,
+            type_of(c).Engine,
+            type_of(a).Engine,
+            type_of(b).Engine,
+            type_of(a_scales).Engine,
+            type_of(b_scales).Engine,
+            type_of(row_offsets).Engine,
+            type_of(expert_ids).Engine,
         ]
 
         ctx.enqueue_function[kernel](
-            c.ptr,
-            a.ptr,
-            b.ptr,
-            a_scales.ptr,
-            b_scales.ptr,
-            row_offsets.ptr,
-            expert_ids.ptr,
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            row_offsets,
+            expert_ids,
             Int32(num_active_experts),
             Int32(M),
             Int32(N),

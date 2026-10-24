@@ -231,7 +231,11 @@ modular_cc_test(
     deps = [
         "//Support:Compiler",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:Rewrite",
     ],
 )
 
@@ -356,6 +360,8 @@ modular_cc_test(
         "//Support:Filesystem",
         "//Support:Telemetry",
         "@llvm-project//llvm:Support",
+        "@opentelemetry-cpp//exporters/otlp:otlp_http_log_record_exporter",
+        "@opentelemetry-cpp//exporters/otlp:otlp_http_metric_exporter",
     ],
 )
 

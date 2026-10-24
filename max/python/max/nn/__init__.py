@@ -66,8 +66,8 @@ from .kv_cache import (
     KVCacheParams,
     build_max_lengths_tensors,
 )
-from .layer import Layer, LayerList, Module, Shardable
-from .linear import MLP, ColumnParallelLinear, FusedMLP, GPTQLinear, Linear
+from .layer import Layer, LayerList, MissingLayer, Module, Shardable
+from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
 from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
 from .quant_config import (
@@ -77,6 +77,7 @@ from .quant_config import (
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
+    WeightSource,
 )
 from .rotary_embedding import (
     DynamicRotaryEmbedding,
@@ -120,7 +121,6 @@ __all__ = [
     "DistributedTransformerBlock",
     "DynamicRotaryEmbedding",
     "Embedding",
-    "FusedMLP",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinear",
@@ -142,6 +142,7 @@ __all__ = [
     "LongRoPERotaryEmbedding",
     "LongRoPEScalingParams",
     "MinPSampler",
+    "MissingLayer",
     "MoE",
     "MoEGate",
     "MoEQuantized",
@@ -169,6 +170,7 @@ __all__ = [
     "VocabParallelEmbedding",
     "WeightNormConvTranspose1d",
     "WeightScaleSpec",
+    "WeightSource",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
     "build_max_lengths_tensors",

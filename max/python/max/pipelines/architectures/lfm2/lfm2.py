@@ -14,22 +14,36 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
     DeviceRef,
+    Graph,
     TensorType,
     TensorValue,
+    Type,
+    Value,
     Weight,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.graph_groups import ConvStates
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.transformer import DecoderOutputs
 from max.nn.transformer.transformer import logits_postprocess
 
 from ..llama3.model_config import create_rope_embedding
@@ -375,6 +389,63 @@ class LFM2(Module):
             *conv_state_types,
         )
 
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits them into
+        the batch, the device's KV collection and the conv states.
+
+        Args:
+            *input_types: The graph's input types, as :meth:`input_types`
+                returns them.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        kv_params = self.config.kv_params
+        num_kv_inputs = len(kv_params.flattened_kv_inputs())
+
+        def forward(
+            tokens: Value[Any],
+            input_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            *variadic: Value[Any],
+        ) -> DecoderOutputs:
+            kv_collections = tree.leaves(
+                kv_params.unflatten_kv_inputs(iter(variadic[:num_kv_inputs])),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens=tokens.tensor,
+                kv_collection=kv_collections[0],
+                return_n_logits=return_n_logits.tensor,
+                input_row_offsets=input_row_offsets.tensor,
+                conv_states=[v.tensor for v in variadic[num_kv_inputs:]],
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def __call__(
         self,
         tokens: TensorValue,
@@ -382,7 +453,7 @@ class LFM2(Module):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         conv_states: list[TensorValue],
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         h = self.embed_tokens(tokens)
         freqs_cis = self.rope.freqs_cis.to(h.device)
         conv_idx = 0
@@ -412,4 +483,5 @@ class LFM2(Module):
             return_hidden_states=self.config.return_hidden_states,
             logits_scaling=self.config.logits_scaling,
         )
-        return outputs + tuple(new_states)
+        outputs["conv_states"] = ConvStates(states=tuple(new_states))
+        return outputs

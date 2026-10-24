@@ -57,6 +57,7 @@ from max.graph import (
     Type,
 )
 from max.nn.kv_cache import (
+    MLAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
     RecurrentStateParams,
@@ -206,6 +207,7 @@ def _text_config(num_hidden_layers: int = 8) -> SimpleNamespace:
         qk_rope_head_dim=0,
         index_head_dim=INDEX_HEAD_DIM,
         index_kpool=KPOOL,
+        index_topk=2048,
         layer_types=[
             "deepseek_sparse_attention" if (i % 4) == 3 else "linear_attention"
             for i in range(num_hidden_layers)
@@ -235,6 +237,18 @@ def _cache_params(
     )
     assert isinstance(params, MultiKVCacheParams)
     return params
+
+
+def test_the_attention_caches_record_the_selection_width() -> None:
+    """Each token attends the indexer's 2051-row selection, k-pool tail
+    included, which the AMD sparse decode split and its dispatch key size by.
+    The indexer leaf carries it too, so no leaf's key moves with the context.
+    """
+    children = _cache_params().children
+    for key in (MLA_CACHE_KEY, INDEXER_CACHE_KEY):
+        leaf = children[key]
+        assert isinstance(leaf, MLAKVCacheParams)
+        assert leaf.sparse_indices_stride == 2048 + KPOOL - 1
 
 
 def test_the_state_joins_the_attention_caches() -> None:

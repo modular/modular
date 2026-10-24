@@ -27,7 +27,7 @@ def issue1242():
     var decorator: Int
 
     @decorator # expected-error {{cannot use a dynamic value in decorator}}
-    def on_message() capturing: pass
+    def on_message(): pass
 
 @invalid_dec # expected-error {{use of unknown declaration 'invalid_dec'}}
 def unknown_decorator(): pass
@@ -290,31 +290,6 @@ def llvm_arg_meta_wrong_type[x: Int](a: Int, b: Int):
 @__llvm_arg_metadata(c, myMeta)
 def llvm_arg_meta_wrong_name[x: Int](a: Int, b: Int):
     pass
-
-# ===----------------------------------------------------------------------=== #
-# Closure decorators
-# ===----------------------------------------------------------------------=== #
-
-def outer_function():
-    @__copy_capture  # expected-error {{'@__copy_capture' must have arguments}}
-    @__parameter()  # expected-error {{'@__parameter' cannot have arguments}}
-    def copy_capture_no_args_1():
-        pass
-
-    @__copy_capture()  # expected-error {{'@__copy_capture' must have arguments}}
-    @__parameter("abc")  # expected-error {{'@__parameter' cannot have arguments}}
-    def copy_capture_no_args_2():
-        pass
-
-    @__move_capture  # expected-error {{'@__move_capture' must have arguments}}
-    @__parameter
-    def move_capture_no_args_1():
-        pass
-
-    @__move_capture()  # expected-error {{'@__move_capture' must have arguments}}
-    @__parameter
-    def move_capture_no_args_2():
-        pass
 
 # ===----------------------------------------------------------------------=== #
 # Struct decorators

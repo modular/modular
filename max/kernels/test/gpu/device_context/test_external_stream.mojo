@@ -13,11 +13,10 @@
 
 from std.math import ceildiv
 from max.gpu import global_idx
-from max.gpu.host import DeviceContext, DeviceStream
-from max.gpu.host._amdgpu_hip import HIP
-from max.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host import DeviceContext, DeviceStream, default_accelerator
+from max.gpu.host import HIP
+from max.gpu.host import CUDA
 from std.memory.unsafe_pointer import unsafe_cast
-from std.sys import default_accelerator
 from std.testing import assert_equal
 
 

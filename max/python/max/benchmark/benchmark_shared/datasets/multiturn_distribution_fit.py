@@ -360,6 +360,7 @@ def _build_sessions(
     tools: Sequence[ToolConfig] | None,
     rounds: BaseDistribution | None,
     min_output_len: int,
+    max_output_len: int | None,
     sys_prompt_ratio: float,
     max_num_unique_sys_prompt: int,
     min_input_len: int,
@@ -443,7 +444,11 @@ def _build_sessions(
             _TurnSpec(
                 prompt_text=next(body_cycle),
                 target_in=targets.input_len,
-                target_out=targets.output_len,
+                target_out=(
+                    min(targets.output_len, max_output_len)
+                    if max_output_len is not None
+                    else targets.output_len
+                ),
                 sys_variant=(session_id + turn_i) % max_variant,
                 preceding_delay_ms=targets.delay_ms,
                 is_agentic=is_agentic,
@@ -556,6 +561,7 @@ def build_fitted_chat_samples(
     min_input_len: int = 4,
     min_output_len: int = 1,
     *,
+    max_output_len: int | None = None,
     shuffle_pool: bool = False,
     tools: Sequence[ToolConfig] | None = None,
     agentic_rounds_per_turn: DistributionParameter | None = None,
@@ -590,6 +596,8 @@ def build_fitted_chat_samples(
             agent-loop rounds alike. A round also carries the ``[N] `` marker,
             so a sub-floor tool profile cannot reach the wire either way.
         min_output_len: Floor for sampled output lengths.
+        max_output_len: Optional ceiling. Draws above it are clamped to it,
+            not redrawn, before context budgeting.
         shuffle_pool: Whether to randomize the draw order of the text pools.
         tools: Optional tool profiles for an agent loop after each turn.
         agentic_rounds_per_turn: How many rounds follow each turn. Given with
@@ -604,6 +612,8 @@ def build_fitted_chat_samples(
         pool size; the result may still contain fewer sessions if any drop
         due to model max-context overflow.
     """
+    if max_output_len is not None and max_output_len < min_output_len:
+        raise ValueError("max_output_len must be at least min_output_len")
     first_in, rest_in = parse_two_part_distribution(input_len, "input_len")
     first_out, rest_out = parse_two_part_distribution(output_len, "output_len")
 
@@ -647,6 +657,7 @@ def build_fitted_chat_samples(
         rounds=rounds_dist,
         min_input_len=min_input_len,
         min_output_len=min_output_len,
+        max_output_len=max_output_len,
         sys_prompt_ratio=sys_prompt_ratio,
         max_num_unique_sys_prompt=max_num_unique_sys_prompt,
         shuffle_pool=shuffle_pool,

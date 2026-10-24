@@ -390,14 +390,41 @@ class SpeculativeConfig(ConfigFileModel):
         ),
     )
 
+    draft_head_parallelism: Literal["device0", "replica"] = Field(
+        default="device0",
+        description=(
+            "Where a data-parallel block draft runs its sequential head. "
+            "'device0' (default) runs it on device 0 over the whole batch. "
+            "'replica' runs it on each replica's own device over that "
+            "replica's rows, trading extra device memory for a shorter "
+            "draft step. Has no effect without data parallelism or on an "
+            "architecture whose draft head is not split."
+        ),
+    )
+
+    draft_probs_layout: Literal["device0", "replica"] = Field(
+        default="device0",
+        description=(
+            "Where the sampled draft's proposal distributions live between "
+            "steps. 'device0' (default) keeps one ``[batch, K, vocab]`` "
+            "tensor on device 0. 'replica' keeps each data-parallel "
+            "replica's rows on its own device and verifies them there, "
+            "which drops the allgather onto device 0 and the verify's "
+            "single-device cost. Requires ``draft_proposal='sampled'`` and "
+            "``draft_head_parallelism='replica'``; the engine feeding the "
+            "graph has to bind one distribution per replica. MAX Serve's "
+            "speculative pipeline does not."
+        ),
+    )
+
     logit_penalties: bool = Field(
         default=False,
         description=(
             "Declares presence/frequency penalty inputs on the fused "
             "speculative graph and applies them to the verified logits "
             "before acceptance. For engines that feed those inputs (Mach); "
-            "MAX Serve's speculative pipeline does not, and only the "
-            "Qwen3.5 MTP graph declares them."
+            "MAX Serve's speculative pipeline does not, and a block draft "
+            "refuses them."
         ),
     )
 
@@ -412,6 +439,15 @@ class SpeculativeConfig(ConfigFileModel):
                 " use_relaxed_acceptance_for_thinking: relaxed acceptance"
                 " takes the drafted token to be the draft's argmax, which a"
                 " sampled proposal does not guarantee"
+            )
+        if self.draft_probs_layout == "replica" and (
+            self.draft_proposal != "sampled"
+            or self.draft_head_parallelism != "replica"
+        ):
+            raise ValueError(
+                "draft_probs_layout='replica' needs draft_proposal='sampled'"
+                " and draft_head_parallelism='replica': the distributions"
+                " are drawn on each replica's device and stay there"
             )
         return self
 

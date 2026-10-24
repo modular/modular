@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Graph-op plumbing for MiniMax-M3's NVFP4 KV cache (B200 / SM100).
+"""Graph-op plumbing for MiniMax-M3's NVFP4 KV cache (B200 and MI355X).
 
 Two ops carry the format: ``mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4``
 writes K/V into the packed cache, and ``mo.msa.attention.ragged.paged.nvfp4``
@@ -23,19 +23,27 @@ operand order, the scale operands and the routes, through the Python wrappers.
   gives on the host, and K must track a torch RMSNorm+RoPE reference.
 * The reader: attention over the NVFP4 cache must equal, bit for bit, the FP8
   op over the same K/V dequantized on the host, on the decode, speculative
-  decode and prefill routes.
+  decode and prefill routes. On MI355X the same holds for the MXFP8-output
+  ops that feed o_proj (``.nvfp4.mxfp8`` against ``.mxfp8``).
 * The indexer: over an NVFP4 index-K cache it must select the blocks the BF16
   indexer selects over the same dequantized keys.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+
 import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
 from max import tree
-from max.driver import Accelerator, Buffer
+from max.driver import (
+    Accelerator,
+    Buffer,
+    accelerator_api,
+    accelerator_architecture_name,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -49,6 +57,7 @@ from max.graph import (
 from max.nn.kernels import (
     fused_dual_qk_rms_norm_rope_nvfp4_ragged,
     msa_sparse_attention_ragged,
+    msa_sparse_attention_ragged_mxfp8,
     msa_sparse_indexer,
 )
 from max.nn.kv_cache import (
@@ -73,8 +82,13 @@ _NVFP4 = KVCacheQuantizationConfig(
     scale_dtype=DType.float8_e4m3fn, quantization_granularity=_GROUP
 )
 
+_IS_GFX950 = (
+    accelerator_api() == "hip" and accelerator_architecture_name() == "gfx950"
+)
+
 pytestmark = pytest.mark.skipif(
-    not is_b100_b200(), reason="the NVFP4 KV cache runs on SM100 only"
+    not (is_b100_b200() or _IS_GFX950),
+    reason="the NVFP4 KV cache runs on SM100 and gfx950 only",
 )
 
 
@@ -351,7 +365,8 @@ def test_dual_nvfp4_writes_quantized_kv(nvfp4_index: bool) -> None:
 @pytest.fixture(scope="module")
 def attention_model() -> tuple[Accelerator, Model]:
     """FP8 and NVFP4 attention in one graph with symbolic batch shapes, so
-    every case runs on a single compile."""
+    every case runs on a single compile; on gfx950 also through the
+    MXFP8-output ops."""
     device = Accelerator()
     session = InferenceSession(devices=[device])
     gpu = DeviceRef.GPU()
@@ -429,10 +444,16 @@ def attention_model() -> tuple[Accelerator, Model]:
             page_size=_PAGE_SIZE,
             devices=[gpu],
         )
-        outs = []
-        for params, kv in ((fp8_params, fp8_kv), (_nvfp4_params(1), nvfp4_kv)):
-            outs.append(
-                msa_sparse_attention_ragged(
+        caches = ((fp8_params, fp8_kv), (_nvfp4_params(1), nvfp4_kv))
+        attention_fns: list[
+            Callable[..., TensorValue | tuple[TensorValue, TensorValue]]
+        ] = [msa_sparse_attention_ragged]
+        if _IS_GFX950:
+            attention_fns.append(msa_sparse_attention_ragged_mxfp8)
+        outs: list[TensorValue] = []
+        for attention in attention_fns:
+            for params, kv in caches:
+                out = attention(
                     kv_params=params,
                     input=q.tensor,
                     input_row_offsets=iro.tensor,
@@ -446,9 +467,19 @@ def attention_model() -> tuple[Accelerator, Model]:
                     sparse_block_size=_PAGE_SIZE,
                     scale=float(_HEAD_DIM**-0.5),
                 )
-            )
+                outs.extend(out if isinstance(out, tuple) else (out,))
         graph.output(*outs)
     return device, session.load(graph)
+
+
+def _output_bits(outputs: Sequence[object]) -> list[npt.NDArray[np.generic]]:
+    """Returns each output's raw bits (bf16 as uint16, fp8 and scales as uint8)."""
+    bits = []
+    for out in outputs:
+        assert isinstance(out, Buffer)
+        width = DType.uint16 if out.dtype == DType.bfloat16 else DType.uint8
+        bits.append(out.view(width).to_numpy())
+    return bits
 
 
 @pytest.mark.parametrize(
@@ -477,7 +508,7 @@ def test_msa_attention_nvfp4_matches_fp8(
     attention_model: tuple[Accelerator, Model],
 ) -> None:
     """Attention over NVFP4 K/V equals FP8 attention over the dequantized
-    K/V, bit for bit.
+    K/V, bit for bit; on gfx950 also through the MXFP8-output ops.
 
     With ``separate_scales_lut`` the NVFP4 scales sit on pages in reverse
     order and are found through their own page table, as when the pool pages
@@ -557,13 +588,16 @@ def test_msa_attention_nvfp4_matches_fp8(
         ),
         Buffer.from_numpy(d_idx).to(device),
     ]
-    ref, got = model.execute(*inputs)
-    assert isinstance(ref, Buffer)
-    assert isinstance(got, Buffer)
-    ref_bits = ref.view(DType.uint16).to_numpy()
-    got_bits = got.view(DType.uint16).to_numpy()
+    bits = _output_bits(model.execute(*inputs))
+    ref_bits, got_bits = bits[:2]
     assert int(np.count_nonzero(ref_bits)) > ref_bits.size // 2
     np.testing.assert_array_equal(got_bits, ref_bits)
+    if not _IS_GFX950:
+        return
+    ref_mx, ref_sf, got_mx, got_sf = bits[2:]
+    assert int(np.count_nonzero(ref_mx)) > ref_mx.size // 2
+    np.testing.assert_array_equal(got_mx, ref_mx)
+    np.testing.assert_array_equal(got_sf, ref_sf)
 
     if max(q_lens) == 1:
         key = 0x4D5342
@@ -589,16 +623,13 @@ def test_msa_attention_nvfp4_matches_fp8(
                 _copy_host_input(
                     inputs[3], np.array([sum(live_keys)], dtype=np.uint32)
                 )
-                eager = [
-                    out.view(DType.uint16).to_numpy().copy()
-                    for out in model.execute(*inputs)
-                ]
+                eager = [b.copy() for b in _output_bits(model.execute(*inputs))]
                 model.debug_verify_replay(key, *inputs)
                 model.replay(key, *inputs)
-                for out, want in zip(captured, eager, strict=True):
-                    np.testing.assert_array_equal(
-                        out.view(DType.uint16).to_numpy(), want
-                    )
+                for out, want in zip(
+                    _output_bits(captured), eager, strict=True
+                ):
+                    np.testing.assert_array_equal(out, want)
         finally:
             model.release_captured_graph(key)
 
@@ -683,6 +714,23 @@ def test_nvfp4_ops_accept_an_empty_replica(nvfp4_index: bool) -> None:
             scale=float(_HEAD_DIM**-0.5),
         )
         outs = [out]
+        if _IS_GFX950:
+            outs.extend(
+                msa_sparse_attention_ragged_mxfp8(
+                    kv_params=params,
+                    input=q8,
+                    input_row_offsets=iro.tensor,
+                    cache_row_offsets=cro.tensor,
+                    total_context_length=tcl.tensor,
+                    kv_collection=main_kv,
+                    layer_idx=layer,
+                    block_indices=d.tensor,
+                    group=_NUM_Q_HEADS // _N_KV_HEADS,
+                    topk=_TOPK,
+                    sparse_block_size=_PAGE_SIZE,
+                    scale=float(_HEAD_DIM**-0.5),
+                )
+            )
         if nvfp4_index:
             outs.append(
                 msa_sparse_indexer(
@@ -745,8 +793,14 @@ def test_nvfp4_ops_accept_an_empty_replica(nvfp4_index: bool) -> None:
     out_buf = results[0]
     assert isinstance(out_buf, Buffer)
     assert tuple(out_buf.shape) == (0, _NUM_Q_HEADS, _HEAD_DIM)
+    if _IS_GFX950:
+        mx_buf, sf_buf = results[1:3]
+        assert isinstance(mx_buf, Buffer)
+        assert isinstance(sf_buf, Buffer)
+        assert tuple(mx_buf.shape) == (0, _NUM_Q_HEADS, _HEAD_DIM)
+        assert tuple(sf_buf.shape) == (0, _NUM_Q_HEADS * _HEAD_DIM // 32)
     if nvfp4_index:
-        idx_buf = results[1]
+        idx_buf = results[-1]
         assert isinstance(idx_buf, Buffer)
         assert tuple(idx_buf.shape) == (4, 0, _TOPK)
     np.testing.assert_array_equal(main_rt.kv_blocks.to_numpy(), blocks_before)

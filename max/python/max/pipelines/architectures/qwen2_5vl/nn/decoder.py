@@ -20,27 +20,39 @@ from __future__ import annotations
 
 import functools
 import math
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     Weight,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.comm.allreduce import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
+from max.nn.graph_groups import MRoPEPositions
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
     rope_split_store_ragged,
 )
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
@@ -50,12 +62,18 @@ from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer import DecoderOutputs
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     ShardableCallable,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+    vision_merge_inputs,
+)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 
@@ -457,9 +475,25 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
     - Multi-axis rotary position embeddings (mrope) for 2D position encoding
     """
 
-    def __init__(self, config: Llama3Config) -> None:
+    def __init__(
+        self,
+        config: Llama3Config,
+        *,
+        mrope_section: list[int],
+        image_embedding_dtype: DType,
+    ) -> None:
+        """Initializes the decoder.
+
+        Args:
+            config: The language model config.
+            mrope_section: The rotary dimensions of each position-id axis.
+            image_embedding_dtype: The dtype of the image embeddings the
+                graph takes.
+        """
         super().__init__()
         self.devices = config.devices
+        self.mrope_section = mrope_section
+        self._image_embedding_dtype = image_embedding_dtype
 
         rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
@@ -570,6 +604,109 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
         self.rope = rope
         self.return_logits = config.return_logits
 
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; its leaves are its inputs.
+
+        Image embeddings are always inputs: a text-only batch feeds zero rows.
+
+        Args:
+            kv_params: The KV cache parameters.
+
+        Returns:
+            The input types under ``batch`` (whose ``row_offsets`` are one
+            per device), ``vision``, ``mrope``, ``signals`` and ``kv``, in
+            graph order.
+        """
+        return OrderedDict(
+            batch=ragged_batch_inputs(
+                self.devices[0],
+                ("tokens", "return_n_logits", "row_offsets"),
+                row_offsets_devices=self.devices,
+            ),
+            vision=vision_merge_inputs(
+                self.devices,
+                self._image_embedding_dtype,
+                self.dim,
+                rows_dim="vision_seq_len",
+            ),
+            mrope=MRoPEPositions(
+                position_ids=TensorType(
+                    DType.uint32,
+                    shape=[len(self.mrope_section), "total_seq_len"],
+                    device=self.devices[0],
+                )
+            ),
+            signals=signal_inputs(list(self.devices)),
+            kv=kv_params.get_symbolic_inputs(),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s
+        leaves.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        # The KV cache comes last, and unflattens through the KV params.
+        head = OrderedDict(
+            (key, types)
+            for key, types in self.input_tree(self.kv_params).items()
+            if key != "kv"
+        )
+        head_treedef = tree.flatten(head)[1]
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            remaining = iter(inputs)
+            named = tree.unflatten(head_treedef, remaining, exact=False)
+            assert isinstance(named, OrderedDict)
+            batch, vision = named["batch"], named["vision"]
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(remaining),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens=batch["tokens"].tensor,
+                return_n_logits=batch["return_n_logits"].tensor,
+                image_embeddings=[v.tensor for v in vision["image_embeddings"]],
+                image_token_indices=[
+                    v.tensor for v in vision["image_token_indices"]
+                ],
+                position_ids=named["mrope"]["position_ids"].tensor,
+                signal_buffers=[v.buffer for v in named["signals"]["signal"]],
+                kv_collections=kv_collections,
+                input_row_offsets=[v.tensor for v in batch["row_offsets"]],
+                mrope_section=self.mrope_section,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def __call__(
         self,
         tokens: TensorValueLike,
@@ -581,7 +718,7 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
         kv_collections: list[PagedCacheValues],
         input_row_offsets: list[TensorValue],
         signal_buffers: list[BufferValue],
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         h = self.embed_tokens(tokens, signal_buffers)
 
         # Merge image embeddings into text embeddings.

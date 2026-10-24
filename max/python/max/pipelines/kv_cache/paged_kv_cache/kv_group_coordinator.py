@@ -17,6 +17,7 @@ from __future__ import annotations
 from array import array
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from max._kv_core import blocks_held_of_hit
 from max.nn.kv_cache import KVCacheGroupId
@@ -72,6 +73,9 @@ class KVGroupCoordinatorInterface:
     group_id: KVCacheGroupId
     page_size: int
     """Tokens per page, which turns a window width into a block count."""
+    demand_plateaus: ClassVar[bool] = True
+    """Whether a request's pages stop growing past some length, so admission
+    counts this leaf's headroom in requests rather than pages."""
 
     rows: dict[RequestID, dict[str, list[LittleKVCacheBlock]]] = field(
         default_factory=dict, kw_only=True
@@ -88,8 +92,8 @@ class KVGroupCoordinatorInterface:
         default_factory=dict, init=False, repr=False
     )
     """Per request, the row index :meth:`commit` scans from. Never moves back:
-    every block below it is null or published, and it stays a block short of
-    the last one committed, which is the latest slot a checkpoint can fill."""
+    every block below it is null, published, or permanently incomplete.
+    Published runs leave the latest checkpoint slot available to fill."""
 
     def _rewrote(self, req_id: RequestID) -> None:
         """Forgets what was derived from the row.
@@ -426,6 +430,8 @@ class KVGroupCoordinatorInterface:
 class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
     """A group whose caches read their whole history."""
 
+    demand_plateaus: ClassVar[bool] = False
+
     def claimable_hashes(
         self, desired_hashes: Sequence[bytes]
     ) -> Sequence[bytes]:
@@ -467,6 +473,92 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
 
     window_size: int
     """The sliding window's width in tokens."""
+
+    _write_ranges: dict[RequestID, tuple[int, int]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    """Known contiguous written tails, never a computed prefix."""
+
+    _full_write_ranges: dict[RequestID, tuple[int, int]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+
+    def record_full_write(self, req_id: RequestID, end: int) -> None:
+        """Remembers ordinary writes until the first partial-write report."""
+        if req_id in self._write_ranges:
+            return
+        previous = self._full_write_ranges.get(req_id)
+        if previous is None:
+            row = self.rows[req_id][self.leaf_id]
+            high = 0
+            while high < len(row) and (
+                row[high].is_null or row[high].block_hash is not None
+            ):
+                high += 1
+            low = high
+            while low and row[low - 1].block_hash is not None:
+                low -= 1
+            start = low * self.page_size
+        else:
+            start = previous[0]
+        self._full_write_ranges[req_id] = (min(start, end), end)
+
+    def record_write_range(
+        self, req_id: RequestID, start: int, end: int
+    ) -> None:
+        """Records writes common to every layer sharing this leaf.
+
+        Adjacent forwards may together fill a page. A gap permanently rules
+        out its pages: subsequent forwards only append to the written tail.
+        """
+        if not 0 <= start <= end:
+            raise ValueError("Invalid write range")
+        previous = self._write_ranges.get(
+            req_id, self._full_write_ranges.get(req_id)
+        )
+        if previous is None:
+            # Only published blocks prove validity; allocated pages and the
+            # null prefix of a window hit do not.
+            row = self.rows[req_id][self.leaf_id]
+            high = min(start // self.page_size, len(row))
+            low = high
+            while low and row[low - 1].block_hash is not None:
+                low -= 1
+            previous = (low * self.page_size, high * self.page_size)
+        old_start, old_end = previous
+        if end < old_end or start < old_start:
+            raise ValueError("Write ranges must advance monotonically")
+        if start <= old_end:
+            start = old_start
+        self._write_ranges[req_id] = (start, end)
+        self._full_write_ranges.pop(req_id, None)
+        # A page crossing the floor can never become fully written later.
+        first_complete = (start + self.page_size - 1) // self.page_size
+        self._commit_from[req_id] = max(
+            self._commit_from[req_id], first_complete
+        )
+
+    def _is_committable(
+        self,
+        req_id: RequestID,
+        row: Sequence[LittleKVCacheBlock],
+        block_idx: int,
+    ) -> bool:
+        written = self._write_ranges.get(req_id)
+        if written is not None:
+            start, end = written
+            if not (
+                start <= block_idx * self.page_size
+                and (block_idx + 1) * self.page_size <= end
+            ):
+                return False
+        return super()._is_committable(req_id, row, block_idx)
+
+    def release(self, req_id: RequestID, replica_idx: int) -> None:
+        """Drops write coverage along with the request's blocks."""
+        self._write_ranges.pop(req_id, None)
+        self._full_write_ranges.pop(req_id, None)
+        super().release(req_id, replica_idx)
 
     @property
     def _blocks_in_window(self) -> int:

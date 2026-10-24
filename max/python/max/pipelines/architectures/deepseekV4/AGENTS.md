@@ -34,9 +34,11 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   capture records the decode step, and a device-to-host copy cannot be
   captured (it also closed a 2-GPU collective deadlock, DRIV-462). The one
   size a ragged batch derives from its lengths, the per-ratio window count,
-  arrives as the length of a host input (`layers/ragged.py`
-  `window_count`). Ops without a GPU kernel (`ops.tile`)
-  round-trip through the host implicitly; keep them out.
+  never reaches the host: `mo.compress_windows.ragged.paged`
+  (`max.nn.kernels.compress_windows_ragged`) sizes its output by a bound
+  taken from shapes and reads the count from the window offsets on the
+  device. Ops without a GPU kernel (`ops.tile`) round-trip through the host
+  implicitly; keep them out.
 - **A compressed zone is a `slots_per_page = page_size // ratio` leaf written
   by the stock ragged store with `cache_lengths // ratio`** (the kernel takes
   the page size from the buffer's static slot dim). Each chunk stores
@@ -58,14 +60,21 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   pass the window leaf as the compressed operand with a `[rows, 0]` entry list.
   The indexer scores its zone leaf in place through
   `mo.indexer_score.ragged.paged` (`max.nn.kernels.indexer_score_ragged`), so
-  no per-token candidate table exists on the cached path. The compressor state
-  reads are still `buffer_load` + `gather_nd` per layer -- a copy of the leaf
-  per read; do not size a real deployment on them. The cache-less path
-  (`cache=None`) keeps the gathered-table attention as the gates' reference.
+  no per-token candidate table exists on the cached path. The compressor pools
+  every window of the batch in one op that reads the state leaf in place,
+  the same op for the attention's and the indexer's stream. The cache-less
+  path (`cache=None`) keeps the graph-op compressor over per-window tables
+  and the gathered-table attention as the gates' reference.
 - **Routed experts: grouped W4A8 for native weights, dense otherwise.**
   Native fp4 experts run `DeepseekV4RoutedExperts` (tokens sorted by expert);
   wide-dtype (dequantized) weights still take the dense every-expert path,
   42× the routed work at 256 experts, so do not size a deployment on it.
+- **A block's layer numbers are graph values, not constants.** With
+  `use_subgraphs` the trunk blocks of one compress ratio and routing kind
+  share one subgraph body (`subgraph_layer_groups`), so which window and zone
+  layer a block reads arrives as a `LayerIndex` operand. Baking
+  `self.swa_layer` / `self.zone_layer` into an op inside the block makes every
+  layer of the group read the first one's leaves, silently.
 - RoPE: no mscale, and two schedules — compressed layers use
   `compress_rope_theta` + YaRN, window-only layers base theta, YaRN off.
   `apply_rope_tail` takes a `[seq, ...]` or `[batch, seq, ...]` table.

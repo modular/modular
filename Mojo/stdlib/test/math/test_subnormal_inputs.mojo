@@ -30,7 +30,6 @@ from std.math import (
     isfinite,
     isinf,
     isnan,
-    ldexp,
     nan,
     remainder,
     y0,
@@ -40,9 +39,6 @@ from std.math.math import (
     _call_libm,
     _frexp_bits,
     _log_accurate,
-    _narrow_f32_to_bf16_bits,
-    _scale_down_bits,
-    _scale_up_subnormal,
 )
 from std.memory import bitcast
 from std.testing import TestSuite, assert_equal, assert_raises, assert_true
@@ -176,76 +172,6 @@ def test_hypot_subnormal_outputs() raises:
     _check(got[1], Float32(from_bits=Int32(0x00B504F2)), "hypot SIMD normal")
     assert_true(isnan(got[2]))
     assert_equal(got[3], inf[.float32]())
-
-
-def _scale_down_reference(y: Float32, shift: Int) -> Float32:
-    """Rounds `y * 2^-shift` once, through an exact float64 product."""
-    var scale = Float64(from_bits=UInt64(1023 - shift) << 52)
-    return (Float64(y) * scale).cast[.float32]()
-
-
-def _check_scale_down[shift: Int](y: Float32) raises:
-    var got = _scale_down_bits[shift](SIMD[.float32, 1](y))[0]
-    var want = _scale_down_reference(y, shift)
-    assert_equal(
-        Int(got._to_bits_signed()),
-        Int(want._to_bits_signed()),
-        String(t"_scale_down_bits[{shift}]({y})"),
-    )
-
-
-def test_scale_down_bits() raises:
-    var state = UInt32(12345)
-    # Normal inputs of several exponents with random mantissas, and mantissas
-    # that sit exactly on a rounding tie for each subnormal shift amount.
-    for exp in range(120, 140):
-        for trial in range(64):
-            state = state * 1664525 + 1013904223
-            var mant = state >> 9
-            if trial < 25:
-                mant = (mant >> UInt32(trial + 1) << UInt32(trial + 1)) | (
-                    UInt32(1) << UInt32(trial)
-                )
-                mant &= 0x7FFFFF
-            var y = Float32(from_bits=(UInt32(exp) << 23) | mant)
-            _check_scale_down[126](y)
-            _check_scale_down[126](-y)
-            _check_scale_down[130](y)
-            _check_scale_down[100](y)
-    _check_scale_down[126](Float32(0))
-    _check_scale_down[126](Float32(1))
-    _check_scale_down[126](Float32(from_bits=UInt32(0x00800000)))
-
-
-def test_narrow_f32_to_bf16_bits() raises:
-    var state = UInt32(777)
-    for i in range(512):
-        state = state * 1664525 + 1013904223
-        var bits = state
-        if i % 4 == 0:
-            # Subnormal float32 inputs.
-            bits &= 0x807FFFFF
-        elif i % 4 == 1:
-            # Exact ties between two bfloat16 values.
-            bits = (bits & 0xFFFF0000) | 0x8000
-        var x = Float32(from_bits=bits)
-        if isnan(x):
-            continue
-        var got = _narrow_f32_to_bf16_bits(SIMD[.float32, 1](x))[0]
-        assert_equal(
-            Int(got._to_bits_signed()),
-            Int(x.cast[.bfloat16]()._to_bits_signed()),
-            String(t"narrow({x})"),
-        )
-    for x in [inf[.float32](), -inf[.float32](), Float32(0), Float32(-0.0)]:
-        var got = _narrow_f32_to_bf16_bits(SIMD[.float32, 1](x))[0]
-        assert_equal(
-            Int(got._to_bits_signed()),
-            Int(x.cast[.bfloat16]()._to_bits_signed()),
-        )
-    assert_true(
-        isnan(_narrow_f32_to_bf16_bits(SIMD[.float32, 1](nan[.float32]()))[0])
-    )
 
 
 def main() raises:
@@ -416,13 +342,11 @@ from std.math import (
     isfinite,
     isinf,
     isnan,
-    ldexp,
     nan,
     remainder,
     y0,
     y1,
 )
-from std.math.math import _narrow_f32_to_bf16_bits, _scale_down_bits
 
 from test_utils.math import ulp_distance
 
@@ -643,35 +567,6 @@ def test_tiny_bits() raises:
 def test_tiny_bits_flush_denormals() raises:
     with FlushDenormals():
         _tiny_cases()
-
-
-def test_scale_up_subnormal() raises:
-    var patterns: List[UInt32] = [
-        1,
-        2,
-        3,
-        0x12345,
-        0x35555,
-        0x3FFFFF,
-        0x400000,
-        0x400001,
-        0x7FFFFF,
-    ]
-    for p in patterns:
-        for neg in range(2):
-            var x = Float32(from_bits=p | (UInt32(neg) << 31))
-            assert_equal(
-                _scale_up_subnormal[23](x),
-                Float32(ldexp(Float64(x), 23)),
-                msg=String(t"_scale_up_subnormal[23]({x})"),
-            )
-            assert_equal(
-                _scale_up_subnormal[40](x),
-                Float32(ldexp(Float64(x), 40)),
-                msg=String(t"_scale_up_subnormal[40]({x})"),
-            )
-    var h = Float16(from_bits=UInt16(0x0155))
-    assert_equal(_scale_up_subnormal[10](h), Float16(ldexp(Float64(h), 10)))
 
 
 def test_y0_flush_denormals() raises:

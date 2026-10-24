@@ -147,13 +147,19 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         # into the fp32 matmul, which may run in TF32.
         rms = F.rsqrt((flat * flat).mean(axis=-1) + self.rms_norm_eps)
 
-        pre, post, comb = hyper_connection_gates(
-            (flat @ self.hc_fn.T) * rms,
-            self.hc_base,
-            self.hc_scale,
-            hc_mult=self.hc_mult,
-            hc_eps=self.hc_eps,
-            hc_sinkhorn_iters=self.hc_sinkhorn_iters,
+        mix = (flat @ self.hc_fn.T) * rms
+        # The gates are computed row by row, so on a mesh each device's rows
+        # keep the projection's placement.
+        pre, post, comb = (
+            gate.rebind_mapping(mix.mapping) if mix.is_distributed else gate
+            for gate in hyper_connection_gates(
+                mix,
+                self.hc_base,
+                self.hc_scale,
+                hc_mult=self.hc_mult,
+                hc_eps=self.hc_eps,
+                hc_sinkhorn_iters=self.hc_sinkhorn_iters,
+            )
         )
 
         collapsed = (pre.unsqueeze(-1) * streams).sum(axis=1).squeeze(1)

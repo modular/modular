@@ -1,0 +1,169 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# The CPU half of the numerics harness: the config build, the weight-adapter
+# name contract and the staged trace, all on the tiny fixture and a CPU mesh,
+# plus the base graph's input tree and its fused-QKV op sites staged on
+# virtual GPUs (the tree Mach's modulev3 registry entry wires). The GPU
+# targets below are the real gates;
+# this one runs wherever bazel does.
+modular_py_test(
+    name = "mimo_v2_modulev3",
+    size = "medium",
+    srcs = [
+        "test_base_graph_tree.py",
+        "test_fused_qkv_graph.py",
+        "test_harness_cpu.py",
+    ],
+    ignore_extra_deps = [
+        # The staged trace realizes eager tensors, which import the MO
+        # interpreter; without its compiled ops the trace crawls.
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    # Importing max.pipelines times out pytest collection on contended macOS
+    # workers, and macOS adds no coverage to these CPU-only tests.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_v3_runner",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("transformers"),
+    ],
+)
+
+# The expert-parallel half of the no-GPU gates: mode selection, whole-expert
+# weight placement under global indices, and the EP2 graph staged on virtual
+# B200s. Same host constraints as the TP harness above.
+modular_py_test(
+    name = "mimo_v2_modulev3_ep",
+    size = "medium",
+    srcs = ["test_ep_construction_cpu.py"],
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_v3_runner",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/request",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "mimo_v3_runner",
+    testonly = True,
+    srcs = ["mimo_v3_runner.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# The V3 model on the tiny fixture vs the V2 harness's HF goldens, TP2 over
+# the target's selected GPU count. The goldens and the fixture are shared
+# with the graph-API harness, not duplicated here.
+modular_py_test(
+    name = "mimo_v3_numerics_gpu",
+    size = "large",
+    srcs = ["test_serving_numerics_gpu.py"],
+    data = ["//max/tests/integration/architectures/mimo_v2:tiny_goldens"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    precompile_device_count = 2,
+    precompile_mefs = True,
+    # Postsubmit: an expensive B200 test that presubmit would rerun on any
+    # change to its dependencies.
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    deps = [
+        ":mimo_v3_runner",
+        "//max/python/max/driver",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("numpy"),
+    ],
+)
+
+# The migration's parity gate: the graph-API MiMo-V2 and the ModuleV3 port on
+# the same fixture, through the V2 and V3 runners, logits row by row. The
+# record run captures only the V3 graph (each runner needs hardware right
+# after its compile, so the record stops at the first one — see the fixture
+# for the ordering); the V2 graph compiles on the GPU via the plugin's
+# past-stop path.
+modular_py_test(
+    name = "mimo_v3_parity_gpu",
+    size = "large",
+    srcs = ["test_v2_v3_parity_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    precompile_device_count = 2,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    deps = [
+        ":mimo_v3_runner",
+        "//max/python/max/driver",
+        "//max/tests/integration/architectures/mimo_v2:mimo_runner",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("numpy"),
+    ],
+)

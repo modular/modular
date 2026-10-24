@@ -78,9 +78,12 @@ class DSparkAttention(DeepseekV4Attention):
         freqs_cis = ops.gather(
             self.rope.freqs_cis_base(), rows.positions, axis=0
         )
-        kv = self.latent(main_x, freqs_cis)
+        # The stacked projection also computes ``wq_a(main_x)``, discarded
+        # here; at decode sizes the GEMM sits on its latency floor either way.
+        _, kv_a = self.project(main_x)
+        kv = self.latent(kv_a, freqs_cis)
         cache.swa.store(
-            self.swa_layer,
+            self.layer_index().swa,
             KEY,
             ops.reshape(kv, [rows.total, self.head_dim]),
             rows.offsets,
@@ -123,22 +126,24 @@ class DSparkAttention(DeepseekV4Attention):
             self.rope.freqs_cis_base(), rows.positions, axis=0
         )
 
-        qr = self.q_norm(self.wq_a(x))
+        q_a, kv_a = self.project(x)
+        qr = self.q_norm(q_a)
         q = ops.reshape(self.wq_b(qr), [1, t, self.n_heads, self.head_dim])
         q = weightless_rms_normalize(q, self.eps)
         q = apply_rope_tail(q, freqs_cis, rd)
-        kv = self.latent(x, freqs_cis)
+        kv = self.latent(kv_a, freqs_cis)
 
         # Each request's live window, positions ``L - window .. L - 1``; the
         # slots below position 0 are clamped onto a live one and masked.
         back = ops.reshape(arange(window, device) - window, [1, window])
-        win_pos = ops.reshape(rows.starts, [rows.batch, 1]) + back
+        batch = rows.starts.shape[0]
+        win_pos = ops.reshape(rows.starts, [batch, 1]) + back
         zero = scalar(0, device)
         live = cache.swa.gather(self.swa_layer, KEY, ops.max(win_pos, zero))
         # Table: the block's rows first, so a token's block rows are addressed
         # by the batch's own row numbers, then ``window`` rows per request.
         table = ops.concat(
-            [kv, ops.reshape(live, [1, rows.batch * window, self.head_dim])],
+            [kv, ops.reshape(live, [1, batch * window, self.head_dim])],
             axis=1,
         )
         tok_win_pos = ops.gather(win_pos, rows.bid, axis=0)

@@ -1,0 +1,50 @@
+load("//bazel:api.bzl", "modular_nanobind_library")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_nanobind_library(
+    name = "modules",
+    srcs = [
+        "dlpack.cpp",
+        "driver.cpp",
+        "dtype.cpp",
+        "engine.cpp",
+        "graph.cpp",
+        "metrics.cpp",
+        "nixl.cpp",
+        "profiler.cpp",
+        "request_context.cpp",
+        "safetensors.cpp",
+        "xgrammar.cpp",
+        "xxhash.cpp",
+    ],
+    local_defines = [
+        # Set definition used in Interop.h to prefix the MLIR package.
+        "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
+    ],
+    deps = [
+        "//Init",
+        "//Support:Log",
+        "//Support:ML",
+        "//Support:Metrics",
+        "//Support:Profiling",
+        "//Support:ProfilingRanges",
+        "//Support:RequestContext",
+        "//max/lib/max_license:max",
+        "//max/python/max/_core/max_license:AsyncRTPython",
+        "//max/python/max/_core/max_license:DriverPython",
+        "//max/python/max/_core/max_license:EnginePython",
+        "//max/python/max/_core/max_license:GraphPython",
+        "//max/python/max/_core/max_license:ProfilerPython",
+        "//max/python/max/_core/max_license/modules/dialects:Builtin",
+        "//max/python/max/_core/max_license/modules/dialects:KGEN",
+        "//max/python/max/_core/max_license/modules/dialects:M",
+        "//max/python/max/_core/max_license/modules/dialects:MO",
+        "//max/python/max/_core/max_license/modules/dialects:MOSH",
+        "//max/python/max/_core/max_license/modules/dialects:RMO",
+        "@llvm-project//llvm:Support",
+        "@nixl_upstream//:nixl_api_headers",
+        "@xgrammar",
+        "@xxhash",
+    ],
+)

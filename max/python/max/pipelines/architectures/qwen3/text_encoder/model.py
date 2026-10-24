@@ -150,7 +150,7 @@ class Qwen3TextEncoderModel(ComponentModel):
         ) as graph:
             outputs = nn_model(*(value.tensor for value in graph.inputs))
             if isinstance(outputs, tuple):
-                graph.output(*outputs)
+                graph.output(outputs)
             else:
                 graph.output(outputs)
 

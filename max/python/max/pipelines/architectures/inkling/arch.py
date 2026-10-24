@@ -45,6 +45,9 @@ inkling_arch = SupportedArchitecture(
     },
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
+    checkpoints_recurrent_state=True,
     memory_planner=InklingMemoryPlanner,
     reasoning_parser="inkling",
+    checkpoint_drafts={"mtp": "MTPInklingDraftModel"},
+    spec_decode_graph_names={"mtp": "inkling_with_mtp_graph"},
 )

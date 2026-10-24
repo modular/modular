@@ -20,7 +20,6 @@ thread IDs in the block.
 """
 
 from max.gpu import thread_idx
-from max.gpu.globals import WARP_SIZE
 from std.testing import assert_equal, TestSuite
 
 from max.gpu.host import DeviceContext
@@ -40,7 +39,7 @@ def block_sum_1d_kernel[
 
 
 def test_block_sum_1d() raises:
-    comptime N = WARP_SIZE * 4
+    comptime N = DeviceContext.default_device_info.warp_size * 4
 
     with DeviceContext() as ctx:
         var buf = ctx.enqueue_create_buffer[.float32](N)
@@ -70,7 +69,7 @@ def block_max_1d_kernel[
 
 
 def test_block_max_1d() raises:
-    comptime N = WARP_SIZE * 4
+    comptime N = DeviceContext.default_device_info.warp_size * 4
 
     with DeviceContext() as ctx:
         var buf = ctx.enqueue_create_buffer[.float32](N)
@@ -101,7 +100,7 @@ def block_min_1d_kernel[
 
 
 def test_block_min_1d() raises:
-    comptime N = WARP_SIZE * 4
+    comptime N = DeviceContext.default_device_info.warp_size * 4
 
     with DeviceContext() as ctx:
         var buf = ctx.enqueue_create_buffer[.float32](N)
@@ -131,9 +130,9 @@ def block_broadcast_1d_kernel[
 
 
 def test_block_broadcast_1d() raises:
-    comptime N = WARP_SIZE * 4
+    comptime N = DeviceContext.default_device_info.warp_size * 4
     # Source thread in the second warp.
-    comptime src = WARP_SIZE + 1
+    comptime src = DeviceContext.default_device_info.warp_size + 1
 
     with DeviceContext() as ctx:
         var buf = ctx.enqueue_create_buffer[.float32](N)
@@ -164,7 +163,7 @@ def block_prefix_sum_1d_kernel[
 
 
 def test_block_prefix_sum_1d() raises:
-    comptime N = WARP_SIZE * 4
+    comptime N = DeviceContext.default_device_info.warp_size * 4
 
     with DeviceContext() as ctx:
         var buf = ctx.enqueue_create_buffer[.float32](N)
@@ -196,7 +195,7 @@ def block_sum_2d_kernel[
 
 
 def test_block_sum_2d() raises:
-    comptime BX = WARP_SIZE
+    comptime BX = DeviceContext.default_device_info.warp_size
     comptime BY = 4
     comptime total = BX * BY
 
@@ -237,7 +236,7 @@ def block_sum_3d_kernel[
 
 
 def test_block_sum_3d() raises:
-    comptime BX = WARP_SIZE
+    comptime BX = DeviceContext.default_device_info.warp_size
     comptime BY = 2
     comptime BZ = 2
     comptime total = BX * BY * BZ
@@ -272,7 +271,7 @@ def block_max_2d_kernel[
 
 
 def test_block_max_2d() raises:
-    comptime BX = WARP_SIZE
+    comptime BX = DeviceContext.default_device_info.warp_size
     comptime BY = 4
     comptime total = BX * BY
 
@@ -307,7 +306,7 @@ def block_min_2d_kernel[
 
 
 def test_block_min_2d() raises:
-    comptime BX = WARP_SIZE
+    comptime BX = DeviceContext.default_device_info.warp_size
     comptime BY = 4
     comptime total = BX * BY
 
@@ -343,7 +342,7 @@ def block_broadcast_2d_kernel[
 
 
 def test_block_broadcast_2d() raises:
-    comptime BX = WARP_SIZE
+    comptime BX = DeviceContext.default_device_info.warp_size
     comptime BY = 4
     comptime total = BX * BY
     # Source thread in the second row, second lane (linearized ID = 33).
@@ -380,7 +379,7 @@ def block_prefix_sum_2d_kernel[
 
 
 def test_block_prefix_sum_2d() raises:
-    comptime BX = WARP_SIZE
+    comptime BX = DeviceContext.default_device_info.warp_size
     comptime BY = 4
     comptime total = BX * BY
 

@@ -18,14 +18,15 @@ from std.math import ceildiv
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.itertools import product
+from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
 
 
 def matrix_mul_kernel(
-    M: UnsafePointer[Float32, MutUntrackedOrigin],
-    N: UnsafePointer[Float32, MutUntrackedOrigin],
-    P: UnsafePointer[Float32, MutUntrackedOrigin],
+    M: MutPointer[Float32, MutUntrackedOrigin],
+    N: MutPointer[Float32, MutUntrackedOrigin],
+    P: MutPointer[Float32, MutUntrackedOrigin],
     width_dev: Int32,
 ):
     """GPU kernel for matrix multiplication.
@@ -52,9 +53,9 @@ def matrix_mul_kernel(
 
 
 def matmul_cpu(
-    A_host: UnsafePointer[mut=False, Float32, _],
-    B_host: UnsafePointer[mut=False, Float32, _],
-    C_ref: UnsafePointer[mut=True, Float32, _],
+    A_host: ImmPointer[Float32, _],
+    B_host: ImmPointer[Float32, _],
+    C_ref: MutPointer[Float32, _],
     Width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -74,8 +75,8 @@ def matmul_cpu(
 
 
 def initialize_host(
-    A_host: UnsafePointer[Float32, MutUntrackedOrigin],
-    B_host: UnsafePointer[Float32, MutUntrackedOrigin],
+    A_host: MutPointer[Float32, MutUntrackedOrigin],
+    B_host: MutPointer[Float32, MutUntrackedOrigin],
     Width: Int,
 ):
     """Initialize input matrices with test data.
@@ -97,10 +98,10 @@ def main() raises:
     var num_elements = Width * Width
 
     # Allocate host memory
-    var A_h = alloc[Float32](num_elements)
-    var B_h = alloc[Float32](num_elements)
-    var C_h = alloc[Float32](num_elements)
-    var C_ref = alloc[Float32](num_elements)
+    var A_h = unsafe_alloc[Float32](num_elements)
+    var B_h = unsafe_alloc[Float32](num_elements)
+    var C_h = unsafe_alloc[Float32](num_elements)
+    var C_ref = unsafe_alloc[Float32](num_elements)
 
     # Initialize host arrays
     initialize_host(A_h, B_h, Width)
@@ -171,7 +172,7 @@ def main() raises:
         print("Success")
 
     # Cleanup
-    A_h.free()
-    B_h.free()
-    C_h.free()
-    C_ref.free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    C_ref.unsafe_free()

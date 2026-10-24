@@ -31,9 +31,12 @@ from .model import Gemma4Model
 
 gemma4_modulev3_arch = SupportedArchitecture(
     name="Gemma4ForConditionalGeneration_ModuleV3",
-    example_repo_ids=["google/gemma-4-31B-it"],
+    example_repo_ids=[
+        "google/gemma-4-31B-it",
+        "nvidia/Gemma-4-31B-IT-NVFP4",
+    ],
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     pipeline_model=Gemma4Model,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=Gemma4Tokenizer,

@@ -13,28 +13,24 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-"""MAX profiler Python bindings."""
+"""Provides Python bindings for the MAX profiler."""
 
 class Trace:
     """
-    Context manager for creating profiling spans.
+    A context manager for creating profiling spans.
 
     Examples:
         >>> with Trace("foo", color="modular_purple"):
         >>>   # Run `bar()` inside the profiling span.
         >>>   bar()
         >>> # The profiling span ends when the context manager exits.
+
+    Args:
+        message: The name of the span.
+        color: The color of the span.
     """
 
-    def __init__(self, message: str, color: str = "modular_purple") -> None:
-        """
-        Constructs and initializes the underlying Mojo Trace object.
-
-        Args:
-            message: Name of the span.
-            color: Color of the span.
-        """
-
+    def __init__(self, message: str, color: str = "modular_purple") -> None: ...
     def __enter__(self) -> Trace:
         """Begins a profiling event."""
 
@@ -147,8 +143,8 @@ def request_burst(reason: str) -> bool:
             Characters outside ``[A-Za-z0-9_.-]`` become ``_``.
 
     Returns:
-        True if a burst opened. False when profiling is off, which costs a
-        single check, or when the request was not honored.
+        ``True`` if a burst opened. ``False`` when profiling is off, which
+        costs a single check, or when the request was not honored.
     """
 
 def is_capture_recording() -> bool:

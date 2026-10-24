@@ -16,10 +16,26 @@ modular_cc_library(
     alwayslink = True,
 )
 
+# C reference for the narrow integer extension test. Built at -O2, because at
+# -O0 clang re-extends narrow integers itself and hides a missing extension.
+modular_cc_library(
+    name = "c_narrow_int_reference",
+    testonly = True,
+    srcs = ["c_narrow_int.c"],
+    copts = [
+        "-Werror",
+        "-O2",
+    ],
+    alwayslink = True,
+)
+
 lit_tests(
     name = "test",
     srcs = glob(["*.mojo"]),
-    data = [":c_effect_reference"],
+    data = [
+        ":c_effect_reference",
+        ":c_narrow_int_reference",
+    ],
     mojo_deps = ["@mojo//:std"],
     tools = ["//Mojo/tools/mojo"],
 )

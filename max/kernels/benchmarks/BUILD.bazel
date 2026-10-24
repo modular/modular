@@ -20,10 +20,54 @@ _EXTRA_DEPS = {
     "gpu/nn/bench_rms_norm_fused_residual_add.mojo": ["//max:builtin_kernels"],
     "gpu/nn/bench_rms_norm_rope.mojo": ["//max:builtin_kernels"],
     "gpu/nn/bench_softmax.mojo": ["//max:builtin_kernels"],
-    "linalg/bench_layout_tensor.mojo": ["//max:max_mojo"],
+    "gpu/state_space/bench_causal_conv1d_prefill.mojo": [
+        "//max:extensibility",
+        "//max/kernels/src/state_space",
+    ],
+    "gpu/state_space/bench_causal_conv1d_update.mojo": ["//max/kernels/src/state_space"],
+    "gpu/state_space/bench_gated_delta_conv1d.mojo": ["//max/kernels/src/state_space"],
+    "gpu/state_space/bench_gated_delta_recurrence.mojo": ["//max/kernels/src/state_space"],
+    "gpu/state_space/bench_gated_delta_verify.mojo": ["//max/kernels/src/state_space"],
+    "gpu/state_space/bench_mamba2_ssd_scan.mojo": [
+        "//max/kernels/src/state_space",
+        "//max/kernels/test/common/ssd_scan_test_utils:ssd_scan_test_utils",
+    ],
+    "gpu/state_space/bench_rms_norm_fused_residual.mojo": ["//max/kernels/src/state_space"],
+    "linalg/bench_tile_tensor.mojo": ["//max:max_mojo"],
 }
 
 _EXTRA_CONSTRAINTS = {
+    # TODO(GEX-3342): Metal execution is not supported for state-space kernels.
+    "gpu/state_space/bench_causal_conv1d_prefill.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_causal_conv1d_update.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_gated_delta_conv1d.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_gated_delta_recurrence.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_gated_delta_verify.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_mamba2_ssd_scan.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/state_space/bench_rms_norm_fused_residual.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    # MXFP4 packing uses the SM100 conversion instructions.
+    "gpu/nn/bench_indexer_k_store.mojo": ["//:b200_gpu"],
     "algorithm/parallelize_overhead.mojo": select({
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -74,6 +118,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506 (paged KV + matmul, same as sibling)
+    "gpu/nn/bench_group_norm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-3587 — Metal compilation failure (same as test_group_norm)
     "gpu/nn/bench_rms_norm_gemm_pdl.mojo": ["//:nvidia_gpu"],  # SM100 consumer GEMM
     "gpu/linalg/bench_apple_gpu_matmul.mojo": ["//:apple_gpu"],  # Apple M5 simdgroup matmul (incl. split-K) — Metal only
     "gpu/linalg/bench_apple_fp4_matmul.mojo": ["//:apple_gpu"],  # Apple M5 weight-only NVFP4 (W4A16) matmul — Metal only
@@ -110,7 +158,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Kernel uses NVIDIA SM90 TMA primitives; Metal AIR codegen crashes.
-    "gpu/nn/bench_mla_index_fp8_paged.mojo": ["//:b200_gpu"],  # SM100 tensor-core scorer: tcgen05 / TMA / SS-UMMA
     "gpu/nn/bench_latent_sparse_attention_v4.mojo": ["//:b200_gpu"],  # the `fast` arm only takes the SM100 route there
     # TODO(MOCO-4551): re-enable once Metal supports non-relaxed atomic
     # orderings natively; CoopRow's device-scope release fence needs a Metal 4
@@ -128,10 +175,6 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # Kernel uses block-scope atomics (BLOCK_SCOPE) unsupported on Metal.
     "gpu/nn/trace_topk_bitonic.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # Kernel uses block-scope atomics (BLOCK_SCOPE) unsupported on Metal.
-    "gpu/nn/xcheck_topk_bitonic.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Kernel uses block-scope atomics (BLOCK_SCOPE) unsupported on Metal.
@@ -172,7 +215,7 @@ _CPU_TESTS = glob(
         # Has a dedicated `mojo_test` below carrying the -D shape defines and
         # TEST_ONLY gate; one rule per source (see "Lint files in multiple
         # targets"), so it must leave the generic glob.
-        "linalg/bench_layout_tensor.mojo",
+        "linalg/bench_tile_tensor.mojo",
         "misc/**",
         "packages/**",
     ] + _RUN_BENCHMARKS,
@@ -297,6 +340,14 @@ mojo_binary(
             # Same reason: `--sweep=1` takes the whole top-k A/B grid in
             # one process, and timing that needs a test target.
             "gpu/nn/bench_topk_mt.mojo",
+            # Same reason: timed on remote B200 at the plan's baseline cells;
+            # `--bounds=True` selects the bounded (production) kernel arm.
+            "gpu/nn/xcheck_topk_bitonic.mojo",
+            # Same reason: timed on remote B200 (`mojo_binary` cannot run
+            # remotely) for the indexer end-to-end baseline.
+            "gpu/nn/bench_mla_index_fp8_paged.mojo",
+            # Same reason, timed on remote MI355.
+            "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             # Dedicated target below: the Qwen3.8 prod shape is carried in
             # `-D` defines, which the generic glob cannot pass.
             "gpu/nn/bench_qwen38_decode_attn.mojo",
@@ -331,6 +382,14 @@ mojo_binary(
             # Same reason: `--sweep=1` takes the whole top-k A/B grid in
             # one process, and timing that needs a test target.
             "gpu/nn/bench_topk_mt.mojo",
+            # Same reason: timed on remote B200 at the plan's baseline cells;
+            # `--bounds=True` selects the bounded (production) kernel arm.
+            "gpu/nn/xcheck_topk_bitonic.mojo",
+            # Same reason: timed on remote B200 (`mojo_binary` cannot run
+            # remotely) for the indexer end-to-end baseline.
+            "gpu/nn/bench_mla_index_fp8_paged.mojo",
+            # Same reason, timed on remote MI355.
+            "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             # Dedicated target below: the Qwen3.8 prod shape is carried in
             # `-D` defines, which the generic glob cannot pass.
             "gpu/nn/bench_qwen38_decode_attn.mojo",
@@ -523,7 +582,12 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = ["//:b200_gpu"],  # tcgen05 / TMA / SS-UMMA
+    # SM100 tcgen05 / TMA / SS-UMMA scorer, or the gfx950 MFMA scorer.
+    target_compatible_with = select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//max:internal_utils",
         "//max:layout",
@@ -575,6 +639,115 @@ build_test(
     name = "gpu/nn/bench_topk_mt.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/nn/bench_topk_mt.mojo.run"],
+)
+
+# Out of the `gpu/**` glob for the same reason as the benchmark above: only a
+# test target can be TIMED on remote B200. This one drives
+# `persistent_topk_block_split` on the hash-keyed input the cross-implementation
+# comparison uses; `--bounds=True` times the bounded (production) kernel on it.
+# `manual` keeps it out of `//...`; the `build_test` below restores compile
+# coverage. Default `dump=True` prints the full index dump.
+mojo_test(
+    name = "gpu/nn/xcheck_topk_bitonic.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/xcheck_topk_bitonic.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Uses NVIDIA GPU barrier primitives.
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/xcheck_topk_bitonic.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/xcheck_topk_bitonic.mojo.run"],
+)
+
+# The paged MLA FP8 indexer end-to-end (scorer + top-k + invalid-fill), timed
+# on remote B200 to measure the top-k's share of the op. Out of the `gpu/**`
+# glob because that glob builds a `mojo_binary`, which cannot run remotely.
+# `manual` keeps it out of `//...`; the `build_test` below restores compile
+# coverage.
+mojo_test(
+    name = "gpu/nn/bench_mla_index_fp8_paged.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_mla_index_fp8_paged.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/bench_mla_index_fp8_paged.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_mla_index_fp8_paged.mojo.run"],
+)
+
+# Out of the `gpu/**` glob so it can be timed on remote MI355; `manual` keeps
+# it out of `//...` and the `build_test` keeps it compiling.
+mojo_test(
+    name = "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_mla_decode_sparse_rows_amd.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_mla_decode_sparse_rows_amd.mojo.run"],
 )
 
 # Deps/data/env shared by the softmax / m3 benchmark targets below.
@@ -673,7 +846,7 @@ filegroup(
 # timing so this target checks correctness rather than benchmark performance.
 mojo_test(
     name = "linalg/bench_tile_tensor_correctness",
-    srcs = ["linalg/bench_layout_tensor.mojo"],
+    srcs = ["linalg/bench_tile_tensor.mojo"],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "M=16",

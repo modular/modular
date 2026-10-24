@@ -66,6 +66,7 @@ from max.graph import BufferType as GBufferType
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph import Type as GType
 from max.graph import ops as graph_ops
+from max.graph.ops import CoordinateTransformMode, RoundMode
 
 
 @pytest.fixture(autouse=True)
@@ -4175,6 +4176,50 @@ class TestDistributedAllreduceSumHandler:
             )
 
     @_NEED_2_GPUS
+    def test_allreduce_sum_low_level_bfloat16(self) -> None:
+        """Same as `test_allreduce_sum_low_level`, but bfloat16."""
+        # Uses torch, not NumPy, to build/check the data: torch's dlpack
+        # supports bfloat16, NumPy's doesn't (the bug this regresses).
+        shape = [4, 4]
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+
+        input_types: list[GType[Any]] = [
+            TensorType(DType.bfloat16, shape, gpu0),
+            TensorType(DType.bfloat16, shape, gpu1),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("allreduce_bf16_test", input_types=input_types) as graph:
+            t0, t1, b0, b1 = graph.inputs
+            results = graph_ops.allreduce.sum(
+                [t0.tensor, t1.tensor], [b0.buffer, b1.buffer]
+            )
+            graph.output(*results)
+
+        a_torch = torch.arange(16, dtype=torch.bfloat16).reshape(shape)
+        b_torch = 10 * torch.arange(16, dtype=torch.bfloat16).reshape(shape)
+        expected = a_torch + b_torch
+
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_dlpack(a_torch).to(dev0),
+            Buffer.from_dlpack(b_torch).to(dev1),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        for out in outputs:
+            assert isinstance(out, Buffer)
+            torch.testing.assert_close(
+                torch.from_dlpack(out.to(CPU())), expected
+            )
+
+    @_NEED_2_GPUS
     def test_allreduce_sum_distributed_tensor_e2e(self) -> None:
         """End-to-end: all_reduce_sum on a Partial distributed Tensor via interpreter."""
         num_gpus = min(accelerator_count(), 2)
@@ -4618,10 +4663,18 @@ class TestResizeNearestGPU:
     @pytest.mark.parametrize(
         "coordinate_transform_mode, round_mode",
         # half_pixel with floor reads below index 0 without the kernel clamp.
-        [(0, 0), (0, 2), (1, 1), (2, 3)],
+        [
+            (CoordinateTransformMode.HALF_PIXEL, RoundMode.HALF_DOWN),
+            (CoordinateTransformMode.HALF_PIXEL, RoundMode.FLOOR),
+            (CoordinateTransformMode.ALIGN_CORNERS, RoundMode.HALF_UP),
+            (CoordinateTransformMode.ASYMMETRIC, RoundMode.CEIL),
+        ],
     )
     def test_matches_cpu(
-        self, dtype: DType, coordinate_transform_mode: int, round_mode: int
+        self,
+        dtype: DType,
+        coordinate_transform_mode: CoordinateTransformMode,
+        round_mode: RoundMode,
     ) -> None:
         # Distinct small integers are exact in float16 and bfloat16, so a wrong
         # source index changes the output.
@@ -4694,6 +4747,60 @@ class TestResizeLinearGPU:
             torch.from_dlpack(cpu_out),
             rtol=2e-2,
             atol=2e-2,
+        )
+
+    def test_rank3_lazy_compile_matches_cpu(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A rank-3 input lazy-compiles on dispatch and matches the CPU path.
+
+        The accelerated warm builds only rank 4 (MXF-841), so rank 3 must
+        compile on demand; `modular_eager_py_test` forbids cold compiles, so
+        this test re-allows them like TestResizeLazyCompileGPU does.
+        """
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        out_shape = [2, 6, 8]
+
+        x_gpu = Tensor.from_dlpack(torch.from_numpy(x_np).cuda())
+        assert x_gpu.storage is not None
+        device = x_gpu.storage.device
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            gpu_out = F.resize_linear(x_gpu, out_shape)
+        assert gpu_out.storage is not None
+        assert gpu_out.storage.device == device
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            cpu_out = F.resize_linear(Tensor.from_dlpack(x_np), out_shape)
+
+        np.testing.assert_allclose(
+            torch.from_dlpack(gpu_out).float().cpu().numpy(),
+            np.from_dlpack(cpu_out),
+            rtol=1e-5,
+        )
+
+    def test_same_shape_copies(self) -> None:
+        """An unchanged shape takes the copy path, which must still write."""
+        x_np = np.arange(60, dtype=np.float32).reshape(1, 3, 4, 5)
+
+        x_gpu = Tensor.from_dlpack(torch.from_numpy(x_np).cuda())
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            gpu_out = F.resize_linear(x_gpu, [1, 3, 4, 5])
+        assert gpu_out.storage is not None
+
+        np.testing.assert_array_equal(
+            torch.from_dlpack(gpu_out).float().cpu().numpy(), x_np
         )
 
 

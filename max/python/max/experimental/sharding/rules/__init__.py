@@ -59,6 +59,7 @@ from .misc import (
 from .norm import layer_norm_rule, rms_norm_rule
 from .pooling import linear_pool_rule, pool_rule
 from .reduction import (
+    cumsum_rule,
     linear_reduce_rule,
     reduce_rule,
     softmax_rule,
@@ -104,6 +105,7 @@ __all__ = [
     "conv2d_rule",
     "conv2d_transpose_rule",
     "conv3d_rule",
+    "cumsum_rule",
     "dequantize_rule",
     "div_rule",
     "flatten_rule",

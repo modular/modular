@@ -1673,22 +1673,38 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
 
 ParamNode *Elaborator::getOrCreateNode(ParameterExprArrayAttr values,
                                        GeneratorOpInterface gen, size_t depth) {
-  // TODO: Split this into `get` and `create` methods, so that some can be
-  // read-only accesses.
-  ParamNode *paramNode = g.nodes.modify([&](auto &map) {
-    std::unique_ptr<ParamNode> &n = map[{values, gen}];
-    if (!n)
-      n = std::make_unique<ParamNode>(cpuDevice, gen, values, depth, &g);
-    return n.get();
+  // Most calls name a node that already exists, so look it up under the reader
+  // lock and take the writer lock only to create one. `SmartRWMutex` cannot be
+  // upgraded, so the writer lock repeats the lookup: another thread can insert
+  // this key while no lock is held, and `specializeGenerator` elects the thread
+  // that elaborates a node by test-and-set on the node itself, which requires
+  // exactly one node per key.
+  std::pair<ParameterExprArrayAttr, GeneratorOpInterface> key(values, gen);
+  ParamNode *paramNode = g.nodes.read([&key](const auto &map) -> ParamNode * {
+    if (auto it = map.find(key); it != map.end())
+      return it->second.get();
+    return nullptr;
   });
+  if (!paramNode) {
+    paramNode = g.nodes.modify([&](auto &map) {
+      std::unique_ptr<ParamNode> &n = map[key];
+      if (!n)
+        n = std::make_unique<ParamNode>(cpuDevice, gen, values, depth, &g);
+      return n.get();
+    });
+  }
   // Add the node to the concrete nodes map regardless of whether it was
   // created or not. This guarantees that both nodes (ParamNode and ImplNode)
   // are in the corresponding maps (g.nodes and concreteNodes) when this
   // function returns.
   StringAttr name = paramNode->getMangledName();
   ImplNode *implNode = &paramNode->impl;
-  concreteNodes.modify(
-      [name, implNode](auto &map) { map.try_emplace(name, implNode); });
+  bool isConcrete = concreteNodes.read(
+      [name](const auto &map) { return map.contains(name); });
+  if (!isConcrete) {
+    concreteNodes.modify(
+        [name, implNode](auto &map) { map.try_emplace(name, implNode); });
+  }
   return paramNode;
 }
 
@@ -1825,22 +1841,31 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // ParametricNode (or similar) that doesn't store the input parameters, in
     // which we could store the ParameterUseDefGraph.
 
-    ParameterUseDefGraph *genNodeGraph = knownGraphs.modify(
-        [gen, &paramCache = this->paramCache](auto &map) mutable {
+    // Most generators already have a graph, so look it up under the reader lock
+    // and take the writer lock only to compute a missing one.
+    ParameterUseDefGraph *genNodeGraph =
+        knownGraphs.read([gen](const auto &map) -> ParameterUseDefGraph * {
           if (auto it = map.find(gen); it != map.end())
             return it->second.get();
-          // Compute a new graph. The computed graph could end up getting
-          // discarded if two threads end up here at the same time for the same
-          // generator.
-          auto newGraph =
-              std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
-
-          // calculate() modifies gen.getBodyRegion(), so this needs to be done
-          // in a thread safe manner to avoid tsan failures.
-          newGraph->calculate(paramCache.getThreadLocalCache());
-
-          return map.try_emplace(gen, std::move(newGraph)).first->second.get();
+          return nullptr;
         });
+    if (!genNodeGraph) {
+      genNodeGraph = knownGraphs.modify([&gen, this](auto &map) mutable {
+        // Repeat the lookup: another thread can insert this generator while no
+        // lock is held.
+        if (auto it = map.find(gen); it != map.end())
+          return it->second.get();
+
+        auto newGraph =
+            std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
+
+        // calculate() modifies gen.getBodyRegion(), so this needs to be done
+        // in a thread safe manner to avoid tsan failures.
+        newGraph->calculate(paramCache.getThreadLocalCache());
+
+        return map.try_emplace(gen, std::move(newGraph)).first->second.get();
+      });
+    }
 
     // Clone the body of the generator into the function.
     // TODO: is there a nice way for us to avoid cloning this?
@@ -1961,13 +1986,7 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     return offloadFuncOr.takeError();
   auto [symbol, func] = offloadFuncOr.takeValue();
 
-  // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
-  Builder b(ctx);
-  auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = FuncTypeGeneratorType::get(
-      {}, b.getFunctionType(PointerType::get(noneType), noneType),
-      {ArgConvention::ImmReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it
@@ -2054,6 +2073,14 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
         });
     symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
 
+    // The replacer above reaches the offload function's parameters only, so a
+    // struct referenced solely by `opaque_plugin` would never be exported.
+    // `compileOffloads` stamps the rewritten target on the slice.
+    if (target.getOpaquePlugin()) {
+      offloadInfo.slicedTarget =
+          dyn_cast_or_null<TargetInfoAttr>(replacer.replace(Attribute(target)));
+    }
+
     auto iter =
         offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
             .first;
@@ -2063,9 +2090,8 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       sourceName = StringAttr::get(ctx, *srcName);
 
     auto pair = iter->second.insert(
-        {symbol,
-         OffloadInfo::KernelInfo{
-             name, offloadInfo.numKernels, populateFnType, {}, sourceName}});
+        {symbol, OffloadInfo::KernelInfo{
+                     name, offloadInfo.numKernels, {}, sourceName}});
 
     if (pair.second)
       offloadInfo.numKernels += 1;
@@ -2525,14 +2551,29 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
   // These are the nodes we are going to reschedule at the end.
   std::vector<ImplNode *> reschedule;
 
+  // A set of ParamNode that is waiting on a blocker.
+  DenseSet<ParamNode *> waitingOnBlocker;
+  auto isBlocking = [&](GraphEdge edge) {
+    // If the edge src has a blocker or its dst has a blocker, then the edge is
+    // blocked.
+    return edge.pnode->impl.blocker.has_value() ||
+           waitingOnBlocker.contains(edge.getPointee());
+  };
+
   // Early increment since we will modify the graph as we go.
   for (auto sccIt = llvm::scc_begin(graph); !sccIt.isAtEnd();) {
-    if (!sccIt.hasCycle()) {
-      ++sccIt;
-      continue;
-    }
+    bool hasCycle = sccIt.hasCycle();
     std::vector<GraphEdge> scc = *sccIt;
     ++sccIt;
+
+    // Classify before breaking, also run this before hasCycle check.
+    bool blocking = llvm::any_of(scc, isBlocking);
+    if (blocking)
+      for (GraphEdge edge : scc)
+        waitingOnBlocker.insert(edge.pnode);
+
+    if (!hasCycle)
+      continue;
 
     // First build a set of edges in the SCC for convenient lookup.
     inSCC.clear();
@@ -2555,14 +2596,12 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       break;
     }
 
-    // We can not re-schedule a scc if any of its node has a blocker, in that
-    // case, the scc must have been blocked by another scc, and can only be
-    // waken up indirectly through the blocker.
-    if (llvm::any_of(sccNodes, [](ParamNode *node) {
-          return node->impl.blocker.has_value();
-        })) {
+    // If this SCC is waiting on a blocker, don't schedule it.
+    if (blocking) {
+      sccNodes.clear();
       continue;
     }
+
     // Now, we break all the edges in the SCC for each node in the SCC.
     for (ParamNode *node : sccNodes) {
       ImplNode *inode = &node->impl;
@@ -2672,40 +2711,12 @@ static WalkResult rewriteCompileOffloadOp(
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
   StringAttr content = iter->second.contents[emissionKind];
   StringAttr moduleName = iter->second.moduleNames[emissionKind];
-  IntegerAttr numCaptures = iter->second.numCaptures;
-  mlir::DenseI64ArrayAttr captureSizes = iter->second.captureSizes;
-  PointerType nonePtr = PointerType::get(KGEN::NoneType::get(op->getContext()));
-  auto structType = StructType::get(op->getContext(), {
-                                                          content.getType(),
-                                                          moduleName.getType(),
-                                                          numCaptures.getType(),
-                                                          nonePtr,
-                                                      });
+  auto structType = StructType::get(op->getContext(),
+                                    {content.getType(), moduleName.getType()});
 
   SmallVector<Value> values;
-
-  auto constantV = ParamConstantOp::create(b, content);
-  auto moduleNameV = ParamConstantOp::create(b, moduleName);
-  auto numCapturesV = ParamConstantOp::create(b, numCaptures);
-  // Allocate an array numCaptures elements of int64 integers to store capture
-  // sizes
-  auto captureSizesV = POP::StackAllocationOp::create(
-      b, PointerType::get(captureSizes.getElementType()), numCaptures.getInt());
-  for (auto [i, typeSize] : llvm::enumerate(captureSizes.asArrayRef())) {
-    Value gep = POP::OffsetOp::create(
-        b, captureSizesV, ParamConstantOp::create(b, b.getIndexAttr(i)));
-    POP::StoreOp::create(
-        b, ParamConstantOp::create(b, b.getI64IntegerAttr(typeSize)), gep);
-  }
-  auto opaqueCaptureSizesV =
-      POP::PointerBitcastOp::create(b, nonePtr, captureSizesV);
-
-  assert(numCaptures.getInt() == captureSizes.size() &&
-         "Num captures and number of their sizes mismatch");
-  values.push_back(constantV);
-  values.push_back(moduleNameV);
-  values.push_back(numCapturesV);
-  values.push_back(opaqueCaptureSizesV);
+  values.push_back(ParamConstantOp::create(b, content));
+  values.push_back(ParamConstantOp::create(b, moduleName));
   auto newOp = StructCreateOp::create(b, op->getLoc(), structType, values);
 
   op->replaceUsesOfWith(op.getResult(), newOp);
@@ -2930,12 +2941,8 @@ LogicalResult Elaborator::run(
   // generators - everything else we don't care about.
   // Sort instantiations of each generator to ensure we have a deterministic
   // output in multithreaded execution.
-  struct SuccessfulInstances {
-    std::string paramStr;
-    InstantiatedOpInterface inst;
-  };
   auto *newBlock = new Block;
-  llvm::MapVector<GeneratorOpInterface, std::vector<SuccessfulInstances>>
+  llvm::MapVector<GeneratorOpInterface, std::vector<InstantiatedOpInterface>>
       genInstantiations;
   for (Operation &op : llvm::make_early_inc_range(*theModule.getBody())) {
     if (auto gen = dyn_cast<GeneratorOpInterface>(op)) {
@@ -2955,17 +2962,17 @@ LogicalResult Elaborator::run(
       continue;
     }
 
-    genInstantiations[node.gen].push_back(SuccessfulInstances{
-        mlir::debugString(node.inputParams), node.impl.inst});
+    genInstantiations[node.gen].push_back(node.impl.inst);
   }
 
   // Now reorder all instantiations of each generator to be deterministic.
   for (auto &[gen, instantiations] : genInstantiations) {
-    llvm::sort(instantiations, [](auto &lhs, auto &rhs) {
-      return lhs.paramStr < rhs.paramStr;
-    });
-    for (auto &[_, func] : instantiations)
-      newBlock->push_back(func);
+    llvm::sort(instantiations,
+               [](InstantiatedOpInterface lhs, InstantiatedOpInterface rhs) {
+                 return lhs.getName() < rhs.getName();
+               });
+    for (InstantiatedOpInterface inst : instantiations)
+      newBlock->push_back(inst);
   }
 
   // Sort and then push on all the deferred functions.
@@ -2984,44 +2991,6 @@ LogicalResult Elaborator::run(
   theModule.getBodyRegion().push_back(newBlock);
 
   renameFunctions(theModule, target.isGPU(), failed);
-
-  // Fill populate_captures stubs with the body generated during offload
-  // compilation.
-  //
-  // @__name kernels are renamed by renameFunctions above, so this fill step
-  // runs after renaming. Both sides of the name lookup are deliberately
-  // anchored to the pre-rename auto-mangled sym to survive that rename:
-  //
-  //   - The host stub was created in evaluateCompileOffloadClosureAttr using
-  //     the pre-rename sym (mangleParameterValues of the generator).
-  //   - writeCaptureArgs (in KGENCompiler) names the offload-side populate
-  //     function using the same mangled kernel.name.
-  //
-  // So populate.getSymName() here is the pre-rename sym, and lookupSymbolIn
-  // finds the host stub by that same name.
-  for (auto &[fillTarget, fillResult] : compiledOffload) {
-    for (auto &[_, fillGroup] : fillResult) {
-      for (auto &[_, kernel] : fillGroup) {
-        auto populate = cast<FuncOp>(kernel.func.get());
-        StringRef populateName = populate.getSymName();
-        StringAttr lookupName =
-            StringAttr::get(theModule.getContext(), populateName);
-        // A host stub only exists for kernels that had a
-        // compile_offload_closure declared on the host side. Kernels compiled
-        // only for their info (e.g. via compile_offload without a matching
-        // closure) have no stub; skip.
-        Operation *stubOp =
-            mlir::SymbolTable::lookupSymbolIn(theModule, lookupName);
-        if (!stubOp)
-          continue;
-        auto stubFunc = cast<FuncOp>(stubOp);
-        // Fill in the actual body of the populate closure which is
-        // generated while compiling all the offload functions.
-        stubFunc.getBodyRegion().takeBody(
-            cast<FuncOp>(*kernel.func).getBodyRegion());
-      }
-    }
-  }
 
   theModule.walk([&](Operation *op) {
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {

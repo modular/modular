@@ -65,7 +65,7 @@ def warp_scan(val: UInt32) -> UInt32:
 
 def block_scan(
     val: UInt32,
-    warp_sums: UnsafePointer[mut=True, UInt32, _, address_space=.SHARED],
+    warp_sums: MutPointer[UInt32, _, address_space=.SHARED],
 ) -> UInt32:
     """Block-level inclusive scan.
 
@@ -104,8 +104,8 @@ def block_scan(
 
 def block_exclusive_scan(
     val: UInt32,
-    warp_sums: UnsafePointer[mut=True, UInt32, _, address_space=.SHARED],
-    temp: UnsafePointer[mut=True, UInt32, _, address_space=.SHARED],
+    warp_sums: MutPointer[UInt32, _, address_space=.SHARED],
+    temp: MutPointer[UInt32, _, address_space=.SHARED],
 ) -> UInt32:
     """Convert inclusive scan to exclusive scan.
 
@@ -130,9 +130,9 @@ def block_exclusive_scan(
 
 # ========================== KERNEL CODE ==========================
 def filter_kernel(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    output_size: UnsafePointer[UInt32, MutAnyOrigin],
+    input: MutPointer[UInt32, MutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    output_size: MutPointer[UInt32, MutAnyOrigin],
     N: UInt32,
 ):
     """Figure 12.8: Simple stable filter kernel using scan.

@@ -14,12 +14,24 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+from max import tree
+from max.graph import Graph, Type, Value
+from max.graph import Module as GraphModule
 from max.nn.attention import AttentionWithRope
 from max.nn.embedding import Embedding
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.linear import MLP, Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import Transformer, TransformerBlock
+from max.nn.transformer import DecoderOutputs, Transformer, TransformerBlock
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_kv_symbolic_input_tree,
+)
 
 from .model_config import MistralConfig
 
@@ -107,4 +119,67 @@ class Mistral(Transformer):
             kv_params=config.kv_params,
             rope=rope,
             return_logits=config.return_logits,
+        )
+        self.devices = config.devices
+
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the graph's inputs; its leaves are its inputs."""
+        return ragged_kv_symbolic_input_tree(
+            kv_params=self.kv_params,
+            device_refs=list(self.devices),
+            include_signal_buffers=False,
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_tree`'s leaves.
+
+        Adapts the flat graph inputs to :meth:`__call__`, which takes the
+        device's KV cache as one collection.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+
+        def forward(
+            tokens: Value[Any],
+            input_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            *kv_inputs: Value[Any],
+        ) -> DecoderOutputs:
+            kv_collections = tree.leaves(
+                self.kv_params.unflatten_kv_inputs(iter(kv_inputs)),
+                leaf=KVCacheInputsPerDevice,
+            )
+            return self(
+                tokens.tensor,
+                kv_collections[0],
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )

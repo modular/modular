@@ -15,7 +15,7 @@ from std.math import isclose
 from std.random import rand
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import (
     MASK_VALUE,
@@ -48,7 +48,7 @@ def build_ChunkedCausalMask[
                     var causal_masked = q_idx + start_pos < k_idx
                     var masked = chunk_masked or causal_masked
                     mask.store(
-                        Coord(Index(b, h, q_idx, k_idx)),
+                        (b, h, q_idx, k_idx),
                         Scalar[mask.dtype](MASK_VALUE) if masked else Scalar[
                             mask.dtype
                         ](0),

@@ -17,6 +17,7 @@ from layout import TileTensor, row_major
 from layout._fillers import random
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
+    causal_conv1d_channel_first_fwd_cpu_no_bias,
 )
 from std.testing import TestSuite, assert_almost_equal
 
@@ -39,6 +40,7 @@ def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
 def run_causal_conv1d[
     dtype: DType,
     activation: StaticString,
+    with_bias: Bool = True,
 ](batch: Int, dim: Int, seqlen: Int, width: Int, rtol: Float64 = 0.01,) raises:
     """Test causal conv1d kernel against reference implementation."""
     # Allocate host memory
@@ -74,82 +76,67 @@ def run_causal_conv1d[
     var input_buf = input_h
     var weight_buf = weight_h
     var bias_buf = bias_h
+    comptime if not with_bias:
+        for c in range(dim):
+            bias_h.store((c,), Scalar[dtype](0))
     var result_unfused_buf = result_unfused_h
-
-    # Strides for channel-first layout (B, C, L)
-    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var x_c_stride: UInt32 = UInt32(seqlen)
-    var x_l_stride: UInt32 = 1
-    var weight_c_stride: UInt32 = UInt32(width)
-    var weight_width_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var out_c_stride: UInt32 = UInt32(seqlen)
-    var out_l_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
 
     # Test kernel
-    causal_conv1d_channel_first_fwd_cpu[
-        dtype,
-        dtype,
-        dtype,
-        dtype,
-    ](
-        batch,
-        dim,
-        seqlen,
-        width,
-        input_h,
-        weight_h,
-        result_fused_h,
-        bias_h,
-        silu_activation,
-    )
+    comptime if with_bias:
+        causal_conv1d_channel_first_fwd_cpu[dtype, dtype, dtype, dtype](
+            batch,
+            dim,
+            seqlen,
+            width,
+            input_h,
+            weight_h,
+            result_fused_h,
+            bias_h,
+            silu_activation,
+        )
+    else:
+        causal_conv1d_channel_first_fwd_cpu_no_bias[dtype, dtype, dtype](
+            batch,
+            dim,
+            seqlen,
+            width,
+            input_h,
+            weight_h,
+            result_fused_h,
+            silu_activation,
+        )
 
     # Reference implementation
     var width_minus_1: Int = width - 1
     for b in range(batch):
         for c in range(dim):
-            var cur_bias = bias_buf.unsafe_ptr().load(c)
+            var cur_bias = bias_buf[c]
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = cur_bias
                 for w in range(width):
                     var input_l: Int = l - (width_minus_1 - w)
                     if input_l >= 0:
-                        var x_offset = (
-                            UInt32(b) * x_batch_stride
-                            + UInt32(c) * x_c_stride
-                            + UInt32(input_l) * x_l_stride
-                        )
-                        var input_val = input_buf.unsafe_ptr().load(x_offset)
-                        var weight_offset = (
-                            UInt32(c) * weight_c_stride
-                            + UInt32(w) * weight_width_stride
-                        )
-                        var weight_val = weight_buf.unsafe_ptr().load(
-                            weight_offset
-                        )
+                        var input_val = input_buf[b, c, input_l]
+                        var weight_val = weight_buf[c, w]
                         conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
                 if silu_activation:
                     out_val = silu_ref[dtype](out_val)
 
-                var out_offset = (
-                    UInt32(b) * out_batch_stride
-                    + UInt32(c) * out_c_stride
-                    + UInt32(l) * out_l_stride
-                )
-                result_unfused_buf.unsafe_ptr().store(out_offset, out_val)
+                result_unfused_buf[b, c, l] = out_val
 
     # Compare results
-    var flattened_size = batch * dim * seqlen
-    for i in range(flattened_size):
-        assert_almost_equal(
-            result_fused_h.unsafe_ptr()[i],
-            result_unfused_h.unsafe_ptr()[i],
-            rtol=rtol,
-        )
+    for b in range(batch):
+        for c in range(dim):
+            for l in range(seqlen):
+                assert_almost_equal(
+                    result_fused_h[b, c, l],
+                    result_unfused_h[b, c, l],
+                    rtol=rtol,
+                )
 
 
 def test_basic_causal_conv1d() raises:
@@ -183,3 +170,24 @@ def test_causal_conv1d_various_widths() raises:
 def test_causal_conv1d_large_sequence() raises:
     """Test causal conv1d with larger sequence length."""
     run_causal_conv1d[.float32, "none"](2, 16, 128, 3)
+
+
+def test_causal_conv1d_no_bias() raises:
+    """Test the no-bias channel-first kernel, including SIMD tails."""
+    run_causal_conv1d[.float32, "none", False](2, 4, 8, 3)
+    run_causal_conv1d[.float32, "silu", False](2, 5, 37, 4)
+    run_causal_conv1d[.float32, "none", False](1, 3, 130, 2)
+
+
+def test_causal_conv1d_odd_sequence_lengths() raises:
+    """Test sequence lengths that straddle the vector width."""
+    run_causal_conv1d[.float32, "none"](2, 3, 5, 4)
+    run_causal_conv1d[.float32, "silu"](1, 3, 33, 4)
+    run_causal_conv1d[.float32, "none"](1, 2, 1, 3)
+
+
+def test_causal_conv1d_wide_filters() raises:
+    """Filters wider than four taps and wider than a SIMD vector."""
+    run_causal_conv1d[.float32, "none"](1, 3, 37, 5)
+    run_causal_conv1d[.float32, "silu"](1, 2, 40, 20)
+    run_causal_conv1d[.float32, "none", False](1, 2, 40, 7)

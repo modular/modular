@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
@@ -47,19 +48,19 @@ def test_nvfp4_quantization[
 ) raises:
     comptime out_dtype = DType.uint8
 
-    var _B = Int(batch.value())
-    var M = Int(m.value())
-    var N = Int(n.value())
+    var _B = Int(batch)
+    var M = Int(m)
+    var N = Int(n)
 
     var input_shape = Coord(m, n)
     comptime output_n = ceildiv(NType.static_value, 2)
     var output_shape = Coord(m, Idx[output_n])
 
-    var host_ptr = alloc[Scalar[dtype]](M * N)
+    var host_ptr = unsafe_alloc[Scalar[dtype]](M * N)
     var host_tensor = TileTensor(host_ptr, row_major(input_shape))
 
-    var host_ptr_output = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
-    var host_ptr_output_ref = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_ptr_output = unsafe_alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_ptr_output_ref = unsafe_alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
 
     var device_buffer = ctx.enqueue_create_buffer[dtype](M * N)
 
@@ -91,8 +92,8 @@ def test_nvfp4_quantization[
         * SF_ATOM_K
     )
 
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_total)
-    var scales_host_ptr_ref = alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host_ptr_ref = unsafe_alloc[Scalar[scales_dtype]](scales_total)
 
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_total)
     var scales_device_ref = ctx.enqueue_create_buffer[scales_dtype](
@@ -188,9 +189,9 @@ def test_nvfp4_quantization[
                 output_fp32_ref,
             )
 
-    host_ptr.free()
-    host_ptr_output.free()
-    scales_host_ptr.free()
+    host_ptr.unsafe_free()
+    host_ptr_output.unsafe_free()
+    scales_host_ptr.unsafe_free()
 
 
 def main() raises:

@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from typing import ClassVar
 
 from max.dtype import DType
@@ -23,6 +24,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
+    MLAKVCacheParams,
     MultiKVCacheParams,
     spec_decode_cache_slack,
 )
@@ -38,6 +40,7 @@ from max.pipelines.speculative.config import SpeculativeMethod
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from ..deepseekV3_2.layers.sparse_mla import sparse_selection_width
 from ..deepseekV3_modulev3.model_config import DeepseekV3Config
 
 
@@ -68,6 +71,55 @@ def resolve_indexer_types(
         "full" if (max(i - offset + 1, 0) % freq) == 0 else "shared"
         for i in range(num_hidden_layers)
     ]
+
+
+def indexer_cache_layer_map(
+    indexer_types: Sequence[str], num_layers: int
+) -> list[int]:
+    """Maps each decoder layer to its slot in the indexer K cache.
+
+    Only ``"full"`` layers run the indexer, so only they get a slot; slots are
+    numbered in layer order. ``"shared"`` layers never touch the indexer cache
+    and map to slot 0. An empty schedule means every layer is full.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        The indexer cache slot of each of the first ``num_layers`` layers.
+    """
+    if not indexer_types:
+        return list(range(num_layers))
+    slots: list[int] = []
+    next_slot = 0
+    for layer_type in indexer_types[:num_layers]:
+        if layer_type == "full":
+            slots.append(next_slot)
+            next_slot += 1
+        else:
+            slots.append(0)
+    return slots
+
+
+def num_indexer_cache_layers(
+    indexer_types: Sequence[str], num_layers: int
+) -> int:
+    """Returns how many layers the indexer K cache needs to hold.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        The number of ``"full"`` layers among the first ``num_layers``, or
+        ``num_layers`` when the schedule is empty.
+    """
+    if not indexer_types:
+        return num_layers
+    return sum(t == "full" for t in indexer_types[:num_layers])
 
 
 @dataclass(kw_only=True)
@@ -133,6 +185,13 @@ class DeepseekV3_2Config(DeepseekV3Config):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
+        assert isinstance(mla_kv_params, MLAKVCacheParams)
+        mla_kv_params = replace(
+            mla_kv_params,
+            sparse_indices_stride=sparse_selection_width(
+                mla_kv_params, huggingface_config.index_topk
+            ),
+        )
 
         # Always store the indexer's K cache in float8_e4m3fn.
         indexer_cache_dtype = DType.float8_e4m3fn
@@ -164,7 +223,15 @@ class DeepseekV3_2Config(DeepseekV3Config):
             # Similar to MLA, the indexer's k-cache uses a single KV head.
             n_kv_heads=1,
             head_dim=indexer_head_dim,
-            num_layers=mla_kv_params.num_layers,
+            # Only ``full`` layers run the indexer, so only they hold a slot
+            # (see :func:`indexer_cache_layer_map`); the graph-API config and
+            # the fused MTP graph size it the same way.
+            num_layers=num_indexer_cache_layers(
+                resolve_indexer_types(
+                    huggingface_config, mla_kv_params.num_layers
+                ),
+                mla_kv_params.num_layers,
+            ),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             # Set to True because there is only a key-cache, and one KV head.
@@ -174,7 +241,13 @@ class DeepseekV3_2Config(DeepseekV3Config):
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
-        assert isinstance(indexer_kv_params, KVCacheParams)
+        # No kernel reads the indexer leaf's dispatch metadata, but it is part
+        # of the composite capture key, so it must not move with the context.
+        assert isinstance(indexer_kv_params, MLAKVCacheParams)
+        indexer_kv_params = replace(
+            indexer_kv_params,
+            sparse_indices_stride=mla_kv_params.sparse_indices_stride,
+        )
         return MultiKVCacheParams.from_params(
             {"mla": mla_kv_params, "indexer": indexer_kv_params}
         )

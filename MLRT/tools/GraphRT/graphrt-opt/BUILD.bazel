@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+package(
+    default_visibility = ["//MLRT:__subpackages__"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+modular_cc_binary(
+    name = "graphrt-opt",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//AsyncRT:CompilerSupport",
+        "//AsyncRT:RuntimeGlobals",
+        "//Init",
+        "//MLRT:GraphRT/AllDialects",
+        "//Support:Context",
+        "//Support:Globals",
+        "@llvm-project//mlir:MlirOptLib",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Transforms",
+    ],
+)

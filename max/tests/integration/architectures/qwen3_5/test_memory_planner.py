@@ -33,6 +33,7 @@ from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.quantization import (
     Qwen3_5QuantScheme,
 )
+from max.pipelines.lib import PipelineConfig
 
 # 3 linear layers of a conv window and a recurrent state, at bf16:
 #   conv      = (2 * 128 * 16 + 128 * 48) * (4 - 1)  = 30_720 elements
@@ -102,6 +103,8 @@ def _pipeline_config(
 ) -> Mock:
     pipeline_config = Mock()
     pipeline_config.runtime.max_batch_size = max_batch_size
+    # An unspeculated model, so no verify ring is priced.
+    pipeline_config.speculative = None
     pipeline_config.model.kv_cache.device_memory_utilization = 0.9
     pipeline_config.model.quantization_encoding = encoding
     # A resolved (no-op) cast makes encoding selection take the fast path.
@@ -147,6 +150,19 @@ def test_the_state_is_not_reserved_outside_the_pool() -> None:
         )
         == 0
     )
+
+
+def test_a_speculative_request_is_priced_its_ring() -> None:
+    """A speculative request's extra bytes are its verify ring alone."""
+    config = _qwen_config()
+    planner = Qwen3_5MemoryPlanner(config)
+    pipeline_config = cast(
+        "PipelineConfig",
+        SimpleNamespace(speculative=SimpleNamespace(draft_width=3)),
+    )
+    ring_bytes = config._per_request_ring_bytes(3 + 1)
+    assert ring_bytes > 0
+    assert planner.spec_state_bytes(pipeline_config) == ring_bytes
 
 
 def test_a_state_still_costs_what_the_batch_bound_thinks_it_does() -> None:

@@ -1892,13 +1892,7 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     return offloadFuncOr.takeError();
   auto [symbol, func] = offloadFuncOr.takeValue();
 
-  // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
-  Builder b(ctx);
-  auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = FuncTypeGeneratorType::get(
-      {}, b.getFunctionType(PointerType::get(noneType), noneType),
-      {ArgConvention::ImmReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it
@@ -1977,6 +1971,14 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
         });
     symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
 
+    // The replacer above reaches the offload function's parameters only, so a
+    // struct referenced solely by `opaque_plugin` would never be exported.
+    // `compileOffloads` stamps the rewritten target on the slice.
+    if (target.getOpaquePlugin()) {
+      offloadInfo.slicedTarget =
+          dyn_cast_or_null<TargetInfoAttr>(replacer.replace(Attribute(target)));
+    }
+
     auto iter =
         offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
             .first;
@@ -1986,9 +1988,8 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       sourceName = StringAttr::get(ctx, *srcName);
 
     auto pair = iter->second.insert(
-        {symbol,
-         OffloadInfo::KernelInfo{
-             name, offloadInfo.numKernels, populateFnType, {}, sourceName}});
+        {symbol, OffloadInfo::KernelInfo{
+                     name, offloadInfo.numKernels, {}, sourceName}});
 
     if (pair.second)
       offloadInfo.numKernels += 1;
@@ -2508,40 +2509,12 @@ static WalkResult rewriteCompileOffloadOp(
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
   StringAttr content = iter->second.contents[emissionKind];
   StringAttr moduleName = iter->second.moduleNames[emissionKind];
-  IntegerAttr numCaptures = iter->second.numCaptures;
-  mlir::DenseI64ArrayAttr captureSizes = iter->second.captureSizes;
-  PointerType nonePtr = PointerType::get(KGEN::NoneType::get(op->getContext()));
-  auto structType = StructType::get(op->getContext(), {
-                                                          content.getType(),
-                                                          moduleName.getType(),
-                                                          numCaptures.getType(),
-                                                          nonePtr,
-                                                      });
+  auto structType = StructType::get(op->getContext(),
+                                    {content.getType(), moduleName.getType()});
 
   SmallVector<Value> values;
-  auto constantV = ParamConstantOp::create(b, content);
-  auto moduleNameV = ParamConstantOp::create(b, moduleName);
-  auto numCapturesV = ParamConstantOp::create(b, numCaptures);
-  // Allocate an array numCaptures elements of int64 integers to store capture
-  // sizes
-  auto captureSizesV = POP::StackAllocationOp::create(
-      b, PointerType::get(captureSizes.getElementType()), numCaptures.getInt());
-  for (auto [i, typeSize] : llvm::enumerate(captureSizes.asArrayRef())) {
-    Value gep = POP::OffsetOp::create(
-        b, captureSizesV, ParamConstantOp::create(b, b.getIndexAttr(i)));
-    POP::StoreOp::create(
-        b, ParamConstantOp::create(b, b.getI64IntegerAttr(typeSize)), gep);
-  }
-  auto opaqueCaptureSizesV =
-      POP::PointerBitcastOp::create(b, nonePtr, captureSizesV);
-
-  assert(numCaptures.getInt() == captureSizes.size() &&
-         "Num captures and number of their sizes mismatch");
-
-  values.push_back(constantV);
-  values.push_back(moduleNameV);
-  values.push_back(numCapturesV);
-  values.push_back(opaqueCaptureSizesV);
+  values.push_back(ParamConstantOp::create(b, content));
+  values.push_back(ParamConstantOp::create(b, moduleName));
   auto newOp = StructCreateOp::create(b, op->getLoc(), structType, values);
 
   op->replaceUsesOfWith(op.getResult(), newOp);
@@ -2724,12 +2697,8 @@ LogicalResult ParametricElaborator::run(
   // generators - everything else we don't care about.
   // Sort instantiations of each generator to ensure we have a deterministic
   // output in multithreaded execution.
-  struct SuccessfulInstances {
-    std::string paramStr;
-    InstantiatedOpInterface inst;
-  };
   auto *newBlock = new Block;
-  llvm::MapVector<GeneratorOpInterface, std::vector<SuccessfulInstances>>
+  llvm::MapVector<GeneratorOpInterface, std::vector<InstantiatedOpInterface>>
       genInstantiations;
   for (Operation &op : llvm::make_early_inc_range(*theModule.getBody())) {
     if (auto gen = dyn_cast<GeneratorOpInterface>(op)) {
@@ -2749,17 +2718,17 @@ LogicalResult ParametricElaborator::run(
       continue;
     }
 
-    genInstantiations[node.gen].push_back(SuccessfulInstances{
-        mlir::debugString(node.inputParams), node.impl.inst});
+    genInstantiations[node.gen].push_back(node.impl.inst);
   }
 
   // Now reorder all instantiations of each generator to be deterministic.
   for (auto &[gen, instantiations] : genInstantiations) {
-    llvm::sort(instantiations, [](auto &lhs, auto &rhs) {
-      return lhs.paramStr < rhs.paramStr;
-    });
-    for (auto &[_, func] : instantiations)
-      newBlock->push_back(func);
+    llvm::sort(instantiations,
+               [](InstantiatedOpInterface lhs, InstantiatedOpInterface rhs) {
+                 return lhs.getName() < rhs.getName();
+               });
+    for (InstantiatedOpInterface inst : instantiations)
+      newBlock->push_back(inst);
   }
 
   // Sort and then push on all the deferred functions.
@@ -2774,44 +2743,6 @@ LogicalResult ParametricElaborator::run(
   theModule.getBodyRegion().push_back(newBlock);
 
   renameFunctions(theModule, target.isGPU(), failed);
-
-  // Fill populate_captures stubs with the body generated during offload
-  // compilation.
-  //
-  // @__name kernels are renamed by renameFunctions above, so this fill step
-  // runs after renaming. Both sides of the name lookup are deliberately
-  // anchored to the pre-rename auto-mangled sym to survive that rename:
-  //
-  //   - The host stub was created in evaluateCompileOffloadClosureAttr using
-  //     the pre-rename sym (mangleParameterValues of the generator).
-  //   - writeCaptureArgs (in KGENCompiler) names the offload-side populate
-  //     function using the same mangled kernel.name.
-  //
-  // So populate.getSymName() here is the pre-rename sym, and lookupSymbolIn
-  // finds the host stub by that same name.
-  for (auto &[fillTarget, fillResult] : compiledOffload) {
-    for (auto &[_, fillGroup] : fillResult) {
-      for (auto &[_, kernel] : fillGroup) {
-        auto populate = cast<FuncOp>(kernel.func.get());
-        StringRef populateName = populate.getSymName();
-        StringAttr lookupName =
-            StringAttr::get(theModule.getContext(), populateName);
-        // A host stub only exists for kernels that had a
-        // compile_offload_closure declared on the host side. Kernels compiled
-        // only for their info (e.g. via compile_offload without a matching
-        // closure) have no stub; skip.
-        Operation *stubOp =
-            mlir::SymbolTable::lookupSymbolIn(theModule, lookupName);
-        if (!stubOp)
-          continue;
-        auto stubFunc = cast<FuncOp>(stubOp);
-        // Fill in the actual body of the populate closure which is
-        // generated while compiling all the offload functions.
-        stubFunc.getBodyRegion().takeBody(
-            cast<FuncOp>(*kernel.func).getBodyRegion());
-      }
-    }
-  }
 
   theModule.walk([&](Operation *op) {
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {

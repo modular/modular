@@ -1,3 +1,74 @@
+load("//bazel:api.bzl", "modular_cc_library")
+
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["torch-cuda-deps.patch"])
+exports_files([
+    "torch-cuda-deps.patch",
+    "hip_version.h.in",
+])
+
+# GPU vendor header/stub targets. These live here rather than in
+# //bazel/third-party because Support, Target and MLRT depend on them by label
+# and are part of the source-available export, which does not carry
+# third-party.
+modular_cc_library(name = "empty_lib")
+
+alias(
+    name = "NVPTX",
+    actual = select({
+        "//:linux_x86_64": "@nvptxcompiler_x86_64//:NVPTX",
+        "//:linux_aarch64": "@nvptxcompiler_aarch64//:NVPTX",
+        "@platforms//os:macos": ":empty_lib",
+    }),
+)
+
+alias(
+    name = "CUDAHeaders",
+    actual = select({
+        "//:linux_x86_64": "@cuda_x86_64//:cuda_headers",
+        "//:linux_aarch64": "@cuda_sbsa//:cuda_headers",
+        "@platforms//os:macos": "@cuda_x86_64//:cuda_headers",
+    }),
+)
+
+alias(
+    name = "NVMLHeaders",
+    actual = select({
+        "//:linux_x86_64": "@nvml_x86_64//:nvml_headers",
+        "//:linux_aarch64": "@nvml_sbsa//:nvml_headers",
+        "@platforms//os:macos": "@nvml_x86_64//:nvml_headers",
+    }),
+)
+
+# CUPTI headers from the NVIDIA CUDA CUPTI redistributable.
+# Used by Tracy's TracyCUDA.hpp for GPU profiling.
+alias(
+    name = "cuda_cupti_headers",
+    actual = select({
+        "//:linux_x86_64": "@cuda_cupti_x86_64//:cupti_headers",
+        "//:linux_aarch64": "@cuda_cupti_aarch64//:cupti_headers",
+        "@platforms//os:macos": ":empty_lib",
+    }),
+)
+
+# CUDA runtime headers only (no libcudart.so) from the NVIDIA cuda_cudart
+# redistributable.  Provides cuda_runtime_api.h (needed transitively by
+# cupti.h) without a hard link against libcudart.so.  Used by Tracy's CUDA
+# profiling backend alongside the libcudart_stub for on-demand loading.
+alias(
+    name = "cuda_runtime_headers",
+    actual = select({
+        "//:linux_x86_64": "@cuda_x86_64//:cuda_runtime_headers",
+        "//:linux_aarch64": "@cuda_sbsa//:cuda_runtime_headers",
+        "@platforms//os:macos": ":empty_lib",
+    }),
+)
+
+# rocprofiler-sdk headers from the hermetic hip_include http_archive.
+alias(
+    name = "rocprofiler_headers",
+    actual = select({
+        "@platforms//os:linux": "@hip_include//:rocprofiler_headers",
+        "@platforms//os:macos": ":empty_lib",
+    }),
+)

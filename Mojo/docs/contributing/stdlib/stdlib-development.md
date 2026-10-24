@@ -29,17 +29,9 @@ build and test tool to ensure reproducible builds through dependency tracking
 and caching. For more information on using Bazel in the Modular repo, see
 [Using Bazel](https://github.com/modular/modular/blob/main/bazel/docs/usage.md).
 
-To build with Bazel, you'll need to choose one of two modes: either building
-the Mojo compiler locally, or using a prebuilt Mojo compiler. To use the
-prebuilt Mojo compiler, pass the `--config=prebuilt-mojo` option on every
-`bazel` command. Or create a `local.bazelrc` file and add the following:
-
-```text
-build --config=prebuilt-mojo
-```
-
-The `bazel` commands shown in this document assume you have the configuration
-already set in a `local.bazelrc` file.
+The whole tree — including the Mojo compiler — is built from source, so there
+is no build-mode `--config` to choose; the `bazel` commands shown in this
+document work as written.
 
 To build and test your changes to the Mojo standard library, run the following
 `./bazelw` commands from the top-level directory of the repository (where the

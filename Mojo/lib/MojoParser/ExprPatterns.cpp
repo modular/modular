@@ -188,6 +188,12 @@ void PatternCommand::dump() const { print(llvm::errs()); }
 // Per-ExprNode Support for Matching.
 //===----------------------------------------------------------------------===//
 
+static bool isNegatedNumericLiteral(const ExprNode *expr) {
+  return expr->kind == ExprNode::kNeg &&
+         isa<IntLiteralNode, FloatLiteralNode>(
+             cast<UnaryOpNode>(expr)->subExpr->getWithoutParens());
+}
+
 LogicalResult
 ExprNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                          const PatternPath *path,
@@ -210,6 +216,17 @@ StringRef ExprNode::getLiteralSpelling() const { return {}; }
 StringRef IntLiteralNode::getLiteralSpelling() const { return spelling; }
 
 StringRef FloatLiteralNode::getLiteralSpelling() const { return spelling; }
+
+StringRef UnaryOpNode::getLiteralSpelling() const {
+  if (isNegatedNumericLiteral(this)) {
+    const char *startPos = opLoc.getPointer();
+    const char *lastPos = isa<ParenNode>(subExpr)
+                              ? subExpr->getRangeEnd().getPointer() + 1
+                              : subExpr->getLiteralSpelling().end();
+    return StringRef(startPos, lastPos - startPos);
+  }
+  return {};
+}
 
 StringRef BoolLiteralNode::getLiteralSpelling() const {
   return value ? "True" : "False";
@@ -261,7 +278,86 @@ LogicalResult StringLiteralNode::buildCheckList(
 LogicalResult SetInitLiteralNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
-  out.push_back(builder.createEqual(path, this));
+  if (values.empty())
+    return ExprNode::buildCheckList(builder, subject, path, out);
+
+  ASTType subjectType = path->type;
+  auto structType =
+      dyn_cast<StructType>(SugarAttr::strip(subjectType.mlirType));
+  auto *structDecl =
+      dyn_cast_or_null<StructASTDecl>(subjectType.getDecl(builder.shared));
+  if (!structType || !structDecl) {
+    builder.emitError(
+        getLoc(), "initializer-list patterns require a struct subject, got ")
+        << subjectType << getRange();
+    return failure();
+  }
+
+  SmallVector<StructFieldOp, 8> fields;
+  llvm::append_range(fields, structDecl->getOp().getFieldDecls());
+
+  bool hasPositionalElement =
+      llvm::any_of(values, [](const auto &element) { return !element.first; });
+  if (hasPositionalElement) {
+    auto diag = builder.emitError(
+        getLoc(), "initializer-list patterns require field names");
+    diag << getRange();
+    for (auto [index, element] : llvm::enumerate(values)) {
+      if (!element.first && index < fields.size())
+        diag << FixIt::insertBeforeToken(
+            element.second->getRangeStart(),
+            fields[index].getNameAttr().getValue() + "=");
+    }
+    return failure();
+  }
+
+  llvm::SmallPtrSet<Attribute, 8> seenFields;
+  for (auto [keyExpr, valueExpr] : values) {
+    auto *fieldNameExpr = dyn_cast<DeclRefNode>(keyExpr);
+    if (!fieldNameExpr) {
+      builder.emitError(keyExpr->getLoc(),
+                        "expected a field name in initializer-list pattern")
+          << keyExpr->getRange();
+      return failure();
+    }
+
+    StringAttr fieldName =
+        StringAttr::get(builder.shared.getContext(), fieldNameExpr->spelling);
+    LookupResult lookup = builder.shared.lookupAndResolveDecl(
+        fieldName.getValue(), keyExpr->getLoc(), *structDecl,
+        /*searchParentScopes=*/false);
+    if (lookup.isErroneous())
+      return failure();
+    if (!lookup.isSuccess() || lookup.getIfSuccess().size() != 1) {
+      builder.emitError(keyExpr->getLoc(), "'")
+          << fieldName.getValue() << "' is not a field of " << subjectType
+          << keyExpr->getRange();
+      return failure();
+    }
+
+    auto *fieldDecl =
+        dyn_cast<StructFieldASTDecl>(lookup.getIfSuccess().front());
+    if (!fieldDecl) {
+      builder.emitError(keyExpr->getLoc(), "'")
+          << fieldName.getValue() << "' is not a stored field of "
+          << subjectType << keyExpr->getRange();
+      return failure();
+    }
+    if (!seenFields.insert(fieldName).second) {
+      builder.emitError(keyExpr->getLoc(), "duplicate field '")
+          << fieldName.getValue() << "' in initializer-list pattern"
+          << keyExpr->getRange();
+      return failure();
+    }
+
+    StructFieldOp fieldOp = fieldDecl->getOp();
+    ASTType fieldType = fieldOp.getReboundType(
+        structType, &builder.shared.getEvaluationContext());
+    const PatternPath *fieldPath =
+        builder.getStructField(path, fieldName, fieldType);
+    if (failed(valueExpr->buildCheckList(builder, CValue(), fieldPath, out)))
+      return failure();
+  }
   return success();
 }
 
@@ -363,12 +459,18 @@ LogicalResult UnaryOpNode::buildCheckList(
   if (kind == kPrefixEQ) {
     const ExprNode *value = subExpr->getWithoutParens();
     if (isa<BoolLiteralNode, IntLiteralNode, FloatLiteralNode,
-            StringLiteralNode, SetInitLiteralNode>(value)) {
+            StringLiteralNode>(value) ||
+        isNegatedNumericLiteral(value)) {
       builder.emitWarning(getLoc())
           << "'==' is redundant when matching a literal; remove it"
           << FixIt::remove(getLoc());
     }
     out.push_back(builder.createEqual(path, this->subExpr));
+    return success();
+  }
+
+  if (isNegatedNumericLiteral(this)) {
+    out.push_back(builder.createEqual(path, this));
     return success();
   }
 
@@ -538,14 +640,15 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
           << operand.expr->getRange();
       return failure();
     }
-    auto fieldOp = dyn_cast_or_null<StructFieldOp>(
-        lookup.getIfSuccess().front()->getIfOperation());
-    if (!fieldOp) {
+    auto *fieldDecl =
+        dyn_cast<StructFieldASTDecl>(lookup.getIfSuccess().front());
+    if (!fieldDecl) {
       builder.emitError(operand.getLoc(), "'")
           << fieldName.getValue() << "' is not a stored field of "
           << subjectType << operand.expr->getRange();
       return failure();
     }
+    StructFieldOp fieldOp = fieldDecl->getOp();
 
     if (!seenFields.insert(fieldName).second) {
       builder.emitError(operand.getLoc(), "duplicate field '")
@@ -1806,10 +1909,10 @@ static bool collectFiniteDims(PatternMatchBuilder &builder,
   ASTDecl *typeDecl = type.getDecl(builder.shared);
   if (!structType || !typeDecl)
     return false;
-  auto structDeclOp =
-      dyn_cast_or_null<LIT::StructDeclOp>(typeDecl->getIfOperation());
-  if (!structDeclOp)
+  auto *structDecl = dyn_cast<LIT::StructASTDecl>(typeDecl);
+  if (!structDecl)
     return false;
+  LIT::StructDeclOp structDeclOp = structDecl->getOp();
 
   for (LIT::StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getReboundType(

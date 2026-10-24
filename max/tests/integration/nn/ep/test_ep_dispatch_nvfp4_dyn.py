@@ -308,7 +308,7 @@ def test_ep_dispatch_nvfp4_dyn_global_scales(
             src_info = ep_batch_manager._src_info[i]
             assert src_info is not None
             outputs.extend([*dispatch_outputs, src_info])
-        graph.output(*outputs)
+        graph.output(outputs)
 
     compiled = session.load(graph)
     results = compiled.execute(

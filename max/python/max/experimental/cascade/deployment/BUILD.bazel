@@ -29,5 +29,6 @@ modular_py_library(
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/grpc_runtime",
         "//max/python/max/experimental/cascade/http_runtime",
+        "//max/python/max/experimental/cascade/telemetry",
     ],
 )

@@ -33,6 +33,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheBufferInterface,
     KVCacheMemory,
     KVConnectorType,
+    max_pages_per_request,
     spec_decode_cache_slack,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
@@ -73,6 +74,7 @@ from .jenga_block_pool import (
     JengaBlockPool,
     JengaGeometry,
     _pristine_pool_can_satisfy,
+    _stranding_warning,
     plan_jenga_geometry,
 )
 from .kv_group_coordinator import KVGroupCoordinatorInterface
@@ -98,15 +100,14 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         bytes_per_page = {
             leaf_id: leaf.bytes_per_page for leaf_id, leaf in leaves.items()
         }
-        # A row-addressed leaf reports 1 and so constrains nothing.
-        row_bytes = {
-            leaf_id: leaf.row_bytes for leaf_id, leaf in leaves.items()
+        stride_alignments = {
+            leaf_id: leaf.stride_alignment for leaf_id, leaf in leaves.items()
         }
         n_devices = len(params.devices)
         if n_devices < 1:
             raise ValueError("Jenga KV cache requires at least one device")
         return plan_jenga_geometry(
-            available_bytes // n_devices, bytes_per_page, row_bytes
+            available_bytes // n_devices, bytes_per_page, stride_alignments
         )
 
     @classmethod
@@ -162,9 +163,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         Raises:
             RuntimeError: If ``available_bytes`` cannot hold a single block.
         """
-        num_blocks = ceildiv(
-            max_seq_len + spec_decode_cache_slack(params), params.page_size
-        )
+        num_blocks = max_pages_per_request(params, max_seq_len)
         demand = {
             leaf_id: max_batch_size
             * leaf.blocks_to_reserve(
@@ -254,6 +253,12 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                     f" (+{geometry.padding_fraction(leaf_id, bytes_per_page[leaf_id]):.2%})"
                 )
             )
+
+        warning = _stranding_warning(
+            geometry, len(leaves), available_bytes // len(params.devices)
+        )
+        if warning is not None:
+            logger.warning(warning)
 
         devices = [d.to_device() for d in params.devices]
         slabs = [
@@ -378,8 +383,9 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         # LUT columns index logical sequence pages, not physical page IDs.
         # Tiny scale pages can give a slab millions of physical pages, but
         # a request still only addresses its sequence length plus slack.
-        max_num_blocks = ceildiv(
-            max_seq_len + spec_decode_cache_slack(params), params.page_size
+        max_num_blocks = max_pages_per_request(params, max_seq_len)
+        self._max_seq_len_with_slack = max_seq_len + spec_decode_cache_slack(
+            params
         )
         # One instance across every leaf, shard and replica. Leaf ids are
         # already unique, a replica's shards are the destinations of one
@@ -760,14 +766,40 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         return self.huge_block_count(replica_idx)
 
     def pressure_pct(self, replica_idx: int = 0) -> float:
-        """Returns the fullest leaf's page occupancy, in ``[0, 100]``.
+        """Returns how much of the replica's headroom is gone, in ``[0, 100]``.
 
-        Reads 100 once no leaf can allocate another page.
+        Headroom is how many more pages of every full leaf at once, and how
+        many more requests' pages of every windowed, state or scratch leaf,
+        the pool can serve, each against a pristine pool; the larger share
+        gone wins. Committed pages no request holds count as free. Reads 100
+        once either runs out.
         """
+        pool = self.pools[replica_idx]
+        per_request = self._blocks_to_reserve(self._max_seq_len_with_slack)
+        units = [
+            {
+                leaf_id: 1
+                for leaf_id, group in self.groups.items()
+                if not group.demand_plateaus
+            },
+            {
+                leaf_id: per_request[leaf_id]
+                for leaf_id, group in self.groups.items()
+                if group.demand_plateaus
+            },
+        ]
         return max(
             (
-                count.used_pct
-                for count in self.little_block_count(replica_idx).values()
+                100.0
+                * (
+                    1
+                    - pool.max_satisfiable_multiple(unit)
+                    / max(
+                        1, pool.max_satisfiable_multiple(unit, at_capacity=True)
+                    )
+                )
+                for unit in units
+                if unit
             ),
             default=0.0,
         )

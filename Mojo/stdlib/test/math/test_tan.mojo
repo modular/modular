@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp2, inf, isinf, isnan, nan, nextafter, pi, tan, ulp
-from std.math.math import _call_libm, _narrow_f32_to_bf16_bits
+from std.math.math import _call_libm
 from std.testing import assert_equal, assert_true, TestSuite
 
 comptime max_ulp = 2.0
@@ -347,41 +347,6 @@ def test_tan_special_values() raises:
     _check_special_values[.bfloat16]()
     _check_special_values[.float32]()
     _check_special_values[.float64]()
-
-
-def test_narrow_f32_to_bf16_bits() raises:
-    # Keys cover ties, subnormal results, overflow to inf, and signs.
-    var state: UInt32 = 12345
-    var inputs = List[Float32]()
-    for _ in range(600):
-        state = state * 1664525 + 1013904223
-        inputs.append(Float32(from_bits=state))
-    for b in [
-        UInt32(0x00000001),
-        0x0000FFFF,
-        0x00008000,
-        0x00018000,
-        0x00010000,
-        0x007FFFFF,
-        0x007F8000,
-        0x007F7FFF,
-        0x3F808000,
-        0x3F818000,
-        0x7F7FFFFF,
-        0x7F7F8000,
-        0x7F800000,
-        0x80008000,
-    ]:
-        inputs.append(Float32(from_bits=b))
-        inputs.append(Float32(from_bits=b | 0x80000000))
-    for x in inputs:
-        if isnan(x):
-            assert_true(isnan(_narrow_f32_to_bf16_bits(x)))
-        else:
-            assert_equal(
-                _narrow_f32_to_bf16_bits(x).to_bits(),
-                x.cast[.bfloat16]().to_bits(),
-            )
 
 
 def main() raises:

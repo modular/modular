@@ -18,9 +18,9 @@ Two compile modes, selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
 
 The op carries ``MO_SingleDeviceWithHostOperands``: ``input``/``rois`` and the
 result live on the device inferred from the first device operand, while the
-four numeric scalars stay host-side. The family therefore sweeps every
-discovered device (CPU and accelerators), one graph per
-(device, dtype, aligned, mode).
+four numeric scalars stay host-side. The warm sweeps only CPU variants;
+accelerator variants compile and cache on their first dispatch. ROI Align's
+attribute matrix would otherwise make every accelerator warm expensive.
 
 Unlike every other family in this package, ``aligned`` and ``mode`` are genuine
 MLIR attributes and the GC kernel takes them as comptime parameters
@@ -49,6 +49,8 @@ from max.graph import DeviceRef, Graph, Module, TensorType
 
 _GRAPH_BASE_NAME = "roi_align"
 
+_CPU_DEVICES = [d for d in gc_compile.DISCOVERED_DEVICES if d.label == "cpu"]
+
 
 @dataclass(frozen=True)
 class CompilationTarget:
@@ -69,8 +71,8 @@ class CompilationTarget:
 
 _COMPILATION_TARGETS = [
     CompilationTarget(device, dtype, aligned, mode)
-    for device in gc_compile.DISCOVERED_DEVICES
-    for dtype in gc_compile.float_dtypes(device)
+    for device in _CPU_DEVICES
+    for dtype in gc_compile.CPU_FLOAT_DTYPES
     for aligned in (False, True)
     for mode in ("AVG", "MAX")
 ]
@@ -119,6 +121,9 @@ def _roi_align_graph(module: Module, target: CompilationTarget) -> None:
 class _RoiAlignFamily(gc_compile.GCFamilySpec):
     name = "roi_align"
 
+    def sweep_devices(self) -> list[Device]:
+        return list(_CPU_DEVICES)
+
     def build_module(self) -> Module:
         module = Module()
         for device in self.sweep_devices():
@@ -148,8 +153,8 @@ def roi_align_model(
 ) -> engine.Model:
     """Returns the roi_align :class:`~max.engine.Model` for the given key.
 
-    Lazy by default (compiled and cached on first use); the first miss adopts a
-    whole warm cache. ``MAX_EAGER_OP_PRECOMPILE=1`` makes this a pure lookup.
+    CPU variants adopt the whole warm cache. Accelerator variants compile and
+    cache on first use because they are intentionally excluded from the warm.
 
     Args:
         device: The device the ``input``/``rois``/output live on.

@@ -19,9 +19,12 @@ def mojo_targets_from_toolchain(ctx):
             ``toolchains = ["@rules_mojo//:toolchain_type"]``.
 
     Returns:
-        A struct with ``accelerator`` (``"api:arch"``, e.g. ``"cuda:sm_100a"``,
-        or ``""`` on a lane whose toolchain names none) and ``cpu_target`` (the
-        host-CPU codegen descriptor), as MAX's virtual-device knobs spell them.
+        A struct with ``accelerator`` (the toolchain's ``--target-accelerator``
+        value verbatim, e.g. ``"nvidia:sm_100a"``, or ``""`` on a lane whose
+        toolchain names none) and ``cpu_target`` (the host-CPU codegen
+        descriptor). MAX's virtual-device knobs take the vendor name as a
+        synonym for the device API it belongs to, so neither needs rewriting
+        here.
     """
     copts = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info.copts
 
@@ -35,11 +38,6 @@ def mojo_targets_from_toolchain(ctx):
             cpu = copt.removeprefix("--target-cpu=")
         elif copt.startswith("-target-triple=") or copt.startswith("--target-triple="):
             triple = copt.split("=", 1)[1]
-
-    # Mojo and the graph compiler spell the vendor differently.
-    if accelerator:
-        accelerator = accelerator.replace("nvidia", "cuda")
-        accelerator = accelerator.replace("amdgpu", "hip")
 
     # The triple matters as much as the CPU: it is part of the compile target,
     # and the artifact's host code has to match the machine that runs it.

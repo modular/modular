@@ -69,7 +69,7 @@ def _fill_pseudorandom[dtype: DType](buf: HostBuffer[dtype], n: Int):
 
 def _fnv1a64[dtype: DType](buf: HostBuffer[dtype], n: Int) -> UInt64:
     """FNV-1a over the buffer's raw bytes."""
-    var ptr = buf.unsafe_ptr().bitcast[UInt8]()
+    var ptr = buf.unsafe_ptr().unsafe_bitcast[UInt8]()
     var h = UInt64(0xCBF29CE484222325)
     for i in range(n * size_of[dtype]()):
         h = (h ^ UInt64(Int(ptr[i]))) * UInt64(0x100000001B3)
@@ -124,27 +124,23 @@ def _probe_layer_norm[
     var shape = Index(rows, cols)
     var in_buf = TileTensor(in_d, row_major(Coord(shape)))
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
-    var beta = TileTensor(beta_d, row_major(Coord(Index(cols))))
+    var gamma = TileTensor(gamma_d, row_major(cols))
+    var beta = TileTensor(beta_d, row_major(cols))
     var epsilon = Scalar[dtype](1e-5)
 
     @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
-        var idx = in_buf.layout(coords)
-        return in_buf.raw_load[
+        return in_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(coords)
-        out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
-            idx, rebind[SIMD[dtype, width]](val)
-        )
+        out_buf.store[alignment=alignment * align_of[dtype]()](coords, val)
 
     var hashes = List[UInt64]()
     var nans = 0
@@ -202,39 +198,35 @@ def _probe_rms_norm[
     var shape = Index(rows, cols)
     var in_buf = TileTensor(in_d, row_major(Coord(shape)))
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[dtype](1e-5)
+    var gamma = TileTensor(gamma_d, row_major(cols))
+    comptime epsilon = Float32(1e-5)
 
     @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
-        var idx = in_buf.layout(coords)
-        return in_buf.raw_load[
+        return in_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(coords)
-        out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
-            idx, rebind[SIMD[dtype, width]](val)
-        )
+        out_buf.store[alignment=alignment * align_of[dtype]()](coords, val)
 
     var hashes = List[UInt64]()
     var nans = 0
     for _run in range(_NUM_RUNS):
         ctx.enqueue_memset(out_d, Scalar[dtype](0))
-        rms_norm[dtype, 2, target="gpu"](
+        rms_norm[
+            dtype, 2, target="gpu", epsilon=epsilon, weight_offset=Float32(0)
+        ](
             input_fn,
             output_fn,
             Coord(shape),
             ComptimeInt[cols](),
             gamma,
-            epsilon,
-            Scalar[dtype](0),
             ctx,
         )
         ctx.enqueue_copy(out_h, out_d)
@@ -274,10 +266,9 @@ def _probe_softmax[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
-        var idx = in_buf.layout(coords)
-        return in_buf.raw_load[
+        return in_buf.load[
             width=width, alignment=alignment * align_of[dtype]()
-        ](idx)
+        ](coords)
 
     var hashes = List[UInt64]()
     var nans = 0

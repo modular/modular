@@ -21,14 +21,15 @@ from typing import Any, ClassVar, Protocol
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
-from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+from max.pipelines.lib.graph_specs import GraphRole
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.speculative import (
@@ -228,6 +229,12 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
         self.draft_ep_comm_initializer = self.ep_comm_initializer
 
     @override
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the decoder graph through :meth:`load_model`."""
+        # TODO(kathywu): Build this graph through `graph_specs`.
+        return {GraphRole.DECODER: self.load_model(session)}
+
+    @override
     def _build_graph_for_compile(
         self,
         session: InferenceSession,
@@ -311,7 +318,7 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
                 draft_probs_full=graph_inputs.draft_probs_full,
             )
 
-            graph.output(*outputs)
+            graph.output(outputs)
 
         return graph, weights_registry
 

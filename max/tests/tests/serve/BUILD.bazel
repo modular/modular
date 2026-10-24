@@ -46,6 +46,8 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max:_core",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/context",
@@ -55,6 +57,7 @@ modular_py_test(
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/request",
         "//max/python/max/pipelines/sampling",
+        "//max/python/max/pipelines/speculative",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
         "//max/python/max/serve:process_control",
@@ -69,6 +72,7 @@ modular_py_test(
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve/telemetry:kernel_capture",
         "//max/python/max/serve/worker_interface",
+        "//max/python/max/support:telemetry",
         requirement("async-asgi-testclient"),
         requirement("av"),
         requirement("fastapi"),
@@ -90,6 +94,7 @@ modular_py_test(
         requirement("taskgroup"),
         requirement("transformers"),
         requirement("pillow"),
+        requirement("uvicorn"),
     ],
 )
 

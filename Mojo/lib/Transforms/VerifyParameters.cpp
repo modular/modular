@@ -102,10 +102,7 @@ static void propagateTrivialParameters(Region *region,
             decl = cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl));
             evaluator.setDeclBinding(decl, ParamDeclRefAttr::get(decl));
           });
-      // Nested regions can declare parameters, so we cannot fully rebind the
-      // operation now. It will be handled later when this function recurses.
-      if (!isa<ParamDeclareRegionOp>(op))
-        processOp(op, evaluator);
+      processOp(op, evaluator);
     }
   }
 

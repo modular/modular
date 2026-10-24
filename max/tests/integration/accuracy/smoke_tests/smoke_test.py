@@ -35,7 +35,8 @@ import logging
 import os
 import shlex
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from functools import cache
 from pathlib import Path
 from pprint import pformat
@@ -56,7 +57,7 @@ from eval_runner import (
     write_github_output,
     write_results,
 )
-from inference_server_harness import start_server
+from inference_server_harness import RunningServer, start_server
 from pydantic import BaseModel, ConfigDict, Field
 from requests.structures import CaseInsensitiveDict
 
@@ -77,12 +78,12 @@ logger = logging.getLogger(__name__)
 
 
 def _metrics_url(framework: str) -> str:
-    """Prometheus ``/metrics`` URL for the given framework (MAX uses port 8001, others 8000)."""
-    port = 8001 if framework in ("max", "max-ci", "max-nightly") else 8000
+    """Prometheus ``/metrics`` URL for the given framework (vLLM and SGLang use port 8000, others 8001)."""
+    port = 8000 if framework in ("vllm", "sglang") else 8001
     return f"http://127.0.0.1:{port}/metrics"
 
 
-# Maps alias model names to reusable MAX recipe configs. Aliases let the same
+# Maps model variants to reusable MAX recipe configs. Variants let the same
 # weights be tested under different configurations while keeping results
 # separate in dashboards. Paths use the portable ``max/pipelines/architectures/``
 # prefix (same convention as the MAX CLI config loader). The smoke driver
@@ -109,12 +110,13 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_rust_tiered_kvconnector.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__mojo_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_mojo_tiered_kvconnector.yaml",
     "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
     "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_8x_b200.yaml",
+    "poolside/Laguna-S-2.1-NVFP4": "max/pipelines/architectures/laguna/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
+    "poolside/Laguna-S-2.1-NVFP4__modulev3": "max/pipelines/architectures/laguna_modulev3/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
@@ -122,14 +124,20 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
+    "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3-Flash__tpep_mi355_modulev3": "max/pipelines/architectures/glm5_next_modulev3/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": "max/pipelines/architectures/kimik2_5_modulev3/recipes/nvfp4_kimi_k2_7_code_b200.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4_dspark.yaml",
+    "tencent/Hy4-preview-FP8__mtp": "max/pipelines/architectures/hy_v4/recipes/hy4_preview_fp8_tp_ep_8x_b200.yaml",
+    "thinkingmachines/Inkling-Small-NVFP4__modulev3": "max/pipelines/architectures/inkling_modulev3/recipes/inkling_small_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
-    "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/unified_mtp_qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
-    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/unified_dflash2_qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
 })
 # fmt: on
 
@@ -182,6 +190,15 @@ class RecipeConfig(BaseModel):
 class ServerCommand(NamedTuple):
     cmd: list[str]
     env: dict[str, str]
+
+
+# Servers for frameworks whose serving code is internal. Their internal
+# entrypoint registers them here before running the smoke test. Each takes the
+# model, the startup timeout in seconds, and whether the model is a vision
+# model, so a framework that builds its vision graph separately builds it.
+SERVERS: dict[
+    str, Callable[[str, int, bool], AbstractContextManager[RunningServer]]
+] = {}
 
 
 # TODO Refactor this to a model list/matrix specifying type of model
@@ -269,7 +286,7 @@ def _load_recipe(recipe_path: str) -> RecipeConfig:
 def resolve_model_path(
     model: str, recipe_path: str | None = None
 ) -> tuple[str, str | None]:
-    """Resolve a model alias to a canonical HF repo id and its recipe path."""
+    """Resolve a model variant to a canonical HF repo id and its recipe path."""
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     if recipe_path:
@@ -285,8 +302,8 @@ def resolve_model_path(
 def hf_repos_for_model(model: str) -> list[str]:
     """Return the repos to pre-cache for the given model.
 
-    Always includes the base repo (alias prefix before __), plus the
-    draft_model.model_path when the alias maps to a recipe with one.
+    Always includes the base repo (variant prefix before __), plus the
+    draft_model.model_path when the variant maps to a recipe with one.
     """
     repos: list[str] = []
     seen: set[str] = set()
@@ -308,14 +325,14 @@ def hf_repos_for_model(model: str) -> list[str]:
         if recipe.draft_model and recipe.draft_model.model_path:
             add(recipe.draft_model.model_path)
 
-    # Recipe-derived paths win the casefold dedup, so a lowercased alias
+    # Recipe-derived paths win the casefold dedup, so a lowercased variant
     # input still resolves to the canonical casing the cache expects.
     recipe_path = MODEL_RECIPES.get(model)
     if recipe_path is not None:
         add_recipe_repos(recipe_path)
     add(model.split("__", 1)[0])
-    # A private recipe can serve a different repo than the alias; adding its
-    # repos after the alias keeps the alias as the base repo callers get back.
+    # A private recipe can serve a different repo than the variant; adding its
+    # repos after the variant keeps it as the base repo callers get back.
     if recipe_path is None:
         for private_path in _private_recipe_paths_for_model(model):
             add_recipe_repos(private_path)
@@ -425,6 +442,11 @@ def get_server_cmd(
     autoscale_devices: bool = True,
     gpu_spec: tuple[str, int],
 ) -> ServerCommand:
+    if framework == "mach-ci":
+        raise click.UsageError(
+            "mach-ci runs only through its internal entrypoint"
+        )
+
     gpu_name, gpu_count = gpu_spec
     env: dict[str, str] = {}
     if recipe_path is None:
@@ -459,6 +481,10 @@ def get_server_cmd(
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
+    # vLLM 0.30's sparse-MLA index group waits on a side stream during
+    # CUDA graph capture and fails Hy4's engine start.
+    if "hy4" in model.casefold():
+        VLLM += ["--enforce-eager"]
     MAX = ["serve", "--pretty-print-config"]
     # A smoke test is where an eager or host-transfer footgun should surface,
     # so validate each request too and not just initialization. max-ci only:
@@ -598,7 +624,7 @@ def valid_tasks() -> set[str]:
 )
 @click.option(
     "--framework",
-    type=click.Choice(["sglang", "vllm", "max", "max-ci"]),
+    type=click.Choice(["sglang", "vllm", "max", "max-ci", "mach-ci"]),
     default="max-ci",
     required=False,
     help="Framework to use for the smoke test. Only max-ci is supported when running in bazel.",
@@ -737,15 +763,29 @@ def smoke_test(
     served = hf_model_path
     if recipe_path:
         served = _load_recipe(recipe_path).model.served_model_name or served
-    cmd, server_env = get_server_cmd(
-        framework,
-        hf_model_path,
-        serve_image=serve_image,
-        serve_extra_args=serve_extra_args,
-        recipe_path=recipe_path,
-        autoscale_devices=autoscale_devices,
-        gpu_spec=get_gpu_name_and_count(),
-    )
+    if disable_timeouts:
+        timeout = sys.maxsize
+    else:
+        # TODO(GEX-3508): Reduce timeout once model build time is optimized
+        timeout = 2700
+    if framework in SERVERS:
+        if recipe_path:
+            raise ValueError(f"{framework} does not support recipes")
+        serving = SERVERS[framework](
+            hf_model_path, timeout, is_vision_model(model)
+        )
+    else:
+        cmd, server_env = get_server_cmd(
+            framework,
+            hf_model_path,
+            serve_image=serve_image,
+            serve_extra_args=serve_extra_args,
+            recipe_path=recipe_path,
+            autoscale_devices=autoscale_devices,
+            gpu_spec=get_gpu_name_and_count(),
+        )
+        logger.info(f"Starting server with command:\n {shlex.join(cmd)}")
+        serving = start_server(cmd, timeout, env_overrides=server_env)
 
     if override_tasks:
         tasks = list(override_tasks)
@@ -755,19 +795,13 @@ def smoke_test(
     else:
         tasks = [TEXT_TASK]
 
-    logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
-    if disable_timeouts:
-        timeout = sys.maxsize
-    else:
-        # TODO(GEX-3508): Reduce timeout once model build time is optimized
-        timeout = 2700
 
     # TODO(SERVSYS-1318): Cascade serves no /metrics, so Cascade runs report
     # no generated-token count.
     metrics_url = _metrics_url(framework)
-    with start_server(cmd, timeout, env_overrides=server_env) as server:
+    with serving as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")
         write_github_output("startup_time", f"{server.startup_time:.2f}")
 
@@ -783,6 +817,8 @@ def smoke_test(
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
+                # Mach refreshes /metrics every 2s; wait so reads aren't stale.
+                metrics_delay_s=2 if framework == "mach-ci" else 0,
                 lm_eval_metadata=lm_eval_metadata,
             )
 

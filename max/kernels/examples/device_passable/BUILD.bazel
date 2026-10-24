@@ -1,0 +1,43 @@
+load("//bazel:api.bzl", "mojo_binary", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+
+package(default_visibility = ["//max:consumers"])
+
+# Runnable demos of the `DevicePassable` kernel-launch ABI, paired with
+# `max/docs/internal/max-serve/device-passable-closures.md`. Each file has a
+# `main()` and targets a GPU.
+
+_DEPS = [
+    "//max:extensibility",
+    "//max:layout",
+    "//max:max_mojo",
+    "@mojo//:std",
+]
+
+# `footgun.mojo` intentionally faults at runtime (it is the "here is the broken
+# code" reference), so it is built but never run: a `mojo_binary`, not a test.
+# Building it still proves the key claim that the misuse typechecks.
+mojo_binary(
+    name = "footgun",
+    srcs = ["footgun.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = _DEPS,
+)
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "medium",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = _DEPS,
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = ["footgun.mojo"],
+    )
+]

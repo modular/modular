@@ -189,15 +189,17 @@ def matmul_ukern[
         # to remain in the l1 cache, but freely evict `B`.
         # Repeatedly re-touching the cachelines of `A` helps us achieve this.
         var Atmp = Ao
-        Ao = Ao + 1
+        Ao = Ao.unsafe_offset(1)
         for _ in range(kf):
             comptime for _ in range(kr):
                 comptime for n in range(nr):
-                    Bloads[n] = Bo.load[width=width, alignment=Align](n * width)
+                    Bloads[n] = Bo.unsafe_load[width=width, alignment=Align](
+                        n * width
+                    )
 
                 comptime for m in range(mr):
                     var Abroadcast: SIMD[elt, width] = SIMD[elt, width](
-                        Atmp.load[width=1, alignment=size_of[elt]()](
+                        Atmp.unsafe_load[width=1, alignment=size_of[elt]()](
                             m * Astride
                         )
                     )
@@ -206,8 +208,8 @@ def matmul_ukern[
                         acc[n + m * nr] = fma(
                             Abroadcast, Bloads[n], acc[n + m * nr]
                         )
-                Atmp = Atmp + mr * Astride
-                Bo = Bo + nr * width
+                Atmp = Atmp.unsafe_offset(mr * Astride)
+                Bo = Bo.unsafe_offset(nr * width)
     if inc:
         # Note, `C` would have spilled from the L1 cache by the time
         # we load it again had we loaded before the reduction loop.
@@ -216,14 +218,14 @@ def matmul_ukern[
                 comptime for n1 in range(CstoresPer):
                     acc[n1 + n0 * CstoresPer + m * nr] = acc[
                         n1 + n0 * CstoresPer + m * nr
-                    ] + C.load[width=width, alignment=Align](
+                    ] + C.unsafe_load[width=width, alignment=Align](
                         (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width
                     )
 
     comptime for m in range(mr):
         comptime for n0 in range(CstoreReps):
             comptime for n1 in range(CstoresPer):
-                C.store[alignment=Align](
+                C.unsafe_store[alignment=Align](
                     (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width,
                     acc[n1 + n0 * CstoresPer + m * nr],
                 )
@@ -374,9 +376,9 @@ def matmul[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pck, pak, pbk, kc != 0
                         )
-                        pbk = pbk + WNr * Kc
-                        pck = pck + Mr * WNr
-                    pak = pak + Mr * Kc
+                        pbk = pbk.unsafe_offset(WNr * Kc)
+                        pck = pck.unsafe_offset(Mr * WNr)
+                    pak = pak.unsafe_offset(Mr * Kc)
                 pb = pbk
             pc = pck
         pa = pak
@@ -398,7 +400,7 @@ def alloc_tensor[
     elt: DType, layout: TensorLayout
 ](rtlayout: layout) -> TileTensor[mut=True, elt, layout, MutUntrackedOrigin]:
     return TileTensor[mut=True, elt, layout, MutUntrackedOrigin](
-        alloc[Scalar[elt]](Int(rtlayout.product()), alignment=64),
+        unsafe_alloc[Scalar[elt]](Int(rtlayout.product()), alignment=64),
         rtlayout,
     )
 
@@ -433,9 +435,9 @@ def strided_load[
     elt: DType, //, W: Int, X: Int
 ](p: ImmPointer[Scalar[elt], _], i: Int) -> SIMD[elt, W]:
     comptime if X == 1:
-        return p.load[width=W](i)
+        return p.unsafe_load[width=W](i)
     else:
-        return (p + i * X).unsafe_strided_load[width=W](X)
+        return p.unsafe_offset(i * X).unsafe_strided_load[width=W](X)
 
 
 @inline(.always)
@@ -443,9 +445,9 @@ def strided_store[
     elt: DType, W: Int, //, X: Int
 ](p: MutPointer[Scalar[elt], _], i: Int, x: SIMD[elt, W]):
     comptime if X == 1:
-        p.store(i, x)
+        p.unsafe_store(i, x)
     else:
-        (p + i * X).unsafe_strided_store(x, X)
+        p.unsafe_offset(i * X).unsafe_strided_store(x, X)
 
 
 @inline(.always)
@@ -504,7 +506,7 @@ def vectorize_flat[
                 subset_shape,
                 subset_stride_a,
                 subset_stride_b,
-            ](a + i * a_stride, b + i * b_stride, f)
+            ](a.unsafe_offset(i * a_stride), b.unsafe_offset(i * b_stride), f)
 
 
 def tolist(x: IntTuple) -> List[Int]:
@@ -877,9 +879,9 @@ def matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pabk, pak, pbk, kc != 0
                         )
-                        pbk = pbk + WNr * Kc
-                        pabk = pabk + Mr * WNr
-                    pak = pak + Mr * Kc
+                        pbk = pbk.unsafe_offset(WNr * Kc)
+                        pabk = pabk.unsafe_offset(Mr * WNr)
+                    pak = pak.unsafe_offset(Mr * Kc)
                 pb = pbk
             pdk = pd
             for _ in range(
@@ -934,9 +936,9 @@ def matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pdk, pabk, pck, lc != 0
                         )
-                        pck = pck + WNr * Kc
-                        pdk = pdk + Mr * WNr
-                    pabk = pabk + Mr * Kc
+                        pck = pck.unsafe_offset(WNr * Kc)
+                        pdk = pdk.unsafe_offset(Mr * WNr)
+                    pabk = pabk.unsafe_offset(Mr * Kc)
                 pc = pck
         pa = pak
         pd = pdk
@@ -1101,17 +1103,17 @@ def bench_b2b[
 
     check_approx_equal[.float32](Dtile, Drm64)
 
-    Atile.ptr.free()
-    Btile.ptr.free()
-    Ctile.ptr.free()
-    Ctileb2b.ptr.free()
-    Dtile.ptr.free()
-    ABtile.ptr.free()
-    Arm64.ptr.free()
-    Brm64.ptr.free()
-    Crm64.ptr.free()
-    Drm64.ptr.free()
-    ABrm64.ptr.free()
+    Atile.ptr.unsafe_free()
+    Btile.ptr.unsafe_free()
+    Ctile.ptr.unsafe_free()
+    Ctileb2b.ptr.unsafe_free()
+    Dtile.ptr.unsafe_free()
+    ABtile.ptr.unsafe_free()
+    Arm64.ptr.unsafe_free()
+    Brm64.ptr.unsafe_free()
+    Crm64.ptr.unsafe_free()
+    Drm64.ptr.unsafe_free()
+    ABrm64.ptr.unsafe_free()
 
 
 def getMr() -> Int:

@@ -24,7 +24,8 @@ import extensibility
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 
-from extensibility import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor, Tensor
+from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 from state_space.varlen_causal_conv1d import (
@@ -86,7 +87,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         cache_seqlens: InputTensor[dtype=.int32, rank=1, ...],
         conv_state_indices: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var batch = x.dim_size(0)
         var dim = x.dim_size(1)
         var seqlen = x.dim_size(2)
@@ -354,21 +355,16 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
 
 
 @extensibility.register_shape_function("causal_conv1d_varlen_update")
-def causal_conv1d_varlen_update_shape[
-    dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=3, ...],
-    weight: InputTensor[dtype=dtype, rank=2, ...],
-    bias: InputTensor[dtype=dtype, rank=1, ...],
-    cache_seqlens: InputTensor[dtype=.int32, rank=1, ...],
-    conv_state_indices: InputTensor[dtype=.int32, rank=1, ...],
+def causal_conv1d_varlen_update_shape(
+    x: Some[Tensor],
+    weight: Some[Tensor],
+    bias: Some[Tensor],
+    cache_seqlens: Some[Tensor],
+    conv_state_indices: Some[Tensor],
 ) -> IndexList[3]:
     """Returns the output shape for the `causal_conv1d_varlen_update` op.
 
     The output shape equals the input shape `(batch, dim, seqlen)`.
-
-    Parameters:
-        dtype: Element type of the `x`, `weight`, and `bias` input tensors.
 
     Args:
         x: Input tensor with shape `(batch, dim, seqlen)`.
@@ -382,7 +378,28 @@ def causal_conv1d_varlen_update_shape[
     Returns:
         The output tensor shape, equal to `x.shape()`.
     """
-    return x.shape()
+    comptime assert type_of(x).rank == 3, "x must be rank 3"
+    comptime assert type_of(weight).rank == 2, "weight must be rank 2"
+    comptime assert (
+        type_of(weight).dtype == type_of(x).dtype
+    ), "weight dtype must match x dtype"
+    comptime assert type_of(bias).rank == 1, "bias must be rank 1"
+    comptime assert (
+        type_of(bias).dtype == type_of(x).dtype
+    ), "bias dtype must match x dtype"
+    comptime assert (
+        type_of(cache_seqlens).rank == 1
+    ), "cache_seqlens must be rank 1"
+    comptime assert (
+        type_of(cache_seqlens).dtype == .int32
+    ), "cache_seqlens dtype must be int32"
+    comptime assert (
+        type_of(conv_state_indices).rank == 1
+    ), "conv_state_indices must be rank 1"
+    comptime assert (
+        type_of(conv_state_indices).dtype == .int32
+    ), "conv_state_indices dtype must be int32"
+    return rebind[IndexList[3]](coord_to_index_list(x.shape()))
 
 
 # ============================================================================
@@ -412,7 +429,7 @@ struct CausalConv1DVarlenStates:
         x: InputTensor[dtype=dtype, rank=2, ...],
         cu_seqlens: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         var total_tokens = x.dim_size(0)
         var dim = x.dim_size(1)
         var batch = cu_seqlens.dim_size(0) - 1
@@ -471,11 +488,9 @@ struct CausalConv1DVarlenStates:
 
 
 @extensibility.register_shape_function("causal_conv1d_varlen_states")
-def causal_conv1d_varlen_states_shape[
-    dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=2, ...],
-    cu_seqlens: InputTensor[dtype=.int32, rank=1, ...],
+def causal_conv1d_varlen_states_shape(
+    x: Some[Tensor],
+    cu_seqlens: Some[Tensor],
 ) -> IndexList[3]:
     """Returns the output shape for the `causal_conv1d_varlen_states` op.
 
@@ -483,9 +498,6 @@ def causal_conv1d_varlen_states_shape[
     `(batch, dim, state_len)`. The `state_len` dimension is determined by
     the output allocation at runtime; this function returns 0 for that
     dimension as a placeholder.
-
-    Parameters:
-        dtype: Element type of the packed input tensor `x`.
 
     Args:
         x: Packed input tensor with shape `(total_tokens, dim)`.
@@ -495,8 +507,13 @@ def causal_conv1d_varlen_states_shape[
         The output state shape `(batch, dim, 0)` where `batch` is inferred
         from `cu_seqlens` and `state_len` is filled at runtime.
     """
-    var batch = cu_seqlens.dim_size(0) - 1
-    var dim = x.dim_size(1)
+    comptime assert type_of(x).rank == 2, "x must be rank 2"
+    comptime assert type_of(cu_seqlens).rank == 1, "cu_seqlens must be rank 1"
+    comptime assert (
+        type_of(cu_seqlens).dtype == .int32
+    ), "cu_seqlens dtype must be int32"
+    var batch = coord_to_index_list(cu_seqlens.shape())[0] - 1
+    var dim = coord_to_index_list(x.shape())[1]
     # state_len is derived from the output tensor shape at runtime
     # Return a placeholder shape; actual shape determined by output allocation
     return IndexList[3](batch, dim, 0)

@@ -56,10 +56,9 @@ comptime Collection[dtype: DType, page_size: Int] = PagedKVCacheCollection[
 
 
 def _fill_random(tensor: TileTensor[mut=True, ...]):
+    var flat = tensor.reshape(row_major(tensor.num_elements()))
     for i in range(tensor.num_elements()):
-        tensor.unsafe_ptr().unsafe_store(
-            i, Scalar[tensor.dtype](randn_float64())
-        )
+        flat.store((i,), Scalar[tensor.dtype](randn_float64()))
 
 
 def run_case[

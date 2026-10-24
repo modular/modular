@@ -59,6 +59,7 @@ void LLVMThreadPool::asyncEnqueue(llvm::unique_function<void()> task,
 
   // Increment the number of active tasks.
   ++turnstile->counter;
+  ++poolTurnStile.counter;
 
   cpuDevice.getWorkQueue()->addTask(
       [this, turnstile, func = std::move(task)]() mutable {

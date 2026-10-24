@@ -81,8 +81,11 @@ class DeepSeekV2MoEGate(MoEGate):
                 - topk_weight: Routing weights for selected experts of shape (seq_len, num_experts_per_token)
         """
         # compute gating score
-        logits = self.gate_score(hidden_states.cast(DType.float32))
-        scores = ops.softmax(logits.cast(DType.float32))
+        weight = self.gate_score.weight.to(hidden_states.device)
+        logits = (
+            hidden_states.cast(DType.float32) @ weight.cast(DType.float32).T
+        )
+        scores = ops.softmax(logits)
 
         # select top k experts
         if self.topk_method == "greedy":

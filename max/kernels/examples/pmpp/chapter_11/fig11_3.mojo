@@ -15,6 +15,7 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 from std.math import abs
 
@@ -24,8 +25,8 @@ comptime SEG_SIZE = 256
 
 # ========================== KERNEL CODE ==========================
 def scan_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
     """Kogge-Stone scan kernel using shared memory.
@@ -46,31 +47,29 @@ def scan_kernel(
     var idx = block_idx.x * SEG_SIZE + tx
 
     # Read everything into shared buffer
-    buffer_s[tx] = Float32(input[idx])
+    buffer_s[tx] = input[idx]
     barrier()
 
     # Kogge-Stone scan
     var stride = 1
     while stride < Int(N):
         # Read current input from shared memory
-        var curr = Float32(buffer_s[tx])
+        var curr = buffer_s[tx]
         barrier()
 
         if tx + stride < SEG_SIZE:
             # Add it to buffer position
-            buffer_s[tx + stride] = Float32(
-                Float32(buffer_s[tx + stride]) + curr
-            )
+            buffer_s[tx + stride] = Float32(buffer_s[tx + stride] + curr)
         barrier()
         stride *= 2
 
-    output[idx] = Float32(buffer_s[tx])
+    output[idx] = buffer_s[tx]
 
 
 # ========================== TEST CODE ==========================
 def cpu_scan(
-    input: UnsafePointer[mut=False, Float32, _],
-    output: UnsafePointer[mut=True, Float32, _],
+    input: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
     N: UInt32,
 ):
     """CPU reference scan implementation.
@@ -91,9 +90,9 @@ def main() raises:
     comptime dtype = DType.float32
 
     # Allocate host memory
-    var h_input = alloc[Float32](N)
-    var h_output = alloc[Float32](N)
-    var h_ref = alloc[Float32](N)
+    var h_input = unsafe_alloc[Float32](N)
+    var h_output = unsafe_alloc[Float32](N)
+    var h_ref = unsafe_alloc[Float32](N)
 
     # Initialize input
     for i in range(N):
@@ -145,9 +144,9 @@ def main() raises:
             errors += 1
 
     # Cleanup
-    h_input.free()
-    h_output.free()
-    h_ref.free()
+    h_input.unsafe_free()
+    h_output.unsafe_free()
+    h_ref.unsafe_free()
 
     if errors == 0:
         print("SUCCESS: All values match!")

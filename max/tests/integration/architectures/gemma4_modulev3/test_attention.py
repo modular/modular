@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Gemma4 ModuleV3 attention tests (bf16, sliding and global k==v layers).
+"""Gemma4 ModuleV3 attention tests (sliding and global k==v layers).
 
 Ports the graph-arch tests in
 ``max/tests/integration/architectures/gemma4/test_attention.py`` to the
 ModuleV3 ``Gemma4Attention``. The layer is wrapped in a small harness module
 that reconstructs :class:`PagedCacheValues` from variadic KV graph inputs the
 same way ``Gemma4.forward`` does, compiled, and validated against the HF
-torch reference with the same tolerances.
+torch reference with the same tolerances. The FP8 KV cache case is checked
+against the bf16 output, as in the graph-arch test.
 """
 
 from __future__ import annotations
@@ -59,6 +60,7 @@ from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
+from test_common.graph_utils import is_b100_b200
 from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
@@ -128,12 +130,14 @@ def build_max_attention(
     attention_weights: dict[str, torch.Tensor],
     device: Device,
     layer_idx: int,
+    *,
+    cache_dtype: DType = MAX_DTYPE,
 ) -> CompiledAttention:
     """Builds and compiles the ModuleV3 Gemma4 attention harness."""
     mesh = DeviceMesh((device,), (1,), ("tp",))
     with F.lazy():
         attention, kv_params = make_attention_module(
-            text_config, device, layer_idx
+            text_config, device, layer_idx, cache_dtype=cache_dtype
         )
         harness = AttentionHarness(attention, kv_params, mesh, MAX_DTYPE)
         harness.to(mesh)
@@ -265,6 +269,25 @@ def compiled_global_bf16(
     )
 
 
+@pytest.fixture(scope="module")
+def compiled_global_fp8(
+    session: InferenceSession,
+    text_config: Gemma4TextConfig,
+    attention_weights_global: dict[str, torch.Tensor],
+    device: Device,
+) -> CompiledAttention:
+    if not is_b100_b200():
+        pytest.skip("Native FP8 MHA requires B200 (SM100)")
+    return build_max_attention(
+        session,
+        text_config,
+        attention_weights_global,
+        device,
+        layer_idx=5,
+        cache_dtype=DType.float8_e4m3fn,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # BF16 attention tests
 # --------------------------------------------------------------------------- #
@@ -318,3 +341,28 @@ def test_attention_global(
         rtol=2 * torch.finfo(TORCH_DTYPE).eps,
         atol=8 * torch.finfo(TORCH_DTYPE).eps,
     )
+
+
+# --------------------------------------------------------------------------- #
+# FP8 KV cache attention tests
+# --------------------------------------------------------------------------- #
+
+
+def test_attention_fp8_kv_global(
+    compiled_global_bf16: CompiledAttention,
+    compiled_global_fp8: CompiledAttention,
+    input_tensor: torch.Tensor,
+    device: Device,
+) -> None:
+    bf16_output = from_dlpack(
+        execute_max_attention(compiled_global_bf16, input_tensor, device)
+    ).to(torch.float32)
+    fp8_output = from_dlpack(
+        execute_max_attention(compiled_global_fp8, input_tensor, device)
+    ).to(torch.float32)
+
+    assert fp8_output.shape == bf16_output.shape
+    cosine = torch.nn.functional.cosine_similarity(
+        fp8_output.flatten(), bf16_output.flatten(), dim=0
+    )
+    assert cosine >= 0.99, f"FP8 KV output diverged: cosine={cosine:.4f}"

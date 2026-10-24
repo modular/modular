@@ -82,7 +82,7 @@ from ....utils import (
 from ....utils_gpu import block_swizzle
 from ..tile_scheduler import RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
-from ....structuring import RegTile
+from layout.tile_tensor import stack_allocation
 
 # Shared types from SM100 tile_types
 from structured_kernels.tile_types import (
@@ -349,9 +349,14 @@ struct HopperMatmulSM90Kernel[
     ) // Self.adjusted_num_pipeline_stages
     comptime TMABarrier = TMABarrierHandler[Self._tma_bytes_per_stage]
 
-    comptime AccumRegTile = RegTile[
+    comptime AccumRegTileLayout = row_major[
+        Self.num_m_mmas * Self.num_n_mmas, Self.c_frag_size
+    ]()
+    comptime AccumRegTile = TileTensor[
         Self.accum_type,
-        Layout.row_major(Self.num_m_mmas * Self.num_n_mmas, Self.c_frag_size),
+        type_of(Self.AccumRegTileLayout),
+        MutUntrackedOrigin,
+        address_space=.LOCAL,
     ]
 
     comptime cluster_size = Int(
@@ -519,6 +524,14 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @inline(.always)
+    def allocate_accum_reg_tile() -> Self.AccumRegTile:
+        """Allocates one WGMMA accumulator tile in registers."""
+        return stack_allocation[Self.accum_type, address_space=.LOCAL](
+            Self.AccumRegTileLayout
+        )
+
+    @staticmethod
+    @inline(.always)
     def setup_consumer(
         warp_group_idx: Int,
     ) -> Tuple[Int, Self.AccumRegTile, Self.AccumRegTile]:
@@ -538,8 +551,8 @@ struct HopperMatmulSM90Kernel[
         warpgroup_reg_alloc[num_regs()]()
 
         var local_warp_group_idx = warp_group_idx - 1
-        var c_reg_tile = Self.AccumRegTile.stack_allocation()
-        var final_c_reg_tile = Self.AccumRegTile.stack_allocation()
+        var c_reg_tile = Self.allocate_accum_reg_tile()
+        var final_c_reg_tile = Self.allocate_accum_reg_tile()
 
         return (local_warp_group_idx, c_reg_tile, final_c_reg_tile)
 
@@ -578,7 +591,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @inline(.always)
     def get_block_swizzle(
-        lut_ptr: OptionalReg[UnsafePointer[UInt32, MutAnyOrigin]] = None,
+        lut_ptr: OptionalReg[MutPointer[UInt32, MutAnyOrigin]] = None,
     ) -> IndexList[2, element_type=.uint32]:
         """Calculate block swizzle for better L2 cache locality.
 
@@ -904,7 +917,7 @@ struct HopperMatmulSM90Kernel[
         c: TileTensor[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
-        lut_ptr: UnsafePointer[UInt32, MutAnyOrigin],
+        lut_ptr: MutPointer[UInt32, MutAnyOrigin],
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
     ):
@@ -932,10 +945,11 @@ struct HopperMatmulSM90Kernel[
             c_tensor_layout: Memory layout of output matrix C.
             EpilogueFnType: Type of `epilogue_fn`.
             has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
-                with `host_arg=epilogue_fn`.
+                with `epilogue_fn` as the first `host_args` element.
             ComputeFnType: Type of `compute_fn`.
             has_compute_fn: Whether `compute_fn` maps each output before it
-                is stored. Launch with `host_arg2=compute_fn`.
+                is stored. Launch with `compute_fn` as the second
+                `host_args` element.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -959,7 +973,7 @@ struct HopperMatmulSM90Kernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SMem]()[]
+        ]().unsafe_bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -1090,8 +1104,8 @@ struct HopperMatmulSM90Kernel[
         c: TileTensor[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
-        workspace_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
-        locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
+        workspace_ptr: MutPointer[Scalar[Self.accum_type], MutAnyOrigin],
+        locks_ptr: MutPointer[UInt8, MutAnyOrigin],
         problem_shape: IndexList[3],
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
@@ -1116,10 +1130,11 @@ struct HopperMatmulSM90Kernel[
             c_tensor_layout: Memory layout of output matrix C.
             EpilogueFnType: Type of `epilogue_fn`.
             has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
-                with `host_arg=epilogue_fn`.
+                with `epilogue_fn` as the first `host_args` element.
             ComputeFnType: Type of `compute_fn`.
             has_compute_fn: Whether `compute_fn` maps each output before it
-                is stored. Launch with `host_arg2=compute_fn`.
+                is stored. Launch with `compute_fn` as the second
+                `host_args` element.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -1148,7 +1163,7 @@ struct HopperMatmulSM90Kernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SMem]()[]
+        ]().unsafe_bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -1362,10 +1377,11 @@ struct HopperMatmulSM90Kernel[
             c_tensor_layout: Memory layout of output matrix C.
             EpilogueFnType: Type of `epilogue_fn`.
             has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
-                with `host_arg=epilogue_fn`.
+                with `epilogue_fn` as the first `host_args` element.
             ComputeFnType: Type of `compute_fn`.
             has_compute_fn: Whether `compute_fn` maps each output before it
-                is stored. Launch with `host_arg2=compute_fn`.
+                is stored. Launch with `compute_fn` as the second
+                `host_args` element.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -1399,7 +1415,7 @@ struct HopperMatmulSM90Kernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SMem]()[]
+        ]().unsafe_bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -1519,11 +1535,13 @@ struct HopperMatmulSM90Kernel[
                     comptime assert (
                         idx.rank == 2
                     ), "the matmul epilogue contract is rank 2"
-                    var row = Int(a_start_row) + Int(idx[0].value())
-                    var col = Int(idx[1].value())
+                    var row = Int(a_start_row) + Int(idx[0])
+                    var col = Int(idx[1])
                     var row_idx = Coord(row, col)
                     comptime if has_compute_fn:
-                        (c_ptr + row * N + col).store[alignment=alignment](
+                        c_ptr.unsafe_offset(row * N).unsafe_offset(
+                            col
+                        ).unsafe_store[alignment=alignment](
                             rebind[SIMD[Self.c_type, width]](
                                 compute_fn[dtype, width, alignment=alignment](
                                     row_idx, val
@@ -1695,18 +1713,16 @@ struct HopperMatmulSM90Kernel[
             DType.float16,
         ), "Only support fp32 and fp16 data type in CUDA Core promotion"
         comptime assert (
-            len(c_reg_tile.layout) == 2
+            c_reg_tile.rank == c_reg_tile.flat_rank == 2
         ), "Only support 2D layout in CUDA Core promotion"
 
-        comptime num_mma = c_reg_tile.layout.shape[0].value()
-        comptime c_frag_size = c_reg_tile.layout.shape[1].value()
+        comptime num_mma = c_reg_tile.static_shape[0]
+        comptime c_frag_size = c_reg_tile.static_shape[1]
 
         # Add tensor core results to higher-precision accumulator
         comptime for mma_id in range(num_mma):
             comptime for i in range(c_frag_size):
-                final_c_reg_tile[mma_id, i] = rebind[Scalar[Self.accum_type]](
-                    final_c_reg_tile[mma_id, i]
-                ) + rebind[Scalar[Self.accum_type]](c_reg_tile[mma_id, i])
+                final_c_reg_tile[mma_id, i] += c_reg_tile[mma_id, i]
 
     @inline(.always)
     @staticmethod

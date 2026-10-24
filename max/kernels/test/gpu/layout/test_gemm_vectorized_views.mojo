@@ -17,7 +17,6 @@ from max.gpu.host import DeviceContext
 from layout import row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from matmul_kernels import gemm_kernel_6, matmul_kernel_tc
-from max.gpu import WARP_SIZE
 
 
 def a_value(row: Int, k: Int) -> Float32:
@@ -87,7 +86,7 @@ def test_views[
             b_device,
             c_device,
             grid_dim=(N // 64, M // 64),
-            block_dim=(4 * WARP_SIZE,),
+            block_dim=(4 * ctx.default_device_info.warp_size,),
         )
     else:
         comptime kernel = gemm_kernel_6[

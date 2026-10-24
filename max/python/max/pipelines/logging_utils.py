@@ -62,7 +62,7 @@ def log_pipeline_info(
     arch_entries: list[tuple[str, Any]] = [
         ("architecture", arch.name),
         ("pipeline_class", pipeline_class.__name__),
-        ("pipeline_model", arch.pipeline_model.__name__),
+        ("pipeline_model", getattr(arch.pipeline_model, "__name__", None)),
         ("tokenizer", arch.tokenizer_cls.__name__),
     ]
 
@@ -72,7 +72,9 @@ def log_pipeline_info(
     for line in _format_config_entries(arch_entries):
         _logger.info(line)
 
-    pipeline_config.models.log_model_info()
+    pipeline_config.models.log_model_info(
+        uses_kv_cache=arch.task == PipelineTask.TEXT_GENERATION
+    )
     pipeline_entries: list[tuple[str, Any]] = []
     if "main" in pipeline_config.models:
         pipeline_entries.append(("max_seq_len", memory_plan.planned_max_length))

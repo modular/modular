@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 
 _FILECHECK_TESTS = [
     "test_memory.mojo",
-    "test_sharedmem_async_cp.mojo",
     "test_tma_ops.mojo",
 ]
 
@@ -26,6 +25,8 @@ _OTHER_TESTS = [
 
 _EXTRA_CONSTRAINTS = {
     "test_apple_edge_masked_load.mojo": ["//:apple_gpu"],
+    "test_prefetch_nvidia.mojo": ["//:nvidia_gpu"],
+    "test_tma_cache_hint.mojo": ["//:nvidia_gpu"],
 }
 
 mojo_filecheck_test(
@@ -57,25 +58,7 @@ mojo_filecheck_test(
         ],
     )
     for src in _FILECHECK_TESTS
-    if src != "test_sharedmem_async_cp.mojo"
 ]
-
-# test_sharedmem_async_cp uses NVIDIA-specific mbarrier and time.sleep() in GPU kernel
-mojo_filecheck_test(
-    name = "test_sharedmem_async_cp.mojo.test",
-    srcs = ["test_sharedmem_async_cp.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    tags = [
-        "gpu",
-        "manual",
-    ],  # TODO: KERN-1531 hangs with regular builds
-    target_compatible_with = ["//:nvidia_gpu"],
-    deps = [
-        "//max:layout",
-        "//max:linalg",
-        "@mojo//:std",
-    ],
-)
 
 [
     mojo_test(

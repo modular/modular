@@ -449,35 +449,6 @@ def test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) ra
   # EH logic.
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}(*, "move":
 
-# CHECK-LABEL: lit.fn @"test_parameter_closure_captures
-def test_parameter_closure_captures(var x: MemExample, var y: MemExample):
-  # CHECK: lit.fn *"capture
-  @__parameter
-  def capture():
-    _ = x^
-    _ = y^
-
-  # CHECK: lit.call[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%y)
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%x)
-  capture()
-
-def higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: def() capturing [lts] -> None]():
-  pass
-
-# CHECK-LABEL: lit.fn @"test_higher_order_capture
-def test_higher_order_capture(var x: MemExample, var y: MemExample):
-  # CHECK: lit.fn *"capture
-  @__parameter
-  def capture():
-    _ = x^
-    _ = y^
-
-  # CHECK: lit.call {{.*}}higher_order_function{{.*}} !lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%y)
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%x)
-  higher_order_function[capture]()
-
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
 # CHECK-SAME: !lit.ref<!Int, mut *"our_origin._mlir_origin`"> mutref)
 def test_origin_ref_spec[our_origin: Origin[mut=True]](ref[our_origin] a: Int):

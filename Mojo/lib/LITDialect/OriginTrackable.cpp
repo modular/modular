@@ -269,9 +269,9 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     conventions = signature.getArgConventions().drop_back(
         signature.getNumAsyncReturnSlots());
 
-    // CreateClosureOp has a subset of the operands of a call.
-    if (isa<CreateClosureOp>(op))
-      conventions = conventions.take_front(op.getNumOperands());
+    // CreateFuncPtrOp only references the callee and binds no arguments.
+    if (isa<CreateFuncPtrOp>(op))
+      conventions = {};
 
     assert(conventions.size() == op.getNumOperands());
   } else {

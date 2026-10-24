@@ -156,6 +156,7 @@
     "docs/reference/simple-statements",
     "docs/reference/compound-statements",
     "docs/reference/function-declarations",
+    "docs/reference/function-overloads",
     "docs/reference/closure-declarations",
     "docs/reference/lambda-expressions",
     "docs/reference/struct-declarations",
@@ -170,7 +171,6 @@
       "items": [
         "docs/reference/decorators/align",
         "docs/reference/decorators/always-inline",
-        "docs/reference/decorators/copy-capture",
         "docs/reference/decorators/deprecated",
         "docs/reference/decorators/doc-hidden",
         "docs/reference/decorators/export",
@@ -178,7 +178,6 @@
         "docs/reference/decorators/implicit",
         "docs/reference/decorators/inline",
         "docs/reference/decorators/no-inline",
-        "docs/reference/decorators/parameter",
         "docs/reference/decorators/staticmethod"
       ]
     }

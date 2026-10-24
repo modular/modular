@@ -75,7 +75,7 @@ struct StableStorage[
         self = Self(
             StableAddr(
                 ptr.unsafe_bitcast[Pointer[NoneType, MutUntrackedOrigin]]()
-                .unsafe_mut_cast[False]()
+                .as_imm()
                 .unsafe_origin_cast[ImmUntrackedOrigin]()
             ),
             0,

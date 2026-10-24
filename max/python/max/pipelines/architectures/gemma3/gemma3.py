@@ -16,10 +16,22 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections import OrderedDict
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 
 from max.dtype import DType
-from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
+from max.graph import (
+    BufferValue,
+    Graph,
+    ShardingStrategy,
+    TensorValue,
+    Type,
+    Value,
+    ops,
+)
+from max.graph import Module as GraphModule
 from max.nn.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
@@ -31,8 +43,13 @@ from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
+from max.nn.transformer import DecoderOutputs
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
 )
 
 from .layers.attention import Gemma3Attention
@@ -189,7 +206,7 @@ class Gemma3TextModel(DistributedLogitsPostprocessMixin, Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         **kwargs,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         h = self.embed_tokens(tokens, signal_buffers)
 
         kv_collections_by_type = {
@@ -223,6 +240,85 @@ class Gemma3(Module):
         super().__init__()
         self.language_model = Gemma3TextModel(config)
 
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the graph's inputs; its leaves are its inputs.
+
+        Returns:
+            The input types under ``batch`` (whose ``row_offsets`` are one
+            per device), ``signals`` and ``kv``, in graph order.
+        """
+        devices = list(self.language_model.devices)
+        return OrderedDict(
+            batch=ragged_batch_inputs(
+                devices[0],
+                ("tokens", "return_n_logits", "row_offsets"),
+                row_offsets_devices=devices,
+            ),
+            signals=signal_inputs(devices),
+            kv=self.language_model.kv_params.get_symbolic_inputs(),
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_tree`'s leaves.
+
+        Adapts the flat graph inputs to :meth:`__call__`, splitting the KV
+        cache into its sliding and global collections.
+
+        Args:
+            *input_types: The graph's input types, the leaves of
+                :meth:`input_tree`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.language_model.devices)
+
+        def forward(
+            tokens: Value[Any],
+            return_n_logits: Value[Any],
+            *variadic_args: Value[Any],
+        ) -> DecoderOutputs:
+            input_row_offsets = [v.tensor for v in variadic_args[:n_devices]]
+            signal_buffers = [
+                v.buffer for v in variadic_args[n_devices : 2 * n_devices]
+            ]
+            sliding_kv, global_kv = (
+                self.language_model.kv_params.unflatten_basic_kv_tree(
+                    iter(variadic_args[2 * n_devices :])
+                )
+            )
+            return self(
+                tokens=tokens.tensor,
+                signal_buffers=signal_buffers,
+                sliding_kv_collections=sliding_kv,
+                global_kv_collections=global_kv,
+                return_n_logits=return_n_logits.tensor,
+                input_row_offsets=input_row_offsets,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )
+
     def __call__(
         self,
         tokens: TensorValue,
@@ -231,7 +327,7 @@ class Gemma3(Module):
         global_kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         return self.language_model(
             tokens,
             signal_buffers,

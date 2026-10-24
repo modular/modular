@@ -30,6 +30,7 @@ from max.gpu.sync import (
     cp_async_bulk_wait_group,
 )
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 from layout.tma_async import SharedMemBarrier
@@ -74,8 +75,8 @@ def kernel_bulk_g2s[
 
 
 def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
-    var in_host = alloc[Float32](NUM_ELEMS)
-    var out_host = alloc[Float32](NUM_ELEMS)
+    var in_host = unsafe_alloc[Float32](NUM_ELEMS)
+    var out_host = unsafe_alloc[Float32](NUM_ELEMS)
 
     for i in range(NUM_ELEMS):
         in_host[i] = Float32(i + 1)
@@ -100,8 +101,8 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         assert_equal(out_host[i], Float32(i + 1))
 
-    in_host.free()
-    out_host.free()
+    in_host.unsafe_free()
+    out_host.unsafe_free()
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +131,7 @@ def kernel_bulk_s2g[
 
 
 def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
-    var out_host = alloc[Float32](NUM_ELEMS)
+    var out_host = unsafe_alloc[Float32](NUM_ELEMS)
     for i in range(NUM_ELEMS):
         out_host[i] = 0
 
@@ -149,7 +150,7 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         assert_equal(out_host[i], Float32(i + 1))
 
-    out_host.free()
+    out_host.unsafe_free()
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +185,7 @@ def test_bulk_reduce_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     # reduce-add.
     comptime init = Float32(100.0)
 
-    var out_host = alloc[Float32](NUM_ELEMS)
+    var out_host = unsafe_alloc[Float32](NUM_ELEMS)
     for i in range(NUM_ELEMS):
         out_host[i] = init
 
@@ -203,7 +204,7 @@ def test_bulk_reduce_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         assert_equal(out_host[i], init + Float32(i + 1))
 
-    out_host.free()
+    out_host.unsafe_free()
 
 
 # ---------------------------------------------------------------------------

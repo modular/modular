@@ -58,55 +58,6 @@ void LIT::emitUnprovableConstraintsFromFitness(
     LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag, constraint);
 }
 
-/// If we're trying to call `foo.lork()`, like this:
-///
-///     def callTraitMethodWithAliasArg[X: MyTrait](t: X, thing: MyStruct[X.T]):
-///         t.lork(thing)
-///
-/// and lork happens to be a trait method with an alias, like:
-///
-///     trait MyTrait:
-///         alias T: OtherTrait
-///         def lork(self, thing: MyStruct[T]): ...
-///
-/// Then we'll need to adjust our desired signature from:
-///     def lork(self, thing: MyStruct[T])
-/// to:
-///     def lork(self, thing: MyStruct[get_witness(X, MyTrait, T)])
-///
-/// This function will do that conversion. If we aren't calling a trait method
-/// with an alias, it'll return the given desiredSignature unmodified.
-///
-/// For more context, see
-/// https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
-///
-/// TODO(MOCO-1259): Support static methods with associated aliases
-///
-/// FIXME: why do we need a substitution here? shouldn't we just generate the
-/// right signature during parsing??
-FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, TraitSymbolAttr traitSymbol,
-    FnTypeGeneratorType desiredSignature, PValue selfPValue) {
-  auto &traitDecl = declResolver.getDeclForTypeSymbol(traitSymbol.getSymbol());
-  ParameterEvaluator traitAliasReplacer =
-      declResolver.shared.getParameterEvaluator();
-  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      auto *traitAliasDecl = dyn_cast<AliasASTDecl>(decl);
-      if (!traitAliasDecl)
-        continue;
-      AliasDeclOp traitAlias = traitAliasDecl->getOp();
-      StringAttr nameStringAttr =
-          StringAttr::get(traitDecl.getContext(), name.str());
-      TypedAttr aliasRef =
-          declResolver.shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-              selfPValue, traitSymbol, nameStringAttr, traitAlias.getType());
-      traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasRef);
-    }
-  }
-  return traitAliasReplacer.replace(desiredSignature);
-}
-
 //===----------------------------------------------------------------------===//
 // ParamBindings
 //===----------------------------------------------------------------------===//
@@ -120,102 +71,10 @@ ParamBindings::ParamBindings(ASTDecl &declScope, const ExprNode *expr)
 void ParamBindings::operator=(ParamBindings &&other) {
   parameters = std::move(other.parameters);
   additionalConstraints = std::move(other.additionalConstraints);
-  ctadPogs = std::move(other.ctadPogs);
   bindingKind = other.bindingKind;
 }
 
 SMLoc ParamBindings::getExprLoc() const { return getExpr()->getLoc(); }
-
-/// Create a (possibly partially unbound) set of bindings for the given type.
-/// This can be used to initialize the binding set for methods. If the given
-/// type is not a parametric user defined type, this returns empty bindings.
-ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
-                                                ASTType type,
-                                                const ExprNode *expr,
-                                                Type optionalParentTraitType) {
-  ParamBindings paramBindings(declScope, expr);
-  // TODO: this will not work with arbitrary parametric ancestors.
-  // Default params need to come from the original declaration, instead of
-  // TypeSignatureType, as the latter won't contain the full defaults list if
-  // any have been bound already (when `type` is partially specified).
-  ASTDecl *decl = type.getDecl(declScope.getShared());
-  if (decl) {
-    if (auto structDecl =
-            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
-      llvm::append_range(
-          paramBindings.ctadPogs,
-          structDecl.getSignature().getParamListAttrs().getPogs());
-    }
-  }
-
-  auto traitSelfName = StringAttr::get(decl->getContext(), "_Self");
-  // When binding a trait function, add the self type bindings.
-  if (decl && isa_and_nonnull<TraitDeclOp>(decl->getIfOperation())) {
-    auto typeAttr = PValue(type).get();
-
-    // The source value be something of trait type like Movable, or it may be
-    // something of AnyTraitType type, like
-    //   def ex[Trait: MovableMetaType, T: Trait](argument: T):
-    // where T is some type that is known to conform to Movable.  In the latter
-    // case we just know that the input type conforms to Movable, and we want to
-    // look up members to bind in Movable, so bind the Trait type here.  If this
-    // is a struct, or simple trait, keep it.
-    if (auto paramType = sugarDynCast<ParamType>(type.extractMetaType())) {
-      auto simpleTraitType =
-          sugarCast<AnyTraitType>(paramType.getParam().getType())
-              .getTraitType();
-      // Upcast from a parametric type of trait metatype value (e.g. "some
-      // type that conforms to Movable) to the simple trait type (Movable)
-      // so we can substitute the value into the signature.
-      typeAttr = UpcastAttr::get(simpleTraitType, PValue(type));
-    }
-    paramBindings.add(expr, typeAttr, traitSelfName);
-  } else if (isa<TraitType>(decl->getIfTypeValue())) {
-    if (optionalParentTraitType) {
-      // If caller provided a parent trait type, we need to upcast the self.
-      auto typeAttr = UpcastAttr::get(optionalParentTraitType, PValue(type));
-      paramBindings.add(expr, typeAttr, traitSelfName);
-    } else {
-      // If this is a trait composition, the method signature's self type won't
-      // match directly (need to upcast the composition into the trait type that
-      // declared the method). Add as _not_ prechecked.
-      paramBindings.add(expr, PValue(type), traitSelfName);
-    }
-  }
-
-  ArrayRef<TypedAttr> paramValues = type.getParamBindings();
-  if (!paramValues.empty()) {
-    ArrayRef<PogMetadataAttr> pogs =
-        type.getWithoutParameters(declScope.getShared())
-            .getSignature()
-            .getParamListAttrs()
-            .getPogs();
-    assert(paramValues.size() <= pogs.size());
-
-    // Since we prepend struct parameters as inferred only, specify the name
-    // here to make sure we can verify the pog list correctly.
-    for (auto [value, pog] : llvm::zip(paramValues, pogs)) {
-      if (auto idxRef = dyn_cast<ParamIndexRefAttr>(value);
-          idxRef && idxRef.getDepth() == 0 &&
-          sugarIsa<GeneratorType>(type.extractMetaType())) {
-        // This is a index ref reference to the generator input, it means it
-        // has an unknown value.
-        paramBindings.add(expr, UnboundAttr::get(idxRef.getType()),
-                          pog.getName());
-      } else {
-        paramBindings.add(expr, value, pog.getName());
-      }
-    }
-  }
-
-  // Since we are peeling off a generator type to extract the binding, we need
-  // to propagate the body constraints as well, we don't need to adjust index
-  // offset here since Self parameter are always prepended.
-  if (auto genType = sugarDynCast<GeneratorType>(type.extractMetaType()))
-    paramBindings.additionalConstraints.assign(genType.getBodyConstraints());
-
-  return paramBindings;
-}
 
 void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
   assert(!isa_and_nonnull<EllipsisAttr>(value.getIfPValue().get()) &&
@@ -225,8 +84,15 @@ void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
                  name ? ArgUnpackStyle::kKeyword : ArgUnpackStyle::kPositional);
 }
 
+void ParamBindings::append(const ParamBindings &other) {
+  llvm::append_range(parameters.values, other.parameters.values);
+  llvm::append_range(additionalConstraints, other.additionalConstraints);
+  bindingKind = other.bindingKind;
+}
+
 static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
-  auto funcOp = dyn_cast_or_null<FnOp>(fnDecl.getIfOperation());
+  auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl);
+  FnOp funcOp = defDecl ? defDecl->getOp() : nullptr;
   if (!funcOp || !isa_and_nonnull<FnOp>(funcOp->getParentOp()))
     return false;
 
@@ -243,8 +109,8 @@ static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                       const VerifiedParamBindings &verified,
                                       ASTDecl &useScope, SMLoc useLoc) {
-  auto funcOp = dyn_cast_or_null<FnOp>(fnDecl.getIfOperation());
-  if (funcOp) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl); defDecl) {
+    FnOp funcOp = defDecl->getOp();
     if (isReferenceFromOwnFnBody(fnDecl, useScope)) {
       StringRef name = funcOp.getDeclName().getValue();
       auto diag = shared.emitError(
@@ -279,8 +145,6 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
     paramValues.push_back(UnboundAttr::get(t));
 
   TraitSymbolAttr witnessFor = witnessEntry->traitSymbol;
-  signature = substituteTraitAliasesIntoSignature(
-      *shared.declResolver, witnessFor, signature, selfExpr);
 
   // Get the signature with only `_Self` bound.
   signature = signature.getSpecializedGenerator(paramValues,

@@ -136,30 +136,6 @@ kgen.generator @call_it() {
 
 module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
 
-// expected-note @below {{failed to interpret function @parameter_closure}}
-kgen.generator @parameter_closure() -> index {
-  // CHECK-PARAM: failed to interpret operation pop.compiler.global_load{name: "named_global"}()
-  // CHECK-PARAM: cannot evaluate standalone capturing closure at compile time
-  // expected-note @below {{failed to interpret operation pop.compiler.global_load{name: "named_global"}()}}
-  // expected-note @below {{cannot evaluate standalone capturing closure at compile time}}
-  %0 = pop.compiler.global_load "named_global" : index
-  hlcf.return %0 : index
-}
-
-// expected-error @below {{function instantiation failed}}
-kgen.generator export @use_it() {
-  // CHECK-PARAM: failed to compile-time evaluate function call
-  // expected-note @below {{failed to compile-time evaluate function call}}
-  kgen.param.constant = <apply(:() -> index @parameter_closure)>
-  hlcf.return
-}
-
-}
-
-// -----
-
-module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
-
 // expected-note @below {{failed to interpret function @load_union}}
 kgen.generator @load_union() -> !pop.union<index> {
   %0 = pop.stack_allocation 1 x union<index>

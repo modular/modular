@@ -232,6 +232,45 @@ class CompletedTransfer:
 
 
 @runtime_checkable
+class KVLookup(Protocol):
+    """Handle for one :meth:`KVConnector.start_lookup`, polled by the manager.
+
+    The manager holds the request out of the batch until :meth:`is_complete`
+    reads ``True``, then reads :meth:`masks` once and either loads through
+    :meth:`KVConnector.load_lookup` or hands the handle back through
+    :meth:`KVConnector.abandon_lookup`. A connector that answers at once
+    returns :class:`CompletedLookup` instead.
+    """
+
+    def is_complete(self) -> bool:
+        """Returns whether the connector has answered. Never blocks."""
+        ...
+
+    def masks(self) -> Mapping[str, Sequence[bool]]:
+        """Returns the masks :meth:`KVConnector.lookup` would have returned.
+
+        Raises:
+            RuntimeError: If the connector has not answered yet.
+        """
+        ...
+
+
+class CompletedLookup:
+    """An already-answered :class:`KVLookup` carrying a lookup's masks."""
+
+    def __init__(self, masks: Mapping[str, Sequence[bool]]) -> None:
+        self._masks = masks
+
+    def is_complete(self) -> bool:
+        """Returns ``True`` because the answer is already here."""
+        return True
+
+    def masks(self) -> Mapping[str, Sequence[bool]]:
+        """Returns the masks the lookup answered with."""
+        return self._masks
+
+
+@runtime_checkable
 class KVConnector(Protocol):
     """Protocol for KV cache connectors managing external (non-device) tiers.
 
@@ -359,6 +398,90 @@ class KVConnector(Protocol):
                 it was posted raises from the returned transfer instead.
         """
         ...
+
+    def start_lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVLookup:
+        """Starts a :meth:`lookup` and returns at once.
+
+        Same arguments and same answer as :meth:`lookup`, read off the handle
+        once it completes. The manager holds the request out of the batch
+        meanwhile, so a connector whose lookup is a round trip keeps it off
+        the scheduler thread. A handle the manager does not load from goes
+        back through :meth:`abandon_lookup`.
+
+        By default the lookup runs here and comes back already answered,
+        which is right for a connector that answers from local memory.
+        """
+        return CompletedLookup(
+            self.lookup(block_hashes, replica_idx=replica_idx, hint=hint)
+        )
+
+    def defers_lookup(self, replica_idx: int = 0) -> bool:
+        """Returns whether :meth:`start_lookup` can return before it answers.
+
+        Only such a lookup holds a request out of the batch, so only it
+        counts against the scheduler's bound on unanswered lookups, and a
+        connector that answers in place is asked in place about the gap a
+        short device hit leaves. ``False`` by default, matching the default
+        :meth:`start_lookup`.
+        """
+        return False
+
+    def load_lookup(
+        self,
+        lookup: KVLookup,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        """Loads as :meth:`load` does, reading out of what ``lookup`` found.
+
+        ``lookup`` is complete and was started with the same ``replica_idx``
+        and ``hint``, and the hashes are a contiguous run of the ones it was
+        asked about, starting wherever the device hit ends. Consumes the
+        handle however it exits, so no :meth:`abandon_lookup` is owed
+        afterwards. By default the handle carries no state and this is a
+        plain :meth:`load`.
+        """
+        return self.load(
+            block_ids, block_hashes, replica_idx=replica_idx, hint=hint
+        )
+
+    def abandon_lookup(self, lookup: KVLookup) -> None:
+        """Hands back a :meth:`start_lookup` the manager will not load from.
+
+        Returns at once and never raises into the caller. Safe on a handle
+        that has not answered yet, that was already loaded from, or that
+        found nothing. No-op by default, since a lookup that holds nothing
+        has nothing to hand back.
+        """
+        return
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        """Reports what each replica could load of ``block_hashes``, for pricing.
+
+        One answer per entry of ``replica_idxs``, each shaped as a
+        :meth:`lookup` answer, read without taking whatever a lookup takes.
+        Called once per arriving request to weigh the replicas against each
+        other, so a connector whose lookup leases or stages anything answers
+        this from an index instead. An answer may cover fewer leaves than
+        :attr:`leaves` names when one is representative, and the manager
+        reconciles the leaves it covers. Answers may share one mapping, so a
+        caller reads them and never changes them. ``None`` means the
+        connector has no such answer, and the manager prices each replica
+        with a :meth:`lookup`. No-op by default.
+        """
+        return None
 
     def offload(
         self,

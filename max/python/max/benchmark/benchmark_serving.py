@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import os
 import random
@@ -34,7 +33,7 @@ from collections.abc import (
 )
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -113,6 +112,7 @@ from max.benchmark.benchmark_shared.request import (
     progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
+    MissingEngineMetricsError,
     collect_benchmark_metrics,
     fetch_spec_decode_metrics,
 )
@@ -160,9 +160,6 @@ from max.profiler.cpu import (
     collect_pids_for_port,
 )
 from max.profiler.gpu import GPUDiagContext, GpuStatsRecorder
-from openai.types.chat import ChatCompletionToolParam
-from openai.types.chat.completion_create_params import ResponseFormat
-from pydantic import TypeAdapter, ValidationError
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     "This command runs comprehensive benchmark tests on a model server to"
@@ -241,73 +238,6 @@ def _make_gpu_recorder(
         )
         return None
     return BackgroundRecorder()
-
-
-def parse_response_format(arg: str) -> ResponseFormat:
-    """Parse response format from CLI arg (inline JSON or @filepath).
-
-    Args:
-        arg: Either a JSON string or '@path/to/schema.json' to load from file.
-
-    Returns:
-        Validated ResponseFormat.
-
-    Raises:
-        ValueError: If the JSON is invalid, the file cannot be read, or the
-            value does not match a recognised OpenAI response format.
-    """
-    if arg.startswith("@"):
-        # Load from file
-        file_path = Path(arg[1:])
-        try:
-            raw = file_path.read_text()
-        except FileNotFoundError as e:
-            raise ValueError(
-                f"Response format file not found: {file_path}"
-            ) from e
-        try:
-            return TypeAdapter(ResponseFormat).validate_json(raw)
-        except (json.JSONDecodeError, ValidationError) as e:
-            raise ValueError(
-                f"Invalid response format in file {file_path}: {e}"
-            ) from e
-
-    # Parse inline JSON
-    try:
-        return TypeAdapter(ResponseFormat).validate_json(arg)
-    except (json.JSONDecodeError, ValidationError) as e:
-        raise ValueError(f"Invalid response format: {e}") from e
-
-
-def parse_tools(arg: str) -> list[Mapping[str, Any]]:
-    """Parses tool definitions from a CLI arg (inline JSON or @filepath).
-
-    Args:
-        arg: Either a JSON list or '@path/to/tools.json' to load from file.
-
-    Returns:
-        The tool definitions, validated against the OpenAI tool shape.
-
-    Raises:
-        ValueError: If the JSON is invalid, the file cannot be read, or the
-            value is not a non-empty list of OpenAI tool definitions.
-    """
-    source = "tools"
-    raw = arg
-    if arg.startswith("@"):
-        file_path = Path(arg[1:])
-        source = f"tools file {file_path}"
-        try:
-            raw = file_path.read_text()
-        except FileNotFoundError as e:
-            raise ValueError(f"Tools file not found: {file_path}") from e
-    try:
-        tools = TypeAdapter(list[ChatCompletionToolParam]).validate_json(raw)
-    except (json.JSONDecodeError, ValidationError) as e:
-        raise ValueError(f"Invalid {source}: {e}") from e
-    if not tools:
-        raise ValueError(f"Invalid {source}: the list is empty")
-    return [dict(tool) for tool in tools]
 
 
 def get_default_trace_path() -> str:
@@ -557,6 +487,7 @@ async def benchmark(
             disable_tqdm=args.disable_tqdm,
             max_concurrency=args.warmup_concurrency,
             use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
+            max_output_len=args.max_output_len,
         )
 
     # Capture baseline server metrics after priming so priming requests
@@ -569,6 +500,9 @@ async def benchmark(
             )
             logger.info("Captured baseline server metrics")
         except Exception as e:
+            # No required-metric verification on the baseline: the exporter
+            # omits a histogram until its first data point, so a fresh idle
+            # engine has no batch families yet.
             logger.warning(f"Failed to capture baseline server metrics: {e}")
 
     if session.benchmark_task == "text-generation":
@@ -762,6 +696,7 @@ async def benchmark(
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
                 disable_ignore_eos=args.disable_ignore_eos,
+                max_output_len=args.max_output_len,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -840,8 +775,13 @@ async def benchmark(
                 backend,
                 session.base_url,
                 baseline=baseline_endpoints,
+                verify_required_metrics=True,
             )
             logger.info("Collected server metrics (final)")
+        except MissingEngineMetricsError:
+            # A reachable endpoint missing the metrics this backend always
+            # emits must fail the run, not degrade to null fields.
+            raise
         except Exception as e:
             logger.warning(f"Failed to collect server metrics: {e}")
 
@@ -1158,7 +1098,7 @@ def _sample_for_seed(
     if args.tools is not None:
         augment_samples_with_tools(
             samples,
-            tools=parse_tools(args.tools),
+            tools=args.tools,
             fraction=args.tools_fraction,
             tokenizer=tokenizer,
             seed=seed,
@@ -1184,10 +1124,11 @@ def _sample_for_seed(
 
     # After images, which can cut sessions: a constraint on a cut turn
     # would never be sent.
-    if args.response_format is not None:
+    response_format = args.openai_response_format
+    if response_format is not None:
         augment_samples_with_response_format(
             samples,
-            response_format=parse_response_format(args.response_format),
+            response_format=response_format,
             fraction=args.response_format_fraction,
             turn=args.response_format_turn,
             seed=seed,

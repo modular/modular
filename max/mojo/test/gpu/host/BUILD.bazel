@@ -30,7 +30,7 @@ mojo_test(
 # Tests programmatic Metal GPU frame capture. The test handles non-Metal
 # contexts gracefully, so it is not restricted to the Apple GPU toolchain.
 # It does need a GPU build, though: `DeviceContext` resolves
-# `GPUInfo.from_name[_accelerator_arch()]()` at compile time, which fails the
+# `get_gpu_info()` at compile time, which fails the
 # "Unknown GPU architecture" constraint on CPU-only platforms (e.g. Graviton).
 # `//:has_gpu` keeps it vendor-agnostic while excluding CPU-only build configs.
 mojo_test(
@@ -66,6 +66,27 @@ mojo_test(
     srcs = ["test_device_is_host_unified.mojo"],
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# Kernel profiling ranges compile in only with a profiling define and only for
+# NVIDIA and AMD GPUs, the two vendors with a range library.
+mojo_test(
+    name = "test_tracing_missing_library.mojo.test",
+    srcs = ["test_tracing_missing_library.mojo"],
+    copts = [
+        "-D",
+        "MODULAR_ENABLE_GPU_PROFILING_DETAILED=1",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:amd_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//max:max_mojo",
         "@mojo//:std",

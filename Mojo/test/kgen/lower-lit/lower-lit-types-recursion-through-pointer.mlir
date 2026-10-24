@@ -212,7 +212,7 @@ lit.struct.decl @Tup<Ts: !kgen.param_list<!lit.trait<@AnyType>>> register_passab
 }
 
 // CHECK-LABEL: kgen.struct.generator @Node
-// CHECK-SAME:    , pointer<none>{{\]\]}} isParamPack>]) memoryOnly>
+// CHECK-SAME:    , pointer<none>]]>>>, struct<(pointer<none>) isParamPack>]) memoryOnly>
 lit.struct.decl @Node {
   lit.struct.field next : !lit.struct<@Tup<:param_list<trait<@AnyType>>
       [!lit.struct<@Ptr<:type !lit.struct<@Node>>>]>>
@@ -270,10 +270,33 @@ lit.struct.decl @Ptr<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
 
-// CHECK-LABEL: kgen.struct.generator @Node
+// COM: `(...)` is a layout, so the field's type value keeps only the layout.
+// CHECK-LABEL: kgen.struct.generator @Node =
 // CHECK-SAME:    (next: struct<(pointer<none>)>) memoryOnly>
 lit.struct.decl @Node {
   lit.struct.field next : !kgen.struct<(!lit.struct<@Ptr<:type !lit.struct<@Node>>>)>
+}
+
+// COM: A list with no domain is a value representation in the field's type
+// COM: value, keeping `@Ptr`'s type value, and a layout in its MLIR type.
+// CHECK-LABEL: kgen.struct.generator @NodeUnset =
+// CHECK-SAME:    (next: [struct<{{\[\[}}typevalue<#kgen.genref<@Ptr<:type [typevalue<#kgen.genref<@NodeUnset>>, struct<(struct<(pointer<none>)>) memoryOnly>]>>>, pointer<none>]] value>,
+// CHECK-SAME:    struct<(pointer<none>)>]) memoryOnly>
+lit.struct.decl @NodeUnset {
+  lit.struct.field next : !kgen.struct<[!lit.struct<@Ptr<:type !lit.struct<@NodeUnset>>>]>
+}
+
+// COM: An explicit domain is kept in both halves.
+// CHECK-LABEL: kgen.struct.generator @NodeLayout =
+// CHECK-SAME:    (next: struct<(pointer<none>)>) memoryOnly>
+lit.struct.decl @NodeLayout {
+  lit.struct.field next : !kgen.struct<[!lit.struct<@Ptr<:type !lit.struct<@NodeLayout>>>] layout>
+}
+
+// CHECK-LABEL: kgen.struct.generator @NodeValue =
+// CHECK-SAME:    (next: struct<{{\[\[}}typevalue<#kgen.genref<@Ptr<:type [typevalue<#kgen.genref<@NodeValue>>, struct<(struct<{{\[\[}}typevalue<#kgen.genref<@Ptr<:type [typevalue<#kgen.genref<@NodeValue>>, pointer<none>]>>>, pointer<none>]] value>) memoryOnly>]>>>, pointer<none>]] value>) memoryOnly>
+lit.struct.decl @NodeValue {
+  lit.struct.field next : !kgen.struct<[!lit.struct<@Ptr<:type !lit.struct<@NodeValue>>>] value>
 }
 
 // -----

@@ -29,6 +29,9 @@ NVFP4_BLOCK_SIZE = 16
 MXFP4_BLOCK_SIZE = 32
 """Inputs covered by one MXFP4 weight block scale."""
 
+_MXFP8_BLOCK_SIZE = 32
+"""Inputs covered by one MXFP8 weight block scale."""
+
 
 class ScaleGranularity(Enum):
     """Specifies the granularity of the quantization scale factor.
@@ -111,6 +114,26 @@ class QuantFormat(Enum):
     absmax/127. Weights are RTN-quantized at load (no pre-quantized checkpoint).
     Apple M5 only: routes to the int8 widening-MMA GEMM
     (``int8_matmul.mojo``)."""
+
+
+class WeightSource(Enum):
+    """Where a quantized weight's bytes come from.
+
+    Orthogonal to :class:`QuantFormat`. The format says what a weight *is*
+    once quantized -- its grid, scales and byte layout. The source says how
+    it got that way, which decides only what the checkpoint holds and who
+    does the quantizing.
+
+    Keeping them apart matters because they are read by different code for
+    different reasons. A kernel asks about the format; a weight loader asks
+    about the source.
+    """
+
+    CHECKPOINT = "checkpoint"
+    """Pre-quantized on disk: the checkpoint holds packed data and scales."""
+
+    QUANTIZE = "quantize"
+    """Native precision on disk, quantized on the fly at first use."""
 
 
 @dataclass
@@ -303,6 +326,9 @@ class QuantConfig:
     to 2D ``[M, K//16]`` in the checkpoint."""
 
     _mxfp6_element_format: str = "e2m3"
+
+    source: WeightSource = WeightSource.CHECKPOINT
+    """Where the weight's bytes come from. See :class:`WeightSource`."""
     """Which OCP FP6 encoding an MXFP6 checkpoint holds. Read through
     :attr:`mxfp6_format`, which rejects the question for non-MXFP6 configs."""
 
@@ -398,6 +424,53 @@ class QuantConfig:
             embedding_output_dtype=embedding_output_dtype,
             bias_dtype=bias_dtype,
             format=QuantFormat.MXFP4,
+            can_use_fused_mlp=can_use_fused_mlp,
+        )
+
+    @classmethod
+    def mxfp8(
+        cls,
+        *,
+        mlp_quantized_layers: Iterable[int],
+        attn_quantized_layers: Iterable[int] = (),
+        embedding_output_dtype: DType | None = None,
+        bias_dtype: DType | None = None,
+        can_use_fused_mlp: bool = False,
+    ) -> QuantConfig:
+        """Builds an OCP MXFP8 config with dynamic MXFP8 activations.
+
+        Weights are unpacked E4M3 values with one E8M0 scale per 32 inputs.
+        Unlike NVFP4 there is no per-tensor second scale level: MXFP8 is pure
+        block scaling, so nothing rescales the matmul output.
+
+        Args:
+            mlp_quantized_layers: Layer indices whose MLPs are quantized.
+            attn_quantized_layers: Layer indices whose attention projections
+                are quantized.
+            embedding_output_dtype: The dtype of the embedding output.
+            bias_dtype: The dtype of the bias weights.
+            can_use_fused_mlp: Whether the fused MLP path may be used.
+
+        Returns:
+            The config.
+        """
+        return cls(
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
+                dtype=DType.float8_e8m0fnu,
+                block_size=(1, _MXFP8_BLOCK_SIZE),
+            ),
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                dtype=DType.float8_e8m0fnu,
+                block_size=(1, _MXFP8_BLOCK_SIZE),
+            ),
+            mlp_quantized_layers=set(mlp_quantized_layers),
+            attn_quantized_layers=set(attn_quantized_layers),
+            embedding_output_dtype=embedding_output_dtype,
+            bias_dtype=bias_dtype,
+            format=QuantFormat.MXFP8,
             can_use_fused_mlp=can_use_fused_mlp,
         )
 
@@ -503,6 +576,15 @@ class QuantConfig:
     def is_dynamic(self) -> bool:
         """``True`` if this input scale is dynamic."""
         return self.input_scale.origin == ScaleOrigin.DYNAMIC
+
+    @property
+    def quantizes_on_load(self) -> bool:
+        """Whether weights arrive in native precision and are quantized here.
+
+        The format says what weights become; this says whether the
+        checkpoint already holds them that way.
+        """
+        return self.source is WeightSource.QUANTIZE
 
     @property
     def is_nvfp4(self) -> bool:

@@ -16,8 +16,9 @@
 Two compile modes, selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
 :func:`gc_compile.should_precompile`):
 
-- **Lazy per-target (default).** First dispatch for a (device, dtype) compiles
-  just that target's fully-symbolic rank-3 batched-matmul graph.
+- **Lazy per-target (default).** First dispatch for a (device, lhs dtype,
+  rhs dtype, out dtype) compiles just that target's fully-symbolic rank-3
+  batched-matmul graph.
 - **Precompile sweep (``=1``).** The batched sweep compiles the full matrix at
   import; a :func:`matmul_model` miss is then a hard error.
 
@@ -65,18 +66,23 @@ _CPU_DTYPES = [
 class CompilationTarget:
     graph_op_name: str
     device: Device
-    # A single dtype shared by both operands. In principle lhs and rhs can
-    # have different dtypes. In that case extend the dataclass
-    dtype: DType
+    lhs_dtype: DType
+    rhs_dtype: DType
+    out_dtype: DType
 
     @property
     def graph_name(self) -> str:
         """Returns the string used both as the graph ``sym_name`` and cache key."""
-        return f"{self.graph_op_name}_{self.device.label}_{self.device.id}_{self.dtype}"
+        prefix = f"{self.graph_op_name}_{self.device.label}_{self.device.id}"
+        # One dtype keeps the pre-mixed-dtype name, so warm caches still hit.
+        if self.lhs_dtype == self.rhs_dtype == self.out_dtype:
+            return f"{prefix}_{self.lhs_dtype}"
+        return f"{prefix}_{self.lhs_dtype}_{self.rhs_dtype}_{self.out_dtype}"
 
 
+# The sweep covers one-dtype matmuls; mixed dtypes compile lazily.
 _COMPILATION_TARGETS = [
-    CompilationTarget(_GRAPH_BASE_NAME, device, dtype)
+    CompilationTarget(_GRAPH_BASE_NAME, device, dtype, dtype, dtype)
     for device, dtype in itertools.chain(
         itertools.product(_CPU_DEVICES, _CPU_DTYPES),
         itertools.product(_ACCELERATOR_DEVICES, _ACCELERATOR_DTYPES),
@@ -101,16 +107,22 @@ def _matmul_graph(
     """Adds one fully-symbolic rank-3 matmul graph into *module* in-place."""
     device_ref = DeviceRef.from_device(compilation_target.device)
     lhs_type = TensorType(
-        compilation_target.dtype, ["batch", "m", "k"], device=device_ref
+        compilation_target.lhs_dtype, ["batch", "m", "k"], device=device_ref
     )
     rhs_type = TensorType(
-        compilation_target.dtype, ["batch", "k", "n"], device=device_ref
+        compilation_target.rhs_dtype, ["batch", "k", "n"], device=device_ref
     )
     graph_name = compilation_target.graph_name
     graph = Graph(graph_name, input_types=[lhs_type, rhs_type], module=module)
     with graph:
         lhs, rhs = graph.inputs
-        graph.output(graph_ops.matmul(lhs.tensor, rhs.tensor))
+        graph.output(
+            graph_ops.matmul(
+                lhs.tensor,
+                rhs.tensor,
+                out_dtype=compilation_target.out_dtype,
+            )
+        )
 
 
 class _MatmulFamily(gc_compile.GCFamilySpec):
@@ -155,15 +167,19 @@ _FAMILY = gc_compile.GCOpFamily(_MatmulFamily())
 gc_compile.register_family(_FAMILY)
 
 
-def matmul_model(device: Device, dtype: DType) -> engine.Model:
-    """Return the matmul :class:`~max.engine.Model` for *device* + *dtype*.
+def matmul_model(
+    device: Device, lhs_dtype: DType, rhs_dtype: DType, out_dtype: DType
+) -> engine.Model:
+    """Return the matmul :class:`~max.engine.Model` for *device* and dtypes.
 
     Lazy by default (compiled and cached on first use); the first miss adopts a
     whole warm cache. ``MAX_EAGER_OP_PRECOMPILE=1`` makes this a pure lookup.
 
     Args:
         device: The target device (CPU or GPU accelerator).
-        dtype: The element dtype for both operands.
+        lhs_dtype: The element dtype of the left operand.
+        rhs_dtype: The element dtype of the right operand.
+        out_dtype: The element dtype of the result.
 
     Returns:
         The compiled :class:`~max.engine.Model`.
@@ -173,10 +189,12 @@ def matmul_model(device: Device, dtype: DType) -> engine.Model:
             ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
 
     Note:
-        No support guard (unlike unary): RMO->MO casts both operands to a
-        common backend-compilable dtype, so no target is unsupported.
+        No support guard (unlike unary): a dtype combination the kernels
+        don't support fails to compile, with the kernel's error.
     """
-    target = CompilationTarget(_GRAPH_BASE_NAME, device, dtype)
+    target = CompilationTarget(
+        _GRAPH_BASE_NAME, device, lhs_dtype, rhs_dtype, out_dtype
+    )
     key = target.graph_name
     # Cache-check before building the lambda below: this runs on every eager
     # op dispatch, so a hit must not pay for a closure it won't use.

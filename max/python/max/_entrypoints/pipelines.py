@@ -21,6 +21,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator, Sequence
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, TypeVar
 
 import click
@@ -216,10 +217,8 @@ def main(ctx: click.Context, log_level: str = "INFO") -> None:
 def configure_telemetry(subcommand: str) -> None:
     try:
         from max.serve.config import Settings
-        from max.serve.telemetry.common import (
-            configure_metrics,
-            configure_tracing,
-        )
+        from max.serve.telemetry._tracing import configure_tracing
+        from max.serve.telemetry.common import configure_metrics
     except ImportError as e:
         # Note: most commands import main(), and thus run this, so this catches most subcommands.
         _handle_import_error(
@@ -406,7 +405,9 @@ def click_option_requires(
     default=None,
     help=(
         "[--cascade] Number of local GPU worker subprocesses. When unset, "
-        "auto-sized from ``--devices`` (one per distinct GPU set)."
+        "auto-sized from ``--devices`` (one per distinct GPU set). With "
+        "``--cascade-local-cpu-workers 0`` and no remote CPU workers, every "
+        "worker runs in the server process and this must be unset or 0."
     ),
 )
 @click_option_requires("cascade")(
@@ -682,6 +683,16 @@ def cli_pipeline(
     from max.pipelines import PipelineArgs
     from max.pipelines.lib import MAXModelConfig
 
+    # Leaves the field unset unless the user passed the flag, so the AMD
+    # default in _with_debug_defaults can apply.
+    if (
+        click.get_current_context().get_parameter_source(
+            "disable_vendor_blas_fallback"
+        )
+        is click.core.ParameterSource.DEFAULT
+    ):
+        config_kwargs.pop("disable_vendor_blas_fallback", None)
+
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
     model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     generate_text_for_pipeline(
@@ -691,6 +702,162 @@ def cli_pipeline(
             sampling_params_defaults=model_config.sampling_params_defaults,
         ),
         prompt=prompt,
+        image_urls=image_url,
+        num_warmups=num_warmups,
+        profile=profile,
+        profile_top_n=profile_top_n,
+    )
+
+
+@main.command(name="quantize", cls=WithLazySamplingAndPipelineOptions)
+@click.option(
+    "--targets",
+    default=[
+        r"^language_model\.layers\.\d+\.mlp\.down_proj$",
+        r"^language_model\.layers\.\d+\.self_attn\.o_proj$",
+    ],
+    type=str,
+    multiple=True,
+    help="Tensor-name regex to quantize (repeatable)",
+)
+@click.option(
+    "--quantization-format",
+    type=str,
+    default="nvfp4",
+    show_default=True,
+    help=(
+        "Format the targeted weights are quantized into on load. Only"
+        " formats that can be produced on the fly are accepted; the error"
+        " lists them."
+    ),
+)
+@click.option(
+    "--prompt",
+    type=str,
+    default="I believe the meaning of life is",
+    help="The text prompt to use for further generation.",
+)
+@click.option(
+    "--image_url",
+    type=str,
+    multiple=True,
+    default=[],
+    help=(
+        "Images to include along with prompt, specified as URLs."
+        " The images are ignored if the model does not support"
+        " image inputs."
+    ),
+)
+@click.option(
+    "--num-warmups",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Number of warmup iterations to run before the final timed run.",
+)
+@click.option(
+    "--profile",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help=(
+        "Capture a rudimentary profile of the timed run. If Nsight Systems "
+        "(`nsys`) and an NVIDIA GPU are available, captures the GPU kernel "
+        "trace into an .nsys-rep file and prints the top kernels. Always "
+        "captures a Python/CPU profile via cProfile."
+    ),
+)
+@click.option(
+    "--profile-output",
+    type=str,
+    default=None,
+    help=(
+        "Path for the .nsys-rep file when `--profile` is on. Default: "
+        "$BUILD_WORKSPACE_DIRECTORY/max-profile.nsys-rep, or "
+        "./max-profile.nsys-rep."
+    ),
+)
+@click.option(
+    "--profile-top-n",
+    type=int,
+    default=15,
+    show_default=True,
+    help="Number of rows to show in the GPU kernel and Python profile tables.",
+)
+def quantize(
+    targets: list[str],
+    quantization_format: str,
+    prompt: str,
+    image_url: list[str],
+    num_warmups: int,
+    profile: bool,
+    profile_output: str | None,
+    profile_top_n: int,
+    top_k: int,
+    top_p: float,
+    min_p: float,
+    temperature: float,
+    frequency_penalty: float,
+    presence_penalty: float,
+    repetition_penalty: float,
+    max_new_tokens: int,
+    min_new_tokens: int,
+    ignore_eos: bool,
+    stop: list[str],
+    stop_token_ids: list[int],
+    detokenize: bool,
+    seed: int,
+    **config_kwargs: Any,
+) -> None:
+    """Quantize the specified model.
+
+    This command runs text generation using the loaded model, optionally
+    accepting image inputs for multimodal models.
+    """
+    from max._entrypoints.cli.quantize import quantize_pipeline
+    from max.pipelines.context import SamplingParams, SamplingParamsInput
+    from max.profiler import maybe_reexec_under_nsys
+
+    # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec
+    # under nsys *before* loading any model state. The child process picks
+    # up the same argv, detects it is running under nsys, and runs normally.
+    # This keeps the parent process's wasted work to ~zero.
+    if profile:
+        maybe_reexec_under_nsys(profile_output, top_n=profile_top_n)
+
+    params = SamplingParamsInput(
+        top_k=top_k,
+        top_p=top_p,
+        min_p=min_p,
+        temperature=temperature,
+        frequency_penalty=frequency_penalty,
+        presence_penalty=presence_penalty,
+        repetition_penalty=repetition_penalty,
+        # Limit generate default max_new_tokens to 100.
+        max_new_tokens=max_new_tokens or 100,
+        min_new_tokens=min_new_tokens,
+        ignore_eos=ignore_eos,
+        stop=stop,
+        stop_token_ids=stop_token_ids,
+        detokenize=detokenize,
+        seed=seed,
+    )
+
+    # Load tokenizer & pipeline.
+    from max.pipelines import PipelineArgs
+    from max.pipelines.lib import MAXModelConfig
+
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
+    quantize_pipeline(
+        pipeline_args,
+        sampling_params=SamplingParams.from_input_and_generation_config(
+            params,
+            sampling_params_defaults=model_config.sampling_params_defaults,
+        ),
+        targets=targets,
+        prompt=prompt,
+        quantization_format=quantization_format,
         image_urls=image_url,
         num_warmups=num_warmups,
         profile=profile,
@@ -767,6 +934,37 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
         # `pre-jit` asked for the emitted Mojo and nothing more; the
         # pipeline has nothing left to warm.
         logging.info(str(stopped))
+
+
+@main.command(name="export", cls=WithLazyPipelineOptions)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    required=True,
+    help=(
+        "Where to write the pipeline artifact directory. ``.m`` is appended"
+        " if missing. The path must not exist."
+    ),
+)
+def cli_export(output: Path, **config_kwargs: Any) -> None:
+    """Build the pipeline and export it as a ``.m`` pipeline artifact.
+
+    Takes the same pipeline options as ``serve`` and ``generate`` and builds
+    the pipeline the same way, so the artifact holds the graphs a served
+    pipeline compiles, keyed by role.
+    """
+    from max._artifact import ArtifactError
+    from max._artifact.export import export_pipeline
+    from max.pipelines import PipelineArgs, PipelineConfig
+
+    pipeline_config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(**config_kwargs)
+    )
+    try:
+        dest = export_pipeline(pipeline_config, output)
+    except ArtifactError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Exported pipeline artifact to {dest}")
 
 
 def _render_warm_progress(

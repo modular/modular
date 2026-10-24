@@ -19,10 +19,10 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max import tree
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -35,18 +35,21 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
-    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
+    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
-from max.profiler import traced
 
 from .batch_processor import PixtralBatchProcessor
 from .model_config import PixtralConfig
 from .pixtral import PixtralLanguage, PixtralVision
 
 logger = logging.getLogger("max.pipelines")
+
+# The vision and language graphs compile into one artifact.
+_COMPILE_GROUP = "pixtral"
 
 
 @dataclass
@@ -68,7 +71,9 @@ class PixtralInputs(ModelInputs):
         return self.pixel_patches is not None
 
 
-class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
+class PixtralModel(
+    PipelineModelWithKVCache[TextAndVisionContext, PixtralConfig, Model]
+):
     """Pixtral pipeline model with separate vision and language graphs."""
 
     model_config_cls: ClassVar[type[Any]] = PixtralConfig
@@ -76,8 +81,8 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         PixtralBatchProcessor
     )
 
-    vision_model: Model | None
-    language_model: Model
+    _vision_weights_dict: dict[str, WeightData]
+    _language_weights_dict: dict[str, WeightData]
 
     def __init__(
         self,
@@ -116,7 +121,17 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
                 "Pixtral does not support distributed inference"
             )
 
-        self.vision_model, self.language_model = self.load_model(session)
+        self._models = self.load_graphs(session)
+
+    @property
+    def vision_model(self) -> Model:
+        """The compiled vision model for processing images."""
+        return self._models[GraphRole.VISION]
+
+    @property
+    def language_model(self) -> Model:
+        """The compiled language model for text generation."""
+        return self._models[GraphRole.DECODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, PixtralInputs)
@@ -194,103 +209,47 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
             ),
         )
 
-    def _language_graph_input_types(self) -> Sequence[TensorType | BufferType]:
-        device_ref = DeviceRef.from_device(self.devices[0])
-        return (
-            TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=device_ref,
+    def graph_specs(self, model_config: PixtralConfig) -> dict[str, GraphSpec]:
+        """Returns the vision encoder and the decoder, in one compile group."""
+        return {
+            GraphRole.VISION: self._vision_spec(
+                model_config, self._vision_weights_dict
             ),
-            TensorType(
-                DType.int64,
-                shape=["return_n_logits"],
-                device=DeviceRef.CPU(),
+            GraphRole.DECODER: self._language_spec(
+                model_config, self._language_weights_dict
             ),
-            TensorType(
-                self.dtype,
-                shape=[
-                    "num_image_tokens",
-                    self.huggingface_config.text_config.hidden_size,
-                ],
-                device=device_ref,
-            ),
-            TensorType(
-                DType.int32,
-                shape=["total_image_tokens"],
-                device=device_ref,
-            ),
-            *self.kv_params.flattened_kv_inputs(),
+        }
+
+    def _vision_spec(
+        self, config: PixtralConfig, state_dict: dict[str, WeightData]
+    ) -> GraphSpec:
+        vision_nn = PixtralVision(config)
+        vision_nn.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        return GraphSpec(
+            vision_nn,
+            "pixtral_vision",
+            self._vision_graph_input_types(self._patch_dim),
+            weights=vision_nn.state_dict(),
+            group=_COMPILE_GROUP,
         )
 
-    @traced
-    def _build_vision_graph(
-        self,
-        config: PixtralConfig,
-        state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        patch_dim = self._patch_dim
-        with Graph(
-            "pixtral_vision",
-            input_types=self._vision_graph_input_types(patch_dim),
-            module=module,
-        ) as graph:
-            vision_nn = PixtralVision(config)
-            vision_nn.load_state_dict(
-                state_dict, weight_alignment=1, strict=True
-            )
-
-            pixel_patches, attention_mask, position_ids = graph.inputs
-            output = vision_nn(
-                pixel_patches.tensor,
-                attention_mask.tensor,
-                position_ids.tensor,
-            )
-            graph.output(output)
-            return graph, vision_nn.state_dict()
-
-    @traced
-    def _build_language_graph(
-        self,
-        config: PixtralConfig,
-        state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        with Graph(
+    def _language_spec(
+        self, config: PixtralConfig, state_dict: dict[str, WeightData]
+    ) -> GraphSpec:
+        language_nn = PixtralLanguage(config)
+        language_nn.load_state_dict(
+            state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=True,
+        )
+        return GraphSpec(
+            language_nn,
             "pixtral_language",
-            input_types=self._language_graph_input_types(),
-            module=module,
-        ) as graph:
-            language_nn = PixtralLanguage(config)
-            language_nn.load_state_dict(
-                state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-                strict=True,
-            )
-
-            (
-                tokens,
-                input_row_offsets,
-                return_n_logits,
-                image_embeddings,
-                image_token_indices,
-                *kv_cache_inputs,
-            ) = graph.inputs
-
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-            outputs = language_nn(
-                tokens=tokens.tensor,
-                kv_collection=kv_collections[0],
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets.tensor,
-                image_embeddings=image_embeddings.tensor,
-                image_token_indices=image_token_indices.tensor,
-            )
-            graph.output(*outputs)
-            return graph, language_nn.state_dict()
+            language_nn.input_tree(self.kv_params),
+            weights=language_nn.state_dict(),
+            group=_COMPILE_GROUP,
+        )
 
     def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
