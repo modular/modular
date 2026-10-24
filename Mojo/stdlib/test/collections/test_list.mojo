@@ -672,6 +672,13 @@ def test_list_extend_growth_is_amortized() raises:
     assert_equal(exact.capacity(), 5)
 
 
+def test_list_extend_mut() raises:
+    var items: List[UInt32] = [1, 2, 3]
+    var copy = items.copy()
+    items.extend(copy)
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
+    assert_equal(copy, List[UInt32]())
+
 def test_list_resize_growth_is_amortized() raises:
     # `resize` grows through the same path as `extend`, so growing by a fixed
     # increment must double as well.
