@@ -1988,10 +1988,9 @@ struct CPython(Defaultable, Movable):
         pass
 
     def destroy(mut self):
-        # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
-        self.lib.call["Py_FinalizeEx"]()
-        # Note: self.lib will be automatically closed when CPython is destroyed
-        # due to OwnedDLHandle's RAII semantics
+        if not self.init_error and self.lib.check_symbol("Py_IsInitialized"):
+            if self.lib.call["Py_IsInitialized", c_int]() != 0:
+                _ = self.lib.call["Py_FinalizeEx", c_int]()
 
     def check_init_error(self) raises:
         """Used for entry points that initialize Python on first use, will
