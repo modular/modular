@@ -159,6 +159,9 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
     bool changed = false;
     for (size_t resIdx = 0, e = op.getNumResults(); resIdx != e; ++resIdx) {
       Value res = op.getResult(resIdx);
+      if (res.use_empty())
+        continue;
+
       Value first = yields.front()->getOperand(resIdx);
       bool allSame = llvm::all_of(
           yields, [&](YieldOp y) { return y->getOperand(resIdx) == first; });
@@ -184,9 +187,15 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
       }
     }
 
-    // If we removed all the results we can nuke the entire if.  This is safe
-    // because every body arm is only a yield.
-    if (op.use_empty()) {
+    auto hasOnlyYield = [](Region &region) {
+      Block &block = region.front();
+      Operation &operation = block.front();
+      return isa<YieldOp, IfElifCondYieldOp>(operation);
+    };
+
+    // Erase the unused if when its bodies and conditions contain only yield
+    // terminators.
+    if (op.use_empty() && llvm::all_of(op->getRegions(), hasOnlyYield)) {
       rewriter.eraseOp(op);
       return success();
     }
