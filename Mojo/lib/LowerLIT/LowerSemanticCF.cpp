@@ -1032,7 +1032,7 @@ Operation *LowerSemanticCF::checkSelfRecursion(Block &block,
     if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp>(op))
       return theFunc;
 
-    // Break exits to its parent loop.
+    // Break exits to its control flow parent loop.
     if (isa<HLCF::BreakOp, HLCF::ComptimeForBreakOp>(op))
       return HLCF::getParentNode(cast<HLCF::ControlFlowTerminator>(op));
 
