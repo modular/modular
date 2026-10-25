@@ -7603,7 +7603,13 @@ def _router_gate_mixed_gemv(
     hidden_states: TensorValue,
     gate_weight: TensorValue,
 ) -> TensorValue:
-    """Computes mixed-input MiniMax router logits."""
+    """Computes mixed-input MiniMax router logits from fixed gate weights.
+
+    On SM100, ``gate_weight`` must be initialized before graph execution and
+    remain unchanged during execution. The kernel prefetches weights before
+    waiting for dependent grids, so weights produced by preceding graph ops
+    are unsupported. An already initialized graph input is allowed.
+    """
     _check_rank(2, hidden_states=hidden_states, gate_weight=gate_weight)
     _check_dtype(DType.bfloat16, hidden_states=hidden_states)
     _check_dtype(DType.float32, gate_weight=gate_weight)
