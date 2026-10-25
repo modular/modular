@@ -335,7 +335,7 @@ def range_shape[
     Returns:
         The output shape `[num_elements]` for the range tensor.
     """
-    return arange_shape(start, stop, step)
+    return IndexList[1](arange_shape(start, stop, step))
 
 
 # ===-----------------------------------------------------------------------===#
