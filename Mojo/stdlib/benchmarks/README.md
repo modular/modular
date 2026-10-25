@@ -65,14 +65,14 @@ Run a single benchmark with full measurements:
 
 ```bash
 ./bazelw test //Mojo/stdlib/benchmarks/collections:bench_dict.mojo.bench \
-  --test_output=all
+  --test_output=all --cache_test_results=no
 ```
 
 Run every stdlib benchmark with full measurements:
 
 ```bash
 ./bazelw test //Mojo/stdlib/benchmarks:all_benchmarks \
-  --local_test_jobs=1 --test_output=all
+  --local_test_jobs=1 --test_output=all --cache_test_results=no
 ```
 
 `--local_test_jobs=1` serializes execution so concurrent benchmarks do not
