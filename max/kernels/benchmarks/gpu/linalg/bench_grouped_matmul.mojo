@@ -777,7 +777,11 @@ def bench_grouped_matmul[
                         a_type, b_type, c_type, transpose_b
                     ](
                         cluster_shape=Index(1, 1, 1),
-                        mma_shape=umma_shape,
+                        mma_shape=(
+                            umma_shape[0],
+                            umma_shape[1],
+                            umma_shape[2],
+                        ),
                         cta_group=1,
                         AB_swapped=AB_swapped,
                         k_group_size=1,

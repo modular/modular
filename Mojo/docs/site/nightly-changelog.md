@@ -16,6 +16,12 @@ This version is still a work in progress.
 - `__exit__(self, error: E)` now additionally supports `var self` and
   `deinit self`, similar to the non-error `__exit__`.
 
+- You can transfer ownership of a payload from an rvalue enum/tuple subject with
+  a `var` case binding, enabling `case .Some(var value):` and
+  `case (var x, var y):` without copies. This allows `match` and `if case`
+  statements work more conveniently with linear types, and reduces copies in
+  general.
+
 ## Language changes
 
 - `@explicit_destroy("<message>")` on a struct is deprecated and now emits a
@@ -132,6 +138,9 @@ This version is still a work in progress.
 - Added `BorrowedFileDescriptor` to `std.io`, a copyable, non-owning view
   of a `FileDescriptor` that carries the owner's origin, so it can be
   passed around without closing the descriptor or outliving its owner.
+
+- `ArcPointer` element types no longer need to be `Deinitable`. Destroy an
+  `ArcPointer` of a non-`Deinitable` type with the new `deinit_with()` method.
 
 ## GPU programming
 

@@ -35,12 +35,11 @@ from std.memory.alloc import (
     Layout,
 )
 from std.memory import (
-    MaybeUninit,
     Pointer,
     unsafe_memcpy,
     unsafe_uninit_move_n,
 )
-from std.utils._nicheable import NicheIndex, UnsafeNicheable, _FieldNiche
+from std.utils._nicheable import _FieldNicheable
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -166,8 +165,8 @@ struct List[T: AnyType, /](
     IterableOwned where conforms_to(T, Deinitable & Movable),
     Movable,
     Sized,
-    UnsafeNicheable,
     Writable where conforms_to(T, Writable),
+    _FieldNicheable,
 ):
     """A dynamically-allocated and resizable list.
 
@@ -809,25 +808,7 @@ struct List[T: AnyType, /](
             fmt.TypeNames[Self.T](),
         ).fields(write_fields)
 
-    comptime _Niche = _FieldNiche[Self, "_storage"]
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def niche_count() -> Int:
-        return Self._Niche.niche_count()
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
-        Self._Niche.write_niche[index](memory)
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
-        return Self._Niche.classify_niche(memory)
+    comptime _KgenNichedFieldName = "_storage".value
 
     # ===-------------------------------------------------------------------===#
     # Methods

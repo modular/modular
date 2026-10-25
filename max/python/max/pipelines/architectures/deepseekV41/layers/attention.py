@@ -38,7 +38,6 @@ from max.graph import (
     ops,
 )
 from max.nn.kernels import (
-    block_diagonal_block_scaled_matmul,
     quantize_dynamic_block_scaled,
     rope_quantize_dynamic_block_scaled,
 )
@@ -61,6 +60,8 @@ from ..layer_resolver import LayerInfo
 from ..model_config import (
     DeepseekV41Config,
     compressor_bf16_enabled,
+    csa2_mxfp8_enabled,
+    fused_kv_store_enabled,
     index_list_fused_enabled,
     q_mxfp8_enabled,
     woa_mxfp8_enabled,
@@ -70,14 +71,17 @@ from .csa2 import (
     HEAD_DIM,
     MAX_COMPRESSED,
     PREFILL_ROWS,
+    ROPE_Q_HEADS,
     WINDOW_ENTRIES,
+    WindowStore,
     csa2_attention,
+    csa2_attention_mxfp8,
     index_list,
     index_list_ops,
     leaf_slots,
     store_compressed_kv,
-    store_window_kv,
 )
+from .hyper_connection import Mxfp8Rows
 from .indexer import (
     DeepseekV41Indexer,
     candidate_keep_blocks,
@@ -90,7 +94,7 @@ from .indexer import (
     select_index_keys_masked,
     store_index_keys,
 )
-from .mxfp8_matmul import mxfp8_linear
+from .mxfp8_matmul import mxfp8_block_diagonal, mxfp8_linear
 from .query import DeepseekV41Query
 from .ragged import V41RaggedRows as RaggedRows
 from .reuse import ForwardSelection, bind_cache_sources, selection_for_layer
@@ -390,13 +394,40 @@ def mxfp8_grouped_projection(
             scales_type=DType.float8_e8m0fnu,
             out_type=DType.float8_e4m3fn,
         )
+    return mxfp8_grouped_projection_quantized(
+        x_q, x_scales, weight, weight_scale, groups
+    )
+
+
+def mxfp8_grouped_projection_quantized(
+    x_q: TensorValue,
+    x_scales: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    groups: int,
+) -> TensorValue:
+    """:func:`mxfp8_grouped_projection` of already quantized activations.
+
+    SM100 only.
+
+    Args:
+        x_q: ``[t, groups * k]`` ``float8_e4m3fn``.
+        x_scales: ``x_q``'s E8M0 scales in the 5D TCGEN layout.
+        weight: As in :func:`mxfp8_grouped_projection`.
+        weight_scale: As in :func:`mxfp8_grouped_projection`.
+        groups: The number of (local) groups.
+
+    Returns:
+        ``[t, groups * r]`` bf16.
+    """
     rows, k = (int(d) for d in weight.shape)
-    return block_diagonal_block_scaled_matmul(
+    return mxfp8_block_diagonal(
         x_q,
         weight,
         x_scales,
         ops.reshape(
-            weight_scale, [rows // _SCALE_TILE_ROWS, k // 128, 32, 4, 4]
+            weight_scale.to(x_q.device),
+            [rows // _SCALE_TILE_ROWS, k // 128, 32, 4, 4],
         ),
         groups,
     )
@@ -630,6 +661,11 @@ class CSA2Attention(Module):
         # as a Linear: MXFP8 by default, or host-dequantized bf16 with
         # `MAX_DSV41_WOA_MXFP8=0`.
         self.woa_mxfp8 = woa_mxfp8_enabled()
+        self.csa2_mxfp8 = (
+            self.woa_mxfp8
+            and csa2_mxfp8_enabled()
+            and _grouped_mxfp8_supported()
+        )
         self.wo_a = wo_a_linear(
             num_heads * head_dim // config.o_groups,
             config.o_groups * config.o_lora_rank,
@@ -724,15 +760,41 @@ class CSA2Attention(Module):
         cache: object | None,
         *,
         swa_valid_from: TensorValue | None = None,
+        h_mxfp8: Mxfp8Rows | None = None,
     ) -> TensorValue:
         return self.end(
-            self.begin(h, rows, cache), rows, swa_valid_from=swa_valid_from
+            self.begin(h, rows, cache, h_mxfp8=h_mxfp8),
+            rows,
+            swa_valid_from=swa_valid_from,
         )
 
+    def reads_mxfp8(self) -> bool:
+        """Whether :meth:`begin` can take ``h`` already in MXFP8."""
+        return self._fuses_query() and self.query_proj.reads_mxfp8()
+
+    def _fuses_query(self) -> bool:
+        indexer_mxfp8 = (
+            self.indexer is None or self.indexer.wq_b.quant_config is not None
+        )
+        return self.query_proj.can_fuse_norm_quant() and indexer_mxfp8
+
+    def _attention_ropes_q(self) -> bool:
+        """Whether the attention rotates Q, so ``wq_b`` runs as a plain
+        MXFP8 matmul rather than one with a RoPE epilogue."""
+        return self.csa2_mxfp8 and self.num_heads == ROPE_Q_HEADS
+
     def begin(
-        self, h: TensorValue, rows: RaggedRows, cache: object | None
+        self,
+        h: TensorValue,
+        rows: RaggedRows,
+        cache: object | None,
+        h_mxfp8: Mxfp8Rows | None = None,
     ) -> PendingCSA2Attention:
-        """Runs :meth:`__call__` up to the indexer's top-k."""
+        """Runs :meth:`__call__` up to the indexer's top-k.
+
+        ``h_mxfp8``, when given, is ``h`` already in MXFP8, ``[T, hidden]``;
+        only valid when :meth:`reads_mxfp8`.
+        """
         if not isinstance(cache, CSA2Cache):
             raise TypeError(
                 f"CSA2Attention requires a CSA2Cache, got {type(cache)!r}"
@@ -744,17 +806,35 @@ class CSA2Attention(Module):
         freqs_cis = ops.gather(
             self.rope.freqs_cis_base(), rows.positions, axis=0
         )
-        qr_scales = None
-        indexer_mxfp8 = (
-            self.indexer is None or self.indexer.wq_b.quant_config is not None
+        rope_table = rope_cos_sin_table(self.rope.freqs_cis_base())
+        # The window record: full-width RMSNorm of the KV latent, RoPE on its
+        # trailing dims, then MXFP8. Every layer, including "SWA-only", owns
+        # its sliding-window slot.
+        swa = cache.swa_collection
+        window = WindowStore(
+            swa.kv_blocks,
+            rows.positions,
+            rope_table,
+            leaf_slots(swa, rows.bid, rows.positions, layer.layer_id),
+            swa.page_stride,
         )
-        if self.query_proj.can_fuse_norm_quant() and indexer_mxfp8:
-            qr, qr_scales, q, kv = self.query_proj.call_fused(
-                h_flat, freqs_cis, self.kv_norm
-            )
+        qr_scales = None
+        kv: TensorValue | None = None
+        rope = not self._attention_ropes_q()
+        if self._fuses_query():
+            if fused_kv_store_enabled():
+                qr, qr_scales, q = self.query_proj.call_fused_store_kv(
+                    h_flat, freqs_cis, self.kv_norm, window, h_mxfp8, rope
+                )
+            else:
+                qr, qr_scales, q, kv = self.query_proj.call_fused(
+                    h_flat, freqs_cis, self.kv_norm, h_mxfp8, rope
+                )
         else:
-            qr, q, kv_raw = self.query_proj(h_flat, freqs_cis)
+            qr, q, kv_raw = self.query_proj(h_flat, freqs_cis, rope)
             kv = ops.cast(self.kv_norm(kv_raw), DType.bfloat16)
+        if kv is not None:
+            window.store(ops.reshape(kv, [-1, self.head_dim]))
         q = ops.reshape(q, [-1, self.num_heads, self.head_dim])
         state = PendingCSA2Attention(
             q=q,
@@ -764,19 +844,6 @@ class CSA2Attention(Module):
             comp_collection=None,
             comp_index=None,
             layer_comp=None,
-        )
-        rope_table = rope_cos_sin_table(self.rope.freqs_cis_base())
-        # The window record: full-width RMSNorm of the KV latent; the store
-        # applies RoPE to its trailing dims and quantizes it to MXFP8.
-        # Every layer, including "SWA-only", owns its sliding-window slot.
-        swa = cache.swa_collection
-        store_window_kv(
-            swa.kv_blocks,
-            ops.reshape(kv, [-1, self.head_dim]),
-            rows.positions,
-            rope_table,
-            leaf_slots(swa, rows.bid, rows.positions, layer.layer_id),
-            block_stride=swa.page_stride,
         )
         if layer.attention_mode == "SWA-only":
             return state
@@ -979,7 +1046,8 @@ class CSA2Attention(Module):
         rows: RaggedRows,
         idx: TensorValue,
     ) -> TensorValue:
-        """Runs the CSA2 attention over ``idx``'s slots.
+        """Runs the CSA2 attention over ``idx``'s slots and projects it to
+        ``[t, hidden_size]``.
 
         A forward where some request brings more than
         ``_DECODE_MAX_QUERY_TOKENS`` query tokens runs the prefill attention
@@ -989,6 +1057,9 @@ class CSA2Attention(Module):
         would abort. The op makes the choice from a host flag rather than a
         graph branch: a decode attention inside an ``ops.cond`` branch read
         the window cache before this forward's window stores landed.
+
+        With ``wo_a`` in MXFP8 on SM100 the op writes the projection's MXFP8
+        input itself, so no separate inverse-RoPE quantize runs.
         """
         swa = state.swa_collection
         comp = state.comp_collection
@@ -1012,19 +1083,49 @@ class CSA2Attention(Module):
             longest > ops.constant(_DECODE_MAX_QUERY_TOKENS, DType.int64, host)
         ) & (named <= ops.constant(PREFILL_ROWS, DType.int64, host))
 
-        return csa2_attention(
+        kv_comp = None if comp is None else comp.kv_blocks
+        comp_stride = None if comp is None else comp.page_stride
+        if self.csa2_mxfp8:
+            assert self.wo_a.weight_scale is not None
+            x_q, x_scales = csa2_attention_mxfp8(
+                q,
+                idx,
+                sink,
+                swa.kv_blocks,
+                kv_comp,
+                state.freqs_cis,
+                scale=self.scale,
+                prefill=use_prefill,
+                window_stride=swa.page_stride,
+                comp_stride=comp_stride,
+                compressed_rows=self.num_comp,
+                max_distinct_rows=PREFILL_ROWS,
+                rope_q=self._attention_ropes_q(),
+            )
+            return mxfp8_linear(
+                self.wo_b,
+                mxfp8_grouped_projection_quantized(
+                    x_q,
+                    x_scales,
+                    self.wo_a.weight,
+                    self.wo_a.weight_scale,
+                    self.o_groups,
+                ),
+            )
+        out = csa2_attention(
             q,
             idx,
             sink,
             swa.kv_blocks,
-            None if comp is None else comp.kv_blocks,
+            kv_comp,
             scale=self.scale,
             window_stride=swa.page_stride,
-            comp_stride=None if comp is None else comp.page_stride,
+            comp_stride=comp_stride,
             compressed_rows=self.num_comp,
             prefill=use_prefill,
             max_distinct_rows=PREFILL_ROWS,
         )
+        return self._output_projection(out, state.freqs_cis)
 
     def _select(
         self, state: PendingCSA2Attention, rows: RaggedRows
@@ -1134,10 +1235,7 @@ class CSA2Attention(Module):
             )
             if self._selection_trace is not None:
                 self._selection_trace.append((layer.layer_id, None))
-            return ops.reshape(
-                self._output_projection(out, state.freqs_cis),
-                state.out_shape,
-            )
+            return ops.reshape(out, state.out_shape)
 
         if layer.attention_mode in ("Full", "Reindex"):
             produced, pool = self._select(state, rows)
@@ -1162,10 +1260,7 @@ class CSA2Attention(Module):
         )
         if self._selection_trace is not None:
             self._selection_trace.append((layer.layer_id, selection))
-        return ops.reshape(
-            self._output_projection(out, state.freqs_cis),
-            state.out_shape,
-        )
+        return ops.reshape(out, state.out_shape)
 
 
 def make_csa2_attn_factory(

@@ -47,9 +47,9 @@ from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
-from std.memory import unsafe_memcmp, pack_bits, MaybeUninit
-from std.utils._nicheable import NicheIndex, UnsafeNicheable, _FieldNiche
-from std.python import ConvertibleToPython, Python, PythonObject
+from std.memory import unsafe_memcmp, pack_bits
+from std.utils._nicheable import _FieldNicheable
+from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
 
@@ -106,8 +106,8 @@ struct StringSpan[origin: ImmOrigin](
     KeyElement,
     PathLike,
     TrivialRegisterPassable,
-    UnsafeNicheable,
     Writable,
+    _FieldNicheable,
 ):
     """An immutable, non-owning view into encoded string data.
 
@@ -555,6 +555,7 @@ struct StringSpan[origin: ImmOrigin](
     @doc_hidden
     def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
         return Self._Niche.classify_niche(memory)
+    comptime _KgenNichedFieldName = "_slice".value
 
     # ===------------------------------------------------------------------===#
     # Operator dunders

@@ -32,6 +32,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -59,7 +60,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -258,8 +259,8 @@ def main() raises:
                     192,
                     256,
                 ]:
-                    comptime block_tile_shape = Index(mma_m, mma_n, BK)
-                    comptime umma_shape = Index(mma_m, mma_n, MMA_K)
+                    comptime block_tile_shape = (mma_m, mma_n, BK)
+                    comptime umma_shape = (mma_m, mma_n, MMA_K)
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,

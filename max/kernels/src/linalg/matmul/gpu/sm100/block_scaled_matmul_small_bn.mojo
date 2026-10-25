@@ -1550,7 +1550,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         a_type=a_type,
         accum_type=accum_type,
         block_tile_shape=config.block_tile_shape,
-        mma_shape=config.mma_shape,
+        mma_shape=(
+            config.mma_shape[0],
+            config.mma_shape[1],
+            config.mma_shape[2],
+        ),
         opc=opc,
         c_swizzle=config.c_swizzle,
         transpose_c=config.AB_swapped,
@@ -1751,7 +1755,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         sfb_dtype,
         config.scaling_kind,
         config.block_tile_shape,
-        config.mma_shape,
+        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         accum_type=accum_type,
         cta_group=config.cta_group,
         cluster_shape=config.cluster_shape,
@@ -1840,7 +1844,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         prefetch_stages[pf] = load_mma_pipeline.producer_stage()
                         _prefetch_weight_tiles_sbn[
                             block_tile_shape=config.block_tile_shape,
-                            mma_shape=config.mma_shape,
+                            mma_shape=(
+                                config.mma_shape[0],
+                                config.mma_shape[1],
+                                config.mma_shape[2],
+                            ),
                             num_sf_k_tiles=config.num_sf_k_tiles,
                             cta_group=config.cta_group,
                             k_group_size=config.k_group_size,
@@ -1873,7 +1881,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     if UInt32(pf * config.k_group_size) < num_iters:
                         _complete_activation_tiles_sbn[
                             block_tile_shape=config.block_tile_shape,
-                            mma_shape=config.mma_shape,
+                            mma_shape=(
+                                config.mma_shape[0],
+                                config.mma_shape[1],
+                                config.mma_shape[2],
+                            ),
                             num_sf_k_tiles=config.num_sf_k_tiles,
                             cta_group=config.cta_group,
                             k_group_size=config.k_group_size,
@@ -1929,7 +1941,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         if pf_iter < num_iters and elect_one_sync():
                             _prefetch_weight_tiles_l2_sbn[
                                 block_tile_shape=config.block_tile_shape,
-                                mma_shape=config.mma_shape,
+                                mma_shape=(
+                                    config.mma_shape[0],
+                                    config.mma_shape[1],
+                                    config.mma_shape[2],
+                                ),
                                 num_sf_k_tiles=config.num_sf_k_tiles,
                                 k_group_size=config.k_group_size,
                                 AB_swapped=config.AB_swapped,
@@ -1947,7 +1963,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             )
                     load_AB_SFA[
                         block_tile_shape=config.block_tile_shape,
-                        mma_shape=config.mma_shape,
+                        mma_shape=(
+                            config.mma_shape[0],
+                            config.mma_shape[1],
+                            config.mma_shape[2],
+                        ),
                         num_sf_k_tiles=config.num_sf_k_tiles,
                         cta_group=config.cta_group,
                         k_group_size=config.k_group_size,
@@ -2179,7 +2199,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     for i in range(num_iters // UInt32(config.k_group_size)):
                         consumer_main_loop[
                             block_tile_shape=config.block_tile_shape,
-                            mma_shape=config.mma_shape,
+                            mma_shape=(
+                                config.mma_shape[0],
+                                config.mma_shape[1],
+                                config.mma_shape[2],
+                            ),
                             SFA_NUM_COLS=SFA_NUM_COLS,
                             SFB_NUM_COLS=SFB_NUM_COLS,
                             cta_group=config.cta_group,

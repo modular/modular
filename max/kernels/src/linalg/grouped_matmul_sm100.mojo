@@ -2383,7 +2383,7 @@ def _grouped_matmul_sm100_persistent[
         type_of(c_tma_op).tile_shape,
         type_of(c_tma_op).desc_shape,
         config.block_tile_shape,
-        config.mma_shape,
+        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         transpose_b=transpose_b,
         cluster_shape=StaticTuple[Int32, 3](
             Int32(cluster_shape[0]),

@@ -31,7 +31,10 @@ from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from layout import Coord, TensorEngine
 from layout.tma_async import RaggedTMA3DTile, TMATensorTile
 from std.logger import Logger
-from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
+from nn.attention.gpu.nvidia.sm100.attention import (
+    FA4Config,
+    MHA_PDL_LEVEL,
+)
 from nn.attention.gpu.nvidia.common import (
     NonNullPointer,
     NullPointer,
@@ -223,9 +226,13 @@ def _ws_g_p_ceiling[
 
 @inline(.always)
 def _raw_grid[
-    dtype: DType, //, cfg: FA4Config[dtype]
+    cfg: FA4Config
 ](max_prompt_len: UInt32, batch_size: UInt32) -> UInt32:
-    """Work items the launch needs: prompt tiles x scheduled heads x batch."""
+    """Work items the launch needs: prompt tiles x scheduled heads x batch.
+
+    The config type is unbound (not `FA4Config[dtype]`) so any `cross_p` value
+    flows through; `dtype` was only ever used to pin that type.
+    """
     comptime heads_sched = UInt32(
         cfg.num_kv_heads if cfg.fuse_gqa else cfg.num_q_heads
     )
@@ -404,6 +411,12 @@ def mha_sm100_dispatch[
     ragged: Bool,
     sink: Bool,
     _is_cache_length_accurate: Bool,
+    # Cross-stage P for every FA4Config this dispatch builds, defaulting
+    # to the measured choice. Threaded as a parameter so a benchmark can
+    # elaborate both arms of one executable; the routes cross-stage P
+    # cannot apply to (1Q, WS, pair-CTA, MLA) fold `crossp_on()` to False
+    # unchanged.
+    cross_p: Bool = True,
 ](
     output: DeviceBuffer[output_type],
     q_arg: Pointer[Scalar[q_type], _],
@@ -459,6 +472,10 @@ def mha_sm100_dispatch[
         sink: Whether to thread sink-attention weights into the kernel.
         _is_cache_length_accurate: Whether the supplied cache length is
             accurate, threaded to the compiled kernel.
+        cross_p: Cross-stage P for every FA4Config this dispatch builds,
+            defaulting to the measured choice, so a benchmark can
+            elaborate both arms of one executable; routes cross-stage P
+            cannot apply to fold `crossp_on()` to False unchanged.
 
     Args:
         output: Device buffer that receives the attention output rows.
@@ -495,7 +512,7 @@ def mha_sm100_dispatch[
     # descriptor. `kernel.mojo`'s `_is_decoding(...) == False` assert is the
     # fail-loud backstop -- don't reinstate a guard here, it would re-block the
     # runtime-1 decode route.
-    comptime fa4_config_2q = FA4Config[KVType.dtype](
+    comptime fa4_config_2q = FA4Config[KVType.dtype, cross_p=cross_p](
         num_q_heads=config.num_heads,
         group=group,
         qk_depth=config.depth,
@@ -535,7 +552,7 @@ def mha_sm100_dispatch[
         PartitionType: MHAPartitionScheme,
         OWorkspaceType: OptionalPointer,
         //,
-        fa4_config: FA4Config[KVType.dtype],
+        fa4_config: FA4Config[KVType.dtype, cross_p=cross_p],
     ](
         num_partitions: NumPartitionsType,
         partition: PartitionType,
@@ -1096,7 +1113,7 @@ def mha_sm100_dispatch[
 
     @inline(.always)
     def launch_workspace[
-        fa4_config: FA4Config[KVType.dtype]
+        fa4_config: FA4Config[KVType.dtype, cross_p=cross_p]
     ](p: UInt32) raises {imm}:
         """Traditional (unfused / workspace) split-K launch: run the plain 1Q
         config over an over-launched grid that writes each partition's

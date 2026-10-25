@@ -38,6 +38,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -51,7 +52,7 @@ def test_blackwell_matmul_with_weight_prefetch[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -189,8 +190,8 @@ def main() raises:
                     112,
                     128,
                 ]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     test_blackwell_matmul_with_weight_prefetch[
                         dtype,
@@ -309,8 +310,8 @@ def main() raises:
                 dtype,
                 dtype,
                 .bfloat16,
-                block_tile_shape=Index(64, 128, 64),
-                mma_shape=Index(128, 256, 16),
+                block_tile_shape=(64, 128, 64),
+                mma_shape=(128, 256, 16),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 block_swizzle_size=8,
                 swapAB=swapAB,
@@ -323,8 +324,8 @@ def main() raises:
                 dtype,
                 dtype,
                 .bfloat16,
-                block_tile_shape=Index(64, 128, 64),
-                mma_shape=Index(128, 256, 16),
+                block_tile_shape=(64, 128, 64),
+                mma_shape=(128, 256, 16),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 block_swizzle_size=8,
                 swapAB=swapAB,
@@ -337,8 +338,8 @@ def main() raises:
                 dtype,
                 dtype,
                 .bfloat16,
-                block_tile_shape=Index(64, 128, 64),
-                mma_shape=Index(128, 256, 16),
+                block_tile_shape=(64, 128, 64),
+                mma_shape=(128, 256, 16),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 block_swizzle_size=8,
                 swapAB=swapAB,

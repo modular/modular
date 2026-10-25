@@ -28,6 +28,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -41,7 +42,7 @@ def test_blackwell_matmul_with_1d_bias[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -212,8 +213,8 @@ def main() raises:
                     112,
                     128,
                 ]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
@@ -290,8 +291,8 @@ def main() raises:
             # AB_swapped + 1D bias (2SM)
             comptime for bm in [64, 128]:
                 comptime for bn in [16, 32, 64, 80, 112, 128]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
@@ -335,8 +336,8 @@ def main() raises:
             # Edge cases: small/odd M with swapAB (transpose bias path, 2SM)
             comptime for bm in [64, 128]:
                 comptime for bn in [16, 64, 128]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     # M=3: odd, smaller than warp size
                     test_blackwell_matmul_with_1d_bias[
@@ -378,8 +379,8 @@ def main() raises:
 
             # Non-swapAB with M=1 (single-row, non-transpose bias path, 2SM)
             comptime for bn in [16, 64, 128]:
-                comptime block_tile_shape = Index(128, bn, BK)
-                comptime umma_shape = Index(256, 2 * bn, MMA_K)
+                comptime block_tile_shape = (128, bn, BK)
+                comptime umma_shape = (256, 2 * bn, MMA_K)
 
                 test_blackwell_matmul_with_1d_bias[
                     dtype,

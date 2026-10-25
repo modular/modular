@@ -31,6 +31,7 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -44,7 +45,7 @@ def test_matmul_sm100_epilogue[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -254,12 +255,16 @@ def main() raises:
                 ) and mma_n_scale % 2 != 0:
                     continue
 
-                comptime block_tile_shape = Index(
-                    64 * mma_m_scale, 8 * mma_n_scale, BK
+                comptime block_tile_shape = (
+                    64 * mma_m_scale,
+                    8 * mma_n_scale,
+                    BK,
                 )
 
-                comptime umma_shape = Index(
-                    128 * mma_m_scale, 16 * mma_n_scale, MMA_K
+                comptime umma_shape = (
+                    128 * mma_m_scale,
+                    16 * mma_n_scale,
+                    MMA_K,
                 )
 
                 comptime for register_based_epilogue in [True, False]:

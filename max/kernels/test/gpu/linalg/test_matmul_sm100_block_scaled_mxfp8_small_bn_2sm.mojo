@@ -36,6 +36,7 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul_small_bn import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
@@ -67,7 +68,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_type: DType,
     scales_dtype: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -299,8 +300,8 @@ def main() raises:
         # 2SM tests: sweep MMA_N in [16, 32, 48, 64, 96].
         # MMA_N=24 is excluded: BN=12 breaks TMA tile layout constraints.
         comptime for mma_n in [16, 32, 48, 64, 96]:
-            comptime block_tile = Index(128, mma_n // 2, BK)
-            comptime umma = Index(256, mma_n, MMA_K)
+            comptime block_tile = (128, mma_n // 2, BK)
+            comptime umma = (256, mma_n, MMA_K)
 
             # Basic cluster_shape=(2,1,1)
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -401,8 +402,8 @@ def main() raises:
             ](ctx, Idx[1], Idx[6656], Idx[16384])
 
         # Kimi-K2.5 shape that triggered a race condition in fp4 2SM
-        comptime kimi_block_tile = Index(128, 8, BK)
-        comptime kimi_umma = Index(256, 16, MMA_K)
+        comptime kimi_block_tile = (128, 8, BK)
+        comptime kimi_umma = (256, 16, MMA_K)
         test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             dtype,
             dtype,

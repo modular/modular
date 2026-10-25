@@ -333,7 +333,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
-        mma_shape=mma_shape,
+        mma_shape=(mma_shape[0], mma_shape[1], mma_shape[2]),
         block_swizzle_size=block_swizzle_size,
         cta_group=cta_group,
         AB_swapped=swapAB,

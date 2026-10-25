@@ -69,7 +69,7 @@ comptime mma_n = get_defined_int["mma_n", 128]()
 comptime cta_group = get_defined_int["cta_group", 1]()
 
 comptime block_tile_shape = Index(bm, mma_n // cta_group, BK)
-comptime umma_shape = Index(cta_group * bm, mma_n, MMA_K)
+comptime umma_shape = (cta_group * bm, mma_n, MMA_K)
 
 comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
 comptime budget = get_defined_int["budget", 16]()

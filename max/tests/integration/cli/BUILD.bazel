@@ -24,6 +24,8 @@ modular_py_test(
             "max/tests/integration/test_common/test_llama"
         ),
     },
+    # The architecture lookup materializes FLUX.2 by name at runtime.
+    ignore_extra_deps = ["//max/python/max/pipelines/architectures/flux2"],
     tags = [
         "no-sandbox",
     ],
@@ -35,6 +37,14 @@ modular_py_test(
         "//max/python/max/_entrypoints",
         "//max/python/max/_entrypoints:pipelines",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/flux2",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        "//max/python/max/profiler",
+        "//max/tests/integration/test_common:fake_weights",
+        requirement("click"),
+        requirement("pillow"),
     ],
 )
 

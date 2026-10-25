@@ -206,7 +206,7 @@ def _test_grouped_1d1d_block_fp4_impl[
     ).as_unsafe_any_origin()
 
     # Launch kernel
-    comptime mma_shape = Index(128 * cta_group, mma_n, 32)
+    comptime mma_shape = (128 * cta_group, mma_n, 32)
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sf_dtype, sf_dtype, True
     ](
@@ -418,7 +418,7 @@ def _test_grouped_1d1d_mixed_experts[
         ),
     ).as_unsafe_any_origin()
 
-    comptime mma_shape = Index(128 * cta_group, mma_n, 32)
+    comptime mma_shape = (128 * cta_group, mma_n, 32)
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sf_dtype, sf_dtype, True
     ](

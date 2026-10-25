@@ -23,13 +23,29 @@ combine them.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from max.dtype import DType
-from max.graph import BufferType, TensorType, TensorValue, ops
+from max.graph import BufferType, Dim, TensorType, TensorValue, ops
 from max.nn.hyper_connection import HyperConnection
+from max.nn.kernels import _block_scaled_quantize_out_types
 from max.nn.norm.rms_norm import RMSNorm
 
 # Arrival counters one fused step keeps between calls.
 _MEGA_MHC_COUNTERS = 1136
+
+
+@dataclass(frozen=True)
+class Mxfp8Rows:
+    """An activation that arrives already quantized to MXFP8.
+
+    ``values`` is ``float8_e4m3fn`` ``[rows, k]``, and ``scales`` holds its
+    E8M0 block scales in the layout
+    :func:`~max.nn.kernels.quantize_dynamic_block_scaled` produces.
+    """
+
+    values: TensorValue
+    scales: TensorValue
 
 
 def fused_hc_step(
@@ -40,7 +56,16 @@ def fused_hc_step(
     pre_mix: TensorValue,
     hc: HyperConnection,
     norm: RMSNorm,
-) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+    *,
+    mxfp8: bool = False,
+) -> tuple[
+    TensorValue,
+    TensorValue,
+    TensorValue,
+    TensorValue,
+    TensorValue,
+    Mxfp8Rows | None,
+]:
     """Joins two sublayers of the ``hc_mult`` residual streams in one step.
 
     Writes ``out`` back into ``residual`` through ``post`` and ``comb``,
@@ -57,11 +82,15 @@ def fused_hc_step(
             sublayer.
         hc: The later sublayer's hyper-connection weights.
         norm: The later sublayer's input norm.
+        mxfp8: Also writes the normalized input in MXFP8, as
+            :func:`~max.nn.kernels.quantize_dynamic_block_scaled` would.
+            SM100 only.
 
     Returns:
         The later sublayer's normalized ``[1, s, d]`` input, the new
-        ``[1, s, hc, d]`` streams, and the later sublayer's ``post``,
-        ``comb`` and ``pre``.
+        ``[1, s, hc, d]`` streams, the later sublayer's ``post``, ``comb``
+        and ``pre``, and the ``[b * s, d]`` normalized input in MXFP8 if
+        ``mxfp8`` is set, else ``None``.
 
     Raises:
         ValueError: If ``hc`` does not mix exactly four streams.
@@ -77,8 +106,25 @@ def fused_hc_step(
     )
     flat_residual = ops.reshape(residual, [-1, hc_mult, d])
     rows = flat_residual.shape[0]
-    streams, new_pre, new_post, new_comb, normed = ops.inplace_custom(
-        "mo.mega_mhc",
+    out_types = [
+        TensorType(DType.bfloat16, [rows, hc_mult, d], device),
+        TensorType(DType.float32, [rows, hc_mult], device),
+        TensorType(DType.float32, [rows, hc_mult], device),
+        TensorType(DType.float32, [rows, hc_mult * hc_mult], device),
+        TensorType(DType.bfloat16, [rows, d], device),
+    ]
+    if mxfp8:
+        out_types += _block_scaled_quantize_out_types(
+            rows,
+            Dim(d),
+            name="hidden",
+            sf_vector_size=32,
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.float8_e4m3fn,
+            device=device,
+        )
+    results = ops.inplace_custom(
+        "mo.mega_mhc.mxfp8" if mxfp8 else "mo.mega_mhc",
         device=device,
         values=[
             ops.reshape(ops.cast(out, DType.bfloat16), [-1, d]),
@@ -92,13 +138,7 @@ def fused_hc_step(
             norm.weight.to(device).cast(DType.bfloat16),
             counters,
         ],
-        out_types=[
-            TensorType(DType.bfloat16, [rows, hc_mult, d], device),
-            TensorType(DType.float32, [rows, hc_mult], device),
-            TensorType(DType.float32, [rows, hc_mult], device),
-            TensorType(DType.float32, [rows, hc_mult * hc_mult], device),
-            TensorType(DType.bfloat16, [rows, d], device),
-        ],
+        out_types=out_types,
         parameters={
             "hidden": d,
             "shifted": True,
@@ -110,12 +150,14 @@ def fused_hc_step(
             "rms_norm_eps": norm.eps,
         },
     )
+    streams, new_pre, new_post, new_comb, normed = results[:5]
     return (
         ops.reshape(normed.tensor, [b, s, d]),
         ops.reshape(streams.tensor, [b, s, hc_mult, d]),
         ops.reshape(new_post.tensor, [b, s, hc_mult]),
         ops.reshape(new_comb.tensor, [b, s, hc_mult, hc_mult]),
         ops.reshape(new_pre.tensor, [b, s, hc_mult]),
+        Mxfp8Rows(results[5].tensor, results[6].tensor) if mxfp8 else None,
     )
 
 

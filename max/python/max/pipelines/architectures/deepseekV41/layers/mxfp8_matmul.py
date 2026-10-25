@@ -17,6 +17,9 @@ At decode sizes one CTA per 128-row weight tile leaves most SMs idle, so
 CTAs where that pays. For the weight shapes and M its measured tables name
 it runs a pair-CTA GEMM (the swap-AB decode GEMM or the prefill GEMM), and
 the production block-scaled matmul elsewhere.
+``mo.matmul.mxfp8.cluster_splitk.block_diagonal`` splits the
+block-diagonal (grouped) projection the same way, and runs the production
+block-diagonal matmul where no split pays.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from max.dtype import DType
 from max.graph import Dim, TensorType, TensorValue, ops
 from max.nn.kernels import (
     _is_sm10x_gpu,
+    block_diagonal_block_scaled_matmul,
     block_scales_interleave,
     quantize_dynamic_block_scaled,
 )
@@ -105,6 +109,49 @@ def mxfp8_linear(
         ],
     )[0].tensor
     return ops.reshape(out, [*leading, weight.shape[0]])
+
+
+def mxfp8_block_diagonal(
+    x: TensorValue,
+    weight: TensorValue,
+    x_scales: TensorValue,
+    weight_scales: TensorValue,
+    groups: int,
+) -> TensorValue:
+    """Applies a block-diagonal MXFP8 matmul through the cluster split-K
+    matmul.
+
+    Group ``g`` multiplies ``x``'s columns ``[g * k, (g + 1) * k)`` by
+    ``weight``'s rows ``[g * n, (g + 1) * n)`` into the output's columns
+    ``[g * n, (g + 1) * n)``. With the split-K matmul off, or on any device
+    but SM100, it runs
+    :func:`~max.nn.kernels.block_diagonal_block_scaled_matmul`.
+
+    Args:
+        x: The ``float8_e4m3fn`` activation, ``[rows, groups * k]``.
+        weight: ``[groups * n, k]`` ``float8_e4m3fn``.
+        x_scales: ``x``'s E8M0 block scales, in the layout
+            :func:`~max.nn.kernels.quantize_dynamic_block_scaled` produces.
+        weight_scales: ``weight``'s interleaved E8M0 block scales,
+            ``[groups * n / 128, k / 128, 32, 4, 4]``.
+        groups: The number of groups.
+
+    Returns:
+        ``[rows, groups * n]`` bf16.
+    """
+    if not (mxfp8_splitk_enabled() and _is_sm10x_gpu()):
+        return block_diagonal_block_scaled_matmul(
+            x, weight, x_scales, weight_scales, groups
+        )
+    return ops.custom(
+        "mo.matmul.mxfp8.cluster_splitk.block_diagonal",
+        device=x.device,
+        values=[x, weight, x_scales, weight_scales],
+        out_types=[
+            TensorType(DType.bfloat16, [x.shape[0], weight.shape[0]], x.device)
+        ],
+        parameters={"groups": groups},
+    )[0].tensor
 
 
 def mxfp8_linear_rope_tail(

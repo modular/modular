@@ -140,9 +140,7 @@ def bench_grouped_block_scaled_gemm[
     comptime is_fp4 = (a_type == DType.uint8)
 
     # MMA shape and cluster shape
-    comptime mma_shape = Index(256, 256, 32) if cta_group == 2 else Index(
-        128, 128, 32
-    )
+    comptime mma_shape = ((256, 256, 32) if cta_group == 2 else (128, 128, 32))
     comptime cluster_shape = Index(2, 1, 1) if cta_group == 2 else Index(
         1, 1, 1
     )

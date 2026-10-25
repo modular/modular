@@ -188,7 +188,7 @@ def bench_blockwise_fp8_1d2d[
     # ===== Benchmark Legacy Kernel =====
     comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(1, 1, 1),
-        mma_shape=Index(64, 64, 32),
+        mma_shape=(64, 64, 32),
         cta_group=1,
         AB_swapped=False,
         k_group_size=1,

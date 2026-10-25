@@ -120,6 +120,18 @@ void PatternPath::dump() const {
   llvm::errs() << "\n";
 }
 
+bool PatternCommand::hasVarBinding() const {
+  if (kind == Bind)
+    return bindData.declKind == PatternDeclKind::kVar;
+  if (kind != Or)
+    return false;
+  return llvm::any_of(orAlternatives, [](PatternCommandList alternative) {
+    return llvm::any_of(alternative, [](const PatternCommand *command) {
+      return command->hasVarBinding();
+    });
+  });
+}
+
 void PatternCommand::print(raw_ostream &os, unsigned indent) const {
   os.indent(indent);
   switch (kind) {
@@ -188,10 +200,12 @@ void PatternCommand::dump() const { print(llvm::errs()); }
 // Per-ExprNode Support for Matching.
 //===----------------------------------------------------------------------===//
 
+// Return true if this is a negated numeric literal, such as `-1.0`. We don't
+// want patterns to support arbitrary expressions, just "literals", so we don't
+// accept parenthesis, or unary plus.
 static bool isNegatedNumericLiteral(const ExprNode *expr) {
-  return expr->kind == ExprNode::kNeg &&
-         isa<IntLiteralNode, FloatLiteralNode>(
-             cast<UnaryOpNode>(expr)->subExpr->getWithoutParens());
+  return expr->kind == ExprNode::kNeg && isa<IntLiteralNode, FloatLiteralNode>(
+                                             cast<UnaryOpNode>(expr)->subExpr);
 }
 
 LogicalResult
@@ -220,9 +234,7 @@ StringRef FloatLiteralNode::getLiteralSpelling() const { return spelling; }
 StringRef UnaryOpNode::getLiteralSpelling() const {
   if (isNegatedNumericLiteral(this)) {
     const char *startPos = opLoc.getPointer();
-    const char *lastPos = isa<ParenNode>(subExpr)
-                              ? subExpr->getRangeEnd().getPointer() + 1
-                              : subExpr->getLiteralSpelling().end();
+    const char *lastPos = subExpr->getLiteralSpelling().end();
     return StringRef(startPos, lastPos - startPos);
   }
   return {};
@@ -921,17 +933,21 @@ LogicalResult InferredAttributeRefNode::buildCheckList(
 
 CValue PatternEmitState::getPathValue(IREmitter &emitter,
                                       const PatternPath *path,
-                                      const ExprNode *expr) {
+                                      const ExprNode *expr, bool consume) {
   assert(path && "null pattern path");
-  if (auto it = pathValues.find(path); it != pathValues.end())
-    return it->second;
+  if (!consume) {
+    if (auto it = pathValues.find(path); it != pathValues.end())
+      return it->second;
+  }
 
   if (path->kind == PatternPath::Root) {
     assert(path == rootPath && "unexpected root path");
+    if (consume)
+      return rootSubject;
     return pathValues[path] = rootSubject;
   }
 
-  CValue parent = getPathValue(emitter, path->parent, expr);
+  CValue parent = getPathValue(emitter, path->parent, expr, consume);
   if (!parent)
     return {};
 
@@ -982,6 +998,31 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
     CValue payload = emitter.emitExprCValue(&payloadCall, EC_MatchSubject);
     if (!payload)
       return {};
+
+    // If we are allowed to consume the subject and it is an RValue, we do a
+    // little dance to mark the enum as destroyed while keeping the reference
+    // we got back from _unsafe_get_enum_payload alive.  This allows us to bind
+    // var patterns to enum payloads without them even needing to be movable.
+    if (consume && parent.getIfMRValue()) {
+      auto parentRef = parent.getMValueReference();
+      auto payloadRef = payload.getMValueReference();
+      assert(payloadRef && "enum payload projection requires memory values");
+      Location loc = expr->getLocation(emitter);
+      Value payloadPtr =
+          RefToPointerOp::create(*emitter.builder, loc, payloadRef);
+      // Propagate the origin, but transfer ownership to the new value.
+      auto origin = cast<RefType>(parentRef.getType()).getOrigin();
+      StringAttr name = StringAttr::get(emitter.getContext(), "(enum payload)");
+      // The new value will own the original value, but define the start of a
+      // new live range.
+      Value ownedPayload = RefFromPointerOp::create(
+          *emitter.builder, loc, payloadPtr, origin, name,
+          /*startsUninit=*/false, /*endsUninit=*/true);
+      // Make the parent subject look consumed here on after.
+      OwnershipMarkDestroyedOp::create(*emitter.builder, loc, parentRef);
+      return MRValue(ownedPayload);
+    }
+
     return pathValues[path] = payload;
   }
   case PatternPath::ListElement:
@@ -1143,6 +1184,105 @@ RValue PatternEmitState::emitListLengthTest(IREmitter &emitter,
 
 /// Given an Equal/EnumTag command, emit the subject and (if an enum) extract
 /// the discriminant.
+LogicalResult
+PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
+                                           ArrayRef<PatternBoundName> bindings,
+                                           SmallVectorImpl<CValue> &values) {
+  // Pattern tests must borrow the subject: a failed case can still fall
+  // through.  Once an unguarded arm commits, however, its var bindings may
+  // transfer ownership out of an rvalue aggregate.
+  values.clear();
+  for (const PatternBoundName &binding : bindings)
+    values.push_back(binding.value);
+  if (!rootSubject.getIfMRValue() || bindings.empty())
+    return success();
+
+  const ExprNode *expr = bindings.front().expr;
+  if (!expr)
+    return success();
+
+  bool hasVarBinding = llvm::any_of(bindings, [](const PatternBoundName &b) {
+    return b.bindingKind == PatternDeclKind::kVar && b.path &&
+           b.path->parent != nullptr;
+  });
+  if (!hasVarBinding)
+    return success();
+
+  SmallVector<PatternPath, 4> children;
+  ASTType rootType = rootPath->type;
+  auto tupleElements =
+      rootType.getParamBindings().size() == 2
+          ? sugarDynCastIfPresent<ParamListAttr>(rootType.getParamBindings()[0])
+          : ParamListAttr();
+  if (tupleElements) {
+    // Wildcards do not have binding paths, but they still need to be projected
+    // and owned so that their destructors run after the tuple is disarmed.
+    for (auto [index, type] : llvm::enumerate(tupleElements.getValues())) {
+      PatternPath child{};
+      child.kind = PatternPath::TupleElement;
+      child.parent = rootPath;
+      child.type = ASTType(type);
+      child.index = index;
+      children.push_back(child);
+    }
+  } else {
+    auto payload = llvm::find_if(bindings, [](const PatternBoundName &binding) {
+      return binding.bindingKind == PatternDeclKind::kVar && binding.path &&
+             binding.path->kind == PatternPath::EnumPayload;
+    });
+    if (payload == bindings.end())
+      return success();
+    children.push_back(*payload->path);
+  }
+
+  auto rootRef = rootSubject.getMValueReference();
+  if (!rootRef)
+    return success();
+  Location loc = expr->getLocation(emitter);
+  SmallVector<CValue, 4> ownedChildren;
+  for (const PatternPath &childPath : children) {
+    CValue child = getPathValue(emitter, &childPath, expr);
+    auto childRef = child.getMValueReference();
+    if (!childRef)
+      return failure();
+    Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
+    Value owned = RefFromPointerOp::create(
+        *emitter.builder, loc, pointer,
+        cast<RefType>(rootRef.getType()).getOrigin(),
+        StringAttr::get(emitter.getContext(), "(pattern child)"),
+        /*startsUninit=*/false, /*endsUninit=*/true);
+    ownedChildren.push_back(MRValue(owned));
+  }
+  // Every child now has its own owning reference, so it is safe to suppress
+  // the aggregate destructor without invalidating later sibling projections.
+  OwnershipMarkDestroyedOp::create(*emitter.builder, loc, rootRef);
+
+  for (auto [childIndex, childPath] : llvm::enumerate(children)) {
+    auto binding =
+        llvm::find_if(bindings, [&](const PatternBoundName &binding) {
+          return binding.bindingKind == PatternDeclKind::kVar && binding.path &&
+                 binding.path->kind == childPath.kind &&
+                 binding.path->parent == rootPath &&
+                 binding.path->index == childPath.index;
+        });
+    if (binding != bindings.end()) {
+      values[std::distance(bindings.begin(), binding)] =
+          ownedChildren[childIndex];
+      continue;
+    }
+    // Keep unbound children live in a synthesized slot. Lifetime lowering will
+    // emit their destructors at the end of the successful arm.
+    VarDeclOp cleanup = emitter.emitVarDecl("anonymous*", childPath.type, loc,
+                                            VarDeclKind::Synthesized);
+    if (!cleanup)
+      return failure();
+    ExprDest cleanupDest(MLValue(cleanup), EC_MatchSubject);
+    if (!emitter.emitCResult(ownedChildren[childIndex], expr, cleanupDest))
+      return failure();
+  }
+  return success();
+}
+
 CValue PatternEmitState::emitTestableValue(IREmitter &emitter,
                                            const PatternCommand *command) {
   assert(command->kind == PatternCommand::Equal ||
@@ -1291,8 +1431,8 @@ FailureOr<TypedAttr> PatternEmitState::emitComptimeCondition(
       CValue subject = getPathValue(emitter, cmd->path, cmd->expr);
       if (!subject)
         return failure();
-      bindings.push_back(
-          {cmd->bindData.bindName, subject, cmd->bindData.declKind});
+      bindings.push_back({cmd->bindData.bindName, subject,
+                          cmd->bindData.declKind, cmd->path, cmd->expr});
       continue;
     }
     case PatternCommand::Or: {
@@ -1413,8 +1553,8 @@ PatternEmitState::emitCommands(OpBuilder &builder,
       CValue subject = getPathValue(emitter, cmd->path, cmd->expr);
       if (!subject)
         return failure();
-      bindings.push_back(
-          {cmd->bindData.bindName, subject, cmd->bindData.declKind});
+      bindings.push_back({cmd->bindData.bindName, subject,
+                          cmd->bindData.declKind, cmd->path, cmd->expr});
       break;
     }
     case PatternCommand::Or:
@@ -1558,7 +1698,8 @@ initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
 
     CValue slot =
         isRefOrBind ? CValue(RLValue(varDecl)) : CValue(MLValue(varDecl));
-    aggregateBindings.push_back({bn.name, slot, bn.bindingKind, varDecl});
+    aggregateBindings.push_back(
+        {bn.name, slot, bn.bindingKind, nullptr, nullptr, varDecl});
   }
   return success();
 }
@@ -1617,7 +1758,7 @@ static LogicalResult checkOrBindings(
       assert(rl && "aggregate or-pattern bindings are ML/RLValues");
       destLV = LValue(rl);
     }
-    ExprDest storeDest(destLV, EC_VarInit);
+    ExprDest storeDest(destLV, EC_VarInitMatchBinding);
     SyntheticNode locExpr(loc);
     IREmitter emitter(curDeclScope, builder);
     CValue caseValue = caseBN.value;
@@ -1711,8 +1852,8 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
       Value refVal = RefLoadOp::create(builder, loc, rl);
       resultBinding = CValue::getMValueForRef(refVal);
     }
-    bindings.push_back(
-        {bn.name, resultBinding, bn.bindingKind, bn.declaration});
+    bindings.push_back({bn.name, resultBinding, bn.bindingKind, nullptr,
+                        nullptr, bn.declaration});
   }
   return success();
 }

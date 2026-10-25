@@ -28,18 +28,6 @@ comptime EnableForcedOrdering = get_defined_bool[
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
 
-# Cross-stage P TMEM placement (2Q, non-WS only): each softmax stage's P is
-# written into the OTHER stage's free S columns instead of self-aliasing its
-# own S, enabling early S-release. Default OFF => byte-identical.
-comptime EnableTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", True]()
-
-# Reading the same define with the opposite default recovers whether the user
-# passed it at all: only an explicit `=true` makes a False-defaulted read come
-# back True. The cross-stage-P guards key off this, so the ON-by-default path
-# can never trip a guard -- they fire only when someone explicitly asks for
-# cross-stage P on a config that does not support it.
-comptime ExplicitTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", False]()
-
 # Programmatic Dependent Launch level for the SM100 MHA prefill kernel.  On by
 # default so back-to-back attention grids in a stream overlap launch/prologue
 # latency; disable with `-D MHA_PDL=false`.  When > OFF the kernel emits
@@ -60,6 +48,15 @@ struct FA4Config[
     *,
     rope_dtype_: Optional[DType] = None,
     scale_dtype_: Optional[DType] = None,
+    # Cross-stage P TMEM placement (2Q, non-WS only): each softmax stage's P
+    # is written into the OTHER stage's free S columns instead of
+    # self-aliasing its own S, enabling early S-release. A comptime
+    # parameter, threaded from the dispatch entries, so an A/B can
+    # elaborate both arms of one executable -- one compile, one fixture
+    # fill, paired timing. Defaults ON (the measured choice); where the
+    # support matrix rejects the config, `crossp_on()` folds it to False
+    # and every consumer stays byte-identical to cross-P-off.
+    cross_p: Bool = True,
 ](TrivialRegisterPassable):
     var MMA_M: Int
     var BM: Int
@@ -1098,12 +1095,14 @@ struct FA4Config[
     ) -> Bool:
         """The cross-stage-P support matrix, in one place.
 
-        Every `comptime assert` that guards a cross-stage-P code path derives
-        its condition from here, so turning the feature on BY DEFAULT can never
-        trip one of those guards. They stay hard errors, but only an explicit
-        `-D FA4_TMEM_CROSS_P=true` on an unsupported config can reach them.
+        `crossp_on()` folds the knob to False wherever this is False, which
+        is what keeps every consumer outside the supported matrix
+        byte-identical to cross-P-off -- a caller may thread `cross_p=True`
+        through a dispatch that also builds 1Q / WS / MLA vehicles, and
+        those fold it silently rather than failing the build.
 
-        Deriving the default from the guards is the point. An earlier version
+        Deriving the matrix from the consumers' requirements is the point.
+        An earlier version
         of this predicate listed the consumers it knew about instead, and CI
         found a consumer it did not know about within the hour.
 
@@ -1141,10 +1140,10 @@ struct FA4Config[
         as an `smem_used != smem_size` constraint failure, or worse, an
         ILLEGAL_ADDRESS at runtime.
 
-        `FA4_TMEM_CROSS_P` now defaults ON, so `crossp_supported` is what keeps
+        `cross_p` defaults ON, so `crossp_supported` is what keeps
         every other consumer byte-identical to cross-P-off.
         """
-        return EnableTMEMCrossP and Self.crossp_supported(
+        return Self.cross_p and Self.crossp_supported(
             self.num_q,
             self.use_ws,
             self.pair_cta,
@@ -1385,7 +1384,7 @@ struct FA4Config[
         # +32 only to clear row stats it keeps inplaced in TMEM — MAX keeps
         # stats in SMEM, so the base is free). 2Q + non-WS only: the 1Q
         # odd-T tail aliases s1->s0, which would collide the two P windows.
-        comptime if EnableTMEMCrossP:
+        comptime if Self.cross_p:
             if self.num_q == 2 and not self.use_ws:
                 self.TMEM_P0 = self.TMEM_S1
                 self.TMEM_P1 = Self.TMEM_S0
@@ -1678,7 +1677,7 @@ struct FA4Config[
         # needs `use_shared_kv`, which is only decided above. Same predicate
         # FA4MiscMBars.CrossP_count is threaded from, so the accounting and the
         # layout cannot drift.
-        if EnableTMEMCrossP and Self.crossp_supported(
+        if Self.cross_p and Self.crossp_supported(
             self.num_q,
             self.use_ws,
             self.pair_cta,
@@ -2149,6 +2148,8 @@ struct FA4Config[
             Self.scale_dtype_size,
             "\nuse_shared_kv = ",
             self.use_shared_kv,
+            "\ncross_p = ",
+            Self.cross_p,
         )
 
     def correction_smem_elements(self) -> Int:

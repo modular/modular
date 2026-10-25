@@ -1073,7 +1073,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
     // Suggest transfer if the type is movable, or if it is a transferable
     // MValue.
-    if ((valueType.isMovable(exprLoc, shared, declScope) ||
+    if (dest.context != EC_VarInitMatchBinding &&
+        (valueType.isMovable(exprLoc, shared, declScope) ||
          canTransferFrom())) {
       diag.attachNote(exprLoc)
           << "consider transferring the value with '^'"

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Utilities for generating text in the cli."""
+"""Utilities for generating text and images in the cli."""
 
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ import asyncio
 import contextlib
 import dataclasses
 import logging
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -40,12 +41,20 @@ from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     PipelineArgs,
     PipelineConfig,
+    PixelGenerationPipeline,
+    PixelGenerationTokenizer,
 )
 from max.pipelines.lib.generate import BatchPipeline, GenerateIterator
+from max.pipelines.lib.generate_images import (
+    _is_image_generation_model,
+    _prepare_requests,
+    _run_requests,
+)
 from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import (
     ImageContentPart,
     Pipeline,
+    PipelineTask,
     PipelineTokenizer,
     RequestID,
     TextContentPart,
@@ -53,6 +62,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
 )
 from max.profiler import OneShotCapture, Tracer
+from PIL import Image
 
 from .metrics import TextGenerationMetrics
 
@@ -276,3 +286,190 @@ def generate_text_for_pipeline(
     finally:
         if capture is not None:
             capture.end_and_finalize()
+
+
+# The flags only one kind of model reads, by click parameter name.
+_TEXT_ONLY_FLAGS = (
+    "max_new_tokens",
+    "min_new_tokens",
+    "top_k",
+    "top_p",
+    "min_p",
+    "temperature",
+    "frequency_penalty",
+    "presence_penalty",
+    "repetition_penalty",
+    "ignore_eos",
+    "stop",
+    "stop_token_ids",
+    "detokenize",
+    "num_warmups",
+    "profile",
+    "profile_output",
+    "profile_top_n",
+    # An image pipeline runs one prompt per call and captures no graphs, so
+    # these are rejected as AutoModel rejects them.
+    "device_graph_capture",
+    "max_batch_size",
+)
+_IMAGE_ONLY_FLAGS = (
+    "negative_prompt",
+    "height",
+    "width",
+    "num_inference_steps",
+    "guidance_scale",
+    "true_cfg_scale",
+    "strength",
+    "num_images_per_prompt",
+    "output",
+)
+
+
+def check_flags_fit_model(
+    set_flags: Mapping[str, str], image_model: bool, model_path: str
+) -> None:
+    """Raises if the user set a flag only the other kind of model reads.
+
+    Args:
+        set_flags: The flag the user set for each click parameter name.
+        image_model: Whether the model generates images.
+        model_path: The model, which the error names.
+
+    Raises:
+        ValueError: Naming every flag for the other kind of model.
+    """
+    wrong = _TEXT_ONLY_FLAGS if image_model else _IMAGE_ONLY_FLAGS
+    flags = [set_flags[name] for name in wrong if name in set_flags]
+    if not flags:
+        return
+    kind, loaded = ("text", "an image") if image_model else ("image", "a text")
+    verb = "applies" if len(flags) == 1 else "apply"
+    raise ValueError(
+        f"{', '.join(flags)} {verb} to {kind} generation models, and "
+        f"{model_path} is {loaded} generation model."
+    )
+
+
+def is_image_generation_model(pipeline_args: PipelineArgs) -> bool:
+    """Returns whether ``pipeline_args`` names an image generation model.
+
+    It resolves the task before anything loads, with the lookup
+    :class:`~max.pipelines.AutoModel` uses.
+
+    Raises:
+        ValueError: If ``--task pixel_generation`` names a model that does
+            not generate images.
+    """
+    task = pipeline_args.task
+    if task not in (PipelineTask.UNDEFINED, PipelineTask.PIXEL_GENERATION):
+        return False
+    if _is_image_generation_model(pipeline_args):
+        return True
+    if task == PipelineTask.PIXEL_GENERATION:
+        raise ValueError(
+            "--task pixel_generation needs an image generation model, but "
+            f"{pipeline_args.model_path} uses "
+            f"{pipeline_args.main_architecture_name}, which is not one."
+        )
+    return False
+
+
+def _image_paths(output: Path, count: int) -> list[Path]:
+    """Returns where to save ``count`` images, checking ``output`` first.
+
+    A path without a suffix is a directory, created if missing.
+
+    Raises:
+        ValueError: If the suffix of ``output`` names no format PIL writes or
+            its directory does not exist.
+    """
+    if not output.suffix:
+        output.mkdir(parents=True, exist_ok=True)
+        output = output / "image.png"
+    image_format = Image.registered_extensions().get(output.suffix.lower())
+    if image_format not in Image.SAVE:
+        raise ValueError(
+            f"--output {output} has the suffix {output.suffix}, which names "
+            "no image format PIL can write. Use one such as .png or .jpg."
+        )
+    if not output.parent.is_dir():
+        raise ValueError(
+            f"--output {output} is in {output.parent}, which does not exist."
+        )
+    if count == 1:
+        return [output]
+    return [
+        output.with_name(f"{output.stem}-{index}{output.suffix}")
+        for index in range(count)
+    ]
+
+
+def generate_images_for_pipeline(
+    pipeline_args: PipelineArgs,
+    prompt: str,
+    image_urls: Sequence[str],
+    output: Path,
+    *,
+    negative_prompt: str | None,
+    height: int | None,
+    width: int | None,
+    num_inference_steps: int | None,
+    guidance_scale: float | None,
+    true_cfg_scale: float | None,
+    strength: float | None,
+    num_images_per_prompt: int,
+    seed: int,
+) -> list[Path]:
+    """Generates images for ``prompt`` and saves them under ``output``.
+
+    The config is built as serve builds it, without ``max generate``'s text
+    defaults.
+
+    Returns:
+        The saved paths. The suffix of ``output`` picks the format, and a
+        path without one is a directory that gets ``image.png``.
+
+    Raises:
+        ValueError: If there is more than one image URL, ``output`` is not a
+            path an image can be saved to, the model generates video, or as
+            raised by
+            :func:`~max.pipelines.lib.generate_images.generate_images`. All
+            of these come before the model loads.
+    """
+    if len(image_urls) > 1:
+        raise ValueError(
+            "An image generation model takes one --image_url, the input "
+            f"image, but got {len(image_urls)}."
+        )
+    paths = _image_paths(output, num_images_per_prompt)
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
+    images = (
+        [[requests.get(url).content for url in image_urls]]
+        if image_urls
+        else None
+    )
+    prepared = _prepare_requests(
+        pipeline_config,
+        prompt,
+        images=images,
+        negative_prompt=negative_prompt,
+        height=height,
+        width=width,
+        num_inference_steps=num_inference_steps,
+        guidance_scale=guidance_scale,
+        true_cfg_scale=true_cfg_scale,
+        strength=strength,
+        num_images_per_prompt=num_images_per_prompt,
+        seed=seed,
+        caller="max generate",
+    )
+    tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(
+        pipeline_config, task=PipelineTask.PIXEL_GENERATION
+    )
+    assert isinstance(pipeline, PixelGenerationPipeline)
+    assert isinstance(tokenizer, PixelGenerationTokenizer)
+    [prompt_images] = _run_requests(pipeline, tokenizer, prepared).images
+    for image, path in zip(prompt_images, paths, strict=True):
+        image.save(path)
+        print(f"Saved {path}")
+    return paths

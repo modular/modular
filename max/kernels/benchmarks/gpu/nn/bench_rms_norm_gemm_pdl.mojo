@@ -115,7 +115,7 @@ def bench_rms_norm_gemm_pdl[
 
     comptime gemm_config_off = MatmulConfig[dtype, dtype, dtype, True](
         cluster_shape=Index(cta_group, 1, 1),
-        mma_shape=Index(mma_m, mma_n, MMA_K),
+        mma_shape=(mma_m, mma_n, MMA_K),
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1,
@@ -125,7 +125,7 @@ def bench_rms_norm_gemm_pdl[
     )
     comptime gemm_config_prefetch = MatmulConfig[dtype, dtype, dtype, True](
         cluster_shape=Index(cta_group, 1, 1),
-        mma_shape=Index(mma_m, mma_n, MMA_K),
+        mma_shape=(mma_m, mma_n, MMA_K),
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1,

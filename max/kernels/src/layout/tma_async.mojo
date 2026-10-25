@@ -80,11 +80,12 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord,
+    coord,
+    Idx,
 )
 from layout.tile_layout import RowMajorLayout, row_major
 from layout.tensor_core_async import tile_layout_k_major
 
-from std.utils.index import Index, IndexList
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.utils.static_tuple import StaticTuple
 
@@ -124,33 +125,19 @@ def _idx_str[shape: Coord]() -> String:
     return Coord[*shape.element_types].get_type_name()
 
 
-def _coord_to_index_list[rank: Int, shape: Coord]() -> IndexList[rank]:
-    """Convert a flat `Coord` shape to the runtime `IndexList[rank]` TMA APIs
-    take.
-
-    The explicit `rank` parameter lets the result unify with the
-    `IndexList[N]` parameters of `create_tma_descriptor`, which KGEN cannot
-    do through `shape.rank` alone.
-    """
-    comptime assert (
-        rank == shape.rank
-    ), "Coord rank must match the explicit IndexList rank"
-    var result = IndexList[rank]()
-    comptime for i in range(rank):
-        result[i] = Int(Coord[*shape.element_types]()[i])
-    return result
-
-
-def _desc_offset[
-    rank: Int, dims: IndexList[rank], is_k_major: Bool
-](coords: IndexList[rank]) -> Int:
+def _desc_offset[dims: Coord, coords: Coord, is_k_major: Bool]() -> Int:
     """Compute linear offset for descriptor layout.
 
     col_major (is_k_major=True): first dim varies fastest,
         strides (1, d0, d0*d1, ...).
     row_major (is_k_major=False): last dim varies fastest,
         strides (..., d2*d3, d3, 1).
+
+    Both `dims` and `coords` are `Coord` parameters, so every caller spends no
+    registers on coordinates that are known when the kernel is compiled.
     """
+    comptime rank = dims.rank
+    comptime assert coords.rank == rank, "dims and coords must have equal rank"
     var offset = 0
 
     comptime if is_k_major:
@@ -158,14 +145,14 @@ def _desc_offset[
             var stride = 1
 
             comptime for j in range(i):
-                stride *= dims[j]
+                stride *= Int(dims[j])
             offset += Int(coords[i]) * stride
     else:
         comptime for i in range(rank):
             var stride = 1
 
             comptime for j in range(i + 1, rank):
-                stride *= dims[j]
+                stride *= Int(dims[j])
             offset += Int(coords[i]) * stride
     return offset
 
@@ -856,13 +843,12 @@ struct TMATensorTile[
                     (i * num_copies_dim1 + j) * copy_size
                 )
                 cp_async_bulk_tensor_shared_cluster_global[
-                    cta_group=cta_group,
-                    eviction_policy=eviction_policy,
+                    cta_group=cta_group, eviction_policy=eviction_policy
                 ](
                     dst.ptr.unsafe_offset(copy_offset),
                     Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(
+                    (
                         coords[0] + (j * copy_dim1),
                         coords[1] + (i * copy_dim0),
                     ),
@@ -913,13 +899,12 @@ struct TMATensorTile[
                     (i * num_copies_dim1 + j) * copy_size
                 )
                 cp_async_bulk_tensor_shared_cluster_global_elect[
-                    cta_group=cta_group,
-                    eviction_policy=eviction_policy,
+                    cta_group=cta_group, eviction_policy=eviction_policy
                 ](
                     dst.ptr.unsafe_offset(copy_offset),
                     Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(
+                    (
                         coords[0] + (j * copy_dim1),
                         coords[1] + (i * copy_dim0),
                     ),
@@ -973,25 +958,24 @@ struct TMATensorTile[
                 comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         _desc_offset[
-                            3,
-                            Index(
+                            coord[
                                 num_copies_dim0,
                                 num_copies_dim1,
                                 num_copies_dim2,
-                            ),
+                            ],
+                            coord[m, i, j],
                             Self.is_k_major,
-                        ](Index(m, i, j))
+                        ]()
                         * copy_size
                     )
 
                     cp_async_bulk_tensor_shared_cluster_global[
-                        cta_group=cta_group,
-                        eviction_policy=eviction_policy,
+                        cta_group=cta_group, eviction_policy=eviction_policy
                     ](
                         dst.ptr.unsafe_offset(copy_offset),
                         Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
-                        Index(
+                        (
                             coords[0] + (j * copy_dim2),
                             coords[1] + (i * copy_dim1),
                             coords[2] + (m * copy_dim0),
@@ -1044,25 +1028,24 @@ struct TMATensorTile[
                 comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         _desc_offset[
-                            3,
-                            Index(
+                            coord[
                                 num_copies_dim0,
                                 num_copies_dim1,
                                 num_copies_dim2,
-                            ),
+                            ],
+                            coord[m, i, j],
                             Self.is_k_major,
-                        ](Index(m, i, j))
+                        ]()
                         * copy_size
                     )
 
                     cp_async_bulk_tensor_shared_cluster_global_elect[
-                        cta_group=cta_group,
-                        eviction_policy=eviction_policy,
+                        cta_group=cta_group, eviction_policy=eviction_policy
                     ](
                         dst.ptr.unsafe_offset(copy_offset),
                         Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
-                        Index(
+                        (
                             coords[0] + (j * copy_dim2),
                             coords[1] + (i * copy_dim1),
                             coords[2] + (m * copy_dim0),
@@ -1120,28 +1103,27 @@ struct TMATensorTile[
                     comptime for j in range(num_copies_dim3):
                         comptime copy_offset: UInt32 = UInt32(
                             _desc_offset[
-                                4,
-                                Index(
+                                coord[
                                     num_copies_dim0,
                                     num_copies_dim1,
                                     num_copies_dim2,
                                     num_copies_dim3,
-                                ),
+                                ],
+                                coord[n, m, i, j],
                                 Self.is_k_major,
-                            ](Index(n, m, i, j))
+                            ]()
                             * copy_size
                         )
 
                         cp_async_bulk_tensor_shared_cluster_global[
-                            cta_group=cta_group,
-                            eviction_policy=eviction_policy,
+                            cta_group=cta_group, eviction_policy=eviction_policy
                         ](
                             dst.ptr.unsafe_offset(copy_offset),
                             Pointer(to=self.descriptor).unsafe_bitcast[
                                 NoneType
                             ](),
                             mem_barrier.unsafe_ptr(),
-                            Index(
+                            (
                                 coords[0] + (j * copy_dim3),
                                 coords[1] + (i * copy_dim2),
                                 coords[2] + (m * copy_dim1),
@@ -1199,28 +1181,27 @@ struct TMATensorTile[
                     comptime for j in range(num_copies_dim3):
                         comptime copy_offset: UInt32 = UInt32(
                             _desc_offset[
-                                4,
-                                Index(
+                                coord[
                                     num_copies_dim0,
                                     num_copies_dim1,
                                     num_copies_dim2,
                                     num_copies_dim3,
-                                ),
+                                ],
+                                coord[n, m, i, j],
                                 Self.is_k_major,
-                            ](Index(n, m, i, j))
+                            ]()
                             * copy_size
                         )
 
                         cp_async_bulk_tensor_shared_cluster_global_elect[
-                            cta_group=cta_group,
-                            eviction_policy=eviction_policy,
+                            cta_group=cta_group, eviction_policy=eviction_policy
                         ](
                             dst.ptr.unsafe_offset(copy_offset),
                             Pointer(to=self.descriptor).unsafe_bitcast[
                                 NoneType
                             ](),
                             mem_barrier.unsafe_ptr(),
-                            Index(
+                            (
                                 coords[0] + (j * copy_dim3),
                                 coords[1] + (i * copy_dim2),
                                 coords[2] + (m * copy_dim1),
@@ -1284,16 +1265,16 @@ struct TMATensorTile[
                         comptime for j in range(num_copies_dim4):
                             comptime copy_offset: UInt32 = UInt32(
                                 _desc_offset[
-                                    5,
-                                    Index(
+                                    coord[
                                         num_copies_dim0,
                                         num_copies_dim1,
                                         num_copies_dim2,
                                         num_copies_dim3,
                                         num_copies_dim4,
-                                    ),
+                                    ],
+                                    coord[o, n, m, i, j],
                                     Self.is_k_major,
-                                ](Index(o, n, m, i, j))
+                                ]()
                                 * copy_size
                             )
 
@@ -1306,7 +1287,7 @@ struct TMATensorTile[
                                     NoneType
                                 ](),
                                 mem_barrier.unsafe_ptr(),
-                                Index(
+                                (
                                     coords[0] + (j * copy_dim4),
                                     coords[1] + (i * copy_dim3),
                                     coords[2] + (m * copy_dim2),
@@ -1370,16 +1351,16 @@ struct TMATensorTile[
                         comptime for j in range(num_copies_dim4):
                             comptime copy_offset: UInt32 = UInt32(
                                 _desc_offset[
-                                    5,
-                                    Index(
+                                    coord[
                                         num_copies_dim0,
                                         num_copies_dim1,
                                         num_copies_dim2,
                                         num_copies_dim3,
                                         num_copies_dim4,
-                                    ),
+                                    ],
+                                    coord[o, n, m, i, j],
                                     Self.is_k_major,
-                                ](Index(o, n, m, i, j))
+                                ]()
                                 * copy_size
                             )
 
@@ -1392,7 +1373,7 @@ struct TMATensorTile[
                                     NoneType
                                 ](),
                                 mem_barrier.unsafe_ptr(),
-                                Index(
+                                (
                                     coords[0] + (j * copy_dim4),
                                     coords[1] + (i * copy_dim3),
                                     coords[2] + (m * copy_dim2),
@@ -1801,7 +1782,7 @@ struct TMATensorTile[
                     dst.ptr.unsafe_offset(copy_offset),
                     Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(
+                    (
                         coords[0] + j * copy_dim1,
                         coords[1] + i * copy_dim0,
                     ),
@@ -1836,7 +1817,7 @@ struct TMATensorTile[
                 comptime for j in range(num_copies_dim2):
                     cp_async_bulk_prefetch_tensor(
                         Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
-                        Index(
+                        (
                             coords[0] + j * copy_dim2,
                             coords[1] + i * copy_dim1,
                             coords[2] + m * copy_dim0,
@@ -1877,7 +1858,7 @@ struct TMATensorTile[
                             Pointer(to=self.descriptor).unsafe_bitcast[
                                 NoneType
                             ](),
-                            Index(
+                            (
                                 coords[0] + j * copy_dim3,
                                 coords[1] + i * copy_dim2,
                                 coords[2] + m * copy_dim1,
@@ -1930,14 +1911,14 @@ struct TMATensorTile[
                 comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         _desc_offset[
-                            3,
-                            Index(
+                            coord[
                                 num_copies_dim0,
                                 num_copies_dim1,
                                 num_copies_dim2,
-                            ),
+                            ],
+                            coord[m, i, j],
                             Self.is_k_major,
-                        ](Index(m, i, j))
+                        ]()
                         * copy_size
                     )
 
@@ -1947,7 +1928,7 @@ struct TMATensorTile[
                         dst.ptr.unsafe_offset(copy_offset),
                         Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
-                        Index(
+                        (
                             coords[0] + j * copy_dim2,
                             coords[1] + i * copy_dim1,
                             coords[2] + m * copy_dim0,
@@ -2004,15 +1985,15 @@ struct TMATensorTile[
                     comptime for j in range(num_copies_dim3):
                         comptime copy_offset: UInt32 = UInt32(
                             _desc_offset[
-                                4,
-                                Index(
+                                coord[
                                     num_copies_dim0,
                                     num_copies_dim1,
                                     num_copies_dim2,
                                     num_copies_dim3,
-                                ),
+                                ],
+                                coord[n, m, i, j],
                                 Self.is_k_major,
-                            ](Index(n, m, i, j))
+                            ]()
                             * copy_size
                         )
 
@@ -2024,7 +2005,7 @@ struct TMATensorTile[
                                 NoneType
                             ](),
                             mem_barrier.unsafe_ptr(),
-                            Index(
+                            (
                                 coords[0] + (j * copy_dim3),
                                 coords[1] + (i * copy_dim2),
                                 coords[2] + (m * copy_dim1),
@@ -2108,7 +2089,7 @@ struct TMATensorTile[
                 cp_async_bulk_tensor_global_shared_cta(
                     src.unsafe_offset(copy_offset),
                     Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
-                    Index(
+                    (
                         coords[0] + j * copy_dim1,
                         coords[1] + i * copy_dim0,
                     ),
@@ -2158,21 +2139,21 @@ struct TMATensorTile[
                 comptime for j in range(num_copies_dim2):
                     comptime copy_offset: UInt32 = UInt32(
                         _desc_offset[
-                            3,
-                            Index(
+                            coord[
                                 num_copies_dim0,
                                 num_copies_dim1,
                                 num_copies_dim2,
-                            ),
+                            ],
+                            coord[m, i, j],
                             Self.is_k_major,
-                        ](Index(m, i, j))
+                        ]()
                         * copy_size
                     )
 
                     cp_async_bulk_tensor_global_shared_cta(
                         src.unsafe_offset(copy_offset),
                         Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
-                        Index(
+                        (
                             coords[0] + j * copy_dim2,
                             coords[1] + i * copy_dim1,
                             coords[2] + m * copy_dim0,
@@ -2227,15 +2208,15 @@ struct TMATensorTile[
                     comptime for j in range(num_copies_dim3):
                         comptime copy_offset: UInt32 = UInt32(
                             _desc_offset[
-                                4,
-                                Index(
+                                coord[
                                     num_copies_dim0,
                                     num_copies_dim1,
                                     num_copies_dim2,
                                     num_copies_dim3,
-                                ),
+                                ],
+                                coord[n, m, i, j],
                                 Self.is_k_major,
-                            ](Index(n, m, i, j))
+                            ]()
                             * copy_size
                         )
 
@@ -2244,7 +2225,7 @@ struct TMATensorTile[
                             Pointer(to=self.descriptor).unsafe_bitcast[
                                 NoneType
                             ](),
-                            Index(
+                            (
                                 coords[0] + j * copy_dim3,
                                 coords[1] + i * copy_dim2,
                                 coords[2] + m * copy_dim1,
@@ -2305,16 +2286,16 @@ struct TMATensorTile[
                         comptime for j in range(num_copies_dim4):
                             comptime copy_offset: UInt32 = UInt32(
                                 _desc_offset[
-                                    5,
-                                    Index(
+                                    coord[
                                         num_copies_dim0,
                                         num_copies_dim1,
                                         num_copies_dim2,
                                         num_copies_dim3,
                                         num_copies_dim4,
-                                    ),
+                                    ],
+                                    coord[o, n, m, i, j],
                                     Self.is_k_major,
-                                ](Index(o, n, m, i, j))
+                                ]()
                                 * copy_size
                             )
 
@@ -2323,7 +2304,7 @@ struct TMATensorTile[
                                 Pointer(to=self.descriptor).unsafe_bitcast[
                                     NoneType
                                 ](),
-                                Index(
+                                (
                                     coords[0] + j * copy_dim4,
                                     coords[1] + i * copy_dim3,
                                     coords[2] + m * copy_dim2,
@@ -2606,16 +2587,15 @@ struct TMATensorTile[
     def replace_tensormap_global_dim_strides_in_shared_mem[
         _dtype: DType,
         only_update_dim_0: Bool,
+        dim_types: TypeList[Trait=CoordLike, ...],
         /,
-        *,
-        tensor_rank: Int,
     ](
         self,
         smem_tma_descriptor_ptr: MutPointer[
             TMADescriptor, address_space=.SHARED, ...
         ],
-        gmem_dims: IndexList[tensor_rank],
-        gmem_strides: IndexList[tensor_rank],
+        gmem_dims: Coord[*dim_types],
+        gmem_strides: Coord[*dim_types],
     ):
         """
         Replaces dimensions and strides in a TMA descriptor stored in shared memory.
@@ -2627,7 +2607,7 @@ struct TMATensorTile[
         Parameters:
             _dtype: The data type of the new source tensor.
             only_update_dim_0: If true, only the first dimension (dim 0) is updated with updating strides.
-            tensor_rank: The rank of the tensor.
+            dim_types: The element types of the dimension and stride coordinates.
 
         Args:
             smem_tma_descriptor_ptr: Pointer to the TMA descriptor in shared memory that will be modified.
@@ -2639,6 +2619,7 @@ struct TMATensorTile[
             - A memory fence may be required after this operation to ensure visibility
             of the changes to other threads.
         """
+        comptime tensor_rank = Coord[*dim_types].rank
 
         var desc_ptr = smem_tma_descriptor_ptr.unsafe_bitcast[UInt64]()
 
@@ -2679,7 +2660,8 @@ struct TMATensorTile[
                     has_side_effect=True,
                 ](
                     desc_ptr,
-                    gmem_strides[tensor_rank - i - 1] * size_of[Self.dtype](),
+                    Int(gmem_strides[tensor_rank - i - 1])
+                    * size_of[Self.dtype](),
                 )
 
     @inline(.always)
@@ -2807,7 +2789,7 @@ def create_tma_tile[
             + "B swizzle requirement."
         )
 
-    return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
+    return create_tma_descriptor[tensor.dtype, swizzle_mode=swizzle_mode](
         DeviceBuffer(
             ctx,
             tensor.ptr.unsafe_mut_cast[True]().unsafe_address_space_cast[
@@ -2951,11 +2933,13 @@ def create_tma_tile_gather4[
     comptime assert tile_height % 4 == 0, "tile_height must be a multiple of 4"
 
     comptime box_w = _gather4_box_width[dtype, tile_width, swizzle_mode]()
-    return create_tma_descriptor[dtype, 2, swizzle_mode, l2_promotion](
+    return create_tma_descriptor[
+        dtype, swizzle_mode=swizzle_mode, l2_promotion=l2_promotion
+    ](
         device_buf,
-        IndexList[2](num_rows, tile_stride),
-        IndexList[2](tile_stride, 1),
-        IndexList[2](1, box_w),
+        (num_rows, tile_stride),
+        (tile_stride, Idx[1]),
+        (Idx[1], box_w),
     )
 
 
@@ -3019,16 +3003,18 @@ def create_tma_tile_gather4[
     comptime assert tile_height % 4 == 0, "tile_height must be a multiple of 4"
 
     comptime box_w = _gather4_box_width[dtype, tile_width, swizzle_mode]()
-    return create_tma_descriptor[dtype, 2, swizzle_mode, l2_promotion](
+    return create_tma_descriptor[
+        dtype, swizzle_mode=swizzle_mode, l2_promotion=l2_promotion
+    ](
         DeviceBuffer(
             ctx,
             ptr,
             1,
             owning=False,
         ),
-        IndexList[2](num_rows, tile_stride),
-        IndexList[2](tile_stride, 1),
-        IndexList[2](1, box_w),
+        (num_rows, tile_stride),
+        (tile_stride, Idx[1]),
+        (Idx[1], box_w),
     )
 
 
@@ -3119,7 +3105,7 @@ def create_tensor_tile[
     comptime match tile_shape.rank:
         case 2:
             return create_tma_descriptor[
-                dtype, 2, swizzle_mode, unpack_fp4=unpack_fp4
+                dtype, swizzle_mode=swizzle_mode, unpack_fp4=unpack_fp4
             ](
                 DeviceBuffer(
                     ctx,
@@ -3135,12 +3121,12 @@ def create_tensor_tile[
                     Int(tensor.dynamic_stride(0)),
                     Int(tensor.dynamic_stride(1)),
                 ),
-                _coord_to_index_list[2, __desc_shape](),
+                __desc_shape,
             )
 
         case 3:
             return create_tma_descriptor[
-                dtype, 3, swizzle_mode, unpack_fp4=unpack_fp4
+                dtype, swizzle_mode=swizzle_mode, unpack_fp4=unpack_fp4
             ](
                 DeviceBuffer(
                     ctx,
@@ -3148,65 +3134,65 @@ def create_tensor_tile[
                     1,
                     owning=False,
                 ),
-                IndexList[3](
+                (
                     Int(tensor.dim[0]()),
                     Int(tensor.dim[1]()),
                     Int(tensor.dim[2]()) * (2 if unpack_fp4 else 1),
                 ),
-                IndexList[3](
+                (
                     Int(tensor.dynamic_stride(0)),
                     Int(tensor.dynamic_stride(1)),
                     Int(tensor.dynamic_stride(2)),
                 ),
-                _coord_to_index_list[3, __desc_shape](),
+                __desc_shape,
             )
 
         case 4:
-            return create_tma_descriptor[dtype, 4, swizzle_mode](
+            return create_tma_descriptor[dtype, swizzle_mode=swizzle_mode](
                 DeviceBuffer(
                     ctx,
                     tensor.ptr.unsafe_address_space_cast[.GENERIC](),
                     1,
                     owning=False,
                 ),
-                IndexList[4](
+                (
                     Int(tensor.dim[0]()),
                     Int(tensor.dim[1]()),
                     Int(tensor.dim[2]()),
                     Int(tensor.dim[3]()),
                 ),
-                IndexList[4](
+                (
                     Int(tensor.dynamic_stride(0)),
                     Int(tensor.dynamic_stride(1)),
                     Int(tensor.dynamic_stride(2)),
                     Int(tensor.dynamic_stride(3)),
                 ),
-                _coord_to_index_list[4, __desc_shape](),
+                __desc_shape,
             )
 
         case _:  # rank == 5
-            return create_tma_descriptor[dtype, 5, swizzle_mode](
+            return create_tma_descriptor[dtype, swizzle_mode=swizzle_mode](
                 DeviceBuffer(
                     ctx,
                     tensor.ptr.unsafe_address_space_cast[.GENERIC](),
                     1,
                     owning=False,
                 ),
-                IndexList[5](
+                (
                     Int(tensor.dim[0]()),
                     Int(tensor.dim[1]()),
                     Int(tensor.dim[2]()),
                     Int(tensor.dim[3]()),
                     Int(tensor.dim[4]()),
                 ),
-                IndexList[5](
+                (
                     Int(tensor.dynamic_stride(0)),
                     Int(tensor.dynamic_stride(1)),
                     Int(tensor.dynamic_stride(2)),
                     Int(tensor.dynamic_stride(3)),
                     Int(tensor.dynamic_stride(4)),
                 ),
-                _coord_to_index_list[5, __desc_shape](),
+                __desc_shape,
             )
 
 
@@ -3426,17 +3412,17 @@ def _create_split_tma_folded[
             "row_major fold: box_rows must be a multiple of the swizzle-atom"
             " rows"
         )
-        var desc = create_tma_descriptor[dtype, 5, swizzle_mode](
+        var desc = create_tma_descriptor[dtype, swizzle_mode=swizzle_mode](
             device_buf,
-            (num_heads, runtime_rows // CM, num_depth_dim, CM, gran),
+            (num_heads, runtime_rows // CM, num_depth_dim, Idx[CM], gran),
             (
                 head_size,
                 CM * num_heads * head_size,
                 gran,
                 num_heads * head_size,
-                1,
+                Idx[1],
             ),
-            IndexList[5](1, box_rows // CM, fold_chunks, CM, gran),
+            (Idx[1], box_rows // CM, fold_chunks, Idx[CM], gran),
         )
         res = SplitLastDimTMATensorTile[dtype, smem_shape, swizzle_mode](desc)
     else:
@@ -3446,11 +3432,11 @@ def _create_split_tma_folded[
         # fold_chunks, globalDim = num_depth_dim). The chunk axis stride is gran, so
         # chunk c covers depth elements [c*gran, c*gran+gran); the issue-site coord
         # sets chunk-base = depth_offset // gran and gran coord = 0.
-        var desc = create_tma_descriptor[dtype, 4, swizzle_mode](
+        var desc = create_tma_descriptor[dtype, swizzle_mode=swizzle_mode](
             device_buf,
-            IndexList[4](num_heads, num_depth_dim, runtime_rows, gran),
-            IndexList[4](head_size, gran, num_heads * head_size, 1),
-            IndexList[4](1, fold_chunks, box_rows, gran),
+            (num_heads, num_depth_dim, runtime_rows, gran),
+            (head_size, gran, num_heads * head_size, Idx[1]),
+            (Idx[1], fold_chunks, box_rows, gran),
         )
         res = SplitLastDimTMATensorTile[dtype, smem_shape, swizzle_mode](desc)
 
@@ -3950,21 +3936,29 @@ struct RaggedTMA3DTile[
                 comptime K = Self.swizzle_granularity
                 comptime n_blocks = depth // K
                 return Self(
-                    create_tma_descriptor[Self.dtype, 5, Self.swizzle_mode](
+                    create_tma_descriptor[
+                        Self.dtype, swizzle_mode=Self.swizzle_mode
+                    ](
                         DeviceBuffer(
                             ctx,
                             ptr.unsafe_offset(-(stride * Self.BM_seq)),
                             1,
                             owning=False,
                         ),
-                        (merged_extent, n_blocks, Self.BM_seq, Self.group, K),
-                        IndexList[5](Self.group * depth, K, stride, depth, 1),
                         (
-                            1,
+                            merged_extent,
+                            n_blocks,
+                            Self.BM_seq,
+                            Self.group,
+                            Idx[K],
+                        ),
+                        (Self.group * depth, Idx[K], stride, depth, Idx[1]),
+                        (
+                            Idx[1],
                             Self.tma_blocks_per_op,
                             Self.BM_seq,
                             Self.group,
-                            K,
+                            Idx[K],
                         ),
                     ),
                 )
@@ -3972,7 +3966,9 @@ struct RaggedTMA3DTile[
                 # Per-block / load fused-GQA: rank-4 dims (inner->outer) =
                 # (depth, group, BM_seq, merged).
                 return Self(
-                    create_tma_descriptor[Self.dtype, 4, Self.swizzle_mode](
+                    create_tma_descriptor[
+                        Self.dtype, swizzle_mode=Self.swizzle_mode
+                    ](
                         DeviceBuffer(
                             ctx,
                             ptr.unsafe_offset(-(stride * Self.BM_seq)),
@@ -3980,8 +3976,13 @@ struct RaggedTMA3DTile[
                             owning=False,
                         ),
                         (merged_extent, Self.BM_seq, Self.group, depth),
-                        IndexList[4](Self.group * depth, stride, depth, 1),
-                        (1, Self.BM_seq, Self.group, Self.swizzle_granularity),
+                        (Self.group * depth, stride, depth, Idx[1]),
+                        (
+                            Idx[1],
+                            Self.BM_seq,
+                            Self.group,
+                            Self.swizzle_granularity,
+                        ),
                     ),
                 )
         else:
@@ -4004,31 +4005,35 @@ struct RaggedTMA3DTile[
                 comptime K = Self.swizzle_granularity
                 comptime n_blocks = depth // K
                 return Self(
-                    create_tma_descriptor[Self.dtype, 4, Self.swizzle_mode](
+                    create_tma_descriptor[
+                        Self.dtype, swizzle_mode=Self.swizzle_mode
+                    ](
                         DeviceBuffer(
                             ctx,
                             ptr.unsafe_offset(-(stride * Self.BM)),
                             1,
                             owning=False,
                         ),
-                        IndexList[4](merged_extent, n_blocks, Self.BM, K),
-                        IndexList[4](depth, K, stride, 1),
-                        IndexList[4](1, Self.tma_blocks_per_op, Self.BM, K),
+                        (merged_extent, n_blocks, Self.BM, Idx[K]),
+                        (depth, Idx[K], stride, Idx[1]),
+                        (Idx[1], Self.tma_blocks_per_op, Self.BM, Idx[K]),
                     ),
                 )
             else:
                 # Per-block / load: rank-3 dims (inner->outer) = (depth, BM, merged).
                 return Self(
-                    create_tma_descriptor[Self.dtype, 3, Self.swizzle_mode](
+                    create_tma_descriptor[
+                        Self.dtype, swizzle_mode=Self.swizzle_mode
+                    ](
                         DeviceBuffer(
                             ctx,
                             ptr.unsafe_offset(-(stride * Self.BM)),
                             1,
                             owning=False,
                         ),
-                        IndexList[3](merged_extent, Self.BM, depth),
-                        IndexList[3](depth, stride, 1),
-                        IndexList[3](1, Self.BM, Self.swizzle_granularity),
+                        (merged_extent, Self.BM, depth),
+                        (depth, stride, Idx[1]),
+                        (Idx[1], Self.BM, Self.swizzle_granularity),
                     ),
                 )
 
@@ -4082,7 +4087,7 @@ struct RaggedTMA3DTile[
                 src.unsafe_offset(copy_offset),
                 Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                 # dims (inner->outer): (depth, group, BM_seq, merged)
-                Index(
+                (
                     col * Self.swizzle_granularity,
                     0,
                     box_idx,
@@ -4099,7 +4104,7 @@ struct RaggedTMA3DTile[
                 src.unsafe_offset(copy_offset),
                 Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                 # dims (inner->outer): (depth, BM, merged)
-                Index(
+                (
                     col * Self.swizzle_granularity,
                     box_idx,
                     merged,
@@ -4163,7 +4168,7 @@ struct RaggedTMA3DTile[
             ](
                 src.unsafe_offset(copy_offset),
                 Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
-                Index(0, 0, box_idx, col_start, merged),
+                (Idx[0], Idx[0], box_idx, col_start, merged),
                 elect,
             )
         else:
@@ -4174,7 +4179,7 @@ struct RaggedTMA3DTile[
             ](
                 src.unsafe_offset(copy_offset),
                 Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
-                Index(0, box_idx, col_start, merged),
+                (Idx[0], box_idx, col_start, merged),
                 elect,
             )
 
@@ -4401,13 +4406,13 @@ struct TMATensorTileIm2col[
 
                 # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
                 cp_async_bulk_tensor_shared_cluster_global_im2col[
-                    cta_group=cta_group,
+                    cta_group=cta_group
                 ](
                     dst.ptr.unsafe_offset(copy_offset),
                     Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(c, w, h, n),
-                    Index(s, r),
+                    (c, w, h, n),
+                    (s, r),
                 )
 
             # Iterator pattern: advance M by copy_dim0 using addition
@@ -4508,13 +4513,13 @@ struct TMATensorTileIm2col[
 
                 # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
                 cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
-                    cta_group=cta_group,
+                    cta_group=cta_group
                 ](
                     dst.ptr.unsafe_offset(copy_offset),
                     Pointer(to=self.descriptor).unsafe_bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(c, w, h, n),
-                    Index(s, r),
+                    (c, w, h, n),
+                    (s, r),
                     multicast_mask,
                 )
 
@@ -4650,7 +4655,7 @@ def _build_im2col_descriptor[
 
     var swizzle = _SwizzleMode(Int32(Int(swizzle_mode)))
 
-    var tensormap = _create_tensormap_im2col[dtype, 4, 2](
+    var tensormap = _create_tensormap_im2col[dtype](
         global_buf,
         global_shape,
         global_strides,

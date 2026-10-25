@@ -21,34 +21,34 @@ the mask over-extending past the cluster.
 """
 
 from max.gpu.primitives.cluster import cluster_mask_base
-from std.testing import assert_equal, TestSuite
-from std.utils import Index
+from std.testing import TestSuite, assert_equal
+from std.utils.coord import coord
 
 
 def test_axis0_masks() raises:
-    assert_equal(cluster_mask_base[Index(1, 1, 1), 0](), 0b1)
-    assert_equal(cluster_mask_base[Index(2, 1, 1), 0](), 0b11)
-    assert_equal(cluster_mask_base[Index(4, 2, 1), 0](), 0b1111)
-    assert_equal(cluster_mask_base[Index(2, 4, 1), 0](), 0b11)
-    assert_equal(cluster_mask_base[Index(4, 4, 1), 0](), 0b1111)
+    assert_equal(cluster_mask_base[coord[1, 1, 1], 0](), 0b1)
+    assert_equal(cluster_mask_base[coord[2, 1, 1], 0](), 0b11)
+    assert_equal(cluster_mask_base[coord[4, 2, 1], 0](), 0b1111)
+    assert_equal(cluster_mask_base[coord[2, 4, 1], 0](), 0b11)
+    assert_equal(cluster_mask_base[coord[4, 4, 1], 0](), 0b1111)
 
 
 def test_axis1_masks() raises:
-    assert_equal(cluster_mask_base[Index(1, 1, 1), 1](), 0b1)
-    assert_equal(cluster_mask_base[Index(4, 1, 1), 1](), 0b1)
-    assert_equal(cluster_mask_base[Index(2, 2, 1), 1](), 0b101)
-    assert_equal(cluster_mask_base[Index(4, 2, 1), 1](), 0b1_0001)
+    assert_equal(cluster_mask_base[coord[1, 1, 1], 1](), 0b1)
+    assert_equal(cluster_mask_base[coord[4, 1, 1], 1](), 0b1)
+    assert_equal(cluster_mask_base[coord[2, 2, 1], 1](), 0b101)
+    assert_equal(cluster_mask_base[coord[4, 2, 1], 1](), 0b1_0001)
 
 
 def test_axis1_masks_tall_clusters() raises:
     # cluster_shape[1] > 2 previously compounded the whole mask each
     # iteration, setting bits past the cluster size (0x1555 for (2, 4, 1))
     # which traps on device when used as a multicast mask.
-    assert_equal(cluster_mask_base[Index(2, 4, 1), 1](), 0b0101_0101)
-    assert_equal(cluster_mask_base[Index(1, 4, 1), 1](), 0b1111)
-    assert_equal(cluster_mask_base[Index(4, 4, 1), 1](), 0b0001_0001_0001_0001)
-    assert_equal(cluster_mask_base[Index(1, 8, 1), 1](), 0b1111_1111)
-    assert_equal(cluster_mask_base[Index(2, 8, 1), 1](), 0b0101_0101_0101_0101)
+    assert_equal(cluster_mask_base[coord[2, 4, 1], 1](), 0b0101_0101)
+    assert_equal(cluster_mask_base[coord[1, 4, 1], 1](), 0b1111)
+    assert_equal(cluster_mask_base[coord[4, 4, 1], 1](), 0b0001_0001_0001_0001)
+    assert_equal(cluster_mask_base[coord[1, 8, 1], 1](), 0b1111_1111)
+    assert_equal(cluster_mask_base[coord[2, 8, 1], 1](), 0b0101_0101_0101_0101)
 
 
 def main() raises:

@@ -87,6 +87,7 @@ def mha_operand_tma_copy_kernel[
 
     if thread_idx.x == 0:
         mbar.init()
+    barrier()
 
     var phase: UInt32 = 0
 
@@ -173,7 +174,7 @@ def mha_operand_copy[
     comptime kernel = mha_operand_tma_copy_kernel[
         type_of(src_tma).tile_shape,
         type_of(src_tma).desc_shape,
-        Layout.row_major(coord_to_index_list(type_of(src_tma).tile_shape)),
+        Layout.row_major(type_of(src_tma).tile_shape),
         kv_t,
         swizzle_mode,
         head_size,

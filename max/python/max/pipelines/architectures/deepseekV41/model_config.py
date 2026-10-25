@@ -90,13 +90,43 @@ def q_mxfp8_enabled() -> bool:
     return _env_switch(Q_MXFP8_ENV)
 
 
+# The window KV store inside the fused q/kv norm and quantize (default on).
+FUSED_KV_STORE_ENV = "MAX_DSV41_FUSED_KV_STORE"
+
+
+def fused_kv_store_enabled() -> bool:
+    """Whether the fused q/kv norm and quantize also stores the KV.
+
+    On (default): wherever the fused kernel runs, it writes each token's
+    MXFP8 window record itself, and DSpark's block attention normalizes and
+    quantizes its query with it too. Off (``MAX_DSV41_FUSED_KV_STORE=0``):
+    the trunk writes the normalized KV out for a separate store, and DSpark
+    keeps its unfused query norm and store.
+    """
+    return _env_switch(FUSED_KV_STORE_ENV)
+
+
+# The CSA2 attention writing wo_a's MXFP8 input (default on).
+CSA2_MXFP8_ENV = "MAX_DSV41_CSA2_MXFP8"
+
+
+def csa2_mxfp8_enabled() -> bool:
+    """Whether the CSA2 attention writes ``attn.wo_a``'s MXFP8 input itself.
+
+    Applies with ``wo_a`` in MXFP8 on SM100. Off
+    (``MAX_DSV41_CSA2_MXFP8=0``): the attention writes bf16, and a separate
+    kernel rotates and quantizes it.
+    """
+    return _env_switch(CSA2_MXFP8_ENV)
+
+
 # MXFP8 projections on the cluster split-K matmul (default on).
 MXFP8_SPLITK_ENV = "MAX_DSV41_MXFP8_SPLITK"
 
 
 def mxfp8_splitk_enabled() -> bool:
-    """Whether ``attn.wo_b`` and the shared expert run on the cluster
-    split-K MXFP8 matmul.
+    """Whether ``attn.wo_a``, ``attn.wo_b`` and the shared expert run on
+    the cluster split-K MXFP8 matmul.
 
     On (default): each weight shape and M takes cluster split-K or a
     pair-CTA GEMM (decode or prefill) where measured faster, and the
@@ -104,6 +134,21 @@ def mxfp8_splitk_enabled() -> bool:
     (``MAX_DSV41_MXFP8_SPLITK=0``): production at every size.
     """
     return _env_switch(MXFP8_SPLITK_ENV)
+
+
+# The FFN input in MXFP8 from the hyper-connection step (default on).
+MHC_MXFP8_ENV = "MAX_DSV41_MHC_MXFP8"
+
+
+def mhc_mxfp8_enabled() -> bool:
+    """Whether each hyper-connection step also writes its sublayer's input
+    in MXFP8.
+
+    On (default): on SM100 the shared expert and the attention's fused
+    ``wq_a``/``wkv`` projection read that copy instead of quantizing their
+    input. Off (``MAX_DSV41_MHC_MXFP8=0``): each quantizes its own input.
+    """
+    return _env_switch(MHC_MXFP8_ENV)
 
 
 ENGRAM_HOST_GATHER_ENV = "MAX_ENGRAM_HOST_GATHER"

@@ -46,6 +46,7 @@ from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
 from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
 from std.collections import OptionalReg
 from std.utils.static_tuple import StaticTuple
 
@@ -1630,7 +1631,7 @@ def matmul_sm100_fallback[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
+    umma_shape: Coord,
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1701,7 +1702,7 @@ def matmul_sm100_fallback[
         type_of(c).LayoutType,
         type_of(c).Engine,
         block_tile_shape,
-        umma_shape,
+        (umma_shape[0], umma_shape[1], umma_shape[2]),
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,

@@ -2343,7 +2343,7 @@ def blockwise_scaled_fp8_with_epilogue[
             cluster_shape=Index(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
-            mma_shape=Index(128, 256 if wide_N else 128, MMA_K),
+            mma_shape=(128, 256 if wide_N else 128, MMA_K),
             cta_group=2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
@@ -2354,7 +2354,7 @@ def blockwise_scaled_fp8_with_epilogue[
             cluster_shape=Index(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
-            mma_shape=Index(128, 128, MMA_K),
+            mma_shape=(128, 128, MMA_K),
             cta_group=1 if wide_N else 2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
@@ -2365,7 +2365,7 @@ def blockwise_scaled_fp8_with_epilogue[
             cluster_shape=Index(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
-            mma_shape=Index(128, 128, MMA_K),
+            mma_shape=(128, 128, MMA_K),
             cta_group=1 if n_tiles >= 8 else 2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )

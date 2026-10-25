@@ -35,6 +35,8 @@ joins the denominator only. Each record is both key and value.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -45,6 +47,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn.kernels import _block_scaled_quantize_out_types
 from max.nn.kv_cache import PagedCacheValues
 
 HEAD_DIM = 512
@@ -66,6 +69,8 @@ MAX_COMPRESSED = 512
 PREFILL_ROWS = 1 << 18
 """Distinct named slots a model's prefill workspace holds: a forward whose
 lists may name more runs the decode attention instead."""
+ROPE_Q_HEADS = 64
+"""Query heads of the MXFP8 attention that takes Q before its RoPE."""
 DECODE_SPLIT_ROWS = 296
 """Partial rows (``splits * tokens``) a decode workspace holds by default,
 two waves of a B200's CTAs; a decode splits a token's work only while its
@@ -361,6 +366,89 @@ def store_window_kv(
     )
 
 
+class WindowStore(NamedTuple):
+    """Where a forward step's KV latents go as window records."""
+
+    cache: BufferValue
+    """The window cache leaf's blocks."""
+    positions: TensorValue
+    """``[T]`` token positions."""
+    rope_table: TensorValue
+    """``[rows, 64]`` float32 cosines then sines per position."""
+    slots: TensorValue
+    """``[T]`` absolute slots, negative to skip a row."""
+    block_stride: TensorValue
+    """Host ``[1]`` int64 block stride in bytes, as for
+    :func:`store_window_kv`."""
+
+    def store(self, latent: TensorValue) -> None:
+        """Stores ``latent``'s ``[T, 512]`` rows with :func:`store_window_kv`."""
+        store_window_kv(
+            self.cache,
+            latent,
+            self.positions,
+            self.rope_table,
+            self.slots,
+            block_stride=self.block_stride,
+        )
+
+
+def norm_quantize_q_store_kv(
+    x: TensorValue,
+    q_weight: TensorValue,
+    kv_weight: TensorValue,
+    epsilon: float,
+    q_cols: int,
+    window: WindowStore,
+) -> tuple[TensorValue, TensorValue]:
+    """Normalizes ``[q | kv]`` rows, quantizes q to MXFP8 and stores kv.
+
+    One launch computes what
+    :func:`~max.nn.kernels.rms_norm_quantize_mxfp8_q_kv` and then
+    :meth:`WindowStore.store` on its normalized kv compute, bit for bit,
+    without writing the normalized kv out.
+
+    Args:
+        x: ``[T, q_cols + 512]`` bf16 rows, q then kv.
+        q_weight: ``[q_cols]`` bf16 q norm weight.
+        kv_weight: ``[512]`` bf16 kv norm weight.
+        epsilon: Added to each row's mean square.
+        q_cols: The width of the q part, a multiple of 256.
+        window: Where the kv rows' records go.
+
+    Returns:
+        The float8_e4m3fn q ``[T, q_cols]`` and its float8_e8m0fnu scales in
+        the rank-5 interleaved layout.
+    """
+    q_type, scales_type = _block_scaled_quantize_out_types(
+        x.shape[0],
+        Dim(q_cols),
+        "q_cols",
+        32,
+        DType.float8_e8m0fnu,
+        DType.float8_e4m3fn,
+        x.device,
+    )
+    q, scales = ops.inplace_custom(
+        "mo.csa.rms_norm_quantize_q_store_kv",
+        device=x.device,
+        values=[
+            x,
+            q_weight,
+            kv_weight,
+            ops.cast(window.positions, DType.int64),
+            window.rope_table,
+            ops.cast(window.slots, DType.int64),
+            window.cache,
+            window.block_stride,
+            ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[q_type, scales_type],
+        parameters={"page_size": records_per_page(window.cache)},
+    )
+    return q.tensor, scales.tensor
+
+
 def store_compressed_kv(
     cache: BufferValue,
     latent: TensorValue,
@@ -512,6 +600,129 @@ def csa2_attention(
             dimension of ``q`` or ``idx`` differs from the shapes above,
             or ``sink`` has fewer logits than ``q`` has heads.
     """
+    return _csa2_op(
+        q,
+        idx,
+        sink,
+        kv_window,
+        kv_comp,
+        None,
+        scale=scale,
+        window_stride=window_stride,
+        comp_stride=comp_stride,
+        compressed_rows=compressed_rows,
+        prefill=prefill,
+        split_rows=split_rows,
+        max_distinct_rows=max_distinct_rows,
+        window_entries=window_entries,
+    )[0]
+
+
+def csa2_attention_mxfp8(
+    q: TensorValue,
+    idx: TensorValue,
+    sink: TensorValue,
+    kv_window: BufferValue,
+    kv_comp: BufferValue | None,
+    freqs: TensorValue,
+    *,
+    scale: float,
+    prefill: TensorValue,
+    window_stride: TensorValue | None = None,
+    comp_stride: TensorValue | None = None,
+    compressed_rows: int = MAX_COMPRESSED,
+    split_rows: int = DECODE_SPLIT_ROWS,
+    max_distinct_rows: Dim | int | None = None,
+    window_entries: int = WINDOW_ENTRIES,
+    rope_q: bool = False,
+) -> tuple[TensorValue, TensorValue]:
+    """Returns :func:`csa2_attention`'s output as the MXFP8 input of the
+    grouped output projection.
+
+    Each head's last 64 channels rotate back by the conjugate of ``freqs``,
+    then every 32 channels quantize to E4M3 under an E8M0 scale, byte for
+    byte as :func:`~max.nn.kernels.rope_quantize_dynamic_block_scaled` with
+    ``inverse`` quantizes the bf16 output. A 64-head prefill writes them
+    from the attention kernel, so the bf16 output never reaches memory.
+    SM100 only.
+
+    Args:
+        q: ``[T, n_heads, 512]`` bf16 queries.
+        idx: ``[T, 640]`` int32 window then compressed absolute slots.
+        sink: ``[n_heads]`` float32 sink logits.
+        kv_window: The window cache leaf's blocks.
+        kv_comp: The compressed cache leaf's blocks, ``None`` on a
+            window-only layer.
+        freqs: ``[T, 32, 2]`` or ``[T, 64]`` float32 cos/sin pairs at each
+            query's position.
+        scale: Softmax scale.
+        prefill: Host bool scalar, whether to run the prefill.
+        window_stride: As in :func:`csa2_attention`.
+        comp_stride: As in :func:`csa2_attention`.
+        compressed_rows: As in :func:`csa2_attention`.
+        split_rows: As in :func:`csa2_attention`.
+        max_distinct_rows: As in :func:`csa2_attention`.
+        window_entries: As in :func:`csa2_attention`.
+        rope_q: Whether ``q`` arrives before its RoPE. The attention then
+            rotates each head's last 64 channels by ``freqs`` itself. Takes
+            64 heads.
+
+    Returns:
+        The ``[T, n_heads * 512]`` ``float8_e4m3fn`` data and its
+        ``float8_e8m0fnu`` scales in the 5D TCGEN layout.
+
+    Raises:
+        ValueError: As :func:`csa2_attention` does, or if ``rope_q`` is
+            set and ``q`` does not have 64 heads.
+    """
+    if rope_q and int(q.shape[1]) != ROPE_Q_HEADS:
+        raise ValueError(
+            f"Q before its RoPE takes {ROPE_Q_HEADS} heads, not"
+            f" {int(q.shape[1])}"
+        )
+    freqs = ops.cast(freqs, DType.float32)
+    freqs = ops.reshape(freqs, [freqs.shape[0], 64]).rebind([q.shape[0], 64])
+    data, scales = _csa2_op(
+        q,
+        idx,
+        sink,
+        kv_window,
+        kv_comp,
+        freqs,
+        scale=scale,
+        window_stride=window_stride,
+        comp_stride=comp_stride,
+        compressed_rows=compressed_rows,
+        prefill=prefill,
+        split_rows=split_rows,
+        max_distinct_rows=max_distinct_rows,
+        window_entries=window_entries,
+        rope_q=rope_q,
+    )[:2]
+    return data, scales
+
+
+def _csa2_op(
+    q: TensorValue,
+    idx: TensorValue,
+    sink: TensorValue,
+    kv_window: BufferValue,
+    kv_comp: BufferValue | None,
+    mxfp8_freqs: TensorValue | None,
+    *,
+    scale: float,
+    window_stride: TensorValue | None,
+    comp_stride: TensorValue | None,
+    compressed_rows: int,
+    prefill: bool | TensorValue,
+    split_rows: int,
+    max_distinct_rows: Dim | int | None,
+    window_entries: int,
+    rope_q: bool = False,
+) -> list[TensorValue]:
+    """Builds a CSA2 attention op; with ``mxfp8_freqs``, its MXFP8 form,
+    whose outputs lead with the data and scales, and with ``rope_q`` too,
+    the form that rotates Q."""
     if (
         window_entries <= 0
         or window_entries % 64
@@ -562,8 +773,28 @@ def csa2_attention(
             # partials.
             values = values + 2 * decode_floats
         workspace = TensorType(DType.bfloat16, [values], device)
+    out_types = [
+        TensorType(DType.bfloat16, [t, n_heads, HEAD_DIM], device),
+        workspace,
+    ]
+    if mxfp8_freqs is not None:
+        if flag is None:
+            raise ValueError("the MXFP8 CSA2 op takes a host prefill flag")
+        name += ".mxfp8" + (".rope_q" if rope_q else "")
+        out_types = (
+            _block_scaled_quantize_out_types(
+                t,
+                Dim(n_heads * HEAD_DIM),
+                "the attention output width",
+                32,
+                DType.float8_e8m0fnu,
+                DType.float8_e4m3fn,
+                device,
+            )
+            + out_types
+        )
     caches = [kv_window] if kv_comp is None else [kv_window, kv_comp]
-    return ops.inplace_custom(
+    outs = ops.inplace_custom(
         name,
         device=device,
         values=[
@@ -578,10 +809,9 @@ def csa2_attention(
                 if flag is None
                 else [ops.reshape(ops.cast(flag, DType.bool), [1])]
             ),
+            *([] if mxfp8_freqs is None else [mxfp8_freqs]),
         ],
-        out_types=[
-            TensorType(DType.bfloat16, [t, n_heads, HEAD_DIM], device),
-            workspace,
-        ],
+        out_types=out_types,
         parameters=parameters,
-    )[0].tensor
+    )
+    return [out.tensor for out in outs]

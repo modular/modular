@@ -98,10 +98,14 @@ OriginTrackable::OriginTrackable(Value v) {
   // uninit on exit, CheckLifetimes will ensure the value gets consumed or
   // destroyed.
   if (auto refFromPtr = v.getDefiningOp<RefFromPointerOp>()) {
-    name = StringAttr::get(v.getContext(), "(reference value)");
+    name = refFromPtr.getNameAttr();
     isIndirect = true;
-    startsUninit = refFromPtr.getEndUninit();
-    endInitState = startsUninit ? EndsUninit : EndsInit;
+    // The operation's start state describes the path where it executes. At
+    // function boundaries this reference must have its end state, since some
+    // paths may skip the operation entirely.
+    bool isUninitAtFunctionBoundary = refFromPtr.getEndUninit();
+    startsUninit = isUninitAtFunctionBoundary;
+    endInitState = isUninitAtFunctionBoundary ? EndsUninit : EndsInit;
     return;
   }
 

@@ -40,7 +40,7 @@ from max.gpu.sync import schedule_barrier as amd_schedule_barrier
 # Import AMD helper functions and structs from the kernels subdirectory
 
 from .amd_helpers import amd_scheduling_hints, compare_equal
-from layout import TensorLayout, TileTensor, row_major, stack_allocation
+from layout import TensorLayout, TileTensor, coord, row_major, stack_allocation
 from layout.layout import blocked_product
 from linalg.matmul.gpu.amd.matmul_mma import MmaOp
 from structured_kernels.amd_tile_io import (
@@ -581,7 +581,7 @@ def naive_tensor[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Calculate correct accumulator fragment size based on MMA configuration
@@ -697,7 +697,7 @@ def basic_shared_mem[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Allocate shared memory for tiles of A and B
@@ -845,7 +845,7 @@ def multi_block_tiled[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Allocate shared memory for tiles of A and B
@@ -1013,7 +1013,7 @@ def scheduler_hints[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Allocate single set of shared memory buffers (single buffering to fit memory limit)
@@ -1205,7 +1205,7 @@ def double_buffer[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Allocate two sets of shared memory buffers for double buffering

@@ -123,7 +123,7 @@ def bench_rs_norm_gemm_pdl[
     comptime BK = swizzle.bytes() // size_of[in_dtype]()
     comptime MMA_K = 16
     comptime block_tile_shape = Index(bm, bn, BK)
-    comptime mma_shape = Index(2 * bm, 2 * bn, MMA_K)
+    comptime mma_shape = (2 * bm, 2 * bn, MMA_K)
 
     comptime gemm_config_off = MatmulConfig[in_dtype, in_dtype, in_dtype, True](
         cluster_shape=Index(2, 1, 1),

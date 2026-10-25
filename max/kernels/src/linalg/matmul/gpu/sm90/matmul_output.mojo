@@ -37,7 +37,6 @@ from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_engine import TensorEngine
 from layout.tma_async import TMATensorTile
 
-from std.utils.index import IndexList
 
 from ....utils import (
     ElementwiseComputeFn,
@@ -68,7 +67,7 @@ struct MatmulTileWriter[
     BM: Int,
     BN: Int,
     swizzle: TensorMapSwizzle,
-    wgmma_shape: IndexList[3],
+    wgmma_shape: Coord,
     num_consumer: Int = 1,
     use_tma_store: Bool = False,
     swapAB: Bool = False,
@@ -108,11 +107,13 @@ struct MatmulTileWriter[
     """
 
     comptime N = Self.tensor_layout.static_shape[1]
-    comptime frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
-        1
-    ] // WARPGROUP_SIZE
-    comptime num_m_mmas = Self.BM // Self.wgmma_shape[0] // Self.num_consumer
-    comptime num_n_mmas = Self.BN // Self.wgmma_shape[1]
+    comptime frag_size = (
+        Int(Self.wgmma_shape[0]) * Int(Self.wgmma_shape[1]) // WARPGROUP_SIZE
+    )
+    comptime num_m_mmas = Self.BM // Int(
+        Self.wgmma_shape[0]
+    ) // Self.num_consumer
+    comptime num_n_mmas = Self.BN // Int(Self.wgmma_shape[1])
     comptime num_consumer_threads = Self.num_consumer * WARPGROUP_SIZE
     comptime simd_size = simd_width_of[Self.dtype]()
 
@@ -303,8 +304,8 @@ struct MatmulTileWriter[
 
         comptime if has_epilogue_fn or has_compute_fn:
             tile_coords = TileCoordinates(
-                IndexList[2](tile_origin[0], tile_origin[1]),
-                IndexList[2](consumer_coords[0], consumer_coords[1]),
+                Coord(Int(tile_origin[0]), Int(tile_origin[1])),
+                Coord(Int(consumer_coords[0]), Int(consumer_coords[1])),
             )
             max_row = UInt32(self.tensor.dim[0]())
 
@@ -348,7 +349,7 @@ struct MatmulTileWriter[
             accum_type, reg_tile_layout, address_space=.LOCAL, ...
         ],
         output_tile: TileTensor[mut=True, Self.dtype, ...],
-        tile_origin: IndexList[2],
+        tile_origin: Coord,
         value_epilogue_fn: EpilogueFnType,
         value_compute_fn: ComputeFnType,
     ):
@@ -431,7 +432,12 @@ struct MatmulTileWriter[
                 tile_rows, tile_cols
             ](Coord(pos_row, pos_col))
 
-            var global_coords = rebind[IndexList[2]](tile_coords) + tile_origin
+            # `Coord` has no element-wise arithmetic, so add the two
+            # coordinate pairs element by element.
+            var global_coords = (
+                Int(tile_coords[0]) + Int(tile_origin[0]),
+                Int(tile_coords[1]) + Int(tile_origin[1]),
+            )
 
             def apply_epilogue[
                 F: ImplicitlyCopyable & RegisterPassable & Self.lambda_type
@@ -600,10 +606,10 @@ struct MatmulTileWriter[
         comptime can_use_stmatrix_normal = (
             accum_type == .float32 and Self.dtype == .bfloat16  # F32→BF16
             and Self.frag_size % 4 == 0                               # Register count
-            and Self.BM % Self.wgmma_shape[0] == 0                              # M alignment
+            and Self.BM % Int(Self.wgmma_shape[0]) == 0                              # M alignment
             and Self.WG_BN % 16 == 0                                  # Shared memory
             and Self.num_consumer <= 2                                     # Thread limit
-            and Self.BN == Self.wgmma_shape[1]                                  # Tile size
+            and Self.BN == Int(Self.wgmma_shape[1])                                  # Tile size
             and Self.BM == Self.WG_BM                                      # Block size
             and row_size_aligned                                      # Row alignment
         )
@@ -611,10 +617,10 @@ struct MatmulTileWriter[
         comptime can_use_stmatrix_swapAB = (
             accum_type == .float32 and Self.dtype == .bfloat16             # F32→BF16
             and Self.frag_size % 4 == 0                                              # Register count (at least stmatrix x2 can be used)
-            and Self.BM % Self.wgmma_shape[0] == 0                                   # each consumer should get one wgmma tile
+            and Self.BM % Int(Self.wgmma_shape[0]) == 0                                   # each consumer should get one wgmma tile
             and Self.WG_BM % 8 == 0                                                  # Shared memory, must have at least 8 rows for swapAB
             and Self.num_consumer <= 2                                               # Thread limit
-            and Self.BN == Self.wgmma_shape[1]                                       # Tile size
+            and Self.BN == Int(Self.wgmma_shape[1])                                       # Tile size
             and self.BM == Self.WG_BN                                                # Block size (we load by chunks of BM (this checks that this aligns with it))
             and row_size_aligned                                                     # Row alignment
         )

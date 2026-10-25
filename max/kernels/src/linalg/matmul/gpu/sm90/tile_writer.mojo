@@ -58,6 +58,7 @@ from ....utils import (
     no_epilogue_fn,
 )
 from std.utils.index import IndexList
+from std.utils.coord import Coord, DynamicCoord
 from std.sys import align_of, size_of
 from layout.tile_io import copy_local_to_dram
 import std.itertools
@@ -111,11 +112,13 @@ struct TileCoordinates(TrivialRegisterPassable):
     processing and provides a clean interface for coordinate transformations.
     """
 
-    var corner: IndexList[2]
-    var split: IndexList[2]
+    var corner: DynamicCoord[.int, 2]
+    var split: DynamicCoord[.int, 2]
 
     @inline(.always)
-    def __init__(out self, corner: IndexList[2], split: IndexList[2]):
+    def __init__(
+        out self, corner: DynamicCoord[.int, 2], split: DynamicCoord[.int, 2]
+    ):
         """Initialize tile coordinates.
 
         Args:
@@ -126,7 +129,9 @@ struct TileCoordinates(TrivialRegisterPassable):
         self.split = split
 
     @inline(.always)
-    def adjust(self, base_coords: IndexList[2]) -> IndexList[2]:
+    def adjust(
+        self, base_coords: DynamicCoord[.int, 2]
+    ) -> DynamicCoord[.int, 2]:
         """Add corner and split offsets to base coordinates.
 
         Args:
@@ -135,9 +140,9 @@ struct TileCoordinates(TrivialRegisterPassable):
         Returns:
             Adjusted coordinates with corner and split offsets applied.
         """
-        return IndexList[2](
-            base_coords[0] + self.corner[0] + self.split[0],
-            base_coords[1] + self.corner[1] + self.split[1],
+        return (
+            Int(base_coords[0]) + Int(self.corner[0]) + Int(self.split[0]),
+            Int(base_coords[1]) + Int(self.corner[1]) + Int(self.split[1]),
         )
 
 
@@ -674,7 +679,7 @@ struct RegisterToGMemWriter[
     dst_engine: TensorEngine,
     dst_linear_idx_type: DType,
     //,
-    wgmma_shape: IndexList[3],
+    wgmma_shape: Coord,
     num_consumer: Int,
     N: Int,  # Matrix N dimension
     check_runtime_bounds: Bool = False,  # New parameter for N-dimension bounds checking
@@ -699,11 +704,11 @@ struct RegisterToGMemWriter[
         swapAB: Whether to swap the A and B matrices.
     """
 
-    comptime c_frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
-        1
-    ] // WARPGROUP_SIZE
-    comptime num_n_frag_mat = Self.wgmma_shape[1] // 8
-    comptime num_m_frag_mat = Self.wgmma_shape[0] // 4 // 8
+    comptime c_frag_size = (
+        Int(Self.wgmma_shape[0]) * Int(Self.wgmma_shape[1]) // WARPGROUP_SIZE
+    )
+    comptime num_n_frag_mat = Int(Self.wgmma_shape[1]) // 8
+    comptime num_m_frag_mat = Int(Self.wgmma_shape[0]) // 4 // 8
     comptime num_frag_mats = Self.num_n_frag_mat * Self.num_m_frag_mat
 
     var thread_info: ThreadInfo
@@ -836,7 +841,7 @@ struct RegisterToGMemWriter[
         """Direct vectorized copy without transformations."""
         # Get the warp's portion of the tile
         var warp_tile = self.dst.tile[
-            Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
+            Int(Self.wgmma_shape[0]) // 4, Int(Self.wgmma_shape[1])
         ](Coord(m_mma * 4 + self.thread_info.warp_id, n_mma))
 
         # Get the corresponding register fragment
@@ -868,12 +873,12 @@ struct RegisterToGMemWriter[
         """Vectorized write with epilogue or compute_lambda transformation."""
         # Get warp tile and coordinates
         var warp_tile, warp_tile_coords, _ = self.dst.tile_with_offset[
-            Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
+            Int(Self.wgmma_shape[0]) // 4, Int(Self.wgmma_shape[1])
         ](Coord(m_mma * 4 + self.thread_info.warp_id, n_mma))
 
         # Calculate global coordinates
-        var warp_coords_base = IndexList[2](
-            warp_tile_coords[0], warp_tile_coords[1]
+        var warp_coords_base = Coord(
+            Int(warp_tile_coords[0]), Int(warp_tile_coords[1])
         )
         var warp_coords = self.tile_coords.value().adjust(warp_coords_base)
 
@@ -883,10 +888,14 @@ struct RegisterToGMemWriter[
             1, 2
         ]().distribute_with_offset[row_major[8, 4]()](self.thread_info.lane_id)
 
-        var gmem_offset_coords = IndexList[2](
-            gmem_offset_coords_raw[0], gmem_offset_coords_raw[1] * 2
+        var gmem_offset_coords = (
+            Int(gmem_offset_coords_raw[0]),
+            Int(gmem_offset_coords_raw[1]) * 2,
         )
-        var coords = gmem_offset_coords + warp_coords
+        var coords = (
+            gmem_offset_coords[0] + Int(warp_coords[0]),
+            gmem_offset_coords[1] + Int(warp_coords[1]),
+        )
         var max_row = self.max_row.value()
 
         comptime num_vecs = type_of(gmem_frag).LayoutType.static_product
@@ -986,12 +995,16 @@ struct RegisterToGMemWriter[
                 `has_compute_fn`.
         """
 
-        comptime warp_tile_size_m = Self.wgmma_shape[
-            0
-        ] // 4 if not Self.swapAB else Self.wgmma_shape[1]
-        comptime warp_tile_size_n = Self.wgmma_shape[
-            1
-        ] if not Self.swapAB else Self.wgmma_shape[0] // 4
+        comptime warp_tile_size_m = (
+            Int(Self.wgmma_shape[0])
+            // 4 if not Self.swapAB else Int(Self.wgmma_shape[1])
+        )
+        comptime warp_tile_size_n = (
+            Int(Self.wgmma_shape[1]) if not Self.swapAB else Int(
+                Self.wgmma_shape[0]
+            )
+            // 4
+        )
 
         var coord_0 = (
             m_mma * 4 + self.thread_info.warp_id
@@ -1005,7 +1018,9 @@ struct RegisterToGMemWriter[
             warp_tile_size_m, warp_tile_size_n
         ](Coord(coord_0, coord_1))
 
-        var warp_tile_coords = rebind[IndexList[2]](warp_tile_coords_raw)
+        var warp_tile_coords = Coord(
+            Int(warp_tile_coords_raw[0]), Int(warp_tile_coords_raw[1])
+        )
         if case .Some(tile_coords) = self.tile_coords:
             warp_tile_coords = tile_coords.adjust(warp_tile_coords)
 
@@ -1048,13 +1063,13 @@ struct RegisterToGMemWriter[
                         comptime if Self.swapAB:
                             # In swapAB mode, coordinates are transposed
                             return (
-                                warp_tile_coords[0]
+                                Int(warp_tile_coords[0])
                                 + Int(
                                     UInt32(n_frag * 8)
                                     + self.thread_info.lane_col * 2
                                     + UInt32(i)
                                 ),
-                                warp_tile_coords[1]
+                                Int(warp_tile_coords[1])
                                 + Int(
                                     UInt32(m_frag * 8)
                                     + self.thread_info.lane_row
@@ -1062,12 +1077,12 @@ struct RegisterToGMemWriter[
                             )
                         else:
                             return (
-                                warp_tile_coords[0]
+                                Int(warp_tile_coords[0])
                                 + Int(
                                     UInt32(m_frag * 8)
                                     + self.thread_info.lane_row
                                 ),
-                                warp_tile_coords[1]
+                                Int(warp_tile_coords[1])
                                 + Int(
                                     UInt32(n_frag * 8)
                                     + self.thread_info.lane_col * 2

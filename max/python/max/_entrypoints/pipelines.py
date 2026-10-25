@@ -583,7 +583,8 @@ def cli_serve(
     help=(
         "Images to include along with prompt, specified as URLs."
         " The images are ignored if the model does not support"
-        " image inputs."
+        " image inputs. An image generation model takes one input"
+        " image, if it reads one."
     ),
 )
 @click.option(
@@ -622,6 +623,72 @@ def cli_serve(
     show_default=True,
     help="Number of rows to show in the GPU kernel and Python profile tables.",
 )
+@click.option(
+    "--negative-prompt",
+    type=str,
+    default=None,
+    help="For an image model, what to steer the image away from.",
+)
+@click.option(
+    "--height",
+    type=int,
+    default=None,
+    help="For an image model, the image height in pixels.",
+)
+@click.option(
+    "--width",
+    type=int,
+    default=None,
+    help="For an image model, the image width in pixels.",
+)
+@click.option(
+    "--num-inference-steps",
+    type=click.IntRange(min=1),
+    default=None,
+    help="For an image model, the number of denoising steps.",
+)
+@click.option(
+    "--guidance-scale",
+    type=float,
+    default=None,
+    help="For an image model, the guidance scale.",
+)
+@click.option(
+    "--true-cfg-scale",
+    type=float,
+    default=None,
+    help=(
+        "For an image model, the true classifier-free guidance scale. "
+        "Models that use it need it above 1 and --negative-prompt."
+    ),
+)
+@click.option(
+    "--strength",
+    type=float,
+    default=None,
+    help=(
+        "For an image model, how far the input image is noised, in (0, 1]. "
+        "Z-Image reads it, and FLUX.2 ignores it."
+    ),
+)
+@click.option(
+    "--num-images-per-prompt",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="For an image model, the number of images to generate.",
+)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=Path("image.png"),
+    show_default=True,
+    help=(
+        "For an image model, where to save the image. The suffix picks the "
+        "format, several images get -0, -1 and so on, and a path without a "
+        "suffix is a directory, created with its parents if missing."
+    ),
+)
 def cli_pipeline(
     prompt: str,
     image_url: list[str],
@@ -629,6 +696,15 @@ def cli_pipeline(
     profile: bool,
     profile_output: str | None,
     profile_top_n: int,
+    negative_prompt: str | None,
+    height: int | None,
+    width: int | None,
+    num_inference_steps: int | None,
+    guidance_scale: float | None,
+    true_cfg_scale: float | None,
+    strength: float | None,
+    num_images_per_prompt: int,
+    output: Path,
     top_k: int,
     top_p: float,
     min_p: float,
@@ -645,20 +721,44 @@ def cli_pipeline(
     seed: int,
     **config_kwargs: Any,
 ) -> None:
-    """Generate text using the specified model.
+    """Generate text or images using the specified model.
 
     This command runs text generation using the loaded model, optionally
-    accepting image inputs for multimodal models.
+    accepting image inputs for multimodal models. For an image generation
+    model, it saves the generated images, and --image_url gives the input
+    image.
     """
-    from max._entrypoints.cli.generate import generate_text_for_pipeline
+    from max._entrypoints.cli.generate import (
+        check_flags_fit_model,
+        generate_images_for_pipeline,
+        generate_text_for_pipeline,
+        is_image_generation_model,
+    )
+    from max.pipelines import PipelineArgs
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.profiler import maybe_reexec_under_nsys
 
+    ctx = click.get_current_context()
+    # A boolean pair is named by both spellings, since either may be the one
+    # the user passed.
+    set_flags = {
+        param.name: "/".join(param.opts + param.secondary_opts)
+        for param in ctx.command.params
+        if param.name is not None
+        and ctx.get_parameter_source(param.name)
+        not in (None, click.core.ParameterSource.DEFAULT)
+    }
     # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec
     # under nsys *before* loading any model state. The child process picks
     # up the same argv, detects it is running under nsys, and runs normally.
     # This keeps the parent process's wasted work to ~zero.
     if profile:
+        # An image model would fail under nsys and hide the error behind
+        # nsys's own, so the flags are checked before the re-exec.
+        args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+        check_flags_fit_model(
+            set_flags, is_image_generation_model(args), args.model_path
+        )
         maybe_reexec_under_nsys(profile_output, top_n=profile_top_n)
 
     params = SamplingParamsInput(
@@ -680,7 +780,6 @@ def cli_pipeline(
     )
 
     # Load tokenizer & pipeline.
-    from max.pipelines import PipelineArgs
     from max.pipelines.lib import MAXModelConfig
 
     # Leaves the field unset unless the user passed the flag, so the AMD
@@ -694,6 +793,25 @@ def cli_pipeline(
         config_kwargs.pop("disable_vendor_blas_fallback", None)
 
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    image_model = is_image_generation_model(pipeline_args)
+    check_flags_fit_model(set_flags, image_model, pipeline_args.model_path)
+    if image_model:
+        generate_images_for_pipeline(
+            pipeline_args,
+            prompt,
+            image_url,
+            output,
+            negative_prompt=negative_prompt,
+            height=height,
+            width=width,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            true_cfg_scale=true_cfg_scale,
+            strength=strength,
+            num_images_per_prompt=num_images_per_prompt,
+            seed=seed if seed is not None else 0,
+        )
+        return
     model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     generate_text_for_pipeline(
         pipeline_args,

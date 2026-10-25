@@ -109,9 +109,11 @@ def test_warp_specialize_gemm_with_multicasting[
 
     comptime num_consumer: Int = 1 if BM == 64 else 2
 
-    comptime wgmma_shape = Index(
-        64, BN, 32
-    ) if a_type == .float8_e4m3fn else Index(64, BN, 16)
+    comptime wgmma_shape = (
+        64,
+        BN,
+        32,
+    ) if a_type == .float8_e4m3fn else (64, BN, 16)
 
     print(
         "wgmma_n",

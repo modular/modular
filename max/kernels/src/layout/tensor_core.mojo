@@ -90,7 +90,7 @@ from layout.swizzle import (
 from std.memory.unsafe import bitcast
 from std.simd import _has_native_f8_support
 
-from std.utils import IndexList
+from std.utils.coord import Coord, DynamicCoord
 
 
 def num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
@@ -112,38 +112,38 @@ def num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
 
 
 # shapes
-comptime shape_null = IndexList[3](0, 0, 0)
+comptime shape_null = DynamicCoord[.int, 3](0, 0, 0)
 """Null tensor core shape (0x0x0)."""
-comptime shape_16x8x4 = IndexList[3](16, 8, 4)
+comptime shape_16x8x4 = DynamicCoord[.int, 3](16, 8, 4)
 """Tensor core shape 16x8x4."""
-comptime shape_16x8x8 = IndexList[3](16, 8, 8)
+comptime shape_16x8x8 = DynamicCoord[.int, 3](16, 8, 8)
 """Tensor core shape 16x8x8."""
-comptime shape_16x8x16 = IndexList[3](16, 8, 16)
+comptime shape_16x8x16 = DynamicCoord[.int, 3](16, 8, 16)
 """Tensor core shape 16x8x16."""
-comptime shape_8x8x4 = IndexList[3](8, 8, 4)
+comptime shape_8x8x4 = DynamicCoord[.int, 3](8, 8, 4)
 """Tensor core shape 8x8x4."""
-comptime shape_16x8x32 = IndexList[3](16, 8, 32)
+comptime shape_16x8x32 = DynamicCoord[.int, 3](16, 8, 32)
 """Tensor core shape 16x8x32."""
 
 # AMDGPU shapes
-comptime shape_16x16x4 = IndexList[3](16, 16, 4)
+comptime shape_16x16x4 = DynamicCoord[.int, 3](16, 16, 4)
 """AMDGPU tensor core shape 16x16x4."""
-comptime shape_16x16x16 = IndexList[3](16, 16, 16)
+comptime shape_16x16x16 = DynamicCoord[.int, 3](16, 16, 16)
 """AMDGPU tensor core shape 16x16x16."""
-comptime shape_16x16x32 = IndexList[3](16, 16, 32)
+comptime shape_16x16x32 = DynamicCoord[.int, 3](16, 16, 32)
 """AMDGPU tensor core shape 16x16x32."""
-comptime shape_32x32x8 = IndexList[3](32, 32, 8)
+comptime shape_32x32x8 = DynamicCoord[.int, 3](32, 32, 8)
 """AMDGPU tensor core shape 32x32x8."""
-comptime shape_32x32x16 = IndexList[3](32, 32, 16)
+comptime shape_32x32x16 = DynamicCoord[.int, 3](32, 32, 16)
 """AMDGPU tensor core shape 32x32x16."""
-comptime shape_32x32x64 = IndexList[3](32, 32, 64)
+comptime shape_32x32x64 = DynamicCoord[.int, 3](32, 32, 64)
 """AMDGPU tensor core shape 32x32x64."""
 
 
 struct TensorCore[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Coord,
     transpose_b: Bool = False,
 ](Defaultable, ImplicitlyCopyable):
     """TensorCore provides an abstraction for GPU tensor core hardware to perform optimized matrix operations.
@@ -180,8 +180,12 @@ struct TensorCore[
     """Whether float32 is supported for this tensor core configuration."""
     comptime supported_half = Self.in_type.is_half_float() and (
         Self.shape
-        == shape_16x8x16 if is_nvidia_gpu() else Self.shape
-        in (shape_16x16x16, shape_16x16x32, shape_32x32x8, shape_32x32x16)
+        == shape_16x8x16 if is_nvidia_gpu() else (
+            Self.shape == shape_16x16x16
+            or Self.shape == shape_16x16x32
+            or Self.shape == shape_32x32x8
+            or Self.shape == shape_32x32x16
+        )
     )
     """Whether half-precision float is supported for this configuration."""
     comptime supported_fp8 = (
@@ -197,25 +201,30 @@ struct TensorCore[
             get_amd_fp8_dtype(),
             get_amd_bf8_dtype(),
         )
-        and Self.shape in (shape_16x16x32, shape_32x32x64)
+        and (Self.shape == shape_16x16x32 or Self.shape == shape_32x32x64)
     )
     """Whether float8 is supported for this tensor core configuration."""
     comptime supported_fp64 = Self.in_type == DType.float64 and Self.out_type == DType.float64 and (
-        Self.shape in (shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16)
+        (
+            Self.shape == shape_8x8x4
+            or Self.shape == shape_16x8x4
+            or Self.shape == shape_16x8x8
+            or Self.shape == shape_16x8x16
+        )
     ) if is_nvidia_gpu() else False
     """Whether float64 is supported for this tensor core configuration."""
 
     # Operand register types.
     comptime a_reg_type = SIMD[
-        Self.in_type, num_matrix_reg[Self.shape[0], Self.shape[2]]()
+        Self.in_type, num_matrix_reg[Int(Self.shape[0]), Int(Self.shape[2])]()
     ]
     """SIMD type for the A operand registers."""
     comptime b_reg_type = SIMD[
-        Self.in_type, num_matrix_reg[Self.shape[2], Self.shape[1]]()
+        Self.in_type, num_matrix_reg[Int(Self.shape[2]), Int(Self.shape[1])]()
     ]
     """SIMD type for the B operand registers."""
     comptime c_reg_type = SIMD[
-        Self.out_type, num_matrix_reg[Self.shape[0], Self.shape[1]]()
+        Self.out_type, num_matrix_reg[Int(Self.shape[0]), Int(Self.shape[1])]()
     ]
     """SIMD type for the C/accumulator operand registers."""
 
@@ -237,7 +246,9 @@ struct TensorCore[
         pass
 
     @staticmethod
-    def get_shapes[_out_type: DType, _in_type: DType]() -> List[IndexList[3]]:
+    def get_shapes[
+        _out_type: DType, _in_type: DType
+    ]() -> List[DynamicCoord[.int, 3]]:
         """
         Get supported shapes for given data types.
 
@@ -248,7 +259,7 @@ struct TensorCore[
             _in_type: The input matrix data type.
 
         Returns:
-            List[IndexList[3]]: Valid shapes for the matrix operations given the specified types.
+            List[DynamicCoord[.int, 3]]: Valid shapes for the matrix operations given the specified types.
 
         Note:
             The returned shapes are hardware-dependent. Different shapes are supported
@@ -325,7 +336,7 @@ struct TensorCore[
             Self.in_type,
             type_of(
                 row_major[
-                    1, num_matrix_reg[Self.shape[0], a.static_shape[1]]()
+                    1, num_matrix_reg[Int(Self.shape[0]), a.static_shape[1]]()
                 ]()
             ),
             MutUntrackedOrigin,
@@ -352,25 +363,26 @@ struct TensorCore[
         comptime assert a.rank == a.flat_rank == 2 and a.element_size == 1
         comptime assert swizzle is None, "native A loads do not support swizzle"
         comptime K = a.static_shape[1]
-        comptime assert K > 0 and K % Self.shape[2] == 0
+        comptime assert K > 0 and K % Int(Self.shape[2]) == 0
         comptime if not is_nvidia_gpu():
             Self._check_cdna_input_fragment[
-                Self.shape[0], num_matrix_reg[Self.shape[0], Self.shape[2]]()
+                Int(Self.shape[0]),
+                num_matrix_reg[Int(Self.shape[0]), Int(Self.shape[2])](),
             ]()
         else:
-            comptime assert K == Self.shape[2]
-            comptime assert Self.shape[0] in (8, 16)
+            comptime assert K == Int(Self.shape[2])
+            comptime assert Int(Self.shape[0]) in (8, 16)
         debug_assert(
-            Int(a.dim[0]()) == Self.shape[0], "source must have MMA M rows"
+            Int(a.dim[0]()) == Int(Self.shape[0]), "source must have MMA M rows"
         )
-        comptime registers = num_matrix_reg[Self.shape[0], K]()
+        comptime registers = num_matrix_reg[Int(Self.shape[0]), K]()
         var fragment = stack_allocation[Self.in_type, address_space=.LOCAL](
             type_of(res).LayoutType()
         )
         comptime assert fragment.flat_rank == 2
         comptime if is_nvidia_gpu():
             comptime width = Self._nvidia_input_pack_width[registers, True]()
-            comptime row_groups = Self.shape[0] // 8
+            comptime row_groups = Int(Self.shape[0]) // 8
             comptime for register in range(registers):
                 var row = lane_id() // 4 + 8 * (
                     (register // width) % row_groups
@@ -382,8 +394,8 @@ struct TensorCore[
                 )
                 fragment[0, register] = a.load[width=1]((row, k))
         else:
-            var row = lane_id() % Self.shape[0]
-            var k_base = (lane_id() // Self.shape[0]) * registers
+            var row = lane_id() % Int(Self.shape[0])
+            var k_base = (lane_id() // Int(Self.shape[0])) * registers
             comptime for register in range(registers):
                 fragment[0, register] = a.load[width=1](
                     (row, k_base + register)
@@ -402,7 +414,7 @@ struct TensorCore[
                 row_major[
                     num_matrix_reg[
                         b.static_shape[1 if Self.transpose_b else 0],
-                        Self.shape[1],
+                        Int(Self.shape[1]),
                     ](),
                     1,
                 ]()
@@ -432,22 +444,23 @@ struct TensorCore[
         comptime assert b.rank == b.flat_rank == 2 and b.element_size == 1
         comptime assert swizzle is None, "native B loads do not support swizzle"
         comptime K = b.static_shape[1 if Self.transpose_b else 0]
-        comptime assert K > 0 and K % Self.shape[2] == 0
+        comptime assert K > 0 and K % Int(Self.shape[2]) == 0
         comptime if not is_nvidia_gpu():
             Self._check_cdna_input_fragment[
-                Self.shape[1], num_matrix_reg[Self.shape[2], Self.shape[1]]()
+                Int(Self.shape[1]),
+                num_matrix_reg[Int(Self.shape[2]), Int(Self.shape[1])](),
             ]()
         else:
-            comptime assert K == Self.shape[2] and Self.shape[1] == 8
+            comptime assert K == Int(Self.shape[2]) and Int(Self.shape[1]) == 8
             comptime assert not (
                 Self.transpose_b
                 and Self.in_type in (DType.float8_e4m3fn, DType.float8_e5m2)
             ), "transposed NVIDIA FP8 native loads are not supported"
         debug_assert(
-            Int(b.dim[0 if Self.transpose_b else 1]()) == Self.shape[1],
+            Int(b.dim[0 if Self.transpose_b else 1]()) == Int(Self.shape[1]),
             "source must have MMA N columns",
         )
-        comptime registers = num_matrix_reg[K, Self.shape[1]]()
+        comptime registers = num_matrix_reg[K, Int(Self.shape[1])]()
         var fragment = stack_allocation[Self.in_type, address_space=.LOCAL](
             type_of(res).LayoutType()
         )
@@ -466,8 +479,8 @@ struct TensorCore[
                 else:
                     fragment[register, 0] = b.load[width=1]((k, col))
         else:
-            var col = lane_id() % Self.shape[1]
-            var k_base = (lane_id() // Self.shape[1]) * registers
+            var col = lane_id() % Int(Self.shape[1])
+            var k_base = (lane_id() // Int(Self.shape[1])) * registers
             comptime for register in range(registers):
                 comptime if Self.transpose_b:
                     fragment[register, 0] = b.load[width=1](
@@ -485,7 +498,7 @@ struct TensorCore[
         register: Int, rows: Int = 4
     ](lane: Int) -> Tuple[Int, Int]:
         comptime if is_nvidia_gpu():
-            comptime assert Self.shape[1] == 8
+            comptime assert Int(Self.shape[1]) == 8
             # NVIDIA MMA accumulators pair adjacent columns, then advance 8 rows.
             return (
                 lane // 4 + (register // 2) * 8,
@@ -493,14 +506,14 @@ struct TensorCore[
             )
         else:
             comptime assert is_amd_gpu(), "unsupported accumulator architecture"
-            comptime assert WARP_SIZE % Self.shape[1] == 0
+            comptime assert WARP_SIZE % Int(Self.shape[1]) == 0
             comptime assert Self.c_reg_type.length % rows == 0
-            comptime groups = WARP_SIZE // Self.shape[1]
+            comptime groups = WARP_SIZE // Int(Self.shape[1])
             return (
-                (lane // Self.shape[1]) * rows
+                (lane // Int(Self.shape[1])) * rows
                 + (register // rows) * groups * rows
                 + register % rows,
-                lane % Self.shape[1],
+                lane % Int(Self.shape[1]),
             )
 
     @inline(.always)
@@ -520,7 +533,9 @@ struct TensorCore[
             NVIDIA supports float32 and float64; AMD supports float32.
         """
         comptime assert c.rank == c.flat_rank == 2 and c.element_size == 1
-        comptime registers = num_matrix_reg[Self.shape[0], Self.shape[1]]()
+        comptime registers = num_matrix_reg[
+            Int(Self.shape[0]), Int(Self.shape[1])
+        ]()
         comptime if is_nvidia_gpu():
             comptime assert (Self.out_type == .float32 and registers == 4) or (
                 Self.out_type == .float64 and registers in (2, 4)
@@ -528,8 +543,8 @@ struct TensorCore[
         else:
             comptime assert Self.out_type == .float32 and registers in (4, 16)
         debug_assert(
-            Int(c.dim[0]()) == Self.shape[0]
-            and Int(c.dim[1]()) == Self.shape[1],
+            Int(c.dim[0]()) == Int(Self.shape[0])
+            and Int(c.dim[1]()) == Int(Self.shape[1]),
             "source must have the MMA accumulator shape",
         )
         var fragment = stack_allocation[Self.out_type, address_space=.LOCAL](
@@ -579,7 +594,9 @@ struct TensorCore[
     ):
         comptime assert d_dst.rank == d_dst.flat_rank == 2
         comptime assert d_dst.element_size == 1
-        comptime registers = num_matrix_reg[Self.shape[0], Self.shape[1]]()
+        comptime registers = num_matrix_reg[
+            Int(Self.shape[0]), Int(Self.shape[1])
+        ]()
         comptime if is_nvidia_gpu():
             comptime assert (Self.out_type == .float32 and registers == 4) or (
                 Self.out_type == .float64 and registers in (2, 4)
@@ -591,8 +608,8 @@ struct TensorCore[
                 16,
             )
         debug_assert(
-            Int(d_dst.dim[0]()) == Self.shape[0]
-            and Int(d_dst.dim[1]()) == Self.shape[1],
+            Int(d_dst.dim[0]()) == Int(Self.shape[0])
+            and Int(d_dst.dim[1]()) == Int(Self.shape[1]),
             "destination must have the MMA accumulator shape",
         )
         # RDNA stores eight strided rows per group; CDNA stores four.
@@ -673,7 +690,7 @@ struct TensorCore[
         row vectors, and `swizzle` remaps the vector index.
         """
         comptime assert a.rank == a.flat_rank == 2 and a.element_size == 1
-        comptime M = Self.shape[0]
+        comptime M = Int(Self.shape[0])
         var frag = a.vectorize[1, width]().distribute[
             col_major[M, WARP_SIZE // M](), swizzle=swizzle
         ](Int(lane_id()))
@@ -699,7 +716,7 @@ struct TensorCore[
         both cases.
         """
         comptime assert b.rank == b.flat_rank == 2 and b.element_size == 1
-        comptime N = Self.shape[1]
+        comptime N = Int(Self.shape[1])
         comptime if Self.transpose_b:
             var frag = b.vectorize[1, width]().distribute[
                 col_major[N, WARP_SIZE // N](), swizzle=swizzle
@@ -769,8 +786,8 @@ struct TensorCore[
         comptime assert fragments.static_stride[1] == 1
         comptime frag_width = fragments.static_shape[1]
         comptime num_frags = fragments.static_shape[0]
-        comptime M = Self.shape[0]
-        comptime K = Self.shape[2]
+        comptime M = Int(Self.shape[0])
+        comptime K = Int(Self.shape[2])
 
         comptime if is_nvidia_gpu():
             comptime assert frag_width == 16 // size_of[Self.in_type]()
@@ -852,8 +869,8 @@ struct TensorCore[
         comptime assert fragments.static_stride[1] == 1
         comptime frag_width = fragments.static_shape[1]
         comptime num_frags = fragments.static_shape[0]
-        comptime N = Self.shape[1]
-        comptime K = Self.shape[2]
+        comptime N = Int(Self.shape[1])
+        comptime K = Int(Self.shape[2])
         comptime alignment = align_of[Self.in_type]()
 
         comptime if is_nvidia_gpu():
@@ -1284,7 +1301,7 @@ def _load_matrix_frag[
 @inline(.always)
 def get_mma_shape[
     input_type: DType, accum_type: DType, shape_id: Int = 0
-]() -> IndexList[3]:
+]() -> DynamicCoord[.int, 3]:
     """Returns the appropriate matrix multiply-accumulate (MMA) shape for tensor core operations.
 
     Selects the optimal MMA shape based on the GPU architecture, input data type,
@@ -1297,7 +1314,7 @@ def get_mma_shape[
         shape_id: Optional identifier to select between multiple valid shapes (default: 0).
 
     Returns:
-        An `IndexList[3]` containing the MMA dimensions in the format `[M, N, K]`,
+        A `Coord` containing the MMA dimensions in the format `[M, N, K]`,
         where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
 
@@ -1364,7 +1381,7 @@ def get_mma_shape[
 
 
 @inline(.always)
-def get_fragment_size[mma_shape: IndexList[3]]() -> IndexList[3]:
+def get_fragment_size[mma_shape: Coord]() -> DynamicCoord[.int, 3]:
     """Calculates the fragment size per thread for a given MMA shape.
 
     For tensor core operations, each thread in a warp handles a portion of the
@@ -1372,17 +1389,17 @@ def get_fragment_size[mma_shape: IndexList[3]]() -> IndexList[3]:
     process for the A, B, and C/D matrices based on the MMA shape.
 
     Parameters:
-        mma_shape: An `IndexList[3]` containing the MMA dimensions [M, N, K].
+        mma_shape: A `Coord` containing the MMA dimensions [M, N, K].
 
     Returns:
-        An `IndexList[3]` containing the fragment sizes per thread for matrices
+        A `Coord` containing the fragment sizes per thread for matrices
         A, B, and C/D respectively, calculated as:
         `[M*K/WARP_SIZE, N*K/WARP_SIZE, M*N/WARP_SIZE]`.
     """
-    return IndexList[3](
-        mma_shape[0] * mma_shape[2] // WARP_SIZE,
-        mma_shape[1] * mma_shape[2] // WARP_SIZE,
-        mma_shape[0] * mma_shape[1] // WARP_SIZE,
+    return (
+        Int(mma_shape[0]) * Int(mma_shape[2]) // WARP_SIZE,
+        Int(mma_shape[1]) * Int(mma_shape[2]) // WARP_SIZE,
+        Int(mma_shape[0]) * Int(mma_shape[1]) // WARP_SIZE,
     )
 
 
@@ -1390,7 +1407,7 @@ def get_fragment_size[mma_shape: IndexList[3]]() -> IndexList[3]:
 struct TiledTensorCore[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Coord,
     group_size: Int,
     transpose_b: Bool = False,
 ]:

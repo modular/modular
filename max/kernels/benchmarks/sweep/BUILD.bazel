@@ -1,0 +1,106 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+load(":mojo_sweep_benchmark.bzl", "mojo_sweep_benchmark")
+
+package(default_visibility = ["//max:consumers"])
+
+_DEPS = [
+    "//max/kernels/benchmarks/sweep/bench_sweep",
+    "//max:internal_utils",
+    "//max:kv_cache",
+    "//max:layout",
+    "//max:max_mojo",
+    "//max:nn",
+    "@mojo//:std",
+]
+
+# Bump to force a cold recompile when timing compiles.
+_NONCE = [
+    "-D",
+    "sweep_nonce=1",
+]
+
+# One executable that runs every config of the sweep, plus one per comptime
+# arm (heads x decode/prefill), the way a comptime-parameterized kbench
+# sweep builds them.
+mojo_sweep_benchmark(
+    name = "bench_dsa_block.mojo",
+    srcs = ["bench_dsa_block.mojo"],
+    arm_axes = {
+        "sweep_h": [
+            8,
+            64,
+        ],
+        "sweep_seq": [
+            6,
+            8192,
+        ],
+    },
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + _NONCE,
+    gpu_memory = "8",
+    manual = False,
+    target_compatible_with = ["//:b200_gpu"],
+    deps = _DEPS,
+)
+
+# Sweep ports of the per-kernel benchmarks in gpu/nn. Each `.run` is timed
+# with `bazel test --config=remote-b200`; `manual` keeps it out of `//...`,
+# and the `build_test` keeps the compile coverage.
+_PORTS = {
+    # Sparse MLA decode is implemented only for SM100.
+    "bench_mla_decode_sparse.mojo": ["//:b200_gpu"],
+    # SM100 tensor-core scorer: tcgen05 / TMA / SS-UMMA.
+    "bench_mla_index_fp8_paged.mojo": ["//:b200_gpu"],
+    "bench_mla_prefill_sparse.mojo": ["//:b200_gpu"],
+    # MHA / GQA ragged paged flash attention, the generic GPU path.
+    "bench_kv_cache_ragged_flash_attention_paged.mojo": ["//:has_gpu"],
+}
+
+[
+    mojo_sweep_benchmark(
+        name = src,
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        gpu_memory = "8",
+        target_compatible_with = compat,
+        deps = _DEPS,
+    )
+    for src, compat in _PORTS.items()
+]
+
+# Generators against their CPU references, on every GPU the library targets.
+mojo_test(
+    name = "test_bench_sweep.mojo.test",
+    srcs = ["test_bench_sweep.mojo"],
+    exec_properties = {"test.resources:gpu-memory": "1"},
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:max_mojo",
+        "//max/kernels/benchmarks/sweep/bench_sweep",
+        "@mojo//:std",
+    ],
+)
+
+# Sums `SWEEPTIME` lines across processes into the phase table.
+modular_py_binary(
+    name = "sweeptime",
+    srcs = ["sweeptime.py"],
+    imports = ["."],
+    main = "sweeptime.py",
+)
+
+modular_py_test(
+    name = "test_sweeptime",
+    size = "small",
+    srcs = ["test_sweeptime.py"],
+    imports = ["."],
+    deps = [":sweeptime"],
+)
+
+# Just for mentioning unreferenced files
+filegroup(
+    name = "yaml_files",
+    srcs = glob(["*.yaml"]),
+    tags = ["maybe-unused"],
+)

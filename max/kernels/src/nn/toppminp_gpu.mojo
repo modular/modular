@@ -415,14 +415,9 @@ def radix_sort_pairs_kernel[
             # Double the offset for the next iteration to fetch values from farther threads.
             offset <<= 1
 
-        # After the loop, set the first thread's offset to 0.
-        if tid == 0:
-            s_thread_offsets[tid * NUM_BUCKETS + radix] = 0
-        else:
-            # For all other threads, set the offset to the value of the previous thread.
-            s_thread_offsets[tid * NUM_BUCKETS + radix] = s_thread_offsets[
-                (tid - 1) * NUM_BUCKETS + radix
-            ]
+        # Make the scan exclusive with the thread's own count. Reading slot
+        # `tid - 1` instead races with thread `tid - 1` writing it.
+        s_thread_offsets[tid * NUM_BUCKETS + radix] -= counts_buf[radix]
         # Synchronize all threads to ensure that the final offset values are set.
         barrier()
 

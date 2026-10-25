@@ -1261,7 +1261,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(pair0_row)),
+                        (Int(out_col), Int(pair0_row)),
                     )
 
                 var pair1_buf = buf_base.unsafe_offset(c_out_pair_tile_elems)
@@ -1271,7 +1271,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(pair1_row)),
+                        (Int(out_col), Int(pair1_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1288,7 +1288,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(out_row)),
+                        (Int(out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1305,7 +1305,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(out_row)),
+                        (Int(out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1325,7 +1325,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(top_out_col), Int(out_row)),
+                        (Int(top_out_col), Int(out_row)),
                     )
 
                 var bot_buf = buf_base.unsafe_offset(BM * HalfN)
@@ -1335,7 +1335,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(bot_out_col), Int(out_row)),
+                        (Int(bot_out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()

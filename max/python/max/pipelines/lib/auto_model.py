@@ -453,12 +453,14 @@ class AutoModel:
         self,
         *,
         prompt: str | Sequence[str],
+        images: Sequence[Sequence[bytes | Image.Image]] | None = None,
         negative_prompt: str | Sequence[str] | None = None,
         height: int | None = None,
         width: int | None = None,
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
         true_cfg_scale: float | None = None,
+        strength: float | None = None,
         num_images_per_prompt: int = 1,
         seed: int = 0,
     ) -> GenerateImagesResult: ...
@@ -523,6 +525,7 @@ class AutoModel:
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
         true_cfg_scale: float | None = None,
+        strength: float | None = None,
         num_images_per_prompt: int = 1,
     ) -> GenerateResult | GenerateImagesResult:
         """Generates text or images, whichever the loaded model makes.
@@ -537,7 +540,9 @@ class AutoModel:
 
         For an image model, pass ``prompt`` and the image arguments, and it
         runs :func:`~max.pipelines.lib.generate_images.generate_images` with
-        them. An argument counts as passed when it differs from its default.
+        them. ``images`` and ``seed`` apply to both, and ``images`` holds one
+        list of images per prompt or conversation. An argument counts as
+        passed when it differs from its default.
 
         Raises:
             TypeError: If a text model gets no ``max_new_tokens`` or an image
@@ -547,6 +552,9 @@ class AutoModel:
                 described for the function it runs.
             RuntimeError: If the model has been closed, or as described for
                 the function it runs.
+            OSError: If an image model's input image does not decode, as
+                described for
+                :func:`~max.pipelines.lib.generate_images.generate_images`.
         """
         if self._image_pipeline is None and self._pipeline is None:
             raise RuntimeError("AutoModel is closed. Create a new one.")
@@ -554,7 +562,6 @@ class AutoModel:
             "input_ids": (input_ids, None),
             "messages": (messages, None),
             "attention_mask": (attention_mask, None),
-            "images": (images, None),
             "chat_template_kwargs": (chat_template_kwargs, None),
             "max_new_tokens": (max_new_tokens, None),
             "min_new_tokens": (min_new_tokens, None),
@@ -578,6 +585,7 @@ class AutoModel:
             "num_inference_steps": (num_inference_steps, None),
             "guidance_scale": (guidance_scale, None),
             "true_cfg_scale": (true_cfg_scale, None),
+            "strength": (strength, None),
             "num_images_per_prompt": (num_images_per_prompt, 1),
         }
         if self._image_pipeline is not None:
@@ -594,12 +602,14 @@ class AutoModel:
                 self._image_pipeline,
                 self._image_tokenizer,
                 prompt,
+                images=images,
                 negative_prompt=negative_prompt,
                 height=height,
                 width=width,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
                 true_cfg_scale=true_cfg_scale,
+                strength=strength,
                 num_images_per_prompt=num_images_per_prompt,
                 seed=seed,
                 caller="AutoModel",

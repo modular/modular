@@ -74,6 +74,7 @@ from layout import (
     TileTensor,
     row_major,
     stack_allocation,
+    Idx,
 )
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import (
@@ -349,11 +350,11 @@ def test_raw_smoke[
     var d_data = ctx.enqueue_create_buffer[dtype](num_elems)
     ctx.enqueue_copy(d_data, h_data)
 
-    var tma_desc = create_tma_descriptor[dtype, 2](
+    var tma_desc = create_tma_descriptor[dtype](
         d_data,
         (num_tokens, row_width),
-        (row_width, 1),
-        (1, row_width),
+        (row_width, Idx[1]),
+        (Idx[1], row_width),
     )
 
     var r0 = Int32(3)

@@ -225,7 +225,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -339,7 +343,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     comptime accum_dims = get_accumulator_dims[
         c_smem_dim1=Self.OutputN,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         cta_group=Self.cta_group,
     ]()
 
@@ -349,7 +357,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.accum_dims[1],
         Self.is_lower_required,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         Self.CLUSTER_SIZE,
     ]
 
@@ -362,7 +374,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.accum_dims[0],
         Self.accum_dims[1],
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         is_lower_frag_required=Self.is_lower_required,
         cta_group=Self.cta_group,
         num_output_stages=Self.num_output_stages,

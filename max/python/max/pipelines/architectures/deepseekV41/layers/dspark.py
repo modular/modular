@@ -46,6 +46,7 @@ from ...deepseekV4.layers.ragged import arange_to
 from ..layer_resolver import LayerInfo
 from ..model_config import (
     DeepseekV41Config,
+    fused_kv_store_enabled,
     q_mxfp8_enabled,
     woa_mxfp8_enabled,
 )
@@ -57,9 +58,9 @@ from .attention import (
 )
 from .csa2 import (
     INDEX_WIDTH,
+    WindowStore,
     csa2_attention,
     leaf_slots,
-    store_window_kv,
 )
 from .indexer import rope_cos_sin_table
 from .mxfp8_matmul import mxfp8_linear
@@ -539,19 +540,24 @@ class DeepseekV41DSparkAttention(Module):
         Returns:
             ``[T]`` int32, the slot each row was stored at.
         """
-        slots = leaf_slots(
-            cache, rows.bid, rows.positions, self.layer_info.layer_id
-        )
+        window = self._window(rows, cache)
         latent = self.kv_norm(kv_raw)
-        store_window_kv(
+        window.store(
+            ops.reshape(ops.cast(latent, DType.bfloat16), [-1, self.head_dim])
+        )
+        return window.slots
+
+    def _window(self, rows: RaggedRows, cache: PagedCacheValues) -> WindowStore:
+        """Returns where this stage's records of ``rows`` go."""
+        return WindowStore(
             cache.kv_blocks,
-            ops.reshape(ops.cast(latent, DType.bfloat16), [-1, self.head_dim]),
             rows.positions,
             rope_cos_sin_table(self.rope.freqs_cis_base()),
-            slots,
-            block_stride=cache.page_stride,
+            leaf_slots(
+                cache, rows.bid, rows.positions, self.layer_info.layer_id
+            ),
+            cache.page_stride,
         )
-        return slots
 
     def read_window(
         self, starts: TensorValue, swa_collection: PagedCacheValues
@@ -632,8 +638,15 @@ class DeepseekV41DSparkAttention(Module):
         t, hidden = h.shape[1], h.shape[2]
         b = cache.slots.shape[0]
         freqs_cis = self._freqs_cis(rows.positions)
-        _, q, kv_raw = self.query_proj(h, freqs_cis)
-        block_slots = self._store(kv_raw, rows, cache.cache)
+        if self.query_proj.can_fuse_norm_quant() and fused_kv_store_enabled():
+            window = self._window(rows, cache.cache)
+            _, _, q = self.query_proj.call_fused_store_kv(
+                h, freqs_cis, self.kv_norm, window
+            )
+            block_slots = window.slots
+        else:
+            _, q, kv_raw = self.query_proj(h, freqs_cis)
+            block_slots = self._store(kv_raw, rows, cache.cache)
 
         # `t` rows are `b` blocks of `k`: rebind `t` to `b * k` to split it.
         block_slots = ops.reshape(

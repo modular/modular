@@ -1901,5 +1901,14 @@ mojo_test(
                 "FP8_INDEX_Q_INTERLEAVE=0",
             ],
         ),
+        # K tiles loaded evict-first, which launches choose only for decode
+        # shapes larger than L2.
+        (
+            "test_mla_index_mxfp4_k_evict_first",
+            [
+                "-D",
+                "FP8_INDEX_K_EVICT_FIRST=1",
+            ],
+        ),
     ]
 ]

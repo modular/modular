@@ -31,6 +31,7 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
     matmul_sm100_fallback,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 
@@ -42,7 +43,7 @@ def test_matmul_sm100_fallback[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    umma_shape: IndexList[3],
+    umma_shape: DynamicCoord[.int, 3],
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     BK: Int = 64,
@@ -126,7 +127,7 @@ def test_matmul_sm100_fallback[
     ctx.enqueue_copy(c_device, c_host_ptr)
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+    comptime block_tile_shape = (umma_shape[0], umma_shape[1], BK)
 
     matmul_sm100_fallback[
         c_type,
@@ -191,7 +192,7 @@ def main() raises:
                     dtype,
                     dtype,
                     .bfloat16,
-                    umma_shape=Index(64, 128, MMA_K),
+                    umma_shape=(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
@@ -205,7 +206,7 @@ def main() raises:
                     dtype,
                     dtype,
                     .bfloat16,
-                    umma_shape=Index(64, 128, MMA_K),
+                    umma_shape=(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
@@ -221,7 +222,7 @@ def main() raises:
                     dtype,
                     dtype,
                     .bfloat16,
-                    umma_shape=Index(64, 128, MMA_K),
+                    umma_shape=(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
@@ -236,7 +237,7 @@ def main() raises:
                     dtype,
                     dtype,
                     .bfloat16,
-                    umma_shape=Index(64, 128, MMA_K),
+                    umma_shape=(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
@@ -254,7 +255,7 @@ def main() raises:
                         dtype,
                         dtype,
                         .bfloat16,
-                        umma_shape=Index(64, 128, MMA_K),
+                        umma_shape=(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
@@ -268,7 +269,7 @@ def main() raises:
                         dtype,
                         dtype,
                         .bfloat16,
-                        umma_shape=Index(64, 128, MMA_K),
+                        umma_shape=(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
@@ -282,7 +283,7 @@ def main() raises:
                         dtype,
                         dtype,
                         .bfloat16,
-                        umma_shape=Index(64, 128, MMA_K),
+                        umma_shape=(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
@@ -296,7 +297,7 @@ def main() raises:
                         dtype,
                         dtype,
                         .bfloat16,
-                        umma_shape=Index(64, 128, MMA_K),
+                        umma_shape=(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
@@ -310,7 +311,7 @@ def main() raises:
                         dtype,
                         dtype,
                         .bfloat16,
-                        umma_shape=Index(64, 128, MMA_K),
+                        umma_shape=(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](

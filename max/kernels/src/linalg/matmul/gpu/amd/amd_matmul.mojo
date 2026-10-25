@@ -411,7 +411,11 @@ struct AMDMatmul[
         var mma_op = MmaOp[
             out_type=Self.accum_type,
             in_type=Self.a_type,
-            shape=Self.config.mma_shape,
+            shape=(
+                Self.config.mma_shape[0],
+                Self.config.mma_shape[1],
+                Self.config.mma_shape[2],
+            ),
             k_group_size=Self.k_group_size,
             num_k_tiles=Self.num_k_tiles,
             num_m_mmas=num_m_mmas,

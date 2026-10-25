@@ -22,7 +22,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import IntTuple, Layout, TileTensor
+from layout import IntTuple, Layout, TileTensor, coord
 from layout.tile_layout import TensorLayout, _types_to_int_tuple
 from layout.tensor_core_async import (
     _CM_ROW_BYTES,
@@ -253,7 +253,7 @@ struct MmaOpSM100_SS[
             Self.accum_type,
             Self.a_type,
             Self.b_type,
-            Index[dtype=DType.uint32](Self.mma_shape[0], Self.mma_shape[1]),
+            (UInt32(Self.mma_shape[0]), UInt32(Self.mma_shape[1])),
             transpose_b=Self.transpose_b,
         ]()
 
@@ -263,8 +263,13 @@ struct MmaOpSM100_SS[
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
         comptime if product(Self.cluster_shape) > 1:
-            comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
-            comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
+            comptime cluster_shape = coord[
+                Self.cluster_shape[0],
+                Self.cluster_shape[1],
+                Self.cluster_shape[2],
+            ]
+            comptime dim0_mask = cluster_mask_base[cluster_shape, 0]()
+            comptime dim1_mask = cluster_mask_base[cluster_shape, 1]()
 
             # The mask includes ctas on the same row and column in the cluster
             # Example mask for cta (0, 1) is cluster (4,4)
@@ -509,7 +514,7 @@ struct MmaOpSM100_BlockScaled_SS[
             Self.a_type,
             Self.b_type,
             Self.sfa_dtype,
-            Index[dtype=DType.uint32](Self.mma_shape[0], Self.mma_shape[1]),
+            (UInt32(Self.mma_shape[0]), UInt32(Self.mma_shape[1])),
             transpose_b=Self.transpose_b,
         ]()
 
@@ -519,8 +524,13 @@ struct MmaOpSM100_BlockScaled_SS[
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
         comptime if product(Self.cluster_shape) > 1:
-            comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
-            comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
+            comptime cluster_shape = coord[
+                Self.cluster_shape[0],
+                Self.cluster_shape[1],
+                Self.cluster_shape[2],
+            ]
+            comptime dim0_mask = cluster_mask_base[cluster_shape, 0]()
+            comptime dim1_mask = cluster_mask_base[cluster_shape, 1]()
 
             # The mask includes ctas on the same row and column in the cluster
             # Example mask for cta (0, 1) is cluster (4,4)

@@ -41,6 +41,7 @@ from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul impor
     blockwise_fp8_matmul,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -55,7 +56,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     scales_type: DType = .float32,
@@ -197,7 +198,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
         c_ref_tensor,
         a_tensor,
@@ -257,8 +258,8 @@ def main() raises:
 
         # Config: mma_m_scale=1, mma_n_scale=2
         # block_tile_shape = (64, 16, 128), umma_shape = (64, 16, 32)
-        comptime block_tile_1sm = Index(64, 16, BK)
-        comptime umma_shape_1sm = Index(64, 16, MMA_K)
+        comptime block_tile_1sm = (64, 16, BK)
+        comptime umma_shape_1sm = (64, 16, MMA_K)
 
         print("block_tile_shape", block_tile_1sm, "umma_shape", umma_shape_1sm)
 
@@ -288,8 +289,8 @@ def main() raises:
 
         # Config: mma_m_scale=1, mma_n_scale=2
         # block_tile_shape = (64, 16, 128), umma_shape = (128, 32, 32)
-        comptime block_tile_2sm = Index(64, 16, BK)
-        comptime umma_shape_2sm = Index(128, 32, MMA_K)
+        comptime block_tile_2sm = (64, 16, BK)
+        comptime umma_shape_2sm = (128, 32, MMA_K)
 
         print("block_tile_shape", block_tile_2sm, "umma_shape", umma_shape_2sm)
 

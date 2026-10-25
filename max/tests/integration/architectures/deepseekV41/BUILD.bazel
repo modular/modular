@@ -507,6 +507,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV4",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
         requirement("torch"),
@@ -532,6 +533,29 @@ modular_py_test(
     ],
 )
 
+# The fused mHC step's MXFP8 copy of the FFN input, against
+# quantize_dynamic_block_scaled, and the shared expert reading it.
+modular_py_test(
+    name = "test_mhc_mxfp8_gpu",
+    srcs = ["test_mhc_mxfp8_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
 # The fused mHC step at the sublayers that used to run it unfused
 # (deepseekV41.py), against the unfused gates and collapse.
 modular_py_test(
@@ -550,6 +574,29 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# The block-diagonal MXFP8 matmul on the cluster split-K kernel
+# (layers/mxfp8_matmul.py), against the production block-diagonal matmul.
+modular_py_test(
+    name = "test_mxfp8_block_diagonal_gpu",
+    srcs = ["test_mxfp8_block_diagonal_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
         requirement("torch"),

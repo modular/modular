@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the dim type."""
 
-from std.utils.index import IndexList
+from std.utils.coord import DynamicCoord
 
 
 @fieldwise_init("implicit")
@@ -23,11 +23,11 @@ struct Dim(TrivialRegisterPassable, Writable):
     for kernel launches.
     """
 
-    var _value: IndexList[3]
+    var _value: DynamicCoord[.int, 3]
     """Internal storage for the three dimension components (x, y, z).
 
-    This field stores the values for all three dimensions using an IndexList
-    with a fixed size of 3. The dimensions are accessed in order: x, y, z.
+    This field stores the values for all three dimensions using a `Coord`
+    with a fixed rank of 3. The dimensions are accessed in order: x, y, z.
     """
 
     @implicit
@@ -42,7 +42,7 @@ struct Dim(TrivialRegisterPassable, Writable):
         Args:
             x: The value for the x dimension.
         """
-        self._value = IndexList[3](index(x), 1, 1)
+        self._value = (index(x), 1, 1)
 
     def __init__[I0: Indexer, I1: Indexer, //](out self, x: I0, y: I1):
         """Initializes Dim with indexable values for x and y.
@@ -57,7 +57,7 @@ struct Dim(TrivialRegisterPassable, Writable):
             x: The value for the x dimension.
             y: The value for the y dimension.
         """
-        self._value = IndexList[3](index(x), index(y), 1)
+        self._value = (index(x), index(y), 1)
 
     def __init__[
         I0: Indexer, I1: Indexer, I2: Indexer, //
@@ -74,7 +74,7 @@ struct Dim(TrivialRegisterPassable, Writable):
             y: The value for the y dimension.
             z: The value for the z dimension.
         """
-        self._value = IndexList[3](index(x), index(y), index(z))
+        self._value = (index(x), index(y), index(z))
 
     @implicit
     def __init__[I: Indexer & Copyable, //](out self, dims: Tuple[I]):
@@ -88,7 +88,7 @@ struct Dim(TrivialRegisterPassable, Writable):
         Args:
             dims: A tuple with one element for x dimension.
         """
-        self._value = IndexList[3](index(dims[0]), 1, 1)
+        self._value = (index(dims[0]), 1, 1)
 
     @implicit
     def __init__[
@@ -107,7 +107,7 @@ struct Dim(TrivialRegisterPassable, Writable):
         Args:
             dims: A tuple with two elements: x and y dimensions.
         """
-        self._value = IndexList[3](index(dims[0]), index(dims[1]), 1)
+        self._value = (index(dims[0]), index(dims[1]), 1)
 
     @implicit
     def __init__[
@@ -126,8 +126,10 @@ struct Dim(TrivialRegisterPassable, Writable):
         Args:
             dims: Tuple with three elements: x, y, and z dimensions.
         """
-        self._value = IndexList[3](
-            index(dims[0]), index(dims[1]), index(dims[2])
+        self._value = (
+            index(dims[0]),
+            index(dims[1]),
+            index(dims[2]),
         )
 
     def __getitem__(self, idx: Int) -> Int:
@@ -139,7 +141,14 @@ struct Dim(TrivialRegisterPassable, Writable):
         Returns:
             The value of the dimension at the given index.
         """
-        return self._value[idx]
+        assert idx >= 0 and idx < 3, "dimension index out of range: " + String(
+            idx
+        )
+        if idx == 0:
+            return Int(self._value[0])
+        if idx == 1:
+            return Int(self._value[1])
+        return Int(self._value[2])
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes a formatted string representation of the Dim.

@@ -601,7 +601,7 @@ def _matmul_dispatch_sm100_impl[
         comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=umma_shape,
+            mma_shape=(umma_shape[0], umma_shape[1], umma_shape[2]),
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),
@@ -989,7 +989,11 @@ def matmul_dispatch_sm100_fp8[
     @inline(.nodebug)
     def _dispatch[entry: TuningConfigSM100]() raises {imm}:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=entry.mma_shape,
+            mma_shape=(
+                entry.mma_shape[0],
+                entry.mma_shape[1],
+                entry.mma_shape[2],
+            ),
             cluster_shape=entry.cluster_shape,
             block_swizzle_size=entry.block_swizzle_size,
         )
@@ -1226,7 +1230,11 @@ def select_and_launch_sm100_config[
                     comptime matmul_config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        mma_shape=tuning_config.mma_shape,
+                        mma_shape=(
+                            tuning_config.mma_shape[0],
+                            tuning_config.mma_shape[1],
+                            tuning_config.mma_shape[2],
+                        ),
                         cta_group=tuning_config.cta_group,
                         cluster_shape=tuning_config.cluster_shape,
                         block_swizzle_size=tuning_config.block_swizzle_size,
@@ -1739,7 +1747,11 @@ def dispatch_sm100_batched_matmul[
                 comptime matmul_config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    mma_shape=tuning_config.mma_shape,
+                    mma_shape=(
+                        tuning_config.mma_shape[0],
+                        tuning_config.mma_shape[1],
+                        tuning_config.mma_shape[2],
+                    ),
                     cta_group=tuning_config.cta_group,
                     cluster_shape=tuning_config.cluster_shape,
                     block_swizzle_size=tuning_config.block_swizzle_size,

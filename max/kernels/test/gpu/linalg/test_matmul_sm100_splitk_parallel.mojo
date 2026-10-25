@@ -105,7 +105,7 @@ def parallel_config[
 ]() -> MatmulConfig[dtype, dtype, dtype, True]:
     return MatmulConfig[dtype, dtype, dtype, True](
         cluster_shape=Index(1, 1, 1),
-        mma_shape=Index(128, mma_n, 16),
+        mma_shape=(128, mma_n, 16),
         cta_group=1,
         AB_swapped=swap_ab,
         k_group_size=2,
@@ -433,7 +433,7 @@ def test_k_group_tail[
     comptime assert K % BK == 0 and num_k_tiles % k_group_size == 0
     comptime config = MatmulConfig[dtype, dtype, dtype, True](
         cluster_shape=Index(2, 1, 1),
-        mma_shape=Index(128, 96, 16),
+        mma_shape=(128, 96, 16),
         cta_group=2,
         num_split_k=num_split_k,
         k_group_size=k_group_size,

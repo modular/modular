@@ -360,7 +360,7 @@ def test_mxfp8_dispatch[
 def test_tuned_decode_shape[N: Int, K: Int](ctx: DeviceContext) raises:
     # M inside and at the edges of the shape's tuning-table rows, plus one
     # past the last row. PDL on turns on the rows' weight prefetch.
-    for m in [17, 61, 96, 127, 129, 151, 191, 193]:
+    for m in [1, 17, 61, 64, 65, 96, 127, 128, 129, 151, 191, 193]:
         test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
             ctx, m, Idx[N], Idx[K], expect_heuristic_hit=True
         )

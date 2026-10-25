@@ -22,7 +22,6 @@ BF16-KV kernel (`mla_prefill_sparse.mojo`) and the FP8-KV kernel
 """
 
 from std.sys import size_of
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from max.gpu import warp_id, thread_idx
 from max.gpu.sync import barrier
@@ -608,7 +607,7 @@ struct MLAPrefillSparseCommon[
                                 NoneType
                             ](),
                             prologue_q_ptr[].unsafe_ptr(),
-                            Index(
+                            (
                                 j * Q_SWIZZLE_COLS,
                                 Int(cta_id) * Self.NUM_Q_HEADS_PER_CTA,
                                 Int(seq_idx),

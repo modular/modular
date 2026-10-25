@@ -40,6 +40,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 import linalg.matmul.vendor.blas as vendor_blas
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -53,7 +54,7 @@ def test_transposed_epilogue_row_straddle[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -192,8 +193,8 @@ def main() raises:
             dtype,
             dtype,
             dtype,
-            Index(64, 64, BK),
-            Index(64, 64, MMA_K),
+            (64, 64, BK),
+            (64, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=1,
         ](ctx, Int(64), Idx[136], Idx[128])
@@ -204,8 +205,8 @@ def main() raises:
             dtype,
             dtype,
             dtype,
-            Index(128, 64, BK),
-            Index(128, 64, MMA_K),
+            (128, 64, BK),
+            (128, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=1,
         ](ctx, Int(300), Idx[776], Idx[128])
@@ -216,8 +217,8 @@ def main() raises:
             dtype,
             dtype,
             dtype,
-            Index(64, 32, BK),
-            Index(128, 64, MMA_K),
+            (64, 32, BK),
+            (128, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=2,
         ](ctx, Int(300), Idx[776], Idx[128])

@@ -30,6 +30,7 @@ from linalg.bmm import (
     batched_matmul_dynamic_scaled_fp8_naive,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 from layout import TileTensor, Coord, CoordLike, Idx, row_major
@@ -45,7 +46,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    umma_shape: IndexList[3],
+    umma_shape: DynamicCoord[.int, 3],
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     use_epilogue: Bool = False,
@@ -57,7 +58,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     batch_size: BatchType,
 ) raises:
     comptime BLOCK_SCALE_K = 128
-    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    comptime block_tile_shape = (umma_shape[0], umma_shape[1], 128)
 
     comptime assert transpose_b, "transpose_b must be true"
 
@@ -218,7 +219,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     ctx.synchronize()
 
     _ = batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
     ](
         c_device_ref_nd,
@@ -255,7 +256,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    umma_shape: IndexList[3],
+    umma_shape: DynamicCoord[.int, 3],
     B: Int,
     N: Int,
     K: Int,
@@ -263,7 +264,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     transpose_b: Bool = True,
 ](ctx: DeviceContext, m: Int,) raises:
     comptime BLOCK_SCALE_K = 128
-    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    comptime block_tile_shape = (umma_shape[0], umma_shape[1], 128)
 
     comptime assert transpose_b, "transpose_b must be true"
 
@@ -392,7 +393,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     ctx.synchronize()
 
     _ = batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
     ](
         c_ref,
@@ -431,7 +432,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 256, 32],
+            umma_shape=(64, 256, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -445,7 +446,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 32, 32],
+            umma_shape=(64, 32, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -460,7 +461,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .float32,
-            umma_shape=[64, 128, 32],
+            umma_shape=(64, 128, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -475,7 +476,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .float32,
-            umma_shape=[64, 64, 32],
+            umma_shape=(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -490,7 +491,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 16, 32],
+            umma_shape=(64, 16, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -505,7 +506,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 8, 32],
+            umma_shape=(64, 8, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -520,7 +521,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 64, 32],
+            umma_shape=(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -535,7 +536,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 64, 32],
+            umma_shape=(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -549,7 +550,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 64, 32],
+            umma_shape=(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             use_epilogue=True,
@@ -565,7 +566,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 128, 32],
+            umma_shape=(64, 128, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -579,7 +580,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 128, 32],
+            umma_shape=(64, 128, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -595,7 +596,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 64, 32],
+            umma_shape=(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             B=Int(128),
@@ -607,7 +608,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=[64, 64, 32],
+            umma_shape=(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             B=Int(128),

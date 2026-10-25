@@ -11,14 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Image generation from text prompts, run in the caller's process.
+"""Image generation from text prompts and input images, in-process.
 
 Each prompt becomes the same request ``max serve`` builds for
 ``POST /v1/responses``, so the model's defaults and the request's validation
 are the same as in serve. The images come back as PNG, so they match
-serve's images for ``output_format="png"``. Serve defaults to JPEG.
-Prompts run one at a time, since an image pipeline takes one request per
-``execute``.
+serve's images for ``output_format="png"``. Serve defaults to JPEG. An
+input image goes to the tokenizer directly, the same place serve's data
+URI image ends up. Prompts run one at a time, since an image pipeline
+takes one request per ``execute``.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from typing import Protocol
 
 from max.pipelines.context import GenerationOutput, PixelContext, TextContext
 from max.pipelines.modeling.types import (
+    InputModality,
     PipelineOutputsDict,
     PipelineTask,
     PixelGenerationInputs,
@@ -48,7 +50,12 @@ from max.pipelines.request.provider_options import (
 from PIL import Image
 
 from .config import PipelineArgs, PipelineConfig
-from .generate import _holds_video, _run_coroutine, _unsupported
+from .generate import (
+    _holds_video,
+    _image_rows,
+    _run_coroutine,
+    _unsupported,
+)
 from .registry import PIPELINE_REGISTRY
 
 __all__ = [
@@ -144,6 +151,50 @@ def _is_image_generation_model(pipeline_args: PipelineArgs) -> bool:
     return arch is not None and arch.task == PipelineTask.PIXEL_GENERATION
 
 
+def _open(data: bytes) -> Image.Image:
+    image = Image.open(io.BytesIO(data))
+    image.load()
+    return image
+
+
+def _input_image(row: Sequence[bytes | Image.Image]) -> Image.Image | None:
+    if not row:
+        return None
+    [image] = row
+    return _open(image) if isinstance(image, bytes) else image
+
+
+def _input_images(
+    images: Sequence[Sequence[bytes | Image.Image]] | None,
+    num_prompts: int,
+    pipeline_config: PipelineConfig,
+) -> list[Image.Image | None]:
+    if images is None:
+        return [None] * num_prompts
+    rows = _image_rows(images, "prompt")
+    if len(rows) != num_prompts:
+        raise ValueError(
+            "images must hold one image list per prompt, got "
+            f"{len(rows)} for {num_prompts} prompts."
+        )
+    for index, row in enumerate(rows):
+        if len(row) > 1:
+            raise ValueError(
+                f"Prompt {index} has {len(row)} input images, but image "
+                "generation models read one input image per prompt."
+            )
+    with_image = [index for index, row in enumerate(rows) if row]
+    if with_image:
+        arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
+        if arch is None or InputModality.IMAGE not in arch.input_modalities:
+            raise ValueError(
+                f"Prompt {with_image[0]} has an input image, but "
+                f"{pipeline_config.models.model_name} takes text only."
+            )
+    # Decoded here, so a bad image fails before the first prompt runs.
+    return [_input_image(row) for row in rows]
+
+
 def _check_image_model(pipeline_config: PipelineConfig, caller: str) -> None:
     context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
     if not issubclass(context_type, PixelContext):
@@ -194,19 +245,21 @@ def _decode(output: GenerationOutput) -> list[Image.Image]:
                 f"The pipeline returned {content.type} content without "
                 "image data."
             )
-        image = Image.open(io.BytesIO(base64.b64decode(content.image_data)))
-        image.load()
-        images.append(image)
+        images.append(_open(base64.b64decode(content.image_data)))
     return images
 
 
 async def _new_contexts(
-    tokenizer: ImageTokenizer, requests: Sequence[OpenResponsesRequest]
+    tokenizer: ImageTokenizer,
+    requests: Sequence[OpenResponsesRequest],
+    input_images: Sequence[Image.Image | None],
 ) -> list[PixelContext]:
     contexts = []
-    for index, request in enumerate(requests):
+    for index, (request, input_image) in enumerate(
+        zip(requests, input_images, strict=True)
+    ):
         try:
-            contexts.append(await tokenizer.new_context(request))
+            contexts.append(await tokenizer.new_context(request, input_image))
         except ValueError as error:
             error.args = (f"Prompt {index}: {error}",)
             raise
@@ -218,12 +271,14 @@ def generate_images(
     tokenizer: ImageTokenizer,
     prompt: str | Sequence[str],
     *,
+    images: Sequence[Sequence[bytes | Image.Image]] | None = None,
     negative_prompt: str | Sequence[str] | None = None,
     height: int | None = None,
     width: int | None = None,
     num_inference_steps: int | None = None,
     guidance_scale: float | None = None,
     true_cfg_scale: float | None = None,
+    strength: float | None = None,
     num_images_per_prompt: int = 1,
     seed: int = 0,
     caller: str = "generate_images()",
@@ -238,6 +293,12 @@ def generate_images(
         tokenizer: The pipeline's tokenizer, which builds each request's
             context.
         prompt: One prompt, or a list of prompts.
+        images: One list of input images per prompt, each image encoded
+            bytes or a PIL image, as for
+            :func:`~max.pipelines.lib.generate.generate`. A model reads one
+            input image, so a list holds one image, or none for a text-only
+            prompt. Without ``height`` and ``width``, the output size is the
+            input image's size rounded down to a size the model takes.
         negative_prompt: What to steer away from, as one string for every
             prompt or one per prompt.
         height: The image height in pixels.
@@ -246,6 +307,8 @@ def generate_images(
         guidance_scale: How closely the image follows the prompt.
         true_cfg_scale: The true classifier-free guidance scale. Models
             that use it need it above 1 and a ``negative_prompt``.
+        strength: How far an input image is noised, in ``(0, 1]``. Z-Image
+            reads it, and FLUX.2 ignores it.
         num_images_per_prompt: The number of images for each prompt.
         seed: The seed for prompt 0. Prompt ``i`` uses
             ``(seed + i) % 2**32``, since numpy takes 32-bit seeds.
@@ -255,15 +318,66 @@ def generate_images(
         One list of PIL images per prompt, in prompt order.
 
     Raises:
-        TypeError: If the pipeline's model does not generate images.
+        TypeError: If the pipeline's model does not generate images, or
+            ``images`` is not a list of image lists.
         ValueError: If there are no prompts, a prompt is empty or too long
-            for the model, ``negative_prompt`` has the wrong length,
+            for the model, ``negative_prompt`` or ``images`` has the wrong
+            length, a prompt has more than one input image,
             ``num_inference_steps`` or ``num_images_per_prompt`` is below 1,
             ``seed`` is outside ``[0, 2**32)``, a value is outside the range
-            ``max serve`` accepts, or the model generates video. A
-            tokenizer's error names its prompt. Every prompt is checked
-            before the first one runs.
+            ``max serve`` accepts, the model generates video, or an input
+            image goes to a model that takes text only. A tokenizer's error
+            names its prompt. Every prompt is checked before the first one
+            runs.
         RuntimeError: If the pipeline returns output that is not an image.
+        OSError: If an input image's bytes do not decode, before any prompt
+            runs.
+    """
+    requests = _prepare_requests(
+        pipeline.pipeline_config,
+        prompt,
+        images=images,
+        negative_prompt=negative_prompt,
+        height=height,
+        width=width,
+        num_inference_steps=num_inference_steps,
+        guidance_scale=guidance_scale,
+        true_cfg_scale=true_cfg_scale,
+        strength=strength,
+        num_images_per_prompt=num_images_per_prompt,
+        seed=seed,
+        caller=caller,
+    )
+    return _run_requests(pipeline, tokenizer, requests)
+
+
+@dataclasses.dataclass(frozen=True)
+class _ImageRequests:
+    """Checked requests, each with its decoded input image or None."""
+
+    requests: list[OpenResponsesRequest]
+    input_images: list[Image.Image | None]
+
+
+def _prepare_requests(
+    pipeline_config: PipelineConfig,
+    prompt: str | Sequence[str],
+    *,
+    images: Sequence[Sequence[bytes | Image.Image]] | None,
+    negative_prompt: str | Sequence[str] | None,
+    height: int | None,
+    width: int | None,
+    num_inference_steps: int | None,
+    guidance_scale: float | None,
+    true_cfg_scale: float | None,
+    strength: float | None,
+    num_images_per_prompt: int,
+    seed: int,
+    caller: str,
+) -> _ImageRequests:
+    """Runs every check :func:`generate_images` makes that needs no pipeline.
+
+    ``max generate`` calls it before the model loads.
     """
     prompts = [prompt] if isinstance(prompt, str) else list(prompt)
     if not prompts:
@@ -285,8 +399,8 @@ def generate_images(
         )
     if not 0 <= seed < _SEED_LIMIT:
         raise ValueError(f"seed must be in [0, 2**32), got {seed}.")
-    pipeline_config = pipeline.pipeline_config
     _check_image_model(pipeline_config, caller)
+    input_images = _input_images(images, len(prompts), pipeline_config)
 
     knobs: dict[str, object] = {
         "height": height,
@@ -294,6 +408,7 @@ def generate_images(
         "steps": num_inference_steps,
         "guidance_scale": guidance_scale,
         "true_cfg_scale": true_cfg_scale,
+        "strength": strength,
     }
     model_name = pipeline_config.models.model_name
     requests = [
@@ -315,14 +430,21 @@ def generate_images(
             zip(prompts, negative_prompts, strict=True)
         )
     ]
+    return _ImageRequests(requests, input_images)
 
+
+def _run_requests(
+    pipeline: ImagePipeline, tokenizer: ImageTokenizer, prepared: _ImageRequests
+) -> GenerateImagesResult:
     # Every context is built first, so a prompt the tokenizer rejects fails
     # before any prompt runs.
-    contexts = _run_coroutine(_new_contexts(tokenizer, requests))
-    images: list[list[Image.Image]] = []
+    contexts = _run_coroutine(
+        _new_contexts(tokenizer, prepared.requests, prepared.input_images)
+    )
+    generated: list[list[Image.Image]] = []
     for context in contexts:
         outputs = pipeline.execute(
             PixelGenerationInputs(batch={context.request_id: context})
         )
-        images.append(_decode(outputs[context.request_id]))
-    return GenerateImagesResult(images=images)
+        generated.append(_decode(outputs[context.request_id]))
+    return GenerateImagesResult(images=generated)

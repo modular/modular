@@ -907,6 +907,10 @@ def flash_attention_dispatch[
     # we might also want to use valid length for padded dense inputs
     _padded_ndbuffer: Bool = False,
     decoding_warp_split_k: Bool = False,
+    # Cross-stage P in the SM100 FA4 kernel, defaulting to the measured
+    # choice; threaded to the FA4 dispatch, and every other route ignores
+    # it.
+    cross_p: Bool = True,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[mut=False, dtype, q_layout, address_space=.GENERIC, ...],
@@ -948,6 +952,8 @@ def flash_attention_dispatch[
         _use_valid_length: `True` to mask output with per-sequence lengths.
         _padded_ndbuffer: `True` when the NBuffer has padded dense inputs.
         decoding_warp_split_k: Enable warp-level split-K for decode.
+        cross_p: Cross-stage P TMEM placement in the SM100 FA4 kernel,
+            defaulting to the measured choice; read only by the FA4 route.
 
     Args:
         output: Mutable output tensor.
@@ -1083,6 +1089,7 @@ def flash_attention_dispatch[
                 ragged=ragged,
                 sink=sink,
                 _is_cache_length_accurate=_is_cache_length_accurate,
+                cross_p=cross_p,
             ](
                 output.to_device_buffer(ctx),
                 q.to_device_buffer(ctx).unsafe_ptr(),
@@ -1187,6 +1194,7 @@ def flash_attention_dispatch[
                             ragged=ragged,
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
+                            cross_p=cross_p,
                         ](
                             output.to_device_buffer(ctx),
                             q.to_device_buffer(ctx).unsafe_ptr(),
@@ -2199,6 +2207,7 @@ def _flash_attention_dense[
     _padded_ndbuffer: Bool = False,
     naive_kernel: Bool = False,
     sink: Bool = False,
+    cross_p: Bool = True,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[mut=False, dtype, q_layout, address_space=.GENERIC, ...],
@@ -2308,6 +2317,7 @@ def _flash_attention_dense[
         _use_valid_length=_use_valid_length,
         _padded_ndbuffer=_padded_ndbuffer,
         decoding_warp_split_k=decoding_warp_split_k,
+        cross_p=cross_p,
     ](
         output,
         q,
@@ -2346,6 +2356,11 @@ def flash_attention[
     _padded_ndbuffer: Bool = False,
     naive_kernel: Bool = False,
     sink: Bool = False,
+    # Cross-stage P in the SM100 FA4 kernel, defaulting to the measured
+    # choice. Only the 2Q route reads it; every other route ignores it.
+    # Threaded so an A/B can elaborate both arms of one executable with
+    # paired timing.
+    cross_p: Bool = True,
 ](
     output: TileTensor[
         mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
@@ -2392,6 +2407,8 @@ def flash_attention[
             (defaults to `False`).
         sink: `True` to enable attention-sink mode where the first tokens
             always attend (defaults to `False`).
+        cross_p: Cross-stage P TMEM placement in the SM100 FA4 kernel,
+            defaulting to the measured choice; read only by the 2Q route.
 
     Args:
         output: Mutable destination `TileTensor` for the attention output.
@@ -2413,6 +2430,7 @@ def flash_attention[
         _padded_ndbuffer=_padded_ndbuffer,
         naive_kernel=naive_kernel,
         sink=sink,
+        cross_p=cross_p,
     ](
         output,
         q,

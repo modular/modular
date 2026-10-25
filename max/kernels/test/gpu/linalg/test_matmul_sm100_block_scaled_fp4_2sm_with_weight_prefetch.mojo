@@ -35,6 +35,7 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
@@ -59,7 +60,7 @@ def _test_impl[
     c_type: DType,
     scales_dtype: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -283,7 +284,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
             c_type: DType,
             _scales_dtype: DType,
             block_tile_shape: IndexList[3],
-            mma_shape: IndexList[3],
+            mma_shape: DynamicCoord[.int, 3],
             cluster_shape: StaticTuple[Int32, 3],
             cta_group: Int,
             transpose_b: Bool = True,
@@ -328,12 +329,12 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
 
         # ------------------------------------------------------------------
         # 2SM tile sweep: cta_group=2, bm=128, bn in [64, 128]
-        # umma_shape = Index(2*bm, 2*bn, MMA_K) — reflects 2SM layout
+        # umma_shape = (2*bm, 2*bn, MMA_K) — reflects 2SM layout
         # ------------------------------------------------------------------
         comptime for bm in [128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                 run[
                     dtype,

@@ -78,9 +78,13 @@ struct SM100AttentionSMem[
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
+    cross_p: Bool,
     //,
     config: FA4Config[
-        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
+        qkv_dtype,
+        rope_dtype_=rope_dtype_,
+        scale_dtype_=scale_dtype_,
+        cross_p=cross_p,
     ],
     *,
     use_order_barriers: Bool = EnableForcedOrdering,
@@ -97,6 +101,8 @@ struct SM100AttentionSMem[
         rope_dtype_: Element type of Q and K rope (unset when there is no rope).
         scale_dtype_: Element type of the per-token scale used for Q and K
             (unset when there is no per-token scaling).
+        cross_p: Cross-stage P for this instantiation
+            (`FA4Config.cross_p`).
         config: FA4 configuration (tile sizes, depths, staging counts, etc.).
         use_order_barriers: Whether forced-ordering barriers are allocated.
     """

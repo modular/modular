@@ -14,7 +14,7 @@
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI300X
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
-from std.utils.index import Index
+from std.utils.coord import DynamicCoord
 
 comptime fp8_dtype = (
     DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
@@ -134,7 +134,7 @@ comptime bf8_dtype = (
 def test_load_and_mma_f32_f32_16x16x4(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float32, Index(16, 16, 4), False
+        DType.float32, DType.float32, DynamicCoord[.int, 3](16, 16, 4), False
     ](ctx)
 
 
@@ -247,7 +247,7 @@ def test_load_and_mma_f32_f32_16x16x4(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float32, Index(16, 16, 4), False, 4
+        DType.float32, DType.float32, DynamicCoord[.int, 3](16, 16, 4), False, 4
     ](ctx)
 
 
@@ -358,7 +358,7 @@ def test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_f32_16x16x4_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float32, Index(16, 16, 4), True
+        DType.float32, DType.float32, DynamicCoord[.int, 3](16, 16, 4), True
     ](ctx)
 
 
@@ -471,7 +471,7 @@ def test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4(
 ) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float32, Index(16, 16, 4), True, 4
+        DType.float32, DType.float32, DynamicCoord[.int, 3](16, 16, 4), True, 4
     ](ctx)
 
 
@@ -582,7 +582,7 @@ def test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4(
 def test_load_and_mma_f32_bf16_16x16x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.bfloat16, Index(16, 16, 16), False
+        DType.float32, DType.bfloat16, DynamicCoord[.int, 3](16, 16, 16), False
     ](ctx)
 
 
@@ -695,7 +695,11 @@ def test_load_and_mma_f32_bf16_16x16x16_k_group_size_4(
 ) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.bfloat16, Index(16, 16, 16), False, 4
+        DType.float32,
+        DType.bfloat16,
+        DynamicCoord[.int, 3](16, 16, 16),
+        False,
+        4,
     ](ctx)
 
 
@@ -806,7 +810,7 @@ def test_load_and_mma_f32_bf16_16x16x16_k_group_size_4(
 def test_load_and_mma_f32_bf16_16x16x16_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.bfloat16, Index(16, 16, 16), True
+        DType.float32, DType.bfloat16, DynamicCoord[.int, 3](16, 16, 16), True
     ](ctx)
 
 
@@ -919,7 +923,11 @@ def test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4(
 ) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.bfloat16, Index(16, 16, 16), True, 4
+        DType.float32,
+        DType.bfloat16,
+        DynamicCoord[.int, 3](16, 16, 16),
+        True,
+        4,
     ](ctx)
 
 
@@ -1032,7 +1040,7 @@ def test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4(
 def test_load_and_mma_f32_f16_16x16x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_16x16x16")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float16, Index(16, 16, 16), False
+        DType.float32, DType.float16, DynamicCoord[.int, 3](16, 16, 16), False
     ](ctx)
 
 
@@ -1145,7 +1153,7 @@ def test_load_and_mma_f32_f16_16x16x16(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_f16_16x16x16_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_16x16x16_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float16, Index(16, 16, 16), True
+        DType.float32, DType.float16, DynamicCoord[.int, 3](16, 16, 16), True
     ](ctx)
 
 
@@ -1290,7 +1298,7 @@ def test_load_and_mma_f32_f16_16x16x16_transpose(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_bf16_32x32x8(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_32x32x8")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.bfloat16, Index(32, 32, 8), False
+        DType.float32, DType.bfloat16, DynamicCoord[.int, 3](32, 32, 8), False
     ](ctx)
 
 
@@ -1435,7 +1443,7 @@ def test_load_and_mma_f32_bf16_32x32x8(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_bf16_32x32x8_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_32x32x8_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.bfloat16, Index(32, 32, 8), True
+        DType.float32, DType.bfloat16, DynamicCoord[.int, 3](32, 32, 8), True
     ](ctx)
 
 
@@ -1580,7 +1588,7 @@ def test_load_and_mma_f32_bf16_32x32x8_transpose(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_f16_32x32x8(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_32x32x8")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float16, Index(32, 32, 8), False
+        DType.float32, DType.float16, DynamicCoord[.int, 3](32, 32, 8), False
     ](ctx)
 
 
@@ -1725,7 +1733,7 @@ def test_load_and_mma_f32_f16_32x32x8(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_f16_32x32x8_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_32x32x8_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float16, Index(32, 32, 8), True
+        DType.float32, DType.float16, DynamicCoord[.int, 3](32, 32, 8), True
     ](ctx)
 
 
@@ -1838,7 +1846,7 @@ def test_load_and_mma_f32_f16_32x32x8_transpose(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_bf8_16x16x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, bf8_dtype, Index(16, 16, 32), False
+        DType.float32, bf8_dtype, DynamicCoord[.int, 3](16, 16, 32), False
     ](ctx)
 
 
@@ -1949,7 +1957,7 @@ def test_load_and_mma_f32_bf8_16x16x32(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_bf8_16x16x32_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, bf8_dtype, Index(16, 16, 32), True
+        DType.float32, bf8_dtype, DynamicCoord[.int, 3](16, 16, 32), True
     ](ctx)
 
 
@@ -2064,7 +2072,7 @@ def test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(
 ) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, bf8_dtype, Index(16, 16, 32), True, 2
+        DType.float32, bf8_dtype, DynamicCoord[.int, 3](16, 16, 32), True, 2
     ](ctx)
 
 

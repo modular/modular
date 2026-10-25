@@ -1185,7 +1185,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
         b_type,
         config.block_tile_shape,
-        config.mma_shape,
+        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         accum_type=accum_type,
         cta_group=config.cta_group,
         cluster_shape=config.cluster_shape,
@@ -1254,7 +1254,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             for i in range(_num_iters):
                 load_AB[
                     block_tile_shape=config.block_tile_shape,
-                    mma_shape=config.mma_shape,
+                    mma_shape=(
+                        config.mma_shape[0],
+                        config.mma_shape[1],
+                        config.mma_shape[2],
+                    ),
                     cta_group=config.cta_group,
                 ](
                     a_tma_op,
@@ -1343,7 +1347,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
                     consumer_main_loop[
                         block_tile_shape=config.block_tile_shape,
-                        mma_shape=config.mma_shape,
+                        mma_shape=(
+                            config.mma_shape[0],
+                            config.mma_shape[1],
+                            config.mma_shape[2],
+                        ),
                         cta_group=config.cta_group,
                         cluster_shape=config.cluster_shape,
                     ](
@@ -1394,7 +1402,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     config.output_tile_shape[0], config.output_tile_shape[1]
                 ),
                 block_tile_shape=config.block_tile_shape,
-                mma_shape=config.mma_shape,
+                mma_shape=(
+                    config.mma_shape[0],
+                    config.mma_shape[1],
+                    config.mma_shape[2],
+                ),
                 cta_group=config.cta_group,
             ]()
 
@@ -1418,7 +1430,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             for k_iter in range(_num_iters):
                 promote_accumulators[
                     block_tile_shape=config.block_tile_shape,
-                    mma_shape=config.mma_shape,
+                    mma_shape=(
+                        config.mma_shape[0],
+                        config.mma_shape[1],
+                        config.mma_shape[2],
+                    ),
                     cta_group=config.cta_group,
                     CLUSTER_SIZE=Int32(CLUSTER_SIZE),
                     is_lower_frag_required=is_lower_frag_required,
@@ -1448,7 +1464,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             # scheduler fetch next work
             multi_stage_reg_epilogue[
                 block_tile_shape=config.block_tile_shape,
-                mma_shape=config.mma_shape,
+                mma_shape=(
+                    config.mma_shape[0],
+                    config.mma_shape[1],
+                    config.mma_shape[2],
+                ),
                 is_lower_frag_required=is_lower_frag_required,
                 cta_group=config.cta_group,
                 num_output_warps=num_output_warps,

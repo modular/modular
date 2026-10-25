@@ -195,7 +195,7 @@ def match_tuple_subject(point: Tuple[Int, Int]):
     match point:
     case (0, 0):
         case_callee[0]()
-    case (-0x1, -(2)):
+    case (-0x1, -2):
         case_callee[2]()
     case _:
         case_callee[1]()
@@ -975,6 +975,103 @@ def match_optional_refined_payload(opt: Optional[Int]):
         case_callee[1]()
     case .None:
         case_callee[2]()
+
+
+struct SomeLinearType(Movable):
+    def __init__(out self): pass
+    # Explicit move ctor so we can see where it happens.
+    def __init__(out self, *, deinit move: Self): pass
+    def consume(deinit self): pass
+
+    def __eq__(self, other: Self) -> Bool:
+        return False
+
+
+def use(imm value: SomeLinearType):
+    pass
+
+
+def make_linear_optional() -> Optional[SomeLinearType]:
+    return SomeLinearType()
+
+
+def make_linear_tuple() -> Tuple[SomeLinearType, SomeLinearType]:
+    return (SomeLinearType(), SomeLinearType())
+
+
+# CHECK-LABEL: lit.fn @"match_rvalue_tuple_var_binding
+# CHECK:          lit.ref.to_pointer
+# CHECK:          lit.ref.from_pointer {{.*}}end_uninit
+# CHECK:          lit.ref.to_pointer
+# CHECK:          lit.ref.from_pointer {{.*}}end_uninit
+# CHECK:          lit.ownership.mark_destroyed
+# CHECK:          lit.var.decl "anonymous*" synth
+# CHECK:          lit.var.decl "x" var
+# CHECK-NOT:      lit.memcpy
+def match_rvalue_tuple_var_binding():
+    match make_linear_tuple():
+    case (var x, _):
+        x^.consume()
+
+
+# A final `var` binding can take an rvalue match subject. Earlier immutable
+# bindings only borrow it.
+# CHECK-LABEL: lit.fn @"match_rvalue_var_binding
+# CHECK-NEXT:    lit.ownership.use %arg
+# CHECK-NEXT:    hlcf.match {
+# CHECK-NEXT:      [[BORROWED_ARG:%.*]] = lit.ref.immut %arg
+# CHECK-NEXT:      {{.*}}@"__eq__{{.*}}([[BORROWED_ARG]], %a)
+# CHECK:           hlcf.match.complete
+# CHECK-NEXT:    }
+# CHECK-NEXT:    case {
+# CHECK-NEXT:      [[X:%.*]] = lit.var.decl "x" var
+# CHECK-NOT:       lit.memcpy
+# CHECK-NEXT:      {{.*}}@"__init__(move{{.*}}(%arg, [[X]])
+# CHECK-NEXT:      lit.ownership.use [[X]]
+# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[X]])
+def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
+    match arg^:
+    case == a:
+        use(a)
+    case var x:
+        x^.consume()
+
+
+# CHECK-LABEL: lit.fn @"if_case_rvalue_optional_var_binding
+# CHECK-NEXT:    [[SUBJECT:%.*]] = lit.var.decl "__call_result_tmp__" synth
+# CHECK-NEXT:    {{.*}}@"make_linear_optional{{.*}}([[SUBJECT]])
+# CHECK-NEXT:    hlcf.match {
+# CHECK-NEXT:      [[TAG_REF:%.*]] = lit.ref.immut [[SUBJECT]]
+# CHECK-NEXT:      [[TAG:%.*]] = lit.call {{.*}}@"_get_enum_discriminant{{.*}}([[TAG_REF]])
+# CHECK-NEXT:      [[REBIND:%.*]] = kgen.rebind [[TAG]]
+# CHECK-NEXT:      [[SOME:%.*]] = kgen.param.constant
+# CHECK-NEXT:      [[IS_SOME:%.*]] = lit.call {{.*}}@"__eq__{{.*}}([[REBIND]], [[SOME]])
+# CHECK-NEXT:      [[COND:%.*]] = lit.call {{.*}}@"__mlir_bool{{.*}}([[IS_SOME]])
+# CHECK-NEXT:      hlcf.if [[COND]] {
+# CHECK-NEXT:        hlcf.yield
+# CHECK-NEXT:      } else {
+# CHECK-NEXT:        hlcf.match.next
+# CHECK-NEXT:      }
+# CHECK-NEXT:      [[PAYLOAD_REF:%.*]] = lit.ref.immut [[SUBJECT]]
+# CHECK-NEXT:      [[PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[PAYLOAD_REF]])
+# CHECK-NEXT:      [[CONSUMING_REF:%.*]] = lit.ref.immut [[SUBJECT]]
+# CHECK-NEXT:      [[CONSUMING_PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[CONSUMING_REF]])
+# CHECK-NEXT:      [[PAYLOAD_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
+# CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[PAYLOAD_PTR]] end_uninit
+# CHECK-NEXT:      lit.ownership.mark_destroyed [[SUBJECT]]
+# CHECK-NEXT:      [[X:%.*]] = lit.var.decl "x" var
+# CHECK-NEXT:      {{.*}}@"__init__(move{{.*}}([[OWNED_PAYLOAD]], [[X]])
+# CHECK-NEXT:      lit.ownership.use [[X]]
+# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[X]])
+# CHECK-NEXT:      hlcf.match.complete
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    }
+def if_case_rvalue_optional_var_binding():
+    if case .Some(var x) = make_linear_optional():
+        x^.consume()
+    else:
+        pass
 
 
 # CHECK-LABEL: lit.fn @"match_optional

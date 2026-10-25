@@ -21,7 +21,6 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 )
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
-    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -324,15 +323,6 @@ def fa4_mma[
     # from the OTHER stage's S columns (TMEM_P{wg}). Shared-KV path only (the
     # headline config); split-KV is rejected at compile time.
     comptime CrossP = crossp_effective and type_of(mbars).CrossP_enabled
-    # Fires only for an explicit `-D FA4_TMEM_CROSS_P=true` on a config outside
-    # the support matrix. The ON-by-default path resolves `crossp_on()` to
-    # False on those configs instead, so it never reaches here.
-    comptime assert not (ExplicitTMEMCrossP and not config.crossp_on()), (
-        "FA4_TMEM_CROSS_P=true was requested on a config that does not"
-        " support cross-stage P. Supported: 2Q, non-warp-specialized,"
-        " single-CTA, shared-KV, MHA (no rope split), full pages. See"
-        " FA4Config.crossp_supported"
-    )
 
     # Called after consumer_s[*].wait(phase), which orders the vote write
     # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.

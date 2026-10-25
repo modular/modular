@@ -53,7 +53,8 @@ from std.builtin.dtype import _uint_type_of_width
 from std.memory.address_space import AddressSpace
 from std.memory.unsafe import bitcast
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
+from std.utils.coord import Coord, CoordLike
 from std.utils.numerics import get_accum_type
 
 from max._plugin import CurrentMaxPlugin
@@ -1170,8 +1171,8 @@ def cp_async_bulk_prefetch[
 
 @inline(.nodebug)
 def cp_async_bulk_prefetch_tensor[
-    rank: Int
-](tma_descriptor: OpaquePointer[mut=False, _], coords: IndexList[rank]):
+    coord_types: TypeList[Trait=CoordLike, ...]
+](tma_descriptor: OpaquePointer[mut=False, _], coords: Coord[*coord_types]):
     """Initiates an asynchronous prefetch of a tensor tile into the L2 cache.
 
     Reads the box that the TMA descriptor places at `coords` from global
@@ -1182,13 +1183,14 @@ def cp_async_bulk_prefetch_tensor[
     Requires sm_90 or higher.
 
     Parameters:
-        rank: The dimensionality of the tensor (1 to 5).
+        coord_types: The element types of the coordinates (1 to 5 elements).
 
     Args:
         tma_descriptor: Pointer to the TMA descriptor of the tensor.
         coords: The coordinates of the box, innermost dimension first.
     """
     comptime assert _is_sm_9x_or_newer(), "TMA prefetch requires sm_90 or newer"
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank >= 1 and rank <= 5, "rank must be 1 to 5"
     comptime asm = String(
         "cp.async.bulk.prefetch.tensor.", rank, "d.L2.global.tile [$0, {"
@@ -1330,7 +1332,7 @@ def cp_async_bulk_reduce_global_shared_cta[
 def cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType,  # Type of the destination memory
     mbr_type: AnyType,  # Type of the memory barrier
-    rank: Int,  # Dimensionality of the tensor (1, 2, or 3)
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -1339,7 +1341,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
 ):
     """Initiates an asynchronous bulk copy operation of tensor data from global memory to shared memory.
 
@@ -1350,7 +1352,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
     Parameters:
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
-        rank: The dimensionality of the tensor (1, 2, or 3).
+        coord_types: The element types of the coordinates (1 to 5 elements).
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
         eviction_policy: Optional cache eviction policy that controls how the data is handled
                         in the cache hierarchy. Defaults to EVICT_NORMAL.
@@ -1374,6 +1376,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
     - Requires NVIDIA GPU with TMA support.
     - The memory barrier should be properly initialized before use.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert (
         rank <= 5
     ), "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
@@ -1533,7 +1536,7 @@ def cp_async_bulk_tensor_shared_cluster_global[
 def cp_async_bulk_tensor_shared_cluster_global_elect[
     dst_type: AnyType,
     mbr_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -1542,7 +1545,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
     elect: Int32,
 ):
     """Elect-predicated variant of `cp_async_bulk_tensor_shared_cluster_global`.
@@ -1556,7 +1559,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     Parameters:
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
-        rank: The dimensionality of the tensor (1, 2, 3, 4, or 5).
+        coord_types: The element types of the coordinates (1 to 5 elements).
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
         eviction_policy: Optional cache eviction policy. Defaults to
             `EVICT_NORMAL`.
@@ -1570,6 +1573,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             single elected lane (issue the TMA). Typically the `Int32`
             returned by `elect()` from `nn.attention.gpu.nvidia.sm100.attention_utils`.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert (
         rank <= 5
     ), "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
@@ -1854,7 +1858,8 @@ def cp_async_bulk_tensor_2d_gather4[
 def cp_async_bulk_tensor_shared_cluster_global_im2col[
     dst_type: AnyType,
     mbr_type: AnyType,
-    tensor_rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
+    filter_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -1862,8 +1867,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[tensor_rank],
-    filter_offsets: IndexList[tensor_rank - 2],
+    coords: Coord[*coord_types],
+    filter_offsets: Coord[*filter_types],
 ):
     """Initiates an asynchronous TMA load with im2col addressing for convolution.
 
@@ -1884,7 +1889,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
     Parameters:
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
-        tensor_rank: The rank of the tensor (3, 4, or 5).
+        coord_types: The element types of the coordinates (3, 4, or 5 elements).
+        filter_types: The element types of the filter offsets.
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
@@ -1894,6 +1900,10 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
         coords: Tensor coordinates (c, w, h, n for 4D).
         filter_offsets: Filter window offsets (offset_w, offset_h for 4D).
     """
+    comptime tensor_rank = Coord[*coord_types].rank
+    comptime assert (
+        Coord[*filter_types].rank == tensor_rank - 2
+    ), "im2col filter offsets must have two fewer dimensions than coords"
     comptime assert tensor_rank in (
         3,
         4,
@@ -2034,7 +2044,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
 def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     dst_type: AnyType,
     mbr_type: AnyType,
-    tensor_rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
+    filter_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -2042,8 +2053,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[tensor_rank],
-    filter_offsets: IndexList[tensor_rank - 2],
+    coords: Coord[*coord_types],
+    filter_offsets: Coord[*filter_types],
     multicast_mask: UInt16,
 ):
     """Initiates an asynchronous multicast TMA load with im2col addressing.
@@ -2064,7 +2075,8 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     Parameters:
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
-        tensor_rank: The rank of the tensor (3, 4, or 5).
+        coord_types: The element types of the coordinates (3, 4, or 5 elements).
+        filter_types: The element types of the filter offsets.
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
@@ -2075,6 +2087,10 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
         filter_offsets: Filter window offsets (offset_w, offset_h for 4D).
         multicast_mask: Bitmask specifying target CTAs for multicast.
     """
+    comptime tensor_rank = Coord[*coord_types].rank
+    comptime assert (
+        Coord[*filter_types].rank == tensor_rank - 2
+    ), "im2col filter offsets must have two fewer dimensions than coords"
     comptime assert tensor_rank in (
         3,
         4,
@@ -2223,7 +2239,7 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
 def cp_async_bulk_tensor_shared_cluster_global_multicast[
     dst_type: AnyType,
     mbr_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     cta_group: Int = 1,
@@ -2231,7 +2247,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
     multicast_mask: UInt16,
 ):
     """Initiates an asynchronous multicast load operation using NVIDIA's Tensor Memory Access (TMA)
@@ -2244,7 +2260,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     Parameters:
         dst_type: The data type of the destination tensor elements.
         mbr_type: The data type of the memory barrier.
-        rank: The dimensionality of the tensor (must be 1 or 2).
+        coord_types: The element types of the coordinates (1 to 4 elements).
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
@@ -2269,6 +2285,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     - The memory barrier should be properly initialized before use.
     - The multicast_mask must be properly configured based on cluster size and desired distribution.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank in (
         1,
         2,
@@ -2409,13 +2426,13 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
 @inline(.always)
 def cp_async_bulk_tensor_global_shared_cta[
     src_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
 ):
     """Initiates an asynchronous copy operation to transfer tensor data from shared CTA
     memory to global memory using NVIDIA's Tensor Memory Access (TMA) mechanism.
@@ -2426,7 +2443,7 @@ def cp_async_bulk_tensor_global_shared_cta[
 
     Parameters:
         src_type: The data type of the source tensor elements.
-        rank: The dimensionality of the tensor (must be 1, 2, or 3).
+        coord_types: The element types of the coordinates (1 to 5 elements).
         eviction_policy: Optional cache eviction policy that controls how the data is handled
                         in the cache hierarchy. Defaults to EVICT_NORMAL.
 
@@ -2447,6 +2464,7 @@ def cp_async_bulk_tensor_global_shared_cta[
     - The source memory must be properly aligned for TMA operations.
     - The TMA descriptor must be properly initialized before use.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank in (
         1,
         2,
@@ -2513,13 +2531,13 @@ def cp_async_bulk_tensor_global_shared_cta[
 @inline(.always)
 def cp_async_bulk_tensor_global_shared_cta_elect[
     src_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
     elect: Int32,
 ):
     """Elect-predicated variant of `cp_async_bulk_tensor_global_shared_cta`.
@@ -2532,7 +2550,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
 
     Parameters:
         src_type: The data type of the source tensor elements.
-        rank: The dimensionality of the tensor (1, 2, 3, 4, or 5).
+        coord_types: The element types of the coordinates (1 to 5 elements).
         eviction_policy: Optional cache eviction policy. Defaults to
             `EVICT_NORMAL`.
 
@@ -2544,6 +2562,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
             elected lane (issue the TMA). Typically the `Int32` returned by
             `elect()` from `nn.attention.gpu.nvidia.common`.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank in (
         1,
         2,
@@ -2718,7 +2737,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
 @inline(.always)
 def cp_async_bulk_tensor_reduce_global_shared_cta[
     src_type: AnyType,
-    rank: Int,
+    coord_types: TypeList[Trait=CoordLike, ...],
     /,
     *,
     reduction_kind: ReduceOp,
@@ -2726,7 +2745,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
 ](
     src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    coords: IndexList[rank],
+    coords: Coord[*coord_types],
 ):
     """Initiates an asynchronous reduction operation between shared CTA memory and global memory
     using NVIDIA's Tensor Memory Access (TMA) mechanism.
@@ -2737,7 +2756,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
 
     Parameters:
         src_type: The data type of the source tensor elements.
-        rank: The dimensionality of the tensor (must be 1 or 2).
+        coord_types: The element types of the coordinates (1 to 3 elements).
         reduction_kind: The dtype of reduction operation to perform. Supported operations are:
                        "add", "min", "max", "inc", "dec", "and", "or", "xor".
         eviction_policy: Optional cache eviction policy that controls how the data is handled
@@ -2761,6 +2780,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
     - The TMA descriptor must be properly initialized before use.
     - The reduction operation is performed atomically to ensure correctness.
     """
+    comptime rank = Coord[*coord_types].rank
     comptime assert rank in (
         1,
         2,

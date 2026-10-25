@@ -1874,15 +1874,12 @@ def _histsel_topk_impl[
                                                 wcur_p, UInt32(1)
                                             )
                                         )
-                                        # Wrap instead of testing the cap: a warp
-                                        # that overruns its region turns `parked`
-                                        # off for the whole block below, so nothing
-                                        # reads `cand` afterwards and what the
-                                        # wrapped slots hold cannot matter.
-                                        cand[
-                                            wbase
-                                            + (slot & (_HSEL_WARP_CAP - 1))
-                                        ] = Int32(base + j)
+                                        # A warp that overruns its region turns
+                                        # `parked` off for the whole block below,
+                                        # so nothing reads `cand` afterwards and
+                                        # the overflow can be dropped.
+                                        if slot < _HSEL_WARP_CAP:
+                                            cand[wbase + slot] = Int32(base + j)
                                         if ph[j] <= shi:
                                             _ = Atomic[
                                                 UInt32, scope=BLOCK_SCOPE

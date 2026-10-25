@@ -38,7 +38,7 @@ from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
-from max.pipelines.lib import CompilationTimer
+from max.pipelines.lib import CompilationTimer, PipelineModel
 from max.pipelines.lib.graph_specs import GraphRole
 
 from .diffusion_gemma import (
@@ -66,6 +66,19 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
     """
 
     decoder_model: Model
+
+    # The donor mixes in ``LogProbabilitiesMixin``, which claims the
+    # capability by overriding ``compute_log_probabilities``. This port
+    # inherits that claim through the donor, but never computes log
+    # probabilities: the generation loop denoises a canvas and asks for
+    # neither the per-token logits nor the logprobs graph. Both capability
+    # checks (``_computes_log_probabilities`` in the OpenAI route and the
+    # same identity test in ``generate``) compare this attribute against the
+    # base implementation, so binding the base implementation back is how a
+    # subclass reports "no": an ``echo`` + ``logprobs`` request must not be
+    # rejected for want of ``--enable-echo`` on a model that could not score
+    # it anyway.
+    compute_log_probabilities = PipelineModel.compute_log_probabilities
 
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
         assert self.max_batch_size, "Expected max_batch_size to be set"

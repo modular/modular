@@ -31,6 +31,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -58,7 +59,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -200,11 +201,15 @@ def main() raises:
                     # from 16*1 till 16*16 which is 256
                     # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
 
-                    comptime block_tile_shape = Index(
-                        64 * mma_m_scale, 8 * mma_n_scale, BK
+                    comptime block_tile_shape = (
+                        64 * mma_m_scale,
+                        8 * mma_n_scale,
+                        BK,
                     )
-                    comptime umma_shape = Index(
-                        128 * mma_m_scale, 16 * mma_n_scale, MMA_K
+                    comptime umma_shape = (
+                        128 * mma_m_scale,
+                        16 * mma_n_scale,
+                        MMA_K,
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[

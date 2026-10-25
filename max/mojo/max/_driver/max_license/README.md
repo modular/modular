@@ -311,6 +311,14 @@ extensions: a common hook *holds* the extensions a vendor implements.
 In short, plugin hooks are what the *compiler* knows about a backend, and the
 HAL plugin is what the backend does at *run time*.
 
+### Plugin points beyond the driver
+
+The driver plugin is one of four extension points through which a new device
+reaches Mojo and MAX. The others are the codegen backend the compiler loads
+and the compile-time hook traits of the standard library and MAX. See the
+hardware plugins README (`max/mojo/max/_plugin/README.md`) for all four and how
+a compilation target selects its hooks.
+
 ### Capability-based extensions
 
 It isn't always possible, or useful, to abstract differences between hardware

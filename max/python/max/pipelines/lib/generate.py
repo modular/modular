@@ -392,6 +392,37 @@ def _has_inline_image(message: object) -> bool:
     )
 
 
+def _image_rows(images: object, noun: str) -> list[list[bytes | Image.Image]]:
+    """Returns ``images`` as one list of images per ``noun``.
+
+    Raises:
+        TypeError: If ``images`` is not a list of lists of encoded bytes or
+            PIL images.
+    """
+    shape_error = TypeError(
+        f"images must be a list of image lists, one per {noun}, each image "
+        f"encoded bytes or a PIL image. Wrap one {noun}'s images as [images]."
+    )
+    flat_types = (bytes, bytearray, str, Image.Image)
+    # A bare image, or the flat list of PIL images Hugging Face takes, whose
+    # items don't iterate.
+    if isinstance(images, flat_types) or not isinstance(images, Iterable):
+        raise shape_error
+    rows: list[list[object]] = []
+    for row in images:
+        if isinstance(row, flat_types) or not isinstance(row, Iterable):
+            raise shape_error
+        rows.append(list(row))
+    if not all(
+        isinstance(image, (bytes, Image.Image)) for row in rows for image in row
+    ):
+        raise shape_error
+    return [
+        [image for image in row if isinstance(image, (bytes, Image.Image))]
+        for row in rows
+    ]
+
+
 def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
@@ -434,26 +465,7 @@ def _materialize_conversations(
     if images is None:
         row_images: list[list[bytes | Image.Image]] = [[] for _ in rows]
     else:
-        shape_error = TypeError(
-            "images must be a list of image lists, one per row, each image "
-            "encoded bytes or a PIL image. Wrap one row's images as [images]."
-        )
-        image_rows = list(images)
-        # Hugging Face takes a flat list of PIL images, whose items don't
-        # iterate.
-        if any(
-            isinstance(row, (bytes, bytearray, str))
-            or not isinstance(row, Iterable)
-            for row in image_rows
-        ):
-            raise shape_error
-        row_images = [list(row) for row in image_rows]
-        if not all(
-            isinstance(image, (bytes, Image.Image))
-            for row in row_images
-            for image in row
-        ):
-            raise shape_error
+        row_images = _image_rows(images, "row")
         if len(row_images) != len(rows):
             raise ValueError(
                 f"images has {_plural(len(row_images), 'row')}, but messages "

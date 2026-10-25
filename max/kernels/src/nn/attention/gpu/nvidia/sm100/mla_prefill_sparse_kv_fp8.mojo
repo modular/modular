@@ -1377,9 +1377,19 @@ struct MLAPrefillSparseFP8[
                         var pad_row = Int(
                             head_local >= UInt32(Self.NUM_Q_HEADS_PER_CTA)
                         )
+                        # Each pad thread gets its own dump slot: the two
+                        # depth-column warps of a head row share head_local.
+                        var dump_slot = Int(
+                            depth_col_block
+                        ) * Self.PADDED_HEADS_PER_CTA + Int(head_local)
                         var store_off = (
                             smem_offset * (1 - pad_row)
-                            + (Self.SMemType.O_SIZE - 2) * pad_row
+                            + (
+                                Self.SMemType.O_SIZE
+                                - 2
+                                * (2 * Self.PADDED_HEADS_PER_CTA - dump_slot)
+                            )
+                            * pad_row
                         )
                         (o_ptr.unsafe_offset(store_off)).unsafe_store[width=2](
                             v

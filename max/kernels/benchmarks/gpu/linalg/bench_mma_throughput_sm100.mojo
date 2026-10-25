@@ -349,7 +349,7 @@ def mma_throughput_kernel[
         accum_type,
         a_type,
         a_type,
-        Index[dtype=DType.uint32](MMA_M, MMA_N),
+        (UInt32(MMA_M), UInt32(MMA_N)),
         transpose_b=True,
     ]()
 

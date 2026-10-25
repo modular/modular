@@ -636,7 +636,7 @@ def matmul_dispatch_sm90_fp8[
             transpose_b,
         ](
             block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, 128),
-            mma_shape=Index(64, WGMMA_N, 32),
+            mma_shape=(64, WGMMA_N, 32),
             cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
             num_pipeline_stages=NUM_PIPELINE_STAGES,
             num_consumer=NUM_CONSUMER,
@@ -657,7 +657,11 @@ def matmul_dispatch_sm90_fp8[
     def _dispatch[entry: TuningConfigSM90]() raises {imm}:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
-            mma_shape=entry.mma_shape,
+            mma_shape=(
+                entry.mma_shape[0],
+                entry.mma_shape[1],
+                entry.mma_shape[2],
+            ),
             cluster_shape=entry.cluster_shape,
             num_pipeline_stages=entry.num_pipeline_stages,
             num_consumer=entry.num_consumer,
@@ -736,7 +740,7 @@ def matmul_dispatch_sm90_fp8[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, BN, BK),
-                    mma_shape=Index(64, BN, 32),
+                    mma_shape=(64, BN, 32),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=6,
                     num_consumer=1,
@@ -755,7 +759,7 @@ def matmul_dispatch_sm90_fp8[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, BN, BK),
-                    mma_shape=Index(64, BN, 32),
+                    mma_shape=(64, BN, 32),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=6,
                     num_consumer=1,
@@ -779,7 +783,7 @@ def matmul_dispatch_sm90_fp8[
                     transpose_b,
                 ](
                     block_tile_shape=Index(128, BN, BK),
-                    mma_shape=Index(64, BN, 32),
+                    mma_shape=(64, BN, 32),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=4,
                     num_consumer=2,
@@ -903,7 +907,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 block_tile_shape=Index(
                     BLOCK_TILE_DIM_M, WGMMA_N // size_factor, BK
                 ),
-                mma_shape=Index(64, WGMMA_N // size_factor, mma_k),
+                mma_shape=(64, WGMMA_N // size_factor, mma_k),
                 cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
                 num_pipeline_stages=NUM_PIPELINE_STAGES,
                 num_consumer=NUM_CONSUMER,
@@ -951,7 +955,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     num_consumer=NUM_CONSUMER,
                     partitioned_multicast=PARTITIONED_MULTICAST,
                     pdl_level=pdl_level,
-                    mma_shape=Index(64, WGMMA_N, 16),
+                    mma_shape=(64, WGMMA_N, 16),
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -978,7 +982,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     num_consumer=NUM_CONSUMER,
                     partitioned_multicast=PARTITIONED_MULTICAST,
                     pdl_level=pdl_level,
-                    mma_shape=Index(64, WGMMA_N, 16),
+                    mma_shape=(64, WGMMA_N, 16),
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -1012,7 +1016,11 @@ def matmul_dispatch_sm90_bf16_fp32[
     def _dispatch[entry: TuningConfigSM90]() raises {imm}:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
-            mma_shape=entry.mma_shape,
+            mma_shape=(
+                entry.mma_shape[0],
+                entry.mma_shape[1],
+                entry.mma_shape[2],
+            ),
             cluster_shape=entry.cluster_shape,
             num_pipeline_stages=entry.num_pipeline_stages,
             num_consumer=entry.num_consumer,
@@ -1192,7 +1200,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 16, 64),
-                    mma_shape=Index(64, 16, 16),
+                    mma_shape=(64, 16, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
@@ -1217,7 +1225,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 24, 64),
-                    mma_shape=Index(64, 24, 16),
+                    mma_shape=(64, 24, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=14,
                     num_consumer=1,
@@ -1245,7 +1253,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 24, 64),
-                    mma_shape=Index(64, 24, 16),
+                    mma_shape=(64, 24, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
@@ -1270,7 +1278,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 32, 64),
-                    mma_shape=Index(64, 32, 16),
+                    mma_shape=(64, 32, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
@@ -1295,7 +1303,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 32, 64),
-                    mma_shape=Index(64, 32, 16),
+                    mma_shape=(64, 32, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=16,
                     num_consumer=1,
@@ -1320,7 +1328,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 40, 64),
-                    mma_shape=Index(64, 40, 16),
+                    mma_shape=(64, 40, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
@@ -1345,7 +1353,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 56, 64),
-                    mma_shape=Index(64, 56, 16),
+                    mma_shape=(64, 56, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
@@ -1370,7 +1378,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 48, 64),
-                    mma_shape=Index(64, 48, 16),
+                    mma_shape=(64, 48, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
@@ -1393,7 +1401,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 56, 64),
-                    mma_shape=Index(64, 56, 16),
+                    mma_shape=(64, 56, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
@@ -1416,7 +1424,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 64, 64),
-                    mma_shape=Index(64, 64, 16),
+                    mma_shape=(64, 64, 16),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=10,
                     num_consumer=1,
@@ -1438,7 +1446,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, 48, 64),
-                    mma_shape=Index(64, 48, 16),
+                    mma_shape=(64, 48, 16),
                     cluster_shape=Index(1, 2, 1),
                     num_pipeline_stages=14,
                     partitioned_multicast=False,
@@ -1519,7 +1527,7 @@ def matmul_dispatch_sm90_bf16_fp32[
         if m <= 16:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
-                mma_shape=Index(64, 64 // size_factor, mma_k),
+                mma_shape=(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=12,
                 num_consumer=1,
@@ -1538,7 +1546,7 @@ def matmul_dispatch_sm90_bf16_fp32[
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
-                mma_shape=Index(64, 64 // size_factor, mma_k),
+                mma_shape=(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
@@ -1559,7 +1567,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
+                mma_shape=(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1581,7 +1589,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
+                mma_shape=(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1601,7 +1609,7 @@ def matmul_dispatch_sm90_bf16_fp32[
         if m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 112 // size_factor, BK),
-                mma_shape=Index(64, 112 // size_factor, mma_k),
+                mma_shape=(64, 112 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
@@ -1622,7 +1630,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
+                mma_shape=(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1644,7 +1652,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
+                mma_shape=(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1664,7 +1672,7 @@ def matmul_dispatch_sm90_bf16_fp32[
         if m <= 16:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
-                mma_shape=Index(64, 64 // size_factor, mma_k),
+                mma_shape=(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=12,
                 num_consumer=1,
@@ -1683,7 +1691,7 @@ def matmul_dispatch_sm90_bf16_fp32[
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
-                mma_shape=Index(64, 64 // size_factor, mma_k),
+                mma_shape=(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
@@ -1704,7 +1712,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
+                mma_shape=(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1729,7 +1737,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 transpose_b,
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
+                mma_shape=(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1755,7 +1763,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 128 // size_factor, BK),
-                mma_shape=Index(64, 128 // size_factor, mma_k),
+                mma_shape=(64, 128 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1789,7 +1797,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, BN, BK),
-                    mma_shape=Index(64, BN, mma_k),
+                    mma_shape=(64, BN, mma_k),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=4,
                     num_consumer=1,
@@ -2003,7 +2011,7 @@ def matmul_dispatch_sm90_bf16_fp32[
             a_type, b_type, c_type, transpose_b
         ](
             block_tile_shape=Index(128, BN, 64),
-            mma_shape=Index(64, BN, mma_k),
+            mma_shape=(64, BN, mma_k),
             num_pipeline_stages=4,
             num_consumer=2,
             pdl_level=pdl_level,

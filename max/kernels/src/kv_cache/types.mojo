@@ -1015,9 +1015,9 @@ struct PagedRowIndices[
                                     stage_base.unsafe_offset(smem_off_oob_rm),
                                     desc_ptr,
                                     mbar.unsafe_ptr(),
-                                    Index(
-                                        0,
-                                        0,
+                                    (
+                                        Idx[0],
+                                        Idx[0],
                                         Int(depth_offset) // swizzle_gran,
                                         _OOB_ROW,
                                         Int(kv_head_idx),
@@ -1042,8 +1042,8 @@ struct PagedRowIndices[
                                     stage_base.unsafe_offset(smem_off_oob_f),
                                     desc_ptr,
                                     mbar.unsafe_ptr(),
-                                    Index(
-                                        0,
+                                    (
+                                        Idx[0],
                                         _OOB_ROW,
                                         Int(depth_offset) // swizzle_gran,
                                         Int(kv_head_idx),
@@ -1063,7 +1063,7 @@ struct PagedRowIndices[
                                         stage_base.unsafe_offset(smem_off_oob),
                                         desc_ptr,
                                         mbar.unsafe_ptr(),
-                                        Index(
+                                        (
                                             Int(depth_offset)
                                             + j * swizzle_gran,
                                             Int(kv_head_idx),
@@ -1098,15 +1098,14 @@ struct PagedRowIndices[
                     ),
                 )
                 cp_async_bulk_tensor_shared_cluster_global_elect[
-                    cta_group=Self.cta_group,
-                    eviction_policy=eviction_policy,
+                    cta_group=Self.cta_group, eviction_policy=eviction_policy
                 ](
                     stage_base.unsafe_offset(smem_off_rm),
                     desc_ptr,
                     mbar.unsafe_ptr(),
-                    Index(
-                        0,
-                        0,
+                    (
+                        Idx[0],
+                        Idx[0],
                         Int(depth_offset) // swizzle_gran,
                         row_rm // _SWIZZLE_ATOM_ROWS,
                         Int(kv_head_idx),
@@ -1124,14 +1123,13 @@ struct PagedRowIndices[
                 # covers `fold` chunks; the gran coord is 0.
                 comptime smem_off_f = (_p * tma_per_issue_rows * swizzle_gran)
                 cp_async_bulk_tensor_shared_cluster_global_elect[
-                    cta_group=Self.cta_group,
-                    eviction_policy=eviction_policy,
+                    cta_group=Self.cta_group, eviction_policy=eviction_policy
                 ](
                     stage_base.unsafe_offset(smem_off_f),
                     desc_ptr,
                     mbar.unsafe_ptr(),
-                    Index(
-                        0,
+                    (
+                        Idx[0],
                         Int(self.rows[src_idx]) + intra_page_row_ct,
                         Int(depth_offset) // swizzle_gran,
                         Int(kv_head_idx),
@@ -1151,7 +1149,7 @@ struct PagedRowIndices[
                         stage_base.unsafe_offset(smem_off),
                         desc_ptr,
                         mbar.unsafe_ptr(),
-                        Index(
+                        (
                             Int(depth_offset) + j * swizzle_gran,
                             Int(kv_head_idx),
                             Int(self.rows[src_idx]) + intra_page_row_ct,

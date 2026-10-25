@@ -20,7 +20,7 @@ from std.sys.info import current_accelerator
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
-from std.utils.index import IndexList
+from std.utils.coord import DynamicCoord
 from std.hash.hasher import Hasher
 
 # ===----------------------------------------------------------------------=== #
@@ -248,17 +248,17 @@ def _constrained_mma_n[
 
 @inline(.always)
 def _get_f16_mma_shape[
-    output_shape: IndexList[2, element_type=.uint32],
+    output_shape: DynamicCoord[.uint32, 2],
     /,
     *,
     use_cta_pair: Bool = False,
-]() -> IndexList[3, element_type=.uint32]:
+]() -> DynamicCoord[.uint32, 3]:
     """Get the shape of the MMA instruction for F16 MMA kind.
 
     This function returns the shape of the MMA instruction for F16 MMA kind.
     """
-    comptime mma_m = output_shape[0]
-    comptime mma_n = output_shape[1]
+    comptime mma_m = Int(output_shape[0])
+    comptime mma_n = Int(output_shape[1])
 
     comptime if not use_cta_pair:
         _constrained_mma_m[
@@ -277,7 +277,7 @@ def _get_f16_mma_shape[
                     UMMAKind.KIND_F16,
                     use_cta_pair=use_cta_pair,
                 ]()
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(16))
             case 128:
                 _constrained_mma_n[
                     mma_n,
@@ -287,7 +287,7 @@ def _get_f16_mma_shape[
                     use_cta_pair=use_cta_pair,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(16))
             case _:
                 comptime assert False, String(
                     "Invalid MMA shape: ", mma_m, mma_n
@@ -311,7 +311,7 @@ def _get_f16_mma_shape[
                     use_cta_pair=use_cta_pair,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(16))
             case 256:
                 _constrained_mma_n[
                     mma_n,
@@ -321,7 +321,7 @@ def _get_f16_mma_shape[
                     use_cta_pair=use_cta_pair,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(16))
             case _:
                 comptime assert False, String(
                     "Invalid MMA shape: ", mma_m, mma_n
@@ -330,18 +330,18 @@ def _get_f16_mma_shape[
 
 @inline(.always)
 def _get_tf32_mma_shape[
-    output_shape: IndexList[2, element_type=.uint32],
+    output_shape: DynamicCoord[.uint32, 2],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type=.uint32]:
+]() -> DynamicCoord[.uint32, 3]:
     """Get the shape of the MMA instruction for TF32 MMA kind.
 
     This function returns the shape of the MMA instruction for TF32 MMA kind.
     """
 
-    comptime mma_m = output_shape[0]
-    comptime mma_n = output_shape[1]
+    comptime mma_m = Int(output_shape[0])
+    comptime mma_n = Int(output_shape[1])
 
     comptime if not use_pair_cta:
         _constrained_mma_m[
@@ -361,7 +361,7 @@ def _get_tf32_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(8))
             case 128:
                 _constrained_mma_n[
                     mma_n,
@@ -371,7 +371,7 @@ def _get_tf32_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(8))
             case _:
                 comptime assert False, String(
                     "Invalid MMA shape: ", mma_m, mma_n
@@ -394,7 +394,7 @@ def _get_tf32_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(8))
             case 256:
                 _constrained_mma_n[
                     mma_n,
@@ -404,7 +404,7 @@ def _get_tf32_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(8))
             case _:
                 comptime assert False, String(
                     "Invalid MMA shape: ", mma_m, mma_n
@@ -413,18 +413,18 @@ def _get_tf32_mma_shape[
 
 @inline(.always)
 def _get_f8f6f4_mma_shape[
-    output_shape: IndexList[2, element_type=.uint32],
+    output_shape: DynamicCoord[.uint32, 2],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type=.uint32]:
+]() -> DynamicCoord[.uint32, 3]:
     """Get the shape of the MMA instruction for F8F6F4 MMA kind.
 
     This function returns the shape of the MMA instruction for F8F6F4 MMA kind.
     """
 
-    comptime mma_m = output_shape[0]
-    comptime mma_n = output_shape[1]
+    comptime mma_m = Int(output_shape[0])
+    comptime mma_n = Int(output_shape[1])
 
     comptime if not use_pair_cta:
         _constrained_mma_m[
@@ -444,7 +444,7 @@ def _get_f8f6f4_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(32))
             case 128:
                 _constrained_mma_n[
                     mma_n,
@@ -454,7 +454,7 @@ def _get_f8f6f4_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(32))
 
             case _:
                 comptime assert False, String(
@@ -479,7 +479,7 @@ def _get_f8f6f4_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(32))
             case 256:
                 _constrained_mma_n[
                     mma_n,
@@ -489,7 +489,7 @@ def _get_f8f6f4_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(32))
             case _:
                 comptime assert False, String(
                     "Invalid MMA shape: ", mma_m, mma_n
@@ -498,18 +498,18 @@ def _get_f8f6f4_mma_shape[
 
 @inline(.always)
 def _get_mxf8f6f4_mma_shape[
-    output_shape: IndexList[2, element_type=.uint32],
+    output_shape: DynamicCoord[.uint32, 2],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type=.uint32]:
+]() -> DynamicCoord[.uint32, 3]:
     """Get the shape of the MMA instruction for MXF8F6F4 MMA kind.
 
     This function returns the shape of the MMA instruction for MXF8F6F4 MMA kind.
     """
 
-    comptime mma_m = output_shape[0]
-    comptime mma_n = output_shape[1]
+    comptime mma_m = Int(output_shape[0])
+    comptime mma_n = Int(output_shape[1])
 
     comptime if not use_pair_cta:
         _constrained_mma_m[
@@ -528,7 +528,7 @@ def _get_mxf8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+            return (UInt32(mma_m), UInt32(mma_n), UInt32(32))
 
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
@@ -551,7 +551,7 @@ def _get_mxf8f6f4_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(32))
             case 256:
                 _constrained_mma_n[
                     mma_n,
@@ -561,7 +561,7 @@ def _get_mxf8f6f4_mma_shape[
                     use_cta_pair=use_pair_cta,
                 ]()
 
-                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+                return (UInt32(mma_m), UInt32(mma_n), UInt32(32))
             case _:
                 comptime assert False, String(
                     "Invalid MMA shape: ", mma_m, mma_n
@@ -893,7 +893,7 @@ struct UMMAInsDescriptor[
         d_type: DType,
         a_type: DType,
         b_type: DType,
-        output_shape: IndexList[2, element_type=.uint32],
+        output_shape: DynamicCoord[.uint32, 2],
         /,
         *,
         transpose_a: Bool = False,
@@ -959,7 +959,7 @@ struct UMMAInsDescriptor[
         a_type: DType,
         b_type: DType,
         scale_type: DType,
-        output_shape: IndexList[2, element_type=.uint32],
+        output_shape: DynamicCoord[.uint32, 2],
         /,
         *,
         transpose_a: Bool = False,
@@ -1424,7 +1424,7 @@ def mma[
 
     comptime match cta_group:
         case 1:
-            var masks = IndexList[4, element_type=DType.uint32](0)
+            var masks = DynamicCoord[.uint32, 4]()
 
             inlined_assembly[
                 """{
@@ -1448,7 +1448,7 @@ def mma[
                 masks[3],
             )
         case 2:
-            var masks = IndexList[8, element_type=DType.uint32](0)
+            var masks = DynamicCoord[.uint32, 8]()
 
             inlined_assembly[
                 """{
@@ -1609,7 +1609,7 @@ def mma[
 
     comptime match cta_group:
         case 1:
-            var masks = IndexList[4, element_type=DType.uint32](0)
+            var masks = DynamicCoord[.uint32, 4]()
 
             inlined_assembly[
                 """{
@@ -1633,7 +1633,7 @@ def mma[
                 masks[3],
             )
         case 2:
-            var masks = IndexList[8, element_type=DType.uint32](0)
+            var masks = DynamicCoord[.uint32, 8]()
 
             inlined_assembly[
                 """{
@@ -1696,7 +1696,7 @@ def mma[
 
     comptime match cta_group:
         case 1:
-            var masks = IndexList[4, element_type=DType.uint32](0)
+            var masks = DynamicCoord[.uint32, 4]()
 
             inlined_assembly[
                 """{
@@ -1720,7 +1720,7 @@ def mma[
                 masks[3],
             )
         case 2:
-            var masks = IndexList[8, element_type=DType.uint32](0)
+            var masks = DynamicCoord[.uint32, 8]()
 
             inlined_assembly[
                 """{
@@ -1788,7 +1788,7 @@ def mma[
 
     comptime match cta_group:
         case 1:
-            var masks = IndexList[4, element_type=DType.uint32](0)
+            var masks = DynamicCoord[.uint32, 4]()
 
             inlined_assembly[
                 """{
@@ -1812,7 +1812,7 @@ def mma[
                 masks[3],
             )
         case 2:
-            var masks = IndexList[8, element_type=DType.uint32](0)
+            var masks = DynamicCoord[.uint32, 8]()
 
             inlined_assembly[
                 """{

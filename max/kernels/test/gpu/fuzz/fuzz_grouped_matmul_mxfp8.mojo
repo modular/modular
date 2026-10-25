@@ -91,7 +91,7 @@ comptime K = get_defined_int["K", 1024]()
 comptime num_experts = get_defined_int["num_experts", 8]()
 
 comptime block_tile_shape = Index(bm, bn, BK)
-comptime umma_shape = Index(bm, bn, MMA_K)
+comptime umma_shape = (bm, bn, MMA_K)
 comptime k_groups = ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
 comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
 

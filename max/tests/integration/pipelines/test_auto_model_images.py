@@ -42,7 +42,7 @@ from max.pipelines.lib import (
     auto_pipeline,
 )
 from max.pipelines.lib.generate_images import GenerateImagesResult
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 from PIL import Image
 from test_common.fake_weights import write_fake_safetensors
 
@@ -117,12 +117,14 @@ def test_generate_passes_every_image_argument(
     with _load(image_model_path) as model:
         model.generate(
             prompt=["a", "b"],
+            images=[[], [b"image"]],
             negative_prompt="c",
             height=256,
             width=512,
             num_inference_steps=4,
             guidance_scale=2.0,
             true_cfg_scale=1.5,
+            strength=0.4,
             num_images_per_prompt=2,
             seed=9,
         )
@@ -132,12 +134,14 @@ def test_generate_passes_every_image_argument(
         (
             (pipeline, tokenizer, ["a", "b"]),
             {
+                "images": [[], [b"image"]],
                 "negative_prompt": "c",
                 "height": 256,
                 "width": 512,
                 "num_inference_steps": 4,
                 "guidance_scale": 2.0,
                 "true_cfg_scale": 1.5,
+                "strength": 0.4,
                 "num_images_per_prompt": 2,
                 "seed": 9,
                 "caller": "AutoModel",
@@ -288,7 +292,13 @@ def test_auto_pipeline_generates_images(
     )
     with AutoPipeline(image_model_path, devices="cpu") as pipe:
         one = pipe("a fox", height=256, width=512, seed=3)
-        many = pipe(["a", "b"], negative_prompt="c", num_images_per_prompt=2)
+        many = pipe(
+            ["a", "b"],
+            images=[[], [b"image"]],
+            negative_prompt="c",
+            strength=0.5,
+            num_images_per_prompt=2,
+        )
         with pytest.raises(ValueError, match="has no text tokenizer"):
             _ = pipe.tokenizer
     assert tokenizers == []
@@ -299,6 +309,8 @@ def test_auto_pipeline_generates_images(
     assert image_results[0]["seed"] == 3
     assert image_results[1]["prompt"] == ["a", "b"]
     assert image_results[1]["negative_prompt"] == "c"
+    assert image_results[1]["images"] == [[], [b"image"]]
+    assert image_results[1]["strength"] == 0.5
     assert image_results[1]["caller"] == "AutoModel"
 
 
@@ -380,3 +392,12 @@ def test_every_text_argument_is_rejected_on_an_image_model(
             assert str(error.value).startswith(
                 f"{name} is for text generation models"
             )
+
+
+@pytest.mark.parametrize("name", ["Flux2KleinPipeline", "ZImagePipeline"])
+def test_image_to_image_architectures_take_images(name: str) -> None:
+    arch = PIPELINE_REGISTRY.retrieve_architecture(
+        name, task=PipelineTask.PIXEL_GENERATION
+    )
+    assert arch is not None
+    assert InputModality.IMAGE in arch.input_modalities

@@ -28,6 +28,7 @@ from std.collections.set import Set
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from std.itertools.itertools import product
+from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
 from layout.tensor_core import get_mma_shape
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -353,15 +354,15 @@ def _maximize_pipeline_stages[
     if use_tma_epilogue_load:
         var num_epi_stages = num_tma_epilogue_pipeline_stages
         if epilogue_is_1d:
-            var bias_tile_elems = block_tile_shape[
-                0
-            ] if AB_swapped else mma_shape[1]
+            var bias_tile_elems = block_tile_shape[0] if AB_swapped else Int(
+                mma_shape[1]
+            )
             epi_load_smem_bytes = (
                 bias_tile_elems * num_epi_stages * size_of[c_type]()
             )
         elif AB_swapped:
             epi_load_smem_bytes = (
-                mma_shape[1]
+                Int(mma_shape[1])
                 * block_tile_shape[0]
                 * num_epi_stages
                 * size_of[c_type]()
@@ -437,7 +438,15 @@ def _write_common_config[
     writer.write(a_type, "_")
     writer.write(c_type, "_")
     writer.write("cta", cta_group, "_")
-    writer.write("mma", mma_shape[0], "x", mma_shape[1], "x", mma_shape[2], "_")
+    writer.write(
+        "mma",
+        Int(mma_shape[0]),
+        "x",
+        Int(mma_shape[1]),
+        "x",
+        Int(mma_shape[2]),
+        "_",
+    )
     writer.write(
         "cluster",
         cluster_shape[0],
@@ -519,11 +528,11 @@ def _get_common_config_string[
         + "_"
         + String(cta_group)
         + "sm_"
-        + String(mma_shape[0] // cta_group)
+        + String(Int(mma_shape[0]) // cta_group)
         + "x"
-        + String(mma_shape[1] // cta_group)
+        + String(Int(mma_shape[1]) // cta_group)
         + "x"
-        + String(mma_shape[2])
+        + String(Int(mma_shape[2]))
         + "_"
         + String(cluster_shape[0])
         + "x"
@@ -582,7 +591,7 @@ def _maximize_tma_epi_pipeline_stages[
 
     if AB_swapped or epilogue_is_1d:
         return num_accum_pipeline_stages
-    elif mma_shape[0] == mma_shape[1] == 256:
+    elif Int(mma_shape[0]) == Int(mma_shape[1]) == 256:
         return 1
     elif max_num_pipeline_stages_wo_tma_epi >= 8:
         return 4
@@ -646,7 +655,9 @@ struct MatmulConfig[
         out self,
         *,
         cta_group: Int = 2,
-        mma_shape: IndexList[3] = get_mma_shape[Self.a_type, Self.accum_type](),
+        mma_shape: DynamicCoord[.int, 3] = get_mma_shape[
+            Self.a_type, Self.accum_type
+        ](),
         cluster_shape: IndexList[3] = Index(2, 1, 1),
         AB_swapped: Bool = False,
         num_split_k: Int = 1,
@@ -672,7 +683,7 @@ struct MatmulConfig[
         ), "float32 input only supports float32 output"
 
         self.cta_group = cta_group
-        self.mma_shape = mma_shape
+        self.mma_shape = coord_to_index_list(mma_shape)
         self.cluster_shape = cluster_shape
         self.AB_swapped = AB_swapped
         self.block_swizzle_size = block_swizzle_size
@@ -685,10 +696,13 @@ struct MatmulConfig[
         self.epilogue_is_1d = epilogue_is_1d
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
-            mma_shape, cta_group
+            (mma_shape[0], mma_shape[1], mma_shape[2]), cta_group
         )
         self.output_tile_shape = _compute_output_tile_shape(
-            Self.c_type, mma_shape, cta_group, AB_swapped
+            Self.c_type,
+            (mma_shape[0], mma_shape[1], mma_shape[2]),
+            cta_group,
+            AB_swapped,
         )
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
@@ -798,7 +812,11 @@ struct MatmulConfig[
             Self.b_type, Self.a_type, Self.c_type, Self.transpose_b
         ](
             cta_group=self.cta_group,
-            mma_shape=self.mma_shape,
+            mma_shape=(
+                self.mma_shape[0],
+                self.mma_shape[1],
+                self.mma_shape[2],
+            ),
             cluster_shape=self.cluster_shape,
             AB_swapped=self.AB_swapped,
             num_pipeline_stages=self.num_pipeline_stages,
@@ -1061,9 +1079,7 @@ def choose_config[
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
     var config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        mma_shape=IndexList[3](
-            mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()
-        ),
+        mma_shape=(mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()),
         cta_group=cta_group,
         cluster_shape=Index(cta_group, 1, 1),
         AB_swapped=swapAB,
@@ -1262,7 +1278,9 @@ struct BlockScaledMatmulConfig[
         *,
         scaling_kind: UMMAKind,
         cta_group: Int = 2,
-        mma_shape: IndexList[3] = get_mma_shape[Self.a_type, Self.accum_type](),
+        mma_shape: DynamicCoord[.int, 3] = get_mma_shape[
+            Self.a_type, Self.accum_type
+        ](),
         cluster_shape: IndexList[3] = Index(2, 1, 1),
         AB_swapped: Bool = False,
         num_split_k: Int = 1,
@@ -1293,7 +1311,7 @@ struct BlockScaledMatmulConfig[
 
         self.cta_group = cta_group
         self.is_small_bn = is_small_bn
-        self.mma_shape = mma_shape
+        self.mma_shape = coord_to_index_list(mma_shape)
         self.cluster_shape = cluster_shape
         self.AB_swapped = AB_swapped
         self.block_swizzle_size = block_swizzle_size
@@ -1302,10 +1320,13 @@ struct BlockScaledMatmulConfig[
         self.register_based_epilogue = register_based_epilogue
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
-            mma_shape, cta_group
+            (mma_shape[0], mma_shape[1], mma_shape[2]), cta_group
         )
         self.output_tile_shape = _compute_output_tile_shape(
-            Self.c_type, mma_shape, cta_group, AB_swapped
+            Self.c_type,
+            (mma_shape[0], mma_shape[1], mma_shape[2]),
+            cta_group,
+            AB_swapped,
         )
 
         self.gemm_kind = gemm_kind
@@ -1360,7 +1381,7 @@ struct BlockScaledMatmulConfig[
         var b_scales_smem_bytes_per_stage = (
             self.num_sf_k_tiles
             * (
-                align_up(self.mma_shape[1], SF_MN_GROUP_SIZE)
+                align_up(Int(self.mma_shape[1]), SF_MN_GROUP_SIZE)
                 // SF_MN_GROUP_SIZE
             )
             * Self.sf_block_atom_size
@@ -1440,7 +1461,11 @@ struct BlockScaledMatmulConfig[
             Self.transpose_b,
         ](
             cta_group=self.cta_group,
-            mma_shape=self.mma_shape,
+            mma_shape=(
+                self.mma_shape[0],
+                self.mma_shape[1],
+                self.mma_shape[2],
+            ),
             cluster_shape=self.cluster_shape,
             AB_swapped=self.AB_swapped,
             num_pipeline_stages=self.num_pipeline_stages,
@@ -1689,9 +1714,7 @@ def choose_block_scaled_config[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ](
         scaling_kind=scaling_kind,
-        mma_shape=IndexList[3](
-            mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()
-        ),
+        mma_shape=(mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()),
         cta_group=cta_group,
         cluster_shape=Index(cta_group, 1, 1),
         AB_swapped=swapAB,
@@ -1747,8 +1770,10 @@ def build_block_scaled_configs[
     # one unsupported tile in this comptime-instantiated set fails the whole
     # compile; a shape with no matching config falls through to vendor.
     def _kernel_supported(cfg: config_t) {} -> Bool:
-        var mma_m_ok = cfg.mma_shape[0] == (256 if cfg.cta_group == 2 else 128)
-        return mma_m_ok and cfg.mma_shape[1] in (64, 128, 192, 256)
+        var mma_m_ok = Int(cfg.mma_shape[0]) == (
+            256 if cfg.cta_group == 2 else 128
+        )
+        return mma_m_ok and Int(cfg.mma_shape[1]) in (64, 128, 192, 256)
 
     for m in range(8, 128, 8):  # [8, 128]
         var config = choose_block_scaled_config[
@@ -1807,8 +1832,10 @@ def default_matmul_config_bf16_fp8[
     )
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        mma_shape=IndexList[3](
-            umma_shape[0], umma_shape[1], Kbytes_per_mma // size_of[a_type]()
+        mma_shape=(
+            umma_shape[0],
+            umma_shape[1],
+            Kbytes_per_mma // size_of[a_type](),
         ),
         cta_group=cta_group,
         cluster_shape=Index(cta_group, 1, 1),

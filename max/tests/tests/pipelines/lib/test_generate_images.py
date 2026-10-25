@@ -20,6 +20,8 @@ without a checkpoint.
 
 from __future__ import annotations
 
+import dataclasses
+import io
 from collections.abc import Callable
 from unittest.mock import MagicMock
 
@@ -42,6 +44,7 @@ from max.pipelines.lib.generate_images import (
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.modeling.types import (
+    InputModality,
     PipelineOutputsDict,
     PixelGenerationInputs,
     RequestID,
@@ -53,11 +56,19 @@ from max.pipelines.request import (
     OutputTextContent,
 )
 from max.pipelines.request.provider_options import ImageProviderOptions
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 MODEL_PATH = "org/image-model"
 # The fake tokenizer's size when a request leaves it unset.
 DEFAULT_SIZE = 16
+
+
+@dataclasses.dataclass
+class FakeArch:
+    name: str = "ImageModel"
+    input_modalities: set[InputModality] = dataclasses.field(
+        default_factory=lambda: {InputModality.TEXT, InputModality.IMAGE}
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -67,6 +78,11 @@ def pixel_context_arch(monkeypatch: pytest.MonkeyPatch) -> None:
         PIPELINE_REGISTRY,
         "retrieve_context_type",
         lambda pipeline_config: PixelContext,
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "architecture_for_config",
+        lambda pipeline_config: FakeArch(),
     )
 
 
@@ -83,6 +99,7 @@ class FakeImageTokenizer:
     def __init__(self) -> None:
         self.requests: list[OpenResponsesRequest] = []
         self.too_long: set[str] = set()
+        self.input_images: list[Image.Image | None] = []
 
     async def new_context(
         self,
@@ -92,6 +109,7 @@ class FakeImageTokenizer:
         self.requests.append(request)
         if request.body.input in self.too_long:
             raise PromptTooLongError(600, 512)
+        self.input_images.append(input_image)
         options = request.body.provider_options.image
         assert options is not None
         return PixelContext(
@@ -174,6 +192,7 @@ def test_maps_arguments_to_the_serve_request(
         num_inference_steps=4,
         guidance_scale=2.0,
         true_cfg_scale=1.5,
+        strength=0.4,
         num_images_per_prompt=2,
         seed=7,
     )
@@ -188,6 +207,7 @@ def test_maps_arguments_to_the_serve_request(
         steps=4,
         guidance_scale=2.0,
         true_cfg_scale=1.5,
+        strength=0.4,
         num_images=2,
         output_format="png",
     )
@@ -199,6 +219,7 @@ def test_leaves_unset_knobs_to_the_defaults(
     generate_images(pipeline, tokenizer, "a red fox")
     options = _options(tokenizer.requests[0])
     assert options.model_fields_set == {"num_images", "output_format"}
+    assert tokenizer.input_images == [None]
     assert options == ImageProviderOptions(num_images=1, output_format="png")
 
 
@@ -309,6 +330,24 @@ Call = Callable[[FakeImagePipeline, FakeImageTokenizer], object]
             id="height-below-the-schema-floor",
         ),
         pytest.param(
+            lambda p, t: generate_images(p, t, ["a", "b"], images=[[]]),
+            "images must hold one image list per prompt, got 1 for 2 prompts.",
+            id="image-count",
+        ),
+        pytest.param(
+            lambda p, t: generate_images(
+                p, t, "a", images=[[Image.new("RGB", (8, 8))] * 2]
+            ),
+            "Prompt 0 has 2 input images, but image generation models read "
+            "one input image per prompt.",
+            id="two-images-for-a-prompt",
+        ),
+        pytest.param(
+            lambda p, t: generate_images(p, t, "a", strength=0.0),
+            "greater than 0",
+            id="strength-zero",
+        ),
+        pytest.param(
             lambda p, t: generate_images(p, t, "a", width=129),
             "width must be a multiple of 8",
             id="width-off-the-grid",
@@ -388,3 +427,85 @@ def test_rejects_a_too_long_prompt_before_running(
         generate_images(pipeline, tokenizer, ["a", "b", "c"])
     assert str(error.value).startswith("Prompt 1: Prompt is too long: 600 ")
     assert pipeline.batch_sizes == []
+
+
+def _png(pixels: npt.NDArray[np.uint8]) -> bytes:
+    buffer = io.BytesIO()
+    Image.fromarray(pixels).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_passes_each_prompt_its_input_image(
+    pipeline: FakeImagePipeline, tokenizer: FakeImageTokenizer
+) -> None:
+    pixels = _pixels(5, 0, 24, 32)
+    image = Image.fromarray(_pixels(6, 0, 8, 8))
+    generate_images(
+        pipeline,
+        tokenizer,
+        ["a", "b", "c"],
+        images=[[_png(pixels)], [], [image]],
+    )
+    decoded, text_only, passed = tokenizer.input_images
+    assert decoded is not None
+    np.testing.assert_array_equal(np.asarray(decoded), pixels)
+    assert text_only is None
+    assert passed is image
+    # The image goes to new_context, so the request holds only the prompt.
+    assert [request.body.input for request in tokenizer.requests] == [
+        "a",
+        "b",
+        "c",
+    ]
+
+
+def test_text_only_models_reject_input_images(
+    monkeypatch: pytest.MonkeyPatch,
+    pipeline: FakeImagePipeline,
+    tokenizer: FakeImageTokenizer,
+) -> None:
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "architecture_for_config",
+        lambda pipeline_config: FakeArch(input_modalities={InputModality.TEXT}),
+    )
+    image = Image.new("RGB", (8, 8))
+    with pytest.raises(ValueError) as error:
+        generate_images(pipeline, tokenizer, ["a", "b"], images=[[], [image]])
+    assert str(error.value) == (
+        f"Prompt 1 has an input image, but {MODEL_PATH} takes text only."
+    )
+    assert tokenizer.requests == []
+    # Text-only prompts still run.
+    generate_images(pipeline, tokenizer, ["a", "b"], images=[[], []])
+    assert len(tokenizer.requests) == 2
+
+
+_IMAGE = Image.new("RGB", (8, 8))
+
+
+@pytest.mark.parametrize(
+    "images",
+    [b"png bytes", _IMAGE, [b"png bytes"], [_IMAGE], [[MagicMock()]]],
+    ids=["bytes", "pil", "flat-bytes", "flat-pil", "not-an-image"],
+)
+def test_rejects_images_that_are_not_image_lists(
+    pipeline: FakeImagePipeline, tokenizer: FakeImageTokenizer, images: object
+) -> None:
+    # The wrong shape goes through an untyped name on purpose.
+    untyped: Callable[..., object] = generate_images
+    with pytest.raises(
+        TypeError, match=r"Wrap one prompt's images as \[images\]"
+    ):
+        untyped(pipeline, tokenizer, "a", images=images)
+    assert tokenizer.requests == []
+
+
+def test_decodes_every_image_before_running(
+    pipeline: FakeImagePipeline, tokenizer: FakeImageTokenizer
+) -> None:
+    with pytest.raises(UnidentifiedImageError):
+        generate_images(
+            pipeline, tokenizer, ["a", "b"], images=[[], [b"not an image"]]
+        )
+    assert tokenizer.requests == []

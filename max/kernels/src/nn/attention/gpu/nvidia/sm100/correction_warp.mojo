@@ -42,10 +42,14 @@ def fa4_correction[
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
+    cross_p: Bool,
     MaskType: MHAMask,
     //,
     config: FA4Config[
-        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
+        qkv_dtype,
+        rope_dtype_=rope_dtype_,
+        scale_dtype_=scale_dtype_,
+        cross_p=cross_p,
     ],
     page_size: Int,
     # Workspace (traditional/unfused) split-K: window the KV by a RUNTIME

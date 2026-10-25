@@ -487,7 +487,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     ](
         block_tile_shape=Index(BM, BN, BK),
         warp_tile_shape=Index(MMA_M, MMA_N, BK),
-        mma_shape=Index(MMA_M, MMA_N, MMA_K),
+        mma_shape=(MMA_M, MMA_N, MMA_K),
         cluster_shape=Index(1, 1, 1),
         num_pipeline_stages=num_pipeline_stages,
         num_k_partitions=num_k_partitions,
@@ -502,7 +502,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     ](
         block_tile_shape=Index(BM_SWAPAB, BN_SWAPAB, BK_SWAPAB),
         warp_tile_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, BK_SWAPAB),
-        mma_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, MMA_K_SWAPAB),
+        mma_shape=(MMA_M_SWAPAB, MMA_N_SWAPAB, MMA_K_SWAPAB),
         cluster_shape=Index(1, 1, 1),
         num_pipeline_stages=num_pipeline_stages_swapAB,
         num_k_partitions=num_k_partitions_swapAB,

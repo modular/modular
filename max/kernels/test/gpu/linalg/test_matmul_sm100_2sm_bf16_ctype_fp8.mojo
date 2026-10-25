@@ -28,6 +28,7 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
+from std.utils.coord import DynamicCoord
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
@@ -50,7 +51,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -192,9 +193,11 @@ def main() raises:
             # we support all range of mma_n_scales in range(1, 33) but the test will time out so we only test a subset
             comptime for bm in [64, 128]:
                 comptime for bn in range(8, 128 + 1, 8):
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(
-                        cta_group * bm, cta_group * bn, MMA_K
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (
+                        cta_group * bm,
+                        cta_group * bn,
+                        MMA_K,
                     )
 
                     # Output TMA expects mma_n to be divisible by 16 for FP8 output

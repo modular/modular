@@ -36,6 +36,7 @@ from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import 
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
@@ -59,7 +60,7 @@ def test_block_scaled_prefetch[
     c_type: DType,
     scales_dtype: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -255,8 +256,8 @@ def main() raises:
         # ------------------------------------------------------------------
         comptime for bm in [128]:
             comptime for bn in [128, 256]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(bm, bn, MMA_K)
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (bm, bn, MMA_K)
 
                 # swapAB=False, cluster 1×1
                 test_block_scaled_prefetch[
@@ -343,8 +344,8 @@ def main() raises:
         # ------------------------------------------------------------------
         comptime for bm in [128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                 # swapAB=False
                 test_block_scaled_prefetch[
@@ -404,8 +405,8 @@ def main() raises:
                 dtype,
                 out_dtype,
                 scales_dtype,
-                block_tile_shape=Index(128, 128, BK),
-                mma_shape=Index(128, 128, MMA_K),
+                block_tile_shape=(128, 128, BK),
+                mma_shape=(128, 128, MMA_K),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 cta_group=1,
                 block_swizzle_size=8,
@@ -420,8 +421,8 @@ def main() raises:
                 dtype,
                 out_dtype,
                 scales_dtype,
-                block_tile_shape=Index(128, 128, BK),
-                mma_shape=Index(128, 128, MMA_K),
+                block_tile_shape=(128, 128, BK),
+                mma_shape=(128, 128, MMA_K),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 cta_group=1,
                 block_swizzle_size=8,

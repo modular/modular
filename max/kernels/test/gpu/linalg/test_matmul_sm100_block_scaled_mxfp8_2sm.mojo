@@ -29,6 +29,7 @@ from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import 
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from std.math import ceildiv, align_up
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
@@ -60,7 +61,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_type: DType,
     scales_dtype: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -290,8 +291,8 @@ def main() raises:
 
         comptime for bm in [128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     dtype,

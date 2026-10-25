@@ -78,6 +78,16 @@ This version is still a work in progress.
 
 ## `max` CLI
 
+- `max generate` runs image generation models such as FLUX.2 and saves the
+  images to `--output`, which defaults to `image.png` and whose suffix picks
+  the format. A path without a suffix is a directory, created with its parents
+  if missing. It adds `--negative-prompt`, `--height`, `--width`,
+  `--num-inference-steps`, `--guidance-scale`, `--true-cfg-scale`,
+  `--strength` and `--num-images-per-prompt` for them, and takes the input
+  image from `--image_url`. A flag the user set for the other kind of model,
+  including `--max-batch-size` and `--device-graph-capture` on an image
+  model, raises an error before anything loads. Text models run as before.
+
 ## Python API
 
 - A custom op whose Mojo kernel is registered wrong, or doesn't match its
@@ -198,6 +208,17 @@ This version is still a work in progress.
   On an image model, `AutoModel.generate_iter()` points to
   `AutoModel.generate(prompt=...)`, and `generate()` points to
   `generate_images()`.
+
+- `generate_images()`, `AutoPipeline` and the image path of
+  `AutoModel.generate()` take `images`, one list of input images per prompt as
+  for text `generate()`, each image encoded bytes or a PIL image. A list holds
+  one image, or none for a text-only prompt. FLUX.2 and Z-Image run image to
+  image this way. They also take `strength`, which Z-Image reads and FLUX.2
+  ignores. `ZImagePipeline` now lists image input.
+
+- `generate()` and `GenerateIterator` raise the same `TypeError` for a bare
+  image or bytes passed as `images` as for any other `images` that is not one
+  list of images per conversation, instead of a Python iteration error.
 
 - Removed the `blocking_sync`, `disable_timing` and `interprocess` parameters
   from the Mojo `DeviceContext.create_event()`, along with `EventFlags`. Events

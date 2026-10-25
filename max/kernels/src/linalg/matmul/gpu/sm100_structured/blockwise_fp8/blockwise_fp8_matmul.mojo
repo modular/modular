@@ -132,7 +132,11 @@ def blockwise_fp8_matmul[
         a_type, b_type, c_type, transpose_b
     ](
         cta_group=config.cta_group,
-        mma_shape=config.mma_shape,
+        mma_shape=(
+            config.mma_shape[0],
+            config.mma_shape[1],
+            config.mma_shape[2],
+        ),
         cluster_shape=config.cluster_shape,
         AB_swapped=config.AB_swapped,
         num_accum_pipeline_stages=config.num_accum_pipeline_stages,

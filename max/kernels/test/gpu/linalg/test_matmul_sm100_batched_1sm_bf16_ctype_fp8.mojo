@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import argv, size_of
+from std.utils.coord import DynamicCoord
 from std.testing import assert_equal
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
@@ -54,7 +55,7 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -208,10 +209,8 @@ def main() raises:
         # 1SM (cta_group=1) tests with 128x128x16 and 64x128x16 MMA shapes
         comptime for bm in [64, 128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(
-                    cta_group * bm, cta_group * bn, MMA_K
-                )
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (cta_group * bm, cta_group * bn, MMA_K)
 
                 # Basic
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
@@ -267,10 +266,8 @@ def main() raises:
         # swapAB tests (1SM)
         comptime for bm in [64, 128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(
-                    cta_group * bm, cta_group * bn, MMA_K
-                )
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (cta_group * bm, cta_group * bn, MMA_K)
 
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
                     dtype,

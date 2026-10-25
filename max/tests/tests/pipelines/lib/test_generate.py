@@ -1488,20 +1488,24 @@ class _FlatImage:
             [_FlatImage(), _FlatImage()],
             "list of image lists",
         ),
+        (
+            [_chat("1", num_images=1)],
+            Image.new("RGB", (8, 8)),
+            "list of image lists",
+        ),
     ],
 )
 def test_messages_or_images_of_the_wrong_shape_raise_type_error(
     monkeypatch: pytest.MonkeyPatch,
     messages: list[list[dict[str, object]]],
-    images: list[list[bytes]] | None,
+    images: object,
     message: str,
 ) -> None:
     pipeline = _vision_pipeline(monkeypatch)
     _image_arch(monkeypatch)
+    untyped: Callable[..., object] = GenerateIterator
     with pytest.raises(TypeError, match=message):
-        GenerateIterator(
-            pipeline, messages=messages, images=images, max_new_tokens=5
-        )
+        untyped(pipeline, messages=messages, images=images, max_new_tokens=5)
     assert pipeline.kv_manager.claimed == {}
 
 

@@ -1771,16 +1771,18 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let summary = "Create an immortal reference from a pointer value";
   let description = [{
     This op converts a raw pointer to a reference with specified mutability and
-    origin.  When `startsUninit` is true, the reference is assumed to be
-    uninitialized but needs to be initialized before exit.  When false it is
-    assumed to be initialized and must be initialized on exit.
+    origin. `startUninit` and `endUninit` describe the referent's liveness
+    immediately before and after the operation, respectively. This represents
+    all four transitions: initialization, ownership transfer, and the two
+    no-op liveness states. The parser uses this for
+    `__get_address_as_uninit_lvalue` and `__get_address_as_owned_value`.
 
     ```mlir
     lit.ref.from_pointer %0, startUninit=true : !lit.ref<mut @Foo, life>
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr, UnitAttr:$startUninit,
+  let arguments = (ins PointerType:$ptr, StrAttr:$name, UnitAttr:$startUninit,
                        UnitAttr:$endUninit);
   let results = (outs LIT_RefType:$ref);
   let assemblyFormat = [{
@@ -1791,7 +1793,8 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let builders = [
     // Create with a pointer and origin, to infer result type.
     OpBuilder<(ins "Value":$pointer, "TypedAttr":$origin,
-                   "bool":$startsUninit, "bool":$endsUninit)>,
+                   "StringAttr":$name, "bool":$startsUninit,
+                   "bool":$endsUninit)>,
   ];
 }
 

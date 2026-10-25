@@ -40,10 +40,10 @@ from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
-from layout import TileTensor, Coord, row_major
+from layout import TileTensor, Coord, row_major, Idx
 
 
 @inline(.always)
@@ -153,7 +153,7 @@ def tma_reduction_kernel[
             shmem,
             descriptor_ptr,
             mbar,
-            Index(0, block_offset),
+            (Idx[0], block_offset),
         )
 
     # Wait for TMA to complete (expected_bytes transferred).
@@ -206,11 +206,11 @@ def test_tma_block_reduce[
     @inline(.always)
     def kernel_launch(ctx: DeviceContext) raises {mut d_data, imm} -> None:
         comptime if use_tma:
-            var tma_desc = create_tma_descriptor[dtype, 2](
+            var tma_desc = create_tma_descriptor[dtype](
                 d_data,
                 (rows, cols),
-                (cols, 1),
-                (1, cols),
+                (cols, Idx[1]),
+                (Idx[1], cols),
             )
             # Calculate shared memory size needed per row.
             var shared_mem_bytes = cols * size_of[dtype]()

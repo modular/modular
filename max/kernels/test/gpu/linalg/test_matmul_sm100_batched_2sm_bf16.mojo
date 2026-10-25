@@ -32,6 +32,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     GEMMKind,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -53,7 +54,7 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -202,10 +203,8 @@ def main() raises:
         # 256x256x16 MMA, 2x1x1 cluster
         comptime for bm in [128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(
-                    cta_group * bm, cta_group * bn, MMA_K
-                )
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (cta_group * bm, cta_group * bn, MMA_K)
 
                 # Basic: small batch, small shape
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
@@ -297,8 +296,8 @@ def main() raises:
 
         # swapAB tests (2SM)
         comptime for bn in [64, 128]:
-            comptime block_tile_shape = Index(128, bn, BK)
-            comptime umma_shape = Index(cta_group * 128, cta_group * bn, MMA_K)
+            comptime block_tile_shape = (128, bn, BK)
+            comptime umma_shape = (cta_group * 128, cta_group * bn, MMA_K)
 
             test_blackwell_batched_matmul_tma_umma_warp_specialized[
                 dtype,

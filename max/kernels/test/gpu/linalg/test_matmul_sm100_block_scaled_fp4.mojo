@@ -32,6 +32,7 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.utils import _as_compute_fn
 from std.math import ceildiv, align_up
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
@@ -66,7 +67,7 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     c_type: DType,
     scales_dtype: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -383,7 +384,7 @@ def run_matmul_sm100_block_scaled_fp4_suite[
             c_type: DType,
             _scales_dtype: DType,
             block_tile_shape: IndexList[3],
-            mma_shape: IndexList[3],
+            mma_shape: DynamicCoord[.int, 3],
             cluster_shape: StaticTuple[Int32, 3],
             cta_group: Int,
             transpose_b: Bool = True,
@@ -434,10 +435,8 @@ def run_matmul_sm100_block_scaled_fp4_suite[
         comptime for cta_group in [1, 2]:
             comptime for bm in [128]:
                 comptime for mma_n in [64, 128, 192, 256]:
-                    comptime block_tile_shape = Index(
-                        bm, mma_n // cta_group, BK
-                    )
-                    comptime umma_shape = Index(cta_group * bm, mma_n, MMA_K)
+                    comptime block_tile_shape = (bm, mma_n // cta_group, BK)
+                    comptime umma_shape = (cta_group * bm, mma_n, MMA_K)
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                         dtype,
@@ -571,8 +570,8 @@ def run_matmul_sm100_block_scaled_fp4_suite[
         # Llama 3.1 405B TP8 shape tests (matching tuning configs)
         # Uses M=128 because swapAB with M=1 causes TMA descriptor errors
         # (effective N after swap is too small for TMA box dimensions).
-        comptime llama_bts = Index(128, 32, BK)
-        comptime llama_mma = Index(256, 64, MMA_K)
+        comptime llama_bts = (128, 32, BK)
+        comptime llama_mma = (256, 64, MMA_K)
 
         # cluster(4,1,1), accum_stages=1, K=16384
         comptime for n_val in [2304, 6656, 13312]:
@@ -653,8 +652,8 @@ def run_matmul_sm100_block_scaled_fp4_suite[
         print("\n--- Epilogue fusion tests ---")
         comptime for cta_group in [1, 2]:
             comptime for mma_n in [64]:
-                comptime epi_block_tile = Index(128, mma_n // cta_group, BK)
-                comptime epi_umma = Index(cta_group * 128, mma_n, MMA_K)
+                comptime epi_block_tile = (128, mma_n // cta_group, BK)
+                comptime epi_umma = (cta_group * 128, mma_n, MMA_K)
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     dtype,
@@ -685,8 +684,8 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                     dtype,
                     out_dtype,
                     scales_dtype,
-                    Index(128, 128 // cta_group, BK),
-                    Index(cta_group * 128, 128, MMA_K),
+                    (128, 128 // cta_group, BK),
+                    (cta_group * 128, 128, MMA_K),
                     cluster_shape=StaticTuple[Int32, 3](Int32(cta_group), 1, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
@@ -707,8 +706,8 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                 dtype,
                 out_dtype,
                 scales_dtype,
-                Index(128, 64, BK),
-                Index(128, 64, MMA_K),
+                (128, 64, BK),
+                (128, 64, MMA_K),
                 cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,

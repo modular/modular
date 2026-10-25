@@ -35,6 +35,7 @@ from layout import (
     row_major,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 from linalg.fp4_utils import (
@@ -174,7 +175,7 @@ def test_grouped_kernel_nvfp4_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: IndexList[3],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with NVFP4 (4-bit packed) data format.
@@ -490,7 +491,7 @@ def test_grouped_kernel_nvfp4_multi_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: IndexList[3],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with NVFP4 and 2 groups using different pointers."""
@@ -889,7 +890,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](
         ctx,
@@ -906,7 +907,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[512], Idx[512], Idx[512])
 
@@ -918,7 +919,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[256])
 
@@ -933,7 +934,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
+        mma_shape=(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[256])
 
@@ -945,7 +946,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
+        mma_shape=(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
     ](ctx, Idx[512], Idx[512], Idx[512])
 
@@ -957,7 +958,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
+        mma_shape=(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[256])
 

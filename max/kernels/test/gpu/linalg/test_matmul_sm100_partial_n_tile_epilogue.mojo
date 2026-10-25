@@ -37,6 +37,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 import linalg.matmul.vendor.blas as vendor_blas
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -50,7 +51,7 @@ def test_partial_n_tile_compute_epilogue[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -193,8 +194,8 @@ def main() raises:
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
     comptime MMA_K = 16
 
-    comptime block_tile_shape_1sm = Index(64, 88, BK)
-    comptime mma_shape_1sm = Index(64, 88, MMA_K)
+    comptime block_tile_shape_1sm = (64, 88, BK)
+    comptime mma_shape_1sm = (64, 88, MMA_K)
 
     with DeviceContext() as ctx:
         # transpose_c=False: `if top_col >= self.N: return` branch.

@@ -51,6 +51,16 @@ Two limits drive the rest of this directory's design:
 - `positive_control_poison_uninit.mojo` — reads a never-initialized buffer; with
   the NaN-poison allocator on it surfaces a NaN, proving the uninit-read net
   works. Also `manual`.
+- `negative_control_synccheck_named_barrier.mojo` — two *correct* kernels that
+  rendezvous on a `named_barrier` from two program points, one whole-CTA and
+  one partial-CTA. `synccheck` reports divergence on both anyway, which is the
+  standing proof that those reports are a tool limitation. Also `manual`.
+- `positive_control_synccheck_barrier.mojo` — the same handoff with a plain
+  `barrier()`, which CUDA does not allow. `synccheck` reports it and the
+  filter must keep it. Also `manual`.
+- `classify_synccheck.py` — the filter that acts on that proof: drops a
+  divergence report when its source line is a `named_barrier` call, keeps
+  everything else.
 
 ## Running it locally
 
@@ -132,20 +142,34 @@ total build failure reported green because no test.log existed to hold a marker.
   matmul (`linalg/matmul/vendor/blas.mojo`) hands it a zeroed workspace in
   this lane only. Other builds keep cuBLAS's own workspace, because zeroing
   costs a 32 MiB memset on every call.
-- **`synccheck` cannot report usefully on SM100.** A warp-specialized kernel
-  rendezvouses two warpgroups with `named_barrier[2 * WARPGROUP_SIZE](id)` —
-  `bar.sync id, 256` — and PTX lets the participating warps arrive at
-  *different* `bar.sync` instructions sharing that barrier name. `synccheck`
-  only accepts arrivals from one instruction address, so it reports "Divergent
-  thread(s) in block" for the whole SM100 attention/MLA family — about 48
-  targets, essentially all noise. NVIDIA supports `--suppressions` for
-  `memcheck`, `initcheck` and `racecheck` but **not** for `synccheck`, so there
-  is no way to filter it. **The lane is expected to fail.** KERN-3536 tracks
-  it; until that is resolved, read the sweep's result per lane rather than
-  as a single pass/fail.
+- **`synccheck`'s named-barrier blind spot is filtered, not excluded.** A
+  warp-specialized kernel rendezvouses two warpgroups with
+  `named_barrier[2 * WARPGROUP_SIZE](id)` — `bar.sync id, 256` — and PTX lets
+  the participating warps arrive at *different* `bar.sync` instructions sharing
+  that barrier name. `synccheck` only accepts arrivals from one instruction
+  address, so it reports "Divergent thread(s) in block" across the SM100
+  attention/MLA family — about 48 targets, all noise. NVIDIA supports
+  `--suppressions` for `memcheck`, `initcheck` and `racecheck` but **not** for
+  `synccheck`, so `classify_synccheck.py` does it here: it resolves each report
+  to its `file:line` and drops it only when that line is a `named_barrier` call.
+  A divergence on a plain `barrier()` — which is what a genuinely desynchronized
+  block looks like, and what `test_topk_topp_sampling_with_dist` reported at
+  `block.mojo:100` — still gates. Anything the filter cannot resolve is
+  reported, because a suppression rule has to fail toward reporting.
+- **Controls in both directions.** `positive_control_memcheck_oob.mojo` proves
+  a lane catches a real bug; `negative_control_synccheck_named_barrier.mojo`
+  proves `synccheck` flags a kernel that is correct by construction. The second
+  is what makes the filter above a demonstrated rule rather than a judgement
+  call, and it is where to start if the filter ever needs re-tuning.
+  `positive_control_synccheck_barrier.mojo` differs from it only in the
+  barrier, so running the two together checks the filter both ways: the
+  negative control's reports are all dropped and the positive control's are
+  all kept.
 - **No known-failure list.** A lane either reports nothing or the finding gets
-  fixed. There is no file of parked targets to rot, which is also why the
-  `synccheck` noise is not suppressed.
+  fixed. There is no file of parked targets to rot — the `synccheck` filter is
+  a rule about one tool limitation, not a list of targets excused from the
+  lane, so a new kernel joining the attention family needs no maintenance and a
+  real finding in one of those targets is still caught.
 - **The gate needs a coverage half, not just a findings half.** Marker hits
   alone cannot tell "no test reported a violation" from "no test ran", and the
   two are opposite conclusions. The sweep therefore also asserts bazel's own

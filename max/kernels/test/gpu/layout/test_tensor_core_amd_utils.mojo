@@ -25,7 +25,7 @@ from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core import TensorCore
 
-from std.utils.index import IndexList
+from std.utils.coord import DynamicCoord
 
 comptime fp8_dtype = (
     DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
@@ -41,7 +41,7 @@ def test_load_a[
     dst_dtype: DType,
     dtype: DType,
     layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
 ](
     a: TileTensor[dtype, layout, MutAnyOrigin],
     a_lane: TileTensor[dtype, type_of(row_major[WARP_SIZE]()), MutAnyOrigin],
@@ -58,7 +58,7 @@ def test_load_b[
     dst_dtype: DType,
     dtype: DType,
     layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
     transpose_b: Bool,
 ](
     b: TileTensor[dtype, layout, MutAnyOrigin],
@@ -77,7 +77,7 @@ def test_load_c[
     dtype: DType,
     layout: TensorLayout,
     c_lane_layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
 ](
     c: TileTensor[dst_dtype, layout, MutAnyOrigin],
     c_lane: TileTensor[dst_dtype, c_lane_layout, MutAnyOrigin],
@@ -95,7 +95,7 @@ def test_store_d[
     dst_dtype: DType,
     dtype: DType,
     layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
 ](d: TileTensor[dst_dtype, layout, MutAnyOrigin]):
     comptime assert type_of(d).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
@@ -111,7 +111,7 @@ def test_mma_op[
     layout_a: TensorLayout,
     layout_b: TensorLayout,
     layout_c: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
     transpose_b: Bool,
 ](
     a: TileTensor[dtype, layout_a, MutAnyOrigin],
@@ -172,7 +172,7 @@ def _print_rows(tensor: TileTensor[...]):
 def test_load_and_mma_and_multiply_operands[
     dst_dtype: DType,
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     transpose_b: Bool,
     k_group_size: Int = 1,
 ](ctx: DeviceContext) raises:

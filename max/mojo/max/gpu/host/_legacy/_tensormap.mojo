@@ -13,7 +13,8 @@
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.sys import size_of
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
+from std.utils.coord import Coord, CoordLike
 
 from max.gpu.host import DeviceBuffer
 
@@ -259,13 +260,16 @@ struct TensorMap(DevicePassable, ImplicitlyCopyable):
 @inline(.always)
 def create_tensormap[
     dtype: DType,
-    rank: Int,
-    //,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    /,
+    *,
+    stride_types: TypeList[Trait=CoordLike, ...] = shape_types,
+    box_types: TypeList[Trait=CoordLike, ...] = shape_types,
 ](
     global_buf: DeviceBuffer[dtype],
-    global_shape: IndexList[rank],
-    global_strides: IndexList[rank],
-    shared_mem_shape: IndexList[rank],
+    global_shape: Coord[*shape_types],
+    global_strides: Coord[*stride_types],
+    shared_mem_shape: Coord[*box_types],
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
 ) raises -> TensorMap:
     """Create a tensor map descriptor object representing tiled memory region.
@@ -281,7 +285,9 @@ def create_tensormap[
 
     Parameters:
         dtype: The data type of tensor elements (float32, bfloat16, or float8_e4m3fn).
-        rank: The number of tensor dimensions.
+        shape_types: The element types of `global_shape`.
+        stride_types: The element types of `global_strides`.
+        box_types: The element types of `shared_mem_shape`.
 
     Args:
         global_buf: Device buffer containing the tensor data in global memory.
@@ -298,6 +304,13 @@ def create_tensormap[
         Error if the tensor configuration is invalid or if the underlying
         CUDA driver call fails.
     """
+    comptime rank = Coord[*shape_types].rank
+    comptime assert (
+        Coord[*stride_types].rank == rank
+    ), "global_strides must have the same rank as global_shape"
+    comptime assert (
+        Coord[*box_types].rank == rank
+    ), "shared_mem_shape must have the same rank as global_shape"
     # TensorMap is @align(64) so stack allocation is automatically 64-byte aligned.
     # https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TENSOR__MEMORY.html
     var tensormap = TensorMap()
@@ -313,11 +326,11 @@ def create_tensormap[
     # inputs for the tensormap constructor arguments.
 
     comptime for i in range(rank):
-        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_dim_arg[i] = Int64(Int(global_shape[rank - i - 1]))
         global_strides_arg[i] = Int64(
-            global_strides[rank - i - 1] * size_of[dtype]()
+            Int(global_strides[rank - i - 1]) * size_of[dtype]()
         )
-        box_dim_arg[i] = Int32(shared_mem_shape[rank - i - 1])
+        box_dim_arg[i] = Int32(Int(shared_mem_shape[rank - i - 1]))
 
     debug_assert(
         global_strides_arg[0] == Int64(size_of[dtype]()),
@@ -349,14 +362,16 @@ def create_tensormap[
 @inline(.always)
 def create_tensormap_im2col[
     dtype: DType,
-    rank: Int,
-    spatial_rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+    spatial_types: TypeList[Trait=CoordLike, ...],
+    /,
 ](
     global_buf: DeviceBuffer[dtype],
-    global_shape: IndexList[rank],
-    global_strides: IndexList[rank],
-    lower_corner: IndexList[spatial_rank],
-    upper_corner: IndexList[spatial_rank],
+    global_shape: Coord[*shape_types],
+    global_strides: Coord[*stride_types],
+    lower_corner: Coord[*spatial_types],
+    upper_corner: Coord[*spatial_types],
     channels_per_pixel: Int,
     pixels_per_column: Int,
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
@@ -376,8 +391,11 @@ def create_tensormap_im2col[
 
     Parameters:
         dtype: The data type of tensor elements.
-        rank: Total number of tensor dimensions (4 for 2D conv, 5 for 3D conv).
-        spatial_rank: Number of spatial dimensions (2 for 2D, 3 for 3D).
+        shape_types: The element types of `global_shape` (rank 4 for 2D conv,
+            5 for 3D conv).
+        stride_types: The element types of `global_strides`.
+        spatial_types: The element types of the spatial corners (2 for 2D
+            conv, 3 for 3D).
 
     Args:
         global_buf: Device buffer containing the tensor data.
@@ -395,6 +413,11 @@ def create_tensormap_im2col[
     Raises:
         Error if the tensor configuration is invalid or driver call fails.
     """
+    comptime rank = Coord[*shape_types].rank
+    comptime spatial_rank = Coord[*spatial_types].rank
+    comptime assert (
+        Coord[*stride_types].rank == rank
+    ), "global_strides must have the same rank as global_shape"
     comptime assert (
         rank >= 3
     ), "Im2col requires at least 3D tensor (NHC or NHWC)"
@@ -417,15 +440,15 @@ def create_tensormap_im2col[
 
     # Reverse dimension order for TMA API (CWHDN from NHWC)
     comptime for i in range(rank):
-        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_dim_arg[i] = Int64(Int(global_shape[rank - i - 1]))
         global_strides_arg[i] = Int64(
-            global_strides[rank - i - 1] * size_of[dtype]()
+            Int(global_strides[rank - i - 1]) * size_of[dtype]()
         )
 
     # Reverse spatial corners (W, H, D from D, H, W or H, W)
     comptime for i in range(spatial_rank):
-        lower_corner_arg[i] = Int32(lower_corner[spatial_rank - i - 1])
-        upper_corner_arg[i] = Int32(upper_corner[spatial_rank - i - 1])
+        lower_corner_arg[i] = Int32(Int(lower_corner[spatial_rank - i - 1]))
+        upper_corner_arg[i] = Int32(Int(upper_corner[spatial_rank - i - 1]))
 
     global_buf._tensor_map_encode_im2col(
         tensormap_ptr,

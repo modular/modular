@@ -70,7 +70,7 @@ def default_config_sm90[
     comptime BK = 128 // size_of[a_type]()
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(128, BN, BK),
-        mma_shape=wgmma_shape,
+        mma_shape=(wgmma_shape[0], wgmma_shape[1], wgmma_shape[2]),
         cluster_shape=Index(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
@@ -211,7 +211,7 @@ def grouped_matmul_sm90[
         type_of(c).LayoutType,
         c_smem_layout,
         config.block_tile_shape,
-        wgmma_shape,
+        (wgmma_shape[0], wgmma_shape[1], wgmma_shape[2]),
         cluster_shape,
         config.num_pipeline_stages,
         num_threads,

@@ -38,6 +38,7 @@ from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul impor
     blockwise_fp8_matmul,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -58,7 +59,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     scales_type: DType = .float32,
@@ -270,8 +271,8 @@ def main() raises:
 
         # Part A: mma_m_scale = 1 only (128x16N MMA shapes for 2SM)
         comptime for mma_n_scale in [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16]:
-            comptime block_tile_shape = Index(64, 8 * mma_n_scale, BK)
-            comptime umma_shape = Index(128, 16 * mma_n_scale, MMA_K)
+            comptime block_tile_shape = (64, 8 * mma_n_scale, BK)
+            comptime umma_shape = (128, 16 * mma_n_scale, MMA_K)
 
             print(
                 "block_tile_shape",

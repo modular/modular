@@ -347,7 +347,7 @@ def dense_mma_ws_ts_kernel[
         ACCUM_TYPE,  # d_type
         OP_TYPE,  # a_type (bf16)
         OP_TYPE,  # b_type (bf16)
-        Index[dtype=DType.uint32](MMA_M, MMA_N),
+        (UInt32(MMA_M), UInt32(MMA_N)),
         transpose_b=True,
     ]()
 
@@ -625,7 +625,7 @@ def sparse_mma_ws_ts_kernel[
         accum_type,
         op_type,
         op_type,
-        Index[dtype=DType.uint32](mma_m, mma_n),
+        (UInt32(mma_m), UInt32(mma_n)),
         transpose_b=True,
     ]()
 

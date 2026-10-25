@@ -683,7 +683,7 @@ def _test_swiglu_dispatch[
         ](
             scaling_kind=UMMAKind.KIND_MXF4NVF4,
             cluster_shape=Index(1, 1, 1),
-            mma_shape=Index(128, 8, 32),
+            mma_shape=(128, 8, 32),
             block_swizzle_size=8,
             cta_group=1,
             AB_swapped=True,

@@ -3773,6 +3773,10 @@ def test_topk_cluster_graph_capture(ctx: DeviceContext) raises:
                     b,
                 )
             _ = idxs_host
+        # The graph captured raw pointers, so keep its inputs alive past the
+        # replays.
+        _ = scores_dev^
+        _ = bounds_dev^
     print("PASS test_topk_cluster_graph_capture")
 
 

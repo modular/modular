@@ -43,6 +43,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_parallel import (
     PipelinedModel,
@@ -163,6 +164,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
 
 class Gemma3_MultiModalModel(
+    LogProbabilitiesMixin,
     AlwaysSignalBuffersMixin,
     PipelinedModel[Gemma4Context],
     PipelineModelWithKVCache[

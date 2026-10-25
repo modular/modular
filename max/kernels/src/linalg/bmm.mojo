@@ -52,6 +52,7 @@ from layout import (
     row_major,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile
+from std.utils.coord import Coord, DynamicCoord
 from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
 from std.memory import dealloc
@@ -1665,7 +1666,7 @@ def bmm_sm100_blockwise_scaled_fp8[
     b_scales_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
+    umma_shape: Coord,
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1725,7 +1726,7 @@ def bmm_sm100_blockwise_scaled_fp8[
     //,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
+    umma_shape: Coord,
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1788,7 +1789,7 @@ def _bmm_sm100_blockwise_scaled_fp8_impl[
     //,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
+    umma_shape: Coord,
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1931,7 +1932,7 @@ def _bmm_sm100_blockwise_scaled_fp8_impl[
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,
-        umma_shape,
+        (umma_shape[0], umma_shape[1], umma_shape[2]),
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -2662,7 +2663,7 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
 
         bmm_sm100_blockwise_scaled_fp8[
             transpose_b=transpose_b,
-            umma_shape=umma_shape,
+            umma_shape=(umma_shape[0], umma_shape[1], umma_shape[2]),
             block_tile_shape=block_tile_shape,
             a_swizzle=swizzle,
             b_swizzle=swizzle,

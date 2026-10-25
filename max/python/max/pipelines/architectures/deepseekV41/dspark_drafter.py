@@ -329,14 +329,14 @@ class DeepseekV41DSparkDrafter(Module):
             state.
         """
         lead = drafters[0]
-        all_ids = ops.allgather(
-            [ops.reshape(ids, [-1]) for ids in block_ids],
-            signal_buffers,
-            axis=0,
-        )
+        # The stages' gate treats every draft as text and reads only the
+        # batch's row count from its ids, so the ids are not gathered.
         batch_ids = [
-            ops.reshape(ops.rebind(ids, [replica_tokens.total]), [1, -1])
-            for ids in all_ids
+            ops.broadcast_to(
+                ops.constant(0, ids.dtype, ids.device),
+                [1, replica_tokens.total],
+            )
+            for ids in block_ids
         ]
         streams = [
             HCStreams(expand_copies(embed(ids), lead.config.hc_mult))

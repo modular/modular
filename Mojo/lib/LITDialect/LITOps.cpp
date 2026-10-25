@@ -1977,12 +1977,12 @@ LogicalResult RefUpcastOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void RefFromPointerOp::build(OpBuilder &builder, OperationState &result,
-                             Value pointer, TypedAttr origin, bool startsUninit,
-                             bool endsUninit) {
+                             Value pointer, TypedAttr origin, StringAttr name,
+                             bool startsUninit, bool endsUninit) {
   auto ptr = cast<PointerType>(pointer.getType());
   auto refType =
       RefType::get(ptr.getElementType(), origin, ptr.getAddressSpace());
-  build(builder, result, refType, pointer, startsUninit, endsUninit);
+  build(builder, result, refType, pointer, name, startsUninit, endsUninit);
 }
 
 //===----------------------------------------------------------------------===//

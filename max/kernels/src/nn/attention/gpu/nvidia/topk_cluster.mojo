@@ -1933,7 +1933,6 @@ def _topk_cluster_impl[
             mbar[tid].init()
     if tid == 0:
         cbar[].init()
-        cbar[].expect_bytes(Int32(4 * 2 * CS))
         pbar[].init()
     fence_mbarrier_init()
 
@@ -1952,6 +1951,10 @@ def _topk_cluster_impl[
     if tid < 8:
         ctl[tid] = 0
     barrier()
+    # `cbar`'s byte count registers once the barrier has published its init.
+    # Peers store into `counts` only after round 0's cluster barrier.
+    if tid == 0:
+        cbar[].expect_bytes(Int32(4 * 2 * CS))
     if single_pass:
         _ctopk_scan[
             scan_items,

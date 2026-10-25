@@ -213,16 +213,19 @@ modular_py_test(
     # Offline unit tests. Linux CI passes HF_HUB_OFFLINE=1 for the whole
     # invocation (ci/default/test.sh), the macOS lane does not.
     env = {"HF_HUB_OFFLINE": "1"},
-    # The architecture lookup materializes FLUX.2 and Wan by name at runtime.
+    # The architecture lookup materializes FLUX.2, Wan and Z-Image by name at
+    # runtime.
     ignore_extra_deps = [
         "//max/python/max/pipelines/architectures/flux2",
         "//max/python/max/pipelines/architectures/wan",
+        "//max/python/max/pipelines/architectures/z_image_modulev3",
     ],
     tags = ["skip-external-ci"],
     deps = [
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/flux2",
         "//max/python/max/pipelines/architectures/wan",
+        "//max/python/max/pipelines/architectures/z_image_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:fake_weights",

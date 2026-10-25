@@ -197,8 +197,8 @@ lit.fn @ref_pointer<life: origin<true>, ilife: origin<false>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
   // CHECK: %0 = lit.ref.to_pointer %ref1 : <!lit.struct<@MyStruct>, mut life>
   %ptr = lit.ref.to_pointer %ref1: <!lit.struct<@MyStruct>, mut life>
-  // CHECK: %1 = lit.ref.from_pointer %0 : <!lit.struct<@MyStruct>, imm ilife>
-  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<!lit.struct<@MyStruct>, imm ilife>
+  // CHECK: %1 = lit.ref.from_pointer %0 : <!lit.struct<@MyStruct>, imm ilife> {name = "reference value"}
+  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<!lit.struct<@MyStruct>, imm ilife> {name = "reference value"}
 
   // CHECK: %2 = lit.ref.to_pointer %1 : <!lit.struct<@MyStruct>, imm ilife>
   %ptr2 = lit.ref.to_pointer %ref2: !lit.ref<!lit.struct<@MyStruct>, imm ilife>

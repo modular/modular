@@ -616,9 +616,9 @@ struct Pointer[
             A reference to the value.
         """
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=Self._mlir_lit_ref](
-                self._mlir_value
-            )
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=Self._mlir_lit_ref, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @__unsafe_nested_origins_read_only
@@ -700,7 +700,9 @@ struct Pointer[
             `>`,
         ]
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=ref_type, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @inline(.always)
@@ -737,7 +739,9 @@ struct Pointer[
             `>`,
         ]
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=ref_type, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @doc_hidden

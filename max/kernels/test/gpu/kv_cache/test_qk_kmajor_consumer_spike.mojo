@@ -72,6 +72,7 @@ from layout import (
     TileTensor,
     coord,
     row_major,
+    coord,
 )
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -331,9 +332,6 @@ def run_qk_consumer[
     )
     comptime smem_use = (M + N) * size_of[ab_type]() * K + 64
     comptime native_box = coord[_CM_NUM_ROWS, gran]
-    # `create_tma_descriptor` still takes IndexList for shared_mem_shape (low-level
-    # TMA-builder API); only the high-level TMATensorTile uses Coord.
-    comptime native_box_idx = Index(_CM_NUM_ROWS, gran)
 
     comptime if use_pagedense:
         # Page-dense arm: box (_CM_NUM_ROWS, gran) so each 8-row atom is one
@@ -341,16 +339,16 @@ def run_qk_consumer[
         # the box override (same finding as the K/V spikes), so build the
         # descriptor low-level and wrap via TMATensorTile's @implicit ctor.
         var k_ptr = k.device_tensor().unsafe_ptr()
-        var k_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
+        var k_desc = create_tma_descriptor[ab_type, swizzle_mode=swizzle_mode](
             DeviceBuffer(
                 ctx,
                 k_ptr,
                 1,
                 owning=False,
             ),
-            Index(N, K),  # gmem [seq_k, head_size], row-major
-            Index(K, 1),  # head_size contiguous
-            native_box_idx,  # (_CM_NUM_ROWS, gran) core-matrix box
+            coord[N, K],  # gmem [seq_k, head_size], row-major
+            (K, 1),  # head_size contiguous
+            native_box,  # (_CM_NUM_ROWS, gran) core-matrix box
         )
         var k_tma_op = TMATensorTile[
             ab_type, coord[N, K], native_box, is_k_major=True

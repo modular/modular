@@ -39,6 +39,7 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
@@ -69,7 +70,7 @@ def _test_impl[
     c_type: DType,
     scales_dtype: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
@@ -318,7 +319,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
             c_type: DType,
             _scales_dtype: DType,
             block_tile_shape: IndexList[3],
-            mma_shape: IndexList[3],
+            mma_shape: DynamicCoord[.int, 3],
             cluster_shape: StaticTuple[Int32, 3],
             cta_group: Int,
             transpose_b: Bool = True,
@@ -355,8 +356,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
             ](ctx, m, n, k)
 
         comptime for mma_n in [8, 16, 24, 32, 48, 64, 96]:
-            comptime block_tile_shape = Index(128, mma_n, BK)
-            comptime umma_shape = Index(128, mma_n, MMA_K)
+            comptime block_tile_shape = (128, mma_n, BK)
+            comptime umma_shape = (128, mma_n, MMA_K)
 
             run[
                 dtype,
@@ -480,8 +481,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
             )
 
         # Llama-3.1-405B TP8 FP4 shapes (small_bn kernel, M=1)
-        comptime small_bn_block_tile = Index(128, 8, BK)
-        comptime small_bn_umma = Index(128, 8, MMA_K)
+        comptime small_bn_block_tile = (128, 8, BK)
+        comptime small_bn_umma = (128, 8, MMA_K)
 
         def test_small_bn[N: Int, K: Int]() raises {imm}:
             run[
@@ -517,8 +518,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
         # Epilogue fusion tests
         print("\n--- Epilogue fusion tests ---")
         comptime for mma_n in [8, 16, 24, 32, 48, 64, 96]:
-            comptime epi_block_tile = Index(128, mma_n, BK)
-            comptime epi_umma = Index(128, mma_n, MMA_K)
+            comptime epi_block_tile = (128, mma_n, BK)
+            comptime epi_umma = (128, mma_n, MMA_K)
             run[
                 dtype,
                 dtype,
@@ -541,8 +542,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
             )
 
         # swapAB + epilogue
-        comptime epi_swap_bt = Index(128, 8, BK)
-        comptime epi_swap_mma = Index(128, 8, MMA_K)
+        comptime epi_swap_bt = (128, 8, BK)
+        comptime epi_swap_mma = (128, 8, MMA_K)
         run[
             dtype,
             dtype,

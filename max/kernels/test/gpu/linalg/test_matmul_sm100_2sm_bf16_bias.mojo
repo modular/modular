@@ -28,6 +28,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -41,7 +42,7 @@ def test_blackwell_matmul_with_epilogue_tensor[
     b_type: DType,
     c_type: DType,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -207,8 +208,8 @@ def main() raises:
                     112,
                     128,
                 ]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     test_blackwell_matmul_with_epilogue_tensor[
                         dtype,

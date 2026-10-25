@@ -777,7 +777,7 @@ from std.math.uutils import udivmod
 from std.utils.index import Index
 from max.gpu import block_idx, warp_id
 from max.gpu.sync import barrier
-from layout import TensorLayout, TileTensor, row_major, stack_allocation
+from layout import TensorLayout, TileTensor, coord, row_major, stack_allocation
 from layout.tile_io import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 
@@ -814,7 +814,7 @@ def tensor_core_matrix_multiplication[
         WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
     ), "Warp tile should be an integer multiple of instruction shape"
 
-    var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[A.dtype, C.dtype, coord[MMA_M, MMA_N, MMA_K]]()
 
     var A_sram_tile = stack_allocation[A.dtype, address_space=.SHARED](
         row_major[BM, BK]()

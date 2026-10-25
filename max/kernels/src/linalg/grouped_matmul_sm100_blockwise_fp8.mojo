@@ -91,6 +91,7 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_grouped_matmul_amd import (
 )
 
 from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -481,8 +482,11 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                     (4 * m_mma + warp_id, n_mma)
                 )
             )
+            # `Coord` has no element-wise arithmetic, so add the two
+            # coordinate pairs element by element.
             var c_gmem_warp_tile_coords = (
-                ctile_coords + _c_gmem_warp_tile_coords
+                Int(ctile_coords[0]) + Int(_c_gmem_warp_tile_coords[0]),
+                Int(ctile_coords[1]) + Int(_c_gmem_warp_tile_coords[1]),
             )
 
             var c_gmem_frag, _c_gmem_frag_coords, _ = (
@@ -493,7 +497,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             var new_c_gmem_frag_coords = _c_gmem_frag_coords
             new_c_gmem_frag_coords[1] *= 2
             var c_gmem_frag_coords = (
-                c_gmem_warp_tile_coords + new_c_gmem_frag_coords
+                c_gmem_warp_tile_coords[0] + Int(new_c_gmem_frag_coords[0]),
+                c_gmem_warp_tile_coords[1] + Int(new_c_gmem_frag_coords[1]),
             )
 
             comptime assert c_gmem_frag.flat_rank == 2
@@ -821,7 +826,7 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         config.block_tile_shape,
-        config.mma_shape,
+        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         transpose_b=config.transpose_b,
         a_swizzle=config.a_swizzle,
         b_swizzle=config.b_swizzle,
@@ -2261,7 +2266,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
         b_type,
         config.block_tile_shape,
-        config.mma_shape,
+        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         accum_type=accum_type,
         cta_group=config.cta_group,
         cluster_shape=config.cluster_shape,
@@ -2388,7 +2393,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     b_smem_layout=b_smem_layout,
                     a_scales_smem_layout=a_scales_smem_layout,
                     block_tile_shape=config.block_tile_shape,
-                    mma_shape=config.mma_shape,
+                    mma_shape=(
+                        config.mma_shape[0],
+                        config.mma_shape[1],
+                        config.mma_shape[2],
+                    ),
                     cta_group=config.cta_group,
                 ](
                     a_tma_op,
@@ -2447,7 +2456,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
                     consumer_main_loop[
                         block_tile_shape=config.block_tile_shape,
-                        mma_shape=config.mma_shape,
+                        mma_shape=(
+                            config.mma_shape[0],
+                            config.mma_shape[1],
+                            config.mma_shape[2],
+                        ),
                         cta_group=config.cta_group,
                         cluster_shape=config.cluster_shape,
                     ](
@@ -2507,7 +2520,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             comptime reg_info = _get_accumulator_size[
                 c_smem_layout=c_smem_layout,
                 block_tile_shape=config.block_tile_shape,
-                mma_shape=config.mma_shape,
+                mma_shape=(
+                    config.mma_shape[0],
+                    config.mma_shape[1],
+                    config.mma_shape[2],
+                ),
                 cta_group=config.cta_group,
             ]()
 
@@ -2532,7 +2549,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 promote_accumulators[
                     a_scales_smem_layout=a_scales_smem_layout,
                     block_tile_shape=config.block_tile_shape,
-                    mma_shape=config.mma_shape,
+                    mma_shape=(
+                        config.mma_shape[0],
+                        config.mma_shape[1],
+                        config.mma_shape[2],
+                    ),
                     cta_group=config.cta_group,
                     CLUSTER_SIZE=Int32(CLUSTER_SIZE),
                     is_lower_frag_required=is_lower_frag_required,
@@ -2566,7 +2587,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 c_smem_layout=c_smem_layout,
                 c_static_N=expert_n,
                 block_tile_shape=config.block_tile_shape,
-                mma_shape=config.mma_shape,
+                mma_shape=(
+                    config.mma_shape[0],
+                    config.mma_shape[1],
+                    config.mma_shape[2],
+                ),
                 is_lower_frag_required=is_lower_frag_required,
                 cta_group=config.cta_group,
                 num_output_warps=num_output_warps,
@@ -3052,11 +3077,15 @@ def grouped_matmul_dynamic_scaled_fp8[
 
             # MMA_N=128 halves the number of dispatched (expert, n) tiles vs
             # 64, which dominates runtime for small-M-per-expert decode.
-            comptime umma_shape: IndexList[3] = Index(64, 128, 32)
+            comptime umma_shape: DynamicCoord[.int, 3] = (64, 128, 32)
 
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 cluster_shape=Index(1, 1, 1),
-                mma_shape=umma_shape,
+                mma_shape=(
+                    umma_shape[0],
+                    umma_shape[1],
+                    umma_shape[2],
+                ),
                 cta_group=1,
                 AB_swapped=False,
                 k_group_size=1,

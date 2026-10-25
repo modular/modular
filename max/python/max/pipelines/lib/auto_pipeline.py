@@ -205,12 +205,14 @@ class AutoPipeline:
         self,
         text: str,
         *,
+        images: Sequence[Sequence[bytes | Image.Image]] | None = None,
         negative_prompt: str | Sequence[str] | None = None,
         height: int | None = None,
         width: int | None = None,
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
         true_cfg_scale: float | None = None,
+        strength: float | None = None,
         num_images_per_prompt: int = 1,
         seed: int = 0,
     ) -> list[Image.Image]: ...
@@ -220,12 +222,14 @@ class AutoPipeline:
         self,
         text: list[str] | tuple[str, ...],
         *,
+        images: Sequence[Sequence[bytes | Image.Image]] | None = None,
         negative_prompt: str | Sequence[str] | None = None,
         height: int | None = None,
         width: int | None = None,
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
         true_cfg_scale: float | None = None,
+        strength: float | None = None,
         num_images_per_prompt: int = 1,
         seed: int = 0,
     ) -> list[list[Image.Image]]: ...
@@ -250,12 +254,14 @@ class AutoPipeline:
         ignore_eos: bool = False,
         stop_token_ids: Sequence[int] | None = None,
         seed: int = 0,
+        images: Sequence[Sequence[bytes | Image.Image]] | None = None,
         negative_prompt: str | Sequence[str] | None = None,
         height: int | None = None,
         width: int | None = None,
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
         true_cfg_scale: float | None = None,
+        strength: float | None = None,
         num_images_per_prompt: int = 1,
     ) -> str | list[str] | list[Image.Image] | list[list[Image.Image]]:
         """Returns what the model generates for each prompt or conversation.
@@ -268,8 +274,10 @@ class AutoPipeline:
         :meth:`~max.pipelines.AutoModel.generate`.
 
         For an image model, ``text`` is a prompt or a list of prompts, and
-        the image arguments are those of
-        :meth:`~max.pipelines.AutoModel.generate` with ``prompt``.
+        the image arguments, including ``images`` with one list of input
+        images per prompt, are those of
+        :meth:`~max.pipelines.AutoModel.generate` with ``prompt``. A text
+        model takes its images inside conversations.
 
         Returns:
             For a text model, a string for one prompt or conversation, or a
@@ -336,24 +344,28 @@ class AutoPipeline:
                 )
             generated = self._model.generate(
                 prompt=prompts,
+                images=images,
                 negative_prompt=negative_prompt,
                 height=height,
                 width=width,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
                 true_cfg_scale=true_cfg_scale,
+                strength=strength,
                 num_images_per_prompt=num_images_per_prompt,
                 seed=seed,
             )
             return generated.images[0] if single else generated.images
         self._model._reject_arguments(
             {
+                "images": (images, None),
                 "negative_prompt": (negative_prompt, None),
                 "height": (height, None),
                 "width": (width, None),
                 "num_inference_steps": (num_inference_steps, None),
                 "guidance_scale": (guidance_scale, None),
                 "true_cfg_scale": (true_cfg_scale, None),
+                "strength": (strength, None),
                 "num_images_per_prompt": (num_images_per_prompt, 1),
             },
             "image",

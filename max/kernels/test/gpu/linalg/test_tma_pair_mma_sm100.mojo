@@ -54,6 +54,7 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
 )
+from std.utils.coord import DynamicCoord
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -74,7 +75,7 @@ def tma_umma_kernel_pair_cta[
     a_desc_shape: Coord,
     b_desc_shape: Coord,
     block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -206,7 +207,7 @@ def tma_umma_kernel_pair_cta[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
+        (UInt32(mma_shape[0]), UInt32(mma_shape[1])),
         transpose_b=transpose_b,
     ]()
 
@@ -414,7 +415,7 @@ def test_tma_umma_pair_cta[
     comptime MMA_M = 2 * BM
     comptime MMA_N = 2 * BN
     comptime MMA_K = 32 if ab_type == DType.float8_e4m3fn else 16
-    comptime mma_shape = Index(MMA_M, MMA_N, MMA_K)
+    comptime mma_shape = (MMA_M, MMA_N, MMA_K)
     comptime assert (BN if MMA_M == 128 else MMA_N) <= 256, String(
         "MMA_M = ",
         MMA_M,
@@ -590,8 +591,8 @@ def main() raises:
                 test_tma_umma_pair_cta[
                     ab_type=dtype,
                     c_type=.bfloat16,
-                    prob_shape=Index(512, 1024, 2 * BK),
-                    block_tile_shape=Index(64, 64, BK),
+                    prob_shape=(512, 1024, 2 * BK),
+                    block_tile_shape=(64, 64, BK),
                     transpose_b=True,
                     cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     a_swizzle=swizzle,
@@ -601,8 +602,8 @@ def main() raises:
                 test_tma_umma_pair_cta[
                     ab_type=dtype,
                     c_type=.bfloat16,
-                    prob_shape=Index(256, 1024, 2 * BK),
-                    block_tile_shape=Index(64, 128, BK),
+                    prob_shape=(256, 1024, 2 * BK),
+                    block_tile_shape=(64, 128, BK),
                     transpose_b=True,
                     cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     a_swizzle=swizzle,
@@ -614,8 +615,8 @@ def main() raises:
                 test_tma_umma_pair_cta[
                     ab_type=dtype,
                     c_type=.bfloat16,
-                    prob_shape=Index(512, 512, 2 * BK),
-                    block_tile_shape=Index(128, 64, BK),
+                    prob_shape=(512, 512, 2 * BK),
+                    block_tile_shape=(128, 64, BK),
                     transpose_b=True,
                     cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     a_swizzle=swizzle,
@@ -632,8 +633,8 @@ def main() raises:
                     test_tma_umma_pair_cta[
                         ab_type=dtype,
                         c_type=.bfloat16,
-                        prob_shape=Index(128, 4 * BN_BM64, 2 * BK),
-                        block_tile_shape=Index(64, BN_BM64, BK),
+                        prob_shape=(128, 4 * BN_BM64, 2 * BK),
+                        block_tile_shape=(64, BN_BM64, BK),
                         transpose_b=transpose_b,
                         cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
                         a_swizzle=swizzle,
@@ -644,8 +645,8 @@ def main() raises:
                     test_tma_umma_pair_cta[
                         ab_type=dtype,
                         c_type=.bfloat16,
-                        prob_shape=Index(128, 2 * BN_BM64, 2 * BK),
-                        block_tile_shape=Index(64, BN_BM64, BK),
+                        prob_shape=(128, 2 * BN_BM64, 2 * BK),
+                        block_tile_shape=(64, BN_BM64, BK),
                         transpose_b=transpose_b,
                         cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                         a_swizzle=swizzle,
@@ -657,8 +658,8 @@ def main() raises:
                     test_tma_umma_pair_cta[
                         ab_type=dtype,
                         c_type=.bfloat16,
-                        prob_shape=Index(256, 2 * BN_BM128, 2 * BK),
-                        block_tile_shape=Index(128, BN_BM128, BK),
+                        prob_shape=(256, 2 * BN_BM128, 2 * BK),
+                        block_tile_shape=(128, BN_BM128, BK),
                         transpose_b=transpose_b,
                         cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                         a_swizzle=swizzle,
@@ -669,8 +670,8 @@ def main() raises:
                     test_tma_umma_pair_cta[
                         ab_type=dtype,
                         c_type=.bfloat16,
-                        prob_shape=Index(256, 4 * BN_BM128, 2 * BK),
-                        block_tile_shape=Index(128, BN_BM128, BK),
+                        prob_shape=(256, 4 * BN_BM128, 2 * BK),
+                        block_tile_shape=(128, BN_BM128, BK),
                         transpose_b=transpose_b,
                         cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
                         a_swizzle=swizzle,

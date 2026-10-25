@@ -3148,7 +3148,7 @@ def block_scaled_matmul[
             scaling_kind=get_scaling_kind[
                 a_type, scales_dtype, SF_VECTOR_SIZE, b_type
             ](),
-            mma_shape=umma_shape,
+            mma_shape=(umma_shape[0], umma_shape[1], umma_shape[2]),
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),

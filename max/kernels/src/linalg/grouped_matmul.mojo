@@ -907,7 +907,7 @@ def grouped_matmul[
             comptime transpose_b = True
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=block_tile_shape,
-                mma_shape=umma_shape,
+                mma_shape=(umma_shape[0], umma_shape[1], umma_shape[2]),
                 cluster_shape=cluster_shape,
             )
 

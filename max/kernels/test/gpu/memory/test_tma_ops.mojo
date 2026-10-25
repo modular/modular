@@ -25,7 +25,6 @@ from max.gpu.memory import (
 )
 
 comptime OpaquePointer = ImmPointer[NoneType, ImmutAnyOrigin]
-from std.utils.index import Index
 
 
 # CHECK-LABEL: test_async_copy_asm
@@ -40,11 +39,11 @@ def test_async_copy_asm():
     ):
         # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
         cp_async_bulk_tensor_shared_cluster_global(
-            dst_mem, tma_descriptor, mem_bar, Index(coords[0], coords[1])
+            dst_mem, tma_descriptor, mem_bar, (coords[0], coords[1])
         )
         # CHECK: cp.async.bulk.tensor.1d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
         cp_async_bulk_tensor_shared_cluster_global(
-            dst_mem, tma_descriptor, mem_bar, Index(coords[0])
+            dst_mem, tma_descriptor, mem_bar, (coords[0],)
         )
 
     print(
@@ -66,20 +65,20 @@ def test_async_store_asm():
     ):
         # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group [%rd1, {%r2, %r3}], [%r1];
         cp_async_bulk_tensor_global_shared_cta(
-            src_mem, tma_descriptor, Index(coords[0], coords[1])
+            src_mem, tma_descriptor, (coords[0], coords[1])
         )
         # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r4, %r5}], [%r1], %rd8;
         cp_async_bulk_tensor_global_shared_cta[
             eviction_policy=CacheEviction.EVICT_FIRST
-        ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
+        ](src_mem, tma_descriptor, (coords[0], coords[1]))
         # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group [%rd1, {%r6}], [%r1];
         cp_async_bulk_tensor_global_shared_cta(
-            src_mem, tma_descriptor, Index(coords[0])
+            src_mem, tma_descriptor, (coords[0],)
         )
         # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r7}], [%r1], %rd11;
         cp_async_bulk_tensor_global_shared_cta[
             eviction_policy=CacheEviction.EVICT_LAST
-        ](src_mem, tma_descriptor, Index(coords[0]))
+        ](src_mem, tma_descriptor, (coords[0],))
 
     print(
         _compile_code[
@@ -100,18 +99,18 @@ def test_async_bulk_tensor_reduce_asm():
     ):
         cp_async_bulk_tensor_reduce_global_shared_cta[
             reduction_kind=ReduceOp.ADD
-        ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
+        ](src_mem, tma_descriptor, (coords[0], coords[1]))
         cp_async_bulk_tensor_reduce_global_shared_cta[
             reduction_kind=ReduceOp.ADD,
             eviction_policy=CacheEviction.EVICT_FIRST,
-        ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
+        ](src_mem, tma_descriptor, (coords[0], coords[1]))
         cp_async_bulk_tensor_reduce_global_shared_cta[
             reduction_kind=ReduceOp.ADD
-        ](src_mem, tma_descriptor, Index(coords[0]))
+        ](src_mem, tma_descriptor, (coords[0],))
         cp_async_bulk_tensor_reduce_global_shared_cta[
             reduction_kind=ReduceOp.ADD,
             eviction_policy=CacheEviction.EVICT_LAST,
-        ](src_mem, tma_descriptor, Index(coords[0]))
+        ](src_mem, tma_descriptor, (coords[0],))
 
     print(
         _compile_code[

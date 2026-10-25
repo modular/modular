@@ -5040,9 +5040,10 @@ AnyValue MagicFunctionNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   auto immortal = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
   bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
   bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
+  StringAttr desc = StringAttr::get(emitter.getContext(), "(reference value)");
   exprVal =
       RefFromPointerOp::create(*emitter.builder, getLocation(emitter), exprVal,
-                               immortal, startsUninit, endsUninit);
+                               immortal, desc, startsUninit, endsUninit);
 
   /// __get_address_as_owned_value(ptr) # returns RValue
   if (kind == ExprNode::kGetAddressAsOwned)

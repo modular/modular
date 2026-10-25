@@ -25,9 +25,13 @@ import pytest
 from max.pipelines import AutoModel
 from max.pipelines.modeling.types import PixelGenerationInputs, RequestID
 from max.pipelines.request import (
+    InputImageContent,
+    InputMessage,
+    InputTextContent,
     OpenResponsesRequest,
     OpenResponsesRequestBody,
     OutputImageContent,
+    UserMessage,
 )
 from max.pipelines.request.provider_options import (
     ImageProviderOptions,
@@ -55,11 +59,15 @@ def model() -> Iterator[AutoModel]:
 
 
 def _generate(
-    model: AutoModel, prompts: list[str], seed: int
+    model: AutoModel,
+    prompts: list[str],
+    seed: int,
+    images: list[list[Image.Image]] | None = None,
 ) -> list[Image.Image]:
     """Returns each prompt's one image."""
     result = model.generate(
         prompt=prompts,
+        images=images,
         height=SIZE,
         width=SIZE,
         num_inference_steps=STEPS,
@@ -69,16 +77,40 @@ def _generate(
     return [row[0] for row in result.images]
 
 
-def _direct(model: AutoModel, prompt: str, seed: int) -> Image.Image:
-    """Runs one request through the pipeline itself, as serve does."""
+def _direct(
+    model: AutoModel,
+    prompt: str,
+    seed: int,
+    input_image: Image.Image | None = None,
+) -> Image.Image:
+    """Runs the request serve builds through the pipeline itself.
+
+    An input image travels as a PNG data URI in the message, as in a
+    ``/v1/responses`` request, rather than as ``new_context``'s argument.
+    """
     pipeline = model._image_pipeline
     tokenizer = model._image_tokenizer
     assert pipeline is not None and tokenizer is not None
+    message_input: str | list[InputMessage] = prompt
+    if input_image is not None:
+        buffer = io.BytesIO()
+        input_image.save(buffer, format="PNG")
+        data = base64.b64encode(buffer.getvalue()).decode()
+        message_input = [
+            UserMessage(
+                content=[
+                    InputImageContent(
+                        image_url=f"data:image/png;base64,{data}"
+                    ),
+                    InputTextContent(text=prompt),
+                ]
+            )
+        ]
     request = OpenResponsesRequest(
         request_id=RequestID(),
         body=OpenResponsesRequestBody(
             model=MODEL,
-            input=prompt,
+            input=message_input,
             seed=seed,
             provider_options=ProviderOptions(
                 image=ImageProviderOptions(
@@ -115,4 +147,17 @@ def test_generates_seeded_images_like_the_pipeline(model: AutoModel) -> None:
 
     np.testing.assert_array_equal(
         np.asarray(_direct(model, PROMPTS[0], seed=0)), pixels[0]
+    )
+
+
+def test_edits_an_input_image_like_the_pipeline(model: AutoModel) -> None:
+    [source] = _generate(model, PROMPTS[:1], seed=0)
+    prompt = "the same fox at night"
+    [edited] = _generate(model, [prompt], seed=0, images=[[source]])
+    assert edited.size == (SIZE, SIZE)
+    assert edited.mode == "RGB"
+    assert not np.array_equal(np.asarray(edited), np.asarray(source))
+    np.testing.assert_array_equal(
+        np.asarray(edited),
+        np.asarray(_direct(model, prompt, seed=0, input_image=source)),
     )

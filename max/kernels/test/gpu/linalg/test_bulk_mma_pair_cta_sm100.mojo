@@ -528,7 +528,7 @@ def bulk_mma_pair_cta_ts_kernel[
         accum_type,
         ab_type,
         ab_type,
-        Index[dtype=.uint32](MMA_M, MMA_N),
+        (UInt32(MMA_M), UInt32(MMA_N)),
         transpose_b=transpose_b,
     ]()
 

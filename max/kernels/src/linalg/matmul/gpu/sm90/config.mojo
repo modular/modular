@@ -262,7 +262,11 @@ struct MatmulConfig[
             Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
         ](
             block_tile_shape=self.block_tile_shape,
-            mma_shape=self.mma_shape,
+            mma_shape=(
+                self.mma_shape[0],
+                self.mma_shape[1],
+                self.mma_shape[2],
+            ),
             cluster_shape=self.cluster_shape,
             num_pipeline_stages=self.num_pipeline_stages,
             num_k_partitions=self.num_k_partitions,

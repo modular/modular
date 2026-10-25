@@ -36,7 +36,7 @@ from extensibility import (
     VariadicTensors,
     get_row_major_tensor_spec_static,
 )
-from layout import to_index_list
+from layout import coord_to_index_list, to_index_list
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,

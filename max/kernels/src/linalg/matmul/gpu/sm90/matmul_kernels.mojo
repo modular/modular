@@ -328,11 +328,15 @@ struct HopperMatmulSM90Kernel[
     comptime num_consumer = (Self.num_threads // 128) - 1
     comptime num_consumer_threads = Self.num_consumer * 128
 
-    comptime num_m_mmas = Self.BM // Self.wgmma_shape[0] // Self.num_consumer
-    comptime num_n_mmas = Self.BN // Self.wgmma_shape[1]
+    comptime num_m_mmas = (
+        Self.BM // Int(Self.wgmma_shape[0]) // Self.num_consumer
+    )
+    comptime num_n_mmas = Self.BN // Int(Self.wgmma_shape[1])
 
     comptime accum_type = get_accum_type[Self.a_type]()
-    comptime c_frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[1] // 128
+    comptime c_frag_size = (
+        Int(Self.wgmma_shape[0]) * Int(Self.wgmma_shape[1]) // 128
+    )
 
     comptime a_smem_layout = tile_layout_k_major[
         Self.a_type, Self.BM, Self.BK, Self.a_swizzle
@@ -381,7 +385,7 @@ struct HopperMatmulSM90Kernel[
         Self.accum_type,
         Self.a_type,
         Self.b_type,
-        Self.wgmma_shape,
+        (Self.wgmma_shape[0], Self.wgmma_shape[1], Self.wgmma_shape[2]),
         Self.a_swizzle,
         Self.b_swizzle,
         Self.transpose_b,
@@ -675,7 +679,11 @@ struct HopperMatmulSM90Kernel[
             BM=Self.BM,
             BN=Self.BN,
             swizzle=Self.c_swizzle,
-            wgmma_shape=Self.wgmma_shape,
+            wgmma_shape=(
+                Self.wgmma_shape[0],
+                Self.wgmma_shape[1],
+                Self.wgmma_shape[2],
+            ),
             num_consumer=Self.num_consumer,
             use_tma_store=Self.use_tma_store,
             swapAB=Self.swapAB,

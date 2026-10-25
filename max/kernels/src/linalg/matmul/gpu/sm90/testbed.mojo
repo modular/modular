@@ -234,7 +234,7 @@ def test_matmul_sm90[
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=block_tile_shape,
-        mma_shape=wgmma_shape,
+        mma_shape=(wgmma_shape[0], wgmma_shape[1], wgmma_shape[2]),
         cluster_shape=cluster_shape,
         num_pipeline_stages=num_pipeline_stages,
         num_consumer=num_consumer,

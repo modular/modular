@@ -31,6 +31,7 @@ from layout import (
     row_major,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 from linalg.fp4_utils import (
@@ -173,7 +174,7 @@ def test_existing_kernel_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: IndexList[3],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test existing block-scaled kernel with a single problem.
@@ -387,7 +388,7 @@ def test_grouped_kernel_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: IndexList[3],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with a single group (should behave like non-grouped).
@@ -703,7 +704,7 @@ def test_grouped_kernel_multi_group_same_ptr[
     num_groups: Int,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: IndexList[3],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with multiple groups using same pointers.
@@ -1003,7 +1004,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
     cluster_shape: IndexList[3],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with 2 groups using different pointers per group.
@@ -1395,7 +1396,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -1409,7 +1410,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](
         ctx,
@@ -1428,7 +1429,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[512], Idx[256], Idx[128])
 
@@ -1440,7 +1441,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[256], Idx[512], Idx[128])
 
@@ -1452,7 +1453,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[256])
 
@@ -1464,7 +1465,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[512], Idx[512], Idx[256])
 
@@ -1476,7 +1477,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[128], Idx[128], Idx[128])
 
@@ -1488,7 +1489,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[512])
 
@@ -1504,7 +1505,7 @@ def main() raises:
         num_groups=2,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -1517,7 +1518,7 @@ def main() raises:
         num_groups=4,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -1532,7 +1533,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
+        mma_shape=(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -1550,8 +1551,10 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,  # 2SM mode
-        mma_shape=Index(
-            256, 128, 32
+        mma_shape=(
+            256,
+            128,
+            32,
         ),  # mma[0]=256 for BM=128, mma[1]=128 for BN=128
         cluster_shape=Index(2, 1, 1),  # 2 CTAs per cluster
     ](ctx, Idx[256], Idx[256], Idx[128])
@@ -1564,7 +1567,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
+        mma_shape=(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
     ](ctx, Idx[512], Idx[512], Idx[256])
 
@@ -1577,7 +1580,7 @@ def main() raises:
         num_groups=2,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
+        mma_shape=(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -1589,7 +1592,7 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
+        mma_shape=(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
     ](ctx, Idx[256], Idx[256], Idx[128])
 

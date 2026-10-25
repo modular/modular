@@ -22,7 +22,6 @@ from layout import Coord, TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
-    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -1244,12 +1243,15 @@ def fa4_load[
                 comptime check_mask_crossp = mask.nonfull_sets[BM_mask, BN]()[
                     0
                 ] == TileMaskStatus.UNKNOWN_MASK
-                comptime assert not (
-                    ExplicitTMEMCrossP and (needs_partial or check_mask_crossp)
-                ), (
-                    "FA4_TMEM_CROSS_P=true was requested but the K-ahead load"
-                    " is implemented for the headline regime only (no partial"
-                    " pages, no mid-range FULL_MASK skip)"
+                # Headline regime only, by construction: `CrossPEffective`
+                # (kernel.mojo) requires `crossp_on()`, whose full-pages
+                # conjunct is the negation of `needs_partial`, and excludes
+                # UNKNOWN_MASK -- the two conditions this producer cannot
+                # handle.
+                comptime assert not (needs_partial or check_mask_crossp), (
+                    "the cross-stage-P K-ahead load is implemented for the"
+                    " headline regime only (no partial pages, no mid-range"
+                    " FULL_MASK skip)"
                 )
                 # NT = total K-tiles (== total V-tiles). iter_count is the last
                 # masked set end minus one; for the dense contiguous regime that is
