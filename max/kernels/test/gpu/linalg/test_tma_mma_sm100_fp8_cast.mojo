@@ -78,7 +78,13 @@ def cpu_matmul_naive[
             C.store((m, n), acc.cast[C.dtype]())
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 def tma_umma_kernel_sgs[
     a_type: DType,  # A type in gmem and smem (bfloat16)
@@ -91,7 +97,7 @@ def tma_umma_kernel_sgs[
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
@@ -406,7 +412,7 @@ def test_tma_umma_fp8_b[
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext) raises:

@@ -149,7 +149,7 @@ struct WaitAndAdvanceContextSplitK[
 struct WorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type=.uint32],
+    cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -236,7 +236,7 @@ struct WorkIteratorSplitK[
 struct SchedulerWorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type=.uint32],
+    cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -344,9 +344,7 @@ struct SchedulerWorkIteratorSplitK[
 struct TileScheduler[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type=.uint32] = Index[
-        dtype=DType.uint32
-    ](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
     num_split_k: Int = 1,

@@ -686,7 +686,9 @@ struct MatmulConfig[
             Int(mma_shape[0]), Int(mma_shape[1]), Int(mma_shape[2])
         )
         self.cluster_shape = Coord[Int, Int, Int](
-            Int(cluster_shape[0]), Int(cluster_shape[1]), Int(cluster_shape[2])
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         )
         self.AB_swapped = AB_swapped
         self.block_swizzle_size = block_swizzle_size
@@ -1405,7 +1407,9 @@ struct BlockScaledMatmulConfig[
             Int(mma_shape[0]), Int(mma_shape[1]), Int(mma_shape[2])
         )
         self.cluster_shape = Coord[Int, Int, Int](
-            Int(cluster_shape[0]), Int(cluster_shape[1]), Int(cluster_shape[2])
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         )
         self.AB_swapped = AB_swapped
         self.block_swizzle_size = block_swizzle_size

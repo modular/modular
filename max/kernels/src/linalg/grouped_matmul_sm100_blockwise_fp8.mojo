@@ -143,7 +143,13 @@ def _accum_row[
         return lane
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__name(
@@ -170,7 +176,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
@@ -1992,7 +1998,13 @@ def promote_accumulators[
                         )
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -2022,7 +2034,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     expert_n: Int,
     expert_ids_layout: TensorLayout,
     b_scales_n: Int,
@@ -2756,7 +2768,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
             BLOCK_DIM_M=16,
             BLOCK_DIM_N=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, 128, 128),
+            scales_granularity_mnk=Coord[Int, Int, Int](1, 128, 128),
         ](
             c,
             a,
@@ -2902,11 +2914,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=max_pipeline_stages,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         expert_n=expert_n,
         expert_ids_layout=type_of(expert_ids.layout),
         b_scales_n=b_scales_n,
@@ -3079,7 +3087,9 @@ def grouped_matmul_dynamic_scaled_fp8[
 
             # MMA_N=128 halves the number of dispatched (expert, n) tiles vs
             # 64, which dominates runtime for small-M-per-expert decode.
-            comptime umma_shape: Coord[Int, Int, Int] = (64, 128, 32)
+            comptime umma_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](
+                64, 128, 32
+            )
 
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 cluster_shape=(1, 1, 1),
@@ -3159,7 +3169,7 @@ def grouped_matmul_dynamic_scaled_fp8[
                     BLOCK_DIM_M=16,
                     BLOCK_DIM_N=16,
                     transpose_b=transpose_b,
-                    scales_granularity_mnk=Index(
+                    scales_granularity_mnk=Coord[Int, Int, Int](
                         m_scale_granularity,
                         n_scale_granularity,
                         k_scale_granularity,

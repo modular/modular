@@ -177,7 +177,7 @@ struct MatmulConfig[
         self.mma_shape = Coord[Int, Int, Int](
             mma_mn[0], mma_mn[1], K_bytes_per_mma // size_of[Self.a_type]()
         )
-        self.cluster_shape = Coord[Int, Int, Int](1, 1, 1)
+        self.cluster_shape = (1, 1, 1)
         self.num_k_partitions = num_k_partitions
         self.num_consumer = num_consumer_groups
         self.partitioned_multicast = partitioned_multicast

@@ -1537,7 +1537,13 @@ def batched_matmul_shape[
     return output_shape
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
@@ -1563,7 +1569,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
@@ -2139,7 +2145,7 @@ def blockwise_scaled_fp8_matmul_amd_batched[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c_: TileTensor[mut=True, c_type, ...],
@@ -2295,7 +2301,7 @@ def _batched_matmul_dynamic_scaled_fp8_amd_tiled[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c_: TileTensor[mut=True, c_type, ...],
@@ -2465,7 +2471,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -2521,7 +2527,9 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                1, BLOCK_SCALE_N, BLOCK_SCALE_K
+            ),
         ](
             c[batch, :, :].address_space_cast[.GENERIC](),
             a[batch, :, :].address_space_cast[.GENERIC](),
@@ -2693,8 +2701,10 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         and type_of(a).static_shape[2] > 0
     ):
         return _batched_matmul_dynamic_scaled_fp8_amd_tiled[
-            scales_granularity_mnk=Index(
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
             transpose_b=transpose_b,
         ](
@@ -2707,8 +2717,10 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         )
     else:
         return batched_matmul_dynamic_scaled_fp8_naive[
-            scales_granularity_mnk=Index(
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
             transpose_b=transpose_b,
         ](

@@ -178,11 +178,7 @@ def _create_tma_and_launch[
         sfb_dtype,
         transpose_b,
         config=config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]

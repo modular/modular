@@ -255,7 +255,7 @@ struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
 struct GroupedWorkIterator1D1D[
     static_N: Int,  # N dimension (expert output dim, static)
     tile_shape: Coord[Int, Int, Int],  # Block tile shape (BM, BN, BK)
-    cluster: Coord[Int, Int, Int] = (1, 1, 1),
+    cluster: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     cta_group: Int = 1,
     AB_swapped: Bool = False,
     OffsetsEngine: TensorEngine = DefaultEngine[element_width=1],

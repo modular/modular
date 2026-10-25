@@ -77,7 +77,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         scales_dtype,
         block_tile_shape,
         umma_shape,
-        cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+        cluster_shape=(1, 1, 1),
         cta_group=1,
         a_swizzle=swizzle,
         b_swizzle=swizzle,

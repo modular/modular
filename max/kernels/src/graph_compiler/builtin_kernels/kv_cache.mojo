@@ -1294,7 +1294,7 @@ struct Struct_k_matmul_ragged_paged_scale:
         )
         k_matmul_ragged_paged_scale[
             target=target,
-            scales_granularity_mnk=(
+            scales_granularity_mnk=Coord[Int, Int, Int](
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,

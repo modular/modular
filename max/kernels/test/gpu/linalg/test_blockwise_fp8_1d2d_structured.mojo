@@ -250,7 +250,9 @@ def test_blockwise_fp8_1d2d_structured[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_K, BLOCK_SCALE_K
+        ),
     ](
         c_ref_tt,
         a_tt,

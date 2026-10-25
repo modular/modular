@@ -910,7 +910,13 @@ def consumer_main_loop[
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -944,7 +950,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
     # Need because nvvm.cluster_dim only takes StaticTuple
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
     *,
@@ -1261,11 +1267,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     var scheduler = TileScheduler[
         num_stages=config.num_clc_pipeline_stages,
-        cluster_shape=(
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
-        ),
+        cluster_shape=config.cluster_shape,
         block_swizzle_size=config.block_swizzle_size,
         rasterize_order=config.raster_order,
     ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
@@ -2028,11 +2030,7 @@ def _create_tma_and_launch[
         type_of(sfb_tma_op).desc_shape,
         transpose_b,
         config=config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
         EpilogueFnType=EpilogueFnType,

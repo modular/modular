@@ -494,11 +494,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
         ceildiv(N_static, BN)
     )
 
-    comptime cluster_shape = StaticTuple[Int32, 3](
-        Int32(config.cluster_shape[0]),
-        Int32(config.cluster_shape[1]),
-        Int32(config.cluster_shape[2]),
-    )
+    comptime cluster_shape = config.cluster_shape
 
     comptime CLUSTER_N = Int(cluster_shape[0])
     comptime CLUSTER_M = Int(cluster_shape[1])
@@ -1001,11 +997,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
     logger.info("cluster_shape:", config.cluster_shape)
     logger.info("mma_shape:", config.mma_shape)
 
-    comptime cluster_shape = StaticTuple[Int32, 3](
-        Int32(config.cluster_shape[0]),
-        Int32(config.cluster_shape[1]),
-        Int32(config.cluster_shape[2]),
-    )
+    comptime cluster_shape = config.cluster_shape
 
     comptime CLUSTER_N = Int(cluster_shape[0])
     comptime CLUSTER_M = Int(cluster_shape[1])

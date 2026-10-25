@@ -1605,7 +1605,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     ):
         blockwise_scaled_fp8_with_epilogue[
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(
+            scales_granularity_mnk=Coord[Int, Int, Int](
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,
@@ -1633,7 +1633,7 @@ def naive_blockwise_scaled_fp8_matmul[
     BLOCK_DIM: Int = 16,
     transpose_b: Bool = False,
     accum_type: DType = get_accum_type[c_type](),
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
     has_epilogue_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -1762,7 +1762,7 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
     b_scale_layout: TensorLayout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
     *,
     EpilogueFnType: ElementwiseEpilogueFn,
     has_epilogue_fn: Bool,
@@ -1931,7 +1931,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
     BLOCK_DIM_N: Int = 32,
     BLOCK_DIM_M: Int = 16,
     transpose_b: Bool = True,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
 ](
     c: TileTensor[mut=True, c_type, c_layout, ...],
     a: TileTensor[mut=False, a_type, a_layout, ...],
@@ -2046,7 +2046,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     expert_ids_type: DType,
     accum_type: DType,
     transpose_b: Bool = True,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
@@ -2226,7 +2226,7 @@ def _amd_blockwise_tiled_ok[
     a_scales_type: DType,
     b_scales_type: DType,
     transpose_b: Bool,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     device_info: GPUInfo,
     a_static_k: Int,
     c_static_n: Int,
@@ -2268,7 +2268,7 @@ def blockwise_scaled_fp8_with_epilogue[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
     has_epilogue_fn: Bool = False,
 ](
@@ -2334,17 +2334,13 @@ def blockwise_scaled_fp8_with_epilogue[
         comptime static_N = c.static_shape[1]
         comptime n_tiles = ceildiv(static_N, 128) if static_N > 0 else 0
         comptime wide_N = n_tiles >= B200.sm_count // 4
-        comptime cluster_shape = Index(2, 1, 1)
+        comptime cluster_shape = (2, 1, 1)
         # M <= 128 (runtime branch below): 2-CTA pair, wide MMA_N when
         # the N grid is wide.
         comptime small_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=(
-                cluster_shape[0],
-                cluster_shape[1],
-                cluster_shape[2],
-            ),
+            cluster_shape=cluster_shape,
             mma_shape=(128, 256 if wide_N else 128, MMA_K),
             cta_group=2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
@@ -2353,11 +2349,7 @@ def blockwise_scaled_fp8_with_epilogue[
         comptime mid_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=(
-                cluster_shape[0],
-                cluster_shape[1],
-                cluster_shape[2],
-            ),
+            cluster_shape=cluster_shape,
             mma_shape=(128, 128, MMA_K),
             cta_group=1 if wide_N else 2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
@@ -2366,11 +2358,7 @@ def blockwise_scaled_fp8_with_epilogue[
         comptime big_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=(
-                cluster_shape[0],
-                cluster_shape[1],
-                cluster_shape[2],
-            ),
+            cluster_shape=cluster_shape,
             mma_shape=(128, 128, MMA_K),
             cta_group=1 if n_tiles >= 8 else 2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,

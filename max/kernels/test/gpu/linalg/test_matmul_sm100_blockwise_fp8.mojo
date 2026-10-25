@@ -223,7 +223,9 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_K, BLOCK_SCALE_K
+        ),
     ](
         c_device_ref_nd,
         a_device_nd,

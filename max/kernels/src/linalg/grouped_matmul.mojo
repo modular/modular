@@ -908,7 +908,7 @@ def grouped_matmul[
                 block_tile_shape[1] * cta_group,
                 MMA_K,
             )
-            comptime cluster_shape = Coord[Int, Int, Int](cta_group, 1, 1)
+            comptime cluster_shape = (cta_group, 1, 1)
             comptime transpose_b = True
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=(

@@ -16,7 +16,7 @@ Target: NVIDIA SM100 (B200). Validates
 ``grouped_matmul_rowwise_dynamic_scaled_fp8`` (the kernel under test, KUT)
 against the in-tree naive grouped FP8 reference
 ``naive_blockwise_scaled_fp8_grouped_matmul`` configured with
-``scales_granularity_mnk = (1, 1, K)`` - i.e. one activation scale per token
+``scales_granularity_mnk = Coord[Int, Int, Int](1, 1, K)`` - i.e. one activation scale per token
 and one weight scale per (expert, output-channel). The two paths are distinct
 code: the reference reloads + multiplies the (constant-over-K) scales inside
 the K-loop, while the KUT applies them once after the full-K fp32 reduction.
@@ -33,7 +33,7 @@ Llama-4-Scout gate/up shape.
 """
 
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major, Coord
 from layout._fillers import random
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul import grouped_matmul_rowwise_dynamic_scaled_fp8
@@ -212,7 +212,7 @@ def test_grouped_matmul_rowwise_scaled_fp8[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, 1, K),
+        scales_granularity_mnk=Coord[Int, Int, Int](1, 1, K),
     ](
         c_device_ref_tt,
         a_device_tt,

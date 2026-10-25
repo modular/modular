@@ -34,6 +34,7 @@ from std.random import seed
 
 from max.gpu.host import DeviceContext
 from layout import (
+    Coord,
     TileTensor,
     row_major,
 )
@@ -128,7 +129,7 @@ def _run_one[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=True,
-        scales_granularity_mnk=Index(1, n_g, k_g),
+        scales_granularity_mnk=Coord[Int, Int, Int](1, n_g, k_g),
     ](
         c_ref_tt,
         a_tt,

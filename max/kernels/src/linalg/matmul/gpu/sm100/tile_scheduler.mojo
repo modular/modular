@@ -29,6 +29,7 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from ..tile_scheduler import RasterOrder
+from std.utils.coord import Coord
 
 
 @fieldwise_init
@@ -65,9 +66,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=.uint32] = Index[
-        dtype=DType.uint32
-    ](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ](TrivialRegisterPassable):

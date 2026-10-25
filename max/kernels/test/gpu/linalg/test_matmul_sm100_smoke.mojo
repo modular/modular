@@ -67,7 +67,7 @@ def test_blackwell_matmul[
     c_type: DType,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     block_swizzle_size: Int = 0,
@@ -226,7 +226,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(64), Int(32), Int(BK)),
             mma_shape=(Int(64), Int(32), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
         ](ctx, Int(256), Idx[256], Idx[256])
 
@@ -240,7 +240,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(128), Int(64), Int(BK)),
             mma_shape=(Int(128), Int(64), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=(4, 4, 1),
             cta_group=1,
             block_swizzle_size=4,
         ](ctx, Int(512), Idx[512], Idx[512])
@@ -255,7 +255,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(128), Int(64), Int(BK)),
             mma_shape=(Int(256), Int(128), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=(4, 4, 1),
             cta_group=2,
             block_swizzle_size=4,
         ](ctx, Int(512), Idx[512], Idx[512])
@@ -270,7 +270,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(128), Int(64), Int(BK)),
             mma_shape=(Int(128), Int(64), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=(4, 4, 1),
             cta_group=1,
             swapAB=True,
         ](ctx, Int(256), Idx[512], Idx[512])
@@ -285,7 +285,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(64), Int(32), Int(BK)),
             mma_shape=(Int(64), Int(32), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+            cluster_shape=(4, 2, 1),
             cta_group=1,
             k_group_size=2,
         ](ctx, Int(256), Idx[512], Idx[1024])
@@ -300,7 +300,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(64), Int(32), Int(BK)),
             mma_shape=(Int(128), Int(64), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=(4, 4, 1),
             cta_group=2,
             num_split_k=2,
         ](ctx, Int(256), Idx[256], Idx[512])
@@ -315,7 +315,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(128), Int(128), Int(BK)),
             mma_shape=(Int(128), Int(128), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
         ](ctx, Int(512), Idx[512], Idx[512])
 
@@ -329,7 +329,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(64), Int(64), Int(BK)),
             mma_shape=(Int(64), Int(64), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
         ](ctx, Int(317), Idx[512], Idx[256])
 
@@ -343,7 +343,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(64), Int(32), Int(BK)),
             mma_shape=(Int(64), Int(32), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+            cluster_shape=(8, 2, 1),
             cta_group=1,
             block_swizzle_size=2,
         ](ctx, Int(256), Idx[256], Idx[128])
@@ -358,7 +358,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape=(Int(128), Int(64), Int(BK)),
             mma_shape=(Int(256), Int(128), Int(MMA_K)),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=(4, 4, 1),
             cta_group=2,
             swapAB=True,
         ](ctx, Int(256), Idx[512], Idx[512])

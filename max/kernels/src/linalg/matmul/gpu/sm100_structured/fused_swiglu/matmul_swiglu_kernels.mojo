@@ -367,7 +367,7 @@ def consumer_main_loop[
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: Coord[Int, Int, Int] = (1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
@@ -1467,7 +1467,13 @@ struct SwiGLUKernelConstants[
 # ===----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1488,7 +1494,7 @@ def blackwell_swiglu_warp_specialized_kernel[
     transpose_b: Bool,
     config: FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b],
     BiasEngine: TensorEngine,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     pdl_level: PDLLevel = PDLLevel(),
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],

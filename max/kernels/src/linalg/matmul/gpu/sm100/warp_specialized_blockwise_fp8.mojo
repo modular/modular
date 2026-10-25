@@ -867,7 +867,13 @@ def promote_accumulators[
                     )
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -894,7 +900,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
@@ -1197,11 +1203,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var scheduler = TileScheduler[
         num_stages=config.num_clc_pipeline_stages,
-        cluster_shape=(
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
-        ),
+        cluster_shape=config.cluster_shape,
         block_swizzle_size=config.block_swizzle_size,
         rasterize_order=config.raster_order,
     ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
@@ -1663,11 +1665,7 @@ def sm100_warp_specialized_blockwise_fp8[
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=max_pipeline_stages,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
     ]
 
     var grid_dim = (

@@ -55,7 +55,7 @@ un-rounded fp32 host sum within an e4m3 half-ULP tolerance.
 from std.math import ceildiv, exp2, isnan
 
 from max.gpu.host import DeviceContext
-from layout import TileTensor, row_major
+from layout import TileTensor, row_major, Coord
 from std.random import rand
 from linalg.bmm import (
     _batched_matmul_dynamic_scaled_fp8_impl,
@@ -83,7 +83,7 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
     comptime BLOCK_SCALE_K = k_scale
     comptime BLOCK_SCALE_N = n_scale
     comptime transpose_b = True
-    comptime gran = Index(m_scale, n_scale, k_scale)
+    comptime gran = Coord[Int, Int, Int](m_scale, n_scale, k_scale)
     # Scale-tensor block counts use ceildiv (K=192 -> 2 K-blocks); the host ref
     # must stride scales by these, not floor division, or it reads the wrong tail.
     comptime K_BLOCKS = ceildiv(K, k_scale)

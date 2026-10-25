@@ -55,7 +55,7 @@ def test_transposed_epilogue_row_straddle[
     c_type: DType,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     swapAB: Bool = True,
@@ -197,7 +197,7 @@ def main() raises:
             dtype,
             (64, 64, BK),
             (64, 64, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=1,
         ](ctx, Int(64), Idx[136], Idx[128])
 
@@ -209,7 +209,7 @@ def main() raises:
             dtype,
             (128, 64, BK),
             (128, 64, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=1,
         ](ctx, Int(300), Idx[776], Idx[128])
 
@@ -221,6 +221,6 @@ def main() raises:
             dtype,
             (64, 32, BK),
             (128, 64, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
         ](ctx, Int(300), Idx[776], Idx[128])

@@ -21,6 +21,7 @@ from max.gpu import warp_id as get_warp_id
 from max.gpu.memory import fence_mbarrier_init
 from max.gpu.sync import syncwarp
 from layout.tma_async import PipelineState, SharedMemBarrier
+from layout import Coord
 from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler
 from std.memory import unsafe_stack_allocation
 
@@ -28,9 +29,15 @@ from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 def test_kernel[
-    num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
+    num_stages: Int, cluster_shape: Coord[Int, Int, Int]
 ](cluster_dim: StaticTuple[Int32, 3]):
     var clc_response = unsafe_stack_allocation[
         num_stages,
@@ -71,10 +78,11 @@ def test_kernel[
     comptime TMA_LOAD_THREADS = 32
     comptime MMA_THREADS = 32
     comptime EPILOGUE_THREADS = 128
-    comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
+    comptime CLUSTER_SIZE = Int32(cluster_shape[0] * cluster_shape[1])
     comptime clc_producer_arv_count = 1
-    comptime clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
-        TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
+    comptime clc_consumer_arv_count = Int32(
+        SCHEDULER_THREADS
+        + CLUSTER_SIZE * (TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS)
     )
 
     comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
@@ -207,13 +215,13 @@ def test_kernel[
 
 
 def test_tile_scheduler(ctx: DeviceContext) raises:
-    comptime cluster_shape = StaticTuple[Int32, 3](2, 1, 1)
+    comptime cluster_shape = (2, 1, 1)
     comptime grid_dim = (88, 16, 1)
 
     comptime cluster_dim = StaticTuple[Int32, 3](
-        Int32(Int(Int32(grid_dim[0]) // cluster_shape[0])),
-        Int32(Int(Int32(grid_dim[1]) // cluster_shape[1])),
-        cluster_shape[2],
+        Int32(grid_dim[0] // cluster_shape[0]),
+        Int32(grid_dim[1] // cluster_shape[1]),
+        Int32(cluster_shape[2]),
     )
     comptime kernel = test_kernel[2, cluster_shape]
     # CHECK-DAG: work_info: (0, 4, 0, True)

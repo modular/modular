@@ -47,7 +47,7 @@ def test_matmul_sm100_epilogue[
     c_type: DType,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -287,9 +287,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](
-                                Int32(cluster_m), Int32(cluster_n), 1
-                            ),
+                            cluster_shape=(cluster_m, cluster_n, 1),
                             cta_group=2,
                             test_lambda_fn=True,
                             register_based_epilogue=register_based_epilogue,

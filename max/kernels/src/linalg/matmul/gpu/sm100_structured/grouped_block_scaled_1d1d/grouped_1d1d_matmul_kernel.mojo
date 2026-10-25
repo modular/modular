@@ -652,7 +652,7 @@ struct Grouped1D1DMatmulKernel[
     # Static N dimension (expert output size)
     static_N: Int,
     # Cluster shape
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # Programmatic dependent launch level.
     pdl_level: PDLLevel = PDLLevel(),
     # When True, treats adjacent matmul-N column pairs (2i, 2i+1) as
@@ -1531,7 +1531,13 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)

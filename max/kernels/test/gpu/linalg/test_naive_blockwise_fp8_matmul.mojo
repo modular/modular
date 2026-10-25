@@ -161,7 +161,7 @@ def test_naive_blockwise_fp8_matmul[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(
+            scales_granularity_mnk=Coord[Int, Int, Int](
                 BLOCK_SCALE_M,
                 BLOCK_SCALE_N,
                 BLOCK_SCALE_K,

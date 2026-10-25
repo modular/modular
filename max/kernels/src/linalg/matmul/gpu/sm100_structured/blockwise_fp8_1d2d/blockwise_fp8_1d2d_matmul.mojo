@@ -154,11 +154,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
         config=config,
         static_N=expert_n,
         static_K=K,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         b_scales_engine=type_of(b_scales_2d).Engine,
         c_device_engine=type_of(c_device).Engine,
         offsets_engine=type_of(a_offsets).Engine,

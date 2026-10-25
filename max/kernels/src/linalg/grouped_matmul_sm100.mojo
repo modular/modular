@@ -1421,7 +1421,13 @@ def zero_output_epilogue[
 # splitting. Thus, we simply take the `work_tile_coord` without scaling it
 # in the callee; the scheduler returns element coordinates instead of tile
 # coordinates.
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1439,7 +1445,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     c_desc_shape: Coord,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     num_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     num_output_stages: Int = 2,
@@ -1701,7 +1707,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+                Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
             )
 
         comptime for i in range(num_accum_pipeline_stages):
@@ -2392,11 +2398,7 @@ def _grouped_matmul_sm100_persistent[
         config.block_tile_shape,
         (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         transpose_b=transpose_b,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(cluster_shape[0]),
-            Int32(cluster_shape[1]),
-            Int32(cluster_shape[2]),
-        ),
+        cluster_shape=cluster_shape,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,

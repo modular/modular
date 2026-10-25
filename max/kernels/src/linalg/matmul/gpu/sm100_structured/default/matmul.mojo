@@ -293,11 +293,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
         c_type,
         transpose_b,
         config=config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
@@ -1253,11 +1249,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         c_type,
         transpose_b,
         config=config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         max_profiled_tiles_per_SM=max_profiled_tiles,
         pdl_level=pdl_level,
     ]

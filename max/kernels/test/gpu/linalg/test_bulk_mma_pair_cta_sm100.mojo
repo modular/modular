@@ -90,7 +90,13 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def bulk_mma_pair_cta_kernel[
@@ -103,7 +109,7 @@ def bulk_mma_pair_cta_kernel[
     b_desc_shape: Coord,
     block_tile_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](2, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
@@ -187,7 +193,7 @@ def bulk_mma_pair_cta_kernel[
     if elect_one_warp and elect_one_thread:
         tma_mbar[0].init()
         mma_mbar[0].init(
-            cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+            Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
         )
 
     cluster_sync()
@@ -401,7 +407,13 @@ def bulk_mma_pair_cta_kernel[
                 )
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def bulk_mma_pair_cta_ts_kernel[
@@ -414,7 +426,7 @@ def bulk_mma_pair_cta_ts_kernel[
     b_desc_shape: Coord,
     block_tile_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](2, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
@@ -499,7 +511,7 @@ def bulk_mma_pair_cta_ts_kernel[
     if elect_one_warp and elect_one_thread:
         tma_mbar[0].init()
         mma_mbar[0].init(
-            cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+            Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
         )
 
     cluster_sync()
@@ -757,7 +769,7 @@ def test_bulk_mma_pair_cta[
     block_tile_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_tmem: Bool = False,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](2, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](ctx: DeviceContext) raises:
@@ -971,7 +983,7 @@ def main() raises:
                     prob_shape=(512, 1024, 8 * BK),
                     block_tile_shape=(Int(64), Int(128), Int(BK)),
                     transpose_b=transpose_b,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                 ](ctx)
@@ -985,7 +997,7 @@ def main() raises:
                     prob_shape=(128, 2 * BN_BM64, 2 * BK),
                     block_tile_shape=(Int(64), Int(BN_BM64), Int(BK)),
                     transpose_b=transpose_b,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                 ](ctx)
@@ -997,7 +1009,7 @@ def main() raises:
                     prob_shape=(128, 4 * BN_BM64, 2 * BK),
                     block_tile_shape=(Int(64), Int(BN_BM64), Int(BK)),
                     transpose_b=transpose_b,
-                    cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
+                    cluster_shape=(2, 2, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                 ](ctx)
@@ -1011,7 +1023,7 @@ def main() raises:
                     prob_shape=(256, 2 * BN_BM128, 2 * BK),
                     block_tile_shape=(Int(128), Int(BN_BM128), Int(BK)),
                     transpose_b=transpose_b,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                 ](ctx)
@@ -1034,7 +1046,7 @@ def main() raises:
                 prob_shape=(128, 256, 2 * BK2),
                 block_tile_shape=(Int(64), Int(128), Int(BK2)),
                 transpose_b=True,
-                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
             ](ctx)
@@ -1046,7 +1058,7 @@ def main() raises:
                 prob_shape=(128, 256, 2 * BK2),
                 block_tile_shape=(Int(64), Int(128), Int(BK2)),
                 transpose_b=False,
-                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
             ](ctx)
@@ -1070,7 +1082,7 @@ def main() raises:
                     block_tile_shape=(Int(128), Int(BN_TS_BM128), Int(BK_TS)),
                     transpose_b=transpose_b_ts,
                     a_tmem=True,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     a_swizzle=swizzle_ts,
                     b_swizzle=swizzle_ts,
                 ](ctx)
@@ -1085,7 +1097,7 @@ def main() raises:
                     block_tile_shape=(Int(64), Int(BN_TS_BM64), Int(BK_TS)),
                     transpose_b=transpose_b_ts,
                     a_tmem=True,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     a_swizzle=swizzle_ts,
                     b_swizzle=swizzle_ts,
                 ](ctx)
@@ -1098,7 +1110,7 @@ def main() raises:
                     block_tile_shape=(Int(64), Int(BN_TS_BM64), Int(BK_TS)),
                     transpose_b=transpose_b_ts,
                     a_tmem=True,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     a_swizzle=swizzle_ts,
                     b_swizzle=swizzle_ts,
                 ](ctx)

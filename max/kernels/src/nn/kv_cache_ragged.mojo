@@ -298,7 +298,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     weight_dtype: DType,
     output_dtype: DType,
     scale_dtype: DType,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     target: StaticString = "cpu",
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -701,7 +701,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
     collection_t: KVCollectionT,
     //,
     cache_t: KVCacheT,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     *,
     target: StaticString,
 ](
@@ -1168,7 +1168,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     scale_dtype: DType,
     cache_t: KVCacheT,
     //,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     *,
     target: StaticString,
 ](
@@ -2515,7 +2515,7 @@ def _matmul_blockwise_scaled_fp8_common[
     //,
     *,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
@@ -3122,7 +3122,7 @@ def k_matmul_ragged_paged_scale[
     weight_dtype: DType,
     scale_dtype: DType,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3233,7 +3233,7 @@ def _matmul_k_cache_ragged_scale_impl[
     cache_t: KVCacheT,
     *,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[

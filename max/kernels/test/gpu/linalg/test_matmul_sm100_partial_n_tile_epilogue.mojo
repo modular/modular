@@ -52,7 +52,7 @@ def test_partial_n_tile_compute_epilogue[
     c_type: DType,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     swapAB: Bool = False,
@@ -207,7 +207,7 @@ def main() raises:
             dtype,
             block_tile_shape_1sm,
             mma_shape_1sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=1,
             swapAB=False,
         ](ctx, Int(64), Idx[128], Idx[128])
@@ -219,7 +219,7 @@ def main() raises:
             dtype,
             block_tile_shape_1sm,
             mma_shape_1sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=1,
             swapAB=True,
         ](ctx, Int(64), Idx[128], Idx[128])

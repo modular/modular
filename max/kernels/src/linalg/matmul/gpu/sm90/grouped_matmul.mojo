@@ -145,11 +145,7 @@ def grouped_matmul_sm90[
     comptime N = b.static_shape[1]
     comptime K = b.static_shape[2]
 
-    comptime cluster_shape = StaticTuple[Int32, 3](
-        Int32(config.cluster_shape[0]),
-        Int32(config.cluster_shape[1]),
-        Int32(config.cluster_shape[2]),
-    )
+    comptime cluster_shape = config.cluster_shape
 
     comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,

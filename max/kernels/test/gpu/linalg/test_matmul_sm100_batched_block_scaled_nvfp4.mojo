@@ -63,7 +63,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     scales_dtype: DType,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -339,9 +339,7 @@ def main() raises:
                         scales_dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](
-                            Int32(cta_group), 1, 1
-                        ),
+                        cluster_shape=(cta_group, 1, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -362,7 +360,7 @@ def main() raises:
                         scales_dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                        cluster_shape=(4, 2, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -385,9 +383,7 @@ def main() raises:
                         scales_dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](
-                            Int32(cta_group), 1, 1
-                        ),
+                        cluster_shape=(cta_group, 1, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -408,7 +404,7 @@ def main() raises:
                         scales_dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
