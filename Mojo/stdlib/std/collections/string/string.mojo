@@ -24,6 +24,11 @@ from std.collections.string.string_span import (
     GraphemeIndicesIter,
     GraphemeSliceIter,
 )
+from std.collections.string._utf16 import (
+    _decode_utf16,
+    _invalid_utf16_replace,
+    _invalid_utf16_strict,
+)
 from std.builtin.builtin_slice import ContiguousSlice
 from std.hash.hasher import Hasher
 from std.reflection import call_location
@@ -405,6 +410,57 @@ struct String(
             src=unsafe_from_utf8.unsafe_ptr(),
             count=length,
         )
+
+    def __init__[
+        dtype: DType, //
+    ](
+        out self,
+        *,
+        from_utf16: Span[mut=False, Scalar[dtype], ...],
+        errors: type_of("strict") = "strict",
+    ) raises:
+        """Construct a new `String` from a buffer containing UTF-16 encoded
+        data.
+
+        Parameters:
+            dtype: The dtype of the buffer.
+
+        Args:
+            from_utf16: A span of UTF-16 code units.
+            errors: The action to take when encountering a decoding error.
+
+        Raises:
+            An exception is raised if the provided buffer values do not form
+            valid UTF-16 encoded codepoints.
+        """
+        self = _decode_utf16(from_utf16, _invalid_utf16_strict)
+
+    def __init__[
+        dtype: DType,
+        //,
+        *,
+        replace: Codepoint = Codepoint.ord("�"),
+    ](
+        out self,
+        *,
+        from_utf16: Span[mut=False, Scalar[dtype], ...],
+        errors: type_of("replace"),
+    ):
+        """Construct a new `String` from a buffer containing UTF-16 encoded
+        data.
+
+        Parameters:
+            dtype: The dtype of the buffer.
+            replace: What codepoint to replace the invalid codepoints with.
+
+        Args:
+            from_utf16: A span of UTF-16 code units.
+            errors: The action to take when encountering a decoding error.
+
+        Notes:
+            This constructor replaces invalid data with the specified codepoint.
+        """
+        self = _decode_utf16(from_utf16, _invalid_utf16_replace[replace])
 
     @stable(since="1.0")
     def __init__(out self, *, from_utf8_lossy: Span[Byte, _]):
