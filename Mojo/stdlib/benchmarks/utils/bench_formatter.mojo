@@ -13,11 +13,13 @@
 
 from std.sys import simd_width_of
 
-from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
-# ===-----------------------------------------------------------------------===#
-# Benchmark Data
-# ===-----------------------------------------------------------------------===#
+
+@fieldwise_init
+struct NullWriter(ImplicitlyCopyable, Writer):
+    def write_string(mut self, string: StringSlice):
+        keep(string)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -26,9 +28,10 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 def bench_writer_int[n: Int](mut b: Bencher) raises:
     @inline(.always)
     def call_fn():
-        var s1 = String()
-        s1.write(n)
-        _ = s1^
+        for _ in range(10**6):
+            var writer = NullWriter()
+            writer.write(black_box(n))
+            keep(writer)
 
     b.iter(call_fn)
 
@@ -36,9 +39,12 @@ def bench_writer_int[n: Int](mut b: Bencher) raises:
 def bench_writer_simd[n: Int](mut b: Bencher) raises:
     @inline(.always)
     def call_fn():
-        var s1 = String()
-        s1.write(SIMD[.int32, simd_width_of[DType.int32]()](n))
-        _ = s1^
+        for _ in range(10**6):
+            var writer = NullWriter()
+            writer.write(
+                black_box(SIMD[.int32, simd_width_of[DType.int32]()](n))
+            )
+            keep(writer)
 
     b.iter(call_fn)
 
