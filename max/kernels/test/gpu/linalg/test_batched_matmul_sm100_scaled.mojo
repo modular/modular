@@ -219,9 +219,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     ctx.synchronize()
 
     _ = batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk=Coord[Int, Int, Int](
-            1, BLOCK_SCALE_K, BLOCK_SCALE_K
-        ),
+        scales_granularity_mnk=(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
     ](
         c_device_ref_nd,
@@ -395,9 +393,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     ctx.synchronize()
 
     _ = batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk=Coord[Int, Int, Int](
-            1, BLOCK_SCALE_K, BLOCK_SCALE_K
-        ),
+        scales_granularity_mnk=(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
     ](
         c_ref,

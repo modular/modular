@@ -16,7 +16,7 @@ Target: NVIDIA SM100 (B200). Validates
 ``grouped_matmul_rowwise_dynamic_scaled_fp8`` (the kernel under test, KUT)
 against the in-tree naive grouped FP8 reference
 ``naive_blockwise_scaled_fp8_grouped_matmul`` configured with
-``scales_granularity_mnk = Coord[Int, Int, Int](1, 1, K)`` - i.e. one activation scale per token
+``scales_granularity_mnk = (1, 1, K)`` - i.e. one activation scale per token
 and one weight scale per (expert, output-channel). The two paths are distinct
 code: the reference reloads + multiplies the (constant-over-K) scales inside
 the K-loop, while the KUT applies them once after the full-K fp32 reduction.

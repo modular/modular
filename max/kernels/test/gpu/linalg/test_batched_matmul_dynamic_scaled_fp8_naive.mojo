@@ -128,7 +128,7 @@ def test_batched_matmul_dynamic_scaled_fp8_naive_granularity_64[
     # Call the naive per-batch fallback directly: the public AMD wrapper now
     # routes these shapes to the tiled kernel, which has its own test.
     _ = batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk=Coord[Int, Int, Int](1, n_scale, k_scale),
+        scales_granularity_mnk=(1, n_scale, k_scale),
         transpose_b=True,
     ](c_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
 

@@ -146,7 +146,7 @@ def test_blockwise_fp8_matmul_amd[
                 a_scales_type=.float32,
                 b_scales_type=.float32,
                 transpose_b=transpose_b,
-                scales_granularity_mnk=Coord[Int, Int, Int](
+                scales_granularity_mnk=(
                     BLOCK_SCALE_M,
                     BLOCK_SCALE_N,
                     BLOCK_SCALE_K,

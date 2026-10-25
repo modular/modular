@@ -772,7 +772,7 @@ def bench_grouped_matmul[
                     pass
 
                 else:
-                    comptime umma_shape = Coord[Int, Int, Int](64, 64, 32)
+                    comptime umma_shape = (64, 64, 32)
                     comptime transpose_b = True
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b

@@ -599,9 +599,7 @@ def _matmul_dispatch_sm100_impl[
         comptime NUM_ACCUM = get_defined_int["TUNE_NUM_ACCUM", 2]()
         comptime NUM_CLC = get_defined_int["TUNE_NUM_CLC", 2]()
 
-        comptime umma_shape = Coord[Int, Int, Int](
-            BM * CTA_GROUP, BN * CTA_GROUP, MMA_K
-        )
+        comptime umma_shape = (BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=(

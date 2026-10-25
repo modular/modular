@@ -143,10 +143,12 @@ struct FusedSwiGLUMatmulConfig[
         register_swiglu: Bool = False,
     ):
         self.cta_group = cta_group
-        self.mma_shape = Coord[Int, Int, Int](
-            Int(mma_shape[0]), Int(mma_shape[1]), Int(mma_shape[2])
+        self.mma_shape = (
+            Int(mma_shape[0]),
+            Int(mma_shape[1]),
+            Int(mma_shape[2]),
         )
-        self.cluster_shape = Coord[Int, Int, Int](
+        self.cluster_shape = (
             Int(cluster_shape[0]),
             Int(cluster_shape[1]),
             Int(cluster_shape[2]),

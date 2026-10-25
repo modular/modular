@@ -1778,7 +1778,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
             max_cache_length,
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            scales_granularity_mnk=Coord[Int, Int, Int](
+            scales_granularity_mnk=(
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,
@@ -2493,7 +2493,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
             ).as_unsafe_any_origin()
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            scales_granularity_mnk=Coord[Int, Int, Int](
+            scales_granularity_mnk=(
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,

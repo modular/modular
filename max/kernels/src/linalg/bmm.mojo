@@ -2701,7 +2701,7 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         and type_of(a).static_shape[2] > 0
     ):
         return _batched_matmul_dynamic_scaled_fp8_amd_tiled[
-            scales_granularity_mnk=Coord[Int, Int, Int](
+            scales_granularity_mnk=(
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,
@@ -2717,7 +2717,7 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         )
     else:
         return batched_matmul_dynamic_scaled_fp8_naive[
-            scales_granularity_mnk=Coord[Int, Int, Int](
+            scales_granularity_mnk=(
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,

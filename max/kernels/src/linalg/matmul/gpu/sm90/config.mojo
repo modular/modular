@@ -171,11 +171,11 @@ struct MatmulConfig[
                 min_num_waves = num_waves
                 mma_mn[1] = mma_n
 
-        self.block_tile_shape = Coord[Int, Int, Int](
-            mma_mn[0] * num_consumer_groups, mma_mn[1], BK
-        )
-        self.mma_shape = Coord[Int, Int, Int](
-            mma_mn[0], mma_mn[1], K_bytes_per_mma // size_of[Self.a_type]()
+        self.block_tile_shape = (mma_mn[0] * num_consumer_groups, mma_mn[1], BK)
+        self.mma_shape = (
+            mma_mn[0],
+            mma_mn[1],
+            K_bytes_per_mma // size_of[Self.a_type](),
         )
         self.cluster_shape = (1, 1, 1)
         self.num_k_partitions = num_k_partitions

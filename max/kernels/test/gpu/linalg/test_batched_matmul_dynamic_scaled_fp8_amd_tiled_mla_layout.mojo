@@ -185,7 +185,7 @@ def run_case[
     ](c_disp_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
     # Second oracle on the identical fixture.
     _ = batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk=Coord[Int, Int, Int](1, gran, gran),
+        scales_granularity_mnk=(1, gran, gran),
         transpose_b=True,
     ](c_naive_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
 

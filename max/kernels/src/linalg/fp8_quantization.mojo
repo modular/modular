@@ -1605,7 +1605,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     ):
         blockwise_scaled_fp8_with_epilogue[
             transpose_b=transpose_b,
-            scales_granularity_mnk=Coord[Int, Int, Int](
+            scales_granularity_mnk=(
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,

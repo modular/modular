@@ -140,7 +140,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.K = K
         self.mma_shape = mma_shape
         self.cta_group = cta_group
-        self.block_tile_shape = Coord[Int, Int, Int](
+        self.block_tile_shape = (
             Int(mma_shape[0]) // cta_group,
             Int(mma_shape[1]) // cta_group,
             Int(mma_shape[2]) * 4,
