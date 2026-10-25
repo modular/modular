@@ -1148,7 +1148,7 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
 
   ASTType result = specializeStruct(bindings, structDeclOp, listDecl);
   if (!result)
-    return emitter.shared.getTypeCheckErrorType();
+    return {};
 
   // Add the !kgen.param_list parameter to the parameter list.  It is possible
   // the element type is a non-inferred parameter, so "append" this.
