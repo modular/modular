@@ -199,9 +199,9 @@ struct List[T: AnyType, /](
       improves performance:
 
       ```mojo
-      var int_list: List = [1, 2, 3]        # List[Int]
-      var str_list: List = ["a", "b", "c"]  # List[String]
-      # var mixed: List = [1, "hello"]      # Error! All elements must be same type
+      var int_list: List[Int] = [1, 2, 3]
+      var str_list: List[String] = ["a", "b", "c"]
+      # var mixed: List[Int] = [1, "hello"]  # Error! All elements must be same type
       ```
 
       However, you can get around this by defining your list type as
@@ -590,8 +590,8 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var x = [1, 2, 3]
-        var y = [1, 2, 3]
+        var x: List = [1, 2, 3]
+        var y: List = [1, 2, 3]
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
@@ -634,7 +634,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var x = [1, 2, 3]
+        var x: List = [1, 2, 3]
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
