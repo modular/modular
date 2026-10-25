@@ -268,7 +268,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     var gamma_dev = ctx.enqueue_create_buffer[in_dtype](cols)
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    comptime shape = IndexList[2](rows, cols)
+    comptime shape = (rows, cols)
     var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
@@ -675,7 +675,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         var linear_idx = idx[0] * cols + idx[1]
         return ref_sum_ptr.unsafe_load[width=width, alignment=width](linear_idx)
 
-    comptime shape = IndexList[2](rows, cols)
+    comptime shape = (rows, cols)
     var ref_fp8_tile = TileTensor(
         ref_fp8_dev,
         row_major(Idx[rows], Idx[cols]),

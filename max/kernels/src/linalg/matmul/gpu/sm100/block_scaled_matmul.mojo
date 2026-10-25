@@ -79,6 +79,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
     OutputStage,
 )
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -253,8 +254,8 @@ def load_AB_SFA_SFB[
     num_pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     num_sf_k_tiles: Int,
     cta_group: Int = 1,
     k_group_size: Int = 1,
@@ -506,8 +507,8 @@ def _prefetch_weight_tiles[
     num_pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     num_sf_k_tiles: Int,
     cta_group: Int = 1,
     k_group_size: Int = 1,
@@ -680,8 +681,8 @@ def _complete_activation_tiles[
     b_swizzle_bytes: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     num_sf_k_tiles: Int,
     cta_group: Int = 1,
     k_group_size: Int = 1,
@@ -822,12 +823,12 @@ def consumer_main_loop[
     scaling_kind: UMMAKind,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     SFA_NUM_COLS: Int,
     SFB_NUM_COLS: Int,
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
@@ -1260,7 +1261,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     var scheduler = TileScheduler[
         num_stages=config.num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
+        cluster_shape=(
             config.cluster_shape[0],
             config.cluster_shape[1],
             config.cluster_shape[2],

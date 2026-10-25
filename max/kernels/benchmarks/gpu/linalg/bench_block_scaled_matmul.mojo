@@ -123,14 +123,14 @@ def _tune_config[
     ](
         scaling_kind=scaling_kind,
         mma_shape=(
-            get_defined_int["TUNE_BM", 128]() * cta_group,
-            get_defined_int["TUNE_BN", 128]() * cta_group,
-            32,
+            Int(get_defined_int["TUNE_BM", 128]() * cta_group),
+            Int(get_defined_int["TUNE_BN", 128]() * cta_group),
+            Int(32),
         ),
         cluster_shape=(
-            get_defined_int["TUNE_CLUSTER_DIM_X", 2](),
-            get_defined_int["TUNE_CLUSTER_DIM_Y", 1](),
-            get_defined_int["TUNE_CLUSTER_DIM_Z", 1](),
+            Int(get_defined_int["TUNE_CLUSTER_DIM_X", 2]()),
+            Int(get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()),
+            Int(get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()),
         ),
         block_swizzle_size=get_defined_int["TUNE_BLOCK_SWIZZLE_SIZE", 0](),
         raster_order=RasterOrder(

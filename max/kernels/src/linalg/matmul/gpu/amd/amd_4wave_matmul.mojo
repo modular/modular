@@ -52,6 +52,7 @@ from max.gpu.host.info import MI355X
 from max.gpu.intrinsics import AMDBufferResource, readfirstlane
 from max.gpu.sync import schedule_barrier, s_waitcnt
 
+from std.utils.coord import Coord, coord_to_index_list
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major
@@ -151,19 +152,19 @@ struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
     warp / MMA tile shapes.
     """
 
-    var block_shape: IndexList[3]
+    var block_shape: Coord[Int, Int, Int]
     """Workgroup tile shape `(BM, BN, BK)`."""
-    var warp_shape: IndexList[3]
+    var warp_shape: Coord[Int, Int, Int]
     """Per-warp tile shape `(WM, WN, WK)`."""
-    var mma_shape: IndexList[3]
+    var mma_shape: Coord[Int, Int, Int]
     """Single-MMA instruction shape `(MMA_M, MMA_N, MMA_K)`."""
 
     def __init__(
         out self,
         *,
-        block_shape: IndexList[3],
-        warp_shape: IndexList[3],
-        mma_shape: IndexList[3],
+        block_shape: Coord[Int, Int, Int],
+        warp_shape: Coord[Int, Int, Int],
+        mma_shape: Coord[Int, Int, Int],
     ):
         """Constructs a `MatmulKernelConfig` from the three tile shapes.
 
@@ -178,12 +179,12 @@ struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
 
     @staticmethod
     def _write_index_list(
-        mut writer: Some[Writer], list: IndexList, sep: StaticString
+        mut writer: Some[Writer], list: Coord[Int, Int, Int], sep: StaticString
     ):
-        comptime for i in range(list.size):
+        comptime for i in range(3):
             if i != 0:
                 writer.write(sep)
-            writer.write(list[i])
+            writer.write(Int(list[i]))
 
     @inline(.always)
     def num_threads(self) -> Int:
@@ -192,8 +193,12 @@ struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
         Returns:
             The number of threads in one workgroup.
         """
-        var num_warps = self.block_shape // self.warp_shape
-        return num_warps.flattened_length() * WARP_SIZE
+        var num_warps = (
+            (Int(self.block_shape[0]) // Int(self.warp_shape[0]))
+            * (Int(self.block_shape[1]) // Int(self.warp_shape[1]))
+            * (Int(self.block_shape[2]) // Int(self.warp_shape[2]))
+        )
+        return num_warps * WARP_SIZE
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes a human-readable shape tag to `writer`.
@@ -2347,9 +2352,9 @@ def _structured_4wave_matmul_impl[
         ), "block_n_override must be >= block_m_override (BN < BM is broken)"
 
         comptime config_override = MatmulKernelConfig(
-            block_shape=Index(BM_o, BN_o, _bk),
-            warp_shape=Index(BM_o // 2, BN_o // 2, _bk),
-            mma_shape=Index(16, 16, _mma_k),
+            block_shape=(BM_o, BN_o, _bk),
+            warp_shape=(BM_o // 2, BN_o // 2, _bk),
+            mma_shape=(16, 16, _mma_k),
         )
         run_kernel[config_override]()
         return
@@ -2361,14 +2366,14 @@ def _structured_4wave_matmul_impl[
     # regime). For M ≥ 1024 the dispatcher should pass
     # `block_m_override=128, block_n_override=128, block_k_override=64`.
     comptime config_64 = MatmulKernelConfig(
-        block_shape=Index(64, 64, _bk),
-        warp_shape=Index(32, 32, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+        block_shape=(64, 64, _bk),
+        warp_shape=(32, 32, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
     comptime config_128 = MatmulKernelConfig(
-        block_shape=Index(128, 128, _bk),
-        warp_shape=Index(64, 64, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+        block_shape=(128, 128, _bk),
+        warp_shape=(64, 64, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
 
     comptime if _is_fp8:

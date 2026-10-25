@@ -83,6 +83,7 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -2829,8 +2830,8 @@ struct BlackwellMatmulSM100FallbackKernel[
     c_type: DType,
     c_layout: TensorLayout,
     c_engine: TensorEngine,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,

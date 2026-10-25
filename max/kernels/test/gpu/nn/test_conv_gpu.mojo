@@ -810,9 +810,9 @@ def main() raises:
             Layout.row_major(1, 4, 4, 4, 2),  # input (NDHWC)
             Layout.row_major(2, 2, 2, 2, 3),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](1, 1, 1),  # stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](0, 0, 0),  # padding
+            (1, 1, 1),  # stride
+            (1, 1, 1),  # dilation
+            (0, 0, 0),  # padding
         ](ctx)
 
         # test case 2: medium dimensions with padding
@@ -820,9 +820,9 @@ def main() raises:
             Layout.row_major(2, 6, 6, 6, 4),  # input (NDHWC)
             Layout.row_major(3, 3, 3, 4, 8),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](2, 2, 2),  # stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](1, 1, 1),  # padding
+            (2, 2, 2),  # stride
+            (1, 1, 1),  # dilation
+            (1, 1, 1),  # padding
         ](ctx)
 
         # test case 3: non-square dimensions
@@ -830,9 +830,9 @@ def main() raises:
             Layout.row_major(1, 5, 7, 9, 3),  # input (NDHWC)
             Layout.row_major(2, 3, 2, 3, 4),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](1, 1, 1),  # stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](0, 1, 0),  # padding
+            (1, 1, 1),  # stride
+            (1, 1, 1),  # dilation
+            (0, 1, 0),  # padding
         ](ctx)
 
         # test case 4: varying filter dimensions, getting creative
@@ -840,9 +840,9 @@ def main() raises:
             Layout.row_major(1, 9, 8, 5, 1),  # input (NDHWC)
             Layout.row_major(2, 2, 3, 1, 32),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](1, 3, 2),  # stride - mixed stride values
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](0, 0, 0),  # padding
+            (1, 3, 2),  # stride - mixed stride values
+            (1, 1, 1),  # dilation
+            (0, 0, 0),  # padding
         ](ctx)
 
         # test case 5: with padding on all dimensions
@@ -850,9 +850,9 @@ def main() raises:
             Layout.row_major(1, 5, 7, 6, 7),  # input (NDHWC)
             Layout.row_major(3, 4, 3, 7, 24),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](1, 1, 1),  # stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](1, 1, 1),  # padding
+            (1, 1, 1),  # stride
+            (1, 1, 1),  # dilation
+            (1, 1, 1),  # padding
         ](ctx)
 
         # test case 6: large dimensions with asymmetric padding
@@ -860,9 +860,9 @@ def main() raises:
             Layout.row_major(1, 10, 11, 6, 2),  # input (NDHWC)
             Layout.row_major(3, 4, 3, 2, 31),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](2, 3, 1),  # stride - mixed stride
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](1, 2, 1),  # padding - asymmetric
+            (2, 3, 1),  # stride - mixed stride
+            (1, 1, 1),  # dilation
+            (1, 2, 1),  # padding - asymmetric
         ](ctx)
 
         # test case 7: 3d-unet style small dimensions
@@ -870,9 +870,9 @@ def main() raises:
             Layout.row_major(1, 8, 8, 8, 320),  # input (NDHWC)
             Layout.row_major(3, 3, 3, 320, 320),  # filter (QRSCF)
             DType.float32,
-            IndexList[3](2, 2, 2),  # stride - downsampling
-            IndexList[3](1, 1, 1),  # dilation
-            IndexList[3](1, 1, 1),  # padding
+            (2, 2, 2),  # stride - downsampling
+            (1, 1, 1),  # dilation
+            (1, 1, 1),  # padding
         ](ctx)
 
         # --- bfloat16 coverage ---
@@ -881,9 +881,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(1, 1, 1, 16, 16),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -893,9 +893,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(3, 3, 3, 16, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -905,9 +905,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 96),
             Layout.row_major(3, 3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -917,9 +917,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 0, 0),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -929,9 +929,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 3),
             Layout.row_major(3, 3, 3, 3, 16),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -941,9 +941,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 10),
             Layout.row_major(3, 3, 3, 10, 16),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=1e-2,
             atol=1e-2,
         ](ctx)
@@ -959,9 +959,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(3, 3, 3, 16, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -971,9 +971,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 96),
             Layout.row_major(3, 3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -983,9 +983,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 0, 0),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1004,9 +1004,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(3, 3, 3, 16, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=False,
             rtol=2e-2,
@@ -1022,9 +1022,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(3, 3, 3, 16, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1037,9 +1037,9 @@ def main() raises:
             Layout.row_major(2, 4, 8, 8, 96),
             Layout.row_major(3, 3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
             m_tile_byte_budget=256 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1052,9 +1052,9 @@ def main() raises:
             Layout.row_major(1, 4, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (1, 0, 0),
             m_tile_byte_budget=128 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1073,9 +1073,9 @@ def main() raises:
             Layout.row_major(1, 8, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](2, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (2, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1085,9 +1085,9 @@ def main() raises:
             Layout.row_major(1, 8, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](2, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (2, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=False,
             rtol=2e-2,
@@ -1101,9 +1101,9 @@ def main() raises:
             Layout.row_major(1, 8, 6, 6, 192),
             Layout.row_major(3, 1, 1, 192, 384),
             DType.bfloat16,
-            IndexList[3](2, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (2, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1117,9 +1117,9 @@ def main() raises:
             Layout.row_major(1, 32, 32, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
+            (1, 1),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=False,
             rtol=2e-2,
@@ -1132,9 +1132,9 @@ def main() raises:
             Layout.row_major(1, 32, 32, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
+            (1, 1),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1147,9 +1147,9 @@ def main() raises:
             Layout.row_major(1, 16, 16, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
+            (1, 1),
             m_tile_byte_budget=32 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1162,9 +1162,9 @@ def main() raises:
             Layout.row_major(2, 16, 16, 192),
             Layout.row_major(3, 1, 192, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
-            IndexList[2](1, 0),
+            (1, 1),
+            (1, 1),
+            (1, 0),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=True,
             rtol=2e-2,
@@ -1177,9 +1177,9 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(3, 3, 64, 128),
             DType.bfloat16,
-            IndexList[2](2, 2),
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (2, 2),
+            (1, 1),
+            (1, 1),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=False,
             rtol=2e-2,
@@ -1198,9 +1198,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 16),
             Layout.row_major(1, 1, 1, 16, 16),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1210,9 +1210,9 @@ def main() raises:
             Layout.row_major(1, 4, 8, 8, 192),
             Layout.row_major(1, 1, 1, 192, 96),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 0, 0),
+            (1, 1, 1),
+            (1, 1, 1),
+            (0, 0, 0),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1226,9 +1226,9 @@ def main() raises:
             Layout.row_major(2, 5, 6, 6, 192),
             Layout.row_major(3, 3, 3, 192, 192),
             DType.bfloat16,
-            IndexList[3](1, 1, 1),
-            IndexList[3](1, 1, 1),
-            IndexList[3](0, 1, 1),
+            (1, 1, 1),
+            (1, 1, 1),
+            (0, 1, 1),
             rtol=2e-2,
             atol=2e-2,
         ](ctx)

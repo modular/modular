@@ -52,6 +52,7 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, max_finite
 from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def cpu_matmul_naive[
@@ -84,7 +85,7 @@ def tma_umma_kernel_ss[
     b_tile_shape: Coord,
     b_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     transpose_a: Bool = False,
     transpose_b: Bool = True,
@@ -355,7 +356,7 @@ def tma_umma_kernel_ts_fp8[
     b_tile_shape: Coord,
     b_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -622,7 +623,7 @@ def test_tma_umma[
     b_type: DType,
     c_type: DType,
     prob_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     transpose_a: Bool = False,
     transpose_b: Bool = True,

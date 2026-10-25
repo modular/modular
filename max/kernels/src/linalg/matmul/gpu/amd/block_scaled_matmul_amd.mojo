@@ -77,6 +77,7 @@ from max.gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
+from std.utils.coord import Coord
 from layout import (
     Coord,
     Idx,
@@ -215,7 +216,7 @@ def _swizzled_smem_off[
 
 
 struct BlockScaledMmaOp[
-    mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4 and MXFP8 alike
+    mma_shape: Coord[Int, Int, Int],  # (16, 16, 128) for MXFP4 and MXFP8 alike
     num_m_mmas: Int,
     num_n_mmas: Int,
     num_k_tiles: Int,
@@ -1330,7 +1331,7 @@ struct BlockScaledMatmulAMD[
 
         # === MMA operator ===
         var mma_op = BlockScaledMmaOp[
-            mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
+            mma_shape=(Self.MMA_M, Self.MMA_N, Self.MMA_K),
             num_m_mmas=num_m_mmas,
             num_n_mmas=num_n_mmas,
             num_k_tiles=num_k_tiles,

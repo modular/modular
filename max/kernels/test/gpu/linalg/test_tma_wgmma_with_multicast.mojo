@@ -55,6 +55,7 @@ from std.testing import assert_almost_equal
 from std.utils.coord import DynamicCoord
 from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
+from std.utils.coord import Coord
 
 
 # Keep the nested SMEM modes used by the existing descriptor formulas.
@@ -81,11 +82,11 @@ def multicast_tma_wgmma_kernel[
     a_desc_shape: Coord,
     b_tile_shape: Coord,
     b_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     wgmma_shape: DynamicCoord[.int, 3],
     a_smem_layout: Layout,
     b_smem_layout: Layout,
-    cluster_shape: IndexList[3],
+    cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -314,9 +315,9 @@ def test_multicast_tma_wgmma[
     b_type: DType,
     c_type: DType,
     prob_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     wgmma_shape: DynamicCoord[.int, 3],
-    cluster_shape: IndexList[3],
+    cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,

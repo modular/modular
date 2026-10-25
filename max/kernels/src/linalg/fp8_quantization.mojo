@@ -1605,7 +1605,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     ):
         blockwise_scaled_fp8_with_epilogue[
             transpose_b=transpose_b,
-            scales_granularity_mnk=(
+            scales_granularity_mnk=Index(
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,
@@ -2340,8 +2340,10 @@ def blockwise_scaled_fp8_with_epilogue[
         comptime small_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=Index(
-                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            cluster_shape=(
+                cluster_shape[0],
+                cluster_shape[1],
+                cluster_shape[2],
             ),
             mma_shape=(128, 256 if wide_N else 128, MMA_K),
             cta_group=2,
@@ -2351,8 +2353,10 @@ def blockwise_scaled_fp8_with_epilogue[
         comptime mid_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=Index(
-                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            cluster_shape=(
+                cluster_shape[0],
+                cluster_shape[1],
+                cluster_shape[2],
             ),
             mma_shape=(128, 128, MMA_K),
             cta_group=1 if wide_N else 2,
@@ -2362,8 +2366,10 @@ def blockwise_scaled_fp8_with_epilogue[
         comptime big_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=Index(
-                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            cluster_shape=(
+                cluster_shape[0],
+                cluster_shape[1],
+                cluster_shape[2],
             ),
             mma_shape=(128, 128, MMA_K),
             cta_group=1 if n_tiles >= 8 else 2,

@@ -48,6 +48,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.utils.coord import Coord
 
 
 def test_block_scaled_prefetch[
@@ -59,7 +60,7 @@ def test_block_scaled_prefetch[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
@@ -181,8 +182,10 @@ def test_block_scaled_prefetch[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF4NVF4,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -405,8 +408,8 @@ def main() raises:
                 dtype,
                 out_dtype,
                 scales_dtype,
-                block_tile_shape=(128, 128, BK),
-                mma_shape=(128, 128, MMA_K),
+                block_tile_shape=(Int(128), Int(128), Int(BK)),
+                mma_shape=(Int(128), Int(128), Int(MMA_K)),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 cta_group=1,
                 block_swizzle_size=8,
@@ -421,8 +424,8 @@ def main() raises:
                 dtype,
                 out_dtype,
                 scales_dtype,
-                block_tile_shape=(128, 128, BK),
-                mma_shape=(128, 128, MMA_K),
+                block_tile_shape=(Int(128), Int(128), Int(BK)),
+                mma_shape=(Int(128), Int(128), Int(MMA_K)),
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 cta_group=1,
                 block_swizzle_size=8,

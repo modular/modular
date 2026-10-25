@@ -34,6 +34,7 @@ from layout import DefaultEngine, TensorEngine, TileTensor
 from structured_kernels.tile_types import GMEMLayout1D
 
 from std.utils.fast_div import FastDiv
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -253,8 +254,8 @@ struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
 
 struct GroupedWorkIterator1D1D[
     static_N: Int,  # N dimension (expert output dim, static)
-    tile_shape: IndexList[3],  # Block tile shape (BM, BN, BK)
-    cluster: IndexList[3] = Index(1, 1, 1),
+    tile_shape: Coord[Int, Int, Int],  # Block tile shape (BM, BN, BK)
+    cluster: Coord[Int, Int, Int] = (1, 1, 1),
     cta_group: Int = 1,
     AB_swapped: Bool = False,
     OffsetsEngine: TensorEngine = DefaultEngine[element_width=1],

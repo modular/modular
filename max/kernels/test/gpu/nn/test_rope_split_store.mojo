@@ -43,6 +43,7 @@ from nn.rope_split_store import (
 )
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 def execute_test[
@@ -85,7 +86,7 @@ def execute_test[
 
     comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
 
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -477,7 +478,7 @@ def execute_test_with_position_ids[
     # --- Layouts ---
     comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
 
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -881,7 +882,7 @@ def execute_test_fp8[
     # --- Layouts ---
     comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
 
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,

@@ -38,8 +38,8 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
 
         comptime for bm in [128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     dtype,

@@ -198,7 +198,7 @@ def test_batched_matmul(
                 c.store((batch, i, j), Scalar[c.dtype](0))
                 golden.store((batch, i, j), Scalar[golden.dtype](0))
 
-    var c_shape = Index(batches, m, n)
+    var c_shape = (batches, m, n)
     apple_batched_matmul(c, a, b, c_shape)
     bmm_naive(golden, a, b, batches, m, n, k)
 

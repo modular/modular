@@ -31,7 +31,8 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 
-from std.utils.index import Index, IndexList, product
+from std.utils.coord import Coord, CoordLike, coord
+from std.utils.index import Index, IndexList
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -192,17 +193,39 @@ def smem_descriptor[
     ](ptr)
 
 
+def product[*element_types: CoordLike](t: Coord[*element_types]) -> Int:
+    """Calculate the product of all values in a `Coord`.
+
+    Args:
+        t: The `Coord` to multiply.
+
+    Returns:
+        The product of all elements, or `UNKNOWN_VALUE` if any element is
+        `UNKNOWN_VALUE`.
+    """
+    var result = 1
+    comptime for i in range(Coord[*element_types].__len__()):
+        comptime T = element_types[i]
+        comptime if T.is_value:
+            result *= Int(t[i])
+        else:
+            comptime assert (
+                False
+            ), "product() of a `Coord` requires value elements"
+    return result
+
+
 struct MmaOpSM100_SS[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     /,
     *,
     accum_type: DType = .float32,
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
@@ -436,13 +459,13 @@ struct MmaOpSM100_BlockScaled_SS[
     sfa_dtype: DType,
     sfb_dtype: DType,
     scaling_kind: UMMAKind,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     /,
     *,
     accum_type: DType = .float32,
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,

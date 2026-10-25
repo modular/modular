@@ -193,7 +193,7 @@ def execute_matmul_kv_cache_ragged[
     # Initialize the weights.
     var weight_size = 2 * kv_hidden_size * hidden_size
     var weight_host_ptr = unsafe_alloc[Scalar[dtype]](weight_size)
-    var weight_shape = IndexList[2](2 * kv_hidden_size, hidden_size)
+    var weight_shape = (2 * kv_hidden_size, hidden_size)
     var weight_host = TileTensor(
         weight_host_ptr,
         row_major(Idx[2 * kv_hidden_size], Idx[hidden_size]),
@@ -207,7 +207,7 @@ def execute_matmul_kv_cache_ragged[
     var padded_batch_dim = batch_size * max_seq_length_batch
     var ref_output_size = padded_batch_dim * 2 * kv_hidden_size
     var ref_output_host_ptr = unsafe_alloc[Scalar[dtype]](ref_output_size)
-    var ref_output_shape = IndexList[2](padded_batch_dim, 2 * kv_hidden_size)
+    var ref_output_shape = (padded_batch_dim, 2 * kv_hidden_size)
     var ref_output_host = TileTensor(
         ref_output_host_ptr,
         row_major(padded_batch_dim, Idx[2 * kv_hidden_size]),
@@ -234,7 +234,7 @@ def execute_matmul_kv_cache_ragged[
         * kv_params.num_heads
         * kv_params.head_size
     )
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = (
         num_blocks,
         2,
         num_layers,
@@ -431,7 +431,7 @@ def execute_matmul_k_cache_ragged[
         * kv_params.num_heads
         * kv_params.head_size
     )
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = (
         num_paged_blocks,
         2,
         num_layers,
@@ -504,7 +504,7 @@ def execute_matmul_k_cache_ragged[
 
     # Initialize the weights.
     var weight_size = kv_hidden_size * hidden_size
-    var weight_shape = IndexList[2](kv_hidden_size, hidden_size)
+    var weight_shape = (kv_hidden_size, hidden_size)
     var weight_host_ptr = unsafe_alloc[Scalar[dtype]](weight_size)
     var weight_host = TileTensor(
         weight_host_ptr, row_major(Idx[kv_hidden_size], Idx[hidden_size])
@@ -518,7 +518,7 @@ def execute_matmul_k_cache_ragged[
     var padded_batch_dim = batch_size * init_max_seq_length_batch
     max_seq_length_batch = init_max_seq_length_batch
     var ref_output_size = padded_batch_dim * kv_hidden_size
-    var ref_output_shape = IndexList[2](padded_batch_dim, kv_hidden_size)
+    var ref_output_shape = (padded_batch_dim, kv_hidden_size)
     var ref_output_host_ptr = unsafe_alloc[Scalar[dtype]](ref_output_size)
     var ref_output_host = TileTensor(
         ref_output_host_ptr,
@@ -769,7 +769,7 @@ def generic_execute_fused_qkv_cache_ragged[
 
     # Initialize the weights
     var weight_size = fused_hidden_size * hidden_size
-    var weight_shape = IndexList[2](fused_hidden_size, hidden_size)
+    var weight_shape = (fused_hidden_size, hidden_size)
     var weight_host_ptr = unsafe_alloc[Scalar[dtype]](weight_size)
     var weight_host = TileTensor(
         weight_host_ptr,
@@ -783,12 +783,12 @@ def generic_execute_fused_qkv_cache_ragged[
     # Initialize reference output
     var padded_batch_dim = batch_size * max_seq_length_batch
     var ref_output_size = padded_batch_dim * fused_hidden_size
-    var ref_output_shape = IndexList[2](padded_batch_dim, fused_hidden_size)
+    var ref_output_shape = (padded_batch_dim, fused_hidden_size)
     var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
 
     # Initialize test output
     var test_output_size = total_length * hidden_size
-    var test_output_shape = IndexList[2](total_length, hidden_size)
+    var test_output_shape = (total_length, hidden_size)
     var test_output_device = ctx.enqueue_create_buffer[dtype](test_output_size)
 
     var hidden_state_ragged_tensor = TileTensor(
@@ -891,7 +891,7 @@ def execute_paged_fused_qkv_matmul[
         * kv_params.num_heads
         * kv_params.head_size
     )
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = (
         num_paged_blocks,
         2,
         num_layers,
@@ -1034,7 +1034,7 @@ def execute_cont_batch_fused_qkv_matmul[
         * kv_params.num_heads
         * kv_params.head_size
     )
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = (
         num_blocks,
         2,
         num_layers,

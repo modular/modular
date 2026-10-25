@@ -53,7 +53,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
@@ -79,8 +79,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         print(
             t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
             t" {N}, {K})"
-            t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
-            t" {cluster_shape[1]}, {cluster_shape[2]})"
+            t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=(Int({cluster_shape[0]}),"
+            t" Int( {cluster_shape[1]}), Int({cluster_shape[2]}))"
             t" swapAB={swapAB} k_group_size={k_group_size}"
         )
 
@@ -147,8 +147,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         ctx.enqueue_copy(c_device, c_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,

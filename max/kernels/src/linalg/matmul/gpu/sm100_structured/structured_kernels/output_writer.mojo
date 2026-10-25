@@ -63,6 +63,7 @@ from linalg.utils import (
     no_epilogue_fn,
 )
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import IndexList
 
 # TileTensor-based types for C tiles
@@ -388,8 +389,8 @@ struct TileWriter[
     # Explicit config parameters (works with any config type)
     a_type: DType,
     accum_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     opc: OutputPipelineConfig,
     c_swizzle: TensorMapSwizzle,
     transpose_c: Bool,
@@ -3713,8 +3714,8 @@ struct StandardOutputWriter(OutputWriter):
         c_desc_shape: Coord,
         a_type: DType,
         accum_type: DType,
-        block_tile_shape: IndexList[3],
-        mma_shape: IndexList[3],
+        block_tile_shape: Coord[Int, Int, Int],
+        mma_shape: Coord[Int, Int, Int],
         opc: OutputPipelineConfig,
         c_swizzle: TensorMapSwizzle,
         transpose_c: Bool,

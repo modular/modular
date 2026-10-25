@@ -226,7 +226,7 @@ def b2b_gemm[
     var block_idx = block_swizzle(
         (block_idx.x, block_idx.y),
         (grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index(block_idx.x, block_idx.y)
+    ) if swizzle_block else (block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
     var warp_y, warp_x = udivmod(warp_id, num_warps_n)

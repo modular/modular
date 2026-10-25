@@ -46,6 +46,7 @@ from layout.swizzle import Swizzle
 from layout.tile_layout import Layout as TileLayout, TensorLayout
 from structured_kernels.tile_types import SMemTileArray2D
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 
 from ....arch.sm100 import MmaOpSM100_SS
@@ -131,10 +132,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,

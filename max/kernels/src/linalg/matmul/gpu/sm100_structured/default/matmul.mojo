@@ -1350,17 +1350,17 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # The kernel indexes the workspace and locks over the launch grid, which
     # is built from the swapped dims when AB_swapped; size them the same way.
     var output_tiles = get_num_tiles(
-        Index(M_maybe_swapped, N_maybe_swapped, K),
-        Index(BM, MMA_N, BK),
-        Index(cluster_shape[0], cluster_shape[1]),
+        (M_maybe_swapped, N_maybe_swapped, K),
+        (BM, MMA_N, BK),
+        (Int(cluster_shape[0]), Int(cluster_shape[1])),
     )
     var num_output_tiles = output_tiles[0] * output_tiles[1]
     var lock_buffer_size_bytes = get_required_locks_buffer_size_bytes[
         config.accum_type
     ](
-        Index(M_maybe_swapped, N_maybe_swapped, K),
-        Index(BM, MMA_N, BK),
-        Index(cluster_shape[0], cluster_shape[1]),
+        (M_maybe_swapped, N_maybe_swapped, K),
+        (BM, MMA_N, BK),
+        (Int(cluster_shape[0]), Int(cluster_shape[1])),
     )
 
     # The parallel reduction gives every split its own slot and keeps its
@@ -1631,8 +1631,8 @@ def matmul_sm100_fallback[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: Coord,
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     has_compute_fn: Bool = False,

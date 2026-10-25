@@ -84,6 +84,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 from std.testing import assert_almost_equal
 
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -100,7 +101,7 @@ def bulk_mma_pair_cta_kernel[
     c_layout: TensorLayout,
     a_desc_shape: Coord,
     b_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -411,7 +412,7 @@ def bulk_mma_pair_cta_ts_kernel[
     c_layout: TensorLayout,
     a_desc_shape: Coord,
     b_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -753,7 +754,7 @@ def test_bulk_mma_pair_cta[
     ab_type: DType,
     c_type: DType,
     prob_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_tmem: Bool = False,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](2, 1, 1),
@@ -967,8 +968,8 @@ def main() raises:
                 test_bulk_mma_pair_cta[
                     ab_type=.bfloat16,
                     c_type=.bfloat16,
-                    prob_shape=Index(512, 1024, 8 * BK),
-                    block_tile_shape=Index(64, 128, BK),
+                    prob_shape=(512, 1024, 8 * BK),
+                    block_tile_shape=(Int(64), Int(128), Int(BK)),
                     transpose_b=transpose_b,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     a_swizzle=swizzle,
@@ -977,12 +978,12 @@ def main() raises:
 
                 comptime BN_BM64 = 64 if transpose_b else BK
 
-                # BM=64 -> MMA_M=128, cluster_shape=(2,1,1)
+                # BM=64 -> MMA_M=128, cluster_shape=(Int(2), Int(1), Int(1))
                 test_bulk_mma_pair_cta[
                     ab_type=.bfloat16,
                     c_type=.bfloat16,
-                    prob_shape=Index(128, 2 * BN_BM64, 2 * BK),
-                    block_tile_shape=Index(64, BN_BM64, BK),
+                    prob_shape=(128, 2 * BN_BM64, 2 * BK),
+                    block_tile_shape=(Int(64), Int(BN_BM64), Int(BK)),
                     transpose_b=transpose_b,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     a_swizzle=swizzle,
@@ -993,8 +994,8 @@ def main() raises:
                 test_bulk_mma_pair_cta[
                     ab_type=.bfloat16,
                     c_type=.bfloat16,
-                    prob_shape=Index(128, 4 * BN_BM64, 2 * BK),
-                    block_tile_shape=Index(64, BN_BM64, BK),
+                    prob_shape=(128, 4 * BN_BM64, 2 * BK),
+                    block_tile_shape=(Int(64), Int(BN_BM64), Int(BK)),
                     transpose_b=transpose_b,
                     cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
                     a_swizzle=swizzle,
@@ -1007,8 +1008,8 @@ def main() raises:
                 test_bulk_mma_pair_cta[
                     ab_type=.bfloat16,
                     c_type=.bfloat16,
-                    prob_shape=Index(256, 2 * BN_BM128, 2 * BK),
-                    block_tile_shape=Index(128, BN_BM128, BK),
+                    prob_shape=(256, 2 * BN_BM128, 2 * BK),
+                    block_tile_shape=(Int(128), Int(BN_BM128), Int(BK)),
                     transpose_b=transpose_b,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     a_swizzle=swizzle,
@@ -1030,8 +1031,8 @@ def main() raises:
             test_bulk_mma_pair_cta[
                 ab_type=.bfloat16,
                 c_type=.bfloat16,
-                prob_shape=Index(128, 256, 2 * BK2),
-                block_tile_shape=Index(64, 128, BK2),
+                prob_shape=(128, 256, 2 * BK2),
+                block_tile_shape=(Int(64), Int(128), Int(BK2)),
                 transpose_b=True,
                 cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                 a_swizzle=swizzle,
@@ -1042,8 +1043,8 @@ def main() raises:
             test_bulk_mma_pair_cta[
                 ab_type=.bfloat16,
                 c_type=.bfloat16,
-                prob_shape=Index(128, 256, 2 * BK2),
-                block_tile_shape=Index(64, 128, BK2),
+                prob_shape=(128, 256, 2 * BK2),
+                block_tile_shape=(Int(64), Int(128), Int(BK2)),
                 transpose_b=False,
                 cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                 a_swizzle=swizzle,
@@ -1065,8 +1066,8 @@ def main() raises:
                 test_bulk_mma_pair_cta[
                     ab_type=.bfloat16,
                     c_type=.bfloat16,
-                    prob_shape=Index(256, 2 * BN_TS_BM128, 2 * BK_TS),
-                    block_tile_shape=Index(128, BN_TS_BM128, BK_TS),
+                    prob_shape=(256, 2 * BN_TS_BM128, 2 * BK_TS),
+                    block_tile_shape=(Int(128), Int(BN_TS_BM128), Int(BK_TS)),
                     transpose_b=transpose_b_ts,
                     a_tmem=True,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -1080,8 +1081,8 @@ def main() raises:
                 test_bulk_mma_pair_cta[
                     ab_type=.bfloat16,
                     c_type=.bfloat16,
-                    prob_shape=Index(128, 2 * BN_TS_BM64, BK_TS),
-                    block_tile_shape=Index(64, BN_TS_BM64, BK_TS),
+                    prob_shape=(128, 2 * BN_TS_BM64, BK_TS),
+                    block_tile_shape=(Int(64), Int(BN_TS_BM64), Int(BK_TS)),
                     transpose_b=transpose_b_ts,
                     a_tmem=True,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -1093,8 +1094,8 @@ def main() raises:
                 test_bulk_mma_pair_cta[
                     ab_type=.bfloat16,
                     c_type=.bfloat16,
-                    prob_shape=Index(128, 2 * BN_TS_BM64, 2 * BK_TS),
-                    block_tile_shape=Index(64, BN_TS_BM64, BK_TS),
+                    prob_shape=(128, 2 * BN_TS_BM64, 2 * BK_TS),
+                    block_tile_shape=(Int(64), Int(BN_TS_BM64), Int(BK_TS)),
                     transpose_b=transpose_b_ts,
                     a_tmem=True,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

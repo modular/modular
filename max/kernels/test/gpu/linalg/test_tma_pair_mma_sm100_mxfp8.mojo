@@ -76,6 +76,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
 )
 from linalg.matmul.vendor.blas import matmul
+from std.utils.coord import Coord
 
 
 def simple_init() -> Bool:
@@ -105,7 +106,7 @@ def blockscaled_pair_cta_mxfp8[
     b_scales_tile_shape: Coord,
     b_scales_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
@@ -581,7 +582,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
     b_scales_layout: TensorLayout,
     //,
     *,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     cta_group: Int,
     cluster_shape: StaticTuple[Int32, 3],
@@ -751,7 +752,7 @@ def test_blockscaled_pair_cta_mxfp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     umma_shape: DynamicCoord[.int, 3],
     cta_group: Int,
     cluster_shape: StaticTuple[Int32, 3],

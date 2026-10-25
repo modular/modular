@@ -75,6 +75,7 @@ from internal_utils._utils import InitializationType
 from std.math import align_up, ceildiv
 from std.sys import size_of
 from std.utils import IndexList
+from std.utils.index import Index
 
 # ---- M3 per-device (TP=4) BF16 shapes (match the differential test) ----
 comptime DATA_DTYPE = DType.bfloat16
@@ -201,8 +202,13 @@ def bench_shape(
     var iq_out = TileTensor(iq_out_dev, row_major(total_seq, Idx[iq_dim]))
 
     # ---- KV cache blocks (main: K+V, 1 head; index: K-only MLA, 1 head) ----
-    var main_block_shape = IndexList[6](
-        num_pages, 2, num_layers, page_size, MAIN_KV_HEADS, HEAD_SIZE
+    var main_block_shape = Index(
+        num_pages,
+        2,
+        num_layers,
+        page_size,
+        MAIN_KV_HEADS,
+        HEAD_SIZE,
     )
     var main_blocks_dev = ctx.enqueue_create_buffer[DATA_DTYPE](
         main_block_shape.flattened_length()
@@ -225,7 +231,7 @@ def bench_shape(
     var main_blocks = TileTensor(
         main_blocks_dev, main_layout(main_shape, main_strides)
     )
-    var index_block_shape = IndexList[6](
+    var index_block_shape = Index(
         num_pages, 2, num_layers, page_size, 1, HEAD_SIZE
     )
     var index_blocks_dev = ctx.enqueue_create_buffer[DATA_DTYPE](

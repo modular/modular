@@ -336,8 +336,8 @@ def main() raises:
                 .bfloat16,
                 transpose_b=True,
             ](
-                block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=Index(16, 128, 64),
+                block_tile_shape=(Int(64), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(128), Int(64)),
                 num_pipeline_stages=3,
             ),
             N=Int(128),
@@ -376,8 +376,8 @@ def main() raises:
                     .bfloat16,
                     transpose_b=True,
                 ](
-                    block_tile_shape=Index(16, 64, 64),
-                    warp_tile_shape=Index(16, 64, 32),
+                    block_tile_shape=(Int(16), Int(64), Int(64)),
+                    warp_tile_shape=(Int(16), Int(64), Int(32)),
                     num_pipeline_stages=3,
                     num_k_partitions=1,
                     num_warp_k_partitions=2,
@@ -394,8 +394,8 @@ def main() raises:
                     .bfloat16,
                     transpose_b=True,
                 ](
-                    block_tile_shape=Index(32, 64, 32),
-                    warp_tile_shape=Index(16, 64, 32),
+                    block_tile_shape=(Int(32), Int(64), Int(32)),
+                    warp_tile_shape=(Int(16), Int(64), Int(32)),
                     num_pipeline_stages=3,
                     num_k_partitions=1,
                     num_warp_k_partitions=4,
@@ -433,8 +433,8 @@ def main() raises:
                 .bfloat16,
                 transpose_b=True,
             ](
-                block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=Index(16, 128, 64),
+                block_tile_shape=(Int(64), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(128), Int(64)),
                 num_pipeline_stages=3,
             ),
             N=Int(128),

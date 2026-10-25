@@ -91,6 +91,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.testing import assert_almost_equal
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -133,7 +134,7 @@ def qk_consumer_kernel[
     q_desc_shape: Coord,
     k_tile_shape: Coord,
     k_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     swizzle_mode: TensorMapSwizzle,
     use_pagedense: Bool,
     num_threads: Int = 128,
@@ -295,7 +296,7 @@ def run_qk_consumer[
 ](ctx: DeviceContext) raises:
     comptime ab_type = DType.bfloat16
     comptime c_type = DType.float32
-    comptime block_tile_shape = Index(M, N, K)
+    comptime block_tile_shape = (M, N, K)
     comptime gran = swizzle_mode.bytes() // size_of[ab_type]()
     comptime block_dim = 128
 

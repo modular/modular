@@ -128,7 +128,9 @@ comptime FRAGMENT_LANES = 16
 
 
 @inline(.always)
-def _accum_row[mma_shape: IndexList[3], cta_group: Int](lane: Int) -> Int:
+def _accum_row[
+    mma_shape: Coord[Int, Int, Int], cta_group: Int
+](lane: Int) -> Int:
     """Returns the accumulator row stored in TMEM lane `lane`.
 
     With `cta_group=1` and M=64 each warp uses only the first 16 lanes of
@@ -165,8 +167,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_desc_shape: Coord,
     b_tile_shape: Coord,
     b_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -862,8 +864,8 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
 def _get_accumulator_size[
     *,
     c_smem_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int,
 ]() -> IndexList[2]:
     comptime BM = block_tile_shape[0]
@@ -931,7 +933,7 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     a_gmem_layout: TensorLayout,
     a_scales_gmem_layout: TensorLayout,
     *,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle,
 ](
     a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
@@ -1018,8 +1020,8 @@ def load_AB[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     a_scales_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -1208,7 +1210,7 @@ def load_AB_partial[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     a_scales_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
@@ -1374,8 +1376,8 @@ def multi_stage_reg_epilogue[
     c_smem_layout: TensorLayout,
     c_type: DType,
     c_static_N: Int,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     is_lower_frag_required: Bool,
     cta_group: Int,
     num_output_warps: Int,
@@ -1647,8 +1649,8 @@ def promote_accumulators[
     /,
     *,
     a_scales_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int,
     CLUSTER_SIZE: Int32,
     is_lower_frag_required: Bool,
@@ -2294,7 +2296,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             config.cluster_shape[2],
         ),
         cta_group=config.cta_group,
-        tile_shape=Index(
+        tile_shape=(
             config.block_tile_shape[0],
             config.block_tile_shape[1],
             config.block_tile_shape[2],
@@ -3077,10 +3079,10 @@ def grouped_matmul_dynamic_scaled_fp8[
 
             # MMA_N=128 halves the number of dispatched (expert, n) tiles vs
             # 64, which dominates runtime for small-M-per-expert decode.
-            comptime umma_shape: DynamicCoord[.int, 3] = (64, 128, 32)
+            comptime umma_shape: Coord[Int, Int, Int] = (64, 128, 32)
 
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                cluster_shape=Index(1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 mma_shape=(
                     umma_shape[0],
                     umma_shape[1],

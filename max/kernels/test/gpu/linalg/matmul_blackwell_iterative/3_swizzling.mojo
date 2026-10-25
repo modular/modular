@@ -35,6 +35,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -59,8 +60,8 @@ def kernel_3[
     c_layout: TensorLayout,
     a_desc_shape: Coord,
     b_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -315,8 +316,8 @@ def blackwell_kernel_3[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
@@ -407,7 +408,7 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     comptime a_type = DType.bfloat16
     comptime b_type = DType.bfloat16
     comptime c_type = DType.bfloat16
-    comptime umma_shape = Index(64, 256, 16)
+    comptime umma_shape = (64, 256, 16)
     comptime transpose_b = True
     comptime BK = 64
 
@@ -454,7 +455,7 @@ def test_blackwell_kernel_3[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    umma_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     BK: Int = 64,
     benchmark: Bool = False,
@@ -492,7 +493,7 @@ def test_blackwell_kernel_3[
     c.to_device()
     c_ref.to_device()
 
-    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+    comptime block_tile_shape = (umma_shape[0], umma_shape[1], BK)
 
     blackwell_kernel_3[
         transpose_b=transpose_b,
@@ -572,7 +573,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            umma_shape=Index(64, 256, 16),
+            umma_shape=(Int(64), Int(256), Int(16)),
             transpose_b=True,
             BK=64,
             M=4096,

@@ -38,6 +38,7 @@ from layout import (
 from layout._fillers import random
 from nn.kv_cache_ragged import _fused_qkv_matmul_kv_cache_ragged_impl
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 def _get_run_name[
@@ -145,7 +146,7 @@ def execute_kv_cache_ragged_matmul[
     )
 
     # KV block tensor layout and buffer
-    var kv_block_dynamic_shape = IndexList[6](
+    var kv_block_dynamic_shape = Index(
         num_blocks,
         2,
         num_layers,

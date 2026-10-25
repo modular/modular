@@ -37,6 +37,7 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
+from std.utils.index import Index
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
@@ -307,7 +308,7 @@ def execute_matmul_k_cache_ragged_scale[
     # Execute test with scaled implementation.
     _matmul_k_cache_ragged_scale_impl[
         target="gpu",
-        scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
+        scales_granularity_mnk=Index(1, block_scale, block_scale),
     ](
         hidden_state_ragged_tensor,
         input_row_offsets_tensor,
@@ -321,7 +322,7 @@ def execute_matmul_k_cache_ragged_scale[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=True,
-        scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
+        scales_granularity_mnk=Index(1, block_scale, block_scale),
     ](
         ref_output.device_tensor(),
         hidden_state_ragged_tensor,

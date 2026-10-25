@@ -1177,7 +1177,7 @@ def test_sparse_paged_mma_ws_ts[
 
     # ---- Build the 6D blocks tensor ----
     # Shape: [num_blocks, kv_dim, num_layers, page_size, num_heads, head_size]
-    comptime pg_shape_6d = IndexList[6](
+    comptime pg_shape_6d = Index(
         num_blocks,
         kv_dim,
         num_layers,

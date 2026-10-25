@@ -18,6 +18,7 @@ from std.math import ceildiv
 from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from layout import ImmTileTensor, TensorLayout
 
@@ -121,7 +122,7 @@ struct TileScheduler[
     static_MN: Int,  # if swapAB, then static_MN is M, otherwise N
     # note that the tile shape always refers to the original non-swapped AB
     # shape
-    tile_shape: IndexList[3],
+    tile_shape: Coord[Int, Int, Int],
     cluster: IndexList[3] = Index(1, 1, 1),
     cta_group: Int = 1,
     swizzle: Bool = False,

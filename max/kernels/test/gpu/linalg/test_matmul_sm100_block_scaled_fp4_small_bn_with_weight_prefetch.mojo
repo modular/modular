@@ -51,6 +51,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.utils.coord import Coord
 
 
 def simple_init() -> Bool:
@@ -69,7 +70,7 @@ def _test_impl[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
@@ -209,8 +210,10 @@ def _test_impl[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF4NVF4,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -318,7 +321,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
             b_type: DType,
             c_type: DType,
             _scales_dtype: DType,
-            block_tile_shape: IndexList[3],
+            block_tile_shape: Coord[Int, Int, Int],
             mma_shape: DynamicCoord[.int, 3],
             cluster_shape: StaticTuple[Int32, 3],
             cta_group: Int,

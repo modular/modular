@@ -51,6 +51,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
 )
 from layout import Coord, Idx, TileTensor, row_major
 
+from std.utils.coord import Coord
 from std.utils import Index, IndexList
 
 from linalg.fp4_utils import (
@@ -771,16 +772,16 @@ def bench_grouped_matmul[
                     pass
 
                 else:
-                    comptime umma_shape = Index(64, 64, 32)
+                    comptime umma_shape = Coord[Int, Int, Int](64, 64, 32)
                     comptime transpose_b = True
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        cluster_shape=Index(1, 1, 1),
+                        cluster_shape=(Int(1), Int(1), Int(1)),
                         mma_shape=(
-                            umma_shape[0],
-                            umma_shape[1],
-                            umma_shape[2],
+                            Int(umma_shape[0]),
+                            Int(umma_shape[1]),
+                            Int(umma_shape[2]),
                         ),
                         cta_group=1,
                         AB_swapped=AB_swapped,
@@ -997,7 +998,7 @@ def main() raises:
     comptime row_scales = get_defined_bool["row_scales", False]()
 
     var b = Bench()
-    comptime expert_shape = IndexList[2](N, K)
+    comptime expert_shape = (N, K)
 
     with DeviceContext() as ctx:
         create_grouped_matmul_bench[

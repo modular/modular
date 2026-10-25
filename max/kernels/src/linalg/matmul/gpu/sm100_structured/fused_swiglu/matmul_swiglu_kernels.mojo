@@ -84,6 +84,7 @@ from structured_kernels.tile_types import (
 )
 from layout.tile_layout import _IntToComptimeInt
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -196,8 +197,8 @@ def load_AB[
     num_pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     k_group_size: Int = 1,
 ](
@@ -363,10 +364,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = (1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = (1, 1, 1),
     k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
@@ -1664,7 +1665,7 @@ def blackwell_swiglu_warp_specialized_kernel[
     )
     var scheduler = TileScheduler[
         num_stages=num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](CLUSTER_M, CLUSTER_N, 1),
+        cluster_shape=(CLUSTER_M, CLUSTER_N, 1),
         block_swizzle_size=config.block_swizzle_size,
         rasterize_order=RasterOrder(config.raster_order._value),
     ](cluster_dim, clc_resp, clc_full, clc_empty, clc_throttle)

@@ -69,6 +69,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -245,8 +246,8 @@ struct HopperMatmulSM90Kernel[
     b_layout: TensorLayout,
     c_layout: TensorLayout,
     c_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    wgmma_shape: Coord[Int, Int, Int],
     cluster_shape: StaticTuple[Int32, 3],
     num_pipeline_stages: Int,
     num_threads: Int = 128,
@@ -1212,7 +1213,7 @@ struct HopperMatmulSM90Kernel[
             UInt32(splits),
             UInt32(Self.num_consumer),
             UInt32(Self.num_pipeline_stages),
-            Index(CLUSTER_M, CLUSTER_N),
+            (Int(CLUSTER_M), Int(CLUSTER_N)),
             raster_order,
         ](
             problem_shape,

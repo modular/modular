@@ -45,10 +45,10 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
         # 2SM tests: sweep MMA_N in [16, 32].
         # Note: MMA_N=24 is valid HW but BN=12 breaks TMA tile layout.
         comptime for mma_n in [16, 32, 48, 64, 96]:
-            comptime block_tile = Index(128, mma_n // 2, BK)
-            comptime umma = Index(256, mma_n, MMA_K)
+            comptime block_tile = (128, mma_n // 2, BK)
+            comptime umma = (256, mma_n, MMA_K)
 
-            # Basic cluster_shape=(2,1,1)
+            # Basic cluster_shape=(Int(2), Int(1), Int(1))
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
                 dtype,
@@ -165,8 +165,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
             ](ctx, Idx[1], Idx[6656], Idx[16384])
 
         # Kimi-K2.5 shape that triggered race condition
-        comptime kimi_block_tile = Index(128, 8, BK)
-        comptime kimi_umma = Index(256, 16, MMA_K)
+        comptime kimi_block_tile = (128, 8, BK)
+        comptime kimi_umma = (256, 16, MMA_K)
         test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             dtype,
             dtype,
@@ -190,8 +190,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
         # with 2SM (cta_group=2).
         print("\n--- 2SM Epilogue fusion tests ---")
         comptime for mma_n in [16, 32, 48, 64, 96]:
-            comptime epi_block_tile = Index(128, mma_n // 2, BK)
-            comptime epi_umma = Index(256, mma_n, MMA_K)
+            comptime epi_block_tile = (128, mma_n // 2, BK)
+            comptime epi_umma = (256, mma_n, MMA_K)
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,

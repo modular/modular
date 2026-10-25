@@ -22,6 +22,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
 from layout import Idx, TileTensor, row_major
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -46,7 +47,7 @@ def _test_grouped_1d1d_block_fp4_impl[
     num_experts: Int,
     N: Int,
     K: Int,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = (1, 1, 1),
     cta_group: Int = 1,
     mma_n: Int = 128 * cta_group,
     AB_swapped: Bool = (cta_group == 2),
@@ -254,7 +255,7 @@ def _test_grouped_1d1d_mixed_experts[
     num_experts: Int,
     N: Int,
     K: Int,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = (1, 1, 1),
     cta_group: Int = 1,
     mma_n: Int = 128 * cta_group,
     AB_swapped: Bool = (cta_group == 2),
@@ -473,7 +474,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
         num_experts: Int,
         N: Int,
         K: Int,
-        cluster_shape: IndexList[3] = Index(1, 1, 1),
+        cluster_shape: Coord[Int, Int, Int] = (1, 1, 1),
         cta_group: Int = 1,
         mma_n: Int = 128 * cta_group,
         AB_swapped: Bool = (cta_group == 2),
@@ -518,16 +519,12 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
         " (TileTensor) ==="
     )
     # 2SM with mma_n=64: UMMA shape (256, 128, 32), BM=128, BN=64
-    test_grouped_1d1d_block_fp4[4, 2048, 1024, Index(2, 1, 1), 2, 64](
-        ctx, 4, 64
-    )
-    test_grouped_1d1d_block_fp4[4, 2048, 1024, Index(2, 1, 1), 2, 64](
-        ctx, 2, 256
-    )
+    test_grouped_1d1d_block_fp4[4, 2048, 1024, (2, 1, 1), 2, 64](ctx, 4, 64)
+    test_grouped_1d1d_block_fp4[4, 2048, 1024, (2, 1, 1), 2, 64](ctx, 2, 256)
 
     print("\n=== Grouped 1D1D NVFP4 2SM Smoke Tests (TileTensor) ===")
-    test_grouped_1d1d_block_fp4[4, 2048, 1024, Index(2, 1, 1), 2](ctx, 4, 64)
-    test_grouped_1d1d_block_fp4[4, 2048, 1024, Index(2, 1, 1), 2](ctx, 2, 256)
+    test_grouped_1d1d_block_fp4[4, 2048, 1024, (2, 1, 1), 2](ctx, 4, 64)
+    test_grouped_1d1d_block_fp4[4, 2048, 1024, (2, 1, 1), 2](ctx, 2, 256)
 
     print("\n=== Grouped 1D1D NVFP4 MMA_N=8 Smoke Tests (TileTensor) ===")
     test_grouped_1d1d_block_fp4[6, 2048, 1024, mma_n=8](ctx, 1, 512)

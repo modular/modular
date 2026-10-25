@@ -38,7 +38,7 @@ def main() raises:
                 K=1152,
                 mma_n=mma_n,
                 cta_group=1,
-                cluster_shape=(1, 1, 1),
+                cluster_shape=(Int(1), Int(1), Int(1)),
                 block_swizzle_size=8,
                 prefetch_tiles_n=2,
             ](ctx, 1000)
@@ -48,7 +48,7 @@ def main() raises:
                 K=1152,
                 mma_n=mma_n,
                 cta_group=1,
-                cluster_shape=(1, 1, 1),
+                cluster_shape=(Int(1), Int(1), Int(1)),
                 swapAB=True,
                 prefetch_tiles_n=2,
             ](ctx, 16)
@@ -59,7 +59,7 @@ def main() raises:
                 K=1152,
                 mma_n=mma_n,
                 cta_group=2,
-                cluster_shape=(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 prefetch_tiles_n=2,
             ](ctx, 1000)
 
@@ -68,7 +68,7 @@ def main() raises:
                 K=8192,
                 mma_n=mma_n,
                 cta_group=2,
-                cluster_shape=(4, 4, 1),
+                cluster_shape=(Int(4), Int(4), Int(1)),
                 prefetch_tiles_n=2,
             ](ctx, 777)
 
@@ -77,7 +77,7 @@ def main() raises:
                 K=128,
                 mma_n=mma_n,
                 cta_group=2,
-                cluster_shape=(8, 2, 1),
+                cluster_shape=(Int(8), Int(2), Int(1)),
                 prefetch_tiles_n=2,
             ](ctx, 999)
 
@@ -86,7 +86,7 @@ def main() raises:
                 K=1152,
                 mma_n=mma_n,
                 cta_group=2,
-                cluster_shape=(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 swapAB=True,
                 prefetch_tiles_n=2,
             ](ctx, 16)
@@ -97,7 +97,7 @@ def main() raises:
                 K=4096,
                 mma_n=128,
                 cta_group=1,
-                cluster_shape=(1, 1, 1),
+                cluster_shape=(Int(1), Int(1), Int(1)),
                 swapAB=swap,
                 k_group_size=2,
                 prefetch_tiles_n=2,
@@ -108,7 +108,7 @@ def main() raises:
                 K=4096,
                 mma_n=256,
                 cta_group=2,
-                cluster_shape=(4, 2, 1),
+                cluster_shape=(Int(4), Int(2), Int(1)),
                 swapAB=swap,
                 k_group_size=2,
                 prefetch_tiles_n=2,
@@ -119,7 +119,7 @@ def main() raises:
                 K=8192,
                 mma_n=128,
                 cta_group=2,
-                cluster_shape=(4, 4, 1),
+                cluster_shape=(Int(4), Int(4), Int(1)),
                 swapAB=swap,
                 k_group_size=2,
                 prefetch_tiles_n=2,

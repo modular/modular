@@ -245,7 +245,7 @@ struct Conv2dFpropKernel[
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = TileScheduler[
         num_stages=Self.num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
+        cluster_shape=(
             Self.config.cluster_shape[0],
             Self.config.cluster_shape[1],
             Self.config.cluster_shape[2],

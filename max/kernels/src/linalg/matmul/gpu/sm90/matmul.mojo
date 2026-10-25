@@ -36,6 +36,7 @@ from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from std.logger import Logger
 from std.bit import log2_floor
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -56,7 +57,7 @@ comptime logger = Logger()
 
 
 def _is_valid_cluster_shape[
-    cluster_shape: IndexList[3]
+    cluster_shape: Coord[Int, Int, Int]
 ](grid_shape: IndexList[2], num_tiles_n: Int) -> Bool:
     if num_tiles_n % cluster_shape[0] != 0:
         return False
@@ -72,7 +73,7 @@ def _is_valid_cluster_shape[
 
 
 def _get_grid_shape[
-    cluster_shape: IndexList[3] = Index(1, 1, 1)
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1)
 ](num_tiles_n: Int) -> IndexList[2]:
     # Hardcode values on purpose until we move this inside tile scheduler
     # in a more robust way.
@@ -93,7 +94,7 @@ def _get_grid_shape[
 
 
 def _is_valid_grid_shape[
-    grid_shape: IndexList[2], cluster_shape: IndexList[3]
+    grid_shape: IndexList[2], cluster_shape: Coord[Int, Int, Int]
 ](num_tiles_n: Int) -> Bool:
     comptime assert (
         grid_shape[0] * grid_shape[1] <= H100.sm_count
@@ -834,7 +835,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
 
 
 def _get_c_smem_layout[
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1060,7 +1061,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
         UInt32(splits),
         UInt32(config.num_consumer),
         UInt32(config.num_pipeline_stages),
-        Index(config.cluster_shape[1], config.cluster_shape[0]),
+        (Int(config.cluster_shape[1]), Int(config.cluster_shape[0])),
         raster_order,
     ]
 
@@ -1074,7 +1075,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
     var NUM_TILES = scheduler.get_num_tiles(
         Index(M, N, K),
         config.block_tile_shape,
-        Index(config.cluster_shape[1], config.cluster_shape[0]),
+        (Int(config.cluster_shape[1]), Int(config.cluster_shape[0])),
     )
 
     var workspace_data = ctx.enqueue_create_buffer[accum_type](
@@ -1088,7 +1089,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
         ](
             Index(M, N, K),
             config.block_tile_shape,
-            Index(CLUSTER_M, CLUSTER_N),
+            (Int(CLUSTER_M), Int(CLUSTER_N)),
         )
     )
 

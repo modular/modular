@@ -65,6 +65,7 @@ from layout.tma_async import TMATensorTile
 
 from linalg.utils import ElementwiseComputeFn, ElementwiseEpilogueFn
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import IndexList
 
 from structured_kernels.tile_types import SMemTileArray2DRowMajor
@@ -101,8 +102,8 @@ trait OutputWriter:
         c_desc_shape: Coord,
         a_type: DType,
         accum_type: DType,
-        block_tile_shape: IndexList[3],
-        mma_shape: IndexList[3],
+        block_tile_shape: Coord[Int, Int, Int],
+        mma_shape: Coord[Int, Int, Int],
         opc: OutputPipelineConfig,
         c_swizzle: TensorMapSwizzle,
         transpose_c: Bool,

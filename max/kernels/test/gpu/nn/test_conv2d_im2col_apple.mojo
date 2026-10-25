@@ -639,8 +639,8 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=False,
         ](ctx, "bf16 3x3 s1 same-pad C64->64")
 
@@ -649,8 +649,8 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C64->64")
 
@@ -659,8 +659,8 @@ def main() raises:
             Layout.row_major(1, 32, 32, 128),
             Layout.row_major(3, 3, 128, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C128->128")
 
@@ -669,8 +669,8 @@ def main() raises:
             Layout.row_major(1, 32, 32, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C96->96")
 
@@ -679,8 +679,8 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.float16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "fp16 3x3 s1 same-pad C64->64")
 
@@ -689,8 +689,8 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(3, 3, 64, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C64->128")
 
@@ -699,8 +699,8 @@ def main() raises:
             Layout.row_major(1, 32, 32, 64),
             Layout.row_major(3, 3, 64, 128),
             DType.bfloat16,
-            IndexList[2](2, 2),
-            IndexList[2](1, 1),
+            (2, 2),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s2 C64->128")
 
@@ -709,8 +709,8 @@ def main() raises:
             Layout.row_major(2, 16, 16, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C64->64 N=2")
 
@@ -720,24 +720,24 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "bf16 3x3 s1 same-pad C64->64")
 
         test_conv2d_gpu_dispatch[
             Layout.row_major(1, 32, 32, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "bf16 3x3 s1 same-pad C96->96")
 
         test_conv2d_gpu_dispatch[
             Layout.row_major(2, 16, 16, 64),
             Layout.row_major(3, 3, 64, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "bf16 3x3 s1 same-pad C64->128 N=2")
 
         # 1x1 conv: dispatcher declines, conv_gpu falls through to the naive
@@ -746,8 +746,8 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(1, 1, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](0, 0),
+            (1, 1),
+            (0, 0),
         ](ctx, "bf16 1x1 C64->64 (naive fallback)")
 
         # ---- Fused online-im2col path (AppleM5MatMul.run_conv) ----
@@ -756,8 +756,8 @@ def main() raises:
             Layout.row_major(1, 16, 16, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=False,
         ](ctx, "bf16 3x3 s1 same-pad C64->64")
 
@@ -766,8 +766,8 @@ def main() raises:
             Layout.row_major(1, 32, 32, 128),
             Layout.row_major(3, 3, 128, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C128->128")
 
@@ -776,8 +776,8 @@ def main() raises:
             Layout.row_major(1, 32, 32, 96),
             Layout.row_major(3, 3, 96, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C96->96")
 
@@ -786,8 +786,8 @@ def main() raises:
             Layout.row_major(1, 32, 32, 64),
             Layout.row_major(3, 3, 64, 128),
             DType.bfloat16,
-            IndexList[2](2, 2),
-            IndexList[2](1, 1),
+            (2, 2),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s2 C64->128")
 
@@ -796,8 +796,8 @@ def main() raises:
             Layout.row_major(2, 16, 16, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C64->64 N=2")
 
@@ -810,8 +810,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 32),
             Layout.row_major(3, 3, 32, 32),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C32->32 @256x256 (mem-bound)")
 
@@ -825,8 +825,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 128),
             Layout.row_major(3, 3, 128, 3),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C128->3 @256x256 (FLUX VAE->RGB)")
 
@@ -837,8 +837,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 128),
             Layout.row_major(3, 3, 128, 3),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=False,
         ](ctx, "bf16 3x3 s1 same-pad C128->3 @256x256 (no epilogue)")
 
@@ -847,8 +847,8 @@ def main() raises:
             Layout.row_major(1, 64, 64, 128),
             Layout.row_major(3, 3, 128, 1),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C128->1 @64x64")
 
@@ -858,8 +858,8 @@ def main() raises:
             Layout.row_major(1, 64, 64, 128),
             Layout.row_major(3, 3, 128, 8),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 same-pad C128->8 @64x64")
 
@@ -873,8 +873,8 @@ def main() raises:
             Layout.row_major(1, 17, 17, 20),
             Layout.row_major(3, 3, 20, 96),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
             with_epilogue=True,
         ](ctx, "bf16 3x3 s1 C20->96 @17x17 (straddle+multicarry+tail+ragged)")
 

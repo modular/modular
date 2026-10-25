@@ -84,7 +84,7 @@ def create_ref_b[
     comptime WARP_SIZE = 32
     comptime BLOCK_N = 128
     comptime BLOCK_K = 32
-    comptime repack_tile = Index(64, 16)
+    comptime repack_tile = (64, 16)
     comptime TILE_N = 64
     comptime TILE_K = 16
     comptime num_k_warps = BLOCK_K // repack_tile[1]
@@ -345,7 +345,7 @@ def test_quantized[
     comptime pack_factor = 8
     comptime group_bytes = group_size // 2 + 2
 
-    comptime repack_tile = Index(64, 16)
+    comptime repack_tile = (64, 16)
 
     print("test multistage matmul")
     comptime static_M = MType.static_value

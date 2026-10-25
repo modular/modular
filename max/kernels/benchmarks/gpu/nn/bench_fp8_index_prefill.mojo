@@ -92,6 +92,7 @@ from nn.index_fp8 import (
 from std.math import ceildiv, clamp, log
 from std.memory import bitcast
 from std.utils.index import IndexList
+from std.utils.index import Index
 
 
 comptime _is_amd = _has_gfx950_accelerator()
@@ -383,7 +384,7 @@ def execute_fp8_index_prefill[
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_lens[i])
 
-    var k_shape = IndexList[6](
+    var k_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -398,7 +399,7 @@ def execute_fp8_index_prefill[
         rand(k_block_host.as_span())
 
     comptime head_dim_granularity = 1
-    var ks_shape = IndexList[6](
+    var ks_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -412,7 +413,7 @@ def execute_fp8_index_prefill[
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )

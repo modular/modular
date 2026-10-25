@@ -299,7 +299,7 @@ def blockwise_scaled_fp8_matmul_amd_tile[
     var mma_op = MmaOp[
         out_type=accum_type,
         in_type=a_type,
-        shape=Index(MMA_M, MMA_N, MMA_K),
+        shape=(MMA_M, MMA_N, MMA_K),
         k_group_size=k_group_size,
         num_k_tiles=num_k_tiles,
         num_m_mmas=num_m_mmas,

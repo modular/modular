@@ -31,6 +31,7 @@ SMEM and TMA bulk bandwidth dominates).
 from ...tile_scheduler import RasterOrder
 from internal_utils import TuningConfig
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import IndexList
 
 
@@ -44,8 +45,8 @@ struct TuningConfigSwiGLU(TrivialRegisterPassable, TuningConfig):
     var M_end: Int
     var N: Int
     var K: Int
-    var mma_shape: IndexList[3]
-    var cluster_shape: IndexList[3]
+    var mma_shape: Coord[Int, Int, Int]
+    var cluster_shape: Coord[Int, Int, Int]
     var block_swizzle_size: Int
     var rasterize_order: RasterOrder
     var cta_group: Int
@@ -61,8 +62,8 @@ struct TuningConfigSwiGLU(TrivialRegisterPassable, TuningConfig):
         M_end: Int,
         N: Int,
         K: Int,
-        mma_shape: IndexList[3],
-        cluster_shape: IndexList[3],
+        mma_shape: Coord[Int, Int, Int],
+        cluster_shape: Coord[Int, Int, Int],
         block_swizzle_size: Int,
         rasterize_order: RasterOrder,
         cta_group: Int = 2,

@@ -90,7 +90,7 @@ comptime N = get_defined_int["N", 2048]()
 comptime K = get_defined_int["K", 1024]()
 comptime num_experts = get_defined_int["num_experts", 8]()
 
-comptime block_tile_shape = Index(bm, bn, BK)
+comptime block_tile_shape = (bm, bn, BK)
 comptime umma_shape = (bm, bn, MMA_K)
 comptime k_groups = ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
 comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
@@ -339,7 +339,7 @@ def run_one_case(
         a_type, a_type, out_dtype, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(1, 1, 1),
+        cluster_shape=(Int(1), Int(1), Int(1)),
         mma_shape=umma_shape,
         block_swizzle_size=8,
         cta_group=1,
@@ -763,7 +763,7 @@ def _run_batch_composition(
         a_type, a_type, out_dtype, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(1, 1, 1),
+        cluster_shape=(Int(1), Int(1), Int(1)),
         mma_shape=umma_shape,
         block_swizzle_size=8,
         cta_group=1,

@@ -35,7 +35,7 @@ from layout import (
     TileTensor,
 )
 from layout.tile_layout import Layout as _StaticLayout, _RowMajor
-from std.utils.coord import _IntToComptimeInt
+from std.utils.coord import Coord, _IntToComptimeInt
 from std.bit import log2_floor
 
 from std.utils.index import Index, IndexList
@@ -46,11 +46,11 @@ from .tile_scheduler import RasterOrder, WorkInfo
 @inline(.nodebug)
 def _check_scheduler_constraints[
     prob_shape_nk: IndexList[2],
-    tile_shape: IndexList[3],
+    tile_shape: Coord[Int, Int, Int],
     splits: UInt32,
     num_consumer: UInt32,
     num_pipeline_stages: UInt32,
-    cluster_shape: IndexList[2],
+    cluster_shape: Coord[Int, Int],
     raster_order: RasterOrder,
     reduction_mode: ReductionMode,
 ]():
@@ -192,11 +192,11 @@ struct SplitKTileScheduler[
     locks_origin: MutOrigin,
     //,
     problem_shape_nk: IndexList[2],
-    tile_shape: IndexList[3],
+    tile_shape: Coord[Int, Int, Int],
     splits: UInt32,
     num_consumer: UInt32,
     num_pipeline_stages: UInt32,
-    cluster_shape: IndexList[2],
+    cluster_shape: Coord[Int, Int],
     raster_order: RasterOrder,
     reduction_mode: ReductionMode = ReductionMode.Deterministic,
 ](TrivialRegisterPassable):
@@ -330,8 +330,8 @@ struct SplitKTileScheduler[
     @inline(.always)
     def get_problem_blocks_shape(
         problem_shape: IndexList[3],
-        dyn_tile_shape: IndexList[3],
-        dyn_cluster_shape: IndexList[2],
+        dyn_tile_shape: Coord[Int, Int, Int],
+        dyn_cluster_shape: Coord[Int, Int],
     ) -> IndexList[2]:
         var num_blocks_m = ceildiv(problem_shape[0], dyn_tile_shape[0])
         var num_blocks_n = ceildiv(problem_shape[1], dyn_tile_shape[1])
@@ -504,7 +504,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @inline(.always)
     def get_grid_shape(
-        dyn_cluster_shape: IndexList[3],
+        dyn_cluster_shape: Coord[Int, Int, Int],
         dyn_raster_order: RasterOrder = RasterOrder.AlongN,
     ) raises -> IndexList[3]:
         var launch_grid_shape = IndexList[3](1, 1, 1)
@@ -533,8 +533,8 @@ struct SplitKTileScheduler[
     @inline(.always)
     def get_num_tiles(
         problem_shape: IndexList[3],
-        dyn_tile_shape: IndexList[3],
-        dyn_cluster_shape: IndexList[2],
+        dyn_tile_shape: Coord[Int, Int, Int],
+        dyn_cluster_shape: Coord[Int, Int],
     ) -> Int:
         var problem_blocks = Self.get_problem_blocks_shape(
             problem_shape, dyn_tile_shape, dyn_cluster_shape
@@ -556,8 +556,8 @@ struct SplitKTileScheduler[
         accum_type: DType, dyn_num_consumer: UInt32
     ](
         problem_shape: IndexList[3],
-        dyn_tile_shape: IndexList[3],
-        dyn_cluster_shape: IndexList[2],
+        dyn_tile_shape: Coord[Int, Int, Int],
+        dyn_cluster_shape: Coord[Int, Int],
     ) -> Int:
         comptime assert (
             accum_type == .float32
