@@ -36,7 +36,7 @@ from . import Dim, LaunchAttribute
 @doc_hidden
 @fieldwise_init
 struct MetalEnqueueFunctionArgs[
-    args_origin: MutOrigin,
+    args_origin: ImmOrigin,
     args_array_origin: MutOrigin,
     args_sizes_array_origin: ImmOrigin,
     args_is_device_ptr_array_origin: MutOrigin,
@@ -91,7 +91,7 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
 @inline(.always)
 def call_with_pack_metal[
     # TODO(MOCO-5073): Remove once nested autoparameterization is supported
-    dense_args_origin: MutOrigin,
+    dense_args_origin: ImmOrigin,
     //,
     func: Some[TrivialRegisterPassable],
     ContextT: _FunctionEnqueuer,
@@ -100,7 +100,7 @@ def call_with_pack_metal[
     ctx: ContextT,
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
-    dense_args_addrs: MutPointer[MutOpaquePointer[dense_args_origin], _],
+    dense_args_addrs: MutPointer[ImmOpaquePointer[dense_args_origin], _],
     dense_args_sizes: MutPointer[UInt64, _],
     grid_dim: Dim,
     block_dim: Dim,
@@ -161,7 +161,7 @@ def call_with_pack_metal[
     )
 
     var metal_args_addrs = unsafe_stack_allocation[
-        1, OpaquePointer[origin_of(metal_args)]
+        1, ImmOpaquePointer[origin_of(metal_args)]
     ]()
     metal_args_addrs[] = Pointer(to=metal_args).unsafe_bitcast[NoneType]()
 
@@ -199,7 +199,7 @@ def call_with_pack_checked_metal[
     translated_arg_offsets: Array[Int, num_passed_args],
     extra_align: Int,
     translated_args_ptr: Pointer[Byte, MutAnyOrigin],
-    dense_args_addrs: Pointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin],
+    dense_args_addrs: MutPointer[OpaquePointer[ImmutAnyOrigin], _],
     grid_dim: Dim,
     block_dim: Dim,
     shared_mem_bytes: Int,
@@ -332,11 +332,9 @@ def call_with_pack_checked_metal[
     )
 
     var metal_args_addrs = unsafe_stack_allocation[
-        1, OpaquePointer[MutAnyOrigin]
+        1, ImmOpaquePointer[origin_of(metal_args)]
     ]()
-    metal_args_addrs[] = (
-        Pointer(to=metal_args).unsafe_bitcast[NoneType]().as_unsafe_any_origin()
-    )
+    metal_args_addrs[] = Pointer(to=metal_args).unsafe_bitcast[NoneType]()
 
     _checked_call[func](
         ctx.enqueue(

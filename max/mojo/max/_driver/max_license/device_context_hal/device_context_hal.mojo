@@ -2735,7 +2735,7 @@ struct DeviceFunction[
         # the stack bytes are free to be reused immediately. A kernel may take
         # no arguments; keep the arrays non-empty.
         var stack_addrs = Array[_, max(num_passed_args, 1)](
-            fill=OpaquePointer[MutAnyOrigin].unsafe_dangling()
+            fill=OpaquePointer[ImmutAnyOrigin].unsafe_dangling()
         )
         var stack_sizes = Array[UInt64, max(num_passed_args, 1)](fill=0)
         var dense_args_addrs = stack_addrs.unsafe_ptr().unsafe_origin_cast[
@@ -2779,7 +2779,6 @@ struct DeviceFunction[
             var addr = (
                 Pointer(to=host_args[i])
                 .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
 
@@ -2801,10 +2800,8 @@ struct DeviceFunction[
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             execution_config,
-            args=rebind[
-                Pointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
-            ](dense_args_addrs),
-            arg_sizes=rebind[Pointer[UInt64, MutAnyOrigin]](dense_args_sizes),
+            args=dense_args_addrs,
+            arg_sizes=dense_args_sizes,
             num_args=UInt32(num_translated_args),
             attributes=attr_ptr,
             num_attributes=UInt32(len(attributes)),
@@ -2849,7 +2846,7 @@ struct DeviceFunction[
         # Function scope so the storage outlives the enqueue; see
         # `_call_with_pack_checked`.
         var stack_addrs = Array[_, max(num_args, 1)](
-            fill=OpaquePointer[MutAnyOrigin].unsafe_dangling()
+            fill=OpaquePointer[ImmutAnyOrigin].unsafe_dangling()
         )
         var stack_sizes = Array[UInt64, max(num_args, 1)](fill=0)
         var dense_args_addrs = stack_addrs.unsafe_ptr().unsafe_origin_cast[
@@ -2863,7 +2860,6 @@ struct DeviceFunction[
             dense_args_addrs[unsafe_offset=i] = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
 
@@ -2896,10 +2892,8 @@ struct DeviceFunction[
                 UInt32(block_dim.y()),
                 UInt32(block_dim.z()),
             ),
-            args=rebind[
-                Pointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
-            ](dense_args_addrs),
-            arg_sizes=rebind[Pointer[UInt64, MutAnyOrigin]](dense_args_sizes),
+            args=dense_args_addrs,
+            arg_sizes=dense_args_sizes,
             num_args=UInt32(num_args),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
             attributes=attr_ptr,
@@ -2930,7 +2924,7 @@ struct DeviceFunction[
         # Function scope so the storage outlives the enqueue; see
         # `_call_with_pack_checked`.
         var stack_addrs = Array[_, max(num_args, 1)](
-            fill=OpaquePointer[MutAnyOrigin].unsafe_dangling()
+            fill=OpaquePointer[ImmutAnyOrigin].unsafe_dangling()
         )
         var stack_sizes = Array[UInt64, max(num_args, 1)](fill=0)
         var dense_args_addrs = stack_addrs.unsafe_ptr().unsafe_origin_cast[
@@ -2944,7 +2938,6 @@ struct DeviceFunction[
             dense_args_addrs[unsafe_offset=i] = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
 
@@ -2957,10 +2950,8 @@ struct DeviceFunction[
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             execution_config,
-            args=rebind[
-                Pointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
-            ](dense_args_addrs),
-            arg_sizes=rebind[Pointer[UInt64, MutAnyOrigin]](dense_args_sizes),
+            args=dense_args_addrs,
+            arg_sizes=dense_args_sizes,
             num_args=UInt32(num_args),
         )
         _ = stack_addrs^
@@ -3087,7 +3078,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
 
         comptime num_args = Ts.length
         var dense_args_addrs = unsafe_stack_allocation[
-            num_args + 1, OpaquePointer[MutAnyOrigin]
+            num_args + 1, OpaquePointer[ImmutAnyOrigin]
         ]()
         var dense_args_sizes = unsafe_stack_allocation[num_args + 1, UInt64]()
 
@@ -3095,7 +3086,6 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
             dense_args_addrs[unsafe_offset=i] = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
 
@@ -3128,10 +3118,8 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
                 UInt32(block_dim.y()),
                 UInt32(block_dim.z()),
             ),
-            args=rebind[
-                Pointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
-            ](dense_args_addrs),
-            arg_sizes=rebind[Pointer[UInt64, MutAnyOrigin]](dense_args_sizes),
+            args=dense_args_addrs,
+            arg_sizes=dense_args_sizes,
             num_args=UInt32(num_args),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
             attributes=attr_ptr,
@@ -3155,7 +3143,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
 
         comptime num_args = Ts.length
         var dense_args_addrs = unsafe_stack_allocation[
-            num_args + 1, OpaquePointer[MutAnyOrigin]
+            num_args + 1, OpaquePointer[ImmutAnyOrigin]
         ]()
         var dense_args_sizes = unsafe_stack_allocation[num_args + 1, UInt64]()
 
@@ -3163,7 +3151,6 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
             dense_args_addrs[unsafe_offset=i] = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
 
@@ -3176,10 +3163,8 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             execution_config,
-            args=rebind[
-                Pointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
-            ](dense_args_addrs),
-            arg_sizes=rebind[Pointer[UInt64, MutAnyOrigin]](dense_args_sizes),
+            args=dense_args_addrs,
+            arg_sizes=dense_args_sizes,
             num_args=UInt32(num_args),
         )
 
