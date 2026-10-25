@@ -34,6 +34,7 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVLoadFailed,
     KVLookup,
+    KVProbe,
     KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache import (
@@ -131,6 +132,7 @@ def create_mock_kv_cache() -> Mock:
     cache.starts_lookup = Mock(return_value=False)
     cache.awaits_lookup = Mock(return_value=False)
     cache.hand_back_lookup = Mock()
+    cache.awaits_presence = Mock(return_value=False)
     set_mock_kv_usage(cache, 0.0)
 
     return cache
@@ -3035,6 +3037,176 @@ def test_dp_ce_balance__binding_does_not_reprobe_the_prefix_cache() -> None:
     assert probe.call_count == 1
 
 
+def _stub_presence_answering_later(
+    batch_constructor: TextBatchConstructor,
+    answered: list[PrefixCacheHits],
+) -> Callable[[], None]:
+    """A cache whose shared tiers answer only when the returned callable runs.
+
+    Until then every request prices as uncached everywhere and reads as
+    awaiting presence, the way the Jenga manager prices a request whose
+    connector probe is still out.
+    """
+    kv_cache = _mock_kv_cache_of(batch_constructor)
+    uncached = [PrefixCacheHits()] * batch_constructor.num_replicas
+    state = {"answered": False}
+    kv_cache.get_prefix_cache_hit_counts = Mock(
+        side_effect=lambda ctx: answered if state["answered"] else uncached
+    )
+    kv_cache.awaits_presence = Mock(
+        side_effect=lambda ctx: not state["answered"]
+    )
+
+    def answer() -> None:
+        state["answered"] = True
+
+    return answer
+
+
+def test_dp_ce_balance__pooled_request_is_priced_by_its_device_tier_until_presence_answers() -> (
+    None
+):
+    """A pooled request whose shared-tier answer is out is priced without it.
+
+    Its weights count the device tier alone, which here is nothing, and the
+    planner prices it again on each pass, which costs one read of the
+    cache per pass and no wait, until the answer lands. From then on the
+    weight is kept, as a request priced in place keeps its own.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    for replica_idx in range(2):
+        _saturate_decode(batch_constructor, replica_idx=replica_idx)
+    answer = _stub_presence_answering_later(
+        batch_constructor,
+        [PrefixCacheHits(), PrefixCacheHits(external_blocks=4)],
+    )
+    probe = _mock_kv_cache_of(batch_constructor).get_prefix_cache_hit_counts
+    ctx = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(ctx)
+
+    pending = batch_constructor._ce_pending[ctx.request_id]
+    assert pending.weights == [96, 96]
+    assert pending.awaits_presence
+
+    batch_constructor.construct_batch()
+    assert pending.weights == [96, 96]
+    assert pending.awaits_presence
+    assert probe.call_count == 1, "an answer still out is not read again"
+
+    answer()
+    batch_constructor.construct_batch()
+    assert pending.weights == [96, 32]
+    assert not pending.awaits_presence
+    assert probe.call_count == 2
+
+    batch_constructor.construct_batch()
+    assert probe.call_count == 2, "an answer that landed is priced once"
+
+
+def test_dp_ce_balance__a_late_presence_answer_decides_where_a_request_binds() -> (
+    None
+):
+    """The planner binds on the weights the answer gave, not the estimate.
+
+    Priced on the device tier alone the request is a tie that falls to
+    replica 0, and the answer that lands before the first plan moves it
+    to the replica whose shared tiers hold its prefix.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    answer = _stub_presence_answering_later(
+        batch_constructor,
+        [PrefixCacheHits(), PrefixCacheHits(external_blocks=4)],
+    )
+    ctx = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(ctx)
+    assert batch_constructor._ce_pending[ctx.request_id].weights == [96, 96]
+
+    answer()
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[1], ctx.request_id)
+    assert batch_constructor._bound_requests[ctx.request_id].ce_weight == 32
+
+
+def test_dp_ce_balance__bound_request_is_priced_again_until_it_is_claimed() -> (
+    None
+):
+    """A request bound before its answer landed is priced again too.
+
+    Its weight prices its replica's queue for every pooled bind, so it is
+    read again once the answer lands, and left alone once the request is
+    claimed, since the cache then reads the probe for the allocation.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    _saturate_decode(batch_constructor, replica_idx=0)
+    answer = _stub_presence_answering_later(
+        batch_constructor,
+        [PrefixCacheHits(external_blocks=4), PrefixCacheHits()],
+    )
+    kv_cache = _mock_kv_cache_of(batch_constructor)
+    probe = kv_cache.get_prefix_cache_hit_counts
+    waiting = create_lora_context(seq_len=96)
+    claimed = create_lora_context(seq_len=96)
+    for ctx in (waiting, claimed):
+        batch_constructor.enqueue_new_request(ctx, replica_idx=0)
+        bound = batch_constructor._bound_requests[ctx.request_id]
+        assert bound.ce_weight == 96
+        assert bound.awaits_presence
+    assert probe.call_count == 2
+
+    kv_cache.contains = Mock(side_effect=lambda ctx: ctx is claimed)
+    batch_constructor.construct_batch()
+    assert batch_constructor._bound_requests[waiting.request_id].awaits_presence
+    assert not batch_constructor._bound_requests[
+        claimed.request_id
+    ].awaits_presence
+    assert probe.call_count == 2, "an answer still out is not read again"
+
+    answer()
+    batch_constructor.construct_batch()
+    bound = batch_constructor._bound_requests[waiting.request_id]
+    assert bound.ce_weight == 32
+    assert not bound.awaits_presence
+    assert batch_constructor._bound_requests[claimed.request_id].ce_weight == 96
+    assert probe.call_count == 3, "only the request still waiting is priced"
+
+
+def test_dp_ce_balance__releasing_an_unclaimed_request_abandons_its_presence() -> (
+    None
+):
+    """A request released before it is claimed hands its probe back.
+
+    Whether it was still pooled or bound and waiting its turn, the cache
+    never claimed it, so its release is the probe's only way back. One the
+    cache claimed is released as before, which hands the probe back itself.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    kv_cache = _mock_kv_cache_of(batch_constructor)
+    kv_cache.abandon_presence = Mock()
+
+    pooled = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(pooled)
+    batch_constructor.release_request(pooled.request_id)
+    assert kv_cache.abandon_presence.call_args_list == [call(pooled)]
+    kv_cache.release.assert_not_called()
+
+    bound = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(bound, replica_idx=0)
+    batch_constructor.release_request(bound.request_id)
+    assert kv_cache.abandon_presence.call_args_list == [
+        call(pooled),
+        call(bound),
+    ]
+    kv_cache.release.assert_not_called()
+
+    claimed = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(claimed, replica_idx=0)
+    kv_cache.contains = Mock(return_value=True)
+    batch_constructor.release_request(claimed.request_id)
+    assert kv_cache.abandon_presence.call_count == 2
+    kv_cache.release.assert_called_once_with(claimed)
+
+
 def test_dp_ce_balance__off_cadence_step_plans_nothing() -> None:
     """A step that cannot admit prefill anywhere must not plan any.
 
@@ -3360,6 +3532,7 @@ def _make_cordon_kv_cache(alloc: Mock) -> Mock:
     kv_cache.starts_lookup = Mock(return_value=False)
     kv_cache.awaits_lookup = Mock(return_value=False)
     kv_cache.hand_back_lookup = Mock()
+    kv_cache.awaits_presence = Mock(return_value=False)
     set_mock_kv_usage(kv_cache, 0.0)
     return kv_cache
 
@@ -3578,6 +3751,66 @@ class _DeferringConnector(NullConnector):
         self.abandoned.append(lookup)
 
 
+class _DeferredProbe:
+    """A started connector probe that answers a miss when told to."""
+
+    def __init__(self, num_blocks: int, replica_idxs: Sequence[int]) -> None:
+        self._num_blocks = num_blocks
+        self._replica_idxs = list(replica_idxs)
+        self.answered = False
+
+    def is_complete(self) -> bool:
+        return self.answered
+
+    def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        if not self.answered:
+            raise RuntimeError("the probe has not answered")
+        return [
+            {"full": [False] * self._num_blocks} for _ in self._replica_idxs
+        ]
+
+    def answer(self) -> None:
+        self.answered = True
+
+
+class _ProbingConnector(_DeferringConnector):
+    """Starts its pricing probe and refuses to answer anything in place.
+
+    ``probe`` and ``lookup`` both raise, since either runs on the scheduler
+    thread, and each lookup it starts answers a miss on its first poll.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(answers_on=1)
+        self.started_probes: list[_DeferredProbe] = []
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        raise AssertionError("the blocking probe ran on the scheduler thread")
+
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        raise AssertionError("a blocking lookup ran on the scheduler thread")
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        probe = _DeferredProbe(len(block_hashes), replica_idxs)
+        self.started_probes.append(probe)
+        return probe
+
+
 class _AnsweredLookup:
     """A connector lookup that has already answered a hit over every block."""
 
@@ -3675,6 +3908,129 @@ def _batch_constructor_over_jenga(
         kv_cache=kv_cache,
     )
     return batch_constructor, manager
+
+
+def _dp_batch_constructor_over_jenga(
+    connector: NullConnector,
+) -> tuple[TextBatchConstructor, JengaBlockManager]:
+    """A DP-balanced constructor whose cache calls reach a two-replica manager."""
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+    leaf_infos = {"full": KVLeafInfo(1, KVCacheGroupId.full())}
+    pools = create_pools(leaf_infos, 64, num_replicas=2)
+    manager = JengaBlockManager(
+        pools=pools,
+        groups=create_groups(leaf_infos, pools, 1, enable_prefix_caching=True),
+        leaves={
+            "full": PagedKVLeafRegion(
+                leaf_id="full",
+                group_id=KVCacheGroupId.full(),
+                bytes_per_page=1,
+                page_size=1,
+            )
+        },
+        block_size=1,
+        enable_prefix_caching=True,
+        max_num_input_tokens=None,
+        num_draft_tokens=0,
+        num_draft_tokens_per_step=0,
+        connector=connector,
+    )
+    kv_cache = _make_cordon_kv_cache(Mock(side_effect=manager.alloc))
+    kv_cache.params.page_size = 1
+    for name in (
+        "claim",
+        "contains",
+        "release",
+        "starts_lookup",
+        "start_lookup",
+        "awaits_lookup",
+        "hand_back_lookup",
+        "num_req_blocks",
+        "get_prefix_cache_hit_counts",
+        "awaits_presence",
+        "abandon_presence",
+    ):
+        setattr(kv_cache, name, Mock(side_effect=getattr(manager, name)))
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=False,
+        target_tokens_per_batch_ce=100,
+        data_parallel_degree=2,
+        dp_ce_balance_timeout_ms=10_000.0,
+    )
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    return batch_constructor, manager
+
+
+def test_dp_ce_balance__prices_and_admits_without_a_blocking_connector_call() -> (
+    None
+):
+    """Over a real manager, nothing on the scheduler thread waits on the store.
+
+    The connector raises on its blocking probe and lookup. The first request
+    is priced and planned while its probe is out, so it binds on the device
+    tier alone and its first alloc, finding no answer, takes the leased path
+    as before. The second request's probe answers a miss before it is
+    planned, so its alloc leases nothing and it runs in the same step.
+    """
+    connector = _ProbingConnector()
+    batch_constructor, _ = _dp_batch_constructor_over_jenga(connector)
+    first = create_lora_context(seq_len=8)
+    batch_constructor.enqueue_new_request(first)
+    (first_probe,) = connector.started_probes
+    assert not first_probe.answered
+    assert batch_constructor._ce_pending[first.request_id].awaits_presence
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0] + inputs.batches[1], first.request_id)
+    assert len(connector.started) == 1, "no answer leaves the lease to decide"
+
+    second = create_lora_context(seq_len=8)
+    batch_constructor.enqueue_new_request(second)
+    (_, second_probe) = connector.started_probes
+    second_probe.answer()
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0] + inputs.batches[1], second.request_id)
+    assert second.request_id not in batch_constructor._onloading_reqs
+    assert len(connector.started) == 1, "a probed miss leases nothing"
+    assert not batch_constructor._bound_requests[
+        second.request_id
+    ].awaits_presence
+
+
+def test_dp_ce_balance__a_preempted_request_is_priced_again_from_a_new_probe() -> (
+    None
+):
+    """A request preempted back to the pool starts a probe and waits on it.
+
+    Its release dropped the old probe, so the pool prices it from the device
+    tier and marks it as awaiting presence, or it would keep that weight for
+    its whole second stay.
+    """
+    connector = _ProbingConnector()
+    batch_constructor, _ = _dp_batch_constructor_over_jenga(connector)
+    ctx = create_lora_context(seq_len=8)
+    batch_constructor.enqueue_new_request(ctx)
+    connector.started_probes[0].answer()
+    batch_constructor.construct_batch()
+    replica_idx = batch_constructor._bound_requests[ctx.request_id].replica_idx
+
+    batch_constructor._preempt_request(
+        ctx, replica_idx, PreemptionReason.KV_CACHE_MEMORY
+    )
+
+    assert len(connector.started_probes) == 2
+    assert not connector.started_probes[1].answered
+    assert batch_constructor._ce_pending[ctx.request_id].awaits_presence
 
 
 def test_text_batch_constructor__release_hands_back_a_cordoned_lookup(
