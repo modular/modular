@@ -2922,13 +2922,17 @@ def _max_dynamic_shared_bytes_for_load[
 
 
 @inline(.never)
-def _enqueue_packed_checked(
+def _enqueue_packed_checked[
+    # TODO(MOCO-5073): Remove once nested autoparameterization is supported
+    dense_args_origin: MutOrigin,
+    //,
+](
     ctx: Some[_FunctionEnqueuer],
     *,
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
     func_name: StaticString,
-    dense_args_addrs: Pointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin],
+    dense_args_addrs: MutPointer[MutOpaquePointer[dense_args_origin], _],
     dense_args_sizes: Optional[Pointer[UInt64, MutUntrackedOrigin]],
     num_args: Int,
     grid_dim: Dim,
@@ -3420,7 +3424,9 @@ struct DeviceFunction[
         comptime num_slots = max(num_args, 1)
 
         var dense_args_addrs = unsafe_stack_allocation[
-            num_slots, OpaquePointer[MutAnyOrigin]
+            # TODO(MSTDL-1904): Remove mut cast; verify treated as immutable.
+            num_slots,
+            OpaquePointer[args.origin.unsafe_mut_cast[True]()],
         ]()
         var dense_args_sizes = unsafe_stack_allocation[num_slots, UInt64]()
 
@@ -3430,7 +3436,6 @@ struct DeviceFunction[
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
             )
 
         comptime for i in range(num_args):
@@ -3989,15 +3994,9 @@ struct DeviceExternalFunction[
             var dense_args_is_device_ptr = Array[Bool, num_args](fill=False)
 
             var metal_args = MetalEnqueueFunctionArgs(
-                dense_args_addrs.unsafe_ptr()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-                .unsafe_bitcast[OpaquePointer[MutUntrackedOrigin]](),
-                dense_args_sizes.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                dense_args_is_device_ptr.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
+                dense_args_addrs.unsafe_ptr(),
+                dense_args_sizes.unsafe_ptr(),
+                dense_args_is_device_ptr.unsafe_ptr(),
                 None,
                 Int32(0),
             )
@@ -4017,7 +4016,7 @@ struct DeviceExternalFunction[
                     shared_mem_bytes.or_else(0),
                     attributes.unsafe_ptr(),
                     len(attributes),
-                    metal_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
+                    metal_args_addrs.unsafe_ptr(),
                     UInt32(num_args),
                     no_arg_sizes,
                 ),
@@ -4033,7 +4032,7 @@ struct DeviceExternalFunction[
                 shared_mem_bytes.or_else(0),
                 attributes.unsafe_ptr(),
                 len(attributes),
-                dense_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
+                dense_args_addrs.unsafe_ptr(),
                 UInt32(num_args),
                 no_arg_sizes,
             ),

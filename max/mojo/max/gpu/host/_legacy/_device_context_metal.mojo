@@ -35,13 +35,18 @@ from . import Dim, LaunchAttribute
 
 @doc_hidden
 @fieldwise_init
-struct MetalEnqueueFunctionArgs:
+struct MetalEnqueueFunctionArgs[
+    args_origin: MutOrigin,
+    args_array_origin: MutOrigin,
+    args_sizes_array_origin: ImmOrigin,
+    args_is_device_ptr_array_origin: MutOrigin,
+]:
     """Passes through Metal specific kernel launch data through to the
     driver."""
 
-    var args: Pointer[OpaquePointer[MutUntrackedOrigin], MutUntrackedOrigin]
-    var arg_sizes: Pointer[UInt64, ImmUntrackedOrigin]
-    var arg_is_device_ptr: Pointer[Bool, MutUntrackedOrigin]
+    var args: Pointer[OpaquePointer[Self.args_origin], Self.args_array_origin]
+    var arg_sizes: Pointer[UInt64, Self.args_sizes_array_origin]
+    var arg_is_device_ptr: Pointer[Bool, Self.args_is_device_ptr_array_origin]
     var buffers: Optional[
         Pointer[
             Pointer[_DeviceBufferCpp, MutUntrackedOrigin], MutUntrackedOrigin
@@ -85,6 +90,9 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
 
 @inline(.always)
 def call_with_pack_metal[
+    # TODO(MOCO-5073): Remove once nested autoparameterization is supported
+    dense_args_origin: MutOrigin,
+    //,
     func: Some[TrivialRegisterPassable],
     ContextT: _FunctionEnqueuer,
     num_args: Int,
@@ -92,8 +100,8 @@ def call_with_pack_metal[
     ctx: ContextT,
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
-    dense_args_addrs: Pointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin],
-    dense_args_sizes: Pointer[UInt64, MutUntrackedOrigin],
+    dense_args_addrs: MutPointer[MutOpaquePointer[dense_args_origin], _],
+    dense_args_sizes: MutPointer[UInt64, _],
     grid_dim: Dim,
     block_dim: Dim,
     shared_mem_bytes: Int,
@@ -145,7 +153,7 @@ def call_with_pack_metal[
     )
 
     var metal_args = MetalEnqueueFunctionArgs(
-        dense_args_addrs.unsafe_bitcast[OpaquePointer[MutUntrackedOrigin]](),
+        dense_args_addrs,
         dense_args_sizes,
         dense_args_is_device_ptr,
         None,
@@ -307,7 +315,7 @@ def call_with_pack_checked_metal[
         translated_arg_idx += 1
 
     var metal_args = MetalEnqueueFunctionArgs(
-        dense_args_addrs.unsafe_bitcast[OpaquePointer[MutUntrackedOrigin]](),
+        dense_args_addrs,
         dense_args_sizes,
         dense_args_is_device_ptr,
         Optional[
