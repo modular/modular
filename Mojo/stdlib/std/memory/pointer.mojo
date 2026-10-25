@@ -1366,6 +1366,29 @@ struct Pointer[
             _mlir_value = __mlir_op.`pop.noalias_pointer_cast`(self._mlir_value)
         }
 
+    # TODO(MSTDL-3326): Promote to a safe implicit conversion, once the compiler
+    #   can prove `Self.origin` is not `UntrackedOrigin`.
+    @inline(.always)
+    def _as_origin_superset[
+        O: Origin[mut=Self.mut]
+    ](self) -> Self._OriginCastType[O] where O.contains[Self.origin]:
+        """Widens this pointer's origin to a superset origin `O`.
+
+        Parameters:
+            O: The destination origin. Must contain `Self.origin`.
+
+        Returns:
+            A pointer to the same address with origin `O`.
+
+        Safety:
+
+        The `contains` constraint does not reject `UntrackedOrigin`, because the
+        empty origin is contained by every origin. Do not call this on a pointer
+        whose origin is `UntrackedOrigin` (or `UnsafeAnyOrigin`); doing so
+        silently attaches an arbitrary tracked origin to untracked memory.
+        """
+        return self.unsafe_origin_cast[O]()
+
     @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_load[

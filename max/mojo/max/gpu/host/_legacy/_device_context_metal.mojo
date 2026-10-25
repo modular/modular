@@ -198,7 +198,7 @@ def call_with_pack_checked_metal[
     device_context: DeviceContext,
     translated_arg_offsets: Array[Int, num_passed_args],
     extra_align: Int,
-    translated_args_ptr: Pointer[Byte, MutAnyOrigin],
+    translated_args_ptr: MutPointer[Byte, _],
     grid_dim: Dim,
     block_dim: Dim,
     shared_mem_bytes: Int,
@@ -237,12 +237,13 @@ def call_with_pack_checked_metal[
     comptime extra_host_count = host_args.Ts.length
     comptime num_slots = max(num_passed_args + extra_host_count, 1)
 
-    # Using `Array` (rather than `unsafe_stack_allocation`) gives the compiler
-    # a named local whose origin flows into the `MetalEnqueueFunctionArgs`
-    # pointer fields below — that origin dependency keeps the storage
-    # alive across the `ctx.enqueue` call, preventing stack-slot reuse
-    # for `metal_args` from clobbering the sizes/is-device-ptr arrays.
-    var dense_args_addrs = Array[OpaquePointer[ImmutAnyOrigin], num_slots](
+    # Safety: `dense_args_addrs` holds immutable pointers into either
+    #   `translated_args_ptr` or `host_args`, depending on the argument
+    #   position/type.
+    comptime dense_args_origin = origin_of(
+        host_args, ImmOrigin(translated_args_ptr.origin)
+    )
+    var dense_args_addrs = Array[OpaquePointer[dense_args_origin], num_slots](
         uninitialized=True
     )
     var sizes_inline = Array[UInt64, num_slots](fill=0)
@@ -290,7 +291,9 @@ def call_with_pack_checked_metal[
             actual_arg_type.device_type,
             target=device_type_encoder.target(),
         ]()
-        dense_args_addrs.unsafe_get(translated_arg_idx) = first_word_addr
+        dense_args_addrs.unsafe_get(
+            translated_arg_idx
+        ) = first_word_addr.as_imm()._as_origin_superset[dense_args_origin]()
         dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(arg_size)
         dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = (
             len(device_type_encoder._buffers) - buffers_before == 1
@@ -304,13 +307,10 @@ def call_with_pack_checked_metal[
         if arg_size == 0:
             continue
 
-        var arg_addr = (
-            Pointer(to=host_args[i])
-            .unsafe_bitcast[NoneType]()
-            .unsafe_mut_cast[True]()
-            .as_unsafe_any_origin()
-        )
-        dense_args_addrs.unsafe_get(translated_arg_idx) = arg_addr
+        var arg_addr = Pointer(to=host_args[i]).unsafe_bitcast[NoneType]()
+        dense_args_addrs.unsafe_get(
+            translated_arg_idx
+        ) = arg_addr._as_origin_superset[dense_args_origin]()
         dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(arg_size)
         translated_arg_idx += 1
 

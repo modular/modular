@@ -3596,9 +3596,7 @@ struct DeviceFunction[
                 device_context=self._context.assert_default_target(),
                 translated_arg_offsets=translated_arg_offsets,
                 extra_align=extra_align,
-                translated_args_ptr=translated_args.unsafe_ptr().unsafe_origin_cast[
-                    MutAnyOrigin
-                ](),
+                translated_args_ptr=translated_args.unsafe_ptr(),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 shared_mem_bytes=shared_mem_bytes.or_else(0),
@@ -3610,10 +3608,14 @@ struct DeviceFunction[
             )
 
         else:
+            comptime dense_args_origin = origin_of(
+                host_args, ImmOrigin(origin_of(translated_args))
+            )
+
             # A kernel may take no arguments; keep the buffer non-empty.
-            var dense_args_addrs = unsafe_stack_allocation[
-                max(num_passed_args, 1), OpaquePointer[ImmutAnyOrigin]
-            ]()
+            var dense_args_addrs = Array[
+                OpaquePointer[dense_args_origin], max(num_passed_args, 1)
+            ](uninitialized=True)
 
             # Since we skip over zero sized declared dtypes when passing
             # arguments we need to know the current count of arguments pushed.
@@ -3639,9 +3641,11 @@ struct DeviceFunction[
                         device_type_encoder, first_word_addr
                     )
 
-                    dense_args_addrs[
-                        unsafe_offset=translated_arg_idx
-                    ] = first_word_addr.as_unsafe_any_origin()
+                    dense_args_addrs.unsafe_get(
+                        translated_arg_idx
+                    ) = first_word_addr.as_imm()._as_origin_superset[
+                        dense_args_origin
+                    ]()
                     translated_arg_idx += 1
 
             comptime for i in range(HostArgs.length):
@@ -3650,12 +3654,12 @@ struct DeviceFunction[
                 if arg_size == 0:
                     continue
 
-                var arg_addr = (
-                    Pointer(to=host_args[i])
-                    .unsafe_bitcast[NoneType]()
-                    .as_unsafe_any_origin()
-                )
-                dense_args_addrs[unsafe_offset=translated_arg_idx] = arg_addr
+                var arg_addr = Pointer(to=host_args[i]).unsafe_bitcast[
+                    NoneType
+                ]()
+                dense_args_addrs.unsafe_get(
+                    translated_arg_idx
+                ) = arg_addr._as_origin_superset[dense_args_origin]()
                 translated_arg_idx += 1
 
             comptime func_name = reflect_fn[Self.func].display_name()
@@ -3664,7 +3668,7 @@ struct DeviceFunction[
                 func_handle=self._handle,
                 device_context=self._context.assert_default_target(),
                 func_name=func_name,
-                dense_args_addrs=dense_args_addrs,
+                dense_args_addrs=dense_args_addrs.unsafe_ptr(),
                 dense_args_sizes=None,
                 num_args=num_translated_args,
                 grid_dim=grid_dim,
