@@ -3581,11 +3581,6 @@ struct DeviceFunction[
             for i in range(len(constant_memory)):
                 self._copy_to_constant_memory(constant_memory[i])
 
-        # A kernel may take no arguments; keep the buffer non-empty.
-        var dense_args_addrs = unsafe_stack_allocation[
-            max(num_passed_args, 1), OpaquePointer[ImmutAnyOrigin]
-        ]()
-
         comptime if Self.target.is_apple_gpu():
             # `num_passed_args` sizes the offsets array, which covers encoded
             # args only, so it stays `num_encoded`; `HostArgs.length` sizes
@@ -3604,7 +3599,6 @@ struct DeviceFunction[
                 translated_args_ptr=translated_args.unsafe_ptr().unsafe_origin_cast[
                     MutAnyOrigin
                 ](),
-                dense_args_addrs=dense_args_addrs,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 shared_mem_bytes=shared_mem_bytes.or_else(0),
@@ -3616,6 +3610,11 @@ struct DeviceFunction[
             )
 
         else:
+            # A kernel may take no arguments; keep the buffer non-empty.
+            var dense_args_addrs = unsafe_stack_allocation[
+                max(num_passed_args, 1), OpaquePointer[ImmutAnyOrigin]
+            ]()
+
             # Since we skip over zero sized declared dtypes when passing
             # arguments we need to know the current count of arguments pushed.
             var translated_arg_idx = 0

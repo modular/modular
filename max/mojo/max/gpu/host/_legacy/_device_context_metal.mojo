@@ -199,7 +199,6 @@ def call_with_pack_checked_metal[
     translated_arg_offsets: Array[Int, num_passed_args],
     extra_align: Int,
     translated_args_ptr: Pointer[Byte, MutAnyOrigin],
-    dense_args_addrs: MutPointer[OpaquePointer[ImmutAnyOrigin], _],
     grid_dim: Dim,
     block_dim: Dim,
     shared_mem_bytes: Int,
@@ -227,8 +226,6 @@ def call_with_pack_checked_metal[
         extra_align: Alignment padding to add to each `translated_arg_offset`.
         translated_args_ptr: Storage for the encoded device-side argument
             bytes, owned by the caller.
-        dense_args_addrs: Storage for the per-argument value pointers, owned
-            by the caller.
         grid_dim: Grid dimensions for the kernel launch.
         block_dim: Block dimensions for the kernel launch.
         shared_mem_bytes: Bytes of dynamic shared memory per block.
@@ -245,6 +242,9 @@ def call_with_pack_checked_metal[
     # pointer fields below — that origin dependency keeps the storage
     # alive across the `ctx.enqueue` call, preventing stack-slot reuse
     # for `metal_args` from clobbering the sizes/is-device-ptr arrays.
+    var dense_args_addrs = Array[OpaquePointer[ImmutAnyOrigin], num_slots](
+        uninitialized=True
+    )
     var sizes_inline = Array[UInt64, num_slots](fill=0)
     var is_dev_inline = Array[Bool, num_slots](fill=False)
 
@@ -290,7 +290,7 @@ def call_with_pack_checked_metal[
             actual_arg_type.device_type,
             target=device_type_encoder.target(),
         ]()
-        dense_args_addrs[unsafe_offset=translated_arg_idx] = first_word_addr
+        dense_args_addrs.unsafe_get(translated_arg_idx) = first_word_addr
         dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(arg_size)
         dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = (
             len(device_type_encoder._buffers) - buffers_before == 1
@@ -310,12 +310,12 @@ def call_with_pack_checked_metal[
             .unsafe_mut_cast[True]()
             .as_unsafe_any_origin()
         )
-        dense_args_addrs[unsafe_offset=translated_arg_idx] = arg_addr
+        dense_args_addrs.unsafe_get(translated_arg_idx) = arg_addr
         dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(arg_size)
         translated_arg_idx += 1
 
     var metal_args = MetalEnqueueFunctionArgs(
-        dense_args_addrs,
+        dense_args_addrs.unsafe_ptr(),
         dense_args_sizes,
         dense_args_is_device_ptr,
         Optional[
