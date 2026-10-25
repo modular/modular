@@ -601,6 +601,9 @@ def mhc_post[
             "] with T = ",
             num_rows,
         )
+    # An empty tensor's pointer need not be aligned.
+    if num_rows == 0:
+        return
     # The kernel moves 16-byte vectors along the hidden dimension and reads
     # each token's coefficients as one contiguous vector.
     if not (
@@ -615,8 +618,6 @@ def mhc_post[
             "mhc_post needs unit inner strides, 16-byte aligned rows of"
             " streams/y/output and contiguous rows of post and comb"
         )
-    if num_rows == 0:
-        return
 
     var gpu_ctx = context
     var num_cus = gpu_ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
