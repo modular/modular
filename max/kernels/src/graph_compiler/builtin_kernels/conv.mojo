@@ -304,13 +304,9 @@ struct PadConstant:
         elif is_gpu[target]():
             pad_constant_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 rebind[Scalar[out_dtype]](constant),
                 ctx,
@@ -374,13 +370,9 @@ struct PadRepeat:
         elif is_gpu[target]():
             pad_repeat_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 ctx,
             )
@@ -433,13 +425,9 @@ struct PadReflect:
         elif is_gpu[target]():
             pad_reflect_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 ctx,
             )

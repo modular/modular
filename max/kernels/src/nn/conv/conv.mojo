@@ -5106,10 +5106,8 @@ def conv_gpu[
             paddings_tensor[2 * axis] = SIMDInt(padding[2 * i])  # before
             paddings_tensor[2 * axis + 1] = SIMDInt(padding[2 * i + 1])  # after
 
-        var input_shape = rebind[IndexList[full_rank]](
-            coord_to_index_list(input.layout.shape_coord())
-        )
-        var padded_shape = IndexList[full_rank]()
+        var input_shape = input.layout.shape_coord()
+        var padded_shape = DynamicCoord[.int, full_rank]()
 
         comptime for axis in range(full_rank):
             var before = 0
@@ -5118,14 +5116,16 @@ def conv_gpu[
                 var spatial_idx = axis - 1
                 before = padding[2 * spatial_idx]
                 after = padding[2 * spatial_idx + 1]
-            padded_shape[axis] = input_shape[axis] + before + after
+            padded_shape.replace_dynamic[axis](
+                Int(input_shape[axis]) + before + after
+            )
 
-        var padded_elements = padded_shape.flattened_length()
+        var padded_elements = padded_shape.product()
         var tmp_buffer = ctx.enqueue_create_buffer[input_type](padded_elements)
         var padded_device_buffer = tmp_buffer.unsafe_ptr()
         var zero_scalar = Scalar[input_type](0)
 
-        pad_constant_gpu[full_rank, input_type, DType.int](
+        pad_constant_gpu[input_type, DType.int](
             padded_device_buffer,
             padded_shape,
             input,
@@ -5136,7 +5136,7 @@ def conv_gpu[
 
         var padded_input_tt = TileTensor(
             tmp_buffer, row_major(padded_elements)
-        ).reshape(Coord(padded_shape))
+        ).reshape(padded_shape)
 
         var zero_padding = IndexList[2 * conv_rank](0)
 
