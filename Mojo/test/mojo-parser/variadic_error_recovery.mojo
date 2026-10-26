@@ -12,17 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# RUN: not %parse-mojo-isolated %s 2>&1 | FileCheck %s
+# RUN: %parse-mojo-isolated --mojo-disable-builtins -verify-diagnostics %s
 
-# CHECK: error: 'TypeList' parameter 'Trait' has
-# CHECK: note: 'TypeList' declared here
-trait AnyType:
+trait A:
     pass
 
-struct S[*Ts: AnyType]:
+trait B:
     pass
 
-def foo[T: AnyType]():
+# expected-note @+1 {{'TypeList' declared here}}
+struct TypeList[Trait: type_of(A), //, values: __mlir_type.index]:
+    pass
+
+# expected-error @+1 {{'TypeList' parameter 'Trait' has 'AnyTrait[A]' type, but value has type 'AnyTrait[B]'}}
+struct S[*Ts: B]:
+    pass
+
+def foo[T: B]():
     _ = S[T]()
 
 def bar():
