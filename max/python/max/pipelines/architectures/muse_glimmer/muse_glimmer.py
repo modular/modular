@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -27,7 +29,7 @@ from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
@@ -40,7 +42,109 @@ from .layers.transformer_block import MuseGlimmerTransformerBlock
 from .model_config import MuseGlimmerConfig
 
 
-class MuseGlimmerTextModel(Module[..., tuple[Tensor, ...]]):
+class MuseTextModelBase(Module[..., tuple[Tensor, ...]]):
+    """The text forward Muse Glimmer and Muse Spark share.
+
+    A subclass builds ``embed_tokens``, ``embed_norm``, ``layers``, ``norm``,
+    ``lm_head``, ``rope_sliding`` and ``rope_full``, and sets ``mesh``,
+    ``dtype``, ``output_multiplier``, ``logit_softcapping``,
+    ``_layer_kv_key`` and ``return_logits``. It may override
+    :meth:`_compute_logits` to change the logits.
+    """
+
+    mesh: DeviceMesh
+    dtype: DType
+    embed_tokens: VocabParallelEmbedding
+    embed_norm: Gemma4RMSNorm
+    layers: ModuleList[Any]
+    norm: Gemma4RMSNorm
+    lm_head: ColumnParallelLinear
+    rope_sliding: RotaryEmbedding
+    rope_full: RotaryEmbedding
+    output_multiplier: float
+    logit_softcapping: float
+    return_logits: ReturnLogits
+    _layer_kv_key: list[str]
+
+    def _compute_logits(self, h: Tensor) -> Tensor:
+        outputs = self.lm_head(h).cast(DType.float32) * self.output_multiplier
+        cap = self.logit_softcapping
+        return F.tanh(outputs / cap) * cap
+
+    def prepare_freq_cis(self, mesh: DeviceMesh) -> None:
+        for rope in (self.rope_sliding, self.rope_full):
+            rope.freqs_cis = rope.freqs_cis.cast(self.dtype).to(mesh)
+
+    def forward(
+        self,
+        tokens: Tensor,
+        kv_by_type: dict[str, PagedCacheValues],
+        return_n_logits: Tensor,
+        input_row_offsets: Tensor,
+        image_embeddings: Tensor,
+        image_token_indices: Tensor,
+    ) -> tuple[Tensor, ...]:
+        tokens = tokens.to(self.mesh)
+        input_row_offsets = input_row_offsets.to(self.mesh)
+        image_embeddings = image_embeddings.to(self.mesh)
+        image_token_indices = image_token_indices.to(self.mesh)
+        h = self.embed_norm(self.embed_tokens(tokens))
+        self.prepare_freq_cis(self.mesh)
+
+        # Image embeddings arrive already normed, so they are scattered in
+        # after the embedding norm. Out-of-bounds indices are skipped, so an
+        # empty (text-only or decode) batch is a no-op.
+        h = F_merge_multimodal_embeddings(
+            h, image_embeddings.cast(h.dtype), image_token_indices
+        )
+
+        for idx, layer in enumerate(self.layers):
+            h = layer(
+                h,
+                kv_by_type[self._layer_kv_key[idx]],
+                input_row_offsets=input_row_offsets,
+            )
+
+        last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
+        last_logits = self._compute_logits(self.norm(last_h))
+
+        logits: Tensor | None = None
+        offsets: Tensor | None = None
+        if self.return_logits == ReturnLogits.VARIABLE:
+            return_n_logits_range = F.range(
+                return_n_logits[0],
+                0,
+                -1,
+                out_dim="return_n_logits_range",
+                device=CPU(),
+                dtype=DType.int64,
+            )
+            offsets = (
+                input_row_offsets[1:].unsqueeze(-1) - return_n_logits_range
+            )
+            last_indices = offsets.reshape((-1,))
+            last_tokens = F.gather(h, last_indices, axis=0)
+            logits = self._compute_logits(self.norm(last_tokens))
+            offsets = F.range(
+                0,
+                last_indices.shape[0] + return_n_logits[0],
+                return_n_logits[0],
+                out_dim="logit_offsets",
+                device=CPU(),
+                dtype=DType.int64,
+            )
+        elif self.return_logits == ReturnLogits.ALL:
+            logits = self._compute_logits(self.norm(h))
+            offsets = input_row_offsets
+
+        ret_val: tuple[Tensor, ...] = (last_logits,)
+        if offsets is not None:
+            assert logits is not None
+            ret_val += (logits, offsets)
+        return ret_val
+
+
+class MuseGlimmerTextModel(MuseTextModelBase):
     """The Muse Glimmer language model (text-only)."""
 
     def __init__(self, config: MuseGlimmerConfig, mesh: DeviceMesh) -> None:
@@ -124,92 +228,16 @@ class MuseGlimmerTextModel(Module[..., tuple[Tensor, ...]]):
         self._layer_kv_key = list(text_config.layer_types)
         self.return_logits = text_config.return_logits
 
-    def _compute_logits(self, h: Tensor) -> Tensor:
-        outputs = self.lm_head(h).cast(DType.float32) * self.output_multiplier
-        cap = self.logit_softcapping
-        return F.tanh(outputs / cap) * cap
 
-    def prepare_freq_cis(self, mesh: DeviceMesh) -> None:
-        for rope in (self.rope_sliding, self.rope_full):
-            rope.freqs_cis = rope.freqs_cis.cast(self.dtype).to(mesh)
+class MuseModelBase(Module[..., tuple[Tensor, ...]]):
+    """Top-level wrapper: unflattens the two-leaf KV tree, delegates.
 
-    def forward(
-        self,
-        tokens: Tensor,
-        kv_by_type: dict[str, PagedCacheValues],
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        image_embeddings: Tensor,
-        image_token_indices: Tensor,
-    ) -> tuple[Tensor, ...]:
-        tokens = tokens.to(self.mesh)
-        input_row_offsets = input_row_offsets.to(self.mesh)
-        image_embeddings = image_embeddings.to(self.mesh)
-        image_token_indices = image_token_indices.to(self.mesh)
-        h = self.embed_norm(self.embed_tokens(tokens))
-        self.prepare_freq_cis(self.mesh)
+    A subclass sets ``language_model``, ``kv_params`` and ``mesh``.
+    """
 
-        # Image embeddings arrive already normed, so they are scattered in
-        # after the embedding norm. Out-of-bounds indices are skipped, so an
-        # empty (text-only or decode) batch is a no-op.
-        h = F_merge_multimodal_embeddings(
-            h, image_embeddings.cast(h.dtype), image_token_indices
-        )
-
-        for idx, layer in enumerate(self.layers):
-            h = layer(
-                h,
-                kv_by_type[self._layer_kv_key[idx]],
-                input_row_offsets=input_row_offsets,
-            )
-
-        last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = self._compute_logits(self.norm(last_h))
-
-        logits: Tensor | None = None
-        offsets: Tensor | None = None
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = F.range(
-                return_n_logits[0],
-                0,
-                -1,
-                out_dim="return_n_logits_range",
-                device=CPU(),
-                dtype=DType.int64,
-            )
-            offsets = (
-                input_row_offsets[1:].unsqueeze(-1) - return_n_logits_range
-            )
-            last_indices = offsets.reshape((-1,))
-            last_tokens = F.gather(h, last_indices, axis=0)
-            logits = self._compute_logits(self.norm(last_tokens))
-            offsets = F.range(
-                0,
-                last_indices.shape[0] + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                device=CPU(),
-                dtype=DType.int64,
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = self._compute_logits(self.norm(h))
-            offsets = input_row_offsets
-
-        ret_val: tuple[Tensor, ...] = (last_logits,)
-        if offsets is not None:
-            assert logits is not None
-            ret_val += (logits, offsets)
-        return ret_val
-
-
-class MuseGlimmer(Module[..., tuple[Tensor, ...]]):
-    """Top-level wrapper: unflattens the two-leaf KV tree, delegates."""
-
-    def __init__(self, config: MuseGlimmerConfig, mesh: DeviceMesh) -> None:
-        super().__init__()
-        self.language_model = MuseGlimmerTextModel(config, mesh)
-        self.kv_params = config.kv_params
-        self.mesh = mesh
+    language_model: MuseTextModelBase
+    kv_params: MultiKVCacheParams
+    mesh: DeviceMesh
 
     def forward(
         self,
@@ -240,3 +268,13 @@ class MuseGlimmer(Module[..., tuple[Tensor, ...]]):
             image_embeddings,
             image_token_indices,
         )
+
+
+class MuseGlimmer(MuseModelBase):
+    """The Muse Glimmer text model behind the shared wrapper."""
+
+    def __init__(self, config: MuseGlimmerConfig, mesh: DeviceMesh) -> None:
+        super().__init__()
+        self.language_model = MuseGlimmerTextModel(config, mesh)
+        self.kv_params = config.kv_params
+        self.mesh = mesh

@@ -35,6 +35,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
 )
+from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -46,6 +47,27 @@ logger = logging.getLogger("max.pipelines")
 
 _EXCLUDED_LAYER = re.compile(r"layers\.(\d+)\.")
 _LANGUAGE_MODULE = re.compile(r"model\.language_model\.layers\.(\d+)\.(.+)")
+
+
+def unpadded_vocab_size(pipeline_config: PipelineConfig) -> int:
+    """Returns the tokenizer's size, the bound of the vocab tail mask.
+
+    Raises:
+        ValueError: If the tokenizer cannot be read. Without the bound,
+            padding ids could be sampled.
+    """
+    # Loads the tokenizer while the config is built, on purpose: the mask
+    # bound must be known before the graph is.
+    try:
+        tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+            pipeline_config.model.huggingface_model_repo
+        )
+    except Exception as e:
+        raise ValueError(
+            "Muse Spark: could not read the tokenizer size, which bounds the"
+            " padded vocab tail mask"
+        ) from e
+    return len(tokenizer)
 
 
 def _rope_theta(hf_config: AutoConfig) -> float:
@@ -198,6 +220,8 @@ class MuseSparkTextConfig(ArchConfigWithBoundedMaxSeqLen):
     routed_scaling_factor: float
     residual_gate_temperature: float
     tie_word_embeddings: bool = False
+    unpadded_vocab_size: int
+    """The tokenizer's size; ``lm_head`` rows past it are padding."""
     kv_params: MultiKVCacheParams
     nvfp4: MuseSparkNVFP4 | None = None
     """``None`` for a bfloat16 checkpoint."""
@@ -308,6 +332,7 @@ class MuseSparkTextConfig(ArchConfigWithBoundedMaxSeqLen):
             routed_scaling_factor=hf.routed_scaling_factor,
             residual_gate_temperature=hf.residual_gate_temperature,
             tie_word_embeddings=hf.tie_word_embeddings,
+            unpadded_vocab_size=unpadded_vocab_size(pipeline_config),
             kv_params=cls.construct_kv_params(
                 huggingface_config=hf,
                 pipeline_config=pipeline_config,

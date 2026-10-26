@@ -12,10 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.architectures.muse_glimmer.batch_processor import (
+    MuseGlimmerBatchProcessor,
+)
+from max.pipelines.architectures.muse_glimmer.tokenizer import (
+    MuseGlimmerTokenizer,
+)
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
+from . import weight_adapters
+from .memory_planner import MuseSparkMemoryPlanner
 from .model import MuseSparkModel
 from .model_config import MuseSparkConfig
 
@@ -26,8 +34,16 @@ muse_spark_arch = SupportedArchitecture(
     supported_encodings=MuseSparkConfig.SUPPORTED_ENCODINGS,
     pipeline_model=MuseSparkModel,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextTokenizer,
-    context_type=TextContext,
+    tokenizer=MuseGlimmerTokenizer,
+    context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
+    multi_gpu_supported=False,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_language_state_dict,
+    },
     config=MuseSparkConfig,
+    batching=MuseGlimmerBatchProcessor,
+    memory_planner=MuseSparkMemoryPlanner,
+    supports_overlap_scheduler=True,
+    supports_device_graph_capture=False,
 )
