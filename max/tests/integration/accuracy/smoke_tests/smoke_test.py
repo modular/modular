@@ -201,10 +201,14 @@ VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
 
 # Servers for frameworks whose serving code is internal. Their internal
 # entrypoint registers them here before running the smoke test. Each takes the
-# model, the startup timeout in seconds, and whether the model is a vision
-# model, so a framework that builds its vision graph separately builds it.
+# model, the startup timeout in seconds, whether the model is a vision model, so
+# a framework that builds its vision graph separately builds it, and the
+# variant's recipe file, or None. A server refuses a recipe it cannot serve.
 SERVERS: dict[
-    str, Callable[[str, int, bool], AbstractContextManager[RunningServer]]
+    str,
+    Callable[
+        [str, int, bool, str | None], AbstractContextManager[RunningServer]
+    ],
 ] = {}
 
 
@@ -785,10 +789,11 @@ def smoke_test(
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
     if framework in SERVERS:
-        if recipe_path:
-            raise ValueError(f"{framework} does not support recipes")
         serving = SERVERS[framework](
-            hf_model_path, timeout, is_vision_model(model)
+            hf_model_path,
+            timeout,
+            is_vision_model(model),
+            _resolve_recipe_path(recipe_path) if recipe_path else None,
         )
         # A variant selects how the server serves its base repo, which
         # requests name.
