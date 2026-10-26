@@ -16,6 +16,7 @@
 #include "GraphCompiler/MODialect/MODevices.h"
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MODialect/Transforms/MOTransforms.h"
+#include "GraphCompiler/MODialect/Transforms/Utils.h"
 #include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -39,18 +40,6 @@ namespace {
 
 struct NanCheckPass : public impl::NanCheckPassBase<NanCheckPass> {
   using Base::Base;
-
-  std::string valueToLabel(Value value) {
-    std::string str;
-    llvm::raw_string_ostream os(str);
-
-    if (auto op = value.getDefiningOp())
-      os << " " << op->getName() << " ";
-
-    value.printAsOperand(os, mlir::OpPrintingFlags().printGenericOpForm());
-
-    return str;
-  }
 
   bool isFloatTensor(Value value) {
     auto tensorType = dyn_cast<MO::TensorType>(value.getType());
@@ -95,6 +84,8 @@ struct NanCheckPass : public impl::NanCheckPassBase<NanCheckPass> {
     if (kernelOps.empty())
       return;
 
+    mlir::AsmState state(graphOp, mlir::OpPrintingFlags().printGenericOpForm());
+
     MOGG::MojoRegistry registry(
         getOperation()->getParentOfType<mlir::ModuleOp>());
 
@@ -133,7 +124,7 @@ struct NanCheckPass : public impl::NanCheckPassBase<NanCheckPass> {
         auto countTypeOnDevice = MO::TensorType::get(
             ctx, ArrayRef<int64_t>{1}, M::DType::si32, device, emptyMetadata);
 
-        std::string label = valueToLabel(res);
+        std::string label = valueToLabel(state, res);
         std::string typeStr;
         {
           llvm::raw_string_ostream os(typeStr);

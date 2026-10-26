@@ -109,3 +109,21 @@ mo.graph @label_present(%arg0: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
   %0 = mo.relu(%arg0) : !mo.tensor<[4], f32>
   mo.output %0 : !mo.tensor<[4], f32>
 }
+
+//===----------------------------------------------------------------------===//
+// Test 6: Labels number values as they were before the pass ran. Checks the
+// pass inserts for one kernel must not shift the labels of later kernels.
+//===----------------------------------------------------------------------===//
+
+// CHECK-LABEL: mo.graph @label_numbering
+// CHECK:       NanCheckRaiseOp[label = " map.iter.opaque %0"
+// CHECK:       NanCheckRaiseOp[label = " map.iter.opaque %1"
+// CHECK:       NanCheckRaiseOp[label = " map.iter.opaque %2"
+// CHECK:       mo.output
+
+mo.graph @label_numbering(%arg0: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
+  %0 = mo.add(%arg0, %arg0) : !mo.tensor<[4], f32>
+  %1 = mo.custom [symbol = "test_custom_op", device = #M.device_ref<"cpu", 0>](%0) : (!mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
+  %2 = mo.relu(%1) : !mo.tensor<[4], f32>
+  mo.output %2 : !mo.tensor<[4], f32>
+}
