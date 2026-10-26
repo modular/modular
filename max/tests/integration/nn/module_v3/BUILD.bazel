@@ -35,6 +35,7 @@ modular_eager_py_test(
     per_test_shard_count = {
         # Each case compiles its own graph; shard so the per-test compiles run
         # in parallel and the suite stays well under the per-target timeout.
+        "test_module.py": 4,
         "test_subgraph.py": 4,
     },
     per_test_tags = {
