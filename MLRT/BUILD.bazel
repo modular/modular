@@ -495,6 +495,7 @@ modular_cc_library(
         "include/MLRT/Driver/DeviceContext/DeviceAPINames.h",
         "include/MLRT/Driver/DeviceContext/DeviceContext.h",
         "include/MLRT/Driver/DeviceContext/DeviceGraphBuilder.h",
+        "include/MLRT/Driver/DeviceContext/DriverPluginSpec.h",
         "include/MLRT/Driver/DeviceContext/ErrorMacros.h",
         "include/MLRT/Driver/DeviceContext/HALDeviceContext.h",
         "include/MLRT/Driver/DeviceContext/LaunchTraceEntry.h",

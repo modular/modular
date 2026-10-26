@@ -17,6 +17,7 @@
 
 #include "Target/DriverPlugin.h"
 
+#include "MLRT/Driver/DeviceContext/DriverPluginSpec.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Process.h"
@@ -287,24 +288,23 @@ MODULAR_CXX_EXPORT ErrorOr<int> loadPlugins() {
   if (!envOr)
     return 0;
 
-  std::string pluginsStr = *envOr;
-  if (pluginsStr.empty())
-    return 0;
-
   int loaded = 0;
-  // Split on ':' (colon-separated list of .so paths)
-  size_t start = 0;
-  while (start < pluginsStr.size()) {
-    size_t end = pluginsStr.find(':', start);
-    if (end == std::string::npos)
-      end = pluginsStr.size();
-    std::string path = pluginsStr.substr(start, end - start);
-    start = end + 1;
+  // An entry's name is unused; a plugin reports its api.
+  for (const DriverPluginEntry &entry : parseDriverPluginSpec(*envOr)) {
+    std::string path = entry.path.str();
 
-    if (path.empty())
+    // A plugin without this loader's entry point is for the HAL
+    // `DeviceContext`, so it's skipped, not reported. Holding the probe open
+    // across `Driver::Create` means a kept plugin initializes once; one that
+    // can't be opened is left to `Driver::Create` to report.
+    void *probe = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (probe && !dlsym(probe, "M_driver_device_get_native")) {
+      dlclose(probe);
       continue;
-
+    }
     auto driverIdOr = Driver::Create(path);
+    if (probe)
+      dlclose(probe);
     if (driverIdOr.isError()) {
       // Reported, not silent: a plugin named here was asked for explicitly, so
       // its absence later surfaces as `Unsupported device api` from whichever

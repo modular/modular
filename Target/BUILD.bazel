@@ -281,6 +281,32 @@ modular_cc_test(
     ],
 )
 
+modular_cc_binary(
+    name = "LegacyStubPlugin.so",
+    testonly = True,
+    srcs = ["test/LegacyStubPlugin.cpp"],
+    linkshared = True,
+    linkstatic = False,
+    visibility = ["//visibility:private"],
+    deps = ["//SDK:HAL"],
+)
+
+modular_cc_test(
+    name = "DriverPluginLoadTest",
+    size = "small",
+    srcs = ["test/DriverPluginLoadTest.cpp"],
+    data = [
+        ":CPUPlugin.so",
+        ":LegacyStubPlugin.so",
+    ],
+    env = {
+        "CPU_PLUGIN": "$(rootpath :CPUPlugin.so)",
+        "LEGACY_STUB_PLUGIN": "$(rootpath :LegacyStubPlugin.so)",
+    },
+    visibility = ["//visibility:private"],
+    deps = [":DriverPlugin"],
+)
+
 modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),

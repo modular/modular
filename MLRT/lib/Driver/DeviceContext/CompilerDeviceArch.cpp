@@ -30,8 +30,8 @@
 
 #include "HAL/M_driver_api.h"
 #include "MLRT/Driver/DeviceContext/DeviceAPINames.h"
+#include "MLRT/Driver/DeviceContext/DriverPluginSpec.h"
 #include "llvm/ADT/ScopeExit.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Process.h"
@@ -39,28 +39,11 @@
 #include <dlfcn.h>
 #include <optional>
 #include <string>
-#include <utility>
 
 namespace M {
 namespace Driver {
 
 namespace {
-
-// `spec` is `MODULAR_DRIVER_PLUGINS`: ';'-separated "Name@/path.so" entries.
-// A bare path names no api, so only the plugin can say whether it's the CPU's.
-llvm::SmallVector<llvm::StringRef> candidatePluginPaths(llvm::StringRef spec) {
-  llvm::SmallVector<llvm::StringRef> entries;
-  spec.split(entries, ';', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-  llvm::SmallVector<llvm::StringRef> paths;
-  for (llvm::StringRef entry : entries) {
-    auto [name, path] = entry.contains('@')
-                            ? entry.split('@')
-                            : std::make_pair(llvm::StringRef(), entry);
-    if (!name.equals_insensitive("cpu"))
-      paths.push_back(path);
-  }
-  return paths;
-}
 
 // "<vendor>:<arch>" of device 0 when the plugin's api has a Mojo vendor, or ""
 // when it has no device. `std::nullopt` when the plugin doesn't load or has no
@@ -121,9 +104,14 @@ std::string queryAcceleratorArch() {
       llvm::sys::Process::GetEnv("MODULAR_DRIVER_PLUGINS");
   if (!spec)
     return {};
-  for (llvm::StringRef soPath : candidatePluginPaths(*spec))
-    if (std::optional<std::string> arch = queryPluginArch(soPath))
+  for (const DriverPluginEntry &plugin : parseDriverPluginSpec(*spec)) {
+    // A bare path names no api, so only the plugin can say whether it's the
+    // CPU's.
+    if (plugin.name.equals_insensitive("cpu"))
+      continue;
+    if (std::optional<std::string> arch = queryPluginArch(plugin.path))
       return *arch;
+  }
   return {};
 }
 
