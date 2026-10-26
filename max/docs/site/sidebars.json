@@ -928,6 +928,17 @@
                 "id": "api/python/pipelines.speculative"
               },
               "items": [
+                {
+                  "type": "category",
+                  "label": "driver",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.driver"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.driver__"
+                  ]
+                },
                 "__AUTOGEN:max.pipelines.speculative__"
               ]
             },
