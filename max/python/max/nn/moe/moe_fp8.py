@@ -22,10 +22,10 @@ from max.driver import (
     accelerator_count,
 )
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import BufferType, DeviceRef, TensorValue, ops
 
 from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import moe_create_indices
+from ..kernels import amd_mega_ffn_workspace_words, moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
     BlockScaledStrategy,
@@ -271,6 +271,26 @@ class MoEQuantized(MoE):
             and self._uses_fused_swiglu_layout()
             and accelerator_count() > 0
             and accelerator_architecture_name() == "gfx950"
+        )
+
+    def _can_fuse_mega_ffn_amd(self) -> bool:
+        """Whether the gfx950 MXFP8 MoE FFN runs as one op (the one-launch
+        MegaFFN at decode, the two-kernel chain otherwise).
+
+        Runs wherever it can: for the expert shapes it is validated on
+        (MiniMax M3: hidden 6144, expert width 3072), where it matches the
+        chain bit for bit and is never slower at decode. It takes exactly the layout the fused SwiGLU+MXFP8 epilogue does, plus a
+        single-node EP batch manager (the A-scales must arrive in the
+        dispatch's slot layout, and ``estimated_total_m`` counts only this
+        node's tokens, so it bounds no remote node's rows; the kernel traps
+        past its row bound).
+        """
+        if (self.hidden_dim, self.moe_dim) != (6144, 3072):
+            return False
+        return (
+            self._ep_batch_manager is not None
+            and self._ep_batch_manager.config.n_nodes == 1
+            and self._can_fuse_swiglu_mxfp8()
         )
 
     def _can_fuse_swiglu_nvfp4(self) -> bool:
@@ -539,6 +559,55 @@ class MoEQuantized(MoE):
                 activation=self.activation,
             )
             return None
+
+        if self._can_fuse_mega_ffn_amd() and isinstance(
+            strategy, BlockScaledStrategy
+        ):
+            # Both legs in one op: the one-launch MegaFFN at decode, the same
+            # two kernels otherwise. Its counters persist across executions:
+            # minted and zeroed once at load, one buffer per call site, never
+            # zeroed per launch (that would pin the generation the kernel
+            # uses to reset its own state).
+            # The MegaFFN's band covers every decode step (max_batch_size x
+            # the speculative width stays well under it); past preb's decode
+            # band it is ~10% faster than the chain, so it runs wherever it
+            # can. A step of `T` tokens on this (only) node has
+            # estimated_total_m = T * top_k / GPUs, so inside the band this
+            # GPU receives at most band * GPUs routed rows plus the fused
+            # shared expert's T. 256 is preb's own band boundary past its
+            # decode tiles.
+            mega_band_m = 256
+            n_gpus = ep_config.n_gpus_per_node
+            mega_max_rows = mega_band_m * n_gpus + (
+                -(-mega_band_m * n_gpus // ep_config.top_k)
+            )
+            workspace = ops.buffer_create(
+                BufferType(
+                    DType.uint32,
+                    shape=[
+                        amd_mega_ffn_workspace_words(
+                            int(self.gate_up_proj.shape[0]), mega_max_rows
+                        )
+                    ],
+                    device=x.device,
+                ),
+                init_value=0,
+            )
+            return strategy.grouped_ffn_amd(
+                self.gate_up_proj,
+                gate_up_scales,
+                self.down_proj,
+                down_scales,
+                workspace,
+                expert_inputs,
+                estimated_total_m,
+                scales_max_padded_m=mxfp4_ep_max_padded_m,
+                decode_grid_m_cap=mxfp4_decode_grid_m_cap,
+                decode_grid_m_rows=mxfp4_decode_grid_m_rows,
+                mega_band_m=mega_band_m,
+                mega_max_rows=mega_max_rows,
+                activation=self.activation,
+            )
 
         if self._can_fuse_swiglu_nvfp4():
             assert isinstance(strategy, NvMxf4f8Strategy)

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import NamedTuple, Protocol
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, ops
 
 from ..activation import GatedActivation
 from ..comm.ep.ep_kernels import fused_silu_quantized
@@ -29,6 +29,7 @@ from ..kernels import (
     grouped_dynamic_block_scaled_matmul_amd_swiglu_quant,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_dynamic_scaled_mxfp6_matmul,
+    grouped_ffn_block_scaled_amd,
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
     grouped_quantize_dynamic_block_scaled,
@@ -698,6 +699,72 @@ class BlockScaledStrategy:
             decode_grid_m_cap=decode_grid_m_cap,
             decode_grid_m_rows=decode_grid_m_rows,
             out_scales_max_padded_m=out_scales_max_padded_m,
+            activation=activation,
+        )
+
+    def grouped_ffn_amd(
+        self,
+        gate_up_weight: TensorValue,
+        gate_up_scales: TensorValue,
+        down_weight: TensorValue,
+        down_scales: TensorValue,
+        workspace: BufferValue,
+        expert_inputs: tuple[TensorValue, ...],
+        estimated_total_m: TensorValue,
+        scales_max_padded_m: int,
+        decode_grid_m_cap: int,
+        decode_grid_m_rows: int,
+        mega_band_m: int,
+        mega_max_rows: int,
+        activation: GatedActivation | None = None,
+    ) -> TensorValue:
+        """Runs the whole MoE FFN in one op on AMD gfx950: the one-launch
+        MegaFFN in the decode band, else the same two kernels as
+        :meth:`grouped_matmul_swiglu_quant` then :meth:`grouped_matmul`.
+
+        Args:
+            gate_up_weight: The sigma-permuted gate/up weight.
+            gate_up_scales: Its preshuffled E8M0 scales.
+            down_weight: The down weight.
+            down_scales: Its preshuffled E8M0 scales.
+            workspace: The call site's persistent MegaFFN counter buffer.
+            expert_inputs: The EP dispatch 5-tuple; the A-scales must be in
+                the per-expert slot layout.
+            estimated_total_m: Row-count estimate that picks the regime.
+            scales_max_padded_m: The slot stride of the A-scales.
+            decode_grid_m_cap: Decode-band gate.
+            decode_grid_m_rows: Worst-case rows one expert can receive.
+            mega_band_m: The MegaFFN's band on ``estimated_total_m``.
+            mega_max_rows: The most rows this GPU receives inside it.
+            activation: The gated activation.
+
+        Returns:
+            The bf16 FFN output.
+        """
+        (
+            hidden,
+            hidden_scales,
+            expert_start,
+            expert_ids,
+            usage_stats,
+        ) = expert_inputs
+        return grouped_ffn_block_scaled_amd(
+            hidden,
+            preshuffle_block_scaled_b(gate_up_weight),
+            hidden_scales,
+            gate_up_scales,
+            preshuffle_block_scaled_b(down_weight),
+            down_scales,
+            expert_start,
+            expert_ids,
+            usage_stats.to(DeviceRef.CPU()),
+            workspace,
+            estimated_total_m,
+            scales_max_padded_m,
+            decode_grid_m_cap,
+            decode_grid_m_rows,
+            mega_band_m,
+            mega_max_rows,
             activation=activation,
         )
 
