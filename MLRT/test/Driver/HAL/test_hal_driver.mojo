@@ -19,8 +19,8 @@ Requires MODULAR_DRIVER_PLUGINS env var set to a plugin spec, e.g.:
 from std.os import getenv
 from max._driver import Driver
 from max._driver.max_license.hal.extensions.traits import SupportsPeerAccessV1
-from max._driver.max_license.hal.status import HALError, STATUS_UNKNOWN_ERROR
-from std.testing import assert_equal, assert_false
+from max._driver.max_license.hal.status import HALError, STATUS_INVALID_ARG
+from std.testing import assert_equal, assert_false, assert_true
 
 
 def test_driver_create() raises HALError:
@@ -36,7 +36,7 @@ def test_driver_create() raises HALError:
     print("Device count:", device_count)
 
 
-def test_device_get() raises HALError:
+def test_device_get() raises:
     var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
     if not plugin_spec:
         print("SKIP: MODULAR_DRIVER_PLUGINS not set")
@@ -46,15 +46,17 @@ def test_device_get() raises HALError:
     var device_count = driver[].get_device_count()
     for i in range(device_count):
         var device = driver[].get_device_dynamic(Int64(i))
-        if device[].id != Int64(i):
-            raise HALError(
-                STATUS_UNKNOWN_ERROR,
-                message="Device ID mismatch: expected "
-                + String(i)
-                + ", got "
-                + String(device[].id),
-            )
-        print("Device", i, "OK")
+        var name = device[].get_name()
+        assert_true(name.byte_length() > 0, "device has an empty name")
+        print("Device", i, name)
+
+    var rejected = False
+    try:
+        _ = driver[].get_device_dynamic(device_count)
+    except e:
+        assert_equal(e.status, STATUS_INVALID_ARG)
+        rejected = True
+    assert_true(rejected, "a device ID past the count was accepted")
 
 
 def test_peer_access() raises:
@@ -90,4 +92,5 @@ def main() raises:
         test_driver_create()
     except e:
         raise Error(String(e))
+    test_device_get()
     test_peer_access()
