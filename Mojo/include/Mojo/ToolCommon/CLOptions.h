@@ -127,6 +127,10 @@ public:
 
   SmallVector<std::string> ignoredDeprecations;
 
+  bool disableWarnings{false};
+
+  bool warningsAsErrors{false};
+
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
@@ -159,6 +163,8 @@ public:
         elaborationMaxDepth);
     options.warnOnUnstableAPIs = warnOnUnstableAPIs;
     options.ignoredDeprecations = ignoredDeprecations;
+    options.disableWarnings = disableWarnings;
+    options.warningsAsErrors = warningsAsErrors;
     // LLVM's MC layer already owns a global `-target-abi` flag (see the
     // comment by `targetFeatures` above); read its value instead of adding a
     // second one under the same name. `getABIName()` asserts unless this
@@ -512,6 +518,24 @@ private:
                "declaration). May be specified multiple times. All other "
                "deprecation warnings are still emitted."),
       llvm::cl::location(options.ignoredDeprecations),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> disableWarnings{
+      "disable-warnings", cl::desc("Do not print warning messages."),
+      llvm::cl::location(options.disableWarnings),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  // -Werror and -Wno-error write the same setting so the last one wins.
+  M::cl::MOpt<bool> warningsAsErrors{
+      "Werror", cl::desc("Treat warnings as errors."),
+      llvm::cl::callback(
+          [this](const bool &value) { options.warningsAsErrors = value; }),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool> noWarningsAsErrors{
+      "Wno-error", cl::desc("Do not treat warnings as errors."),
+      llvm::cl::callback(
+          [this](const bool &value) { options.warningsAsErrors = !value; }),
       llvm::cl::cat(KGENOptionsCategory)};
 };
 class KGENOptions : public KGENCommonOptions, public CommonOptions {

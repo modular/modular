@@ -35,6 +35,7 @@
 #include "Mojo/ToolCommon/Debug.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/Paths.h"
@@ -855,6 +856,8 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
   llvm::SourceMgr sourceMgr;
   sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
   mlir::SourceMgrDiagnosticHandler diagHandler(sourceMgr, &context);
+  ScopedMLIRWarningHandler warningHandler(&context, clOptions.disableWarnings,
+                                          clOptions.warningsAsErrors);
 
   CompilationOptions options = clOptions.getCompilationOptions();
   options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
@@ -895,7 +898,7 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
     return failure(clOptions.reportError("failed to write the package"));
   }
   outFile->keep();
-  return mlir::success();
+  return failure(warningHandler.wasErrorEmitted());
 }
 
 int main(int argc, char **argv) {
@@ -1018,6 +1021,10 @@ int main(int argc, char **argv) {
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
         ctx->printOpOnDiagnostic(true);
-        return runToolPipeline(ctx, sourceManager, clOptions);
+        ScopedMLIRWarningHandler warningHandler(ctx, clOptions.disableWarnings,
+                                                clOptions.warningsAsErrors);
+        if (failed(runToolPipeline(ctx, sourceManager, clOptions)))
+          return failure();
+        return failure(warningHandler.wasErrorEmitted());
       }));
 }
