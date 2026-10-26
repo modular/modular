@@ -332,9 +332,11 @@ def pad_constant_shape[
         constant_dtype == type_of(input).dtype
     ), "constant dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 
@@ -387,9 +389,11 @@ def pad_repeat_shape(
     """Computes the output shape for the `mo.pad.repeat` graph op."""
     comptime assert type_of(padding).rank == 1, "padding must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 
@@ -442,9 +446,11 @@ def pad_reflect_shape(
     """Computes the output shape for the `mo.pad.reflect` graph op."""
     comptime assert type_of(padding).rank == 1, "padding must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 
