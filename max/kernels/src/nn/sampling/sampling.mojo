@@ -199,10 +199,21 @@ def apply_masked_penalties_to_logits[
     ](idx: Coord) {var}:
         comptime assert idx.rank == 1, "apply_masked_penalties_fn: rank 1"
 
+        var row = get_batch_from_row_offsets(frequency_offsets, Int(idx[0]))
+        var frequency_penalty_val = frequency_penalty[row][0]
+        var presence_penalty_val = presence_penalty[row][0]
+        # A row with the API's defaults leaves every logit unchanged -- it
+        # subtracts `0 * count + 0`, the identity on every value the checks
+        # below let through -- and this kernel is a packed-mask read plus a
+        # random gather and scatter over the vocabulary: skip the row before
+        # it pays for them.
+        if frequency_penalty_val == 0.0 and presence_penalty_val == 0.0:
+            return
+        # The entry's token is only needed past the skip: a row with the
+        # API's defaults never reads it.
         var token = Int(compressed_frequency_data[idx[0], 0])
         if token < 0:
             return
-        var row = get_batch_from_row_offsets(frequency_offsets, Int(idx[0]))
         var word = packed[row, token >> 5][0]
         if ((word >> Int32(token & 31)) & 1) == 0:
             return
@@ -211,8 +222,8 @@ def apply_masked_penalties_to_logits[
             return
         var count = compressed_frequency_data[idx[0], 1][0].cast[logit_type]()
         logit -= (
-            frequency_penalty[row][0].cast[logit_type]() * count
-            + presence_penalty[row][0].cast[logit_type]()
+            frequency_penalty_val.cast[logit_type]() * count
+            + presence_penalty_val.cast[logit_type]()
         )
         logits[row, token] = logit
 
