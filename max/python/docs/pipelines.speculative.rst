@@ -16,6 +16,7 @@ max.pipelines.speculative
    :hidden:
 
    pipelines.speculative.driver
+   pipelines.speculative.spec_width_policy
 
 Configuration
 -------------

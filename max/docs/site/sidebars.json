@@ -939,6 +939,17 @@
                     "__AUTOGEN:max.pipelines.speculative.driver__"
                   ]
                 },
+                {
+                  "type": "category",
+                  "label": "spec_width_policy",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.spec_width_policy"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.spec_width_policy__"
+                  ]
+                },
                 "__AUTOGEN:max.pipelines.speculative__"
               ]
             },
