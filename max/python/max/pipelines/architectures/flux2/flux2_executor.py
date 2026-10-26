@@ -80,7 +80,7 @@ class Flux2ExecutorInputs(TensorStruct):
     """Token IDs for the text encoder, shape ``(S,)``."""
 
     text_ids: Buffer
-    """Text position IDs for the transformer, shape ``(1, S, 4)`` int64."""
+    """Text position IDs for the transformer, shape ``(B, S, 4)`` int64."""
 
     latents: Buffer
     """Packed latent noise tensor, shape ``(B, seq, C*4)``."""
@@ -168,6 +168,44 @@ class Flux2ExecutorOutputs(TensorStruct):
     Buffer may be device-resident on return -- the caller is responsible
     for host transfer via ``.to(cpu)`` when needed.
     """
+
+
+def repeat_per_image(buffer: Buffer, num_images: int) -> Buffer:
+    """Repeats a one-row buffer to ``num_images`` rows on its device.
+
+    The denoise graphs bind one ``batch`` dim to every input, so a
+    per-prompt tensor needs one row per image.
+
+    Args:
+        buffer: A buffer with one row on its leading axis.
+        num_images: The number of rows to return.
+
+    Returns:
+        A ``(num_images, *buffer.shape[1:])`` buffer, or ``buffer`` itself
+        when ``num_images`` is 1.
+
+    Raises:
+        ValueError: If ``num_images`` is above 1 and ``buffer`` does not
+            have exactly one row.
+    """
+    if num_images == 1:
+        return buffer
+    if buffer.shape[0] != 1:
+        raise ValueError(
+            f"Expected a buffer with one row, got shape {buffer.shape}."
+        )
+    repeated = Buffer(
+        shape=(num_images, *buffer.shape[1:]),
+        dtype=buffer.dtype,
+        device=buffer.device,
+    )
+    if buffer.num_elements == 0:
+        return repeated
+    # MAX takes one index per axis.
+    rest = (slice(None),) * (buffer.rank - 1)
+    for row in range(num_images):
+        repeated[(slice(row, row + 1), *rest)].inplace_copy_from(buffer)
+    return repeated
 
 
 # ---------------------------------------------------------------------------
@@ -530,12 +568,10 @@ class Flux2Executor(
         # Flux2ExecutorInputs.to().  Buffers already on the target device
         # are no-ops.
         inputs = inputs.to(self._model_device)
+        num_images = inputs.latents.shape[0]
 
         # 1) Encode prompts (Graph 1).
-        prompt_embeds = self._encode_prompts(
-            inputs.tokens,
-            inputs.num_images_per_prompt,
-        )
+        prompt_embeds = self._encode_prompts(inputs.tokens, num_images)
         text_ids = inputs.text_ids
 
         # 2) Encode image if img2img (Graph 2).
@@ -548,6 +584,8 @@ class Flux2Executor(
         else:
             image_latents = self._empty_image_latents()
             image_latent_ids = self._empty_image_latent_ids()
+        image_latents = repeat_per_image(image_latents, num_images)
+        image_latent_ids = repeat_per_image(image_latent_ids, num_images)
 
         # 3) Denoising loop (Graph 3).
         latents = self._run_denoising_loop(
@@ -578,18 +616,18 @@ class Flux2Executor(
     def _encode_prompts(
         self,
         tokens: Buffer,
-        num_images_per_prompt: Buffer,
+        num_images: int,
     ) -> Buffer:
         """Run Graph 1: encode text prompts into embeddings.
 
         Args:
             tokens: Token IDs, shape ``(S,)``.
-            num_images_per_prompt: 1-element int64 tensor.
+            num_images: The number of images per prompt, ``B``.
 
         Returns:
             ``prompt_embeds`` Buffer of shape ``(B, S, L*D)``.
         """
-        return self.text_encoder(tokens)
+        return repeat_per_image(self.text_encoder(tokens), num_images)
 
     # -- Graph 2: Image Encode (img2img only) ---------------------------------
 
@@ -606,9 +644,10 @@ class Flux2Executor(
             input_image: Raw input image, shape ``(H, W, C)`` uint8.
 
         Returns:
-            A tuple of ``(image_latents, image_latent_ids)`` where:
-            - ``image_latents`` has shape ``(B, img_seq, C*4)``
-            - ``image_latent_ids`` has shape ``(B, img_seq, 4)`` int64
+            A tuple of ``(image_latents, image_latent_ids)`` with one row,
+            which :meth:`execute` repeats per image:
+            - ``image_latents`` has shape ``(1, img_seq, C*4)``
+            - ``image_latent_ids`` has shape ``(1, img_seq, 4)`` int64
         """
         return self.image_encoder(input_image)
 
@@ -740,6 +779,7 @@ class Flux2Executor(
             Final denoised latents, shape ``(B, seq, C)``.
         """
         num_steps: int = np.from_dlpack(num_inference_steps).item()  # type: ignore[assignment]
+        num_images = latents.shape[0]
 
         if self._denoise_compute_fbcache is not None:
             # First-Block-Cache path: split compute (with in-graph
@@ -761,7 +801,7 @@ class Flux2Executor(
         elif self._taylor_cache is None:
             # Fused path (no cache).
             for i in range(num_steps):
-                timestep_i = timesteps[i : i + 1]
+                timestep_i = repeat_per_image(timesteps[i : i + 1], num_images)
                 dt_i = dts[i : i + 1]
                 latents = self._denoise_step(
                     latents,
@@ -787,7 +827,6 @@ class Flux2Executor(
             )
 
             for i in range(num_steps):
-                timestep_i = timesteps[i : i + 1]
                 dt_i = dts[i : i + 1]
 
                 if self._taylor_cache.should_skip(i):
@@ -799,7 +838,7 @@ class Flux2Executor(
                         latents,
                         image_latents,
                         prompt_embeds,
-                        timestep_i,
+                        repeat_per_image(timesteps[i : i + 1], num_images),
                         guidance,
                         latent_image_ids,
                         image_latent_ids,
@@ -875,7 +914,7 @@ class Flux2Executor(
 
         skipped = 0
         for i in range(num_steps):
-            timestep_i = timesteps[i : i + 1]
+            timestep_i = repeat_per_image(timesteps[i : i + 1], batch_size)
             dt_i = dts[i : i + 1]
 
             new_residual, noise_pred, used_cache = (

@@ -19,6 +19,11 @@ This version is still a work in progress.
   recommends it for coding and agent workloads. Pass `clear_thinking=True` in
   the chat template options to drop earlier reasoning.
 
+- FLUX.2 models now generate more than one image per request, so
+  `num_images` above 1 in `max serve` and `num_images_per_prompt` in
+  `generate_images()` and `AutoModel.generate()` work for them. Such a
+  request used to fail in the first denoising step.
+
 - InternVL and Gemma 3 multimodal models now return log probabilities, so
   `logprobs` in `max serve` and `output_logprobs` in `generate()` work for
   them.

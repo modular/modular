@@ -23,6 +23,31 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_repeat_per_image",
+    srcs = ["test_repeat_per_image.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures/flux2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_repeat_per_image_gpu",
+    srcs = ["test_repeat_per_image_gpu.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures/flux2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "benchmark_text_encoder",
     size = "large",
     timeout = "long",
@@ -53,5 +78,49 @@ modular_py_test(
         "//max/python/max/profiler",
         requirement("numpy"),
         requirement("pytest-benchmark"),
+    ],
+)
+
+modular_py_test(
+    name = "test_multi_image_gpu",
+    size = "enormous",
+    srcs = ["test_multi_image_gpu.py"],
+    exec_properties = {
+        # FLUX.2-dev holds about 110 GB of weights for its transformer and
+        # text encoder.
+        "test.resources:gpu-memory": "160",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # ModuleV3 runs eager ops through the interpreter.
+        "//max/python/max/_interpreter_ops",
+        # Resolves the FLUX.2 executors by name at runtime.
+        "//max/python/max/pipelines/architectures/flux2",
+        "//max/python/max/pipelines/architectures/flux2_modulev3",
+        # Renders the text encoder's chat template.
+        requirement("jinja2"),
+    ],
+    # One model per shard, so each loads in its own process.
+    shard_count = 6,
+    tags = [
+        "gpu",
+        # Loads a full checkpoint, so it stays out of presubmit. Run it by name.
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/flux2",
+        "//max/python/max/pipelines/architectures/flux2_modulev3",
+        requirement("huggingface-hub"),
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pillow"),
     ],
 )

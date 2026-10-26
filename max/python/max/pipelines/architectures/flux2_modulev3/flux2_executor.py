@@ -198,19 +198,17 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         text_embeddings = self.text_encoder(tokens)
         image_latents = self.vae.encode(input_image)
 
-        # Use ``guidance``'s symbolic ``"batch"`` dim as the canonical
-        # batch dim for the whole pipeline.  The text encoder and VAE
-        # encoder both produce hardcoded ``batch=1`` outputs (their
-        # ``unsqueeze(0)`` adds a literal batch dim), so rebind both
-        # onto the symbolic ``"batch"`` here -- this matches the
-        # broadcast that happens inside :class:`Flux2TimestepGuidanceEmbeddings`
+        # Use ``guidance``'s symbolic ``"batch"`` dim, which resolves to
+        # ``num_images_per_prompt`` at runtime, as the canonical batch dim
+        # for the whole pipeline.  The text encoder and VAE encoder both
+        # produce one row per prompt (their ``unsqueeze(0)`` adds a literal
+        # batch dim), so broadcast both to one row per image here.  This
+        # matches the broadcast inside :class:`Flux2TimestepGuidanceEmbeddings`
         # (timestep emb is ``[1, embed_dim]``, guidance emb is
         # ``[batch, embed_dim]``; their sum is ``[batch, embed_dim]``),
         # so every downstream tensor that touches modulation params plus
         # the concat with ``image_latents`` inside the denoiser sees a
-        # consistent batch dim.  Single-context-only today; the symbolic
-        # dim resolves to ``num_images_per_prompt`` at runtime, which
-        # :meth:`prepare_inputs` enforces to be 1.
+        # consistent batch dim.
         #
         # The VAE encoder runs unconditionally even for text-to-image
         # requests: the pipeline feeds a ``(0, 0, 3)`` placeholder image
@@ -220,18 +218,17 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         # ``(1, 0, num_channels)`` packed-latent output that the
         # denoiser concats onto its noise latents as a no-op.
         batch = guidance.shape[0]
-        text_embeddings = F.rebind(
-            text_embeddings,
-            [batch, text_embeddings.shape[1], text_embeddings.shape[2]],
-        )
-        image_latents = F.rebind(
-            image_latents,
-            [batch, image_latents.shape[1], image_latents.shape[2]],
+        text_embeddings = text_embeddings.broadcast_to(
+            [batch, text_embeddings.shape[1], text_embeddings.shape[2]]
         )
         # The encoder lives on ``self._vae_device``; the denoiser's
         # ``F.concat([latents, image_latents], axis=1)`` runs on
-        # ``self._transformer_device``.  Move latents across.
+        # ``self._transformer_device``.  Move the one row across, then
+        # broadcast it.
         image_latents = image_latents.to(self._transformer_device)
+        image_latents = image_latents.broadcast_to(
+            [batch, image_latents.shape[1], image_latents.shape[2]]
+        )
 
         # Use the caller-supplied initial latents.  Pre-generated on
         # CPU by :meth:`prepare_inputs` using
