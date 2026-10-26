@@ -68,7 +68,8 @@ auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
   return parsedArgs.filtered(options::OPT_CompilationOptionGroup,
                              options::OPT_ExperimentalCompilationOptionGroup,
                              options::OPT_DiagnosticOptionGroup,
-                             options::OPT_LinkOptionGroup);
+                             options::OPT_LinkOptionGroup,
+                             options::OPT_TargetOptionGroup);
 }
 
 static bool isMojoFile(StringRef file) { return file.ends_with(".mojo"); }
@@ -194,6 +195,19 @@ static int debug(const State &state) {
         "'");
   }
 
+  std::optional<StringRef> pid;
+  if (parsedArgs.hasArg(options::OPT_pid))
+    pid = parsedArgs.getLastArgValue(options::OPT_pid);
+
+  std::optional<StringRef> processName;
+  if (parsedArgs.hasArg(options::OPT_process_name))
+    processName = parsedArgs.getLastArgValue(options::OPT_process_name);
+
+  // The compilation options are forwarded to `mojo run` below.
+  for (llvm::opt::Arg *arg : compilationOptions)
+    arg->claim();
+  state.assertNoUnusedArguments(parsedArgs);
+
   // This is a launch case.
   if (target) {
     target = resolvePath(*target);
@@ -241,14 +255,6 @@ static int debug(const State &state) {
 #endif // MOJO_COMPILER_ACCELERATOR_SUPPORT
     return invokeLLDB(state, debuggerArgs, runArgs, dryRun);
   }
-
-  std::optional<StringRef> pid;
-  if (parsedArgs.hasArg(options::OPT_pid))
-    pid = parsedArgs.getLastArgValue(options::OPT_pid);
-
-  std::optional<StringRef> processName;
-  if (parsedArgs.hasArg(options::OPT_process_name))
-    processName = parsedArgs.getLastArgValue(options::OPT_process_name);
 
   //  This is an attach case.
   if (pid || processName) {

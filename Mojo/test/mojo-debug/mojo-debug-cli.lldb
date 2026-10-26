@@ -43,6 +43,14 @@
 # RUN: %debug -X foo --dry-run -Xlinker -L/tmp -Xlinker -lfoo target.mojo | FileCheck %s --check-prefix=CHECK-JIT-XLINKER
 # CHECK-JIT-XLINKER: foo -- {{.*}}/mojo run -O0 --debug-level=full -Xlinker -L/tmp -Xlinker -lfoo target.mojo
 
+# COM: Check that target options are forwarded to the JIT'd `mojo run`.
+# RUN: %debug -X foo --dry-run --target-cpu x86-64-v3 --target-accelerator none target.mojo | FileCheck %s --check-prefix=CHECK-JIT-TARGET
+# CHECK-JIT-TARGET: foo -- {{.*}}/mojo run -O0 --debug-level=full --target-cpu x86-64-v3 --target-accelerator none target.mojo
+
+# COM: Check that target options are rejected when debugging a binary.
+# RUN: not env %debug -X foo --dry-run --target-cpu x86-64-v3 target.exe 2>&1 | FileCheck %s --check-prefix=CHECK-BINARY-DEBUG-WITH-TARGET-OPTION
+# CHECK-BINARY-DEBUG-WITH-TARGET-OPTION: unexpected compilation option '--target-cpu'
+
 # COM: Check if we can build correctly the binary debug command.
 # RUN: %debug -X foo --dry-run target.exe --debug-level full | FileCheck %s --check-prefix=CHECK-BINARY-DEBUG
 # CHECK-BINARY-DEBUG: foo -- target.exe --debug-level full
