@@ -55,7 +55,6 @@ from internal_utils import CacheBustingBuffer, arg_parse
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.normalization import rms_norm_fused_fp8
 
-from std.utils import IndexList
 from std.utils.numerics import max_finite
 
 
@@ -139,9 +138,9 @@ def _verify_results[
 
     @inline(.always)
     def v_fused_in[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var ar_ptr_v} -> SIMD[in_dtype, width]:
-        var li = idx[0] * num_cols + idx[1]
+        width: Int
+    ](coords: Coord) {var ar_ptr_v} -> SIMD[in_dtype, width]:
+        var li = Int(coords[0]) * num_cols + Int(coords[1])
         return ar_ptr_v.unsafe_load[width=width, alignment=width](li)
 
     rms_norm_fused_fp8[
@@ -151,7 +150,7 @@ def _verify_results[
         2,
     ](
         v_fused_in,
-        IndexList[2](num_rows, num_cols),
+        (num_rows, num_cols),
         TileTensor(
             v_fused_fp8_dev,
             row_major(Coord(num_rows, num_cols)),
@@ -405,9 +404,9 @@ def _verify_add_results[
 
     @inline(.always)
     def v_ep_fused_in[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var ar_ptr_v} -> SIMD[in_dtype, width]:
-        var li = idx[0] * num_cols + idx[1]
+        width: Int
+    ](coords: Coord) {var ar_ptr_v} -> SIMD[in_dtype, width]:
+        var li = Int(coords[0]) * num_cols + Int(coords[1])
         return ar_ptr_v.unsafe_load[width=width, alignment=width](li)
 
     rms_norm_fused_fp8[
@@ -417,7 +416,7 @@ def _verify_add_results[
         2,
     ](
         v_ep_fused_in,
-        IndexList[2](num_rows, num_cols),
+        (num_rows, num_cols),
         TileTensor(
             v_ep_fp8_dev,
             row_major(Coord(num_rows, num_cols)),
@@ -838,9 +837,9 @@ def bench_allreduce_rmsnorm_fp8[
 
                 @inline(.always)
                 def fused_in[
-                    width: Int, _rank: Int
-                ](idx: IndexList[_rank]) {var ar_ptr} -> SIMD[in_dtype, width]:
-                    var li = idx[0] * num_cols + idx[1]
+                    width: Int
+                ](coords: Coord) {var ar_ptr} -> SIMD[in_dtype, width]:
+                    var li = Int(coords[0]) * num_cols + Int(coords[1])
                     return ar_ptr.unsafe_load[width=width, alignment=width](li)
 
                 rms_norm_fused_fp8[
@@ -850,7 +849,7 @@ def bench_allreduce_rmsnorm_fp8[
                     2,
                 ](
                     fused_in,
-                    IndexList[2](num_rows, num_cols),
+                    (num_rows, num_cols),
                     TileTensor(
                         fused_fp8_out_ptrs[ctx_idx],
                         row_major(Coord(num_rows, num_cols)),
@@ -982,9 +981,9 @@ def bench_allreduce_rmsnorm_fp8[
                 # allreduce + residual).
                 @inline(.always)
                 def add_fused_in[
-                    width: Int, _rank: Int
-                ](idx: IndexList[_rank]) {var ar_ptr} -> SIMD[in_dtype, width]:
-                    var li = idx[0] * num_cols + idx[1]
+                    width: Int
+                ](coords: Coord) {var ar_ptr} -> SIMD[in_dtype, width]:
+                    var li = Int(coords[0]) * num_cols + Int(coords[1])
                     return ar_ptr.unsafe_load[width=width, alignment=width](li)
 
                 rms_norm_fused_fp8[
@@ -994,7 +993,7 @@ def bench_allreduce_rmsnorm_fp8[
                     2,
                 ](
                     add_fused_in,
-                    IndexList[2](num_rows, num_cols),
+                    (num_rows, num_cols),
                     TileTensor(
                         fused_add_fp8_out_ptrs[ctx_idx],
                         row_major(Coord(num_rows, num_cols)),
