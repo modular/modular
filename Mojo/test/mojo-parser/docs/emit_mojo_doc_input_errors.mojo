@@ -27,3 +27,11 @@
 
 # RUN: not %mojo-docs-isolated %t.dir/missing.mojo 2>&1 | FileCheck %s --check-prefix=MISSING
 # MISSING: error: could not generate documentation
+
+# RUN: %mojo-docs-isolated %s -o %t.dir/out.json | FileCheck %s --allow-empty --check-prefix=NO-STDOUT
+# RUN: FileCheck %s --check-prefix=OUTPUT-FILE < %t.dir/out.json
+# NO-STDOUT-NOT: {
+# OUTPUT-FILE: "name": "emit_mojo_doc_input_errors"
+
+# RUN: not %mojo-docs-isolated %s -o %t.dir/missing/out.json 2>&1 | FileCheck %s --check-prefix=BAD-OUTPUT
+# BAD-OUTPUT: kgen-translate: error: {{.*}}out.json

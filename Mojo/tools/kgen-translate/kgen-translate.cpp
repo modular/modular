@@ -77,7 +77,7 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
   bool hasExplicitWarningPolicy = false;
   bool validateDocStrings = false;
   std::string stripFilePrefix;
-  std::string outputPath;
+  std::string outputPath = "-";
   DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;
   for (int i = 1; i < argc; ++i) {
     llvm::StringRef argument(argv[i]);
@@ -169,6 +169,14 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
     warningsAsErrors = true;
   }
 
+  std::string outputError;
+  std::unique_ptr<llvm::ToolOutputFile> output =
+      mlir::openOutputFile(outputPath, &outputError);
+  if (!output) {
+    llvm::errs() << "kgen-translate: error: " << outputError << "\n";
+    return 1;
+  }
+
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   registerContext(registry, ctxRef);
@@ -181,11 +189,11 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
   config.warningsAsErrors = warningsAsErrors;
   config.stripFilePrefix = std::move(stripFilePrefix);
   config.diagnosticFormat = diagnosticFormat;
-  llvm::raw_ostream &output = outputPath.empty() ? llvm::outs() : llvm::nulls();
-  if (!generateMojoDocJSON(*inputPath, context, config, output)) {
+  if (!generateMojoDocJSON(*inputPath, context, config, output->os())) {
     llvm::errs() << "kgen-translate: error: could not generate documentation\n";
     return 1;
   }
+  output->keep();
   return 0;
 }
 } // namespace
