@@ -23,13 +23,19 @@ from __future__ import annotations
 
 from typing import Any
 
+from max.experimental.nn import Module as ModuleV3
 from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
 from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates
 
 from .block_driver import BlockProposer
 from .config import SpeculativeConfig, SpeculativeMethod
-from .cross_attention import CrossAttentionDraft, CrossAttentionMTPProposer
+from .cross_attention import (
+    CrossAttentionDraft,
+    CrossAttentionModuleV3Draft,
+    CrossAttentionModuleV3MTPProposer,
+    CrossAttentionMTPProposer,
+)
 from .dflash import DFlashDraft, DFlashProposer
 from .dflash2 import DFlash2Draft, DFlash2Proposer
 from .driver import SequentialProposer
@@ -97,7 +103,7 @@ def sequential_proposer(
     target_huggingface_config: Any,
     *,
     distributed: bool = False,
-) -> SequentialProposer[Any]:
+) -> SequentialProposer[Any, Any, Any, Any]:
     """Returns the proposer for a one-token-per-step method.
 
     A draft beside a target that takes the distributed signature takes it
@@ -118,6 +124,11 @@ def sequential_proposer(
     if speculative.is_mtp():
         # A head without a cache of its own attends into its target's.
         if getattr(draft_config, "kv_params", None) is None:
+            if isinstance(draft, ModuleV3):
+                assert isinstance(draft, CrossAttentionModuleV3Draft)
+                return CrossAttentionModuleV3MTPProposer(
+                    draft, draft_config.hidden_size
+                )
             assert isinstance(draft, CrossAttentionDraft)
             return CrossAttentionMTPProposer(draft, draft_config.hidden_size)
         # A head over an attention cache projects through its target's head.

@@ -332,7 +332,9 @@ def fused_graph(
         ),
         speculative=speculative,
         needs_bitmask_constraints=structured_output,
-        runtime=SimpleNamespace(reasoning_parser="qwen3_5"),
+        runtime=SimpleNamespace(
+            reasoning_parser="qwen3_5", prefer_module_v3=False
+        ),
         model=SimpleNamespace(
             data_parallel_degree=1,
             huggingface_config=SimpleNamespace(

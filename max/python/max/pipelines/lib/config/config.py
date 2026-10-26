@@ -687,7 +687,10 @@ def _select_spec_decode_architecture(
         for speculator in declared
     ):
         unified = spec_decode_architecture(
-            target, speculative.speculative_method, draft_name
+            target,
+            speculative.speculative_method,
+            draft_name,
+            prefer_module_v3=prefer_module_v3,
         )
         # A target with speculators for other pairs only still refuses a
         # pair nothing runs, below.
@@ -710,23 +713,6 @@ def _select_spec_decode_architecture(
         prefer_module_v3=prefer_module_v3,
     )
     return None if speculator is None else speculator.derive()
-
-
-def _is_gemma4_assistant_pair(models: Mapping[str, MAXModelConfig]) -> bool:
-    """Whether the target is Gemma 4 and the draft its MTP assistant."""
-    target_archs = models["main"].huggingface_config.architectures
-    draft_model = models.get("draft")
-    draft_archs = (
-        draft_model.huggingface_config.architectures
-        if draft_model is not None
-        else None
-    )
-    return bool(
-        target_archs
-        and target_archs[0] == "Gemma4ForConditionalGeneration"
-        and draft_archs
-        and draft_archs[0] == "Gemma4AssistantForCausalLM"
-    )
 
 
 def _is_nemotron_h_dspark_pair(models: Mapping[str, MAXModelConfig]) -> bool:
@@ -780,13 +766,6 @@ def _apply_speculative_target_architecture(
     It is a no-op when speculative decoding is disabled.
     """
     if not speculative:
-        return None
-    if prefer_module_v3 and _is_gemma4_assistant_pair(models):
-        # TODO(MXSERV-698): run ModuleV3 Gemma 4 MTP through
-        # SpecDecodePipelineModel; until then it keeps its fused graph.
-        models["main"].huggingface_config.architectures[0] = (
-            "UnifiedMTPGemma4ForCausalLM"
-        )
         return None
     if _is_nemotron_h_dspark_pair(models):
         # The unified model would also pair this draft under a DFlash method.

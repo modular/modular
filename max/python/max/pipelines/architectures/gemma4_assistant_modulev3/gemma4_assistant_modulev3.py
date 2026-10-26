@@ -299,8 +299,8 @@ class Gemma4AssistantModuleV3(Module[..., tuple[Tensor, ...]]):
             scaling_params=config.global_rope_scaling,
         )
 
-        # Target embedding (backbone dim) for the concat input. Aliased to
-        # the target's embed_tokens by the model before compile.
+        # Target embedding (backbone dim) for the concat input. Spec decoding
+        # aliases it to the target's embed_tokens before compile.
         self.embed_tokens = ScaledEmbedding(
             config.vocab_size,
             dim=config.backbone_hidden_size,

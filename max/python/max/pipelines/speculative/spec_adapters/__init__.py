@@ -19,7 +19,8 @@ target's package holds a target adapter, its ``spec_adapters`` module, that
 holds its call. ``_TARGET_ADAPTERS`` names the module of each target
 architecture's :class:`TargetAdapter`, which takes what it leaves out from
 Llama 3's and holds a target's differences under one speculative method in
-``by_method``.
+``by_method``. A target whose ModuleV3 variant builds a module of another
+kind names that variant's adapter under the variant's own name.
 
 A module is imported only when one of its targets runs, so spec decoding
 imports no architecture it doesn't run, and a build that doesn't ship a private
@@ -74,7 +75,11 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "DeepseekV3ForCausalLM": ".deepseekV3.spec_adapters",
     "DeepseekV4ForCausalLM": ".deepseekV4.spec_adapters",
     "Gemma4ForConditionalGeneration": ".gemma4.spec_adapters",
+    "Gemma4ForConditionalGeneration_ModuleV3": ".gemma4_modulev3.spec_adapters",
     "Gemma4UnifiedForConditionalGeneration": ".gemma4.spec_adapters",
+    "Gemma4UnifiedForConditionalGeneration_ModuleV3": (
+        ".gemma4_modulev3.spec_adapters"
+    ),
     "GraniteForCausalLM": ".llama3.spec_adapters",
     "HYV4ForCausalLM": ".hy_v4.spec_adapters",
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
@@ -90,6 +95,10 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
 
 
 def _target_adapter(target_arch: str) -> TargetAdapter:
+    # A ModuleV3 variant without an adapter of its own is its target's only
+    # variant, as Nemotron-H is, and takes the adapter named for the target.
+    if target_arch not in _TARGET_ADAPTERS:
+        target_arch = target_arch.removesuffix("_ModuleV3")
     if target_arch not in _TARGET_ADAPTERS:
         raise ValueError(
             f"Spec decoding has no call for a {target_arch} target."

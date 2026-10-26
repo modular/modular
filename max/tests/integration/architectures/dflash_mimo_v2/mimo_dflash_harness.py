@@ -364,7 +364,8 @@ def fused_graph(
         speculative=speculative,
         needs_bitmask_constraints=True,
         runtime=SimpleNamespace(
-            reasoning_parser="mimo" if in_thinking_phase else None
+            reasoning_parser="mimo" if in_thinking_phase else None,
+            prefer_module_v3=False,
         ),
         model=SimpleNamespace(
             data_parallel_degree=1,

@@ -128,3 +128,24 @@ modular_py_test(
         requirement("transformers"),
     ],
 )
+
+modular_py_test(
+    name = "test_variable_rows",
+    size = "large",
+    srcs = ["test_variable_rows.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/pipelines/speculative",
+    ],
+)

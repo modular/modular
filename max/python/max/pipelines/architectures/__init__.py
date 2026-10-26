@@ -191,6 +191,11 @@ def register_all_models() -> None:
             "gemma4_assistant_arch",
         ),
         _LazyArch(
+            "Gemma4AssistantForCausalLM_ModuleV3",
+            ".gemma4_assistant_modulev3",
+            "gemma4_assistant_modulev3_arch",
+        ),
+        _LazyArch(
             "Gemma4DSparkModel",
             ".dspark_gemma4",
             "gemma4_dspark_draft_arch",
@@ -410,11 +415,6 @@ def register_all_models() -> None:
             ".unified_dspark_deepseekV41",
             "unified_dspark_deepseekV41_speculator",
             speculates_on="DeepseekV41ForCausalLM",
-        ),
-        _LazyArch(
-            "UnifiedMTPGemma4ForCausalLM_ModuleV3",
-            ".unified_mtp_gemma4_modulev3",
-            "unified_mtp_gemma4_modulev3_arch",
         ),
         _LazyArch(
             "UnifiedMTPGlmMoeDsaForCausalLM",

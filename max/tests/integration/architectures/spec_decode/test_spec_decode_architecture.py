@@ -24,8 +24,10 @@ import pytest
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodeArchConfig,
     SpecDecodePipelineModel,
+    _SpecDecodeModuleV3VisionCachePipelineModel,
     spec_decode_architecture,
 )
+from max.pipelines.modeling.types import InputModality
 
 TARGET = "LlamaForCausalLM"
 # An EAGLE checkpoint declares its target's own architecture; the target maps
@@ -112,3 +114,25 @@ def test_a_pairing_neither_side_caps_stays_uncapped() -> None:
     arch = spec_decode_architecture(TARGET, "eagle", EAGLE_DRAFT)
     assert arch is not None
     assert not arch.requires_max_batch_context_length
+
+
+def test_a_modulev3_target_pairs_with_its_modulev3_draft() -> None:
+    arch = spec_decode_architecture(
+        "Gemma4ForConditionalGeneration",
+        "mtp",
+        "Gemma4AssistantForCausalLM",
+        prefer_module_v3=True,
+    )
+    assert arch is not None
+    assert arch.name == "Gemma4ForConditionalGeneration_ModuleV3+mtp"
+    assert arch.pipeline_model is _SpecDecodeModuleV3VisionCachePipelineModel
+    assert InputModality.IMAGE in arch.input_modalities
+    assert arch.requires_max_batch_context_length
+
+
+def test_a_target_that_builds_both_pairs_on_the_graph_api_by_default() -> None:
+    arch = spec_decode_architecture(
+        "Gemma4ForConditionalGeneration", "mtp", "Gemma4AssistantForCausalLM"
+    )
+    assert arch is not None
+    assert arch.name == "Gemma4ForConditionalGeneration+mtp"

@@ -530,7 +530,12 @@ class PipelineRegistry:
             )
             assert speculator is not None
             return speculator.derive()
-        return spec_decode_architecture(name, method, draft_arch) or arch
+        return (
+            spec_decode_architecture(
+                name, method, draft_arch, prefer_module_v3=prefer_v3
+            )
+            or arch
+        )
 
     def get_active_huggingface_config(
         self,

@@ -35,7 +35,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.layers.scaled_word_embedding import (
     ScaledEmbedding,
 )
@@ -43,6 +43,7 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.pipelines.speculative.driver import gather_variable_rows
 
 from .layers.attention import Gemma4Attention
 from .layers.rms_norm import Gemma4RMSNorm
@@ -196,6 +197,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             for i in range(text_config.num_hidden_layers)
         ]
         self.return_logits = text_config.return_logits
+        self.return_hidden_states = text_config.return_hidden_states
 
     def _compute_logits(self, h: Tensor) -> Tensor:
         if self.tie_word_embeddings:
@@ -266,6 +268,9 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
                 input_row_offsets=input_row_offsets,
             )
 
+        if self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+            return self._verify_outputs(h, input_row_offsets, return_n_logits)
+
         last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
         last_logits = self._compute_logits(self.norm(last_h))
 
@@ -303,6 +308,25 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             assert logits is not None
             ret_val += (logits, offsets)
         return ret_val
+
+    def _verify_outputs(
+        self, h: Tensor, input_row_offsets: Tensor, return_n_logits: Tensor
+    ) -> tuple[Tensor, ...]:
+        """Returns the outputs a spec-decode verify reads.
+
+        That is the variable logits, then each device's normalized hidden
+        state at every row, which the MTP assistant reads. The logits read
+        the same normalized rows, so the norm runs once over the window.
+        """
+        norm_h = self.norm(h)
+        last_logits = self._compute_logits(
+            F.gather(norm_h, input_row_offsets[1:] - 1, axis=0)
+        )
+        var_h, offsets = gather_variable_rows(
+            norm_h, input_row_offsets, return_n_logits, self.mesh
+        )
+        logits = self._compute_logits(var_h)
+        return (last_logits, logits, offsets, *norm_h.local_shards)
 
 
 class Gemma4(Module[..., tuple[Tensor, ...]]):

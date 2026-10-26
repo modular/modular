@@ -10,13 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Gemma4 with MTP draft model for speculative decoding with unified graph compilation."""
 
-from .arch import unified_mtp_gemma4_arch
-from .model import UnifiedMTPGemma4Inputs, UnifiedMTPGemma4Model
+"""Gemma 4's assistant on ModuleV3, which drafts for a ModuleV3 Gemma 4."""
 
-__all__ = [
-    "UnifiedMTPGemma4Inputs",
-    "UnifiedMTPGemma4Model",
-    "unified_mtp_gemma4_arch",
-]
+from .arch import gemma4_assistant_modulev3_arch
+
+__all__ = ["gemma4_assistant_modulev3_arch"]

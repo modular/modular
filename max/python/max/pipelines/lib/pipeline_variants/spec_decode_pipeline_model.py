@@ -103,6 +103,7 @@ from ..interfaces.pipeline_model import (
     AlwaysSignalBuffersMixin,
     ModelInputs,
     ModelLoadContext,
+    ModuleV3MultiGraphPipelineModelWithKVCache,
     ModuleV3PipelineModelWithKVCache,
     PipelineModel,
     PipelineModelWithKVCache,
@@ -210,15 +211,17 @@ def _builds_module(arch: SupportedArchitecture) -> bool:
     ) and ("build_module" in vars(builder))
 
 
-def _target_architecture(name: str) -> SupportedArchitecture | None:
+def _target_architecture(
+    name: str, prefer_module_v3: bool = False
+) -> SupportedArchitecture | None:
     """Returns the variant of the named target that builds its module.
 
-    That is the one a lookup finds, or else its other variant, as a lookup
-    falls back to the only variant registered: Nemotron-H builds its module
-    only as ModuleV3.
+    That is the one a lookup with ``prefer_module_v3`` finds, or else its
+    other variant, as a lookup falls back to the only variant registered:
+    Nemotron-H builds its module only as ModuleV3.
     """
-    for prefer_module_v3 in (False, True):
-        arch = ARCH_LOOKUP.find(name, prefer_module_v3=prefer_module_v3)
+    for prefer in (prefer_module_v3, not prefer_module_v3):
+        arch = ARCH_LOOKUP.find(name, prefer_module_v3=prefer)
         if arch is not None and arch.pipeline_model is not None:
             if _builds_module(arch):
                 return arch
@@ -227,7 +230,26 @@ def _target_architecture(name: str) -> SupportedArchitecture | None:
 
 def _builds_modulev3(arch: SupportedArchitecture) -> bool:
     """Returns whether ``arch``'s pipeline model builds a ModuleV3 module."""
-    return issubclass(_pipeline_model(arch), ModuleV3PipelineModelWithKVCache)
+    return issubclass(
+        _pipeline_model(arch),
+        (
+            ModuleV3PipelineModelWithKVCache,
+            ModuleV3MultiGraphPipelineModelWithKVCache,
+        ),
+    )
+
+
+def _draft_architecture(
+    target: SupportedArchitecture, method: str, draft_arch: str
+) -> SupportedArchitecture | None:
+    """Returns the registered architecture of a target's draft.
+
+    A ModuleV3 target takes its draft's ModuleV3 variant, where it has one.
+    """
+    return ARCH_LOOKUP.find(
+        target.draft_architecture(method, draft_arch),
+        prefer_module_v3=_builds_modulev3(target),
+    )
 
 
 def _takes_images(
@@ -269,6 +291,7 @@ def spec_decode_architecture(
     target: str,
     method: SpeculativeMethod | None,
     draft_arch: str | None,
+    prefer_module_v3: bool = False,
 ) -> SupportedArchitecture | None:
     """Returns the fused architecture for a target and draft, if they pair.
 
@@ -288,8 +311,10 @@ def spec_decode_architecture(
     checkpoints a recurrent state serves with prefix caching off: the state
     checkpoints only at a page boundary, which a step's accepted drafts move
     past. A target that builds a ModuleV3 module pairs with a ModuleV3 draft
-    in one compiled module, and takes text only. A batch's resident context is
-    capped where either architecture requires it.
+    in one compiled module, which ``prefer_module_v3`` prefers where the
+    target builds both, and takes images only through the vision cache. A
+    batch's resident context is capped where either architecture requires
+    it.
     """
     if (
         method is None
@@ -298,25 +323,29 @@ def spec_decode_architecture(
         return None
     # The target first, so a target that can't pair never imports its
     # draft's architecture.
-    base = _target_architecture(target)
+    base = _target_architecture(target, prefer_module_v3)
     if base is None:
         return None
     draft_arch = draft_arch or base.checkpoint_drafts.get(method)
     if draft_arch is None:
         return None
-    draft = ARCH_LOOKUP.find(base.draft_architecture(method, draft_arch))
+    draft = _draft_architecture(base, method, draft_arch)
     if draft is None or not _builds_module(draft):
         return None
     modulev3 = _builds_modulev3(base)
-    vision = not modulev3 and _takes_images(base, draft)
+    vision = _takes_images(base, draft)
     # A target that encodes its images in its own batching reserves no
     # vision cache.
     vision_cache = vision and not _encodes_in_batching(base, draft)
+    if modulev3 and vision and not vision_cache:
+        return None
     return replace(
         base,
         name=f"{base.name}+{method}",
         pipeline_model=(
-            _SpecDecodeModuleV3PipelineModel
+            _SpecDecodeModuleV3VisionCachePipelineModel
+            if modulev3 and vision_cache
+            else _SpecDecodeModuleV3PipelineModel
             if modulev3
             else _SpecDecodeVisionCachePipelineModel
             if vision_cache
@@ -379,19 +408,30 @@ class _Pairing:
         assert speculative is not None
         method = speculative.speculative_method
         assert method is not None
-        target = _target_architecture(target_arch)
+        target = _target_architecture(
+            target_arch, pipeline_config.runtime.prefer_module_v3
+        )
         assert target is not None
         draft_arch = (
-            target.draft_architecture(
-                method, draft_model.huggingface_config.architectures[0]
-            )
+            draft_model.huggingface_config.architectures[0]
             if draft_model is not None
             else target.checkpoint_drafts.get(method)
         )
         assert draft_arch is not None
-        draft = ARCH_LOOKUP.find(draft_arch)
+        draft = _draft_architecture(target, method, draft_arch)
         assert draft is not None
         return cls(target_arch, target, draft)
+
+    @property
+    def adapter_arch(self) -> str:
+        """The name spec decoding finds the target's call under.
+
+        A ModuleV3 target's is its variant's name, since its module calls
+        unlike its graph twin's.
+        """
+        if _builds_modulev3(self.target):
+            return self.target.name
+        return self.target_arch
 
 
 def _takes_distributed_inputs(*parts: object) -> bool:
@@ -638,8 +678,6 @@ class SpecDecodeArchConfig:
     """
 
     target: Any
-    target_arch: str
-    """The target checkpoint's architecture name."""
     draft_architecture: SupportedArchitecture
     kv_params: MultiKVCacheParams
     target_memory_planner: type[MemoryPlanner] | None = None
@@ -663,7 +701,6 @@ class SpecDecodeArchConfig:
         )
         return cls(
             target=target,
-            target_arch=pairing.target_arch,
             draft_architecture=pairing.draft,
             kv_params=_kv_tree(
                 pipeline_config, pairing, target.get_kv_params()
@@ -896,9 +933,8 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         assert speculative is not None
         assert speculative.speculative_method is not None
         self._method = speculative.speculative_method
-        target = _target_architecture(config.target_arch)
-        assert target is not None
-        draft = config.draft_architecture
+        self._pairing = _Pairing.from_pipeline_config(runtime.pipeline_config)
+        target, draft = self._pairing.target, self._pairing.draft
         self._takes_images = _takes_images(target, draft)
         self._encodes_in_batching = _encodes_in_batching(target, draft)
 
@@ -909,9 +945,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         assert config.input_spec is not None, "the graph has not been built"
         if not (config.input_spec.distributed or self._encodes_in_batching):
             return None
-        target = _target_architecture(config.target_arch)
-        assert target is not None
-        return _batching(target)(config.target, self.runtime)
+        return _batching(self._pairing.target)(config.target, self.runtime)
 
     def bind_ep_comm_initializer(
         self, initializer: EPCommInitializer | None
@@ -936,10 +970,8 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         """
         bind_config = getattr(self._target_batching, "bind_model_config", None)
         if bind_config is not None:
-            target = _target_architecture(self.spec_config.target_arch)
-            assert target is not None
             bind_config(
-                _config_cls(target).initialize(
+                _config_cls(self._pairing.target).initialize(
                     self.runtime.pipeline_config,
                     max_seq_len=self.runtime.max_seq_len,
                 )
@@ -966,7 +998,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             ValueError: If a text-only pairing's batch carries images.
         """
         config = self.spec_config
-        arch, target = config.target_arch, config.target
+        arch, target = self._pairing.adapter_arch, config.target
         assert config.input_spec is not None
         # Any image in context, not only one still to encode: a later
         # prefill chunk of an image prompt encodes nothing.
@@ -1054,7 +1086,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             structured_output=spec.enable_structured_output,
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
-                config.target_arch,
+                self._pairing.adapter_arch,
                 self._method,
                 target,
             ),
@@ -1072,7 +1104,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             replica_batches, kv_cache_inputs, return_n_logits
         )
         context_lengths, ep_inputs = spec_adapters.batch_distributed_buffers(
-            self.spec_config.target_arch, target
+            self._pairing.adapter_arch, target
         )
         # Under one replica a target's batch processor may take none of the
         # distributed inputs, as Gemma 4's doesn't, or only some.
@@ -1094,11 +1126,14 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 Buffer.zeros(shape=[1], dtype=DType.int32)
                 for _ in self.runtime.devices
             ]
+        # A ModuleV3 target's batching holds no signal buffers, which its
+        # module's trace appends itself.
+        signals = getattr(target, "signal_buffers", self.runtime.signal_buffers)
         return _Inputs(
             tokens=target.tokens,
             input_row_offsets=target.input_row_offsets,
             return_n_logits=target.return_n_logits,
-            signal_buffers=list(target.signal_buffers),
+            signal_buffers=list(signals),
             host_input_row_offsets=host_offsets,
             data_parallel_splits=splits,
             batch_context_lengths=list(context_lengths),
@@ -1108,7 +1143,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             structured_output=spec.enable_structured_output,
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
-                self.spec_config.target_arch,
+                self._pairing.adapter_arch,
                 self._method,
                 target,
             ),
@@ -1397,9 +1432,13 @@ class SpecDecodePipelineModel(
         self.ep_comm_initializer = ep.initializer
         weights: dict[str, Any] = {}
         if isinstance(target, ModuleV3):
-            assert issubclass(target_builder, ModuleV3PipelineModelWithKVCache)
             for name, builder, ctx, module_config in (
-                ("target", target_builder, target_context, target_config),
+                (
+                    "target",
+                    _module_builder(pairing.target),
+                    target_context,
+                    target_config,
+                ),
                 ("draft", draft_builder, draft_context, draft_config),
             ):
                 checkpoint = builder.checkpoint_weights(ctx, module_config)
@@ -1644,7 +1683,7 @@ def _driver_call(
     a module whose trace appends its own.
     """
     pairing = _Pairing.from_pipeline_config(pipeline_config)
-    target_arch = pairing.target_arch
+    target_arch = pairing.adapter_arch
     speculative = pipeline_config.speculative
     assert speculative is not None
     method = speculative.speculative_method
@@ -1864,6 +1903,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
         """Builds the draft and the target, then compiles the fused module."""
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
+        _share_target_slots(modules)
         module = _SpecDecodeModule(
             modules.target,
             modules.draft,
@@ -1891,6 +1931,41 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
         model = compiled.engine_model
         self._wire_batch_processor(model, config)
         return model
+
+
+class _SpecDecodeModuleV3VisionCachePipelineModel(
+    _SpecDecodeVisionCachePipelineModel, _SpecDecodeModuleV3PipelineModel
+):
+    """Serves the fused module of a ModuleV3 pairing that takes images.
+
+    The fused module compiles as any ModuleV3 pairing's does, and the
+    target's vision graph beside it, whose images go through the vision
+    cache.
+    """
+
+
+def _share_target_slots(modules: _Modules) -> None:
+    """Shares the target's embedding and head onto a draft that reads them.
+
+    A ModuleV3 draft that declares a slot without its own weights for it
+    takes the target's module, which the fused module's state then yields
+    under both names, so the draft's name binds the target's weight too.
+    """
+    target, draft = modules.target, modules.draft
+    for slot in ("embed_tokens", "lm_head"):
+        if getattr(draft, f"has_own_{slot}", False):
+            continue
+        if getattr(draft, slot, None) is None:
+            continue
+        if getattr(target, slot, None) is None:
+            continue
+        setattr(draft, slot, getattr(target, slot))
+        prefix = f"target.{slot}."
+        modules.weights.update(
+            (f"draft.{name.removeprefix('target.')}", value)
+            for name, value in list(modules.weights.items())
+            if name.startswith(prefix)
+        )
 
 
 class _SpecDecodeModule(ModuleV3[..., tuple[Tensor, ...]]):

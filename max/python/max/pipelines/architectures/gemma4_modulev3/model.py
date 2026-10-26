@@ -25,8 +25,9 @@ from max.experimental import functional as F
 from max.experimental.compilation import CompiledCallable
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor, default_device, default_dtype
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     VisionRawInputs,
@@ -34,6 +35,9 @@ from max.pipelines.architectures.gemma4.batch_vision_inputs import (
 from max.pipelines.architectures.gemma4.context import Gemma4Context
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
+)
+from max.pipelines.architectures.gemma4.weight_adapters import (
+    convert_safetensor_language_state_dict,
 )
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
@@ -44,13 +48,14 @@ from max.pipelines.lib import (
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from transformers import AutoConfig
 
 from .batch_processor import Gemma4ModuleV3BatchProcessor
-from .gemma4 import Gemma4
+from .gemma4 import Gemma4, Gemma4TextModel
 from .inputs import Gemma4Inputs
 from .vision_model.vision_model import Gemma4VisionModel
 from .weight_adapters import (
@@ -62,6 +67,19 @@ from .weight_adapters import (
 def _to_buffer(t: Tensor) -> Buffer:
     """Extracts a Buffer from a potentially distributed Tensor."""
     return t.local_shards[0].driver_tensor
+
+
+def _language_dtype(config: Gemma4ForConditionalGenerationConfig) -> DType:
+    """Returns the dtype the language tower's leaves build in.
+
+    Under NVFP4 the checkpoint's model dtype is packed uint8, which only the
+    quantized linears consume; every unquantized leaf (norms, embeddings,
+    layer_scalar, BF16 attention) builds in the checkpoint's unquantized
+    dtype instead, matching the graph arch's ``unquantized_dtype`` handling.
+    """
+    if config.text_config.quant_config is not None:
+        return config.unquantized_dtype
+    return config.dtype
 
 
 class Gemma4Model(
@@ -137,22 +155,98 @@ class Gemma4Model(
         )
         return {k: v.data() for k, v in weights_dict.items()}
 
-    def _create_model_config(
-        self, state_dict: dict[str, Any]
+    @classmethod
+    def build_module(
+        cls, context: ModelLoadContext
+    ) -> tuple[Gemma4TextModel, Gemma4ForConditionalGenerationConfig]:
+        """Builds the language model, without its vision tower.
+
+        The module holds no weights: it compiles with those
+        :meth:`checkpoint_weights` returns. A caller that sized the cache
+        passes its KV params.
+        """
+        config = cls._finalized_config(
+            context.pipeline_config,
+            context.huggingface_config,
+            {name: value.data() for name, value in context.weights.items()},
+            max_seq_len=context.max_seq_len,
+            return_logits=context.return_logits,
+        )
+        if context.kv_params is not None:
+            assert isinstance(context.kv_params, MultiKVCacheParams)
+            config.kv_params = context.kv_params
+        config.text_config.return_hidden_states = context.return_hidden_states
+        devices = [ref.to_device() for ref in config.devices]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), ("tp",))
+        with (
+            F.lazy(),
+            default_dtype(_language_dtype(config)),
+            default_device(mesh),
+        ):
+            module = Gemma4TextModel(config, mesh)
+        return module, config
+
+    @classmethod
+    def checkpoint_weights(
+        cls,
+        context: ModelLoadContext,
+        config: Gemma4ForConditionalGenerationConfig,
+    ) -> dict[str, Any]:
+        """Returns the language weights the built module compiles with."""
+        del config
+        return dict(
+            convert_safetensor_language_state_dict(
+                dict(context.weights.items())
+            )
+        )
+
+    @classmethod
+    def build_vision_graph(
+        cls, context: ModelLoadContext
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Builds the vision tower's graph.
+
+        Raises:
+            ValueError: If the checkpoint has no vision tower.
+        """
+        weights = dict(context.weights.items())
+        config = cls._finalized_config(
+            context.pipeline_config,
+            context.huggingface_config,
+            {name: value.data() for name, value in weights.items()},
+            max_seq_len=context.max_seq_len,
+            return_logits=context.return_logits,
+        )
+        spec = cls._vision_tower_spec(
+            config,
+            convert_vision_state_dict_for_module(weights),
+            config.devices[0].to_device(),
+        )
+        if spec is None:
+            raise ValueError("This Gemma 4 checkpoint has no vision tower.")
+        return spec.trace(), dict(spec.weights_registry())
+
+    @classmethod
+    def _finalized_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, Any],
+        *,
+        max_seq_len: int,
+        return_logits: ReturnLogits,
     ) -> Gemma4ForConditionalGenerationConfig:
         model_config = (
             Gemma4ForConditionalGenerationConfig.initialize_from_config(
-                self.pipeline_config,
-                self.huggingface_config,
-                max_seq_len=self.max_seq_len,
+                pipeline_config, huggingface_config, max_seq_len=max_seq_len
             )
         )
         model_config.finalize(
-            huggingface_config=self.huggingface_config,
+            huggingface_config=huggingface_config,
             state_dict=state_dict,
-            return_logits=self.return_logits,
+            return_logits=return_logits,
         )
-        n_devices = len(self.devices)
+        n_devices = len(model_config.devices)
         text_config = model_config.text_config
         if n_devices > 1 and (
             text_config.num_key_value_heads % n_devices
@@ -165,6 +259,18 @@ class Gemma4Model(
                 " num_global_key_value_heads"
                 f" ({text_config.num_global_key_value_heads})."
             )
+        return model_config
+
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> Gemma4ForConditionalGenerationConfig:
+        model_config = self._finalized_config(
+            self.pipeline_config,
+            self.huggingface_config,
+            state_dict,
+            max_seq_len=self.max_seq_len,
+            return_logits=self.return_logits,
+        )
         self.config = model_config
         return model_config
 
@@ -173,7 +279,20 @@ class Gemma4Model(
         model_config: Gemma4ForConditionalGenerationConfig,
         state_dict: dict[str, Any],
     ) -> GraphSpec | None:
-        """Builds the vision tower, or returns ``None`` when text-only.
+        """Builds the vision tower, or returns ``None`` when text-only."""
+        return self._vision_tower_spec(
+            model_config, state_dict, self.devices[0]
+        )
+
+    @classmethod
+    def _vision_tower_spec(
+        cls,
+        model_config: Gemma4ForConditionalGenerationConfig,
+        state_dict: dict[str, Any],
+        device: Device,
+    ) -> GraphSpec | None:
+        """Builds the vision tower on ``device``, or returns ``None`` when
+        text-only.
 
         The multi-graph base does not open the ``F.lazy()`` / ``default_dtype``
         build context that the single-graph base does, so each spec hook
@@ -185,10 +304,10 @@ class Gemma4Model(
         # The vision tower is never quantized (modelopt ignore-lists it);
         # always build it in the unquantized (BF16) dtype so its leaves
         # match the checkpoint storage even under NVFP4.
-        device_ref = DeviceRef.from_device(self.devices[0])
+        device_ref = DeviceRef.from_device(device)
         with F.lazy(), default_dtype(model_config.unquantized_dtype):
             vision_nn = Gemma4VisionModel(model_config)
-            vision_nn.to(self.devices[0])
+            vision_nn.to(device)
 
         patch_dim = 3 * model_config.vision_config.patch_size**2
         input_types = (
@@ -224,19 +343,9 @@ class Gemma4Model(
     ) -> GraphSpec:
         n_devices = len(self.devices)
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
-        # Under NVFP4 the checkpoint's model dtype is packed uint8, which
-        # only the quantized linears consume; every unquantized leaf (norms,
-        # embeddings, layer_scalar, BF16 attention) must build in the
-        # checkpoint's unquantized dtype instead, matching the graph arch's
-        # ``unquantized_dtype`` handling.
-        build_dtype = (
-            model_config.unquantized_dtype
-            if model_config.text_config.quant_config is not None
-            else model_config.dtype
-        )
         with (
             F.lazy(),
-            default_dtype(build_dtype),
+            default_dtype(_language_dtype(model_config)),
             default_device(mesh),
         ):
             language_nn = Gemma4(model_config, self.kv_params, mesh)

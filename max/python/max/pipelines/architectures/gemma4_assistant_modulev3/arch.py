@@ -11,8 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Gemma4 with MTP speculative decoding on the ModuleV3 stack."""
+from dataclasses import replace
 
-from .arch import unified_mtp_gemma4_modulev3_arch
+from ..gemma4_assistant.arch import gemma4_assistant_arch
+from .model import Gemma4AssistantModuleV3DraftArchConfig
 
-__all__ = ["unified_mtp_gemma4_modulev3_arch"]
+# The same checkpoint as the graph API assistant, drafting for a ModuleV3
+# Gemma 4 target.
+gemma4_assistant_modulev3_arch = replace(
+    gemma4_assistant_arch,
+    name="Gemma4AssistantForCausalLM_ModuleV3",
+    config=Gemma4AssistantModuleV3DraftArchConfig,
+)
