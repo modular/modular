@@ -440,14 +440,11 @@ struct GGMLQ40Dequantize:
         comptime assert type_of(input).rank == 2
         var input_tt = input.to_tile_tensor[.uint8]()
         var output_tt = output.to_tile_tensor[.float32]()
-        # A trait argument's shape() is a Coord, so convert to the IndexList
-        # the dequantize helper takes.
+        # A trait argument's shape() is already a Coord.
         Q4sym[group_size=32].dequantize_and_write_to_tensor(
             input_tt,
             output_tt,
-            rebind[IndexList[2]](
-                coord_to_index_list(output_tt.layout.shape_coord())
-            ),
+            output_tt.layout.shape_coord(),
         )
 
 
@@ -649,14 +646,11 @@ struct GGMLQ6KDequantize:
         comptime assert type_of(input).rank == 2
         var input_tt = input.to_tile_tensor[.uint8]()
         var output_tt = output.to_tile_tensor[.float32]()
-        # A trait argument's shape() is a Coord, so convert to the IndexList
-        # the dequantize helper takes.
+        # A trait argument's shape() is already a Coord.
         q6_k_dequantize_impl(
             input_tt,
             output_tt,
-            rebind[IndexList[2]](
-                coord_to_index_list(output_tt.layout.shape_coord())
-            ),
+            output_tt.layout.shape_coord(),
         )
 
 

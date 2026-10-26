@@ -45,7 +45,7 @@ from quantization.qmatmul_gpu import (
 )
 
 from std.utils import StaticTuple
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -251,7 +251,7 @@ def test_repack_Q4_0_for_sm8x[
 
     build_b_buffer(N, K, gguf_b_host_ptr.unsafe_ptr())
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
-        gguf_b_host.as_imm(), gguf_dequan_ref_host, IndexList[2](K, N)
+        gguf_b_host.as_imm(), gguf_dequan_ref_host, (K, N)
     )
 
     var gguf_b_device = ctx.enqueue_create_buffer[.uint8](gguf_b_size)
