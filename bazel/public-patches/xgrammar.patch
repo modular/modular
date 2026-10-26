@@ -1940,9 +1940,9 @@ diff --git a/cpp/grammar_printer.cc b/cpp/grammar_printer.cc
    return result;
  }
  
-diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
---- a/cpp/json_schema_converter.cc
-+++ b/cpp/json_schema_converter.cc
+diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
+--- c/cpp/json_schema_converter.cc
++++ w/cpp/json_schema_converter.cc
 @@ -5,15 +5,22 @@
   */
  #include "json_schema_converter.h"
@@ -4650,7 +4650,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    // This allows $ref: "#" to resolve to "root"
    std::string root_rule_name = ebnf_script_creator_.AllocateRuleName("root");
 -  uri_to_rule_name_["#"] = root_rule_name;
-+  value_cache_.ref_rules["#"] = root_rule_name;
++  value_cache_.ref_rules[RefRuleKey("#")] = root_rule_name;
  
    // Check if the spec can be directly mapped to an existing rule
    auto cached_rule = GetCache(spec->cache_key);
@@ -4896,7 +4896,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    std::string result;
    bool first = true;
    auto add = [&](const std::string& s) {
-@@ -1281,89 +3573,376 @@ std::string BuildTrieBody(const TrieNode& node) {
+@@ -1281,89 +3573,378 @@ std::string BuildTrieBody(const TrieNode& node) {
      result += s;
    };
  
@@ -5297,7 +5297,9 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
      return;
    }
 -  rule_cache_manager_.AddCache(key, true, value);
-+  value_cache_.schema_rules.AddCache(key, true, value);
++  // The plain JSON converter has one encoding context; XMLToolCallingConverter::AddBasicRules
++  // seeds its basic JSON rules here at nested_object_level_ 2, so 2 is that shared context.
++  value_cache_.schema_rules.AddCache(key, kPlainJSONContext, value);
  }
  
  std::optional<std::string> JSONSchemaConverter::GetCache(const std::string& key) const {
@@ -5305,7 +5307,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
      return std::nullopt;
    }
 -  return rule_cache_manager_.GetCache(key, true);
-+  return value_cache_.schema_rules.GetCache(key, true);
++  return value_cache_.schema_rules.GetCache(key, kPlainJSONContext);
  }
  
  std::string JSONSchemaConverter::CreateRule(
@@ -5314,7 +5316,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  ) {
    // Only check cache for basic rules (pre-populated in AddBasicRules)
    // Don't cache other rules to match original behavior
-@@ -1373,46 +3952,57 @@ std::string JSONSchemaConverter::CreateRule(
+@@ -1373,46 +3954,57 @@ std::string JSONSchemaConverter::CreateRule(
    }
  
    std::string rule_name = ebnf_script_creator_.AllocateRuleName(rule_name_hint);
@@ -5389,7 +5391,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
          } else {
            XGRAMMAR_LOG(FATAL) << "Unknown spec type";
            return "";
-@@ -1425,7 +4015,7 @@ std::string JSONSchemaConverter::GenerateFromSpec(
+@@ -1425,7 +4017,7 @@ std::string JSONSchemaConverter::GenerateFromSpec(
  // ==================== Generate Methods ====================
  
  std::string JSONSchemaConverter::GenerateInteger(
@@ -5398,7 +5400,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  ) {
    std::optional<int64_t> start, end;
    if (spec.minimum.has_value()) {
-@@ -1453,11 +4043,18 @@ std::string JSONSchemaConverter::GenerateInteger(
+@@ -1453,11 +4045,18 @@ std::string JSONSchemaConverter::GenerateInteger(
      std::string range_regex = GenerateRangeRegex(start, end);
      return RegexToEBNF(range_regex, false);
    }
@@ -5419,7 +5421,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  ) {
    std::optional<double> start, end;
    bool exclusive_start = false;
-@@ -1491,55 +4088,281 @@ std::string JSONSchemaConverter::GenerateNumber(
+@@ -1491,55 +4090,281 @@ std::string JSONSchemaConverter::GenerateNumber(
    return "\"-\"? (\"0\" | [1-9] [0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?";
  }
  
@@ -5724,7 +5726,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  ) {
    indent_manager_.StartIndent();
  
-@@ -1554,13 +4377,13 @@ std::string JSONSchemaConverter::GenerateArray(
+@@ -1554,13 +4379,13 @@ std::string JSONSchemaConverter::GenerateArray(
    // Handle prefix items
    for (size_t i = 0; i < spec.prefix_items.size(); ++i) {
      item_rule_names.push_back(
@@ -5740,7 +5742,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    }
  
    indent_manager_.EndIndent();
-@@ -1641,6 +4464,22 @@ std::string JSONSchemaConverter::GenerateArray(
+@@ -1641,11 +4466,31 @@ std::string JSONSchemaConverter::GenerateArray(
  }
  
  std::string JSONSchemaConverter::FormatPropertyKey(const std::string& key) {
@@ -5763,7 +5765,27 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    return "\"" + JSONStrToPrintableStr(picojson::value(key).serialize()) + "\"";
  }
  
-@@ -1687,6 +4526,7 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
+ std::string JSONSchemaConverter::FormatProperty(
+-    const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
++    const std::string& key,
++    const std::string& value_rule,
++    const std::string& rule_name,
++    int64_t idx,
++    const SchemaSpecPtr& schema
+ ) {
+   return FormatPropertyKey(key) + " " + colon_pattern_ + " " + value_rule;
+ }
+@@ -1654,7 +4499,8 @@ std::string JSONSchemaConverter::FormatOtherProperty(
+     const std::string& key_pattern,
+     const std::string& value_rule,
+     const std::string& rule_name,
+-    const std::string& rule_name_suffix
++    const std::string& rule_name_suffix,
++    const SchemaSpecPtr& schema
+ ) {
+   return key_pattern + " " + colon_pattern_ + " " + value_rule;
+ }
+@@ -1687,6 +4533,7 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
      const std::string& additional_suffix,
      int min_properties,
      int max_properties,
@@ -5771,27 +5793,38 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
      const std::string& additional_prop_pattern_override
  ) {
    std::string first_sep = NextSeparator();
-@@ -1698,16 +4538,16 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
+@@ -1698,19 +4545,25 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
    std::vector<std::string> item_patterns;
    for (size_t idx = 0; idx < properties.size(); ++idx) {
      const auto& prop = properties[idx];
 -    std::string value_rule = CreateRule(prop.schema, rule_name + "_prop_" + std::to_string(idx));
-+    std::string value_rule = CreateRule(prop.schema, rule_name + "_prop_" + std::to_string(idx), value_ctx);
-     item_patterns.push_back(FormatProperty(prop.name, value_rule, rule_name, idx));
+-    item_patterns.push_back(FormatProperty(prop.name, value_rule, rule_name, idx));
++    std::string value_rule = UsesValueRule(prop.schema)
++                                 ? CreateRule(prop.schema, rule_name + "_prop_" + std::to_string(idx), value_ctx)
++                                 : "";
++    item_patterns.push_back(FormatProperty(prop.name, value_rule, rule_name, idx, prop.schema));
    }
    if (additional != nullptr) {
      if (!additional_prop_pattern_override.empty()) {
        item_patterns.push_back(additional_prop_pattern_override);
      } else {
 -      std::string add_value_rule = CreateRule(additional, rule_name + "_" + additional_suffix);
-+      std::string add_value_rule = CreateRule(additional, rule_name + "_" + additional_suffix, value_ctx);
++      std::string add_value_rule =
++          UsesValueRule(additional)
++              ? CreateRule(additional, rule_name + "_" + additional_suffix, value_ctx)
++              : "";
        item_patterns.push_back(FormatOtherProperty(
 -          GetKeyPatternExcluding(properties, rule_name),
 +          GetAdditionalKeyPattern(properties, rule_name),
            add_value_rule,
            rule_name,
-           additional_suffix
-@@ -1742,6 +4582,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+-          additional_suffix
++          additional_suffix,
++          additional
+       ));
+     }
+   }
+@@ -1742,6 +4595,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
      const std::string& additional_suffix,
      int min_properties,
      int max_properties,
@@ -5799,7 +5832,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
      const std::string& additional_prop_pattern_override
  ) {
    if (max_properties == 0) {
-@@ -1757,6 +4598,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1757,6 +4611,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
          additional_suffix,
          min_properties,
          max_properties,
@@ -5807,52 +5840,80 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
          additional_prop_pattern_override
      );
    }
-@@ -1770,7 +4612,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1770,8 +4625,10 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
    std::vector<std::string> prop_patterns;
    for (size_t idx = 0; idx < properties.size(); ++idx) {
      const auto& prop = properties[idx];
 -    std::string value_rule = CreateRule(prop.schema, rule_name + "_prop_" + std::to_string(idx));
-+    std::string value_rule = CreateRule(prop.schema, rule_name + "_prop_" + std::to_string(idx), value_ctx);
-     prop_patterns.push_back(FormatProperty(prop.name, value_rule, rule_name, idx));
+-    prop_patterns.push_back(FormatProperty(prop.name, value_rule, rule_name, idx));
++    std::string value_rule = UsesValueRule(prop.schema)
++                                 ? CreateRule(prop.schema, rule_name + "_prop_" + std::to_string(idx), value_ctx)
++                                 : "";
++    prop_patterns.push_back(FormatProperty(prop.name, value_rule, rule_name, idx, prop.schema));
    }
  
-@@ -1786,9 +4628,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+   if (min_properties == 0 && max_properties == -1) {
+@@ -1786,12 +4643,16 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
 -        std::string add_value_rule = CreateRule(additional, rule_name + "_" + additional_suffix);
-+        std::string add_value_rule = CreateRule(additional, rule_name + "_" + additional_suffix, value_ctx);
++        std::string add_value_rule =
++          UsesValueRule(additional)
++              ? CreateRule(additional, rule_name + "_" + additional_suffix, value_ctx)
++              : "";
          additional_prop_pattern = FormatOtherProperty(
 -            GetKeyPatternExcluding(properties, rule_name),
 +            GetAdditionalKeyPattern(properties, rule_name),
              add_value_rule,
              rule_name,
-             additional_suffix
-@@ -1850,9 +4692,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+-            additional_suffix
++            additional_suffix,
++            additional
+         );
+       }
+       std::string last_rule_body = "(" + mid_sep + " " + additional_prop_pattern + ")*";
+@@ -1850,12 +4711,16 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
 -        std::string add_value_rule = CreateRule(additional, rule_name + "_" + additional_suffix);
-+        std::string add_value_rule = CreateRule(additional, rule_name + "_" + additional_suffix, value_ctx);
++        std::string add_value_rule =
++          UsesValueRule(additional)
++              ? CreateRule(additional, rule_name + "_" + additional_suffix, value_ctx)
++              : "";
          additional_prop_pattern = FormatOtherProperty(
 -            GetKeyPatternExcluding(properties, rule_name),
 +            GetAdditionalKeyPattern(properties, rule_name),
              add_value_rule,
              rule_name,
-             additional_suffix
-@@ -1969,9 +4811,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+-            additional_suffix
++            additional_suffix,
++            additional
+         );
+       }
+     }
+@@ -1969,12 +4834,16 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
 -        std::string add_value_rule = CreateRule(additional, rule_name + "_" + additional_suffix);
-+        std::string add_value_rule = CreateRule(additional, rule_name + "_" + additional_suffix, value_ctx);
++        std::string add_value_rule =
++          UsesValueRule(additional)
++              ? CreateRule(additional, rule_name + "_" + additional_suffix, value_ctx)
++              : "";
          additional_prop_pattern = FormatOtherProperty(
 -            GetKeyPatternExcluding(properties, rule_name),
 +            GetAdditionalKeyPattern(properties, rule_name),
              add_value_rule,
              rule_name,
-             additional_suffix
-@@ -2094,8 +4936,10 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+-            additional_suffix
++            additional_suffix,
++            additional
+         );
+       }
+     }
+@@ -2094,8 +4963,10 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
  }
  
  std::string JSONSchemaConverter::GenerateObject(
@@ -5864,7 +5925,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    std::string result = "";
    if (need_braces) {
      result += "\"{\"";
-@@ -2116,6 +4960,9 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2116,6 +4987,9 @@ std::string JSONSchemaConverter::GenerateObject(
      additional_suffix = "addl";
      additional_property = SchemaSpec::Make(AnySpec{}, "", "any");
    }
@@ -5874,7 +5935,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  
    indent_manager_.StartIndent();
  
-@@ -2127,21 +4974,24 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2127,23 +5001,29 @@ std::string JSONSchemaConverter::GenerateObject(
      std::string effective_suffix = additional_suffix;
      std::string pp_override = "";
  
@@ -5899,11 +5960,18 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
        if (effective_additional) {
          std::string add_value_rule =
 -            CreateRule(effective_additional, rule_name + "_" + effective_suffix);
-+            CreateRule(effective_additional, rule_name + "_" + effective_suffix, ctx);
-         std::string add_prop =
-             FormatOtherProperty(GetKeyPattern(), add_value_rule, rule_name, effective_suffix);
+-        std::string add_prop =
+-            FormatOtherProperty(GetKeyPattern(), add_value_rule, rule_name, effective_suffix);
++            UsesValueRule(effective_additional)
++                ? CreateRule(effective_additional, rule_name + "_" + effective_suffix, ctx)
++                : "";
++        std::string add_prop = FormatOtherProperty(
++            GetKeyPattern(), add_value_rule, rule_name, effective_suffix, effective_additional
++        );
          pp_body += " | " + add_prop;
-@@ -2156,8 +5006,9 @@ std::string JSONSchemaConverter::GenerateObject(
+       }
+       // Wrap in parentheses to ensure correct EBNF precedence when | is present
+@@ -2156,8 +5036,9 @@ std::string JSONSchemaConverter::GenerateObject(
        // propertyNames constrains keys of additional properties.
        // Only apply when additional properties are allowed — when additionalProperties
        // is false, no extra keys beyond named properties should be permitted.
@@ -5915,7 +5983,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
        pp_override = key_pattern + " " + colon_pattern_ + " " + val_rule;
        effective_suffix = "pn";
      }
-@@ -2170,6 +5021,7 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2170,6 +5051,7 @@ std::string JSONSchemaConverter::GenerateObject(
                          effective_suffix,
                          spec.min_properties,
                          spec.max_properties,
@@ -5923,7 +5991,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
                          pp_override
                      );
      could_be_empty = spec.required.empty() && spec.min_properties == 0;
-@@ -2179,12 +5031,14 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2179,12 +5061,14 @@ std::string JSONSchemaConverter::GenerateObject(
  
      std::string property_rule_body = "(";
      if (spec.max_properties != 0) {
@@ -5941,23 +6009,24 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
            if (i != 0) {
              property_rule_body += " | ";
            }
-@@ -2192,9 +5046,13 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2192,9 +5076,14 @@ std::string JSONSchemaConverter::GenerateObject(
          }
          property_rule_body += ")";
        } else {
 -        auto key_pattern = CreateRule(spec.property_names, rule_name + "_name");
 +        auto key_pattern =
 +            GetPropertyNamesKeyPattern(spec.property_names, rule_name + "_name");
-+        std::string value = additional_property
++        std::string value = additional_property && UsesValueRule(additional_property)
 +                                ? CreateRule(additional_property, rule_name + "_" + additional_suffix, ctx)
 +                                : GetBasicAnyRuleName();
          property_rule_body +=
 -            beg_seq + " " + key_pattern + " " + colon_pattern_ + " " + GetBasicAnyRuleName() + ")";
-+            beg_seq + " " + FormatOtherProperty(key_pattern, value, rule_name, "pn") + ")";
++            beg_seq + " " +
++            FormatOtherProperty(key_pattern, value, rule_name, "pn", additional_property) + ")";
        }
  
        auto prop_rule_name = ebnf_script_creator_.AllocateRuleName(rule_name + "_prop");
-@@ -2217,16 +5075,21 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2217,16 +5106,24 @@ std::string JSONSchemaConverter::GenerateObject(
                          rule_name,
                          additional_suffix,
                          spec.min_properties,
@@ -5973,17 +6042,20 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
 -          CreateRule(additional_property, rule_name + "_" + additional_suffix);
 -      std::string other_property_pattern =
 -          FormatOtherProperty(GetKeyPattern(), add_value_rule, rule_name, additional_suffix);
-+          CreateRule(additional_property, rule_name + "_" + additional_suffix, ctx);
++          UsesValueRule(additional_property)
++              ? CreateRule(additional_property, rule_name + "_" + additional_suffix, ctx)
++              : "";
 +      std::string other_property_pattern = FormatOtherProperty(
 +          GetAdditionalKeyPattern(/*properties=*/{}, rule_name),
 +          add_value_rule,
 +          rule_name,
-+          additional_suffix
++          additional_suffix,
++          additional_property
 +      );
        result += " " + NextSeparator() + " " + other_property_pattern + " ";
        result += GetPropertyWithNumberConstraints(
                      NextSeparator() + " " + other_property_pattern,
-@@ -2260,117 +5123,145 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2260,117 +5157,154 @@ std::string JSONSchemaConverter::GenerateObject(
      }
    }
  
@@ -6072,14 +6144,22 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
 -  // First check if we have a direct URI mapping (for circular references)
 -  if (uri_to_rule_name_.count(spec.uri)) {
 -    return uri_to_rule_name_[spec.uri];
++SchemaSpecPtr JSONSchemaConverter::ResolveRefSchema(
++    const RefSpec& spec, const std::string& rule_name_hint
++) {
++  if (!ref_resolver_) {
++    XGRAMMAR_LOG(FATAL) << "Ref resolver not set; cannot resolve $ref: " << spec.uri;
+   }
++  return ref_resolver_(spec.uri, rule_name_hint);
++}
+ 
 +std::string JSONSchemaConverter::GenerateRef(
 +    const RefSpec& spec, const std::string& rule_name, const GenerationContext& ctx
 +) {
 +  const std::string key = RefRuleKey(spec.uri);
 +  if (ctx.cache->ref_rules.count(key)) {
 +    return ctx.cache->ref_rules[key];
-   }
--
++  }
    if (!ref_resolver_) {
      XGRAMMAR_LOG(FATAL) << "Ref resolver not set; cannot resolve $ref: " << spec.uri;
    }
@@ -6184,7 +6264,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    }
    return result;
  }
-@@ -2384,26 +5275,39 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2384,26 +5318,39 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
  
      std::string atext = "[\\w!#$%&'*+/=?^`{|}~-]";
      std::string dot_string = "(" + atext + "+(\\." + atext + "+)*)";
@@ -6231,7 +6311,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  
      m["ipv6"] =
          "("
-@@ -2416,13 +5320,11 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2416,13 +5363,11 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
          "([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|"
          "[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|"
          ":((:[0-9a-fA-F]{1,4}){1,7}|:)|"
@@ -6250,7 +6330,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  
      m["hostname"] = "^([a-z0-9]([a-z0-9-]*[a-z0-9])?)(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$";
      m["uuid"] = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$";
-@@ -2435,11 +5337,14 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2435,11 +5380,14 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
      std::string path_abempty = "(/" + pchar + "*)*";
      std::string path_absolute_rootless_empty = "/?(" + pchar + "+(/" + pchar + "*)*)?";
      std::string userinfo = "([\\w\\.~!$&'()*+,;=:-]|%[0-9A-Fa-f][0-9A-Fa-f])*";
@@ -6267,7 +6347,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  
      pchar = "([\\w\\.~!$&'()*+,;=:@-]|%[0-9A-Fa-f][0-9A-Fa-f])";
      query_fragment_char = "([\\w\\.~!$&'()*+,;=:@/\\?-]|%[0-9A-Fa-f][0-9A-Fa-f])*";
-@@ -2454,7 +5359,7 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2454,7 +5402,7 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
      authority = "(" + userinfo + "@)?" + host + "(:\\d*)?";
      std::string relative_part =
          "(//" + authority + path_abempty + "|" + path_absolute + "|" + path_noscheme + ")?";
@@ -6276,7 +6356,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  
      std::string literals =
          "([\\x21\\x23-\\x24\\x26\\x28-\\x3B\\x3D\\x3F-\\x5B\\x5D\\x5F\\x61-\\x7A\\x7E]"
-@@ -3328,7 +6233,17 @@ std::string JSONSchemaToEBNF(
+@@ -3328,7 +6276,17 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -6295,7 +6375,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
  ) {
    picojson::value schema_value;
    std::string err = picojson::parse(schema_value, schema);
-@@ -3342,7 +6257,17 @@ std::string JSONSchemaToEBNF(
+@@ -3342,7 +6300,17 @@ std::string JSONSchemaToEBNF(
        strict_mode,
        max_whitespace_cnt,
        json_format,
@@ -6314,7 +6394,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    );
  }
  
-@@ -3354,11 +6279,59 @@ std::string JSONSchemaToEBNF(
+@@ -3354,11 +6322,59 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -6378,7 +6458,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    if (spec_result.IsErr()) {
      XGRAMMAR_LOG(FATAL) << std::move(spec_result).UnwrapErr().what();
    }
-@@ -3372,18 +6345,37 @@ std::string JSONSchemaToEBNF(
+@@ -3372,18 +6388,37 @@ std::string JSONSchemaToEBNF(
      return std::move(r).Unwrap();
    };
  
@@ -6418,7 +6498,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
        XMLToolCallingConverter converter(
            indent,
            separators,
-@@ -3391,7 +6383,15 @@ std::string JSONSchemaToEBNF(
+@@ -3391,7 +6426,15 @@ std::string JSONSchemaToEBNF(
            max_whitespace_cnt,
            ref_resolver,
            json_format,
@@ -6435,7 +6515,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
        );
        return converter.Convert(spec);
      }
-@@ -3414,7 +6414,9 @@ std::string GenerateFloatRangeRegex(
+@@ -3414,7 +6457,9 @@ std::string GenerateFloatRangeRegex(
    );
  }
  
@@ -6446,7 +6526,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3428,11 +6430,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
+@@ -3428,11 +6473,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
        true,
        std::nullopt,
        JSONFormat::kQwenXML,
@@ -6465,7 +6545,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3446,11 +6453,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -3446,11 +6496,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
        true,
        std::nullopt,
        JSONFormat::kMiniMaxXML,
@@ -6484,7 +6564,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3464,11 +6476,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -3464,11 +6519,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
        true,
        std::nullopt,
        JSONFormat::kDeepSeekXML,
@@ -6503,7 +6583,7 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3482,7 +6499,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
+@@ -3482,7 +6542,33 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
        true,
        std::nullopt,
        JSONFormat::kGlmXML,
@@ -6512,12 +6592,35 @@ diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
 +      /*string_value_delimiter_token_id=*/-1,
 +      require_object_root,
 +      reject_unsupported
++  );
++}
++
++std::string DeepSeekV41XMLToolCallingToEBNF(
++    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
++) {
++  picojson::value json_value;
++  std::string err = picojson::parse(json_value, schema);
++  if (!err.empty()) {
++    XGRAMMAR_LOG(FATAL) << "Failed to parse JSON schema: " << err;
++  }
++  return JSONSchemaToEBNF(
++      json_value,
++      true,
++      std::nullopt,
++      std::nullopt,
++      true,
++      std::nullopt,
++      JSONFormat::kDeepSeekV41XML,
++      any_order,
++      /*string_value_delimiter_token_id=*/-1,
++      require_object_root,
++      reject_unsupported
    );
  }
  
-diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
---- a/cpp/json_schema_converter.h
-+++ b/cpp/json_schema_converter.h
+diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
+--- c/cpp/json_schema_converter.h
++++ w/cpp/json_schema_converter.h
 @@ -9,9 +9,12 @@
  
  #include <picojson.h>
@@ -6561,11 +6664,13 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  
    std::string ToString() const;
  };
-@@ -188,6 +198,28 @@ enum class JSONFormat : int {
+@@ -188,6 +198,30 @@ enum class JSONFormat : int {
    kMiniMaxXML = 2,
    kDeepSeekXML = 3,
    kGlmXML = 4,
 +  kMiniMaxM3XML = 5,
++  // DeepSeek V4.1 DSML: spaced tag names and a string attribute correlated
++  // with the parameter's schema type. See XMLToolCallingConverter.
 +  kDeepSeekV41XML = 6,
 +};
 +
@@ -6590,21 +6695,49 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  };
  
  /*!
-@@ -213,6 +245,13 @@ class GenerateCacheManager {
-   std::unordered_map<std::pair<std::string, bool>, std::string> cache_;
- };
+@@ -195,14 +229,20 @@ enum class JSONFormat : int {
+  */
+ class GenerateCacheManager {
+  public:
+-  /*! \brief Add a key-value pair to the cache. */
+-  void AddCache(const std::string& key, bool is_inner_layer, const std::string& value) {
+-    cache_[{key, is_inner_layer}] = value;
++  /*!
++   * \brief Add a key-value pair to the cache.
++   * \param context The encoding context the rule was generated in: an XML tool-calling format
++   * renders the same schema differently as the root parameter list (0), as one parameter's
++   * value (1) and inside a parameter's JSON (2); the plain JSON converter always uses 2.
++   * See XMLToolCallingConverter::EncodingContext.
++   */
++  void AddCache(const std::string& key, int context, const std::string& value) {
++    cache_[{key, context}] = value;
+   }
  
+   /*! \brief Get cached value by key. Returns std::nullopt if not found. */
+-  std::optional<std::string> GetCache(const std::string& key, bool is_inner_layer) const {
+-    auto it = cache_.find({key, is_inner_layer});
++  std::optional<std::string> GetCache(const std::string& key, int context) const {
++    auto it = cache_.find({key, context});
+     if (it != cache_.end()) {
+       return it->second;
+     }
+@@ -210,7 +250,14 @@ class GenerateCacheManager {
+   }
+ 
+  private:
+-  std::unordered_map<std::pair<std::string, bool>, std::string> cache_;
++  std::unordered_map<std::pair<std::string, int>, std::string> cache_;
++};
++
 +// Per-context memoization.
 +struct RuleCache {
 +  GenerateCacheManager schema_rules;
 +  // $ref URI -> rule name, for circular-reference handling.
 +  std::unordered_map<std::string, std::string> ref_rules;
-+};
-+
+ };
+ 
  /*!
-  * \brief Manage the indent and separator for the generation of EBNF grammar.
-  */
-@@ -262,7 +301,11 @@ class JSONSchemaConverter {
+@@ -262,7 +309,11 @@ class JSONSchemaConverter {
        bool any_whitespace,
        std::optional<int> max_whitespace_cnt,
        RefResolver ref_resolver = nullptr,
@@ -6617,7 +6750,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
    );
  
    virtual ~JSONSchemaConverter() = default;
-@@ -278,22 +321,58 @@ class JSONSchemaConverter {
+@@ -278,55 +329,175 @@ class JSONSchemaConverter {
    // ==================== Virtual methods for generation ====================
    // Subclasses can override these to customize output format
  
@@ -6670,6 +6803,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
 +  virtual std::string GenerateRef(
 +      const RefSpec& spec, const std::string& rule_name, const GenerationContext& ctx
 +  );
++
 +  virtual std::string GenerateAnyOf(
 +      const AnyOfSpec& spec, const std::string& rule_name, const GenerationContext& ctx
 +  );
@@ -6680,21 +6814,60 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
 +      const TypeArraySpec& spec, const std::string& rule_name, const GenerationContext& ctx
 +  );
 +
++  /*!
++   * \brief Resolve a $ref to its schema, without generating a rule. For subclasses that need
++   * the target's shape (e.g. to correlate a parameter's framing with its type) before the
++   * rule exists. \param rule_name_hint Passed to the resolver, like GenerateRef's own name.
++   */
++  SchemaSpecPtr ResolveRefSchema(const RefSpec& spec, const std::string& rule_name_hint);
++
 +  GenerationContext MakeValueContext();
 +  GenerationContext MakeKeyContext(GenerationContext::Framing framing, const std::string& terminal);
 +
 +  // Required escaped spellings for regexes emitted inside a quoted JSON string.
 +  virtual std::string RequiredJSONEscapeAlphabet() const;
-+  // Char-class members a JSON string's raw characters exclude, beyond JSON's own;
-+  // such a character can still be written as a \u escape.
 +  virtual std::string ExtraJSONStringExcludedChars() const { return ""; }
  
    // ==================== Hooks for customization ====================
  
-@@ -316,17 +395,80 @@ class JSONSchemaConverter {
-       const std::string& rule_name_suffix
+   /*! \brief Format a property key. Override for different formats. */
+   virtual std::string FormatPropertyKey(const std::string& key);
+ 
+-  /*! \brief Format a property (key + value). Override for different formats. */
++  /*!
++   * \brief Format a property (key + value). Override for different formats.
++   * \param schema The declared property's schema, so a format can correlate the
++   * value's framing with its type. Null when the caller has none (a schema-less
++   * "other" property).
++   */
+   virtual std::string FormatProperty(
+       const std::string& key,
+       const std::string& value_rule,
+       const std::string& rule_name,
+-      int64_t idx
++      int64_t idx,
++      const SchemaSpecPtr& schema
    );
  
+-  /*! \brief Format an "other" property (additional/unevaluated). Override for different formats. */
++  /*! \brief Format an "other" property (additional/unevaluated). Override for different formats.
++   * \param schema The additional/unevaluated property's schema, or null when the object allows
++   * any value without declaring one. */
+   virtual std::string FormatOtherProperty(
+       const std::string& key_pattern,
+       const std::string& value_rule,
+       const std::string& rule_name,
+-      const std::string& rule_name_suffix
++      const std::string& rule_name_suffix,
++      const SchemaSpecPtr& schema
+   );
+ 
++  /*! \brief Whether the format's property rendering reads the rule CreateRule generates
++   * for the property's schema. A format that rebuilds the value from the schema itself
++   * (instead of splicing the generated rule in) returns false, so the property loops
++   * skip generating a rule nobody would read. */
++  virtual bool UsesValueRule(const SchemaSpecPtr& schema) const { return true; }
++
 +  /*! \brief Opening/closing EBNF delimiter fragments wrapping a string body in
 +   * GenerateString (format/pattern/length ladder). The JSON `"` byte quote, or
 +   * the configured token-delimited pair when a string value delimiter is set. */
@@ -6774,13 +6947,18 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
    /*! \brief Add basic rules for the format. Override for different formats. */
    virtual void AddBasicRules();
  
-@@ -336,13 +478,21 @@ class JSONSchemaConverter {
+@@ -336,13 +507,26 @@ class JSONSchemaConverter {
    /*! \brief Get cached value by key. Returns std::nullopt if not found. */
    virtual std::optional<std::string> GetCache(const std::string& key) const;
  
 +  /*! \brief The key under which a $ref to \p uri memoizes its rule. Override when one
 +   * target builds differently depending on where it is referenced. */
 +  virtual std::string RefRuleKey(const std::string& uri) const { return uri; }
++
++  // The one encoding context of the plain JSON converter. An XML tool-calling format's
++  // AddBasicRules seeds these rules at nested_object_level_ 2, so 2 is the context shared
++  // by both converters. See GenerateCacheManager::AddCache.
++  static constexpr int kPlainJSONContext = 2;
 +
    // ==================== Helper methods (for subclasses to use) ====================
  
@@ -6792,13 +6970,13 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  
    /*! \brief Create a rule and return the rule name (handles caching). */
 -  std::string CreateRule(const SchemaSpecPtr& spec, const std::string& rule_name_hint);
-+  virtual std::string CreateRule(
++  std::string CreateRule(
 +      const SchemaSpecPtr& spec, const std::string& rule_name_hint, const GenerationContext& ctx
 +  );
  
    /*! \brief Get next separator from indent manager. */
    virtual std::string NextSeparator(bool is_end = false);
-@@ -350,6 +500,11 @@ class JSONSchemaConverter {
+@@ -350,6 +534,11 @@ class JSONSchemaConverter {
    /*! \brief Get whitespace pattern. */
    std::string GetWhitespacePattern() const;
  
@@ -6810,7 +6988,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
    /*! \brief Helper to create rule with repetition constraints. */
    std::string GetPropertyWithNumberConstraints(
        const std::string& pattern,
-@@ -359,6 +514,7 @@ class JSONSchemaConverter {
+@@ -359,6 +548,7 @@ class JSONSchemaConverter {
    );
  
    /*! \brief Generate partial rule for object properties.
@@ -6818,7 +6996,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
     *  \param additional_prop_pattern_override When non-empty, used as the additional property
     *         pattern instead of the default GetKeyPattern() : value. This supports patternProperties
     *         and propertyNames constraints on additional keys.
-@@ -371,12 +527,14 @@ class JSONSchemaConverter {
+@@ -371,12 +561,14 @@ class JSONSchemaConverter {
        const std::string& additional_suffix,
        int min_properties,
        int max_properties,
@@ -6833,7 +7011,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
     */
    std::string GetAnyOrderRuleForProperties(
        const std::vector<ObjectSpec::Property>& properties,
-@@ -386,6 +544,7 @@ class JSONSchemaConverter {
+@@ -386,6 +578,7 @@ class JSONSchemaConverter {
        const std::string& additional_suffix,
        int min_properties,
        int max_properties,
@@ -6841,7 +7019,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
        const std::string& additional_prop_pattern_override = ""
    );
  
-@@ -394,12 +553,23 @@ class JSONSchemaConverter {
+@@ -394,12 +587,23 @@ class JSONSchemaConverter {
    EBNFScriptCreator ebnf_script_creator_;
    IndentManager indent_manager_;
    std::string colon_pattern_;
@@ -6865,7 +7043,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  
   public:
    // Basic rule names
-@@ -413,17 +583,45 @@ class JSONSchemaConverter {
+@@ -413,17 +617,45 @@ class JSONSchemaConverter {
    static const std::string kBasicObject;
    static const std::string kBasicEscape;
    static const std::string kBasicStringSub;
@@ -6914,7 +7092,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
    // For string spec deduplication
    struct StringSpecKey {
      std::string pattern;
-@@ -447,12 +645,10 @@ class JSONSchemaConverter {
+@@ -447,12 +679,10 @@ class JSONSchemaConverter {
        bool exclusive_end = false
    );
  
@@ -6928,7 +7106,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
    // Expose for testing
    friend std::string GenerateRangeRegex(std::optional<int64_t> start, std::optional<int64_t> end);
    friend std::string GenerateFloatRangeRegex(
-@@ -499,7 +695,28 @@ std::string JSONSchemaToEBNF(
+@@ -499,7 +729,28 @@ std::string JSONSchemaToEBNF(
      bool strict_mode = true,
      std::optional<int> max_whitespace_cnt = std::nullopt,
      JSONFormat json_format = JSONFormat::kJSON,
@@ -6958,7 +7136,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  );
  
  /*!
-@@ -535,7 +752,25 @@ std::string JSONSchemaToEBNF(
+@@ -535,7 +786,25 @@ std::string JSONSchemaToEBNF(
      bool strict_mode = true,
      std::optional<int> max_whitespace_cnt = std::nullopt,
      JSONFormat json_format = JSONFormat::kJSON,
@@ -6985,7 +7163,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  );
  
  /*!
-@@ -559,7 +794,12 @@ std::string GenerateFloatRangeRegex(
+@@ -559,7 +828,12 @@ std::string GenerateFloatRangeRegex(
   * \return The ebnf-grammar to match the requirements of the schema, and
   * in Qwen xml style.
   */
@@ -6999,7 +7177,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  
  /*!
   * \brief Convert a function call to a Grammar.
-@@ -567,7 +807,12 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order =
+@@ -567,7 +841,12 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order =
   * \return The ebnf-grammar to match the requirements of the schema, and
   * in MiniMax xml style.
   */
@@ -7013,7 +7191,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  
  /*!
   * \brief Convert a function call to a Grammar.
-@@ -575,7 +820,12 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -575,7 +854,12 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
   * \return The ebnf-grammar to match the requirements of the schema, and
   * in DeepSeek xml style.
   */
@@ -7027,7 +7205,7 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
  
  /*!
   * \brief Convert a function call to a Grammar.
-@@ -583,7 +833,12 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -583,7 +867,26 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
   * \return The ebnf-grammar to match the requirements of the schema, and
   * in GLM xml style (<arg_key>key</arg_key><arg_value>value</arg_value>).
   */
@@ -7038,12 +7216,26 @@ diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
 +    bool require_object_root = false,
 +    bool reject_unsupported = false
 +);
++
++/*!
++ * \brief Convert a function call to a Grammar.
++ * \param schema The schema of the parameters of the function call.
++ * \return The ebnf-grammar to match the requirements of the schema, and
++ * in DeepSeek V4.1 DSML style: spaced tags and a string attribute correlated
++ * with each parameter's type.
++ */
++std::string DeepSeekV41XMLToolCallingToEBNF(
++    const std::string& schema,
++    bool any_order = false,
++    bool require_object_root = false,
++    bool reject_unsupported = false
++);
  
  }  // namespace xgrammar
  
-diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
---- a/cpp/json_schema_converter_ext.cc
-+++ b/cpp/json_schema_converter_ext.cc
+diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
+--- c/cpp/json_schema_converter_ext.cc
++++ w/cpp/json_schema_converter_ext.cc
 @@ -5,10 +5,21 @@
   */
  #include "json_schema_converter_ext.h"
@@ -7066,7 +7258,7 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
  
  namespace xgrammar {
  
-@@ -17,17 +28,85 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,17 +28,90 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
@@ -7113,23 +7305,28 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
            // TODO(Linzhang): we do not validate the string's value, and we accept both.
            "</｜DSML｜parameter>"}},
 -        {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
-+        // DeepSeek-V4.1 renamed the DSML parameter tag to " parameter" (leading space).
-+        // Its reader takes string="true" as raw text and string="false" as JSON, cuts a
-+        // value at the DSML marker, and takes exactly a newline after each parameter.
 +        {JSONFormat::kDeepSeekV41XML,
 +         {"<｜DSML｜ parameter name=\\\"",
-+          "\\\" string=\\\"",
++          "\\\"",
 +          "",
++          // The string attribute is emitted per property from its schema (see
++          // FormatDeepSeekV41ParamSuffix), so a raw value is bounded by this close tag alone.
 +          "</｜DSML｜ parameter>",
 +          /*key_is_tag=*/false,
 +          /*xml_all_depths=*/false,
 +          /*array_item_tag=*/"",
++          // A raw value keeps its framing whitespace, so a bounded one is framed tightly.
 +          /*value_framing_stripped=*/false,
-+          /*bare_value_regex_exact=*/false,
++          // The reader scans a raw value to its first close tag, so a regex it
++          // cannot take back exactly is refused (see GenerateString).
++          /*bare_value_regex_exact=*/true,
++          // Inside a parameter's JSON, an any-typed value's string alternative is a JSON
++          // string.
 +          /*any_string_is_json=*/true,
 +          /*container_value_balanced=*/false,
-+          /*raw_value_key_suffix=*/"\\\" string=\\\"true\\\">",
-+          /*json_value_key_suffix=*/"\\\" string=\\\"false\\\">",
++          // The reader cuts a value at the DSML marker and takes exactly a newline
++          // after each parameter close, so no value may spell the marker, and the
++          // terminator replaces whitespace separators between parameters.
 +          /*value_excluded_text=*/"｜DSML｜",
 +          /*json_string_excluded_chars=*/"\\uff5c",
 +          /*exact_parameter_terminator=*/"\\n"}},
@@ -7155,7 +7352,7 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
  };
  
  XMLToolCallingConverter::XMLToolCallingConverter(
-@@ -37,19 +116,258 @@ XMLToolCallingConverter::XMLToolCallingConverter(
+@@ -37,19 +121,258 @@ XMLToolCallingConverter::XMLToolCallingConverter(
      std::optional<int> max_whitespace_cnt,
      RefResolver ref_resolver,
      JSONFormat json_format,
@@ -7183,6 +7380,7 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 +          std::move(additional_bare_key_terminal),
 +          std::move(bare_key_pattern_forbidden)
        ),
++      json_format_(json_format),
        nested_object_level_(0),
 -      xml_wrapper_(kKeyWrapperMap.at(json_format)) {}
 +      json_leaf_ref_resolver_(ref_resolver),
@@ -7243,8 +7441,7 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 +  // blanks. A length-bounded value is framed tightly for the same reason, unless
 +  // its style's reader strips the framing.
 +  bool tight = xml_wrapper_.exact_parameter_terminator.has_value() ||
-+               MarkerTokenId(kValueClose) >= 0 ||
-+               tight_value_rules_.count(value_rule) > 0;
++               MarkerTokenId(kValueClose) >= 0 || tight_value_rules_.count(value_rule) > 0;
 +  std::string whitespace = tight ? "" : GetWhitespacePattern();
 +
 +  std::string value_open;
@@ -7418,7 +7615,7 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
    ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
  
    return ebnf_script_creator_.GetScript();
-@@ -63,41 +381,65 @@ void XMLToolCallingConverter::AddBasicRules() {
+@@ -63,41 +386,65 @@ void XMLToolCallingConverter::AddBasicRules() {
    JSONSchemaConverter::AddBasicRules();
    nested_object_level_ = 1;
    // The outer part, xml format, is at level 1.
@@ -7502,7 +7699,7 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
  }
  
  std::string XMLToolCallingConverter::GetKeyPattern() const {
-@@ -114,36 +456,72 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
+@@ -114,36 +461,84 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
    return kBasicAny;
  }
  
@@ -7552,15 +7749,25 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
          spec.max_length == -1) {
        return kXMLString;
      }
-+    // A bare value is read back by scanning to its close delimiter, so a regex that can
-+    // spell that delimiter has no unambiguous end.
 +    const bool exact = reject_unsupported_ && xml_wrapper_.bare_value_regex_exact;
-+    auto refuse_if_it_reaches_close = [&](const std::string& regex, const std::string& what) {
-+      if (exact && ValueRegexCanReachClose(regex)) {
++    // A bare value is read back by scanning to its close delimiter, so a regex that can
++    // spell that delimiter has no unambiguous end. Under reject_unsupported that is a
++    // refusal; otherwise fall back to the close-excluded run the way BoundedBareValue
++    // relaxes a bound it cannot afford, rather than compile a pattern a value could end
++    // early and truncate the call at read time.
++    auto regex_reaches_close = [&](const std::string& regex, const std::string& what) {
++      if (!xml_wrapper_.bare_value_regex_exact || !ValueRegexCanReachClose(regex)) {
++        return false;
++      }
++      if (reject_unsupported_) {
 +        XGRAMMAR_LOG(FATAL) << "unsupported " << what << " on a bare XML tool-call value: "
 +                            << "it can match the value's own closing delimiter \""
 +                            << ValueCloseDelimiter() << "\", leaving no unambiguous end";
 +      }
++      XGRAMMAR_LOG(WARNING) << what << " on a bare XML tool-call value can match its own "
++                            << "closing delimiter \"" << ValueCloseDelimiter()
++                            << "\"; constraining the close-excluded run instead of the pattern";
++      return true;
 +    };
 +    // The regex matches the value whole, so framing whitespace a reader keeps
 +    // would be read into it.
@@ -7575,12 +7782,14 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
        auto regex_pattern = JSONFormatToRegexPattern(format);
  
        if (regex_pattern.has_value()) {
-+        refuse_if_it_reaches_close(*regex_pattern, "format \"" + format + "\"");
++        if (regex_reaches_close(*regex_pattern, "format \"" + format + "\"")) {
++          return kXMLString;
++        }
 +        frame_tightly();
          std::string converted_regex = RegexToEBNF(regex_pattern.value(), false);
          return converted_regex;
        }
-@@ -151,86 +529,485 @@ std::string XMLToolCallingConverter::GenerateString(
+@@ -151,137 +546,941 @@ std::string XMLToolCallingConverter::GenerateString(
  
      // Check for pattern
      if (spec.pattern.has_value()) {
@@ -7590,7 +7799,9 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 +        XGRAMMAR_LOG(FATAL) << "unsupported pattern on a bare XML tool-call value: only a "
 +                            << "pattern anchored at both ends (^...$) is enforced";
 +      }
-+      refuse_if_it_reaches_close(*spec.pattern, "pattern");
++      if (regex_reaches_close(*spec.pattern, "pattern")) {
++        return kXMLString;
++      }
 +      frame_tightly();
        std::string converted_regex = RegexToEBNF(*spec.pattern, false);
        return converted_regex;
@@ -7931,8 +8142,28 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 +  if (ctx.framing == GenerationContext::Framing::kBare) {
 +    return JSONSchemaConverter::GenerateConst(spec, rule_name, ctx);
 +  }
-+  if (!xml_wrapper_.raw_value_key_suffix.empty() && nested_object_level_ == 0) {
-+    return GenerateUnframedRootLiteral(rule_name, ctx);
++  if (json_format_ == JSONFormat::kDeepSeekV41XML && nested_object_level_ == 0 &&
++      spec.parsed_json_value.is<picojson::object>()) {
++    // A root object is a parameter list, including when all of its values are fixed. Nested
++    // object constants keep the JSON spelling below.
++    ObjectSpec object;
++    object.allow_additional_properties = false;
++    object.allow_unevaluated_properties = false;
++    const auto& properties = spec.parsed_json_value.get<picojson::object>();
++    for (const auto& key : properties.ordered_keys()) {
++      ConstSpec value;
++      value.json_value = properties.at(key).serialize();
++      value.parsed_json_value = properties.at(key);
++      object.properties.push_back({key, SchemaSpec::Make(std::move(value))});
++      object.required.insert(key);
++    }
++    // As with JSON literals, keep a fixed order even when any_order is enabled: the general
++    // any-order object rule permits repeated keys and is not exact for a const.
++    bool saved_any_order = any_order_;
++    any_order_ = false;
++    std::string result = GenerateObject(object, rule_name, ctx, /*dummy_need_braces=*/false);
++    any_order_ = saved_any_order;
++    return result;
 +  }
 +  if (nested_object_level_ <= 1) {
 +    return GenerateBareValueLiteral(spec.parsed_json_value, spec.json_value, rule_name, ctx);
@@ -7949,9 +8180,6 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 +  if (ctx.framing == GenerationContext::Framing::kBare) {
 +    return JSONSchemaConverter::GenerateEnum(spec, rule_name, ctx);
 +  }
-+  if (!xml_wrapper_.raw_value_key_suffix.empty() && nested_object_level_ == 0) {
-+    return GenerateUnframedRootLiteral(rule_name, ctx);
-+  }
    if (nested_object_level_ <= 1) {
      std::string result;
      for (size_t i = 0; i < spec.json_values.size(); ++i) {
@@ -7961,144 +8189,44 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 -      const std::string& val = spec.json_values[i];
 -      if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
 -        result += "(\"" + val.substr(1, val.size() - 2) + "\")";
--      } else {
++      if (json_format_ == JSONFormat::kDeepSeekV41XML) {
++        // A value that is itself a root object is a parameter list, so every value goes
++        // through GenerateConst; the non-object ones render as the bare-value literal.
++        ConstSpec value;
++        value.json_value = spec.json_values[i];
++        value.parsed_json_value = spec.parsed_json_values[i];
++        result += "(" + GenerateConst(value, rule_name, ctx) + ")";
+       } else {
 -        result += "(\"" + val + "\")";
--      }
-+      result += "(" +
-+                GenerateBareValueLiteral(
-+                    spec.parsed_json_values[i], spec.json_values[i], rule_name, ctx
-+                ) +
-+                ")";
++        result += "(" +
++                  GenerateBareValueLiteral(
++                      spec.parsed_json_values[i], spec.json_values[i], rule_name, ctx
++                  ) +
++                  ")";
+       }
      }
      return result;
    }
 -  return JSONSchemaConverter::GenerateEnum(spec, rule_name);
 +  return JSONSchemaConverter::GenerateEnum(spec, rule_name, ctx);
-+}
-+
-+bool XMLToolCallingConverter::IsRawStringValue(
-+    const SchemaSpecPtr& spec, std::unordered_set<std::string>& visited_refs
-+) {
-+  return std::visit(
-+      [&](const auto& s) -> bool {
-+        using T = std::decay_t<decltype(s)>;
-+        if constexpr (std::is_same_v<T, StringSpec>) {
-+          return true;
-+        } else if constexpr (std::is_same_v<T, ConstSpec>) {
-+          return s.parsed_json_value.template is<std::string>();
-+        } else if constexpr (std::is_same_v<T, EnumSpec>) {
-+          for (const auto& value : s.parsed_json_values) {
-+            if (!value.template is<std::string>()) {
-+              return false;
-+            }
-+          }
-+          return true;
-+        } else if constexpr (std::is_same_v<T, RefSpec>) {
-+          if (!visited_refs.insert(s.uri).second) {
-+            return false;
-+          }
-+          return IsRawStringValue(json_leaf_ref_resolver_(s.uri, "ref"), visited_refs);
-+        } else {
-+          return false;
-+        }
-+      },
-+      spec->spec
-+  );
-+}
-+
-+std::string XMLToolCallingConverter::CreateRule(
-+    const SchemaSpecPtr& spec, const std::string& rule_name_hint, const GenerationContext& ctx
-+) {
-+  if (xml_wrapper_.raw_value_key_suffix.empty() || nested_object_level_ != 1 ||
-+      ctx.framing == GenerationContext::Framing::kBare) {
-+    return JSONSchemaConverter::CreateRule(spec, rule_name_hint, ctx);
-+  }
-+  std::unordered_set<std::string> visited_refs;
-+  if (IsRawStringValue(spec, visited_refs)) {
-+    std::string raw = JSONSchemaConverter::CreateRule(spec, rule_name_hint, ctx);
-+    value_readings_[raw] = {raw, ""};
-+    return raw;
-+  }
-+  // One level down, values are JSON.
-+  ++nested_object_level_;
-+  std::string json = JSONSchemaConverter::CreateRule(spec, rule_name_hint, ctx);
-+  --nested_object_level_;
-+  // A value that can be any string also takes the raw reading, the way the model
-+  // writes a string.
-+  std::string raw;
-+  if (std::holds_alternative<AnySpec>(spec->spec)) {
-+    raw = kXMLString;
-+  } else {
-+    const std::vector<SchemaSpecPtr>* members = nullptr;
-+    if (const auto* any_of = std::get_if<AnyOfSpec>(&spec->spec)) {
-+      members = &any_of->options;
-+    } else if (const auto* types = std::get_if<TypeArraySpec>(&spec->spec)) {
-+      members = &types->type_schemas;
-+    }
-+    for (size_t i = 0; members != nullptr && i < members->size(); ++i) {
-+      std::unordered_set<std::string> member_refs;
-+      if (IsRawStringValue((*members)[i], member_refs)) {
-+        raw += (raw.empty() ? "" : " | ") +
-+               JSONSchemaConverter::CreateRule(
-+                   (*members)[i], rule_name_hint + "_raw_" + std::to_string(i), ctx
-+               );
-+      }
-+    }
-+    if (raw.find(" | ") != std::string::npos) {
-+      std::string name = ebnf_script_creator_.AllocateRuleName(rule_name_hint + "_raw");
-+      ebnf_script_creator_.AddRuleWithAllocatedName(name, raw);
-+      raw = name;
-+    }
-+  }
-+  value_readings_[json] = {raw, json};
-+  return json;
-+}
-+
-+std::string XMLToolCallingConverter::FormatTypedValueProperty(
-+    const std::string& key_open_prefix,
-+    const std::string& key_close,
-+    const std::string& value_rule
-+) {
-+  auto it = value_readings_.find(value_rule);
-+  const ValueReadings readings =
-+      it != value_readings_.end() ? it->second : ValueReadings{"", value_rule};
-+  std::string result;
-+  if (!readings.raw.empty()) {
-+    result = FormatXMLProperty(
-+        key_open_prefix + " " + EmitMarker(kKeyClose, xml_wrapper_.raw_value_key_suffix),
-+        key_close, readings.raw
-+    );
-+  }
-+  if (!readings.json.empty()) {
-+    result += (result.empty() ? "" : " | ") +
-+              FormatXMLProperty(
-+                  key_open_prefix + " " + EmitMarker(kKeyClose, xml_wrapper_.json_value_key_suffix),
-+                  key_close, readings.json
-+              );
-+  }
-+  return "(" + result + ")";
-+}
-+
-+std::string XMLToolCallingConverter::GenerateUnframedRootLiteral(
-+    const std::string& rule_name, const GenerationContext& ctx
-+) {
-+  // The root's arguments are spelled as parameters, which a literal has no form for.
-+  if (reject_unsupported_) {
-+    XGRAMMAR_LOG(FATAL) << "unsupported: a const or enum literal at the tool-call root";
-+  }
-+  return GenerateObject(ObjectSpec{}, rule_name, ctx, false);
  }
  
  std::string XMLToolCallingConverter::FormatPropertyKey(const std::string& key) {
    if (nested_object_level_ <= 1) {
 -    return "\"" + xml_wrapper_.key_wrapper_prefix + key + xml_wrapper_.key_wrapper_suffix + "\"";
-+    return EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) + " \"" + key + "\" " +
-+           EmitMarker(kKeyClose, xml_wrapper_.key_wrapper_suffix);
++    return EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) + " \"" + EscapeString(key) +
++           "\" " + EmitMarker(kKeyClose, xml_wrapper_.key_wrapper_suffix);
    }
    return JSONSchemaConverter::FormatPropertyKey(key);
  }
-@@ -239,15 +1016,21 @@ std::string XMLToolCallingConverter::FormatProperty(
-     const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
+ 
+ std::string XMLToolCallingConverter::FormatProperty(
+-    const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
++    const std::string& key,
++    const std::string& value_rule,
++    const std::string& rule_name,
++    int64_t idx,
++    const SchemaSpecPtr& schema
  ) {
    if (nested_object_level_ <= 1) {
 -    std::string whitespace = GetWhitespacePattern();
@@ -8111,24 +8239,32 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 +    if (xml_wrapper_.key_is_tag) {
 +      key_open = OpenTag(key);
 +      key_close = CloseTag(key);
-+    } else if (!xml_wrapper_.raw_value_key_suffix.empty()) {
-+      return FormatTypedValueProperty(
-+          EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) + " \"" + EscapeString(key) + "\"",
-+          key_close, value_rule
-+      );
 +    } else {
-+      key_open = EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) + " \"" + key + "\" " +
++      CheckDeclaredParamName(key);
++      key_open = EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) +
++                 " \"" + EscapeString(key) + "\" " +
 +                 EmitMarker(kKeyClose, xml_wrapper_.key_wrapper_suffix);
      }
 -    return "\"" + xml_wrapper_.key_wrapper_prefix + key + xml_wrapper_.key_wrapper_suffix + "\" " +
 -           whitespace + " " + value_rule + " " + whitespace + " \"" +
 -           xml_wrapper_.parameter_suffix + "\"";
++    if (json_format_ == JSONFormat::kDeepSeekV41XML) {
++      // The string attribute belongs to the value, so it is built from the property's schema.
++      return FormatDeepSeekV41ParamSuffix(key_open, schema, value_rule, rule_name);
++    }
 +    return FormatXMLProperty(key_open, key_close, value_rule);
    }
-   return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
+-  return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
++  return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx, schema);
  }
-@@ -259,29 +1042,323 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
-     const std::string& rule_name_suffix
+ 
+ std::string XMLToolCallingConverter::FormatOtherProperty(
+     const std::string& key_pattern,
+     const std::string& value_rule,
+     const std::string& rule_name,
+-    const std::string& rule_name_suffix
++    const std::string& rule_name_suffix,
++    const SchemaSpecPtr& schema
  ) {
    if (nested_object_level_ <= 1) {
 -    std::string whitespace = GetWhitespacePattern();
@@ -8146,11 +8282,6 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 +      std::string prefix = xml_tag_prefix_.empty() ? "" : xml_tag_prefix_literal_ + " ";
 +      key_open = prefix + "\"<\" " + key_pattern + " \">\"";
 +      key_close = prefix + "\"</\" " + key_pattern + " \">\"";
-+    } else if (!xml_wrapper_.raw_value_key_suffix.empty()) {
-+      return FormatTypedValueProperty(
-+          EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) + " " + key_pattern, key_close,
-+          value_rule
-+      );
 +    } else {
 +      key_open = EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) + " " + key_pattern + " " +
 +                 EmitMarker(kKeyClose, xml_wrapper_.key_wrapper_suffix);
@@ -8158,15 +8289,206 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 -    return "\"" + xml_wrapper_.key_wrapper_prefix + "\" " + key_pattern + " \"" +
 -           xml_wrapper_.key_wrapper_suffix + "\" " + whitespace + " " + value_rule + " " +
 -           whitespace + " \"" + xml_wrapper_.parameter_suffix + "\"";
++    if (json_format_ == JSONFormat::kDeepSeekV41XML) {
++      // An additional or pattern key is a parameter like a named one, so its value's string
++      // attribute is correlated with its schema too.
++      return FormatDeepSeekV41ParamSuffix(key_open, schema, value_rule, rule_name);
++    }
 +    return FormatXMLProperty(key_open, key_close, value_rule);
    }
    return JSONSchemaConverter::FormatOtherProperty(
-       key_pattern, value_rule, rule_name, rule_name_suffix
+-      key_pattern, value_rule, rule_name, rule_name_suffix
++      key_pattern, value_rule, rule_name, rule_name_suffix, schema
    );
  }
  
 -std::string XMLToolCallingConverter::GenerateObject(
 -    const ObjectSpec& spec, const std::string& rule_name, bool dummy_need_braces
++namespace {
++
++// Joins an already-rendered key with the EBNF that follows it. A shared parameter-suffix rule
++// and one alternative of a union have no key of their own, so an empty key contributes nothing,
++// not even the separating space.
++std::string JoinDeepSeekV41KeyAndSuffix(const std::string& key_open, const std::string& suffix) {
++  return key_open.empty() ? suffix : key_open + " " + suffix;
++}
++
++// The V4.1 attribute typing of one parameter schema: the single type whose value keeps the
++// rule the caller generated (nullopt = no single type), and the options a union, type array,
++// mixed enum or one-element allOf rebuilds one alternative per option from. The schema-less
++// case has neither, so the parameter accepts any value.
++struct DeepSeekV41Typing {
++  std::optional<bool> is_string;
++  std::vector<SchemaSpecPtr> options;
++};
++
++DeepSeekV41Typing DeepSeekV41ParamTyping(const SchemaSpecPtr& schema) {
++  DeepSeekV41Typing typing;
++  if (schema == nullptr) {
++    return typing;
++  }
++  std::visit(
++      [&](const auto& spec) {
++        using T = std::decay_t<decltype(spec)>;
++        if constexpr (std::is_same_v<T, StringSpec>) {
++          typing.is_string = true;
++        } else if constexpr (std::is_same_v<T, IntegerSpec> ||
++                             std::is_same_v<T, NumberSpec> || std::is_same_v<T, BooleanSpec> ||
++                             std::is_same_v<T, NullSpec> || std::is_same_v<T, ArraySpec> ||
++                             std::is_same_v<T, ObjectSpec>) {
++          typing.is_string = false;
++        } else if constexpr (std::is_same_v<T, ConstSpec>) {
++          // A const string is a raw value; any other literal keeps its JSON spelling.
++          typing.is_string = spec.parsed_json_value.template is<std::string>();
++        } else if constexpr (std::is_same_v<T, AnyOfSpec>) {
++          typing.options = spec.options;
++        } else if constexpr (std::is_same_v<T, TypeArraySpec>) {
++          typing.options = spec.type_schemas;
++        } else if constexpr (std::is_same_v<T, AllOfSpec>) {
++          if (spec.schemas.size() == 1) {
++            typing.options = spec.schemas;
++          }
++        } else if constexpr (std::is_same_v<T, EnumSpec>) {
++          for (size_t i = 0; i < spec.json_values.size(); ++i) {
++            ConstSpec value;
++            value.json_value = spec.json_values[i];
++            value.parsed_json_value = spec.parsed_json_values[i];
++            typing.options.push_back(SchemaSpec::Make(std::move(value)));
++          }
++        }
++      },
++      schema->spec
++  );
++  return typing;
++}
++
++}  // namespace
++
++std::string XMLToolCallingConverter::FormatDeepSeekV41Value(
++    const std::string& value_expr, bool is_string
++) const {
++  // string="true" frames a raw value whose whitespace is part of it, so it is framed
++  // tightly. With the parameter terminator pinned, string="false" is framed tightly
++  // too: an unbounded whitespace run lets a model burn tokens on blanks the
++  // reader would discard, and the parameter's own trailing terminator replaces
++  // the whitespace separators between parameters.
++  const std::string attribute =
++      is_string ? "\" string=\\\"true\\\">\"" : "\" string=\\\"false\\\">\"";
++  std::string result = attribute + " " + value_expr;
++  result += " " + EmitMarker(kValueClose, xml_wrapper_.parameter_suffix);
++  if (xml_wrapper_.exact_parameter_terminator) {
++    result += " \"" + *xml_wrapper_.exact_parameter_terminator + "\"";
++  }
++  return result;
++}
++
++std::string XMLToolCallingConverter::FormatDeepSeekV41ParamSuffix(
++    const std::string& key_open,
++    const SchemaSpecPtr& schema,
++    const std::string& value_rule,
++    const std::string& rule_name
+ ) {
+-  nested_object_level_++;
++  // A $ref's suffix does not depend on the key, so every parameter referencing the same URI
++  // shares one rule. It is allocated before the reference is resolved, so a recursive schema
++  // terminates on this entry instead of classifying its own target again.
++  if (schema != nullptr) {
++    if (const auto* ref = std::get_if<RefSpec>(&schema->spec); ref != nullptr) {
++      auto cached = deepseek_v41_param_ref_rules_.find(ref->uri);
++      if (cached != deepseek_v41_param_ref_rules_.end()) {
++        return JoinDeepSeekV41KeyAndSuffix(key_open, cached->second);
++      }
++      std::string param_rule_name = ebnf_script_creator_.AllocateRuleName(rule_name + "_dsml_param");
++      deepseek_v41_param_ref_rules_.emplace(ref->uri, param_rule_name);
++      SchemaSpecPtr resolved = ResolveRefSchema(*ref, param_rule_name);
++      ebnf_script_creator_.AddRuleWithAllocatedName(
++          param_rule_name,
++          FormatDeepSeekV41ParamSuffix(/*key_open=*/"", resolved, value_rule, rule_name)
++      );
++      return JoinDeepSeekV41KeyAndSuffix(key_open, param_rule_name);
++    }
++  }
++
++  // A schema with a single type keeps the rule the caller generated for it. A union, a type
++  // array or an enum gets one alternative per option below, so each alternative's attribute
++  // matches its own value's shape. UsesValueRule consults the same typing, so the caller
++  // skips generating a rule this path would drop.
++  const DeepSeekV41Typing typing = DeepSeekV41ParamTyping(schema);
++
++  if (typing.is_string.has_value()) {
++    return JoinDeepSeekV41KeyAndSuffix(
++        key_open, FormatDeepSeekV41Value(value_rule, /*is_string=*/*typing.is_string)
++    );
++  }
++
++  const GenerationContext value_ctx = MakeValueContext();
++  if (!typing.options.empty()) {
++    std::string alternatives;
++    for (size_t index = 0; index < typing.options.size(); ++index) {
++      const std::string option_rule_name = rule_name + "_dsml_case_" + std::to_string(index);
++      std::string option_rule = CreateRule(typing.options[index], option_rule_name, value_ctx);
++      std::string alternative = FormatDeepSeekV41ParamSuffix(
++          /*key_open=*/"", typing.options[index], option_rule, option_rule_name
++      );
++      if (!alternatives.empty()) {
++        alternatives += " | ";
++      }
++      alternatives += alternative;
++    }
++    return JoinDeepSeekV41KeyAndSuffix(key_open, "(" + alternatives + ")");
++  }
++
++  // No schema, {} and allOf with several schemas all accept any value. A JSON string would
++  // have been written as the raw form, so the JSON alternative spells the non-string values
++  // and leaves the string to the raw alternative.
++  const std::string any_json = "(" + kBasicNumber + " | " + kBasicBoolean + " | " + kBasicNull +
++                               " | " + kBasicArray + " | " + kBasicObject + ")";
++  return JoinDeepSeekV41KeyAndSuffix(
++      key_open,
++      "(" + FormatDeepSeekV41Value(kXMLString, /*is_string=*/true) + " | " +
++          FormatDeepSeekV41Value(any_json, /*is_string=*/false) + ")"
++  );
++}
++
++bool XMLToolCallingConverter::UsesValueRule(const SchemaSpecPtr& schema) const {
++  if (json_format_ != JSONFormat::kDeepSeekV41XML || nested_object_level_ > 1 ||
++      schema == nullptr) {
++    return true;
++  }
++  if (std::get_if<RefSpec>(&schema->spec) != nullptr) {
++    // A $ref parameter's shared suffix wraps the rule the caller generated for the reference.
++    return true;
++  }
++  // A union, mixed enum, type array, untyped or unwrapped-allOf parameter rebuilds its value
++  // from the schema, so the caller's rule would ship as unreachable EBNF.
++  return DeepSeekV41ParamTyping(schema).is_string.has_value();
++}
++
++void XMLToolCallingConverter::CheckDeclaredParamName(const std::string& key) const {
++  // The V4.1 reader takes the first `" string="` inside the name attribute as the attribute
++  // boundary and splits a parameter at its close tag, so a declared name spelling either
++  // sequence forces a document the reader mis-frames and drops. The reference encoder↔decoder
++  // pair breaks on such a name identically, so the format, not the grammar, owns the
++  // guarantee; under reject_unsupported the compile fails loudly instead of constraining a
++  // call no reader can take back.
++  if (json_format_ != JSONFormat::kDeepSeekV41XML || nested_object_level_ > 1) {
++    return;
++  }
++  if (!reject_unsupported_) {
++    return;
++  }
++  static const std::string kAttributeBoundary = "\" string=\"";
++  const bool misframes =
++      key.find(kAttributeBoundary) != std::string::npos ||
++      (!xml_wrapper_.parameter_suffix.empty() &&
++       key.find(xml_wrapper_.parameter_suffix) != std::string::npos);
++  if (misframes) {
++    XGRAMMAR_LOG(FATAL) << "unsupported property name \"" << key
++                        << "\" on a DeepSeek-V4.1 tool call: it can spell the attribute boundary"
++                        << " or the parameter close tag, so the reader would mis-frame the call";
++  }
++}
++
 +namespace {
 +
 +// Each JSON leaf owns its value/key/ref caches and never calls the XML renderer.
@@ -8312,8 +8634,7 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 +
 +std::string XMLToolCallingConverter::GenerateJSONMap(
 +    const ObjectSpec& spec, const std::string& rule_name
- ) {
--  nested_object_level_++;
++) {
 +  JSONLeafConverter converter(
 +      std::nullopt, std::make_pair(std::string(","), std::string(":")), false,
 +      max_whitespace_cnt_, json_leaf_ref_resolver_, any_order_
@@ -8465,18 +8786,23 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
    return result;
  }
  
-@@ -289,14 +1366,24 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +1488,29 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }
 -  rule_cache_manager_.AddCache(key, nested_object_level_ > 1, value);
-+  value_cache_.schema_rules.AddCache(key, nested_object_level_ > 1, value);
++  value_cache_.schema_rules.AddCache(key, EncodingContext(), value);
 +}
 +
 +std::string XMLToolCallingConverter::RefRuleKey(const std::string& uri) const {
 +  // The root object is XML markup; below it the same target is framed as a nested value
 +  // or built as a JSON leaf. A target referenced at both, such as a recursive root, gets
 +  // a rule for each, and "#" names the root's own rule only at the root.
++  if (json_format_ == JSONFormat::kDeepSeekV41XML) {
++    // The same $ref renders as a root parameter list, a parameter's raw value or nested
++    // JSON, so each of those contexts keeps its own rule for it.
++    return std::to_string(EncodingContext()) + ":" + uri;
++  }
 +  return xml_object_depth_ == 0 ? uri : "nested:" + uri;
  }
  
@@ -8488,17 +8814,18 @@ diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
      return std::nullopt;
    }
 -  return rule_cache_manager_.GetCache(key, nested_object_level_ > 1);
-+  return value_cache_.schema_rules.GetCache(key, nested_object_level_ > 1);
++  return value_cache_.schema_rules.GetCache(key, EncodingContext());
  }
  
  }  // namespace xgrammar
-diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
---- a/cpp/json_schema_converter_ext.h
-+++ b/cpp/json_schema_converter_ext.h
-@@ -7,8 +7,13 @@
+diff --git c/cpp/json_schema_converter_ext.h w/cpp/json_schema_converter_ext.h
+--- c/cpp/json_schema_converter_ext.h
++++ w/cpp/json_schema_converter_ext.h
+@@ -7,8 +7,14 @@
  #ifndef XGRAMMAR_JSON_SCHEMA_CONVERTER_EXT_H_
  #define XGRAMMAR_JSON_SCHEMA_CONVERTER_EXT_H_
  
++#include <algorithm>
 +#include <cstdint>
 +#include <optional>
 +#include <string>
@@ -8509,7 +8836,7 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
  
  #include "json_schema_converter.h"
  
-@@ -30,7 +35,15 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -30,7 +36,15 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
        std::optional<int> max_whitespace_cnt,
        RefResolver ref_resolver = nullptr,
        JSONFormat json_format = JSONFormat::kQwenXML,
@@ -8526,7 +8853,7 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
    );
  
    /*! \brief Convert SchemaSpec to EBNF with XML format for root object. Note that this function is
-@@ -39,14 +52,55 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -39,14 +53,49 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
  
   protected:
    // Override methods for XML format
@@ -8571,12 +8898,6 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
 +      const TypeArraySpec& spec, const std::string& rule_name, const GenerationContext& ctx
 +  ) override;
 +
-+  // Builds a parameter value's rule for the reading its attribute names, in a style
-+  // whose reader takes a value as raw text or as JSON.
-+  std::string CreateRule(
-+      const SchemaSpecPtr& spec, const std::string& rule_name_hint, const GenerationContext& ctx
-+  ) override;
-+
 +  /*! \brief EBNF for one const/enum literal in XML mode, where the markers
 +   * frame the value: a string loses its JSON quotes, anything else keeps its
 +   * JSON spelling and goes through the base renderer that escapes it. */
@@ -8589,14 +8910,27 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
  
    // Override format hooks
    std::string FormatPropertyKey(const std::string& key) override;
-@@ -65,9 +119,15 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -54,20 +103,26 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+       const std::string& key,
+       const std::string& value_rule,
+       const std::string& rule_name,
+-      int64_t idx
++      int64_t idx,
++      const SchemaSpecPtr& schema
+   ) override;
+   std::string FormatOtherProperty(
+       const std::string& key_pattern,
+       const std::string& value_rule,
+       const std::string& rule_name,
+-      const std::string& rule_name_suffix
++      const std::string& rule_name_suffix,
++      const SchemaSpecPtr& schema
+   ) override;
  
    std::string GetKeyPattern() const override;
    std::string GetBasicAnyRuleName() const override;
 -  std::string GetKeyPatternExcluding(
 +  std::string GetAnyStringRuleName() const override;
-+  std::string RequiredJSONEscapeAlphabet() const override;
-+  std::string ExtraJSONStringExcludedChars() const override;
 +  std::string GetAdditionalKeyPattern(
        const std::vector<ObjectSpec::Property>& properties, const std::string& rule_name
    ) override;
@@ -8606,13 +8940,21 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
  
    std::string NextSeparator(bool is_end = false) override;
  
-@@ -75,14 +135,52 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -75,14 +130,55 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
  
    void AddCache(const std::string& key, const std::string& value) override;
    std::optional<std::string> GetCache(const std::string& key) const override;
 +  std::string RefRuleKey(const std::string& uri) const override;
 +
++  std::string ValueExcludesTuple() const;
++  std::string ExtraJSONStringExcludedChars() const override;
++  std::string RequiredJSONEscapeAlphabet() const override;
++
 + protected:
++  // The style being rendered. A style's wrapper entry carries its markers and flags, but a
++  // style whose value framing depends on the schema (deepseek_v41_xml) also needs the format
++  // itself at the property level.
++  const JSONFormat json_format_;
 +  // Nesting depth used to gate XML- vs JSON-mode emission (<= 1 is XML mode). An
 +  // xml_all_depths style never increments it, so every depth stays in XML mode.
 +  int nested_object_level_ = 0;
@@ -8645,22 +8987,17 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
 +    // MAX's Python qwen3_5 parser scans to the first close instead, but MAX compiles without
 +    // reject_unsupported, so the guard this flag skips never ran on its path.
 +    bool container_value_balanced = false;
-+    // Key suffixes for a style whose reader takes a value as raw text or as JSON by an
-+    // attribute the key ends with. Empty when the style has no such attribute.
-+    std::string raw_value_key_suffix = "";
-+    std::string json_value_key_suffix = "";
-+    // Text a bare value may not contain, because the style's reader cuts the value there.
++    // Text the style's reader cuts a value at, so neither a bare value nor a JSON
++    // string inside a parameter's value may spell it (the DSML marker for V4.1).
 +    std::string value_excluded_text = "";
-+    // Char-class members a JSON string value spells only as \u escapes, because the
-+    // style's reader cuts on them.
 +    std::string json_string_excluded_chars = "";
-+    // What the reader takes after each parameter close when it takes no other framing
-+    // whitespace; unset for a style whose reader skips whitespace.
++    // The exact text the reader takes after each parameter close (a newline for
++    // V4.1): each parameter carries it itself, instead of a whitespace separator.
 +    std::optional<std::string> exact_parameter_terminator = std::nullopt;
    };
  
    static const std::unordered_map<JSONFormat, XMLWrapper> kKeyWrapperMap;
-@@ -90,10 +188,106 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -90,10 +186,130 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    static const std::string kXMLAny;
    static const std::string kXMLObject;
    static const std::string kXMLVariableName;
@@ -8689,18 +9026,34 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
 +      const std::string& value_rule
 +  ) const;
 +
-+  // Whether a parameter value is only ever a string, so the reader takes it as raw text.
-+  bool IsRawStringValue(
-+      const SchemaSpecPtr& spec, std::unordered_set<std::string>& visited_refs
++  // ==================== deepseek_v41_xml ====================
++  // A DSML parameter's value is framed by its own string attribute: string="true" is a raw
++  // value whose whitespace belongs to it, string="false" is a JSON value framed tightly,
++  // with the parameter's exact terminator in place of the whitespace separators between
++  // parameters. The attribute is correlated with the parameter's schema: a string-typed
++  // parameter takes only the raw form, any other single-typed parameter takes only the JSON
++  // form, and a union, mixed enum, $ref or untyped parameter gets one alternative per option
++  // so each alternative's attribute matches its own value's shape.
++
++  /*! \brief EBNF for the attribute, the value and the close tag of one DSML parameter. */
++  std::string FormatDeepSeekV41Value(const std::string& value_expr, bool is_string) const;
++
++  /*!
++   * \brief EBNF from key_open on: the attribute, value and close tag chosen from the schema's
++   * shape. \param value_rule The rule the caller generated for a single-typed schema; a
++   * union, $ref or untyped schema builds its own value alternatives instead.
++   */
++  std::string FormatDeepSeekV41ParamSuffix(
++      const std::string& key_open,
++      const SchemaSpecPtr& schema,
++      const std::string& value_rule,
++      const std::string& rule_name
 +  );
-+  // A property whose key ends with the attribute naming each reading its value takes.
-+  std::string FormatTypedValueProperty(
-+      const std::string& key_open_prefix,
-+      const std::string& key_close,
-+      const std::string& value_rule
-+  );
-+  // A const or enum literal at the root of a style that spells arguments as parameters.
-+  std::string GenerateUnframedRootLiteral(const std::string& rule_name, const GenerationContext& ctx);
++
++  // The root parameter list (0), a parameter's raw value (1) and a parameter's nested JSON
++  // (2) are three different encodings of one schema, so each context caches its rules and
++  // resolves its $refs separately. See AddCache/GetCache/RefRuleKey.
++  int EncodingContext() const { return std::min(nested_object_level_, kPlainJSONContext); }
 +
 +  // Rule body for a bare value with a byte-literal close and a length bound: the close
 +  // delimiter excluded, the length counted, and no whitespace at either edge. Registers
@@ -8712,6 +9065,18 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
 +  // scans a bare value up to that delimiter, so such a value has no unambiguous end.
 +  bool ValueRegexCanReachClose(const std::string& regex) const;
 +
++  // A declared name that can spell the attribute boundary or the parameter close tag
++  // mis-frames the very document the grammar forces, and the reference reader drops the
++  // call. Refused under reject_unsupported; otherwise the format emits it the way the
++  // reference encoder does, broken the same way.
++  void CheckDeclaredParamName(const std::string& key) const;
++
++  // Whether the format's property rendering reads the rule CreateRule generates for the
++  // property's schema. A V4.1 parameter whose suffix is rebuilt from the schema (one
++  // alternative per union option, or an unconstrained parameter's raw-or-JSON pair)
++  // never does, so the caller skips generating a rule nobody would read.
++  bool UsesValueRule(const SchemaSpecPtr& schema) const override;
++
 +  // Marks rule_name for tight framing when body, an alias or a union of rules, reaches a
 +  // rule already marked.
 +  void PropagateTightFraming(const std::string& rule_name, const std::string& body);
@@ -8720,8 +9085,6 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
 +  // bare-value run must not reach. Empty for a style whose close resolved to an
 +  // atomic marker token instead.
 +  const std::string& ValueCloseDelimiter() const;
-+  // The TagDispatch excludes tuple for a bare value: its close and any forbidden text.
-+  std::string ValueExcludesTuple() const;
 +
 +  std::string OpenTag(const std::string& tag) const;
 +  std::string CloseTag(const std::string& tag) const;
@@ -8755,17 +9118,15 @@ diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
 +  const bool reject_unsupported_;
 +  // Whether XML objects must use declared, paired member tags.
 +  const bool xml_require_paired_tags_;
++  // deepseek_v41_xml: $ref URI -> the parameter-suffix rule shared by every parameter
++  // referencing that URI. The suffix is independent of the key, so a named and a dynamic
++  // parameter with the same reference share it; the rule is allocated before the reference
++  // is resolved so a recursive schema terminates.
++  std::unordered_map<std::string, std::string> deepseek_v41_param_ref_rules_;
 +  // Value rules whose length bound covers exactly the bytes between the markers. They are
 +  // framed with no whitespace, since a parser that keeps framing whitespace would read it as
 +  // part of the value.
 +  std::unordered_set<std::string> tight_value_rules_;
-+  // The rules a parameter value takes as raw text and as JSON, by the rule CreateRule
-+  // returned for it; an empty rule means the value never takes that reading.
-+  struct ValueReadings {
-+    std::string raw;
-+    std::string json;
-+  };
-+  std::unordered_map<std::string, ValueReadings> value_readings_;
  };
  
  }  // namespace xgrammar

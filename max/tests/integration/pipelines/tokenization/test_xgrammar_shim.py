@@ -6706,3 +6706,73 @@ def test_partial_hash_warm_compile_matches_cold(
         ).compile_grammar(ebnf)
     )
     assert not _differing_prefixes(warm, cold)
+
+
+def _deepseek_v41_info() -> xgr.TokenizerInfo:
+    # The byte-level vocabulary the DSML markers need: every single byte plus
+    # an eos, so a marker's multi-byte spelling matches one byte at a time.
+    vocab = [bytes([byte]) for byte in range(256)] + [b"<eos>"]
+    return xgr.TokenizerInfo(
+        vocab, vocab_type=xgr.VocabType.RAW, stop_token_ids=[len(vocab) - 1]
+    )
+
+
+def test_deepseek_v41_native_style_matches_schema_through_shim() -> None:
+    # The native V4.1 style through the binding: the schema picks the string
+    # attribute (an integer is JSON-only, so string="false"), the value is
+    # framed the way the reader takes it back, and the newline after each
+    # parameter close is the grammar's, not a separator the model chooses.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            style="deepseek_v41_xml",
+            json_schema={
+                "type": "object",
+                "properties": {"count": {"type": "integer"}},
+                "required": ["count"],
+                "additionalProperties": False,
+            },
+            require_object_root=True,
+            reject_unsupported=True,
+        )
+    )
+    compiled = xgr.GrammarCompiler(_deepseek_v41_info()).compile_structural_tag(
+        tag
+    )
+    value = '<\uff5cDSML\uff5c parameter name="count" string="false">3</\uff5cDSML\uff5c parameter>\n'
+    assert _accepts(compiled, value)
+    assert not _accepts(
+        compiled, value.replace('string="false"', 'string="true"')
+    )
+    assert not _accepts(compiled, value.replace(">3<", ">text<"))
+    assert not _accepts(
+        compiled, value.replace("DSML\uff5c parameter", "DSML\uff5cparameter")
+    )
+
+
+def test_deepseek_v41_empty_arguments_whitespace_cap_through_shim() -> None:
+    # An arguments object with no properties is an empty parameter list: at
+    # most one character of framing whitespace, and nothing else.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            style="deepseek_v41_xml",
+            json_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            require_object_root=True,
+            reject_unsupported=True,
+            max_whitespace_cnt=1,
+        )
+    )
+    compiled = xgr.GrammarCompiler(_deepseek_v41_info()).compile_structural_tag(
+        tag
+    )
+    assert _accepts(compiled, "")
+    assert _accepts(compiled, "\n")
+    assert not _accepts(compiled, "\n\n")
+    assert not _accepts(
+        compiled,
+        '<\uff5cDSML\uff5c parameter name="x" string="true">v</\uff5cDSML\uff5c parameter>\n',
+    )
