@@ -190,6 +190,8 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
           /*fpModeId=*/{}, options::OPT_ignore_deprecated,
           /*incrParsingCacheFileId=*/options::OPT_incr_parsing_cache_file))
     return err.takeError();
+  pkgArgs.compileOptions.warnOnUnstableAPIs =
+      args.hasArg(options::OPT_warn_on_unstable_apis);
 
   // Precompiled files are built with the intention of being agnostic, so use
   // conservative compilation settings as a default.
