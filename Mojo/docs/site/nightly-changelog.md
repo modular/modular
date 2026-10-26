@@ -142,6 +142,15 @@ This version is still a work in progress.
 - `ArcPointer` element types no longer need to be `Deinitable`. Destroy an
   `ArcPointer` of a non-`Deinitable` type with the new `deinit_with()` method.
 
+- `FileHandle` now owns its descriptor through a `FileDescriptor` and always
+  refers to an open file. It is no longer `Defaultable`, and `close()`
+  consumes the handle (`f^.close()`) instead of leaving it in an invalid
+  state. It still raises if the close fails. Use `Optional[FileHandle]`,
+  which is the same size as `FileHandle`, for a file that may not be open.
+  `NamedTemporaryFile` follows the same rules: it always holds an open file,
+  `close()` consumes it, and `Optional[NamedTemporaryFile]` is the same size
+  as `NamedTemporaryFile`.
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and

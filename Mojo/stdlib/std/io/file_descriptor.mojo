@@ -20,7 +20,7 @@ For example, here's how to print to a file
 var f = open("my_file.txt", "w")
 var fd = RawFileDescriptor(f)
 print("hello", file=fd)
-f.close()
+f^.close()
 ```
 
 """
@@ -35,8 +35,8 @@ from std.ffi import (
 from std.collections import Span
 from std.memory import MaybeUninit
 from std.os import abort
-from std.sys._libc import close as libc_close
-from std.utils._nicheable import UnsafeSingleNicheable
+from std.sys._libc import close as libc_close, dup as libc_dup
+from std.utils._nicheable import UnsafeSingleNicheable, _FieldNicheable
 
 
 struct RawFileDescriptor(
@@ -93,7 +93,7 @@ struct RawFileDescriptor(
         Args:
             f: The file handle.
         """
-        self._value = c_int(f._get_raw_fd())
+        self = f._get_raw_fd()
 
     # ===------------------------------------------------------------------===#
     # UnsafeSingleNicheable
@@ -224,7 +224,7 @@ struct RawFileDescriptor(
 struct FileDescriptor(
     not Deinitable else "close it with `fd^.close()`, since closing can fail",
     Movable,
-    UnsafeSingleNicheable,
+    _FieldNicheable,
 ):
     """Owning file descriptor that is closed explicitly with `close()`.
 
@@ -252,6 +252,24 @@ struct FileDescriptor(
         """
         self._value = unsafe_raw_fd
 
+    def __init__(out self, *, copy_borrowed: BorrowedFileDescriptor[_]) raises:
+        """Constructs a new owner by duplicating a borrowed descriptor.
+
+        The new `FileDescriptor` owns a fresh descriptor that refers to the
+        same open file description as `copy_borrowed`, so the two share the
+        file offset and status flags but are closed independently.
+
+        Args:
+            copy_borrowed: The descriptor to duplicate.
+
+        Raises:
+            If the duplication fails.
+        """
+        var fd = libc_dup(copy_borrowed._value._value)
+        if fd < 0:
+            raise Error(t"dup failed err: {get_errno()}")
+        self._value = RawFileDescriptor(unsafe_unchecked_value=fd)
+
     def close(deinit self) raises:
         """Closes the owned file descriptor.
 
@@ -261,25 +279,11 @@ struct FileDescriptor(
         """
         self._value.close()
 
-    # ===------------------------------------------------------------------===#
-    # UnsafeSingleNicheable
-    # ===------------------------------------------------------------------===#
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
-        memory.unsafe_bitcast[c_int]().write(RawFileDescriptor._InvalidFd)
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
-        return memory.unsafe_bitcast[c_int]()[] == RawFileDescriptor._InvalidFd
+    comptime _KgenNichedFieldName = "_value".value
 
 
 struct BorrowedFileDescriptor[origin: ImmOrigin](
-    TrivialRegisterPassable, UnsafeSingleNicheable
+    TrivialRegisterPassable, _FieldNicheable
 ):
     """Copyable, non-owning view of a `FileDescriptor`.
 
@@ -313,18 +317,4 @@ struct BorrowedFileDescriptor[origin: ImmOrigin](
         """
         self._value = fd._value
 
-    # ===------------------------------------------------------------------===#
-    # UnsafeSingleNicheable
-    # ===------------------------------------------------------------------===#
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
-        memory.unsafe_bitcast[c_int]().write(RawFileDescriptor._InvalidFd)
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
-        return memory.unsafe_bitcast[c_int]()[] == RawFileDescriptor._InvalidFd
+    comptime _KgenNichedFieldName = "_value".value

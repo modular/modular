@@ -144,7 +144,7 @@ def _assert_aborts_impl(
 def _run(f: Some[def() raises]) raises:
     """Redirects stdout/stderr to the parent-provided file, then calls `f`."""
     with open(getenv(_OUTPUT_ENV), "w") as out_file:
-        var fd = Int32(out_file._get_raw_fd())
+        var fd = out_file._get_raw_fd()._value
         # redirect stdout/stderr to the output file
         _ = dup2(fd, stdout._value)
         _ = dup2(fd, stderr._value)
@@ -168,7 +168,7 @@ def _spawn_and_check(
 
     var tmp = NamedTemporaryFile(mode="w", delete=False)
     var out_path = tmp.name
-    tmp.close()
+    tmp^.close()
 
     var rest = List[String]()
     for arg in self_argv[1:]:

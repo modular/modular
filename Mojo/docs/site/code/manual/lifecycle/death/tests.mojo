@@ -264,7 +264,7 @@ struct QuickLogger:
 
     def __deinit__(deinit self):
         try:
-            self.temporary_file.close()
+            self.temporary_file^.close()
         except:
             pass
 

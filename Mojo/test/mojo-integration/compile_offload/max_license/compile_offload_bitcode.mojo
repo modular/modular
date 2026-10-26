@@ -70,4 +70,4 @@ def main() raises:
     ]()
     var f = open(tmp_file, "w")
     print(t6.kernel, sep="", end="", flush=True, file=RawFileDescriptor(f))
-    f.close()
+    f^.close()
