@@ -22,6 +22,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
+from max.experimental.compilation import CompiledCallable
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef, TensorType
@@ -29,8 +30,6 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     VisionRawInputs,
-    create_empty_embeddings,
-    pack_uncached_images,
 )
 from max.pipelines.architectures.gemma4.context import Gemma4Context
 from max.pipelines.architectures.gemma4.model_config import (
@@ -114,6 +113,12 @@ class Gemma4Model(
             memory_plan=memory_plan,
         )
         self.vision_model, self.language_model = self._load_towers(session)
+        self._batching.bind_model_state(config=self.config)
+        if self.vision_model is not None:
+            assert isinstance(self.vision_model, CompiledCallable)
+            self._batching.bind_vision_encoder(
+                vision_model=self.vision_model.engine_model, session=session
+            )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -254,19 +259,18 @@ class Gemma4Model(
 
     # --- SupportsVisionEncoding ---
 
+    @property
+    def _batching(self) -> Gemma4ModuleV3BatchProcessor:
+        assert isinstance(self._batch_processor, Gemma4ModuleV3BatchProcessor)
+        return self._batch_processor
+
     def pack_vision_inputs(
         self,
         selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
         devices: list[Device],
     ) -> VisionRawInputs | None:
-        """Packs the pipeline-selected uncached image pixels to device."""
-        assert self.config.vision_config is not None
-        return pack_uncached_images(
-            selection,
-            devices,
-            self.config.vision_config.pooling_kernel_size,
-            self.config.unquantized_dtype,
-        )
+        """Packs the selected images, as the batch processor does."""
+        return self._batching.pack_vision_inputs(selection, devices)
 
     def vision_execute(
         self,
@@ -274,40 +278,13 @@ class Gemma4Model(
         devices: list[Device],
         packed: VisionRawInputs | None,
     ) -> VisionEncodeResult:
-        """Runs the vision encoder on the pixels packed by
-        :meth:`pack_vision_inputs`."""
-        if packed is None:
-            return VisionEncodeResult(
-                embeddings=self.empty_vision_embeddings(self.devices)
-            )
-        assert self.vision_model is not None, (
-            "This checkpoint is served text-only (no vision encoder is"
-            " loaded); image and video inputs are not supported."
-        )
-        out = self.vision_model(
-            packed.patches_flat[0],
-            packed.pixel_position_ids[0],
-            packed.cu_seqlens[0],
-            packed.pool_gather_index[0],
-            packed.max_seq_len,
-        )
-        first = out[0] if isinstance(out, (tuple, list)) else out
-        device0_embeddings = first.driver_tensor
-        return VisionEncodeResult(embeddings=device0_embeddings.to(devices))
+        """Encodes the selected images, as the batch processor does."""
+        return self._batching.vision_execute(selection, devices, packed)
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
-        """Per-device zero-row image embeddings for cached / text-only batches.
-
-        Cached: this is hit on every text-only / decode step, so it must not
-        allocate per call.
-        """
-        if not hasattr(self, "_cached_empty_embeddings"):
-            self._cached_empty_embeddings = create_empty_embeddings(
-                devices,
-                self.huggingface_config.text_config.hidden_size,
-                self.config.unquantized_dtype,
-            )
-        return self._cached_empty_embeddings
+        """Returns the batch processor's embeddings for a batch with no new
+        images."""
+        return self._batching.empty_vision_embeddings(devices)
 
     # --- execute ---
 
