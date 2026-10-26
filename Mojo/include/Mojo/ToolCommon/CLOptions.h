@@ -80,7 +80,7 @@ public:
 
   std::string stripFilePrefix;
 
-  SmallVector<std::string> includePaths;
+  std::vector<std::string> includePaths;
 
   SmallVector<std::string> defines;
 
@@ -130,16 +130,6 @@ public:
   bool disableWarnings{false};
 
   bool warningsAsErrors{false};
-
-  /// Get the include directories that exist on the file system.
-  std::vector<std::string> getIncludePaths() const {
-    std::vector<std::string> result;
-    result.reserve(includePaths.size());
-    for (auto &path : includePaths)
-      if (std::filesystem::is_directory(path))
-        result.push_back(path);
-    return result;
-  }
 
   /// Return a compilation options object based on the command line options.
   CompilationOptions getCompilationOptions() const {
@@ -330,7 +320,7 @@ private:
       llvm::cl::location(options.stripFilePrefix),
       llvm::cl::cat(KGENOptionsCategory)};
 
-  M::cl::MListOpt<std::string, SmallVector<std::string>> includePaths{
+  M::cl::MListOpt<std::string, std::vector<std::string>> includePaths{
       "I", cl::desc("Path to use to search for included files."),
       llvm::cl::Prefix, llvm::cl::location(options.includePaths),
       llvm::cl::cat(KGENOptionsCategory)};

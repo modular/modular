@@ -854,7 +854,7 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
   MLIRContext context(registry, MLIRContext::Threading::DISABLED);
 
   llvm::SourceMgr sourceMgr;
-  sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
+  sourceMgr.setIncludeDirs(clOptions.includePaths);
   mlir::SourceMgrDiagnosticHandler diagHandler(sourceMgr, &context);
   ScopedMLIRWarningHandler warningHandler(&context, clOptions.disableWarnings,
                                           clOptions.warningsAsErrors);
@@ -1010,7 +1010,7 @@ int main(int argc, char **argv) {
 
   // Set up the input file(s).
   llvm::SourceMgr sourceManager;
-  sourceManager.setIncludeDirs(clOptions.getIncludePaths());
+  sourceManager.setIncludeDirs(clOptions.includePaths);
   clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
   if (clOptions.targetAccelerator.empty()) {
 #if MLRT_ACCELERATOR_SUPPORT

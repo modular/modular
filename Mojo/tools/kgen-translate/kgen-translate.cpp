@@ -266,7 +266,7 @@ int main(int argc, char *argv[]) {
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr,
           MLIRContext *context) -> OwningOpRef<ModuleOp> {
-        sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
+        sourceMgr.setIncludeDirs(clOptions.includePaths);
 
         // Handle diagnostic format - JSON diagnostics require SourceMgr
         // diagnostics, not MLIR diagnostics.
