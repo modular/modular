@@ -1803,10 +1803,12 @@ def bottom_k_shape(
         The output shape after selecting the bottom-k values along `axis`.
     """
     return rebind[IndexList[type_of(input).rank]](
-        top_k_shape_impl(
-            input.to_tile_tensor(),
-            Int(k),
-            Int(axis),
+        coord_to_index_list(
+            top_k_shape_impl(
+                input.to_tile_tensor(),
+                Int(k),
+                Int(axis),
+            )
         )
     )
 
@@ -1888,10 +1890,12 @@ def top_k_shape(
         The output shape after selecting the top-k values along `axis`.
     """
     return rebind[IndexList[type_of(input).rank]](
-        top_k_shape_impl(
-            input.to_tile_tensor(),
-            Int(k),
-            Int(axis),
+        coord_to_index_list(
+            top_k_shape_impl(
+                input.to_tile_tensor(),
+                Int(k),
+                Int(axis),
+            )
         )
     )
 
