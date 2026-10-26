@@ -951,7 +951,7 @@ struct RandomNormal:
             )
 
         random_normal[target=target](
-            output.shape(),
+            output.shape_coord(),
             mean,
             variance,
             seed_value.unsafe_ptr[.uint64](),
@@ -1026,7 +1026,7 @@ struct RandomUniform:
             )
 
         random_uniform[target=target](
-            output.shape(),
+            output.shape_coord(),
             lower_bound,
             upper_bound,
             seed_value.unsafe_ptr[.uint64](),
