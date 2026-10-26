@@ -7150,112 +7150,117 @@ def fused_silu_nvfp4_kernel[
     ), "Hidden size must be divisible by (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)."
 
     comptime n_groups = scales_offsets.static_shape[0]
-    comptime n_sms_per_group = num_sms // n_groups
-    comptime assert (
-        n_groups <= num_sms
-    ), "num_sms must be >= number of expert groups."
+    # With more groups than SMs (every expert on one device), each SM walks
+    # several groups in turn; otherwise each group gets its own SMs.
+    comptime n_sms_per_group = max(num_sms // n_groups, 1)
+    comptime group_stride = num_sms // n_sms_per_group
     comptime assert (
         input_scales.static_shape[0] == n_groups
     ), "input_scales must match number of expert groups."
 
     var tid = thread_idx.x
     var sm_id = block_idx.x
-    var group_id, sm_id_in_group = udivmod(sm_id, n_sms_per_group)
+    var first_group, sm_id_in_group = udivmod(sm_id, n_sms_per_group)
     var tid_in_group = (
         lane_id()
         + sm_id_in_group * WARP_SIZE
         + warp_id() * WARP_SIZE * n_sms_per_group
     )
-    if group_id >= n_groups:
+    if first_group >= n_groups:
         return
 
     with PDL():
-        var expert_start = Int(row_offsets[group_id])
-        var expert_end = Int(row_offsets[group_id + 1])
-        var expert_m = expert_end - expert_start
-        var scales_block_id = expert_start // SF_MN_GROUP_SIZE + Int(
-            scales_offsets[group_id]
-        )
-
-        var _scales_tensor = TileTensor[
-            scales_dtype, scales_layout, MutUntrackedOrigin
-        ](
-            ptr=scales_tensor.ptr_at_offset(
-                (scales_block_id, Idx[0], Idx[0], Idx[0], Idx[0])
-            ),
-            layout=scales_tensor.layout,
-        )
-
-        var tensor_sf = rebind[Float32](input_scales[group_id])
-
-        for group_linear in range(
-            tid_in_group,
-            n_threads_per_token * expert_m,
-            num_threads * n_sms_per_group,
-        ):
-            var token_idx, hid_idx = udivmod(group_linear, n_threads_per_token)
-            var m = expert_start + token_idx
-            var k = hid_idx * src_width
-
-            var gate_proj = input_tensor.load[width=src_width]((m, k)).cast[
-                accum_dtype
-            ]()
-            var up_proj = input_tensor.load[width=src_width](
-                (m, k + hidden_size)
-            ).cast[accum_dtype]()
-
-            var output_val = apply_swiglu_activation[activation](
-                gate_proj, up_proj
+        for group_id in range(first_group, n_groups, group_stride):
+            var expert_start = Int(row_offsets[group_id])
+            var expert_end = Int(row_offsets[group_id + 1])
+            var expert_m = expert_end - expert_start
+            var scales_block_id = expert_start // SF_MN_GROUP_SIZE + Int(
+                scales_offsets[group_id]
             )
 
-            # Quantization logic (NVFP4).
-            var thread_max = abs(output_val).reduce_max().cast[.float32]()
-            var group_max = warp.lane_group_max[num_lanes=NUM_THREADS_PER_SF](
-                thread_max
+            var _scales_tensor = TileTensor[
+                scales_dtype, scales_layout, MutUntrackedOrigin
+            ](
+                ptr=scales_tensor.ptr_at_offset(
+                    (scales_block_id, Idx[0], Idx[0], Idx[0], Idx[0])
+                ),
+                layout=scales_tensor.layout,
             )
-            var scale_factor = tensor_sf * (group_max * recip(Float32(6.0)))
 
-            # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know
-            # that scale_factor is always positive, so we can use E4M3 instead.
-            var fp8_scale_factor = scale_factor.cast[scales_dtype]()
-            var output_scale = Float32(0.0)
-            if group_max != 0:
-                output_scale = recip(
-                    fp8_scale_factor.cast[.float32]() * recip(tensor_sf)
-                )
+            var tensor_sf = rebind[Float32](input_scales[group_id])
 
-            var input_f32 = output_val.cast[.float32]() * output_scale
-            var output_vector = bitcast[fp4_dtype, byte_width](
-                cast_fp32_to_fp4e2m1(input_f32)
-            )
-            output_tensor.store((m, k // 2), output_vector)
-
-            # The first thread in each group stores the scale factor.
-            if tid % NUM_THREADS_PER_SF == 0:
-                set_scale_factor[SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE](
-                    _scales_tensor,
-                    token_idx,
-                    k,
-                    fp8_scale_factor,
-                )
-
-        # Zero pad the scales tensor to satisfy the grouped matmul requirement.
-        if expert_m % SF_MN_GROUP_SIZE != 0:
-            var tokens_to_zero_pad = SF_MN_GROUP_SIZE - (
-                expert_m % SF_MN_GROUP_SIZE
-            )
-            for i in range(
+            for group_linear in range(
                 tid_in_group,
-                scales_simds_per_tok * tokens_to_zero_pad,
+                n_threads_per_token * expert_m,
                 num_threads * n_sms_per_group,
             ):
-                var token_idx, scale_simd_idx = udivmod(i, scales_simds_per_tok)
-                set_scale_factor[SF_VECTOR_SIZE=1](
-                    _scales_tensor,
-                    token_idx + expert_m,
-                    scale_simd_idx * SF_ATOM_K,
-                    SIMD[scales_dtype, SF_ATOM_K](0.0),
+                var token_idx, hid_idx = udivmod(
+                    group_linear, n_threads_per_token
                 )
+                var m = expert_start + token_idx
+                var k = hid_idx * src_width
+
+                var gate_proj = input_tensor.load[width=src_width]((m, k)).cast[
+                    accum_dtype
+                ]()
+                var up_proj = input_tensor.load[width=src_width](
+                    (m, k + hidden_size)
+                ).cast[accum_dtype]()
+
+                var output_val = apply_swiglu_activation[activation](
+                    gate_proj, up_proj
+                )
+
+                # Quantization logic (NVFP4).
+                var thread_max = abs(output_val).reduce_max().cast[.float32]()
+                var group_max = warp.lane_group_max[
+                    num_lanes=NUM_THREADS_PER_SF
+                ](thread_max)
+                var scale_factor = tensor_sf * (group_max * recip(Float32(6.0)))
+
+                # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know
+                # that scale_factor is always positive, so we can use E4M3 instead.
+                var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+                var output_scale = Float32(0.0)
+                if group_max != 0:
+                    output_scale = recip(
+                        fp8_scale_factor.cast[.float32]() * recip(tensor_sf)
+                    )
+
+                var input_f32 = output_val.cast[.float32]() * output_scale
+                var output_vector = bitcast[fp4_dtype, byte_width](
+                    cast_fp32_to_fp4e2m1(input_f32)
+                )
+                output_tensor.store((m, k // 2), output_vector)
+
+                # The first thread in each group stores the scale factor.
+                if tid % NUM_THREADS_PER_SF == 0:
+                    set_scale_factor[SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE](
+                        _scales_tensor,
+                        token_idx,
+                        k,
+                        fp8_scale_factor,
+                    )
+
+            # Zero pad the scales tensor to satisfy the grouped matmul requirement.
+            if expert_m % SF_MN_GROUP_SIZE != 0:
+                var tokens_to_zero_pad = SF_MN_GROUP_SIZE - (
+                    expert_m % SF_MN_GROUP_SIZE
+                )
+                for i in range(
+                    tid_in_group,
+                    scales_simds_per_tok * tokens_to_zero_pad,
+                    num_threads * n_sms_per_group,
+                ):
+                    var token_idx, scale_simd_idx = udivmod(
+                        i, scales_simds_per_tok
+                    )
+                    set_scale_factor[SF_VECTOR_SIZE=1](
+                        _scales_tensor,
+                        token_idx + expert_m,
+                        scale_simd_idx * SF_ATOM_K,
+                        SIMD[scales_dtype, SF_ATOM_K](0.0),
+                    )
 
 
 @__llvm_metadata(
