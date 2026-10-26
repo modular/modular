@@ -31,7 +31,7 @@ from std.sys import size_of
 from std.math import align_down, align_up, ceildiv
 from std.itertools.itertools import product
 from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import TensorMapSwizzle

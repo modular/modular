@@ -28,7 +28,7 @@ from max.gpu.host.info import H100
 from internal_utils import Table
 from std.logger import Logger
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 from ....utils import (
     ElementwiseComputeFn,

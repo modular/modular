@@ -49,7 +49,6 @@ import max.gpu.primitives.warp as warp
 
 from layout import Coord, Idx, TensorEngine, TileTensor
 from layout.tile_layout import Layout, TensorLayout, row_major
-from std.utils import IndexList
 
 from linalg.arch.apple.mma import ConvIm2colParams
 from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5_or_newer

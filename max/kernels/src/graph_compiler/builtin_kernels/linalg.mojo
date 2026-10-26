@@ -705,11 +705,12 @@ struct LinalgBandPart:
             return input._lambda_load[width=width](coords)
 
         matrix_band_part[
+            rank=rank,
             simd_width=simd_width_of[dtype](),
             target=target,
         ](
             input_fn,
-            input.shape(),
+            input.shape_coord(),
             num_lower.to_tile_tensor[int_type](),
             num_upper.to_tile_tensor[int_type](),
             exclude.to_tile_tensor[.int64](),

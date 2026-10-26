@@ -27,7 +27,7 @@ from layout import TileTensor, coord, flatten_leading
 from layout.tma_async import create_tensor_tile
 
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from .matmul_kernels import HopperMatmulSM90Kernel

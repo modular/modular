@@ -37,7 +37,6 @@ from layout import (
     stack_allocation,
 )
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from structured_kernels.tile_types import (
@@ -61,7 +60,7 @@ def get_accumulator_dims[
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     cta_group: Int,
-]() -> IndexList[2]:
+]() -> Coord[Int, Int]:
     """Compute register accumulator dimensions for blockwise FP8.
 
     Parameters:
@@ -96,7 +95,7 @@ def get_accumulator_dims[
     comptime fragment_size = (data_paths * num_elements_per_load) // WARP_SIZE
     comptime num_elements = repeats * fragment_size
 
-    return IndexList[2](num_stages, num_elements)
+    return (num_stages, num_elements)
 
 
 @inline(.always)

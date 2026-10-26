@@ -78,7 +78,7 @@ from linalg.utils import (
     no_compute_fn,
     no_epilogue_fn,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from linalg.matmul.vendor.blas import matmul
 from std.memory import bitcast
 from max.gpu.sync import named_barrier

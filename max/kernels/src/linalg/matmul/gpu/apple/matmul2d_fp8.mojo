@@ -79,7 +79,6 @@ from linalg.utils import (
     no_compute_fn,
     no_epilogue_fn,
 )
-from std.utils import IndexList
 
 
 struct Matmul2dFp8[

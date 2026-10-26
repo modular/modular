@@ -25,7 +25,7 @@ from max.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
 from std.utils.fast_div import FastDiv
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from ..tile_scheduler import RasterOrder
@@ -80,7 +80,7 @@ struct TileScheduler[
         num_stages: Number of pipeline stages used for producer/consumer
             synchronization across waves; `0` means only the initial wave
             is valid and subsequent work is invalid.
-        cluster_shape: Three-element `IndexList` giving the number of CTA
+        cluster_shape: Three-element `Coord` giving the number of CTA
             blocks per cluster along the M, N, and K output-tile axes
             (defaults to `(1, 1, 1)`).
         rasterize_order: Direction the scheduler rasterizes clusters across

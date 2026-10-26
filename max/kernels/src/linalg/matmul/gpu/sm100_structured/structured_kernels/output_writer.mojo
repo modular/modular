@@ -64,7 +64,6 @@ from linalg.utils import (
 )
 
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import IndexList
 
 # TileTensor-based types for C tiles
 from structured_kernels.tile_types import SMemTileArray2DRowMajor

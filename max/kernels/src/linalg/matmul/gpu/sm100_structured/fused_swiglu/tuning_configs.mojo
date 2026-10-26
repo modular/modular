@@ -32,7 +32,6 @@ from ...tile_scheduler import RasterOrder
 from internal_utils import TuningConfig
 
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import IndexList
 
 
 struct TuningConfigSwiGLU(TrivialRegisterPassable, TuningConfig):

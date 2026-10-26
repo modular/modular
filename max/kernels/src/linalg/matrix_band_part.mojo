@@ -21,7 +21,6 @@ from layout import TileTensor
 
 
 from std.utils.coord import Coord, coord
-from std.utils.index import IndexList
 
 
 @inline(.always)
@@ -37,7 +36,7 @@ def matrix_band_part[
     target: StaticString = "cpu",
 ](
     input_0_fn: InputFnType,
-    input_shape: IndexList[rank],
+    input_shape: Coord,
     num_lower: TileTensor[int_type, ...],
     num_upper: TileTensor[int_type, ...],
     exclude: TileTensor[cond_type, ...],
@@ -117,7 +116,7 @@ def _matrix_band_part_impl[
     target: StaticString = "cpu",
 ](
     input_0_fn: InputFnType,
-    input_shape: IndexList[rank],
+    input_shape: Coord,
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
     output: TileTensor[mut=True, dtype, ...],

@@ -44,7 +44,7 @@ from ..sm100_structured.block_scaled.block_scaled_matmul import (
 from .config import BlockScaledMatmulConfig
 from std.sys import size_of
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from linalg.utils import _as_compute_fn
 from linalg.fp4_utils import (

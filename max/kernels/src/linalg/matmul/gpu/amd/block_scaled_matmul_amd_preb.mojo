@@ -57,7 +57,7 @@ from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
 from std.bit import log2_floor
 
-from std.utils import StaticTuple, IndexList, StaticTuple
+from std.utils import StaticTuple
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -201,7 +201,9 @@ def a_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
 
 struct BlockScaledMmaOp_PreB[
     mma_shape: Coord[Int, Int, Int],  # (16, 16, 128) for MXFP4 and MXFP8 alike
-    warp_tile: IndexList[3],  # (WM, WN, BK_ELEMS) in MFMA-native element units
+    warp_tile: Coord[
+        Int, Int, Int
+    ],  # (WM, WN, BK_ELEMS) in MFMA-native element units
     num_b_slots: Int = 1,
     num_scale_slots: Int = 1,
     scale_group: Int = 1,

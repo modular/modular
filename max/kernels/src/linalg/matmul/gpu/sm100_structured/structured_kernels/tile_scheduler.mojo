@@ -33,7 +33,7 @@ from std.utils.fast_div import FastDiv
 
 from linalg.structuring import SMemPtr, SMemArray
 from structured_kernels.pipeline import ProducerConsumerPipeline
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.tile_scheduler import RasterOrder

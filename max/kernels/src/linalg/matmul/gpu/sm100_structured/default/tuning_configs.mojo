@@ -22,7 +22,7 @@ from ...tile_scheduler import RasterOrder
 from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):

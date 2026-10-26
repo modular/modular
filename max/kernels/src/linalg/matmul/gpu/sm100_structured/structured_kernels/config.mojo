@@ -31,7 +31,7 @@ from max.gpu.host.info import B200
 from std.itertools.itertools import product
 from std.utils.coord import Coord, DynamicCoord, coord, coord_to_index_list
 from layout.tensor_core import get_mma_shape
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.sys import size_of
 from std.math import align_down, align_up, ceildiv

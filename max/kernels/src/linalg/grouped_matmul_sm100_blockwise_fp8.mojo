@@ -90,7 +90,6 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_grouped_matmul_amd import (
     blockwise_scaled_fp8_grouped_matmul_amd,
 )
 
-from std.utils.index import Index, IndexList
 from std.utils.coord import Coord, DynamicCoord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -873,7 +872,7 @@ def _get_accumulator_size[
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     cta_group: Int,
-]() -> IndexList[2]:
+]() -> Coord[Int, Int]:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -898,7 +897,7 @@ def _get_accumulator_size[
     comptime fragment_size = (data_paths * num_elements_per_load) // WARP_SIZE
     comptime num_elements = repeats * fragment_size
 
-    return Index(num_stages, num_elements)
+    return (num_stages, num_elements)
 
 
 @inline(.always)
@@ -2302,7 +2301,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var scheduler = TileScheduler[
         static_MN=expert_n,
-        cluster=Index(
+        cluster=(
             config.cluster_shape[0],
             config.cluster_shape[1],
             config.cluster_shape[2],

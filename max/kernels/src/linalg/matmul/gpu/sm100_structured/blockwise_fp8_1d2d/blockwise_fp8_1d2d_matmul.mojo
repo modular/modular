@@ -37,7 +37,6 @@ from max.gpu.host.info import B200
 from layout import TileTensor, coord, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import IndexList
 from std.utils.coord import DynamicCoord
 from std.utils.static_tuple import StaticTuple
 

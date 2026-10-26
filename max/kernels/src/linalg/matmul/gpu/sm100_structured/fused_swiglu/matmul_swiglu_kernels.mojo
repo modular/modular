@@ -85,7 +85,7 @@ from structured_kernels.tile_types import (
 from layout.tile_layout import _IntToComptimeInt
 
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS

@@ -22,7 +22,7 @@ from std.sys import size_of
 from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host.info import H100
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
 from std.collections import Optional
 

@@ -36,7 +36,7 @@ through a single body: MMA shape and BK select on dtype.
 from std.bit import log2_floor
 from std.math import ceildiv
 from std.sys import align_of, size_of, llvm_intrinsic
-from std.utils import Index, IndexList, StaticTuple
+from std.utils import Index, StaticTuple
 from std.collections import Array
 from std.utils.numerics import get_accum_type
 

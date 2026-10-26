@@ -1757,7 +1757,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     )
     var scheduler = TileScheduler[
         static_MN=expert_m,
-        cluster=Index(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
+        cluster=(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
         cta_group=cta_group,
         tile_shape=(
             block_tile_shape[0],

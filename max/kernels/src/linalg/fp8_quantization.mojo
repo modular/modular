@@ -49,7 +49,7 @@ from std.memory import bitcast
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from max.algorithm import elementwise
 from std.utils.coord import Coord, Idx
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
 from .matmul import matmul
@@ -1365,7 +1365,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     comptime _trace_string = get_static_string[
         trace_arg(
             "A_scales",
-            IndexList[2](
+            (
                 a_scales.static_shape[0] if a_scales.static_shape[0]
                 > -1 else 0,
                 a_scales.static_shape[1] if a_scales.static_shape[1]
@@ -1376,7 +1376,7 @@ def _matmul_dynamic_scaled_fp8_impl[
         ";",
         trace_arg(
             "B_scales",
-            IndexList[2](
+            (
                 b_scales.static_shape[0] if b_scales.static_shape[0]
                 > -1 else 0,
                 b_scales.static_shape[1] if b_scales.static_shape[1]

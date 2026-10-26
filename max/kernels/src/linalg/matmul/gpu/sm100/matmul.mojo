@@ -47,7 +47,7 @@ from layout.tile_layout import Layout as TileLayout, TensorLayout
 from structured_kernels.tile_types import SMemTileArray2D
 
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 from ....arch.sm100 import MmaOpSM100_SS
 from .pipeline import ProducerConsumerPipeline, MbarPtr

@@ -80,7 +80,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
 )
 
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_BlockScaled_SS
