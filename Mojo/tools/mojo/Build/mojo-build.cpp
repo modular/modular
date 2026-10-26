@@ -51,14 +51,8 @@
 #include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "clang/Basic/Diagnostic.h"
-#include "clang/Basic/DiagnosticIDs.h"
-#include "clang/Basic/DiagnosticOptions.h"
-#include "clang/Basic/TargetInfo.h"
-#include "clang/Basic/TargetOptions.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
@@ -97,194 +91,6 @@ namespace {
 struct BuildOptTable : public llvm::opt::OptTable {
   BuildOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
-
-//===----------------------------------------------------------------------===//
-// Target information helper functions
-//===----------------------------------------------------------------------===//
-
-/// Normalize a target triple string to canonical form with all components.
-/// First applies LLVM's normalization (handles reordering), then fills in
-/// missing components with "unknown" for clearer user output.
-/// Example: "aarch64" -> "aarch64-unknown-unknown"
-static std::string normalizeTriple(StringRef tripleStr) {
-  // First let LLVM handle reordering (e.g., "-pc-i386" -> "i386-pc-unknown")
-  llvm::Triple triple(llvm::Triple::normalize(tripleStr));
-  StringRef vendorName = triple.getVendorName();
-  StringRef osName = triple.getOSName();
-  StringRef envName = triple.getEnvironmentName();
-  // Then fill in missing components with "unknown" for clarity
-  return (llvm::Twine(triple.getArchName()) + "-" +
-          (vendorName.empty() ? "unknown" : vendorName) + "-" +
-          (osName.empty() ? "unknown" : osName) +
-          (envName.empty() ? "" : "-" + envName))
-      .str();
-}
-
-/// Simple diagnostic consumer that prints errors to stderr.
-class StderrDiagConsumer : public clang::DiagnosticConsumer {
-public:
-  void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
-                        const clang::Diagnostic &info) override {
-    if (level >= clang::DiagnosticsEngine::Error) {
-      SmallString<128> message;
-      info.FormatDiagnostic(message);
-      llvm::errs() << "error: " << message << "\n";
-    }
-  }
-};
-
-/// Get the list of valid CPUs for a target triple using clang.
-/// Returns an empty vector if the target is invalid.
-static std::vector<std::string> getValidCPUsForTarget(StringRef triple) {
-  clang::IntrusiveRefCntPtr<clang::DiagnosticIDs> diagIDs(
-      new clang::DiagnosticIDs());
-  clang::DiagnosticOptions diagOpts;
-  StderrDiagConsumer diagConsumer;
-  clang::DiagnosticsEngine diags(diagIDs, diagOpts, &diagConsumer,
-                                 /*ShouldOwnClient=*/false);
-
-  auto targetOpts = std::make_shared<clang::TargetOptions>();
-  targetOpts->Triple = triple;
-
-  std::unique_ptr<clang::TargetInfo> targetInfo(
-      clang::TargetInfo::CreateTargetInfo(diags, *targetOpts.get()));
-
-  std::vector<std::string> cpus;
-  if (targetInfo) {
-    SmallVector<StringRef, 128> cpuRefs;
-    targetInfo->fillValidCPUList(cpuRefs);
-    for (StringRef cpu : cpuRefs)
-      cpus.push_back(cpu.str());
-  }
-  return cpus;
-}
-
-/// Print the targets this build can generate code for.
-static int printSupportedTargets() {
-  llvm::InitializeAllTargets();
-  llvm::InitializeAllTargetMCs();
-
-  // An LLVM backend being linked in is necessary but not sufficient: emission
-  // additionally requires a registered `TargetBackend`. Filter through the same
-  // registry `--emit` consults so this list cannot advertise a target that then
-  // fails to build.
-  std::vector<std::pair<std::string, std::string>> targets;
-  for (const llvm::Target &tgt : llvm::TargetRegistry::targets()) {
-    llvm::Triple triple;
-    triple.setArch(llvm::Triple::getArchTypeForLLVMName(tgt.getName()));
-    if (TargetBackendRegistry::get().lookup(triple).isError())
-      continue;
-    targets.emplace_back(tgt.getName(), tgt.getShortDescription());
-  }
-  // Sort alphabetically for consistent, scannable output.
-  llvm::sort(targets);
-
-  llvm::outs() << "Registered Targets:\n";
-
-  // If no targets found, something is wrong with the LLVM build. Handle
-  // gracefully.
-  if (targets.empty()) {
-    llvm::outs() << "  No targets found.\n";
-    return EXIT_SUCCESS;
-  }
-
-  for (const auto &[name, desc] : targets)
-    llvm::outs() << "  " << name << " - " << desc << "\n";
-
-  return EXIT_SUCCESS;
-}
-
-/// Print valid CPU names for a target triple.
-static int printSupportedCpus(StringRef userTriple) {
-  if (userTriple.empty()) {
-    llvm::errs() << "error: --print-supported-cpus requires --target-triple "
-                    "to be specified\n";
-    llvm::errs() << "Use --print-supported-targets to see available "
-                    "architectures.\n";
-    return EXIT_FAILURE;
-  }
-
-  llvm::InitializeAllTargets();
-  llvm::InitializeAllTargetMCs();
-
-  std::string normalized = normalizeTriple(userTriple);
-  std::vector<std::string> cpus = getValidCPUsForTarget(normalized);
-
-  if (cpus.empty()) {
-    // This likely means invalid target.
-    // Clang already printed an error via StderrDiagConsumer, add guidance.
-    llvm::errs() << "Use --print-supported-targets to see available "
-                    "architectures.\n";
-    return EXIT_FAILURE;
-  }
-
-  llvm::outs() << "Available CPUs for target " << normalized << ":\n";
-  for (const std::string &cpu : cpus)
-    llvm::outs() << "  " << cpu << "\n";
-  return EXIT_SUCCESS;
-}
-
-/// Print the supported accelerator architectures declared by the
-/// registered `TargetTraits`.
-static int printSupportedAccelerators() {
-  // The '#' characters below are intentional.
-  // These delimiters allow Mojo tests to extract the architecture list
-  // without needing to know specific architecture prefixes.
-  llvm::outs() << "Supported Accelerator Architectures:\n\n#\n";
-
-  // Print one section per target, name-sorted.
-  llvm::SmallVector<const TargetTraits *> targets;
-  for (const std::unique_ptr<TargetTraits> &traits :
-       TargetTraitsRegistry::get().targets())
-    if (!traits->acceleratorSectionTitle().empty())
-      targets.push_back(traits.get());
-  llvm::sort(targets, [](const TargetTraits *lhs, const TargetTraits *rhs) {
-    return lhs->name() < rhs->name();
-  });
-
-  llvm::ListSeparator sectionSep("\n");
-  for (const TargetTraits *traits : targets) {
-    llvm::outs() << sectionSep << traits->acceleratorSectionTitle() << "\n";
-    // Pad the arch column so the descriptions line up.
-    size_t width = 12;
-    for (const TargetTraits::AcceleratorArch &arch :
-         traits->supportedAcceleratorArchs())
-      width = std::max(width, arch.arch.size() + 2);
-    for (const TargetTraits::AcceleratorArch &arch :
-         traits->supportedAcceleratorArchs())
-      llvm::outs() << "  " << llvm::left_justify(arch.arch, width) << "- "
-                   << arch.description << "\n";
-  }
-
-  llvm::outs() << "#\n";
-
-  llvm::outs() << "\nUsage: mojo build --target-accelerator <arch> file.mojo\n";
-
-  return EXIT_SUCCESS;
-}
-
-/// Print effective target configuration as command-line options.
-static int printEffectiveTarget(TargetInfoAttr targetInfo) {
-  std::string normalized = normalizeTriple(targetInfo.getTripleStr());
-  StringRef cpu = targetInfo.getArch();
-  StringRef features = targetInfo.getFeatures();
-  StringRef abi = targetInfo.getAbi();
-  StringRef accelerator = targetInfo.getAcceleratorArch();
-
-  llvm::outs() << "Effective target configuration:\n";
-
-  llvm::outs() << "  --target-triple " << normalized << "\n";
-  llvm::outs() << "  --target-cpu " << cpu << "\n";
-  if (!features.empty())
-    llvm::outs() << "  --target-features " << features << "\n";
-  if (!abi.empty())
-    llvm::outs() << "  --target-abi " << abi << "\n";
-  if (!accelerator.empty())
-    llvm::outs() << "  --target-accelerator " << accelerator << "\n";
-
-  return EXIT_SUCCESS;
-}
-
 } // namespace
 
 /// Parses the command line arguments from the given `state` object.
@@ -330,42 +136,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
     );
   }
 
-  // Check for print target information options. Only one is allowed at a time.
-  bool hasPrintEffectiveTarget =
-      allArgs.hasArg(options::OPT_print_effective_target);
-  bool hasPrintSupportedTargets =
-      allArgs.hasArg(options::OPT_print_supported_targets);
-  bool hasPrintSupportedCpus =
-      allArgs.hasArg(options::OPT_print_supported_cpus);
-  bool hasPrintSupportedAccelerators =
-      allArgs.hasArg(options::OPT_print_supported_accelerators);
-
-  int printOptionCount = hasPrintEffectiveTarget + hasPrintSupportedTargets +
-                         hasPrintSupportedCpus + hasPrintSupportedAccelerators;
-
-  if (printOptionCount > 1) {
-    return state.reportError(
-        "only one --print-* option can be specified at a time");
-  }
-
-  // Track if we have a print option that doesn't require an input file.
-  bool hasPrintOption = printOptionCount > 0;
-
-  // Handle --print-supported-targets (simplest, no target parsing needed).
-  if (hasPrintSupportedTargets)
-    return printSupportedTargets();
-
-  // Handle --print-supported-accelerators (no target parsing needed).
-  if (hasPrintSupportedAccelerators)
-    return printSupportedAccelerators();
-
-  // Handle --print-supported-cpus (requires --target-triple).
-  if (hasPrintSupportedCpus) {
-    StringRef userTriple =
-        allArgs.getLastArgValue(options::OPT_target_triple, "");
-    return printSupportedCpus(userTriple);
-  }
-
   // Set up common option IDs.
   CommonOptionIDs optionIDs{
       .help = options::OPT_help,
@@ -406,6 +176,10 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .mcmodel = options::OPT_mcmodel,
       .largeDataThreshold = options::OPT_large_data_threshold,
       .relocationModel = options::OPT_relocation_model,
+      .printEffectiveTarget = options::OPT_print_effective_target,
+      .printSupportedTargets = options::OPT_print_supported_targets,
+      .printSupportedCpus = options::OPT_print_supported_cpus,
+      .printSupportedAccelerators = options::OPT_print_supported_accelerators,
       .diagnoseMissingDocStrings = options::OPT_diagnose_missing_doc_strings,
       .maxNotes = options::OPT_max_notes,
       .defines = options::OPT_D,
@@ -420,10 +194,9 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   };
 
   // Configure parsing for `mojo build` - parse all arguments normally.
-  // For print options, we don't require an input file.
   CommonParseConfig config{
       .parseAllArguments = true,
-      .requireSingleInput = !hasPrintOption,
+      .requireSingleInput = true,
   };
 
   // Parse common arguments.
@@ -434,10 +207,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 
   if (result->exitCode)
     return *result->exitCode;
-
-  // Handle print options that require target parsing.
-  if (hasPrintEffectiveTarget)
-    return printEffectiveTarget(result->target);
 
   // Extract results.
   args = std::move(result->args);

@@ -94,6 +94,12 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier largeDataThreshold;
   llvm::opt::OptSpecifier relocationModel;
 
+  // Target queries
+  llvm::opt::OptSpecifier printEffectiveTarget;
+  llvm::opt::OptSpecifier printSupportedTargets;
+  llvm::opt::OptSpecifier printSupportedCpus;
+  llvm::opt::OptSpecifier printSupportedAccelerators;
+
   // Parser options
   llvm::opt::OptSpecifier diagnoseMissingDocStrings;
   llvm::opt::OptSpecifier maxNotes;
@@ -151,6 +157,7 @@ struct CommonParseResult {
 /// - Source manager setup
 /// - Compilation option parsing
 /// - Target option parsing
+/// - The `--print-*` target queries, which exit without needing an input file
 ///
 /// Note: Help text handling is intentionally left to the caller, as each
 /// command has different help text files that cannot be easily parameterized.

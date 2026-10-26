@@ -23,6 +23,7 @@
 #include "Support/Compiler/Diags.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
+#include "TargetQueries.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/StringExtras.h"
@@ -49,6 +50,13 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   // Parse arguments based on the configuration.
   unsigned unused = 0;
 
+  auto countTargetQueries = [&](const llvm::opt::InputArgList &args) {
+    return args.hasArg(optionIDs.printEffectiveTarget) +
+           args.hasArg(optionIDs.printSupportedTargets) +
+           args.hasArg(optionIDs.printSupportedCpus) +
+           args.hasArg(optionIDs.printSupportedAccelerators);
+  };
+
   // Handle the special case for `mojo run` where we need to find the input
   // argument and only parse up to that point.
   llvm::opt::InputArgList args(nullptr, nullptr);
@@ -62,17 +70,36 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     // passed to the Mojo executable produced from that source file.
     auto inputArgs = allArgs.filtered(optionIDs.input);
     if (inputArgs.empty()) {
-      return Error("no input file provided");
+      if (!countTargetQueries(allArgs))
+        return Error("no input file provided");
+      args = std::move(allArgs);
+    } else {
+      // We now have the index of the Mojo source file argument, so we can
+      // parse the arguments up to and including that argument "normally."
+      args = optTable.ParseArgs(
+          state.arguments.slice(0, (*inputArgs.begin())->getIndex() + 1),
+          unused, unused);
     }
-
-    // We now have the index of the Mojo source file argument, so we can parse
-    // the arguments up to and including that argument "normally."
-    args = optTable.ParseArgs(
-        state.arguments.slice(0, (*inputArgs.begin())->getIndex() + 1), unused,
-        unused);
   } else {
     // Parse all arguments normally for `mojo build`.
     args = optTable.ParseArgs(state.arguments, unused, unused);
+  }
+
+  int targetQueryCount = countTargetQueries(args);
+  if (targetQueryCount > 1)
+    return Error("only one --print-* option can be specified at a time");
+  if (args.hasArg(optionIDs.printSupportedTargets)) {
+    result.exitCode = printSupportedTargets();
+    return result;
+  }
+  if (args.hasArg(optionIDs.printSupportedAccelerators)) {
+    result.exitCode = printSupportedAccelerators();
+    return result;
+  }
+  if (args.hasArg(optionIDs.printSupportedCpus)) {
+    result.exitCode =
+        printSupportedCpus(args.getLastArgValue(optionIDs.targetTriple, ""));
+    return result;
   }
 
   // Parse diagnostic format arguments.
@@ -91,7 +118,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
 
   // Validate input file arguments based on configuration.
   if (!args.hasArg(optionIDs.input)) {
-    if (config.requireSingleInput) {
+    if (config.requireSingleInput && !targetQueryCount) {
       return Error("no input file provided");
     }
   } else if (config.requireSingleInput &&
@@ -139,6 +166,11 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           optionIDs.largeDataThreshold, optionIDs.relocationModel,
           optionIDs.targetAbi))
     return err.takeError();
+
+  if (args.hasArg(optionIDs.printEffectiveTarget)) {
+    result.exitCode = printEffectiveTarget(result.target);
+    return result;
+  }
 
   // Parse stability options.
   if (optionIDs.warnOnUnstableAPIs.isValid())
