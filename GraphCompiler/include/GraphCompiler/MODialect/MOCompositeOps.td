@@ -337,6 +337,9 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
     Sum-reduces same-shaped per-device inputs, adds the residual, then applies
     RMSNorm and dynamic FP8 quantization. Returns the quantized output, its
     scale, and the post-add residual.
+
+    `multiply_before_cast` is the fused `mo.reduce.rms_norm`'s cast order. It
+    may be false only when the output is not quantized.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -346,7 +349,8 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
     Variadic<MO_RankedScalarFloatTensor>: $scaleUb,
     MO_Chain:$inChain,
     MO_F32ScalarAttr:$epsilon,
-    MO_F32ScalarAttr:$weight_offset
+    MO_F32ScalarAttr:$weight_offset,
+    BoolAttr:$multiply_before_cast
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -356,7 +360,8 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
   );
   let assemblyFormat = [{
     `(` operands `)`
-    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
+    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
+    `multiply_before_cast` `=` $multiply_before_cast `}`
     attr-dict `:` functional-type(operands, results)
   }];
 }

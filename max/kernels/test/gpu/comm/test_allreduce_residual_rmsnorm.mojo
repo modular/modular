@@ -13,17 +13,22 @@
 
 """Tests for the fully-fused allreduce + RMSNorm (+ optional FP8) kernel."""
 
-from std.math import rsqrt
+from std.math import ceildiv, rsqrt
+from std.random import random_si64
 from std.sys import is_amd_gpu, size_of
 
 from std.memory import bitcast
 
 from comm import Signal, group_start, group_end
+from comm.allreduce_lamport_rmsnorm import (
+    _lamport_allreduce_rmsnorm_launch,
+    lamport_allreduce_rmsnorm_fits,
+)
 from comm.allreduce_residual_rmsnorm import (
     allreduce_residual_rmsnorm,
     allreduce_rmsnorm,
 )
-from comm.sync import enable_p2p, init_signal_buffer
+from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Coord,
@@ -186,6 +191,46 @@ def _assert_bf16_close[
             t"Too many bf16 mismatches: {num_errors} /"
             t" {length} ({error_rate * 100.0}%)"
         )
+
+
+def _assert_cast_order[
+    dtype: DType, multiply_before_cast: Bool
+](
+    ref_same: Pointer[Scalar[dtype], _],
+    ref_other: Pointer[Scalar[dtype], _],
+    got: Pointer[Scalar[dtype], _],
+    length: Int,
+) raises:
+    """Assert `got` used `multiply_before_cast`'s cast order, not the other.
+
+    The two orders differ by about an ulp per element, so a per-element
+    tolerance passes either. What separates them is how often they disagree:
+    the output must match its own reference on all but 1% of elements and
+    disagree with the other order's on more than 1%. Two ulps are allowed on
+    the stragglers because the cast-first order rounds twice, and gamma scales
+    a flipped intermediate rounding.
+    """
+    _assert_bf16_close(ref_same, got, length, max_ulp=2, max_error_rate=0.01)
+    var other_mismatches = 0
+    for i in range(length):
+        if got[i] != ref_other[i]:
+            other_mismatches += 1
+    if Float32(other_mismatches) / Float32(length) <= 0.01:
+        comptime other = not multiply_before_cast
+        raise Error(
+            t"output also matches multiply_before_cast={other}"
+            t" ({other_mismatches} / {length} differ)"
+        )
+
+
+def _rms_norm_ref[
+    dtype: DType, multiply_before_cast: Bool
+](sum: Float32, norm: Float32, gamma: Scalar[dtype]) -> Scalar[dtype]:
+    """Normalizes one element the way `ops.rms_norm` does for the cast order."""
+    comptime if multiply_before_cast:
+        return (sum * norm * gamma.cast[.float32]()).cast[dtype]()
+    else:
+        return (sum * norm).cast[dtype]() * gamma
 
 
 # --- Test: fully fused allreduce + RMSNorm + FP8 ---
@@ -564,8 +609,14 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     out_dtype: DType,
     rows: Int,
     cols: Int,
+    *,
+    no_scratch: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
-    """Verify fused kernel with residual add against separate paths."""
+    """Verify fused kernel with residual add against separate paths.
+
+    With `no_scratch` the signal buffers end at the `Signal` header, so
+    payloads the dispatch would stage through scratch must take 1-stage.
+    """
     comptime length = rows * cols
 
     print(
@@ -579,6 +630,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         rows,
         "x",
         cols,
+        ", no_scratch=",
+        no_scratch,
         "]",
     )
 
@@ -586,7 +639,10 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var temp_bytes = ngpus * size_of[in_dtype]() * length
+    var temp_bytes = 0 if no_scratch else ngpus * size_of[in_dtype]() * length
+    var scratch_bytes: Optional[Int] = None
+    comptime if no_scratch:
+        scratch_bytes = 0
 
     for i in range(ngpus):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](length))
@@ -746,6 +802,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
             fused_scales_tile,
             rank_sigs,
             list_of_ctx[i],
+            scratch_bytes=scratch_bytes,
         )
     group_end()
 
@@ -828,13 +885,15 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     dtype: DType,
     rows: Int,
     cols: Int,
+    multiply_before_cast: Bool = True,
 ](list_of_ctx: List[DeviceContext]) raises:
     """Verify the no-quant path (out_dtype == in_dtype) of the fused kernel.
 
     Exercises allreduce + residual add + RMSNorm with a `dtype` output (no FP8
     quantization, no scale output) against a host-side float32 reference. The
     reference normalizes the exact float32 sum to match the kernel, which keeps
-    the accumulation in float32 before the single cast to `dtype`.
+    the accumulation in float32 before the cast to `dtype`, and applies gamma
+    in the order `multiply_before_cast` selects.
     """
     comptime length = rows * cols
 
@@ -847,6 +906,8 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         rows,
         "x",
         cols,
+        ", multiply_before_cast=",
+        multiply_before_cast,
         "]",
     )
 
@@ -924,8 +985,8 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         ref_sum_host[i] = s.cast[dtype]()
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    var ref_other_host = ctx.enqueue_create_host_buffer[dtype](length)
     var eps_f32 = epsilon
-    var woff_f32 = weight_offset.cast[.float32]()
     for r in range(rows):
         var m2 = Float32(0)
         for c in range(cols):
@@ -934,8 +995,13 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         var norm = rsqrt(m2 / Float32(cols) + eps_f32)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
-            var g_f32 = gamma_host[c].cast[.float32]() + woff_f32
-            ref_out_host[r * cols + c] = ((s * norm) * g_f32).cast[dtype]()
+            var g = gamma_host[c] + weight_offset
+            ref_out_host[r * cols + c] = _rms_norm_ref[
+                dtype, multiply_before_cast
+            ](s, norm, g)
+            ref_other_host[r * cols + c] = _rms_norm_ref[
+                dtype, not multiply_before_cast
+            ](s, norm, g)
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
     for i in range(ngpus):
@@ -965,7 +1031,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     group_start()
 
     comptime for i in range(ngpus):
-        allreduce_residual_rmsnorm(
+        allreduce_residual_rmsnorm[multiply_before_cast=multiply_before_cast](
             in_tiles,
             residual_tile.as_imm(),
             fused_out_tile,
@@ -1011,9 +1077,17 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         raise Error(t"Residual output mismatches: {res_errors} / {length}")
 
     # --- Verify normalized output (no quant, written in `dtype`) ---
-    _assert_bf16_close(
-        ref_out_host.unsafe_ptr(), fused_out_host.unsafe_ptr(), length
-    )
+    comptime if multiply_before_cast:
+        _assert_bf16_close(
+            ref_out_host.unsafe_ptr(), fused_out_host.unsafe_ptr(), length
+        )
+    else:
+        _assert_cast_order[dtype, multiply_before_cast](
+            ref_out_host.unsafe_ptr(),
+            ref_other_host.unsafe_ptr(),
+            fused_out_host.unsafe_ptr(),
+            length,
+        )
 
     # Cleanup.
     _ = host_bufs^
@@ -1028,9 +1102,341 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     print("    PASS")
 
 
+# --- Test: Lamport path of the fused allreduce + residual + RMSNorm ---
+
+
+def _residual_rmsnorm_call[
+    ngpus: Int, cols: Int, *, force_lamport: Bool, multiply_before_cast: Bool
+](
+    list_of_ctx: List[DeviceContext],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    rows: Int,
+    call_idx: Int,
+    scratch_bytes: Optional[Int] = None,
+) raises:
+    """Runs one fused allreduce + residual add + RMSNorm and checks every rank.
+
+    Inputs and the residual are small random integers, so the float32 sum is
+    exact in bfloat16 and the residual output is compared bitwise. Each rank
+    owns its input, residual, gamma, and outputs, as in a serving graph.
+    `force_lamport` launches the Lamport kernel directly; otherwise the call
+    goes through the public dispatch, which picks the path itself.
+    """
+    comptime dtype = DType.bfloat16
+    var epsilon = Float32(1e-6)
+    var weight_offset = Scalar[dtype](1.0)
+    var length = rows * cols
+
+    var residual_vals = List[Scalar[dtype]](capacity=length)
+    for _ in range(length):
+        residual_vals.append(Scalar[dtype](Int(random_si64(-16, 16))))
+    var gamma_vals = List[Scalar[dtype]](capacity=cols)
+    for _ in range(cols):
+        gamma_vals.append((Float64(random_si64(-8, 8)) / 16.0).cast[dtype]())
+
+    var in_host = List[HostBuffer[dtype]](capacity=ngpus)
+    var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var residual_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var gamma_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var res_out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var scales_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
+    for i in range(ngpus):
+        var ctx = list_of_ctx[i]
+        var h = ctx.enqueue_create_host_buffer[dtype](length)
+        var residual_h = ctx.enqueue_create_host_buffer[dtype](length)
+        var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+        for j in range(length):
+            h[j] = Scalar[dtype](Int(random_si64(-16, 16)))
+            residual_h[j] = residual_vals[j]
+        for c in range(cols):
+            gamma_h[c] = gamma_vals[c]
+        in_dev.append(ctx.enqueue_create_buffer[dtype](length))
+        residual_dev.append(ctx.enqueue_create_buffer[dtype](length))
+        gamma_dev.append(ctx.enqueue_create_buffer[dtype](cols))
+        out_dev.append(ctx.enqueue_create_buffer[dtype](length))
+        res_out_dev.append(ctx.enqueue_create_buffer[dtype](length))
+        scales_dev.append(ctx.enqueue_create_buffer[.float32](rows))
+        ctx.enqueue_copy(in_dev[i], h)
+        ctx.enqueue_copy(residual_dev[i], residual_h)
+        ctx.enqueue_copy(gamma_dev[i], gamma_h)
+        ctx.synchronize()
+        in_host.append(h^)
+
+    var ref_sum = List[Float32](capacity=length)
+    for j in range(length):
+        var s = residual_vals[j].cast[.float32]()
+        for i in range(ngpus):
+            s += in_host[i][j].cast[.float32]()
+        ref_sum.append(s)
+
+    comptime InTile = TileTensor[
+        dtype, type_of(row_major(rows, cols)), ImmutAnyOrigin
+    ]
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InTile: TileTensor(
+            in_dev[i], row_major(rows, cols)
+        ).as_imm()
+    )
+
+    comptime for i in range(ngpus):
+        var residual_tile = TileTensor(
+            residual_dev[i], row_major(rows, cols)
+        ).as_imm()
+        var res_out_tile = TileTensor(res_out_dev[i], row_major(rows, cols))
+        comptime if force_lamport:
+            _lamport_allreduce_rmsnorm_launch[
+                dtype,
+                ngpus,
+                has_residual=True,
+                multiply_before_cast=multiply_before_cast,
+                pdl=False,
+            ](
+                i,
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    in_dev[i].unsafe_ptr()
+                ),
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                    out_dev[i].unsafe_ptr()
+                ),
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    gamma_dev[i].unsafe_ptr()
+                ),
+                rank_sigs,
+                rows,
+                cols,
+                Scalar[dtype](epsilon),
+                weight_offset,
+                list_of_ctx[i],
+                residual_tile,
+                res_out_tile,
+            )
+        else:
+            allreduce_residual_rmsnorm[
+                multiply_before_cast=multiply_before_cast
+            ](
+                in_tiles,
+                residual_tile,
+                TileTensor(out_dev[i], row_major(rows, cols)),
+                res_out_tile,
+                TileTensor(gamma_dev[i], row_major(cols)),
+                epsilon,
+                weight_offset,
+                Float32(1.0),
+                TileTensor(scales_dev[i], row_major(rows)),
+                rank_sigs,
+                list_of_ctx[i],
+                my_rank=i,
+                scratch_bytes=scratch_bytes,
+            )
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    for i in range(ngpus):
+        var ctx = list_of_ctx[i]
+        var out_h = ctx.enqueue_create_host_buffer[dtype](length)
+        var res_out_h = ctx.enqueue_create_host_buffer[dtype](length)
+        ctx.enqueue_copy(out_h, out_dev[i])
+        ctx.enqueue_copy(res_out_h, res_out_dev[i])
+        ctx.synchronize()
+
+        var ref_same = List[Scalar[dtype]](capacity=length)
+        var ref_other = List[Scalar[dtype]](capacity=length)
+        for r in range(rows):
+            var sumsq = Float32(0)
+            for c in range(cols):
+                var s = ref_sum[r * cols + c]
+                sumsq += s * s
+            var norm = rsqrt(sumsq / Float32(cols) + epsilon)
+            for c in range(cols):
+                var j = r * cols + c
+                if res_out_h[j].cast[.float32]() != ref_sum[j]:
+                    raise Error(
+                        t"call {call_idx} GPU {i} residual[{r}, {c}]:"
+                        t" got {res_out_h[j]}, expected {ref_sum[j]}"
+                    )
+                var g = gamma_vals[c] + weight_offset
+                ref_same.append(
+                    _rms_norm_ref[dtype, multiply_before_cast](
+                        ref_sum[j], norm, g
+                    )
+                )
+                ref_other.append(
+                    _rms_norm_ref[dtype, not multiply_before_cast](
+                        ref_sum[j], norm, g
+                    )
+                )
+        _assert_cast_order[dtype, multiply_before_cast](
+            ref_same.unsafe_ptr(),
+            ref_other.unsafe_ptr(),
+            out_h.unsafe_ptr(),
+            length,
+        )
+
+
+def test_lamport_residual_rmsnorm_sequence[
+    ngpus: Int, cols: Int, multiply_before_cast: Bool = True
+](list_of_ctx: List[DeviceContext]) raises:
+    """Chains fused allreduce + residual + RMSNorm calls on one signal buffer
+    set, alternating the forced Lamport launch with the public dispatch.
+
+    On B200 the dispatch also takes the Lamport kernel for these sizes, so the
+    chain advances one shared generation counter. Row counts shrink and grow so
+    calls clear generations written by calls of a different size, and the
+    largest count at `cols=8192` fills the whole Lamport workspace. On 8 GPUs
+    the sizes straddle the switch between cluster-split and one-block rows, so
+    both layouts share the generations. Shapes the kernel cannot take skip the
+    forced launch; their dispatch call still runs, on the barrier kernels.
+    """
+    print(
+        "  test_lamport_residual_rmsnorm_sequence[",
+        ngpus,
+        ", cols=",
+        cols,
+        ", multiply_before_cast=",
+        multiply_before_cast,
+        "]",
+    )
+    var row_counts: List[Int] = [1, 64, 7, 32, 1, 17, 64, 3]
+    # Shapes the Lamport kernel cannot take run the 2-stage kernel, which
+    # stages through scratch after the Signal header.
+    var temp_bytes = ngpus * size_of[DType.bfloat16]() * 64 * cols
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    for i in range(ngpus):
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](
+                size_of[Signal]() + temp_bytes
+            )
+        )
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    for k in range(len(row_counts)):
+        if lamport_allreduce_rmsnorm_fits[DType.bfloat16, ngpus](
+            row_counts[k], cols
+        ):
+            _residual_rmsnorm_call[
+                ngpus,
+                cols,
+                force_lamport=True,
+                multiply_before_cast=multiply_before_cast,
+            ](list_of_ctx, rank_sigs, row_counts[k], 2 * k)
+        _residual_rmsnorm_call[
+            ngpus,
+            cols,
+            force_lamport=False,
+            multiply_before_cast=multiply_before_cast,
+        ](list_of_ctx, rank_sigs, row_counts[k], 2 * k + 1)
+
+    _ = signal_buffers^
+    print("    PASS")
+
+
 # --- Main ---
 
 comptime test_gpu_counts = (2, 4, 8)
+
+
+def _signal_buffers[
+    ngpus: Int
+](list_of_ctx: List[DeviceContext], scratch_bytes: Int) raises -> List[
+    DeviceBuffer[.uint8]
+]:
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    for i in range(ngpus):
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](
+                size_of[Signal]() + scratch_bytes
+            )
+        )
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+    return signal_buffers^
+
+
+def test_residual_rmsnorm_rank_not_ordinal[
+    ngpus: Int
+](list_of_ctx: List[DeviceContext]) raises:
+    """Runs on GPUs whose ordinals differ from their positions in the group,
+    as with `--devices gpu:4,5,6,7`. A rank taken from `ctx.id()` would index
+    past the group's buffers. The row counts cover the Lamport kernel and the
+    barrier kernels."""
+    print(
+        "  test_residual_rmsnorm_rank_not_ordinal[",
+        ngpus,
+        ", first ordinal=",
+        list_of_ctx[0].id(),
+        "]",
+    )
+    comptime cols = 4096
+    var row_counts: List[Int] = [1, 64, 2048]
+    var signal_buffers = _signal_buffers[ngpus](
+        list_of_ctx,
+        ceildiv(2048, ngpus) * cols * 2 * size_of[DType.bfloat16](),
+    )
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+    for k in range(len(row_counts)):
+        _residual_rmsnorm_call[
+            ngpus, cols, force_lamport=False, multiply_before_cast=False
+        ](list_of_ctx, rank_sigs, row_counts[k], k)
+    _ = signal_buffers^
+    print("    PASS")
+
+
+def test_residual_rmsnorm_no_scratch[
+    ngpus: Int
+](list_of_ctx: List[DeviceContext]) raises:
+    """Gives the fused op no scratch behind the `Signal` headers. Payloads the
+    dispatch would stage through scratch must take the 1-stage kernel."""
+    print("  test_residual_rmsnorm_no_scratch[", ngpus, "]")
+    var signal_buffers = _signal_buffers[ngpus](list_of_ctx, 0)
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+    _residual_rmsnorm_call[
+        ngpus, 4096, force_lamport=False, multiply_before_cast=True
+    ](list_of_ctx, rank_sigs, 2048, 0, scratch_bytes=0)
+    _ = signal_buffers^
+    print("    PASS")
+
+
+def test_residual_rmsnorm_without_p2p[
+    ngpus: Int
+](list_of_ctx: List[DeviceContext]) raises:
+    """Runs before peer access is enabled, as on a host without P2P. The
+    fused op must reduce through the plain allreduce's staged copies and
+    normalize separately instead of raising."""
+    print("  test_residual_rmsnorm_without_p2p[", ngpus, "]")
+    var signal_buffers = _signal_buffers[ngpus](list_of_ctx, 0)
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+    var row_counts: List[Int] = [1, 300]
+    for k in range(len(row_counts)):
+        _residual_rmsnorm_call[
+            ngpus, 4096, force_lamport=False, multiply_before_cast=True
+        ](list_of_ctx, rank_sigs, row_counts[k], k)
+        # 4100 columns are not a multiple of the norm's SIMD width.
+        _residual_rmsnorm_call[
+            ngpus, 4100, force_lamport=False, multiply_before_cast=False
+        ](list_of_ctx, rank_sigs, row_counts[k], k)
+    _ = signal_buffers^
+    print("    PASS")
 
 
 def test_fused_allreduce_rmsnorm_zero_rows[
@@ -1133,6 +1539,15 @@ def test_fused_allreduce_rmsnorm_zero_rows[
 def main() raises:
     var num_devices = DeviceContext.number_of_devices()
     assert_true(num_devices >= 2, "need at least 2 GPUs")
+
+    print("\n=== fused_allreduce_residual_rmsnorm without P2P ===")
+    if is_p2p_enabled():
+        print("  skipped: peer access is already enabled")
+    else:
+        var no_p2p_ctx = List[DeviceContext]()
+        for i in range(2):
+            no_p2p_ctx.append(DeviceContext(device_id=i))
+        test_residual_rmsnorm_without_p2p[2](no_p2p_ctx)
 
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
@@ -1303,5 +1718,62 @@ def main() raises:
         test_fused_allreduce_rmsnorm_zero_rows[num_gpus, DType.bfloat16, 4096](
             list_of_ctx
         )
+
+        print(
+            "\n=== fused_allreduce_residual_rmsnorm without scratch (",
+            num_gpus,
+            "GPUs) ===",
+        )
+        test_residual_rmsnorm_no_scratch[num_gpus](list_of_ctx)
+        test_fused_allreduce_residual_rmsnorm_fp8[
+            num_gpus,
+            DType.bfloat16,
+            out_fp8_dtype,
+            2048,
+            4096,
+            no_scratch=True,
+        ](list_of_ctx)
+
+        print(
+            "\n=== fused_allreduce_residual_rmsnorm Lamport sequence (",
+            num_gpus,
+            "GPUs) ===",
+        )
+        # On 8 GPUs these cover cluster sizes 1, 2, 4 and 8.
+        test_lamport_residual_rmsnorm_sequence[num_gpus, 2048](list_of_ctx)
+        test_lamport_residual_rmsnorm_sequence[num_gpus, 4096](list_of_ctx)
+        test_lamport_residual_rmsnorm_sequence[num_gpus, 7168](list_of_ctx)
+        test_lamport_residual_rmsnorm_sequence[num_gpus, 8192](list_of_ctx)
+        test_lamport_residual_rmsnorm_sequence[num_gpus, 16384](list_of_ctx)
+        test_lamport_residual_rmsnorm_sequence[
+            num_gpus, 7168, multiply_before_cast=False
+        ](list_of_ctx)
+
+        print(
+            "\n=== fused_allreduce_residual_rmsnorm cast-first norm (",
+            num_gpus,
+            "GPUs) ===",
+        )
+        # Lamport on B200, 1-stage elsewhere.
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 8, 7168, multiply_before_cast=False
+        ](list_of_ctx)
+        # 1-stage (cols too wide for the Lamport kernel).
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 17, 16384, multiply_before_cast=False
+        ](list_of_ctx)
+        # 2-stage beyond two GPUs.
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 8192, 8192, multiply_before_cast=False
+        ](list_of_ctx)
+
+    print("\n=== fused_allreduce_residual_rmsnorm rank != ordinal ===")
+    comptime for gpu_idx in range(2):
+        comptime num_gpus = test_gpu_counts[gpu_idx]
+        if num_devices >= 2 * num_gpus:
+            var offset_ctx = List[DeviceContext]()
+            for i in range(num_gpus):
+                offset_ctx.append(DeviceContext(device_id=num_gpus + i))
+            test_residual_rmsnorm_rank_not_ordinal[num_gpus](offset_ctx)
 
     print("\nAll tests passed!")

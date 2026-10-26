@@ -2987,7 +2987,9 @@ static bool verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
   }
   if (rmsNormOp.getInput() != residualOp.getResult())
     return false;
-  if (!rmsNormOp.getMultiplyBeforeCast())
+  // The FP8 epilogue applies gamma in float32 before it quantizes, so only the
+  // no-quantize chain can carry a cast-first norm.
+  if (quantizeOp && !rmsNormOp.getMultiplyBeforeCast())
     return false;
   return true;
 }
@@ -3024,11 +3026,14 @@ public:
     quantizes = !quantizeOps.empty();
     if (quantizes && quantizeOps.size() != devicesCount)
       return;
-    // The composite carries one epsilon and weight_offset for every device.
+    // The composite carries one epsilon, weight_offset and cast order for
+    // every device.
     MO::ReduceRMSNormOp firstNorm = rmsNormOps.begin()->second;
     for (auto &[device, rmsNormOp] : rmsNormOps)
       if (rmsNormOp.getEpsilonAttr() != firstNorm.getEpsilonAttr() ||
-          rmsNormOp.getWeightOffsetAttr() != firstNorm.getWeightOffsetAttr())
+          rmsNormOp.getWeightOffsetAttr() != firstNorm.getWeightOffsetAttr() ||
+          rmsNormOp.getMultiplyBeforeCast() !=
+              firstNorm.getMultiplyBeforeCast())
         return;
 
     builder.setInsertionPointAfter(allReduceOp);
@@ -3068,7 +3073,8 @@ public:
             /*scaleUb=*/scaleUbOperands,
             /*inChain=*/allReduceOp.getInChain(),
             /*epsilon=*/firstNorm.getEpsilonAttr(),
-            /*weight_offset=*/firstNorm.getWeightOffsetAttr());
+            /*weight_offset=*/firstNorm.getWeightOffsetAttr(),
+            /*multiply_before_cast=*/firstNorm.getMultiplyBeforeCastAttr());
 
     allReduceOp.getOutChain().replaceAllUsesWith(
         allReduceFusedOp.getOutChain());

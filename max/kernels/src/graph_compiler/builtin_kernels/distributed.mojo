@@ -19,7 +19,7 @@
 """Registers distributed and multi-GPU collective graph ops backed by the `comm` and `shmem` kernels."""
 
 from std.math.uutils import ualign_down
-from std.math import align_down, ceildiv
+from std.math import align_down
 from std.sys import get_defined_bool
 from std.sys.info import align_of, size_of
 import extensibility
@@ -877,6 +877,9 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         _trace_name: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
+        # Graph compilers whose copy of the op predates the attribute fuse
+        # only multiply-first norms.
+        multiply_before_cast: Bool = True,
     ](
         outputs: OutputVariadicTensors[dtype=output_type, rank=rank, ...],
         outputs_scales: OutputVariadicTensors[
@@ -898,34 +901,10 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             " the same number of elements"
         )
 
-        # Logic copied from kernel host code
-        # Note: this is a prime candidate for a method on a kernel
-        # struct which advertises kernel info to the GC!
-        var in_num_elems = inputs[0].size()
-        comptime last_dim_idx = type_of(inputs[0]).rank - 1
-        var cols = inputs[0].dim_size[last_dim_idx]()
-        var rows = in_num_elems // cols
-        var rows_per_rank = ceildiv(rows, num_devices)
-
-        # Output scratch holds fp8 (1 byte) when quantizing; this op is
-        # FP8-only, but size by output_type so the math stays correct if the
-        # output ever matches the input dtype (no-quant path).
-        var output_size_bytes = cols * rows_per_rank * size_of[output_type]()
-        var pessimistic_simd_width = 32  # just to be safe...
-        var scales_size_bytes = (
-            align_up(
-                rows_per_rank * size_of[scales_type](), pessimistic_simd_width
-            ) if output_type
-            != dtype else 0
-        )
-        var residual_size_bytes = cols * rows_per_rank * size_of[dtype]()
-
-        var scratch_buffer_size_bytes = (
-            output_size_bytes + scales_size_bytes + residual_size_bytes
-        )
-        _check_signal_buffer_size(
-            signal_buffers[0].size(), scratch_buffer_size_bytes
-        )
+        # The kernel picks a path that fits the scratch behind the Signal
+        # header, so only the header itself is required here.
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+        var scratch_bytes = signal_buffers[0].size() - size_of[Signal]()
 
         # Filter the dev_ctxs_list to have only the GPU devices.
         # The kernel also takes CPU operands (`scales_ub` are rank-0 CPU
@@ -967,6 +946,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             imm outputs_scales,
             imm outputs_residual,
             imm residuals,
+            imm scratch_bytes,
         }:
             # Marshal per-device outputs and residual as TileTensors.
             var out_buf = outputs[index].to_tile_tensor[.int64]()
@@ -986,7 +966,9 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             # kernel code.
             var scale_ub = scales_ub[index].unsafe_ptr()[]
 
-            allreduce_residual_rmsnorm(
+            allreduce_residual_rmsnorm[
+                multiply_before_cast=multiply_before_cast
+            ](
                 in_tensors,
                 residual_buf,
                 out_buf,
@@ -998,6 +980,8 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
                 out_scales_buf,
                 rank_sigs,
                 dev_ctxs[index],
+                my_rank=index,
+                scratch_bytes=scratch_bytes,
             )
 
         _launch_device_collective[num_devices](
