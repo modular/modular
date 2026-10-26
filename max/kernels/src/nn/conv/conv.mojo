@@ -396,14 +396,14 @@ def _reduce_output[
     scratch: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     N: Int,
-    output_space_dims: IndexList,
+    output_space_dims: Coord,
     F: Int,
     num_partitions: Int,
     num_threads: Int,
     epilogue_fn: EpilogueFnType,
     ctx: Optional[DeviceContext.CPU] = None,
 ):
-    var num_rows = N * output_space_dims.flattened_length()
+    var num_rows = N * output_space_dims.product()
     var buf_size = num_rows * F
 
     # Reduce from the output scratch buffer to the actual output.
@@ -436,7 +436,7 @@ def _reduce_output[
         comptime if has_epilogue:
             for m in range(reduce_range[0], reduce_range[0] + reduce_range[1]):
                 var nhowo = _m_to_n_ho_wo_nhwc(
-                    m, output_space_dims[0], output_space_dims[1]
+                    m, Int(output_space_dims[0]), Int(output_space_dims[1])
                 )
                 epilogue_fn((nhowo[0], nhowo[1], nhowo[2], 0), F)
 
@@ -626,7 +626,7 @@ struct ConvDirectNHWC[
         var num_partitions = get_conv_num_partitions[
             micro_kernel_height, micro_kernel_f_size
         ](num_threads, conv_shape)
-        var num_tasks = num_partitions.flattened_length()
+        var num_tasks = num_partitions.product()
 
         # Safety: the scratch pointer below will alias the output_ptr, so cast to MutAnyOrigin
         # here to turn off the check.
@@ -3585,11 +3585,11 @@ def conv_nhwc_direct[
             output,
             input,
             filter,
-            stride,
-            dilation,
-            pad_d,
-            pad_h,
-            pad_w,
+            Coord(stride),
+            Coord(dilation),
+            Coord(pad_d),
+            Coord(pad_h),
+            Coord(pad_w),
             num_groups,
         )
 

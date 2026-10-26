@@ -62,16 +62,16 @@ def test_conv_nhwc_direct_fused() raises:
     var fused_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
     var input_tt = TileTensor(
-        input_ptr, row_major(Coord(extend_shape(input_dims, N, C)))
+        input_ptr, row_major(extend_shape(Coord(input_dims), N, C))
     )
     var filter_tt = TileTensor(
-        filter_ptr, row_major(Coord(extend_shape(filter_dims, C, F)))
+        filter_ptr, row_major(extend_shape(Coord(filter_dims), C, F))
     )
     var plain_tt = TileTensor(
-        plain_ptr, row_major(Coord(extend_shape(output_dims, N, F)))
+        plain_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
     var fused_tt = TileTensor(
-        fused_ptr, row_major(Coord(extend_shape(output_dims, N, F)))
+        fused_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
 
     comptime conv_attr = ConvInfoStatic[rank]()
@@ -184,16 +184,16 @@ def test_conv_transposed_cpu_fused() raises:
     var fused_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
     var input_tt = TileTensor(
-        input_ptr, row_major(Coord(extend_shape(input_dims, N, C)))
+        input_ptr, row_major(extend_shape(Coord(input_dims), N, C))
     )
     var filter_tt = TileTensor(
-        filter_ptr, row_major(Coord(append_shape(filter_dims, F, C)))
+        filter_ptr, row_major(append_shape(Coord(filter_dims), F, C))
     )
     var plain_tt = TileTensor(
-        plain_ptr, row_major(Coord(extend_shape(output_dims, N, F)))
+        plain_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
     var fused_tt = TileTensor(
-        fused_ptr, row_major(Coord(extend_shape(output_dims, N, F)))
+        fused_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
 
     var out_ptr = fused_tt.ptr
