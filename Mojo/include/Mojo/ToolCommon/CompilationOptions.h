@@ -274,6 +274,10 @@ public:
   // if needed.
   std::string cacheBaseExtra = "mojo";
 
+  /// Experimental incremental parsing cache file backing
+  /// `--experimental-incr-parsing`; empty when the option is off.
+  std::string incrParsingCacheFile;
+
   void setDefaultCPU();
 };
 

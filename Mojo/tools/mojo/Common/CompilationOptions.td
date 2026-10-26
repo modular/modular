@@ -187,6 +187,15 @@ defm timing_file: CommandOptionHidden<["--", "-"], "timing-file",
     "Writes the timing reports to FILE rather than to stderr. The reports are "
     "text, or JSON with `--timing-json`.">>;
 
+defm incr_parsing_cache_file : CommandOptionHidden<["--", "-"],
+  "experimental-incr-parsing",
+  CompilationOptionGroup, Index<23>, MetaVarName<"PATH">,
+  HelpText<"Experimental incremental parsing backed by a module cache at "
+           "the given path. The main source file is always parsed; imported "
+           "modules whose sources are unchanged are served from the cache "
+           "instead of being re-parsed. The cache file is created if missing "
+           "and rewritten whenever any cached module changed.">>;
+
 //===----------------------------------------------------------------------===//
 // Linker Options
 //===----------------------------------------------------------------------===//

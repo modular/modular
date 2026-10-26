@@ -109,6 +109,9 @@ struct CommonOptionIDs {
 
   // Linker options
   llvm::opt::OptSpecifier lldPath;
+
+  // Experimental incremental parsing cache file.
+  llvm::opt::OptSpecifier incrParsingCacheFile;
 };
 
 /// Configuration flags for common argument parsing behavior.
@@ -184,7 +187,8 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier elaborationMaxDepth = {},
     llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFilesId = {},
     llvm::opt::OptSpecifier fpModeId = {},
-    llvm::opt::OptSpecifier ignoreDeprecatedId = {});
+    llvm::opt::OptSpecifier ignoreDeprecatedId = {},
+    llvm::opt::OptSpecifier incrParsingCacheFileId = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(

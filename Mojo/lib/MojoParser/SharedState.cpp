@@ -32,6 +32,7 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/IRValues.h"
+#include "Mojo/MojoParser/ModuleCache.h"
 #include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/MojoParser/SharedState.h"
 
@@ -1298,6 +1299,107 @@ bool SharedState::tryRegisterConversionThunk(Attribute key, FnOp thunk) {
     return false;
   registeredThunk = thunk;
   return true;
+}
+
+bool SharedState::isIncrParsingEnabled() const {
+  return !options.incrParsingCacheFile.empty();
+}
+
+void SharedState::addIncrParsingCacheResumeAttrs(
+    Operation *op, ASTDecl &decl, const llvm::MemoryBuffer &buffer) {
+  LexerCursor resumeCursor = decl.getDeclStartCursor();
+  std::optional<size_t> resumeIndent = resumeCursor.getToken().getIndentation();
+  // A compiler-synthesized decl (e.g. an implicit `__del__`) has no source
+  // cursor to resume from; it serves from its serialized form instead.
+  if (resumeCursor.isInvalid() || !resumeIndent)
+    return;
+  const char *bufferStart = buffer.getBufferStart();
+  // Use the resume token's own spelling, not `resumeCursor.getState()`, which
+  // points past the current token rather than at its start.
+  const char *resumeTokenStart = resumeCursor.getToken().getSpelling().data();
+  int64_t resumeOffset = resumeTokenStart - bufferStart;
+  int64_t resumeIndentation = static_cast<int64_t>(*resumeIndent);
+  int64_t endOffset = decl.getEndCursorState() - bufferStart;
+  int64_t declIndentation = decl.getIndentation();
+  int64_t resumeInfo[] = {resumeOffset, resumeIndentation, endOffset,
+                          declIndentation};
+  op->setAttr(kIncrParsingCacheResumeInfoAttrName,
+              mlir::DenseI64ArrayAttr::get(getContext(), resumeInfo));
+}
+
+/// An alias whose attr payload is fully materialized is complete even when
+/// unparsed (its meaning is just its attrs), so it needs no resume mark.
+static bool isAttrCompleteAlias(Operation *op) {
+  auto alias = dyn_cast<AliasDeclOp>(op);
+  if (!alias || isa<UnresolvedType>(alias.getType()))
+    return false;
+  if (TypedAttr value = alias.getValueAttr())
+    return !isa<UnresolvedAliasValueAttr>(value);
+  // No initializer is legal only for a trait's associated aliases.
+  return isa_and_nonnull<TraitDeclOp>(op->getParentOp());
+}
+
+/// True if the lazy parse left this decl incomplete, so a cache-served run
+/// must resume its parse from source.
+static bool needsSourceResumeMark(const ASTDecl &decl, Operation *op) {
+  switch (decl.resolvedness) {
+  case DeclResolvedness::unparsed:
+    return !isa<ImportOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(op) &&
+           !isAttrCompleteAlias(op);
+  case DeclResolvedness::signature:
+    return isa<FnOp, StructDeclOp, TraitDeclOp, ExtensionDeclOp, FileModuleOp>(
+        op);
+  case DeclResolvedness::body:
+    return false;
+  }
+  llvm_unreachable("unknown DeclResolvedness");
+}
+
+void SharedState::prepareModuleForIncrParsingCache() {
+  auto theModule = cast_or_null<ModuleOp>(getTopLevelDecl().getIfOperation());
+  if (!theModule)
+    return;
+
+  // Reverse index op -> decl, consulted only by walking live IR (decl op links
+  // can dangle).
+  llvm::DenseMap<Operation *, ASTDecl *> opToDecl;
+  for (ASTDecl *decl : declResolver->parsedDeclList)
+    if (decl && !decl->loadedFromBytecode && !decl->isErroneous())
+      if (Operation *op = decl->getIfOperation())
+        if (!decl->getDeclStartCursor().isInvalid())
+          opToDecl[op] = decl;
+
+  // Resolve each module's source buffer once (null = cache-ineligible) so the
+  // mark loop below skips a FindBufferContainingLoc scan per decl.
+  llvm::DenseMap<Operation *, const llvm::MemoryBuffer *> moduleBuffers;
+  auto cacheableModuleBuffer =
+      [&](Operation *op) -> const llvm::MemoryBuffer * {
+    Operation *moduleOp = op;
+    while (moduleOp && !isa<FileModuleOp>(moduleOp))
+      moduleOp = moduleOp->getParentOp();
+    if (!moduleOp)
+      return nullptr;
+    auto [it, inserted] = moduleBuffers.try_emplace(moduleOp, nullptr);
+    if (!inserted)
+      return it->second;
+    ASTDecl *moduleDecl = opToDecl.lookup(moduleOp);
+    ModuleState *state =
+        moduleDecl ? getModuleLoader().lookupState(moduleDecl) : nullptr;
+    if (!state || !state->contentHash)
+      return nullptr;
+    if (unsigned bufferId =
+            getSourceMgr().FindBufferContainingLoc(moduleDecl->getLoc()))
+      it->second = getSourceMgr().getMemoryBuffer(bufferId);
+    return it->second;
+  };
+
+  theModule->walk([&](Operation *op) {
+    ASTDecl *decl = opToDecl.lookup(op);
+    if (!decl || !needsSourceResumeMark(*decl, op))
+      return;
+    if (const llvm::MemoryBuffer *buffer = cacheableModuleBuffer(op))
+      addIncrParsingCacheResumeAttrs(op, *decl, *buffer);
+  });
 }
 
 ASTDecl *
