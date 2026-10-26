@@ -618,7 +618,7 @@ def _layout_fields(
     block_value_bytes = (
         math.prod(params.shape_per_block) * params.dtype.size_in_bytes
     )
-    return [
+    fields = [
         ("dtype", _dtype_tag(params.dtype)),
         ("dtype_bytes", str(params.dtype.size_in_bytes)),
         ("kv_dim", str(params.kv_dim)),
@@ -646,6 +646,11 @@ def _layout_fields(
         # fold has to stay a stable string for whatever a caller hands over.
         ("window_size", str(getattr(params, "window_size", -1))),
     ]
+    # Appended only for a split layout, so every other fingerprint is
+    # unchanged. A params stand-in that predates the field is unsplit.
+    if getattr(params, "has_split_head_dims", False):
+        fields.append(("v_head_dim", str(params.v_head_dim)))
+    return fields
 
 
 def _kv_config_hash(

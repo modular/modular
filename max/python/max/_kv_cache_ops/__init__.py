@@ -18,7 +18,13 @@ from .kv_cache_ops import (  # type: ignore[import-not-found]
     mha_decode_num_partitions as _mha_decode_num_partitions,
 )
 from .kv_cache_ops import (
+    mha_split_kv_decode_num_partitions as _mha_split_kv_decode_num_partitions,
+)
+from .kv_cache_ops import (
     mla_dispatch_args_scalar as _mla_dispatch_args_scalar,
+)
+from .kv_cache_ops import (
+    multiprocessor_count as _multiprocessor_count,
 )
 
 
@@ -37,6 +43,42 @@ def mha_decode_num_partitions(
             device._device_context_ptr(),
         )
     )
+
+
+def mha_split_kv_decode_num_partitions(
+    batch_size: int,
+    num_keys: int,
+    kv_heads_per_device: int,
+    sliding_window: int | None,
+    sm_count: int,
+) -> int:
+    """Returns the decode partition count for a KV cache whose key is wider
+    than its value.
+
+    The SM100 kernel honors this count from the dispatch metadata, so an
+    engine that keys graph captures on it must compute the same value.
+
+    Args:
+        batch_size: Requests in the batch.
+        num_keys: The batch's largest cache length.
+        kv_heads_per_device: KV heads on one device.
+        sliding_window: The group's attention window, or ``None``.
+        sm_count: The device's multiprocessor count.
+    """
+    return int(
+        _mha_split_kv_decode_num_partitions(
+            batch_size,
+            num_keys,
+            kv_heads_per_device,
+            sliding_window or 0,
+            sm_count,
+        )
+    )
+
+
+def multiprocessor_count(device: Device) -> int:
+    """Returns the device's multiprocessor (SM) count."""
+    return int(_multiprocessor_count(device._device_context_ptr()))
 
 
 def mla_dispatch_args_scalar(
@@ -72,4 +114,9 @@ def mla_dispatch_args_scalar(
     return int(result[0]), int(result[1]), int(result[2])
 
 
-__all__ = ["mha_decode_num_partitions", "mla_dispatch_args_scalar"]
+__all__ = [
+    "mha_decode_num_partitions",
+    "mha_split_kv_decode_num_partitions",
+    "mla_dispatch_args_scalar",
+    "multiprocessor_count",
+]

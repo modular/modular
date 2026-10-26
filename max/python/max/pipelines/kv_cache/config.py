@@ -439,6 +439,7 @@ class KVCacheConfig(ConfigFileModel):
         window_size: int | None = None,
         stride_alignment: int | None = None,
         scratch: bool = False,
+        v_head_dim: int | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -483,6 +484,9 @@ class KVCacheConfig(ConfigFileModel):
             scratch: Whether the cache is per-request scratch: one block a
                 request, never published (see
                 :attr:`~max.nn.kv_cache.cache_params.KVCacheParams.scratch`).
+            v_head_dim: Dimension of each value head, when it differs from
+                ``head_dim``. Defaults to ``None``, the same as ``head_dim``.
+                See :attr:`~max.nn.kv_cache.cache_params.KVCacheParams.v_head_dim`.
 
         Returns:
             The constructed KV cache parameters.
@@ -513,6 +517,7 @@ class KVCacheConfig(ConfigFileModel):
             window_size=window_size,
             stride_alignment=stride_alignment,
             scratch=scratch,
+            v_head_dim=v_head_dim,
         )
         if is_mla:
             if num_q_heads is None:

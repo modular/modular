@@ -91,6 +91,7 @@ struct Struct_kv_cache_store_paged:
         kv_type: DType,
         target: StaticString,
         key_or_value: Int,
+        v_head_dim: Int = -1,
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
@@ -103,7 +104,9 @@ struct Struct_kv_cache_store_paged:
         layer_idx: UInt32,
         context: DeviceContext,
     ) raises:
-        var paged_kv_collection = generic_get_paged_cache(
+        var paged_kv_collection = generic_get_paged_cache[
+            v_head_size=v_head_dim
+        ](
             kv_blocks,
             page_stride,
             cache_lengths,
@@ -113,6 +116,22 @@ struct Struct_kv_cache_store_paged:
         )
         comptime KVCacheT = paged_kv_collection.CacheType
         var cache: KVCacheT
+
+        # A split cache's value lands after the key in the same row.
+        comptime kv_params = KVCacheT.kv_params
+        comptime head_dim_offset = (
+            0 if key_or_value == 0 else kv_params.v_col_base()
+        )
+        comptime if kv_params.is_split():
+            var width = (
+                kv_params.k_head_size() if key_or_value
+                == 0 else kv_params.v_head_size
+            )
+            if Int(inputs.dim_size(2)) != width:
+                raise Error(
+                    t"a split KV cache stores {width}-wide rows here, got"
+                    t" {Int(inputs.dim_size(2))}"
+                )
 
         comptime if key_or_value == 0:
             cache = paged_kv_collection.get_key_cache(Int(layer_idx))
@@ -132,7 +151,7 @@ struct Struct_kv_cache_store_paged:
                 )
             )
 
-        kv_cache_store_ragged[target=target](
+        kv_cache_store_ragged[target=target, head_dim_offset=head_dim_offset](
             cache,
             inputs.shape_coord(),
             input_row_offsets.to_tile_tensor(),

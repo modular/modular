@@ -192,6 +192,8 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: Int
     var depth: Int
+    # V and output head dim; narrower than `depth` only for a split KV cache.
+    var v_depth: Int
     var padded_depth: Int
     var num_queries_per_block: Int
     var num_keys_per_block: Int
@@ -323,9 +325,11 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         k_group_size: Int = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+        v_depth: Int = -1,
     ):
         self.num_heads = num_heads
         self.depth = depth
+        self.v_depth = depth if v_depth < 0 else v_depth
         var swizzle_granularity = (
             swizzle_mode.bytes() // size_of[DType.bfloat16]()
         )
@@ -1224,6 +1228,15 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     def lse_pointer(self) -> Self.LSEPointerType:
         ...
 
+    # An f32 buffer the kernel stores each partition's O into directly, in
+    # place of the output-typed O store, so the combine reads unrounded
+    # partials. Null for every scheme that does not own one.
+    comptime OPartialPointerType: OptionalPointer
+
+    @inline(.always)
+    def o_partial_pointer(self) -> Self.OPartialPointerType:
+        ...
+
 
 struct NoPartition[dtype: DType](
     Defaultable, MHAPartitionScheme, TrivialRegisterPassable
@@ -1241,6 +1254,7 @@ struct NoPartition[dtype: DType](
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
     comptime LSEPointerType = NullPointer[Self.accum_dtype]
+    comptime OPartialPointerType = NullPointer[DType.float32]
 
     @inline(.always)
     def __init__(out self):
@@ -1258,10 +1272,14 @@ struct NoPartition[dtype: DType](
     def lse_pointer(self) -> Self.LSEPointerType:
         return {}
 
+    @inline(.always)
+    def o_partial_pointer(self) -> Self.OPartialPointerType:
+        return {}
 
-struct SplitKPartition[dtype: DType](
-    MHAPartitionScheme, TrivialRegisterPassable
-):
+
+struct SplitKPartition[
+    dtype: DType, OPartialType: OptionalPointer = NullPointer[DType.float32]
+](MHAPartitionScheme, TrivialRegisterPassable):
     """A multi-partition split-K scheme for MHA decoding over long sequences.
 
     Divides the key sequence across `num_partitions` CTAs. Each CTA writes
@@ -1273,16 +1291,21 @@ struct SplitKPartition[dtype: DType](
     Parameters:
         dtype: The accumulator element type used for the partial statistics
             buffer and the final output.
+        OPartialType: An f32 buffer for each partition's O, for a kernel that
+            stores its partials unrounded; null when the kernel stores them
+            in its output type.
     """
 
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
     comptime LSEPointerType = NonNullPointer[Self.accum_dtype]
+    comptime OPartialPointerType = Self.OPartialType
 
     @__allow_legacy_any_origin_fields
     var ptr: MutPointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
     var max_num_partitions_value: UInt32
+    var o_partial: Self.OPartialType
 
     @inline(.always)
     def __init__(
@@ -1290,10 +1313,15 @@ struct SplitKPartition[dtype: DType](
         ptr: MutPointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
         max_num_partitions_value: UInt32,
+        o_partial: Self.OPartialType = null_pointer[Self.OPartialType](),
     ):
+        comptime assert (
+            Self.OPartialType.is_null or Self.OPartialType.dtype == .float32
+        ), "the O partials a kernel stores unrounded are f32"
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
         self.max_num_partitions_value = max_num_partitions_value
+        self.o_partial = o_partial
 
     @inline(.always)
     def num_partitions(self) -> UInt32:
@@ -1306,3 +1334,7 @@ struct SplitKPartition[dtype: DType](
     @inline(.always)
     def lse_pointer(self) -> Self.LSEPointerType:
         return {self.ptr.as_imm().as_unsafe_any_origin()}
+
+    @inline(.always)
+    def o_partial_pointer(self) -> Self.OPartialPointerType:
+        return self.o_partial

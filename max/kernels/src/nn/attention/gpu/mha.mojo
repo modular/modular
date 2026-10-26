@@ -140,6 +140,7 @@ from nn.attention.gpu.nvidia.common import (
     immut_tile_tensor_1d,
 )
 from nn.attention.gpu.nvidia.sm100.dispatch import (
+    SPLIT_KV_1Q_MAX_Q_ROWS,
     mha_sm100_dispatch as mha_sm100_2q_dispatch,
 )
 from nn.attention.gpu.nvidia.sm100.mha_depth512 import (
@@ -576,6 +577,7 @@ def _flash_attention_kv_cache[
     sink: Bool = False,
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
+    cross_p: Bool = True,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[mut=False, dtype, q_layout, address_space=.GENERIC, ...],
@@ -662,78 +664,153 @@ def _flash_attention_kv_cache[
         else:
             max_prompt_len = Int(k.max_prompt_length())
 
-        # Whether head and depth are static. With BSHD, B and S are dynamic.
-        # H and D are always known for opaque KVCache types, we only check Q.
-        # fmt: off
-        comptime head_depth_known = q.static_shape[q.rank - 2] != -1 and q.static_shape[q.rank - 1] != -1
-        comptime depth = q.static_shape[q.rank-1]
-        comptime gpu_info = ctx.default_device_info
-        comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info, ctx.target]()
-        comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
-        # fmt: on
-        comptime kv_num_heads = cache_t.kv_params.num_heads
-
-        # TODO: This helps differentiate between CE/TG. Not batch-specific.
-        #       We'll just implement a flag on the cache object which is true
-        #       when the batch contains all cache_lens == 0. Remove this when
-        #       such flag (part of ContiguousKVCache) is implemented.
-        # AMD decode also handles a speculative-verify query length S > 1 by
-        # folding the S tokens into the MMA M dimension. `max_prompt_len` is the
-        # batch maximum, so a mixed batch dispatches at S = max and each
-        # sequence's own CTA clamps to its runtime length; a real prefill batch is
-        # unaffected because its max exceeds _MHA_DECODE_FOLD_MAX_S. This
-        # `comptime for` mirrors the dispatch ladder's instantiation set, and both
-        # read the shape from `config` (which `flash_attention_dispatch`
-        # comptime-asserts against Q's layout), so a routed shape always has a
-        # kernel. `use_valid_length=True` because this overload exposes no
-        # `_use_valid_length` parameter and dispatch takes that default.
-        var fold_seq_len_ok = False
-        comptime for S in range(2, _MHA_DECODE_FOLD_MAX_S + 1):
-            comptime if _mha_decode_fold_ok[
-                dtype,
-                config.depth,
+        comptime if cache_t.kv_params.is_split():
+            # A cache whose rows pack a key and a narrower value is read only
+            # by the SM100 FA4 split-KV routes (`mha_sm100_dispatch`'s
+            # `split_kv` arm). No other kernel reads the layout.
+            comptime k_depth = cache_t.kv_params.k_head_size()
+            comptime v_depth = cache_t.kv_params.v_head_size
+            comptime assert (
+                _is_sm10x_gpu(ctx.default_device_info)
+                and dtype == .bfloat16
+                and output.dtype == .bfloat16
+                and ragged
+                and mask_t.mask_safe_out_of_bounds
+                and not naive_kernel
+                and not decoding_warp_split_k
+                and k_depth == 192
+                and v_depth == 128
+                and q.static_shape[q.rank - 1] == k_depth
+                and output.static_shape[output.rank - 1] == v_depth
+            ), (
+                "a split KV cache is read only by SM100 ragged bf16 attention"
+                " with a 192-wide key and Q and a 128-wide value and output,"
+                " under a mask that is safe out of bounds"
+            )
+            comptime split_config = MHAConfig[dtype](
                 config.num_heads,
-                config.num_heads // kv_num_heads,
-                S,
-                sink=sink,
-                use_valid_length=True,
+                k_depth,
+                swizzle_mode=config.swizzle_mode,
+                v_depth=v_depth,
+            )
+            # Decode callers supply a graph-computed cache length, as on the
+            # `fa4_route` of `flash_attention_dispatch`.
+            var max_cache_len = num_keys
+            if max_prompt_len == 1 and not k.empty_cache():
+                if case .Some(decode_metadata) = decode_dispatch_metadata:
+                    max_cache_len = decode_metadata.max_cache_valid_length
+            # A launch whose query rows fit the split-K tile (decode, verify)
+            # takes its partition count from the dispatch metadata: the engine
+            # computes it and keys its graph captures on it, so an eager launch
+            # and a replay of the same key split the keys alike. A longer
+            # prompt runs a tile that cannot split, so it gets no count.
+            comptime group = config.num_heads // cache_t.kv_params.num_heads
+            var split_num_partitions = num_partitions.or_else(0)
+            if (
+                split_num_partitions == 0
+                and max_prompt_len * group <= SPLIT_KV_1Q_MAX_Q_ROWS
+            ):
+                if case .Some(decode_metadata) = decode_dispatch_metadata:
+                    split_num_partitions = max(
+                        decode_metadata.num_partitions, 0
+                    )
+            mha_sm100_2q_dispatch[
+                config=split_config,
+                group=group,
                 ragged=ragged,
-                check_mask_during_decoding=mask_t.check_mask_during_decoding,
-            ]():
-                if max_prompt_len == S:
-                    fold_seq_len_ok = True
+                sink=sink,
+                _is_cache_length_accurate=False,
+            ](
+                output.to_device_buffer(ctx),
+                q.to_device_buffer(ctx).unsafe_ptr(),
+                KVCacheMHAOperand(k),
+                KVCacheMHAOperand(v),
+                q_num_matrix_view_rows(q),
+                mask_functor,
+                valid_length.to_device_buffer(ctx).unsafe_ptr(),
+                DynamicInt(max_prompt_len),
+                max_cache_len,
+                scale,
+                kv_input_row_offsets,
+                Int(valid_length.dim[0]()) - 1,
+                ctx,
+                sink_weights,
+                num_partitions_override=split_num_partitions,
+            )
+        else:
+            # Whether head and depth are static. With BSHD, B and S are dynamic.
+            # H and D are always known for opaque KVCache types, we only check Q.
+            # fmt: off
+            comptime head_depth_known = q.static_shape[q.rank - 2] != -1 and q.static_shape[q.rank - 1] != -1
+            comptime depth = q.static_shape[q.rank-1]
+            comptime gpu_info = ctx.default_device_info
+            comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info, ctx.target]()
+            comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
+            # fmt: on
+            comptime kv_num_heads = cache_t.kv_params.num_heads
 
-        var is_token_generation = (
-            max_prompt_len == 1 or fold_seq_len_ok
-        ) and not k.empty_cache()
+            # TODO: This helps differentiate between CE/TG. Not batch-specific.
+            #       We'll just implement a flag on the cache object which is true
+            #       when the batch contains all cache_lens == 0. Remove this when
+            #       such flag (part of ContiguousKVCache) is implemented.
+            # AMD decode also handles a speculative-verify query length S > 1 by
+            # folding the S tokens into the MMA M dimension. `max_prompt_len` is the
+            # batch maximum, so a mixed batch dispatches at S = max and each
+            # sequence's own CTA clamps to its runtime length; a real prefill batch is
+            # unaffected because its max exceeds _MHA_DECODE_FOLD_MAX_S. This
+            # `comptime for` mirrors the dispatch ladder's instantiation set, and both
+            # read the shape from `config` (which `flash_attention_dispatch`
+            # comptime-asserts against Q's layout), so a routed shape always has a
+            # kernel. `use_valid_length=True` because this overload exposes no
+            # `_use_valid_length` parameter and dispatch takes that default.
+            var fold_seq_len_ok = False
+            comptime for S in range(2, _MHA_DECODE_FOLD_MAX_S + 1):
+                comptime if _mha_decode_fold_ok[
+                    dtype,
+                    config.depth,
+                    config.num_heads,
+                    config.num_heads // kv_num_heads,
+                    S,
+                    sink=sink,
+                    use_valid_length=True,
+                    ragged=ragged,
+                    check_mask_during_decoding=mask_t.check_mask_during_decoding,
+                ]():
+                    if max_prompt_len == S:
+                        fold_seq_len_ok = True
 
-        var k_operand = KVCacheMHAOperand(k)
-        var v_operand = KVCacheMHAOperand(v)
+            var is_token_generation = (
+                max_prompt_len == 1 or fold_seq_len_ok
+            ) and not k.empty_cache()
 
-        flash_attention_dispatch[
-            kv_num_heads=kv_num_heads,
-            config=config,
-            ragged=ragged,
-            sink=sink,
-            _is_flash_attention_applicable=flash_attention_applicable,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            output,
-            q,
-            k_operand,
-            v_operand,
-            mask_functor,
-            max_prompt_len,
-            num_keys,
-            scale,
-            is_token_generation,
-            ctx,
-            valid_length,
-            kv_input_row_offsets,
-            num_partitions,
-            sink_weights,
-            decode_dispatch_metadata=decode_dispatch_metadata,
-        )
+            var k_operand = KVCacheMHAOperand(k)
+            var v_operand = KVCacheMHAOperand(v)
+
+            flash_attention_dispatch[
+                kv_num_heads=kv_num_heads,
+                config=config,
+                ragged=ragged,
+                sink=sink,
+                _is_flash_attention_applicable=flash_attention_applicable,
+                decoding_warp_split_k=decoding_warp_split_k,
+                cross_p=cross_p,
+            ](
+                output,
+                q,
+                k_operand,
+                v_operand,
+                mask_functor,
+                max_prompt_len,
+                num_keys,
+                scale,
+                is_token_generation,
+                ctx,
+                valid_length,
+                kv_input_row_offsets,
+                num_partitions,
+                sink_weights,
+                decode_dispatch_metadata=decode_dispatch_metadata,
+            )
 
 
 def flash_attention[
@@ -753,6 +830,7 @@ def flash_attention[
     sink: Bool = False,
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
+    cross_p: Bool = True,
 ](
     output: TileTensor[
         mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
@@ -802,6 +880,8 @@ def flash_attention[
             decode (defaults to `False`).
         naive_kernel: `True` to force the fallback naive attention kernel
             (defaults to `False`).
+        cross_p: Cross-stage P TMEM placement in the SM100 FA4 kernel,
+            defaulting to the measured choice; read only by the 2Q route.
 
     Args:
         output: Mutable destination `TileTensor` for the attention output.
@@ -828,6 +908,7 @@ def flash_attention[
         sink=sink,
         decoding_warp_split_k=decoding_warp_split_k,
         naive_kernel=naive_kernel,
+        cross_p=cross_p,
     ](
         output,
         q,

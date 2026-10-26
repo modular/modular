@@ -24,9 +24,10 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
-from std.sys import align_of, size_of, _RegisterPackType
+from std.sys import align_of, get_defined_int, size_of, _RegisterPackType
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
+from std.time import sleep
 from std.bit import prev_power_of_two, pop_count
 from max.gpu import block_idx
 from max.gpu.globals import WARP_SIZE
@@ -2802,6 +2803,27 @@ def sum[
     # return rebind[SIMD[dtype,width]](acc)
 
 
+# Test-only forced schedules for the ring-liveness tests. A nonzero value makes
+# that side of every `StagedPipeline` ring sleep this many nanoseconds before
+# it acquires a slot (producer) or waits for a tile (consumer), so the other
+# side runs as far ahead as the ring lets it: a slow consumer keeps the
+# producer blocked on a full ring, a slow producer keeps the consumer waiting
+# on an empty one. A ring with too few slots for its schedule then hangs
+# instead of completing. Zero, the default, compiles to nothing.
+comptime FA4_RING_SLEEP_PRODUCER_NS = get_defined_int[
+    "FA4_RING_SLEEP_PRODUCER_NS", 0
+]()
+comptime FA4_RING_SLEEP_CONSUMER_NS = get_defined_int[
+    "FA4_RING_SLEEP_CONSUMER_NS", 0
+]()
+
+
+@inline(.always)
+def _ring_sleep(ns: Int):
+    if ns > 0:
+        sleep(Float64(ns) * 1e-9)
+
+
 struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
     TrivialRegisterPassable
 ):
@@ -2860,6 +2882,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
             qk_stage: K-loading sub-stage to acquire (defaults to the last
                 sub-stage).
         """
+        _ring_sleep(FA4_RING_SLEEP_PRODUCER_NS)
         self.consumer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @inline(.nodebug)
@@ -2870,6 +2893,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
             qk_stage: K-loading sub-stage to wait on (defaults to the last
                 sub-stage).
         """
+        _ring_sleep(FA4_RING_SLEEP_CONSUMER_NS)
         self.producer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @inline(.nodebug)

@@ -1539,7 +1539,10 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
 
 @extensibility.register("mo.chunked_qkv_rope_store.ragged.paged")
 struct Struct_chunked_qkv_rope_store_ragged_paged[
-    qk_head_dim: Int, v_head_dim: Int, chunk_padding: Int = 0
+    qk_head_dim: Int,
+    v_head_dim: Int,
+    chunk_padding: Int = 0,
+    split_cache: Bool = False,
 ]:
     """Registers chunked QKV unpacking, partial NeoX RoPE, and paged stores.
 
@@ -1550,6 +1553,8 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         qk_head_dim: Unpadded query and key head width.
         v_head_dim: Unpadded value head width.
         chunk_padding: Trailing projection rows to ignore in each chunk.
+        split_cache: Whether each cache row packs a `qk_head_dim`-wide key
+            and a `v_head_dim`-wide value, rather than K and V planes.
     """
 
     @inline(.always)
@@ -1579,7 +1584,9 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         comptime assert (
             cache_dtype == DType.bfloat16
         ), "kv_blocks must be a rank-6 BF16 cache"
-        var kv_collection = generic_get_paged_cache(
+        var kv_collection = generic_get_paged_cache[
+            v_head_size=Self.v_head_dim if Self.split_cache else -1
+        ](
             kv_blocks,
             page_stride,
             cache_lengths,
@@ -2019,6 +2026,7 @@ def _execute_mha_ragged_paged_scalar_args[
     SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
     # `sink_weights` is optional, so its engine cannot be inferred.
     SinkEngine: TensorEngine = DefaultEngine[element_width=1],
+    v_head_dim: Int = -1,
 ](
     output: OutputTensor[dtype=output_dtype, rank=3, ...],
     q: InputTensor[dtype=q_dtype, rank=3, ...],
@@ -2040,7 +2048,7 @@ def _execute_mha_ragged_paged_scalar_args[
     var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
         mha_decode_dispatch_metadata
     )
-    var kv_collection = generic_get_paged_cache(
+    var kv_collection = generic_get_paged_cache[v_head_size=v_head_dim](
         kv_blocks,
         page_stride,
         cache_lengths,

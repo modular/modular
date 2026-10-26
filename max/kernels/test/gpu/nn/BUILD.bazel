@@ -398,6 +398,11 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # SM100 FA4 tile configs for a 192-wide key with a 128-wide value.
+    "attention/test_mha_sm100_split_kv_config.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # SM100 FA4 warp-specialized BM=32 (MMA_M=32) end-to-end: first live
     # elaboration of the packed-TMEM KV-ring + two-level combine datapath, driven
     # by the short-prompt (max_prompt_len<=32) WS dispatch route. B200-only.

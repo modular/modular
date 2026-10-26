@@ -31,6 +31,17 @@ _Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
 _Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
 
 
+@tree.kind("split_kv_head_dims")
+@tree.dataclass(frozen=True)
+class SplitKVHeadDims:
+    """Marks a paged cache whose rows pack a key and a value of different
+    widths (:attr:`~max.nn.kv_cache.KVCacheParams.has_split_head_dims`).
+
+    A tree node without leaves, so it rides through flatten, unflatten and an
+    exported artifact's input structure without adding a graph input.
+    """
+
+
 @tree.kind("paged_kv")
 @tree.dataclass
 class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
@@ -88,6 +99,10 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     KV cache). ``kv_scales`` aliases ``kv_scales_per_layer[0]``; a per-layer
     attention dispatch picks ``kv_scales_per_layer[layer_idx]``. ``None``
     for every non-per-layer / unquantized cache."""
+    split_head_dims: SplitKVHeadDims | None = None
+    """Set when each cache row packs a key and a value of different widths.
+    The blocks alone cannot say so: one plane also means an MLA cache. An op
+    that does not read this layout must refuse the cache."""
 
     def __post_init__(self) -> None:
         def verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:

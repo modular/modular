@@ -3985,6 +3985,9 @@ def _launch_flash_attention_with_mask[
             "CPU flash attention requires output dtype == q dtype;"
             " the distinct-output-dtype (fp8->bf16) path is GPU-only."
         )
+        comptime assert (
+            not cache_t.kv_params.is_split()
+        ), "a split KV cache's attention is GPU-only"
         return flash_attention_kv_cache_cpu(
             q,
             input_row_offsets,
@@ -5426,6 +5429,8 @@ def kv_cache_store_ragged[
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Coord) -> SIMD[cache_t.dtype, width],
+    *,
+    head_dim_offset: Int = 0,
 ](
     cache: cache_t,
     input_shape: Coord,
@@ -5447,6 +5452,8 @@ def kv_cache_store_ragged[
         target: Compilation target string used to dispatch GPU versus CPU
             paths.
         InputFnType: Type of `input_fn` (inferred).
+        head_dim_offset: Cache column of the input's first column: the
+            value's `v_col_base()` in a split cache, else 0.
 
     Args:
         cache: The KVCache object to write key or value entries into.
@@ -5482,7 +5489,7 @@ def kv_cache_store_ragged[
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row)
         var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
         var h_idx = Int(idx[1])
-        var hd_idx = Int(idx[2])
+        var hd_idx = Int(idx[2]) + head_dim_offset
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(

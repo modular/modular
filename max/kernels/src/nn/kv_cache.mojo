@@ -3082,8 +3082,24 @@ def print_kv_cache_paged_generic_gpu[
 # ===-----------------------------------------------------------------------===#
 
 
+def _paged_cache_static_params(
+    num_heads: Int, head_size: Int, num_planes: Int, v_head_size: Int
+) -> KVCacheStaticParams:
+    """The static params of an unscaled paged cache's blocks.
+
+    One plane is an MLA latent unless `v_head_size` says the rows pack a key
+    and a value; the blocks alone cannot tell the two apart.
+    """
+    if v_head_size > 0:
+        return KVCacheStaticParams(
+            num_heads, head_size, v_head_size=v_head_size
+        )
+    return KVCacheStaticParams(num_heads, head_size, num_planes == 1)
+
+
 def generic_get_paged_cache[
     dtype: DType,
+    v_head_size: Int = -1,
 ](
     blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
     page_stride: InputTensor[dtype=.int64, rank=1, ...],
@@ -3093,10 +3109,11 @@ def generic_get_paged_cache[
     max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
     out result: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
+        _paged_cache_static_params(
             Int(blocks.static_spec.shape_tuple[4]),
             Int(blocks.static_spec.shape_tuple[5]),
-            Int(blocks.static_spec.shape_tuple[1]) == 1,
+            Int(blocks.static_spec.shape_tuple[1]),
+            v_head_size,
         ),
         Int(blocks.static_spec.shape_tuple[3]),
         # MOGG boundary: the device buffers are owned by the graph runtime
@@ -3113,13 +3130,19 @@ def generic_get_paged_cache[
         "a uint8 KV cache is packed NVFP4 and needs its scales: build it with"
         " generic_get_paged_cache_with_scales, from an op that reads NVFP4"
     )
+    comptime num_planes = Int(blocks.static_spec.shape_tuple[1])
+    comptime assert (
+        v_head_size <= 0 or num_planes == 1
+    ), "a split KV cache packs its key and value into one plane"
     comptime page_size = Int(blocks.static_spec.shape_tuple[3])
-    comptime head_dim = Int(blocks.static_spec.shape_tuple[5])
-    comptime num_heads = Int(blocks.static_spec.shape_tuple[4])
-    comptime is_mla = Int(blocks.static_spec.shape_tuple[1]) == 1
     return generic_get_paged_cache[
         dtype,
-        KVCacheStaticParams(num_heads, head_dim, is_mla),
+        _paged_cache_static_params(
+            Int(blocks.static_spec.shape_tuple[4]),
+            Int(blocks.static_spec.shape_tuple[5]),
+            num_planes,
+            v_head_size,
+        ),
         page_size,
     ](
         blocks.to_tile_tensor().as_unsafe_any_origin(),

@@ -110,6 +110,7 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
             scales_lookup_table=scales_lookup_table,
             attention_dispatch_metadata=attention_dispatch_metadata,
             mla_num_partitions=mla_num_partitions,
+            split_head_dims=per_device[0].split_head_dims,
         )
 
     def to_graph_values(self) -> _PagedCacheValues:

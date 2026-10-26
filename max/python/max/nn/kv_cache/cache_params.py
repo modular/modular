@@ -34,7 +34,9 @@ import numpy as np
 from max import tree
 from max._kv_cache_ops import (
     mha_decode_num_partitions,
+    mha_split_kv_decode_num_partitions,
     mla_dispatch_args_scalar,
+    multiprocessor_count,
 )
 from max._kv_core import LeafShape
 from max.driver import Buffer, Device
@@ -57,6 +59,7 @@ from .input_types import (
     KVCacheInputsPerDevice,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
+    SplitKVHeadDims,
 )
 from .utils import (
     ATTN_DISPATCH_METADATA,
@@ -1527,7 +1530,8 @@ class KVCacheParams(KVCacheParamInterface):
     """Data type for storing key and value tensors in the cache."""
 
     head_dim: int
-    """Dimensionality of each attention head."""
+    """Dimensionality of each attention head; the key (and query) head dim
+    when :attr:`v_head_dim` differs."""
 
     leaf_kind: ClassVar[CacheLeafKind] = CacheLeafKind.ATTENTION
 
@@ -1624,6 +1628,18 @@ class KVCacheParams(KVCacheParamInterface):
     """Whether the cache is one block a request, kept until release and never
     published. Excludes :attr:`window_size`."""
 
+    v_head_dim: int | None = None
+    """Dimensionality of each value head.
+
+    ``None`` (the default) means :attr:`head_dim`, and construction turns a
+    value equal to :attr:`head_dim` into ``None``. It stays unresolved so that
+    ``dataclasses.replace(params, head_dim=...)`` on an unsplit cache leaves it
+    unsplit. When it differs (:attr:`has_split_head_dims`), each cache slot
+    holds one packed row per KV head, the key in its first :attr:`head_dim`
+    columns and the value in the next ``v_head_dim``, so neither is padded to
+    the other's width.
+    """
+
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
 
@@ -1667,6 +1683,32 @@ class KVCacheParams(KVCacheParamInterface):
             raise ValueError(
                 f"Slots per page ({self.slots_per_page}) must be a positive"
                 f" divisor of the page size ({self.page_size})."
+            )
+
+        if self.v_head_dim == self.head_dim:
+            self.v_head_dim = None
+        if self.v_head_dim is not None and self.v_head_dim <= 0:
+            raise ValueError(
+                f"V head dim ({self.v_head_dim}) must be positive."
+            )
+        if self.has_split_head_dims and (
+            self.kvcache_quant_config is not None
+            or self.is_fp8_kv_dtype
+            or self.dtype == DType.uint8
+        ):
+            raise ValueError(
+                "A KV cache with key head dim"
+                f" {self.head_dim} and value head dim {self.v_head_dim} must"
+                f" be unquantized, got dtype {self.dtype}."
+            )
+        if (
+            self.has_split_head_dims
+            and self.stride_alignment is not None
+            and self.stride_alignment % self.row_bytes != 0
+        ):
+            raise ValueError(
+                f"Stride alignment ({self.stride_alignment}) must be a"
+                f" multiple of a split KV cache row ({self.row_bytes} bytes)."
             )
 
         # Validate connector configuration
@@ -1747,16 +1789,26 @@ class KVCacheParams(KVCacheParamInterface):
         )
 
     @property
+    def has_split_head_dims(self) -> bool:
+        """Whether the key and value heads have different dims, so one packed
+        row holds both (see :attr:`v_head_dim`)."""
+        return self.v_head_dim is not None and self.v_head_dim != self.head_dim
+
+    @property
     def storage_head_dim(self) -> int:
         """Returns the stored width of one head row in ``dtype`` elements.
 
         Equals :attr:`head_dim` except for packed NVFP4, which stores two
         elements per byte, apart from its trailing FP8 elements (see
-        :attr:`KVCacheQuantizationConfig.fp8_tail_dim`).
+        :attr:`KVCacheQuantizationConfig.fp8_tail_dim`), and for split head
+        dims, whose row holds the key and then the value.
         """
         if self.is_nvfp4_kv_cache:
             tail = self._fp8_tail_dim
             return (self.head_dim - tail) // 2 + tail
+        if self.has_split_head_dims:
+            assert self.v_head_dim is not None
+            return self.head_dim + self.v_head_dim
         return self.head_dim
 
     @property
@@ -2460,8 +2512,9 @@ class MHAKVCacheParams(KVCacheParams):
 
     @property
     def kv_dim(self) -> int:
-        """Returns two: each slot holds a key and a value tensor."""
-        return 2
+        """Returns two, a key and a value tensor per slot, or one when each
+        head's row holds both (:attr:`has_split_head_dims`)."""
+        return 1 if self.has_split_head_dims else 2
 
     @property
     def n_kv_heads_per_device(self) -> int:
@@ -2504,6 +2557,15 @@ class MHAKVCacheParams(KVCacheParams):
             # Sentinel for empty / degenerate replicas or a CPU-only host;
             # skip the GPU dispatch kernel.
             num_partitions = 1
+        elif self.has_split_head_dims:
+            # The split cache's decode kernel launches exactly this count.
+            num_partitions = mha_split_kv_decode_num_partitions(
+                batch_size,
+                max_cache_valid_length,
+                self.n_kv_heads_per_device,
+                self.window_size,
+                self._sm_count,
+            )
         else:
             num_partitions = mha_decode_num_partitions(
                 batch_size,
@@ -2659,6 +2721,7 @@ class MHAKVCacheParams(KVCacheParams):
                 else None,
                 kv_blocks_per_layer=_blocks_per_layer(device),
                 kv_scales_per_layer=_scales_per_layer(device),
+                split_head_dims=self._split_head_dims_marker,
             )
             for device in devices
         ]
@@ -2696,7 +2759,19 @@ class MHAKVCacheParams(KVCacheParams):
             draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
             kv_blocks_per_layer=blocks_per_layer,
             kv_scales_per_layer=scales_per_layer,
+            split_head_dims=self._split_head_dims_marker,
         )
+
+    @cached_property
+    def _sm_count(self) -> int:
+        # resolve_attn_key reads this every decode step; uncached, each read
+        # is a driver query.
+        assert self._primary_device is not None
+        return multiprocessor_count(self._primary_device)
+
+    @property
+    def _split_head_dims_marker(self) -> SplitKVHeadDims | None:
+        return SplitKVHeadDims() if self.has_split_head_dims else None
 
 
 @dataclass(kw_only=True)
@@ -2714,6 +2789,12 @@ class MLAKVCacheParams(KVCacheParams):
 
     def __post_init__(self) -> None:
         super().__post_init__()
+        if self.has_split_head_dims:
+            raise ValueError(
+                "MLA caches one latent per token and has no separate value"
+                f" head; got v_head_dim {self.v_head_dim} for head_dim"
+                f" {self.head_dim}."
+            )
         tp_degree = self.tensor_parallel_degree
         if self.num_q_heads % tp_degree != 0:
             raise ValueError(

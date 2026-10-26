@@ -14,10 +14,11 @@
 
 from __future__ import annotations
 
+import functools
 import math
 import os
-from collections.abc import Mapping, MutableMapping, MutableSequence
-from typing import Any, cast
+from collections.abc import Callable, Mapping, MutableMapping, MutableSequence
+from typing import Any, ParamSpec, TypeVar, cast
 
 import numpy as np
 from max._core.dialects import builtin, kgen, mo
@@ -48,7 +49,12 @@ from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
 from .activation import GatedActivation
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
-from .kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
+from .kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 
 # Elements sharing one MX block scale, matching `MXFP8_SF_VECTOR_SIZE` /
 # `MXFP4_SF_VECTOR_SIZE` in `linalg` and the `sf_vector_size=32` the MX
@@ -71,6 +77,36 @@ _MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
 
 KEY_CACHE_INDEX = 0
 VALUE_CACHE_INDEX = 1
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _rejects_split_head_dims(fn: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Makes ``fn`` raise when handed a cache, or cache params, whose rows
+    pack a key and a value of different widths.
+
+    Every op ``fn`` emits finds its K and V from a one-plane cache by inferring
+    MLA, so it would read such a cache wrong rather than fail. The params are
+    checked too, since a collection built field by field can drop its marker.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        for value in (*args, *kwargs.values()):
+            if (
+                isinstance(value, KVCacheInputsPerDevice)
+                and value.split_head_dims is not None
+            ) or (
+                isinstance(value, KVCacheParams) and value.has_split_head_dims
+            ):
+                raise ValueError(
+                    f"{fn.__name__} does not read a KV cache whose key and"
+                    " value head dims differ."
+                )
+        return fn(*args, **kwargs)
+
+    return wrapper
 
 
 def _check_dtype(expected: DType, **tensors: TensorValue | BufferValue) -> None:
@@ -155,6 +191,7 @@ def ceildiv(n: Dim, d: Dim) -> Dim:
     return (n + d - 1) // d
 
 
+@_rejects_split_head_dims
 def fused_qkv_padded_matmul(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -215,6 +252,7 @@ def fused_qkv_padded_matmul(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def fused_qkv_ragged_matmul(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -306,6 +344,12 @@ def fused_chunked_qkv_rope_store_ragged(
     contains its query, key, and value head regions in that order.
     Query rows at or past ``input_row_offsets[-1]`` are left unwritten.
 
+    A cache whose rows pack a key and a narrower value
+    (:attr:`~max.nn.kv_cache.KVCacheParams.v_head_dim`) is not padded: its
+    rows must be ``qk_head_dim + v_head_dim`` wide, keys go to the first
+    ``qk_head_dim`` columns, values after them, and the queries are
+    ``qk_head_dim`` wide.
+
     Args:
         qkv: BF16 projection with shape ``[tokens, chunks, chunk_width]``.
         input_row_offsets: Ragged uint32 offsets, ``[batch_size + 1]``.
@@ -319,7 +363,8 @@ def fused_chunked_qkv_rope_store_ragged(
         chunk_padding: Trailing projection rows to ignore per chunk, aligned to 8.
 
     Returns:
-        Padded rotated queries, ``[tokens, num_q_heads, cache_head_width]``.
+        Rotated queries, ``[tokens, num_q_heads, cache_head_width]``, or
+        ``[tokens, num_q_heads, qk_head_dim]`` for a split cache.
 
     Raises:
         ValueError: If shapes, dtypes, devices, or cache layout are unsupported.
@@ -349,9 +394,15 @@ def fused_chunked_qkv_rope_store_ragged(
     chunks, chunk_width = (int(dim) for dim in qkv.shape[1:])
     kv_heads, padded_dim = (int(dim) for dim in blocks.shape[-2:])
     rotary_dim = int(freqs_cis.shape[1])
-    if int(blocks.shape[1]) != 2:
+    split = kv_collection.split_head_dims is not None
+    if int(blocks.shape[1]) != (1 if split else 2):
         raise ValueError(
             "cache must have separate K/V planes; MLA is unsupported"
+        )
+    if split and padded_dim != qk_head_dim + v_head_dim:
+        raise ValueError(
+            f"a split cache's {padded_dim}-wide rows must hold the {qk_head_dim}"
+            f"-wide keys and {v_head_dim}-wide values exactly"
         )
     if chunks <= 0 or num_q_heads <= 0 or kv_heads <= 0:
         raise ValueError("chunk and head counts must be positive")
@@ -403,6 +454,13 @@ def fused_chunked_qkv_rope_store_ragged(
         raise ValueError(
             "value_scale must be finite and representable as float32"
         )
+    parameters: dict[str, bool | int] = {
+        "qk_head_dim": qk_head_dim,
+        "v_head_dim": v_head_dim,
+        "chunk_padding": chunk_padding,
+    }
+    if split:
+        parameters["split_cache"] = True
     return ops.inplace_custom(
         "mo.chunked_qkv_rope_store.ragged.paged",
         device=qkv.device,
@@ -422,19 +480,16 @@ def fused_chunked_qkv_rope_store_ragged(
                 shape=[
                     qkv.shape[0],
                     num_q_heads,
-                    kv_collection.kv_blocks.shape[-1],
+                    qk_head_dim if split else padded_dim,
                 ],
                 device=qkv.device,
             )
         ],
-        parameters={
-            "qk_head_dim": qk_head_dim,
-            "v_head_dim": v_head_dim,
-            "chunk_padding": chunk_padding,
-        },
+        parameters=parameters,
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def rope_split_store_ragged(
     kv_params: KVCacheParams,
     qkv: TensorValue,
@@ -619,6 +674,7 @@ def rope_split_store_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def store_k_scale_cache_ragged(
     kv_collection: PagedCacheValues,
     x_k_scale: TensorValue,
@@ -662,6 +718,7 @@ def store_k_scale_cache_ragged(
     )
 
 
+@_rejects_split_head_dims
 def _rope_split_store_ragged_unfused(
     kv_params: KVCacheParams,
     qkv: TensorValue,
@@ -751,6 +808,7 @@ def _rope_split_store_ragged_unfused(
     return xq_rope.reshape((-1, q_dim))
 
 
+@_rejects_split_head_dims
 def _fused_qkv_ragged_matmul_scaled_float8(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -898,6 +956,7 @@ def _fused_qkv_ragged_matmul_scaled_float8(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def _fused_qkv_ragged_matmul_scaled_float4(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -1020,6 +1079,7 @@ def _fused_qkv_ragged_matmul_scaled_float4(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def _fused_qkv_ragged_matmul_scaled_mxfp8(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -1135,6 +1195,7 @@ def _fused_qkv_ragged_matmul_scaled_mxfp8(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def _fused_qkv_ragged_matmul_scaled_mxfp6(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -1249,6 +1310,7 @@ def _fused_qkv_ragged_matmul_scaled_mxfp6(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     kv_params: KVCacheParams,
     index_kv_params: KVCacheParams,
@@ -1395,6 +1457,7 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     return (results[0].tensor, results[1].tensor)
 
 
+@_rejects_split_head_dims
 def _fused_qkv_index_ragged_matmul_scaled_mxfp6(
     kv_params: KVCacheParams,
     index_kv_params: KVCacheParams,
@@ -1539,6 +1602,7 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp6(
     return (results[0].tensor, results[1].tensor)
 
 
+@_rejects_split_head_dims
 def _fused_qkv_index_ragged_matmul(
     kv_params: KVCacheParams,
     index_kv_params: KVCacheParams,
@@ -1655,6 +1719,7 @@ def _fused_qkv_index_ragged_matmul(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def unfused_qkv_ragged_matmul_gguf_quantized(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -1730,6 +1795,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def fused_qkv_ragged_matmul_quantized(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -1830,6 +1896,7 @@ def fused_qkv_ragged_matmul_quantized(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def matmul_kv_cache_ragged(
     kv_params: KVCacheParams,
     hidden_states: TensorValue,
@@ -1866,6 +1933,7 @@ def matmul_kv_cache_ragged(
     )
 
 
+@_rejects_split_head_dims
 def matmul_k_cache_ragged(
     kv_params: KVCacheParams,
     hidden_states: TensorValue,
@@ -1902,6 +1970,7 @@ def matmul_k_cache_ragged(
     )
 
 
+@_rejects_split_head_dims
 def matmul_k_cache_ragged_scaled_float8(
     kv_params: KVCacheParams,
     hidden_states: TensorValue,
@@ -2006,7 +2075,17 @@ def fused_qk_ragged_rope(
     When `position_ids` and `mrope_section` are provided, it replaces the default position
     calculation (cache_length + token_idx) with explicit position values. This is useful for
     3D RoPE in models like Qwen2.5-VL that need custom position encoding.
+
+    For a cache whose key and value head dims differ, `input` is `head_dim`
+    wide and the keys rotated in the cache are the rows' first `head_dim`
+    columns.
     """
+    split = kv_collection.split_head_dims is not None
+    if split != kv_params.has_split_head_dims:
+        raise ValueError(
+            "kv_params and kv_collection disagree on whether the cache's key"
+            " and value head dims differ"
+        )
     _check_dtype(
         DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
     )
@@ -2015,6 +2094,19 @@ def fused_qk_ragged_rope(
         "interleaved": interleaved,
         "cache_dtype": kv_params.dtype,
     }
+    if split:
+        if position_ids is not None:
+            raise ValueError(
+                "position_ids are not supported for a cache whose key and"
+                " value head dims differ"
+            )
+        if input.shape[-1] != kv_params.head_dim:
+            raise ValueError(
+                f"expected input head dim {kv_params.head_dim}, got"
+                f" {input.shape[-1]}"
+            )
+        assert kv_params.v_head_dim is not None
+        parameters["v_head_dim"] = kv_params.v_head_dim
 
     if position_ids is not None:
         _check_dtype(DType.uint32, position_ids=position_ids)
@@ -2071,6 +2163,7 @@ def fused_qk_ragged_rope(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def fused_qk_ragged_rms_norm(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -2166,6 +2259,7 @@ def fused_qk_ragged_rms_norm(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def fused_qk_rms_norm_rope_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -2296,6 +2390,7 @@ def fused_qk_rms_norm_rope_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def fused_dual_qk_rms_norm_rope_ragged(
     main_kv_params: KVCacheParams,
     index_kv_params: KVCacheParams,
@@ -2466,6 +2561,7 @@ def fused_dual_qk_rms_norm_rope_ragged(
     return (results[0].tensor, results[1].tensor)
 
 
+@_rejects_split_head_dims
 def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
     main_kv_params: KVCacheParams,
     index_kv_params: KVCacheParams,
@@ -2662,6 +2758,7 @@ def kv_cache_store_paged_ragged(
     layer_idx: TensorValue,
     *,
     key_or_value: int,
+    v_head_dim: int | None = None,
 ) -> None:
     """Stores key or value tensor into the paged KV cache (ragged inputs).
 
@@ -2671,7 +2768,19 @@ def kv_cache_store_paged_ragged(
         input_row_offsets: Ragged row offsets of shape ``[batch + 1]``.
         layer_idx: Scalar layer index identifying which layer's cache to write.
         key_or_value: Whether to store into the key or the value cache.
+        v_head_dim: The value width of a cache whose rows pack a key and a
+            value of different widths
+            (:attr:`~max.nn.kv_cache.KVCacheParams.v_head_dim`). Required
+            for exactly those caches; ``x_cache`` is then as wide as the key
+            or the value it stores.
     """
+    split = kv_collection.split_head_dims is not None
+    if split != (v_head_dim is not None):
+        raise ValueError(
+            "v_head_dim must be given exactly for a cache whose key and value"
+            f" head dims differ; got v_head_dim={v_head_dim} for a"
+            f" {'split' if split else 'unsplit'} cache"
+        )
     _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
     _check_rank(3, x_cache=x_cache)
     _check_rank(1, input_row_offsets=input_row_offsets)
@@ -2680,6 +2789,17 @@ def kv_cache_store_paged_ragged(
     parameters: dict[str, int | str | DType] = {
         "key_or_value": key_or_value,
     }
+    if v_head_dim is not None:
+        row = int(kv_collection.kv_blocks.shape[-1])
+        width = (
+            row - v_head_dim if key_or_value == KEY_CACHE_INDEX else v_head_dim
+        )
+        if x_cache.shape[-1] != width:
+            raise ValueError(
+                f"expected x_cache to be {width} wide for a {row}-wide split"
+                f" cache with v_head_dim {v_head_dim}, got {x_cache.shape[-1]}"
+            )
+        parameters["v_head_dim"] = v_head_dim
 
     ops.inplace_custom(
         "mo.kv_cache.store.paged.ragged",
@@ -2704,6 +2824,8 @@ def store_k_cache_ragged(
     x_k: TensorValue,
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
+    *,
+    v_head_dim: int | None = None,
 ) -> None:
     """Stores the key tensor into the paged KV cache for ragged inputs.
 
@@ -2715,6 +2837,8 @@ def store_k_cache_ragged(
             ``uint32``.
         layer_idx: The scalar layer index (dtype ``uint32``) identifying which
             transformer layer's cache to update.
+        v_head_dim: The value width of a split cache; see
+            :func:`kv_cache_store_paged_ragged`.
     """
     kv_cache_store_paged_ragged(
         kv_collection,
@@ -2722,6 +2846,7 @@ def store_k_cache_ragged(
         input_row_offsets,
         layer_idx,
         key_or_value=KEY_CACHE_INDEX,
+        v_head_dim=v_head_dim,
     )
 
 
@@ -2730,6 +2855,8 @@ def store_v_cache_ragged(
     x_v: TensorValue,
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
+    *,
+    v_head_dim: int | None = None,
 ) -> None:
     """Stores the value tensor into the paged KV cache for ragged inputs.
 
@@ -2741,6 +2868,8 @@ def store_v_cache_ragged(
             ``uint32``.
         layer_idx: The scalar layer index (dtype ``uint32``) identifying which
             transformer layer's cache to update.
+        v_head_dim: The value width of a split cache; see
+            :func:`kv_cache_store_paged_ragged`.
     """
     kv_cache_store_paged_ragged(
         kv_collection,
@@ -2748,9 +2877,11 @@ def store_v_cache_ragged(
         input_row_offsets,
         layer_idx,
         key_or_value=VALUE_CACHE_INDEX,
+        v_head_dim=v_head_dim,
     )
 
 
+@_rejects_split_head_dims
 def kv_cache_gather_rows_ragged(
     kv_collection: PagedCacheValues,
     slots: TensorValue,
@@ -2816,6 +2947,7 @@ def kv_cache_gather_rows_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def kv_cache_store_paged_padded(
     kv_collection: PagedCacheValues,
     x_cache: TensorValue,
@@ -2852,6 +2984,7 @@ def kv_cache_store_paged_padded(
     )
 
 
+@_rejects_split_head_dims
 def store_k_cache_padded(
     kv_collection: PagedCacheValues,
     x_k: TensorValue,
@@ -3122,6 +3255,7 @@ def rope_ragged_with_position_ids(
     )
 
 
+@_rejects_split_head_dims
 def flash_attention_padded_kv_cache(
     kv_params: KVCacheParams,
     q: TensorValue,
@@ -3219,6 +3353,7 @@ def _validate_argument_tensor(
         raise ValueError("\n".join(errors))
 
 
+@_rejects_split_head_dims
 def _mla_fp8_index_top_k(
     q: TensorValue,
     q_s: TensorValue,
@@ -3354,6 +3489,7 @@ def _mla_fp8_index_top_k(
     ]
 
 
+@_rejects_split_head_dims
 def mla_fp8_index_top_k(
     q: TensorValue,
     q_s: TensorValue,
@@ -3411,6 +3547,7 @@ def mla_fp8_index_top_k(
     )[0]
 
 
+@_rejects_split_head_dims
 def mla_fp8_index_top_k_with_physical(
     q: TensorValue,
     q_s: TensorValue,
@@ -3469,6 +3606,7 @@ def mla_fp8_index_top_k_with_physical(
     return logical, physical
 
 
+@_rejects_split_head_dims
 def mla_fp8_index_top_k_physical(
     q: TensorValue,
     q_s: TensorValue,
@@ -3840,6 +3978,7 @@ def mla_kpool_ring_close(
     return results[0].tensor, results[1].tensor
 
 
+@_rejects_split_head_dims
 def msa_sparse_indexer(
     kv_params: KVCacheParams,
     index_q: TensorValue,
@@ -4008,6 +4147,7 @@ def msa_sparse_indexer(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def _kv_cache_row_offsets_ragged(
     input_row_offsets: TensorValue,
     kv_collection: PagedCacheValues,
@@ -4047,6 +4187,7 @@ def _kv_cache_row_offsets_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def msa_sparse_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -4130,6 +4271,7 @@ def msa_sparse_attention_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def msa_sparse_attention_ragged_mxfp8(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -4232,6 +4374,7 @@ def msa_sparse_attention_ragged_mxfp8(
     return results[0].tensor, results[1].tensor
 
 
+@_rejects_split_head_dims
 def msa_sparse_attention_ragged_mxfp6(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -4325,6 +4468,7 @@ def msa_sparse_attention_ragged_mxfp6(
     return results[0].tensor, results[1].tensor
 
 
+@_rejects_split_head_dims
 def _msa_sparse_attention_ragged_values(
     *,
     input: TensorValue,
@@ -4749,6 +4893,9 @@ def flash_attention_ragged(
     positive ``local_window_size``); ``sink_weights`` and ``rel_logits`` are
     mutually exclusive.
 
+    For a cache whose key and value head dims differ, ``input`` is
+    ``head_dim`` wide and the output is ``v_head_dim`` wide.
+
     Args:
         kv_params: KVCacheParams object containing key-value cache parameters.
         input: TensorValue representing the input tensor with shape
@@ -4791,6 +4938,29 @@ def flash_attention_ragged(
             "expected uint32 input_row_offsets but got"
             f" {input_row_offsets.dtype}"
         )
+
+    split = kv_collection.split_head_dims is not None
+    if split != kv_params.has_split_head_dims:
+        raise ValueError(
+            "kv_params and kv_collection disagree on whether the cache's key"
+            " and value head dims differ"
+        )
+    output_head_dim = input.shape[-1]
+    v_head_dim: int | None = None
+    if split:
+        if rel_logits is not None:
+            raise ValueError(
+                "rel_logits is not supported for a cache whose key and value"
+                " head dims differ"
+            )
+        if input.shape[-1] != kv_params.head_dim:
+            raise ValueError(
+                f"expected input head dim {kv_params.head_dim}, got"
+                f" {input.shape[-1]}"
+            )
+        v_head_dim = kv_params.v_head_dim
+        assert v_head_dim is not None
+        output_head_dim = Dim(v_head_dim)
 
     if sink_weights is not None and rel_logits is not None:
         raise ValueError(
@@ -4857,6 +5027,8 @@ def flash_attention_ragged(
         op_name = "mo.mha.ragged.paged"
         if sink_weights is not None:
             op_name = "mo.mha.ragged.paged.sink_weights"
+        if v_head_dim is not None:
+            parameters["v_head_dim"] = v_head_dim
 
     values: MutableSequence[Value[Any]] = [
         input,
@@ -4879,7 +5051,7 @@ def flash_attention_ragged(
         out_types=[
             TensorType(
                 dtype=output_dtype if output_dtype is not None else input.dtype,
-                shape=input.shape,
+                shape=[*input.shape[:-1], output_head_dim],
                 device=input.device,
             )
         ],
@@ -5110,6 +5282,7 @@ def flash_attention_ragged_gpu(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def flare_mla_decode_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -5198,6 +5371,7 @@ def flare_mla_decode_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def flare_mla_decode_ragged_scaled(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -5304,6 +5478,7 @@ def flare_mla_decode_ragged_scaled(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def flare_mla_prefill_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -5402,6 +5577,7 @@ def flare_mla_prefill_ragged(
     return results[0].tensor
 
 
+@_rejects_split_head_dims
 def flare_mla_prefill_plan(
     kv_params: KVCacheParams,
     input_row_offsets: TensorValue,
@@ -5670,6 +5846,7 @@ def _fp8_mla_scale_params(
     }
 
 
+@_rejects_split_head_dims
 def mla_prefill_graph(
     q: TensorValue,
     kv: TensorValue,
@@ -5883,6 +6060,7 @@ def _set_sparse_row_layout(
         parameters["index_kpool_select_tail"] = index_kpool_select_tail
 
 
+@_rejects_split_head_dims
 def mla_decode_graph(
     q: TensorValue,
     kv: TensorValue,
@@ -6100,6 +6278,7 @@ def mla_decode_graph(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def mla_prefill_decode_graph(
     q: TensorValue,
     kv: TensorValue,
@@ -6296,6 +6475,7 @@ def mla_prefill_decode_graph(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def flare_mla_decompress_k_cache(
     kv_params: KVCacheParams,
     buffer_row_offsets_1d: TensorValue,
@@ -6360,6 +6540,7 @@ def flare_mla_decompress_k_cache(
     return results[1].tensor
 
 
+@_rejects_split_head_dims
 def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -6441,6 +6622,7 @@ def cross_attention_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def kv_cache_ragged_radd(
     kv_params: KVCacheParams,
     a: TensorValue,
@@ -6486,6 +6668,7 @@ def kv_cache_ragged_radd(
     )
 
 
+@_rejects_split_head_dims
 def rms_norm_key_cache(
     kv_params: KVCacheParams,
     kv_collection: PagedCacheValues,
@@ -6593,6 +6776,7 @@ def rms_norm_key_cache(
     )
 
 
+@_rejects_split_head_dims
 def rms_norm_value_cache(
     kv_params: KVCacheParams,
     kv_collection: PagedCacheValues,
@@ -13698,6 +13882,7 @@ def _sgmv_qkv_expand(
     return results[0].tensor, results[1].tensor
 
 
+@_rejects_split_head_dims
 def sgmv_qkv_lora_kernel(
     input: TensorValue,
     lora_a: TensorValue,
@@ -13867,6 +14052,7 @@ def sgmv_qkv_lora_fused(
     return ops.concat([q_out, kv_out[:m, :], kv_out[m:, :]], axis=-1)
 
 
+@_rejects_split_head_dims
 def kv_cache_ragged_2m_iadd(
     kv_params: KVCacheParams,
     a: TensorValue,
@@ -14597,6 +14783,7 @@ def apply_qk_rms_norm(
     return q_out.tensor, k_out.tensor
 
 
+@_rejects_split_head_dims
 def indexer_score_ragged(
     q: TensorValue,
     weights: TensorValue,
@@ -14678,6 +14865,7 @@ def indexer_score_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def compress_windows_ragged(
     kv: TensorValue,
     score: TensorValue,
@@ -14787,6 +14975,7 @@ def compress_windows_ragged(
     )[0].tensor
 
 
+@_rejects_split_head_dims
 def latent_sparse_attention_ragged(
     q: TensorValue,
     input_row_offsets: TensorValue,

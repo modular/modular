@@ -38,6 +38,8 @@ def hybrid_swa_full_kv_params(
     sliding_head_dim: int | None = None,
     full_n_kv_heads: int | None = None,
     full_head_dim: int | None = None,
+    sliding_v_head_dim: int | None = None,
+    full_v_head_dim: int | None = None,
 ) -> MultiKVCacheParams:
     sliding_layers = 0
     full_layers = 0
@@ -72,6 +74,7 @@ def hybrid_swa_full_kv_params(
         num_draft_tokens=num_spec_tokens,
         allow_kv_head_replication=allow_kv_head_replication,
         window_size=sliding_window,
+        v_head_dim=sliding_v_head_dim,
     )
     full_kv_params = kv_cache_config.to_params(
         dtype=cache_dtype,
@@ -84,6 +87,7 @@ def hybrid_swa_full_kv_params(
         num_draft_tokens=num_spec_tokens,
         allow_kv_head_replication=allow_kv_head_replication,
         window_size=None,
+        v_head_dim=full_v_head_dim,
     )
     return MultiKVCacheParams.from_params(
         {

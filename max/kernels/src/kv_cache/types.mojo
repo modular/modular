@@ -489,12 +489,18 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
     Groups the attention-head count and per-head size that are fixed for the
     entire model lifetime, along with the Multi-head Latent Attention flag that
     changes the KV layout from two caches (K + V) to one (K only).
+
+    A split cache (`v_head_size > 0`) also has one plane, but each row packs a
+    key of `k_head_size()` columns and then a value of `v_head_size` columns.
+    `head_size` stays the row pitch, so row arithmetic is unchanged; value
+    accesses add `v_col_base()` to the column.
     """
 
     var num_heads: Int
     var head_size: Int
     var is_mla: Bool
     var fp8_tail_size: Int
+    var v_head_size: Int
 
     def __init__(
         out self,
@@ -502,6 +508,7 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
         head_size: Int,
         is_mla: Bool = False,
         fp8_tail_size: Int = 0,
+        v_head_size: Int = 0,
     ):
         """
         Initialize KVCacheStaticParams.
@@ -515,11 +522,33 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
                 row that hold unscaled FP8 values instead of E2M1 pairs. They
                 have no scales, so they do not count towards the scale row.
                 Defaults to 0.
+            v_head_size (Int, optional): Width of the value packed after the
+                key in each row of a split cache, whose `head_size` is the
+                key and value widths summed. Defaults to 0, a cache whose key
+                and value each fill a `head_size` row of their own plane.
         """
         self.num_heads = num_heads
         self.head_size = head_size
         self.is_mla = is_mla
         self.fp8_tail_size = fp8_tail_size
+        self.v_head_size = v_head_size
+
+    def is_split(self) -> Bool:
+        """Whether each row packs a key and a value of different widths."""
+        return self.v_head_size > 0
+
+    def num_planes(self) -> Int:
+        """The planes a block holds: two (K and V), or one for an MLA latent
+        or a split cache's packed rows."""
+        return 1 if self.is_mla or self.is_split() else 2
+
+    def k_head_size(self) -> Int:
+        """The key's width, which is the whole row unless the cache is split."""
+        return self.head_size - self.v_head_size
+
+    def v_col_base(self) -> Int:
+        """The column the value starts at within a row of its cache view."""
+        return self.k_head_size() if self.is_split() else 0
 
     def nvfp4_row_elems(self) -> Int:
         """The logical elements of a packed NVFP4 row: two per packed byte,
@@ -3354,10 +3383,19 @@ struct PagedKVCache[
         coord[BN, 1, BK],
         swizzle_mode,
     ]:
-        """Creates a TMA tile for this KV cache."""
+        """Creates a TMA tile for this KV cache.
+
+        A split cache's key and value share one descriptor over the whole
+        packed row; a copy selects its columns with a depth offset. The depth
+        folds reshape the row into `head_size // gran` chunks, which assumes
+        the copy spans the row, so a split cache takes the per-chunk copy.
+        """
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0, "BK must be a multiple of swizzle granularity"
+        comptime assert not Self.kv_params.is_split() or (
+            fold_chunks == 1 and not row_major
+        ), "a split KV cache's TMA copies take the per-chunk path"
         # Paged cache collection is (where `$idx` means subsetting that idx):
         # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads, head_size]
         #
@@ -4226,6 +4264,9 @@ struct ContinuousBatchingKVCacheCollection[
 
     @inline(.always)
     def _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
+        comptime assert (
+            not Self.kv_params.is_split()
+        ), "a split KV cache is paged only"
         assert (
             kv_idx == 0 or self.blocks.dim[1]() > 1
         ), "invalid kv_idx for MLA cache"
@@ -4324,7 +4365,7 @@ struct PagedKVCacheCollection[
     # (total_num_blocks, 2, num_layers, page_size) x (num_heads, head_size)
     comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
-        2 if not Self.kv_params.is_mla else 1,
+        Self.kv_params.num_planes(),
         UNKNOWN_VALUE,
         Self.page_size,
         Self.kv_params.num_heads,
@@ -4336,7 +4377,7 @@ struct PagedKVCacheCollection[
     comptime blocks_tt_layout = InternalLayout[
         shape_types=Coord[
             Int64,
-            ComptimeInt[2 if not Self.kv_params.is_mla else 1],
+            ComptimeInt[Self.kv_params.num_planes()],
             Int64,
             ComptimeInt[Self.page_size],
             ComptimeInt[Self.kv_params.num_heads],
@@ -4367,7 +4408,7 @@ struct PagedKVCacheCollection[
     # Define scales tensor with shape [total_num_blocks, 2, num_layers, page_size, num_heads, granularity]
     comptime scales_shape = IntTuple(
         UNKNOWN_VALUE,  # total_num_blocks
-        2 if not Self.kv_params.is_mla else 1,
+        Self.kv_params.num_planes(),
         UNKNOWN_VALUE,  # num_layers
         Self.page_size,  # page_size
         Self.kv_params.num_heads,  # num_heads
@@ -4379,7 +4420,7 @@ struct PagedKVCacheCollection[
     comptime scales_tt_layout = InternalLayout[
         shape_types=Coord[
             Int64,
-            ComptimeInt[2 if not Self.kv_params.is_mla else 1],
+            ComptimeInt[Self.kv_params.num_planes()],
             Int64,
             ComptimeInt[Self.page_size],
             ComptimeInt[Self.kv_params.num_heads],
@@ -4443,6 +4484,11 @@ struct PagedKVCacheCollection[
     ):
         """Constructs the collection from tensors of any layout with its
         shape, such as the graph compiler's `to_tile_tensor()` views."""
+        comptime assert not Self.kv_params.is_split() or (
+            not Self.kv_params.is_mla
+            and Self.kv_params.v_head_size < Self.kv_params.head_size
+            and not Self.CacheType.quantization_enabled
+        ), "a split KV cache packs an unquantized key and value per row"
         self.blocks = _as_cache_tt[
             Self.blocks_tt_layout, Self.blocks_tt_type.Engine
         ](blocks)
@@ -4541,9 +4587,16 @@ struct PagedKVCacheCollection[
 
     @inline(.always)
     def get_value_cache(self, layer_idx: Int) -> Self.CacheType:
+        """Returns the layer's value view.
+
+        A split cache's value shares its key's plane, so this is the key view;
+        callers add `kv_params.v_col_base()` to the column.
+        """
         comptime assert (
             not Self.kv_params.is_mla
         ), "Cannot call get_value_cache for MLA cache"
+        comptime if Self.kv_params.is_split():
+            return self._get_cache[0](layer_idx)
         return self._get_cache[1](layer_idx)
 
     @inline(.always)

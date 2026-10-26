@@ -252,7 +252,7 @@ struct SM100MHA2Q[
         Self.KVLUTType.dtype,
         Self.config.swizzle_mode,
         BN=kv_sub_tile_rows(Self.config.k_rows_per_cta(), Self.page_size),
-        BK=Self.config.BK0,
+        BK=Self.config.k_tma_box_cols(),
     ]
     comptime VTMAOpType = KVTMATile[
         Self.KVLUTType.dtype,
@@ -694,6 +694,7 @@ struct SM100MHA2Q[
                     ws_num_partitions=ws_np,
                     ws_lse_ptr=ws_lse,
                     ws_num_rows_q=num_rows_q,
+                    ws_o_ptr=pack.partition.o_partial_pointer(),
                 )
 
         elif warp_idx < 12:

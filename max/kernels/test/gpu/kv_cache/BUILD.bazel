@@ -51,6 +51,7 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_radd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_kv_cache_split_head_store_rope.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_mha_paged_decode_d64_gqa8_32k.mojo": select({
         # Covers the SM100 FA4 workspace split-K combine.
         "//:b200_gpu": [],
@@ -65,6 +66,11 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mha_prefill_v2_ragged_gate.mojo": ["//:mi355_gpu"],  # the kernel is tuned for gfx950 (MI355X)
+    "test_paged_kv_cache_split_head.mojo": select({
+        # Its TMA copies are SM90+; B200 is where the split cache runs.
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_pv_mnmajor_mma_spike.mojo": select({
         # SM100 P@V mn-major chunk-inner MMA recovery spike; B200-only
         "//:b200_gpu": [],
@@ -154,6 +160,7 @@ _EXTRA_DEPS = {
             "test_paged_lut_load_boundary.mojo",  # Split by page_size below (B200 LUT-load OOB regression)
             "test_mha_paged_kv_oob_canary.mojo",  # Split by page_size below (B200 NaN canary)
             "test_paged_kv_null_block_sentinel.mojo",  # Explicit B200-only target below (SERVOPT-1456 kernel regression)
+            "test_mha_sm100_split_kv.mojo",  # Split by key/value width below
         ],
     )
 ]
@@ -711,4 +718,96 @@ _OOB_CANARY_CONFIGS = [
         ],
     )
     for page_size, mask_kind, mask_label in _OOB_CANARY_CONFIGS
+]
+
+# SM100 FA4 attention over a split K|V paged cache (192-wide key, 128-wide
+# value) against an fp32 reference and the padded 256-wide path. The `d128`
+# target runs the same cases on a 128-wide cache without cross-stage P: the
+# 2Q shared-ring schedule the split tile runs. The `slow_*` targets force the
+# K/V rings empty or full; a hang aborts at the test's own deadline. The
+# `swa` targets run the sliding-window group.
+[
+    mojo_test(
+        name = "test_mha_sm100_split_kv{}.mojo.test".format(suffix),
+        # `medium` sets the `moderate` timeout, which bounds a hung ring.
+        size = "medium",
+        srcs = [
+            "kv_cache_test_utils.mojo",
+            "test_mha_sm100_split_kv.mojo",
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + copts,
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        main = "test_mha_sm100_split_kv.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for suffix, copts in [
+        ("", []),
+        (
+            "_d128_no_cross_p",
+            [
+                "-D",
+                "SPLIT_KV_K_DIM=128",
+                "-D",
+                "SPLIT_KV_V_DIM=128",
+                "-D",
+                "FA4_TMEM_CROSS_P=false",
+            ],
+        ),
+        # Forced schedules: one side of every K/V ring hand-off sleeps, so the
+        # rings run empty or full throughout.
+        (
+            "_slow_producer",
+            [
+                "-D",
+                "FA4_RING_SLEEP_PRODUCER_NS=2000",
+            ],
+        ),
+        (
+            "_slow_consumer",
+            [
+                "-D",
+                "FA4_RING_SLEEP_CONSUMER_NS=2000",
+            ],
+        ),
+        # The sliding-window group: group 8, a 128-key window and sinks.
+        (
+            "_swa",
+            [
+                "-D",
+                "SPLIT_KV_SWA=true",
+            ],
+        ),
+        (
+            "_swa_slow_producer",
+            [
+                "-D",
+                "SPLIT_KV_SWA=true",
+                "-D",
+                "FA4_RING_SLEEP_PRODUCER_NS=2000",
+            ],
+        ),
+        (
+            "_swa_slow_consumer",
+            [
+                "-D",
+                "SPLIT_KV_SWA=true",
+                "-D",
+                "FA4_RING_SLEEP_CONSUMER_NS=2000",
+            ],
+        ),
+    ]
 ]

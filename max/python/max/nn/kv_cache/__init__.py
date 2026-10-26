@@ -62,6 +62,7 @@ from .input_types import (
     PagedCacheValues,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
+    SplitKVHeadDims,
 )
 from .metrics import KVCacheMetrics
 from .utils import (
@@ -115,6 +116,7 @@ __all__ = [
     "RecurrentStateParams",
     "RecurrentStateRegion",
     "ScratchRecurrentKVLeafRegion",
+    "SplitKVHeadDims",
     "build_max_lengths_tensors",
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",

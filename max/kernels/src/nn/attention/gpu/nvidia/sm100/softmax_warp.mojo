@@ -19,7 +19,7 @@ from std.utils.numerics import min_or_neg_inf
 from std.sys import size_of, get_defined_int, get_defined_bool
 from std.sys.info import _accelerator_arch
 import max.gpu.primitives.warp as warp
-from max.gpu import block_idx
+from max.gpu import WARP_SIZE, block_idx, lane_id
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.sync import (
@@ -441,6 +441,107 @@ def fa4_lse_combine_write[
 
     # Wait for all TMA stores to complete.
     cp_async_bulk_wait_group[0]()
+
+
+@inline(.always)
+def fa4_ws_store_o_f32[
+    config: FA4Config,
+    col_lo: Int,
+    col_hi: Int,
+    num_threads: Int,
+    barrier_id: Int,
+    single_source: Bool = False,
+](
+    tile_row: UInt32,
+    tid: UInt32,
+    scale_own: Float32,
+    scale_peer: Float32,
+    own_o_tmem_addr: UInt32,
+    peer_o_tmem_addr: UInt32,
+    stage: SharedMemPointer[Float32],
+    o_partial: MutPointer[Float32, MutAnyOrigin],
+    num_output_rows: Int32,
+    head_idx: UInt32,
+    out_row_idx: UInt32,
+):
+    """Stores O to an f32 workspace: `own * scale_own + peer * scale_peer`
+    (`own * scale_own` with `single_source`) for this thread's row, columns
+    `[col_lo, col_hi)`.
+
+    The f32 sibling of `fa4_lse_combine_write` / `fa4_scale_write_output` for
+    workspace split-K: the combine then reads unrounded partials, so the output
+    is rounded to its dtype once. Every one of the `num_threads` callers (`tid`
+    in `[0, num_threads)`) writes its columns to `stage`, which must be dead
+    smem of `BM * (ov_depth + 4)` f32; after `barrier_id` they copy it out a
+    row per warp to `[P * num_rows_q, num_q_heads, ov_depth]` rows, where the
+    O-store descriptor would place them. Storing straight from registers
+    instead puts a warp's 32 rows, `ov_depth` f32 apart, in one instruction,
+    which cost a verify step about 2 us per layer on B200.
+    """
+    comptime assert config.num_q == 1, "the f32 workspace store is 1Q-only"
+    comptime ov_depth = config.ov_depth
+    # The pad staggers rows across banks for the per-row 16 B stores.
+    comptime stage_ld = ov_depth + 4
+    comptime chunk = 8
+    comptime assert col_lo % chunk == 0 and col_hi % chunk == 0
+    comptime assert 0 <= col_lo and col_hi <= ov_depth
+    comptime assert ov_depth % (4 * WARP_SIZE) == 0
+    comptime assert num_threads % WARP_SIZE == 0
+
+    var stage_row = stage.unsafe_offset(Int(tile_row) * stage_ld)
+    comptime for col in range(col_lo, col_hi, chunk):
+        var own = tcgen05_ld[
+            datapaths=32,
+            bits=32,
+            repeat=chunk,
+            dtype=DType.float32,
+            pack=False,
+            width=chunk,
+        ](own_o_tmem_addr + UInt32(col))
+        var vals = SIMD[DType.float32, chunk]()
+        comptime if single_source:
+            comptime for c in range(chunk):
+                vals[c] = own[c] * scale_own
+        else:
+            var peer = tcgen05_ld[
+                datapaths=32,
+                bits=32,
+                repeat=chunk,
+                dtype=DType.float32,
+                pack=False,
+                width=chunk,
+            ](peer_o_tmem_addr + UInt32(col))
+            comptime for c in range(chunk):
+                vals[c] = peer[c].fma(scale_peer, own[c] * scale_own)
+        stage_row.unsafe_offset(col).unsafe_store[alignment=16](vals)
+    named_barrier[Int32(num_threads)](Int32(barrier_id))
+
+    comptime num_warps = num_threads // WARP_SIZE
+    comptime vecs_per_row = ov_depth // (4 * WARP_SIZE)
+    # Not `warp_id()`: its `tid.x` read merges with the kernel prologue's, and
+    # the hoisted math spills across `setmaxnreg` (see `llvm_opaque_tid`).
+    var warp_id = tid // UInt32(WARP_SIZE)
+    var lane = UInt32(lane_id())
+    for row in range(warp_id, UInt32(config.BM), UInt32(num_warps)):
+        var seq_off: UInt32 = (
+            row // UInt32(config.group)
+        ) if config.fuse_gqa else row
+        if Int32(seq_off) >= num_output_rows:
+            break
+        var q_head: UInt32 = (
+            UInt32(config.group) * head_idx + row % UInt32(config.group)
+        ) if config.fuse_gqa else head_idx
+        var dst = o_partial.unsafe_offset(
+            (Int(out_row_idx + seq_off) * config.num_q_heads + Int(q_head))
+            * ov_depth
+        )
+        comptime for v in range(vecs_per_row):
+            var col = Int(lane) * 4 + v * 4 * WARP_SIZE
+            dst.unsafe_offset(col).unsafe_store[alignment=16](
+                stage.unsafe_offset(Int(row) * stage_ld + col).unsafe_load[
+                    width=4, alignment=16
+                ]()
+            )
 
 
 @inline(.always)
@@ -2458,6 +2559,7 @@ def fa4_softmax[
     QScaleType: OptionalPointer,
     KScaleType: OptionalPointer,
     WSLSEType: OptionalPointer,
+    WSOType: OptionalPointer,
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
@@ -2537,6 +2639,9 @@ def fa4_softmax[
     ws_num_partitions: UInt32 = 1,
     ws_lse_ptr: WSLSEType = NullPointer[.float32](),
     ws_num_rows_q: UInt32 = 0,
+    # When non-null, the 1Q egress stores O to this f32 buffer (same layout as
+    # `o_partial`) instead of through `ragged_tma_store`.
+    ws_o_ptr: WSOType = NullPointer[.float32](),
 ):
     # Local aliases matching SM100MHA2Q comptime members
     comptime qkv_type = KVLUTType.dtype
@@ -2557,6 +2662,14 @@ def fa4_softmax[
     comptime assert (
         WSLSEType.is_null or WSLSEType.dtype == .float32
     ), "the workspace split-K LSE buffer is f32"
+    comptime ws_o_f32 = not WSOType.is_null
+    comptime assert not ws_o_f32 or (
+        workspace_split
+        and WSOType.dtype == .float32
+        and config.num_q == 1
+        and not config.use_ws
+        and config.splitk_partitions == 1
+    ), "only the 1Q workspace split-K egress stores f32 O partials"
     # Warp-specialized packed-TMEM (1x4 / Layout-G) per-quarter score geometry.
     # `score_cols` is the physical S/P column extent one warp reads/writes;
     # `score_rows` is its query-row extent. Non-WS (m_pack == 1): score_cols ==
@@ -2836,6 +2949,23 @@ def fa4_softmax[
     comptime if workspace_split:
         ws_part_idx = splitk_partition_idx(ws_num_partitions)
         ws_o_row_off = ws_part_idx * ws_num_rows_q
+
+    @inline(.always)
+    def _ws_o_stage() {imm} -> SharedMemPointer[Float32]:
+        # At the egress every MMA has drained, so Q and the KV ring are dead.
+        comptime assert (
+            config.BM * (config.ov_depth + 4) * 4
+            <= type_of(smem).q_bytes + type_of(smem).kv_bytes
+        ), "the f32 O stage must fit in the dead Q+KV span"
+        return smem.o_smem[DType.float32]()
+
+    @inline(.always)
+    def _ws_o_ptr() {imm} -> MutPointer[Float32, MutAnyOrigin]:
+        # The egress is this buffer's only writer; `rebind` reconciles
+        # `WSOType.dtype` with the f32 the assert above pins.
+        return rebind[MutPointer[Float32, MutAnyOrigin]](
+            ws_o_ptr.value().unsafe_mut_cast[True]()
+        )
 
     @inline(.always)
     def _ws_write_lse(mx: Scalar[accum_dtype], sm: Scalar[accum_dtype]) {imm}:
@@ -4992,6 +5122,29 @@ def fa4_softmax[
                     head_idx,
                     gmem_row + cta_q_offset,
                 )
+            elif ws_o_f32:
+                # WG1 has returned, so WG0 stages and stores every column.
+                fa4_ws_store_o_f32[
+                    config,
+                    0,
+                    config.ov_depth,
+                    num_threads=WARPGROUP_SIZE,
+                    barrier_id=0,
+                    single_source=True,
+                ](
+                    row,
+                    row,
+                    inv_row_sum,
+                    Float32(0),
+                    o_tile.tmem_addr,
+                    o_tile.tmem_addr,
+                    _ws_o_stage(),
+                    _ws_o_ptr(),
+                    num_output_rows,
+                    head_idx,
+                    gmem_row + cta_q_offset + ws_o_row_off,
+                )
+                _ws_write_lse(row_max, row_sum_total)
             else:
                 if is_writer:
                     fa4_scale_write_output[config](
@@ -5219,6 +5372,50 @@ def fa4_softmax[
                 head_idx,
                 out_row_idx,
             )
+        elif ws_o_f32:
+            # Both WGs hold every row; each stages half the depth columns.
+            comptime half_cols = align_up(config.ov_depth // 2, 8)
+            var writer_tid = warp_group_idx * UInt32(WARPGROUP_SIZE) + row
+            if warp_group_idx == UInt32(0):
+                fa4_ws_store_o_f32[
+                    config,
+                    0,
+                    half_cols,
+                    num_threads=2 * WARPGROUP_SIZE,
+                    barrier_id=5,
+                ](
+                    row,
+                    writer_tid,
+                    final_scale_local,
+                    final_scale_peer,
+                    own_o_tile.tmem_addr,
+                    peer_o_tile.tmem_addr,
+                    _ws_o_stage(),
+                    _ws_o_ptr(),
+                    num_output_rows,
+                    head_idx,
+                    out_row_idx,
+                )
+            else:
+                fa4_ws_store_o_f32[
+                    config,
+                    half_cols,
+                    config.ov_depth,
+                    num_threads=2 * WARPGROUP_SIZE,
+                    barrier_id=5,
+                ](
+                    row,
+                    writer_tid,
+                    final_scale_local,
+                    final_scale_peer,
+                    own_o_tile.tmem_addr,
+                    peer_o_tile.tmem_addr,
+                    _ws_o_stage(),
+                    _ws_o_ptr(),
+                    num_output_rows,
+                    head_idx,
+                    out_row_idx,
+                )
         else:
             if warp_group_idx == UInt32(0):
                 if is_writer:

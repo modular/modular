@@ -78,6 +78,12 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     AMD loaders address through `block_paged_tile`. A sparse-selection
     operand sets it so `KVBuffer` gathers rows lane by lane instead.
     """
+    comptime v_col_base: Int = 0
+    """The first column of the value within a row of the value operand.
+
+    Non-zero only for a split KV cache, whose key and value operands are one
+    view of rows that pack a key and then a narrower value.
+    """
     comptime rows_predicated: Bool = False
     """Whether an invalid indexed key is skipped rather than read.
 
@@ -1023,6 +1029,7 @@ struct KVCacheMHAOperand[
     comptime page_size = Self.cache_t.page_size_
     comptime quantization_enabled = Self.cache_t.quantization_enabled
     comptime quantization_granularity = Self.cache_t.quantization_granularity
+    comptime v_col_base = Self.cache_t.kv_params.v_col_base()
     var cache: Self.cache_t
 
     comptime Engine: TensorEngine = Self.cache_t.Engine

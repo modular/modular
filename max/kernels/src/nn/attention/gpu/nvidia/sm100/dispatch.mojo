@@ -73,6 +73,10 @@ comptime FA4_WS_POISON: Bool = get_defined_int["FA4_WS_POISON", 0]() != 0
 # at P == 1, ignoring an explicit `num_partitions` (2Q has no split-K). The
 # short-prompt WS routes ahead of the gate are unaffected.
 comptime FA4_FORCE_2Q: Bool = get_defined_int["FA4_FORCE_2Q", 0]() != 0
+# Query rows (prompt tokens x GQA group) a split KV cache's 1Q tile holds. At or
+# below it, attention over such a cache runs the 1Q tile with a partition
+# count; above it, the 2Q K-tail tile, which cannot split.
+comptime SPLIT_KV_1Q_MAX_Q_ROWS = 128
 
 
 # Outcomes of `_ws_g_route`.
@@ -292,6 +296,61 @@ def _sk_ws_partitions[
     comptime for v in splitk_p_ladder[sm_count]():
         if UInt32(v) <= want:
             p = UInt32(v)
+    return p
+
+
+# Keys per partition `mha_split_kv_decode_num_partitions` sizes for. A multiple
+# of the 512-key step at which an engine probes cache lengths for distinct
+# partition counts, so every count it can return is found by that walk.
+comptime SPLIT_KV_KEYS_PER_PARTITION = 512
+
+
+def mha_split_kv_decode_num_partitions[
+    sm_count: Int
+](
+    batch_size: Int,
+    num_keys: Int,
+    kv_heads_per_device: Int,
+    sliding_window: Int = 0,
+) -> Int:
+    """Returns the split-K partition count for decode and speculative verify
+    over a split KV cache (key wider than value), the count an engine puts in
+    the dispatch metadata.
+
+    The split cache's 1Q route honors the metadata count exactly
+    (`mha_sm100_dispatch`'s `split_kv` arm), so this is the production policy
+    for that route, and engines that key graph captures on the count port it.
+    It is not `_sk_ws_partitions` or the WS-G ceiling: those size routes the
+    split cache never takes.
+
+    One partition per `SPLIT_KV_KEYS_PER_PARTITION` visible keys, no more than
+    fill one wave of SMs with one CTA per (request, KV head), snapped DOWN to a
+    `splitk_p_ladder` rung (each rung has its own unrolled
+    `fa4_splitk_combine`; any other count takes its runtime-bound fallback)
+    and capped at the combine's `P_MAX`. A windowed group sees at most its
+    window, so a window under 512 keys always runs one partition.
+
+    Parameters:
+        sm_count: The device's SM count, the ladder's top rung.
+
+    Args:
+        batch_size: Requests in the batch.
+        num_keys: The batch's largest cache length, in keys.
+        kv_heads_per_device: KV heads on one device.
+        sliding_window: The group's attention window, or 0 for none.
+
+    Returns:
+        A partition count in `[1, min(sm_count, P_MAX)]`.
+    """
+    var visible_keys = num_keys
+    if sliding_window > 0:
+        visible_keys = min(num_keys, sliding_window)
+    var by_wave = max(1, sm_count // max(1, batch_size * kv_heads_per_device))
+    var want = min(visible_keys // SPLIT_KV_KEYS_PER_PARTITION, by_wave, P_MAX)
+    var p = 1
+    comptime for rung in splitk_p_ladder[sm_count]():
+        if rung <= want:
+            p = rung
     return p
 
 
@@ -516,11 +575,19 @@ def mha_sm100_dispatch[
         num_q_heads=config.num_heads,
         group=group,
         qk_depth=config.depth,
-        ov_depth=config.depth,
+        ov_depth=config.v_depth,
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
         is_mla=False,
     )
+    # A cache whose rows pack a key and a narrower value (`config.v_depth <
+    # config.depth`) has two routes: the 1Q tile with split-K for
+    # `q_rows <= SPLIT_KV_1Q_MAX_Q_ROWS`, and the 2Q K-tail tile for longer
+    # prompts (see the `split_kv` arm of the num_q dispatch below).
+    comptime split_kv = KVType.v_col_base > 0
+    comptime assert split_kv == (
+        config.v_depth != config.depth
+    ), "a value narrower than its key needs a split KV cache, and vice versa"
     # `ws_shared_key` deep-arm admission. A DEPTH-LEVEL predicate
     # (`config.depth in (256, 512)`); `mha.mojo`'s `fa4_route` is the sole feeder
     # of d256/d512 here -- it admits decode at every depth and short prefill
@@ -576,12 +643,18 @@ def mha_sm100_dispatch[
         # writes straight to `output`. Biconditional, so BOTH halves of a
         # mismatch are a compile error rather than a TMA descriptor built over a
         # dangling address.
+        # A scheme that carries its own f32 O buffer stores the partials
+        # without the descriptor, so it supplies no O target here.
         comptime assert PartitionType.do_partition == (
             not OWorkspaceType.is_null
+            or not PartitionType.OPartialPointerType.is_null
         ), (
             "workspace split-K must supply the O-partial target, and only it"
             " may: `do_partition` and the O pointer must agree"
         )
+        comptime assert (
+            OWorkspaceType.is_null or PartitionType.OPartialPointerType.is_null
+        ), "the O partials go through the descriptor or the f32 buffer"
         comptime assert (
             OWorkspaceType.is_null or OWorkspaceType.dtype == output_type
         ), "the O-partial workspace must match the kernel's output dtype"
@@ -622,7 +695,7 @@ def mha_sm100_dispatch[
         # stores straight to `output`. `do_partition` is comptime, so exactly one
         # branch is codegen'd.
         var ragged_tma_store: RaggedStoreType
-        comptime if PartitionType.do_partition:
+        comptime if not OWorkspaceType.is_null:
             ragged_tma_store = RaggedStoreType.create(
                 ctx,
                 # `OptionalPointer.value()` is immutable — its other users are
@@ -676,7 +749,7 @@ def mha_sm100_dispatch[
         comptime k_fold_chunks = kv_tma_fold_chunks[
             KVType.dtype,
             fa4_config.swizzle_mode,
-            BK=fa4_config.BK0,
+            BK=fa4_config.k_tma_box_cols(),
             head_size=fa4_config.qk_depth,
             box_rows=k_sub_BN,
             smem_BN=fa4_config.k_rows_per_cta(),
@@ -694,7 +767,7 @@ def mha_sm100_dispatch[
             fa4_config.swizzle_mode,
             BN=k_sub_BN,
             depth=fa4_config.qk_depth,
-            BK=fa4_config.BK0,
+            BK=fa4_config.k_tma_box_cols(),
             fold_chunks=k_fold_chunks,
             row_major=k_row_major,
         ](ctx)
@@ -714,7 +787,11 @@ def mha_sm100_dispatch[
         comptime v_row_major = (
             False if fa4_config.m_pack == 2 else fa4_config.v_row_major()
         )
-        comptime v_fold_chunks = 1 if fa4_config.m_pack == 2 else kv_tma_fold_chunks[
+        # A split cache's V copies select their columns of the shared K|V row
+        # by depth offset, which the folded descriptor cannot express.
+        comptime v_fold_chunks = 1 if (
+            fa4_config.m_pack == 2 or split_kv
+        ) else kv_tma_fold_chunks[
             KVType.dtype,
             fa4_config.swizzle_mode,
             BK=v_sub_cols,
@@ -1113,7 +1190,8 @@ def mha_sm100_dispatch[
 
     @inline(.always)
     def launch_workspace[
-        fa4_config: FA4Config[KVType.dtype, cross_p=cross_p]
+        fa4_config: FA4Config[KVType.dtype, cross_p=cross_p],
+        f32_partials: Bool = False,
     ](p: UInt32) raises {imm}:
         """Traditional (unfused / workspace) split-K launch: run the plain 1Q
         config over an over-launched grid that writes each partition's
@@ -1137,7 +1215,14 @@ def mha_sm100_dispatch[
         `var partition`: Mojo unifies a `var`'s type across both branches, so
         both ctors would have to type-check. Same idiom as
         `with_valid_length[NonNullPointer]` vs `[NullPointer]`.
+
+        `f32_partials` stores the partials in f32 rather than `output_type`, so
+        the output is rounded once rather than twice; the 1Q egress writes them
+        without the O-store descriptor.
         """
+        comptime intermediate_type = (
+            DType.float32 if f32_partials else output_type
+        )
         # `o_partial`: `[p, num_rows_q, num_q_heads, ov_depth]` locally-
         # normalized partials. `lse_partial`: one fused-LSE f32 per (partition,
         # row, q-head), `[p, num_rows_q, num_q_heads]` -- matching the O-store
@@ -1146,7 +1231,7 @@ def mha_sm100_dispatch[
         var lse_partial = ctx.enqueue_create_buffer[.float32](
             Int(p) * rows_x_heads
         )
-        var o_partial = ctx.enqueue_create_buffer[output_type](
+        var o_partial = ctx.enqueue_create_buffer[intermediate_type](
             Int(p) * rows_x_heads * fa4_config.ov_depth
         )
         # `-D FA4_WS_POISON=1` supplies the garbage that grades
@@ -1159,29 +1244,44 @@ def mha_sm100_dispatch[
         # comptime-pruned, so production codegen is untouched.
         comptime if FA4_WS_POISON:
             ctx.enqueue_memset(lse_partial, nan[.float32]())
-            ctx.enqueue_memset(o_partial, nan[output_type]())
-        var partition = SplitKPartition[.float32](
-            lse_partial.unsafe_ptr().as_unsafe_any_origin(),
-            p,
-            p,
-        )
-        # Attention: per-partition partials -> workspace (O store redirected to
-        # `o_partial` via `o_workspace_ptr`; fused LSE via the `SplitKPartition`
-        # pointer = `lse_partial`).
-        with_fa4_config[fa4_config](
-            StaticInt[1](),
-            partition,
-            NonNullPointer[output_type](o_partial),
-        )
+            ctx.enqueue_memset(o_partial, nan[intermediate_type]())
+        # Attention: per-partition partials -> workspace (fused LSE via the
+        # `SplitKPartition` pointer = `lse_partial`). f32 partials ride on the
+        # partition; otherwise the O store is redirected to `o_partial` via
+        # `o_workspace_ptr`.
+        var num_partitions: UInt32
+        comptime if f32_partials:
+            var f32_partition = SplitKPartition[
+                .float32, NonNullPointer[intermediate_type]
+            ](
+                lse_partial.unsafe_ptr().as_unsafe_any_origin(),
+                p,
+                p,
+                NonNullPointer[intermediate_type](o_partial),
+            )
+            with_fa4_config[fa4_config](StaticInt[1](), f32_partition)
+            num_partitions = f32_partition.num_partitions()
+        else:
+            var partition = SplitKPartition[.float32](
+                lse_partial.unsafe_ptr().as_unsafe_any_origin(),
+                p,
+                p,
+            )
+            with_fa4_config[fa4_config](
+                StaticInt[1](),
+                partition,
+                NonNullPointer[intermediate_type](o_partial),
+            )
+            num_partitions = partition.num_partitions()
         # Combine: reduce the partials into `output`. Bind to
         # `partition.num_partitions()` (not `max_num_partitions()`) so an
         # over-launching caller would need no combine-side change.
-        fa4_splitk_combine[output_type, fa4_config.ov_depth](
+        fa4_splitk_combine[output_type, fa4_config.ov_depth, intermediate_type](
             ctx,
             output.unsafe_ptr().unsafe_mut_cast[True]().as_unsafe_any_origin(),
             o_partial.unsafe_ptr().as_unsafe_any_origin(),
             lse_partial.unsafe_ptr().as_unsafe_any_origin(),
-            partition.num_partitions(),
+            num_partitions,
             UInt32(num_rows_q),
             UInt32(fa4_config.num_q_heads),
         )
@@ -1189,7 +1289,106 @@ def mha_sm100_dispatch[
         _ = lse_partial^
 
     # --- num_q dispatch ---
-    comptime if deep_ws_shared_key:
+    comptime if split_kv:
+        # Two routes. A prompt whose query rows fit one 1Q tile (decode,
+        # speculative verify, short prefill) takes the 1Q tile, whose
+        # non-shared K stage holds the whole 192-wide key in three chunks, with
+        # split-K. Anything longer takes the 2Q K-tail tile, which cannot split
+        # and has no in-kernel 1Q switch. Neither is warp-specialized, and the
+        # value's column offset rules out a page-dense TMA fold.
+        #
+        # A partition count that cannot be honored raises here rather than
+        # demoting to one partition as the other routes' `debug_assert`s do:
+        # those compile out of production builds, and split-K is a work
+        # decomposition, so a demoted launch still computes the right answer
+        # and nothing downstream would notice.
+        comptime fa4_config_1q = fa4_config_2q.with_num_q(1)
+        comptime assert fa4_config_2q.k_tail(), fa4_config_2q.description()
+        comptime assert (
+            not fa4_config_2q.can_switch_to_1q()
+        ), "the K-tail tile has no in-kernel 1Q body"
+        comptime assert (
+            fa4_config_1q.supported()
+            and not fa4_config_1q.k_tail()
+            and not fa4_config_1q.use_ws
+            and fa4_config_1q.fuse_gqa
+            and fa4_config_1q.BM == SPLIT_KV_1Q_MAX_Q_ROWS
+        ), fa4_config_1q.description()
+        comptime assert not (
+            fa4_config_2q.k_row_major()
+            or fa4_config_2q.v_row_major()
+            or fa4_config_1q.k_row_major()
+            or fa4_config_1q.v_row_major()
+        ), "a split KV cache needs whole-tile pages"
+        var q_rows = Int(max_prompt_len_arg.as_uint32()) * group
+        if q_rows > SPLIT_KV_1Q_MAX_Q_ROWS:
+            if num_partitions_override > 0:
+                raise Error(
+                    t"a split KV cache's prefill tile cannot split, but"
+                    t" num_partitions={num_partitions_override} was given for"
+                    t" {q_rows} query rows (the split-K tile holds"
+                    t" {SPLIT_KV_1Q_MAX_Q_ROWS})"
+                )
+            with_fa4_config[fa4_config_2q](
+                StaticInt[1](), NoPartition[.float32]()
+            )
+            return
+        if num_partitions_override > P_MAX:
+            raise Error(
+                t"num_partitions={num_partitions_override} exceeds the split-K"
+                t" combine's limit of {P_MAX}"
+            )
+        comptime split1q_mask_ok = MaskType.nonfull_sets[
+            fa4_config_1q.PairBM_eff(), fa4_config_1q.BN
+        ]()[0] != TileMaskStatus.UNKNOWN_MASK
+        var split1q_p: UInt32 = 1
+        if num_partitions_override > 0:
+            split1q_p = UInt32(num_partitions_override)
+        else:
+            comptime if split1q_mask_ok:
+                # No count given: the 1Q route's own sizing.
+                var raw_grid_split1q: UInt32 = _raw_grid[fa4_config_1q](
+                    max_prompt_len_arg.as_uint32(), batch_size
+                )
+                var by_cache_split1q: UInt32 = _visible_keys[
+                    fa4_config_1q.PairBM_eff(),
+                    fa4_config_1q.BN,
+                    KVType.page_size,
+                ](mask, max_cache_valid_length) // UInt32(512)
+                var p_ceiling_split1q: UInt32 = ws_p_ceiling[
+                    ctx.default_device_info.sm_count,
+                    splitk_oversubscribe,
+                ](raw_grid_split1q)
+                split1q_p = UInt32(
+                    _bucket_ws[ctx.default_device_info.sm_count](
+                        Int(by_cache_split1q),
+                        Int(p_ceiling_split1q),
+                        Int(raw_grid_split1q),
+                    )
+                )
+        if split1q_p > 1:
+            comptime if split1q_mask_ok:
+                comptime for C in _cluster_splitk_candidates[
+                    ctx.default_device_info.sm_count
+                ]():
+                    comptime splitk_cfg = fa4_config_1q.with_splitk(C)
+                    comptime assert (
+                        splitk_cfg.supported()
+                    ), splitk_cfg.description()
+                    if split1q_p == UInt32(C):
+                        with_fa4_config[splitk_cfg](
+                            StaticInt[C](), NoPartition[.float32]()
+                        )
+                        return
+                launch_workspace[fa4_config_1q, f32_partials=True](split1q_p)
+                return
+            else:
+                raise Error(
+                    t"num_partitions={split1q_p} cannot be honored: split-K"
+                    t" needs a mask whose visible range is known on the host"
+                )
+        with_fa4_config[fa4_config_1q](StaticInt[1](), NoPartition[.float32]())
+    elif deep_ws_shared_key:
         comptime fa4_config_ws_sk = fa4_config_2q.ws_shared_key_vehicle()
         comptime ws_sk_mask_ok = MaskType.nonfull_sets[
             fa4_config_ws_sk.PairBM_eff(), fa4_config_ws_sk.BN

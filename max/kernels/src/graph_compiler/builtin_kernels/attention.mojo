@@ -2639,6 +2639,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         //,
         target: StaticString,
         cache_dtype: DType = dtype,
+        v_head_dim: Int = -1,
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q_proj: InputTensor[dtype=dtype, rank=3, ...],
@@ -2658,7 +2659,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
             IndexList[2](0),
         )
-        var kv_collection = generic_get_paged_cache(
+        var kv_collection = generic_get_paged_cache[v_head_size=v_head_dim](
             kv_blocks,
             page_stride,
             cache_lengths,
@@ -2793,6 +2794,7 @@ struct Struct_mha_ragged_paged_scalar_args:
         target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
+        v_head_dim: Int = -1,
     ](
         output: OutputTensor[dtype=out_dtype, rank=3, ...],
         q: InputTensor[dtype=q_dtype, rank=3, ...],
@@ -2816,6 +2818,7 @@ struct Struct_mha_ragged_paged_scalar_args:
             local_window_size=local_window_size,
             output_dtype=out_dtype,
             cache_dtype=cache_dtype,
+            v_head_dim=v_head_dim,
         ](
             output,
             q,
@@ -2846,6 +2849,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
+        v_head_dim: Int = -1,
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
@@ -2876,6 +2880,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
             local_window_size=local_window_size,
             output_dtype=dtype,
             cache_dtype=dtype,
+            v_head_dim=v_head_dim,
         ](
             output,
             q,

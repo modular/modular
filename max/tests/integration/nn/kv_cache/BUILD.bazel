@@ -12,12 +12,15 @@ modular_py_test(
         ["*.py"],
         exclude = ["*_gpu.py"],
     ),
+    data = ["testdata/split_kv_decode_partitions.csv"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
     deps = [
         "//max/python/max:tree",
+        "//max/python/max/_artifact",
+        "//max/python/max/_kv_cache_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
