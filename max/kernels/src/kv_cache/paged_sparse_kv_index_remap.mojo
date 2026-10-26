@@ -28,6 +28,7 @@ the output slot is written ``-1``.
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv
+from std.memory import bitcast
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
@@ -267,7 +268,12 @@ def _remap_scale_one(
 ) -> Int32:
     """Like `_remap_one`, for a pool whose blocks sit `rows_per_block` rows
     apart: returns `block * rows_per_block + offset`, a pool row index rather
-    than the `block * page_size + offset` encoding."""
+    than the `block * page_size + offset` encoding.
+
+    The row is unsigned, stored in the Int32 slot as its bits: an NVFP4 scale
+    pool's rows pass 2**31 (247380 blocks of 9984 rows), so a signed row would
+    turn negative and read as an unused slot. All ones (-1) stays the unused
+    marker; no pool reaches 2**32 - 1 rows."""
     if log_t < 0:
         return log_t
     var t = Int(log_t)
@@ -280,7 +286,9 @@ def _remap_scale_one(
     var block_id = lut[bi * lut_cols + page_idx]
     if block_id >= invalid_block_id:
         return Int32(-1)
-    return Int32(Int(block_id) * rows_per_block + t % page_size)
+    return bitcast[DType.int32, 1](
+        UInt32(Int(block_id) * rows_per_block + t % page_size)
+    )
 
 
 struct PagedKVScaleRemap[page_size: Int, top_k: Int](SparseIndexRemap):

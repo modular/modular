@@ -807,10 +807,12 @@ struct MLAPrefillSparseQKVFP8[
         """
         if slot >= top_k_length:
             return -1
-        var row = indices.load[width=1](Coord(scale_rows_base + slot)).cast[
-            DType.int32
-        ]()
-        return Int(row[0])
+        # Unsigned: an NVFP4 scale pool's rows pass 2**31. All ones marks an
+        # unused slot; see `_remap_scale_one`.
+        var row = indices.load[width=1](Coord(scale_rows_base + slot))[0]
+        if row == UInt32(0xFFFFFFFF):
+            return -1
+        return Int(row)
 
     @inline(.always)
     @staticmethod
@@ -819,7 +821,7 @@ struct MLAPrefillSparseQKVFP8[
         scale_rows_base: UInt32,
         slot0: UInt32,
         top_k_length: UInt32,
-    ) -> SIMD[DType.int32, 2]:
+    ) -> SIMD[DType.int64, 2]:
         """The scale-pool rows of the K rows this thread expands.
 
         A thread expands chunks of two rows (see `_dequant_k_nvfp4`).
@@ -828,9 +830,9 @@ struct MLAPrefillSparseQKVFP8[
         """
         var tid = Int(thread_idx.x) % WARPGROUP_SIZE
         var row0 = 16 * (tid // WARP_SIZE) + (tid % WARP_SIZE) // 4
-        var rows = SIMD[DType.int32, 2](-1)
+        var rows = SIMD[DType.int64, 2](-1)
         comptime for m in range(2):
-            rows[m] = Int32(
+            rows[m] = Int64(
                 Self._live_scale_row(
                     indices,
                     scale_rows_base,
@@ -843,7 +845,7 @@ struct MLAPrefillSparseQKVFP8[
     @inline(.always)
     @staticmethod
     def _load_k_scales(
-        live_rows: SIMD[DType.int32, 2],
+        live_rows: SIMD[DType.int64, 2],
         kv_lut: Self.KVLUTType,
     ) -> SIMD[DType.uint16, 8]:
         """Loads the scales of the chunks this thread expands.
@@ -1388,7 +1390,7 @@ struct MLAPrefillSparseQKVFP8[
                 var phase = (k / UInt32(Self.config.num_mbars)) & 1
                 # An NVFP4 scale row comes from the indices alone, so its
                 # load overlaps the buffer-free wait below.
-                var scale_rows = SIMD[DType.int32, 2](-1)
+                var scale_rows = SIMD[DType.int64, 2](-1)
                 comptime if Self.is_nvfp4:
                     scale_rows = Self._k_scale_rows(
                         indices,

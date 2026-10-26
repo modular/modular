@@ -1280,9 +1280,14 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         comptime RP = Self.config.BN_QK // 16
         comptime for rp in range(RP):
             var r = rp * 16 + lane // 2
+            # Unsigned scale-pool row, -1 for an unused slot; see
+            # `_remap_scale_one`.
             var row = idx_smem[Self.config.BN_QK + r]
+            var live = row != -1
             var src = sf_gmem.unsafe_offset(
-                Int(max(row, Int32(0))) * Self.nvfp4_sf_row_bytes + half * 16
+                (Int(bitcast[DType.uint32, 1](row)) if live else 0)
+                * Self.nvfp4_sf_row_bytes
+                + half * 16
             )
             var dst = sf_smem.unsafe_offset(
                 r * Self.nvfp4_sf_row_bytes + half * 16
@@ -1290,7 +1295,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             async_copy[16, fill=UInt8(0)](
                 src.unsafe_address_space_cast[.GLOBAL](),
                 dst,
-                src_size=Int32(16) if row >= 0 else Int32(0),
+                src_size=Int32(16) if live else Int32(0),
             )
         async_copy_arrive[noinc=True](k_mbar)
 
