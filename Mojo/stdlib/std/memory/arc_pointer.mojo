@@ -34,6 +34,7 @@ from std.memory.alloc import (
     ThinAllocation,
     Layout,
 )
+from std.utils._nicheable import _FieldNicheable
 
 
 @doc_hidden
@@ -155,6 +156,7 @@ struct ArcPointer[T: Movable](
     ImplicitlyCopyable,
     RegisterPassable,
     Writable where conforms_to(T, Writable),
+    _FieldNicheable,
 ):
     """Atomic reference-counted pointer.
 
@@ -506,6 +508,8 @@ struct ArcPointer[T: Movable](
         FormatStruct(writer, "ArcPointer").params(
             TypeNames[Self.T](),
         ).fields(Repr(self[]))
+
+    comptime _KgenNichedFieldName = "_inner".value
 
 
 struct WeakPointer[T: Movable](ImplicitlyCopyable, RegisterPassable):

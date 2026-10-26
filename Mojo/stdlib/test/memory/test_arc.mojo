@@ -13,7 +13,13 @@
 
 from std.memory import ArcPointer
 from std.memory.arc_pointer import WeakPointer
-from test_utils import ExplicitDestroy, ObservableDel, check_write_to
+from std.sys import size_of
+from test_utils import (
+    ExplicitDestroy,
+    ObservableDel,
+    check_niches,
+    check_write_to,
+)
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
@@ -463,6 +469,24 @@ def test_lifetime_probe_arc_drop_with_weak_in_scope() raises:
     # If `_ = p^` is honored as a real drop point: observed is True.
     # If lifetime extension defers p's drop to last-use of w: observed is False.
     assert_true(observed)
+
+
+def test_arc_pointer_niche() raises:
+    comptime ArcType = ArcPointer[String]
+    assert_equal(ArcType.niche_count(), 1)
+    assert_equal(size_of[Optional[ArcType]](), size_of[ArcType]())
+    check_niches[ArcType]()
+
+    var p = ArcPointer(String("hello"))
+    var some = Optional(p)
+    assert_true(some)
+    assert_equal(some.value()[], "hello")
+    assert_equal(p.count(), 2)
+    _ = some^
+    assert_equal(p.count(), 1)
+
+    var none = Optional[ArcType](None)
+    assert_false(none)
 
 
 def main() raises:
