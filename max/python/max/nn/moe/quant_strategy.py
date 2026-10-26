@@ -716,10 +716,13 @@ class BlockScaledStrategy:
         decode_grid_m_rows: int,
         mega_band_m: int,
         mega_max_rows: int,
+        prefill_band_m: int = 0,
+        prefill_mega: bool = True,
         activation: GatedActivation | None = None,
     ) -> TensorValue:
         """Runs the whole MoE FFN in one op on AMD gfx950: the one-launch
-        MegaFFN in the decode band, else the same two kernels as
+        MegaFFN in the decode band, the prefill GEMMs above
+        ``prefill_band_m``, else the same two kernels as
         :meth:`grouped_matmul_swiglu_quant` then :meth:`grouped_matmul`.
 
         Args:
@@ -736,6 +739,9 @@ class BlockScaledStrategy:
             decode_grid_m_rows: Worst-case rows one expert can receive.
             mega_band_m: The MegaFFN's band on ``estimated_total_m``.
             mega_max_rows: The most rows this GPU receives inside it.
+            prefill_band_m: The prefill GEMMs' band floor on
+                ``estimated_total_m`` (0: never).
+            prefill_mega: Runs that band as one MegaFFN launch.
             activation: The gated activation.
 
         Returns:
@@ -765,6 +771,8 @@ class BlockScaledStrategy:
             decode_grid_m_rows,
             mega_band_m,
             mega_max_rows,
+            prefill_band_m=prefill_band_m,
+            prefill_mega=prefill_mega,
             activation=activation,
         )
 

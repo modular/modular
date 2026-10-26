@@ -8263,24 +8263,32 @@ def grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
     return outputs[0].tensor, outputs[1].tensor
 
 
-def amd_mega_ffn_workspace_words(num_experts: int, max_rows: int) -> int:
+def amd_mega_ffn_workspace_words(
+    num_experts: int, max_rows: int, dispatch_rows: int
+) -> int:
     """Returns the u32 words of an AMD MegaFFN persistent workspace.
 
     One padded counter slot per possible 16-row block (each expert adds at
     most one partial block) and per workgroup of the launch (one per CU, at
-    most 1024), plus the two parity ticket words.
+    most 1024), plus the two parity ticket words; then the prefill
+    MegaFFN's region, laid out the same way with a slot per 128-row block
+    of the dispatch buffer (``mega_prefill_region_words`` in
+    ``mega_ffn_amd_prefill.mojo``).
 
     Args:
         num_experts: Expert slots of the FFN.
         max_rows: The most rows the GPU can receive inside the MegaFFN's
             band.
+        dispatch_rows: Rows of the dispatch buffer the FFN reads, its
+            capacity at prefill.
 
     Returns:
         The workspace length in ``uint32`` words.
     """
     pad = 32  # u32 words of a counter slot: mega_ffn_amd_decode.PAD
     blocks = num_experts + -(-max_rows // 16)
-    return max(blocks, 1024) * pad + 2
+    prefill_blocks = num_experts + -(-dispatch_rows // 128)
+    return max(blocks, 1024) * pad + max(prefill_blocks, 1024) * pad + 4
 
 
 def grouped_ffn_block_scaled_amd(
@@ -8300,6 +8308,8 @@ def grouped_ffn_block_scaled_amd(
     decode_grid_m_rows: int,
     mega_band_m: int,
     mega_max_rows: int,
+    prefill_band_m: int = 0,
+    prefill_mega: bool = True,
     activation: GatedActivation | None = None,
 ) -> TensorValue:
     """Runs an MXFP8 MoE FFN on AMD gfx950: gate/up, activation, down.
@@ -8331,6 +8341,10 @@ def grouped_ffn_block_scaled_amd(
         mega_band_m: The MegaFFN runs when ``estimated_total_m`` is at most
             this (0: never).
         mega_max_rows: The most rows this GPU can receive inside that band.
+        prefill_band_m: Above this ``estimated_total_m`` the op runs the
+            prefill GEMMs (0: never), bit for bit the chain's output.
+        prefill_mega: Runs that band as one prefill MegaFFN launch rather
+            than two GEMM launches.
         activation: The gated activation, as for
             :func:`grouped_dynamic_block_scaled_matmul_amd_swiglu_quant`.
 
@@ -8381,6 +8395,12 @@ def grouped_ffn_block_scaled_amd(
             ),
             ops.constant(
                 mega_max_rows, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                prefill_band_m, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                int(prefill_mega), dtype=DType.uint32, device=DeviceRef.CPU()
             ),
         ],
         out_types=[

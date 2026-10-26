@@ -17,8 +17,10 @@ SwiGLU + MXFP8 requantize, then down), byte for byte.
 
 In the decode band the op runs the one-launch MegaFFN, whose counters live in
 a persistent graph buffer zeroed once at load; the graph executes several
-times so a stale count across executions would show. Outside the band the
-op runs the chain itself.
+times so a stale count across executions would show. Above its prefill band
+it runs the prefill MegaFFN (or the two prefill GEMMs), here on partial
+128-row tiles and an empty expert.
+Elsewhere the op runs the chain itself.
 
 NOTE: AMD gfx950 only.
 """
@@ -47,7 +49,6 @@ from max.nn.moe.moe_fp8 import MoEQuantized
 
 H = 6144
 I = 3072
-N1 = 2 * I
 SLOT_ROWS = 32
 
 
@@ -80,8 +81,19 @@ def test_mega_ffn_amd_single_node_only(n_nodes: int, fused: bool) -> None:
 @pytest.mark.skipif(
     accelerator_api() != "hip", reason="the AMD MoE FFN is gfx950-only"
 )
-@pytest.mark.parametrize("decode_band", [True, False])
-def test_mega_ffn_amd_matches_chain(decode_band: bool) -> None:
+@pytest.mark.parametrize(
+    "regime, i",
+    [
+        ("mega", I),
+        ("prefill_mega", I),
+        ("prefill_gemm", I),
+        ("chain", I),
+        # below the prefill kernels' K floor (512): the op takes the chain
+        ("prefill_mega", 256),
+    ],
+)
+def test_mega_ffn_amd_matches_chain(regime: str, i: int) -> None:
+    n1 = 2 * i
     tokens_per_expert = [16, 0, 21, 9]
     n_experts = len(tokens_per_expert)
     total = sum(tokens_per_expert)
@@ -90,10 +102,10 @@ def test_mega_ffn_amd_matches_chain(decode_band: bool) -> None:
     rng = np.random.default_rng(11)
     x = _fp8_bytes(rng, (total, H))
     sx = _scale_bytes(rng, (total, H // 32), -4)
-    w1 = _fp8_bytes(rng, (n_experts, N1, H))
-    s1 = _scale_bytes(rng, (n_experts, N1, H // 32), -4)
-    w2 = _fp8_bytes(rng, (n_experts, H, I))
-    s2 = _scale_bytes(rng, (n_experts, H, I // 32), -2)
+    w1 = _fp8_bytes(rng, (n_experts, n1, H))
+    s1 = _scale_bytes(rng, (n_experts, n1, H // 32), -4)
+    w2 = _fp8_bytes(rng, (n_experts, H, i))
+    s2 = _scale_bytes(rng, (n_experts, H, i // 32), -2)
     offsets = np.zeros(n_experts + 1, dtype=np.uint32)
     offsets[1:] = np.cumsum(tokens_per_expert)
     expert_ids = np.arange(n_experts, dtype=np.int32)
@@ -108,14 +120,15 @@ def test_mega_ffn_amd_matches_chain(decode_band: bool) -> None:
     input_types = [
         TensorType(f8, (total, H), device=device_ref),
         TensorType(e8, (total, H // 32), device=device_ref),
-        TensorType(f8, (n_experts, N1, H), device=device_ref),
-        TensorType(e8, (n_experts, N1, H // 32), device=device_ref),
-        TensorType(f8, (n_experts, H, I), device=device_ref),
-        TensorType(e8, (n_experts, H, I // 32), device=device_ref),
+        TensorType(f8, (n_experts, n1, H), device=device_ref),
+        TensorType(e8, (n_experts, n1, H // 32), device=device_ref),
+        TensorType(f8, (n_experts, H, i), device=device_ref),
+        TensorType(e8, (n_experts, H, i // 32), device=device_ref),
         TensorType(DType.uint32, (n_experts + 1,), device=device_ref),
         TensorType(DType.int32, (n_experts,), device=device_ref),
         TensorType(DType.uint32, (2,), device=cpu_ref),
     ]
+    decode_band = regime == "mega"
     # decode band: estimated rows under the cap; otherwise the gate is off
     cap = 128 if decode_band else 0
     with Graph("mega_ffn_amd_ab", input_types=input_types) as graph:
@@ -167,7 +180,7 @@ def test_mega_ffn_amd_matches_chain(decode_band: bool) -> None:
         workspace = ops.buffer_create(
             BufferType(
                 DType.uint32,
-                shape=[amd_mega_ffn_workspace_words(n_experts, total)],
+                shape=[amd_mega_ffn_workspace_words(n_experts, total, total)],
                 device=device_ref,
             ),
             init_value=0,
@@ -189,6 +202,8 @@ def test_mega_ffn_amd_matches_chain(decode_band: bool) -> None:
             decode_grid_m_rows=max_tok,
             mega_band_m=256 if decode_band else 0,
             mega_max_rows=total,
+            prefill_band_m=1 if regime.startswith("prefill") else 0,
+            prefill_mega=regime == "prefill_mega",
         )
         # bf16 -> f32 is exact, so equal f32 means equal bf16 bits
         graph.output(y_ref.cast(DType.float32), y.cast(DType.float32))
@@ -221,5 +236,5 @@ def test_mega_ffn_amd_matches_chain(decode_band: bool) -> None:
         bad = int(np.count_nonzero(y_ref_np != y_np))
         assert bad == 0, (
             f"execution {execution}: {bad} of {y_np.size} bf16 outputs"
-            f" differ from the chain (decode_band={decode_band})"
+            f" differ from the chain (regime={regime})"
         )

@@ -586,7 +586,9 @@ class MoEQuantized(MoE):
                     DType.uint32,
                     shape=[
                         amd_mega_ffn_workspace_words(
-                            int(self.gate_up_proj.shape[0]), mega_max_rows
+                            int(self.gate_up_proj.shape[0]),
+                            mega_max_rows,
+                            int(expert_inputs[0].shape[0]),
                         )
                     ],
                     device=x.device,
@@ -606,6 +608,10 @@ class MoEQuantized(MoE):
                 decode_grid_m_rows=mxfp4_decode_grid_m_rows,
                 mega_band_m=mega_band_m,
                 mega_max_rows=mega_max_rows,
+                # The prefill GEMMs take every step past the MegaFFN's band:
+                # 2-22% faster there than preb's mid-band and prefill tiles
+                # (512- to 16k-token steps).
+                prefill_band_m=mega_band_m,
                 activation=self.activation,
             )
 

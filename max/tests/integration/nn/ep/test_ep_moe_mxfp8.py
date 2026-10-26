@@ -34,7 +34,8 @@ from max.nn.comm.ep.ep_kernels import (
     _ep_dispatch_output_types,
     uses_mx_ep_token_format,
 )
-from max.nn.moe import GatedActivation, MoEGate, MoEQuantized
+from max.nn.kernels import amd_mega_ffn_workspace_words
+from max.nn.moe import GatedActivation, MoEGate, MoEQuantized, moe_fp8
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -445,15 +446,29 @@ def test_ep_mx_scale_fold_amd(n_devices: int) -> None:
 @pytest.mark.skipif(
     accelerator_api() != "hip", reason="The AMD MoE FFN op is gfx950-only"
 )
-def test_ep_moe_mxfp8_mega_ffn_default_amd() -> None:
+def test_ep_moe_mxfp8_mega_ffn_default_amd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """At MiniMax M3's expert shapes the MXFP8 EP MoE lowers to the AMD FFN
-    op. Pinned at graph build."""
+    op, with a workspace sized for its dispatch buffer. Pinned at graph
+    build."""
+    sized: list[int] = []
+
+    def workspace_words(experts: int, max_rows: int, rows: int) -> int:
+        sized.append(rows)
+        return amd_mega_ffn_workspace_words(experts, max_rows, rows)
+
+    monkeypatch.setattr(
+        moe_fp8, "amd_mega_ffn_workspace_words", workspace_words
+    )
     n_devices = 2
     hidden_dim = 6144
-    moe, _ = _build_ep_moe(
+    # a DP-heavy dispatch buffer: more 128-row blocks than a fixed region of
+    # 4096 slots held
+    moe, ep_config = _build_ep_moe(
         _mx_quant_config(QuantFormat.MXFP8),
         n_devices,
-        128,
+        32768,
         hidden_dim=hidden_dim,
         moe_dim=3072,
     )
@@ -477,3 +492,6 @@ def test_ep_moe_mxfp8_mega_ffn_default_amd() -> None:
         xs = [x.tensor for x in graph.inputs[:n_devices]]
         graph.output(*forward_moe_sharded_layers(moe_shards, xs))
     assert "mo.grouped.ffn.block.scaled.amd" in str(graph)
+    capacity = ep_config.get_max_recv_tokens() + ep_config.max_tokens_per_rank
+    assert NUM_EXPERTS // n_devices + 1 + capacity // 128 > 4096
+    assert sized and set(sized) == {capacity}
