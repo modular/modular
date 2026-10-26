@@ -565,3 +565,28 @@ mo.graph @bundled_allgather_wrong_output_device(
     -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>, !mo.chain)
   mo.output %0#0, %0#1 : !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>
 }
+
+// -----
+
+// Test row-sliced allgather over a grouped (non full-world) layout.
+mo.graph @allgather_slice_rows_grouped(
+    %arg0: !mo.tensor<[4, 3], f32, gpu:0>,
+    %arg1: !mo.tensor<[4, 3], f32, gpu:1>,
+    %arg2: !mo.tensor<[4, 3], f32, gpu:2>,
+    %arg3: !mo.tensor<[4, 3], f32, gpu:3>,
+    %sig0: !mo.buffer<[537919488], ui8, gpu:0>,
+    %sig1: !mo.buffer<[537919488], ui8, gpu:1>,
+    %sig2: !mo.buffer<[537919488], ui8, gpu:2>,
+    %sig3: !mo.buffer<[537919488], ui8, gpu:3>)
+    -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>, !mo.tensor<[2, 3], f32, gpu:1>, !mo.tensor<[2, 3], f32, gpu:2>, !mo.tensor<[2, 3], f32, gpu:2>, !mo.tensor<[2, 3], f32, gpu:3>, !mo.tensor<[2, 3], f32, gpu:3>) {
+  %chain_in = mo.chain.create()
+  // expected-error@+1 {{slice_rows requires one full-world group, but group_size is 2 for 4 inputs}}
+  %0:9 = "mo.distributed.allgather"(%arg0, %arg1, %arg2, %arg3, %sig0, %sig1, %sig2, %sig3, %chain_in) {group_size = 2 : i64, slice_rows = true} :
+    (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.tensor<[4, 3], f32, gpu:2>, !mo.tensor<[4, 3], f32, gpu:3>,
+     !mo.buffer<[537919488], ui8, gpu:0>, !mo.buffer<[537919488], ui8, gpu:1>, !mo.buffer<[537919488], ui8, gpu:2>, !mo.buffer<[537919488], ui8, gpu:3>, !mo.chain)
+    -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>, !mo.tensor<[2, 3], f32, gpu:1>,
+        !mo.tensor<[2, 3], f32, gpu:2>, !mo.tensor<[2, 3], f32, gpu:2>, !mo.tensor<[2, 3], f32, gpu:3>, !mo.tensor<[2, 3], f32, gpu:3>, !mo.chain)
+  mo.output %0#0, %0#1, %0#2, %0#3, %0#4, %0#5, %0#6, %0#7 :
+    !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>, !mo.tensor<[2, 3], f32, gpu:1>,
+    !mo.tensor<[2, 3], f32, gpu:2>, !mo.tensor<[2, 3], f32, gpu:2>, !mo.tensor<[2, 3], f32, gpu:3>, !mo.tensor<[2, 3], f32, gpu:3>
+}

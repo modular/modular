@@ -27,7 +27,7 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from comm.allgather import allgather
+from comm.allgather import allgather, allgather_rows_slice
 from comm.allreduce import allreduce
 
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
@@ -487,6 +487,7 @@ struct DistributedAllGather:
         target: StaticString,
         _trace_name: StaticString,
         group_size: Int = 0,
+        slice_rows: Bool = False,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -505,6 +506,10 @@ struct DistributedAllGather:
             group_size: Number of devices per allgather group; must be at
                 least 1 and must evenly divide the total number of devices
                 (defaults to 0).
+            slice_rows: Whether each device receives only its own contiguous
+                block of `dim0 / num_devices` rows of every gathered piece
+                rather than the whole piece (see `allgather_rows_slice`).
+                Requires one full-world group.
 
         Args:
             outputs: Output tensors (one per GPU) to store gathered results.
@@ -578,26 +583,88 @@ struct DistributedAllGather:
                 row_major(outputs[i].size()),
             )
 
-        @inline(.always)
-        def launch_allgather[
-            index: Int
-        ]() raises {
-            imm in_tensors,
-            imm out_tensors,
-            imm rank_sigs,
-            imm dev_ctxs_input,
-        }:
-            allgather[ngpus=num_devices, group_size=group_size](
-                in_tensors,
-                out_tensors,
-                rank_sigs,
-                dev_ctxs_input[index],
-                index,
+        comptime if slice_rows:
+            comptime assert (
+                group_size == num_devices
+            ), "slice_rows requires one full-world allgather group"
+            comptime assert rank >= 2, "slice_rows needs a row axis to slice"
+            var rows = inputs[0].dim_size(0)
+            var row_elems = 1
+            comptime for dim in range(1, rank):
+                row_elems *= inputs[0].dim_size(dim)
+            if row_elems == 0:
+                if rows % num_devices != 0:
+                    raise Error(
+                        "allgather_rows_slice requires the row count to be a"
+                        " multiple of the device count"
+                    )
+                comptime for i in range(num_devices):
+                    if inputs[i].dim_size(0) != rows or inputs[i].size() != 0:
+                        raise Error(
+                            "allgather_rows_slice requires empty shards with"
+                            " the same row count on every device"
+                        )
+                comptime for i in range(num_devices * group_size):
+                    if outputs[i].size() != 0:
+                        raise Error(
+                            "allgather_rows_slice: an output buffer is not"
+                            " one row block"
+                        )
+                return
+            # `group_size == num_devices` here, which the array length can't
+            # see through.
+            var slice_out_tensors = Array[
+                OutputTensorType, num_devices * num_devices
+            ](
+                fill_with_unrolled=lambda [i: Int]() -> OutputTensorType: (
+                    out_tensors[i]
+                )
             )
 
-        _launch_device_collective[num_devices](
-            launch_allgather, dev_ctxs_input.copy()
-        )
+            @inline(.always)
+            def launch_rows_slice[
+                index: Int
+            ]() raises {
+                imm in_tensors,
+                imm slice_out_tensors,
+                imm rank_sigs,
+                imm dev_ctxs_input,
+                imm row_elems,
+            }:
+                allgather_rows_slice[ngpus=num_devices](
+                    in_tensors,
+                    slice_out_tensors,
+                    rank_sigs,
+                    row_elems,
+                    dev_ctxs_input[index],
+                    index,
+                )
+
+            _launch_device_collective[num_devices](
+                launch_rows_slice, dev_ctxs_input.copy()
+            )
+        else:
+
+            @inline(.always)
+            def launch_allgather[
+                index: Int
+            ]() raises {
+                imm in_tensors,
+                imm out_tensors,
+                imm rank_sigs,
+                imm dev_ctxs_input,
+            }:
+                allgather[ngpus=num_devices, group_size=group_size](
+                    in_tensors,
+                    out_tensors,
+                    rank_sigs,
+                    dev_ctxs_input[index],
+                    index,
+                )
+
+            _launch_device_collective[num_devices](
+                launch_allgather, dev_ctxs_input.copy()
+            )
 
 
 @extensibility.register("mo.distributed.broadcast")

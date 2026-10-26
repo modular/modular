@@ -15,18 +15,155 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, cast
 
 import numpy as np
 import pytest
+from max import _interpreter
+from max._core.dialects import mo
+from max._core.dialects.builtin import BoolAttr, IntegerAttr, IntegerType
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, ModelExecutionError
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, ops
+from max.graph.type import _ChainType
+from max.graph.value import _ChainValue
 from max.nn import Signals
 
 M = 512
 N = 1024
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (8, (8,)),
+        (0, (8,)),
+        ("rows", (8,)),
+        (8, (2, 4)),
+        ("rows", (2, 4)),
+        ("rows", (0,)),
+        ("rows", (2, 0)),
+    ],
+)
+def sliced_allgather_runner(
+    request: pytest.FixtureRequest,
+    sliced_allgather_executor: str,
+    sliced_allgather_signal_buffers: list[Buffer],
+) -> Callable[[], None]:
+    rows, trailing_shape = request.param
+    devices = [DeviceRef.GPU(i) for i in range(2)]
+    signals = Signals(devices)
+    shape = (rows, *trailing_shape)
+    with Graph(
+        "allgather_rows_slice",
+        input_types=[
+            TensorType(DType.float32, shape, device) for device in devices
+        ]
+        + list(signals.input_types()),
+    ) as graph:
+        *outputs, chain = graph._add_op_generated(
+            mo.DistributedAllgatherOp,
+            [
+                TensorType(
+                    DType.float32,
+                    (graph.inputs[0].tensor.shape[0] // 2, *shape[1:]),
+                    device,
+                )
+                for device in devices
+                for _ in devices
+            ],
+            _ChainType(),
+            [v.tensor for v in graph.inputs[:2]],
+            [v.buffer for v in graph.inputs[2:]],
+            graph.device_chains.merge_for(devices),
+            IntegerAttr(IntegerType(64), 2),
+            BoolAttr(True),
+        )
+        assert isinstance(chain, _ChainValue)
+        graph._update_chain(chain)
+        for device in devices:
+            graph.device_chains[device] = chain
+        graph.output(*outputs)
+
+    accelerators = [Accelerator(i) for i in range(2)]
+    model = None
+    if sliced_allgather_executor == "compiled":
+        session = InferenceSession(devices=[CPU(), *accelerators])
+        model = session.load(graph)
+    signal_buffers = sliced_allgather_signal_buffers
+
+    def execute(runtime_rows: int) -> None:
+        runtime_shape = (runtime_rows, *trailing_shape)
+        input_bits = [
+            np.random.default_rng(source).integers(
+                0, 2**32, size=runtime_shape, dtype=np.uint32
+            )
+            for source in range(2)
+        ]
+        for bits in input_bits:
+            if bits.size:
+                bits.reshape(runtime_rows, -1)[:, :5] = np.array(
+                    [
+                        0x7FC01234,
+                        0x7F801234,
+                        0x80000000,
+                        0x7F800000,
+                        0xFF800000,
+                    ],
+                    dtype=np.uint32,
+                )
+        inputs = [bits.view(np.float32) for bits in input_bits]
+        buffers = [
+            Buffer.from_numpy(value).to(device)
+            for value, device in zip(inputs, accelerators, strict=True)
+        ]
+        if model is None:
+            assert _interpreter.can_execute(graph)
+            results = _interpreter.execute(graph, [*buffers, *signal_buffers])
+        else:
+            results = model.execute(*buffers, *signal_buffers)
+        assert len(results) == 4
+        for index, result in enumerate(results):
+            destination, source = divmod(index, 2)
+            assert isinstance(result, Buffer)
+            assert result.device == accelerators[destination]
+            start = destination * runtime_rows // 2
+            stop = (destination + 1) * runtime_rows // 2
+            np.testing.assert_array_equal(
+                result.to(CPU()).to_numpy().view(np.uint32),
+                inputs[source][start:stop].view(np.uint32),
+            )
+
+    def run() -> None:
+        for runtime_rows in (8, 0, 8) if isinstance(rows, str) else (rows,):
+            execute(runtime_rows)
+        if isinstance(rows, str) and 0 in trailing_shape:
+            with pytest.raises(
+                (ValueError, ModelExecutionError), match="row count"
+            ):
+                execute(3)
+
+    return run
+
+
+@pytest.fixture(scope="module")
+def sliced_allgather_signal_buffers() -> list[Buffer]:
+    if accelerator_count() < 2:
+        pytest.skip("Sliced allgather requires two GPUs.")
+    return Signals([DeviceRef.GPU(i) for i in range(2)]).buffers()
+
+
+@pytest.fixture(scope="module", params=["interpreter", "compiled"])
+def sliced_allgather_executor(request: pytest.FixtureRequest) -> str:
+    return request.param
+
+
+def test_allgather_rows_slice_execution(
+    sliced_allgather_runner: Callable[[], None],
+) -> None:
+    sliced_allgather_runner()
 
 
 def allgather_graph(signals: Signals, axis: int) -> Graph:

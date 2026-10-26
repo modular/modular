@@ -2534,7 +2534,21 @@ def _handle_distributed_allgather(
         input_idx = group_start + local_input_idx
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(bufs[input_idx].to(device))
+        source = bufs[input_idx]
+        if op.slice_rows:
+            rows = source.shape[0]
+            if rows % num_inputs != 0:
+                raise ValueError(
+                    "allgather_rows_slice requires the row count to be a "
+                    "multiple of the device count"
+                )
+            rows_per_device = rows // num_inputs
+            start = device_idx * rows_per_device
+            indices = (slice(start, start + rows_per_device),) + (
+                slice(None),
+            ) * (len(source.shape) - 1)
+            source = source[indices]
+        output_buffers.append(source.to(device))
 
     output_buffers.append(None)
     return output_buffers

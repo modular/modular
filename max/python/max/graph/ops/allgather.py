@@ -19,7 +19,7 @@ from collections.abc import Iterable
 from typing import TypeVar
 
 from max._core.dialects import mo
-from max._core.dialects.builtin import IntegerAttr, IntegerType
+from max._core.dialects.builtin import BoolAttr, IntegerAttr, IntegerType
 
 from ..graph import Graph
 from ..type import TensorType, _ChainType
@@ -161,6 +161,7 @@ def allgather(
         signal_buffers,
         in_chain,
         group_size_attr,
+        BoolAttr(False),
     )
 
     # Update the chain.

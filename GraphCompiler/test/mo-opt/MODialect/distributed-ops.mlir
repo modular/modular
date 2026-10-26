@@ -36,6 +36,18 @@ mo.graph @allgather_grouped(%in0: !mo.tensor<[5, 8], f32, gpu:0>, %in1: !mo.tens
   mo.output %out#0, %out#1, %out#2, %out#3, %out#4, %out#5, %out#6, %out#7 : !mo.tensor<[5, 8], f32, gpu:0>, !mo.tensor<[4, 8], f32, gpu:0>, !mo.tensor<[5, 8], f32, gpu:1>, !mo.tensor<[4, 8], f32, gpu:1>, !mo.tensor<[3, 8], f32, gpu:2>, !mo.tensor<[2, 8], f32, gpu:2>, !mo.tensor<[3, 8], f32, gpu:3>, !mo.tensor<[2, 8], f32, gpu:3>
 }
 
+// Row-sliced allgather: every device keeps its own half of each gathered
+// piece, so the outputs have half the rows. The attribute round-trips in the
+// custom `[group_size = N, slice_rows = true]` form.
+// CHECK-LABEL: mo.graph @allgather_slice_rows
+// CHECK: mo.distributed.allgather
+// CHECK-SAME: [group_size = 2, slice_rows = true]
+mo.graph @allgather_slice_rows(%in0: !mo.tensor<[4, 8], f32, gpu:0>, %in1: !mo.tensor<[4, 6], f32, gpu:1>, %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>) -> (!mo.tensor<[2, 8], f32, gpu:0>, !mo.tensor<[2, 6], f32, gpu:0>, !mo.tensor<[2, 8], f32, gpu:1>, !mo.tensor<[2, 6], f32, gpu:1>) {
+  %ch = mo.chain.create()
+  %out:4, %outChain = "mo.distributed.allgather"(%in0, %in1, %sig0, %sig1, %ch) {group_size = 2 : i64, slice_rows = true} : (!mo.tensor<[4, 8], f32, gpu:0>, !mo.tensor<[4, 6], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[2, 8], f32, gpu:0>, !mo.tensor<[2, 6], f32, gpu:0>, !mo.tensor<[2, 8], f32, gpu:1>, !mo.tensor<[2, 6], f32, gpu:1>, !mo.chain)
+  mo.output %out#0, %out#1, %out#2, %out#3 : !mo.tensor<[2, 8], f32, gpu:0>, !mo.tensor<[2, 6], f32, gpu:0>, !mo.tensor<[2, 8], f32, gpu:1>, !mo.tensor<[2, 6], f32, gpu:1>
+}
+
 // CHECK-LABEL: mo.graph @all_reduce_folds
 // CHECK: (%[[IN0:.*]]: !mo.tensor<[2, 17], f32, gpu:0>, %[[SIG0:.*]]: !mo.buffer<[1], ui8, gpu:0>, %[[CH:.*]]: !mo.chain)
 mo.graph @all_reduce_folds(%in0: !mo.tensor<[2, 17], f32, gpu:0>, %sig0: !mo.buffer<[1], ui8, gpu:0>, %ch: !mo.chain) -> (!mo.tensor<[2, 17], f32, gpu:0>, !mo.chain) {

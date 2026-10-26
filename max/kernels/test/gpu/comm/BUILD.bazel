@@ -70,6 +70,7 @@ _GPU_MEMORY = {
     "test_allreduce.mojo": "4",
     "test_allgather_rmsnorm_mxfp8.mojo": "6",
     "test_allgather.mojo": "3",
+    "test_allgather_rows_slice.mojo": "3",
     "test_allgather_rmsnorm.mojo": "3",
     "test_broadcast.mojo": "3",
     "test_kernel_load_gate_nested.mojo": "2",
