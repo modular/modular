@@ -116,6 +116,9 @@ public:
   /// Return the compilation options used by the parser.
   const KGEN::CompilationOptions &getCompilationOptions();
 
+  /// Return the configuration this context was created with.
+  const ParserConfig &getParserConfig();
+
   /// Parse a SourceMgr file given its id as a module.
   ///
   /// In the case of success, the decl corresponding to the module is returned.

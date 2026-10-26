@@ -45,6 +45,10 @@ struct MojoParserContext::Impl {
   // General State
   //===--------------------------------------------------------------------===//
 
+  /// The configuration this context was created with. Completion contexts
+  /// derived from this one copy it.
+  KGEN::LIT::ParserConfig config;
+
   /// The shared state for the parser.
   KGEN::LIT::SharedState sharedState;
 
@@ -95,14 +99,16 @@ struct MojoParserContext::Impl {
     /// Used to bound memory growth from stale completion modules.
     size_t completionsSinceRebuild = 0;
 
-    CompletionCache(MLIRContext *mlirCtx,
-                    const KGEN::CompilationOptions &options,
+    CompletionCache(const KGEN::LIT::ParserConfig &mainConfig,
                     const llvm::SourceMgr &mainSourceMgr)
-        : config(mlirCtx, options) {
+        : config(mainConfig) {
       // Suppress diagnostics in the completion cache.
       sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
       // Copy include directories so import resolution works correctly.
       sourceMgr.setIncludeDirs(mainSourceMgr.getIncludeDirs());
+      config.autoFixItHandler = nullptr;
+      config.useMLIRDiagnostics = false;
+      config.parserListener = nullptr;
       config.maxNotesPerDiagnostic = 0;
       context = std::make_unique<MojoParserContext>(sourceMgr, config);
     }

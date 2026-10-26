@@ -1058,9 +1058,8 @@ StringRef MojoParserContext::prepareCompletionCache(ASTDecl *replDecl) {
   if (!canExtend) {
     // Full rebuild: cache doesn't exist, replDecl changed, target set shrank,
     // or stale module threshold exceeded.
-    impl->completionCache = std::make_unique<Impl::CompletionCache>(
-        impl->sharedState.getContext(), impl->sharedState.options,
-        mainSourceMgr);
+    impl->completionCache =
+        std::make_unique<Impl::CompletionCache>(impl->config, mainSourceMgr);
     impl->completionCache->replDeclKey = replDecl;
   }
 

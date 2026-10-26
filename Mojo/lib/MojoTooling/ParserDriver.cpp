@@ -56,7 +56,7 @@ using llvm::SourceMgr;
 //===----------------------------------------------------------------------===//
 
 MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr, ParserConfig &config)
-    : sharedState(sourceMgr, config), replLocMapper(sourceMgr) {
+    : config(config), sharedState(sourceMgr, config), replLocMapper(sourceMgr) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
   topLevelDecl = &cast<TopLevelModuleASTDecl>(sharedState.declResolver->addDecl(
@@ -100,6 +100,10 @@ MojoParserContext::getModuleSearchDirectories(unsigned fileId) {
 
 const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
   return impl->sharedState.options;
+}
+
+const ParserConfig &MojoParserContext::getParserConfig() {
+  return impl->config;
 }
 
 ASTDecl *MojoParserContext::getTraitDecl(KGEN::TraitSymbolAttr traitSymbol) {

@@ -119,7 +119,11 @@ struct CodeCompletionListener : public BaseCompletionListener {
       // Grab the documentation for the import. Do this out of the current
       // context to avoid pulling in a bunch of unwanted state.
       MLIRContext ctx{MLIRContext::Threading::DISABLED};
-      ParserConfig config(&ctx, parserContext->getCompilationOptions());
+      ParserConfig config(parserContext->getParserConfig());
+      config.context = &ctx;
+      config.autoFixItHandler = nullptr;
+      config.useMLIRDiagnostics = false;
+      config.parserListener = nullptr;
       MojoParserContext importContext(sourceMgr, config);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
         if (auto decl = getPublicDecl(module))
