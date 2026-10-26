@@ -192,6 +192,13 @@ class ServerCommand(NamedTuple):
     env: dict[str, str]
 
 
+# Repos a variant without a recipe needs beside its base repo, such as the
+# draft a Mach speculative variant exports with.
+VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
+    "google/gemma-4-31B-it__pp_mtp": ("google/gemma-4-31B-it-assistant",),
+}
+
+
 # Servers for frameworks whose serving code is internal. Their internal
 # entrypoint registers them here before running the smoke test. Each takes the
 # model, the startup timeout in seconds, and whether the model is a vision
@@ -205,8 +212,11 @@ SERVERS: dict[
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    # gemma-4-12B is served text-only in MAX (gemma4_unified arch).
-    if any(kw in model for kw in ("gemma-3-1b", "gemma-4-12b")):
+    # gemma-4-12B is served text-only in MAX (gemma4_unified arch), and Mach
+    # serves its pipeline-parallel variants (`__pp`, `__pp_mtp`) text-only.
+    if any(
+        kw in model for kw in ("gemma-3-1b", "gemma-4-12b")
+    ) or model.endswith(("__pp", "__pp_mtp")):
         return False
     return any(
         kw in model
@@ -331,6 +341,8 @@ def hf_repos_for_model(model: str) -> list[str]:
     if recipe_path is not None:
         add_recipe_repos(recipe_path)
     add(model.split("__", 1)[0])
+    for repo in VARIANT_REPOS.get(model, ()):
+        add(repo)
     # A private recipe can serve a different repo than the variant; adding its
     # repos after the variant keeps it as the base repo callers get back.
     if recipe_path is None:
@@ -778,6 +790,9 @@ def smoke_test(
         serving = SERVERS[framework](
             hf_model_path, timeout, is_vision_model(model)
         )
+        # A variant selects how the server serves its base repo, which
+        # requests name.
+        served = hf_model_path.split("__", 1)[0]
     else:
         cmd, server_env = get_server_cmd(
             framework,
