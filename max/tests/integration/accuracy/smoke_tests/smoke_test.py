@@ -555,6 +555,9 @@ def get_server_cmd(
 
     if framework == "vllm" and accelerator(serve_image) == "amd":
         env["VLLM_ROCM_USE_AITER"] = "1"
+        # GLM-5.3-Flash recipes test text only; skip vision encoder warmup.
+        if "glm-5.3-flash" in model.casefold():
+            VLLM += ["--language-model-only"]
         # AITER's unquantized MoE rejects Nemotron-H's non-gated MLP.
         if "nemotron" in model.casefold():
             VLLM += ["--moe-backend", "triton"]
