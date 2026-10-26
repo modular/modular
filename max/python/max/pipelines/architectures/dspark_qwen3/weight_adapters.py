@@ -35,19 +35,14 @@ from max.graph.weights import WeightData
 from .dspark_qwen3 import DSparkQwen3DraftConfig, draft_nvfp4_modules
 
 __all__ = [
-    "DRAFT_PREFIX",
     "MASK_EMBEDDING",
     "SHARED_DRAFT_PREFIXES",
     "SKIPPED_DRAFT_PREFIXES",
-    "TARGET_PREFIX",
     "classify_draft_weight",
     "convert_draft_state_dict",
-    "convert_unified_state_dict",
     "expected_draft_weight_names",
 ]
 
-TARGET_PREFIX = "target."
-DRAFT_PREFIX = "draft."
 MASK_EMBEDDING = "mask_embedding"
 """The draft module's weight holding the mask token's trained embedding."""
 
@@ -207,14 +202,3 @@ def convert_draft_state_dict(
             f" {sorted(missing)[:5]}; unexpected: {sorted(extra)[:5]}."
         )
     return weights
-
-
-def convert_unified_state_dict(
-    target_state_dict: Mapping[str, WeightData],
-    draft_state_dict: Mapping[str, WeightData],
-) -> dict[str, WeightData]:
-    """Names the target's and the draft's tensors for the unified module."""
-    unified = {f"{TARGET_PREFIX}{k}": v for k, v in target_state_dict.items()}
-    for name, value in draft_state_dict.items():
-        unified[f"{DRAFT_PREFIX}{name}"] = value
-    return unified

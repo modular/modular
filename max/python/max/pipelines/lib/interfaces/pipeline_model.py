@@ -820,7 +820,9 @@ class PipelineModel(
         return ()
 
     @classmethod
-    def build_module(cls, context: ModelLoadContext) -> tuple[LayerModule, Any]:
+    def build_module(
+        cls, context: ModelLoadContext
+    ) -> tuple[LayerModule | _ModuleV3[..., Any], Any]:
         """Builds this architecture's module and config, compiling no graph.
 
         Both come from the checkpoint ``context`` names, with the config
@@ -1349,6 +1351,24 @@ class ModuleV3PipelineModelWithKVCache(
         """Loads the checkpoint, and keeps it for :meth:`graph_specs`."""
         self._checkpoint = super()._load_state_dict()
         return self._checkpoint
+
+    @classmethod
+    def checkpoint_weights(
+        cls, context: ModelLoadContext, config: Any
+    ) -> dict[str, Any]:
+        """Returns the weights :meth:`build_module`'s module compiles with.
+
+        They come from the checkpoint ``context`` names, laid out as
+        ``Module.compile`` loads them.
+
+        Raises:
+            NotImplementedError: If the architecture builds its module only
+                inside its own graph.
+        """
+        del context, config
+        raise NotImplementedError(
+            f"{cls.__qualname__} builds its module only inside its own graph."
+        )
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``."""

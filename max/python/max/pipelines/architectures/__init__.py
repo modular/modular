@@ -197,7 +197,7 @@ def register_all_models() -> None:
         ),
         _LazyArch(
             "Qwen3DSparkModel",
-            ".unified_dspark_nemotron_h",
+            ".dspark_qwen3",
             "qwen3_dspark_draft_arch",
         ),
         _LazyArch(
@@ -409,11 +409,6 @@ def register_all_models() -> None:
             ".unified_dspark_deepseekV41",
             "unified_dspark_deepseekV41_speculator",
             speculates_on="DeepseekV41ForCausalLM",
-        ),
-        _LazyArch(
-            "UnifiedDSparkNemotronHForCausalLM_ModuleV3",
-            ".unified_dspark_nemotron_h",
-            "unified_dspark_nemotron_h_arch",
         ),
         _LazyArch(
             "UnifiedMTPGemma4ForCausalLM_ModuleV3",

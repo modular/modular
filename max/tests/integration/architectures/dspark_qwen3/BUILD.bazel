@@ -10,9 +10,18 @@ modular_py_test(
     name = "test_arch_registration",
     size = "medium",
     srcs = ["test_arch_registration.py"],
+    # The architectures the pairing resolves to are imported by the registry,
+    # not the test.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/dspark_qwen3",
+        "//max/python/max/pipelines/architectures/nemotron_h",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+    ],
     deps = [
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/unified_dspark_nemotron_h",
+        "//max/python/max/pipelines/architectures/dspark_qwen3",
+        "//max/python/max/pipelines/architectures/nemotron_h",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -22,7 +31,7 @@ modular_py_test(
     size = "medium",
     srcs = ["test_draft_config.py"],
     deps = [
-        "//max/python/max/pipelines/architectures/unified_dspark_nemotron_h",
+        "//max/python/max/pipelines/architectures/dspark_qwen3",
     ],
 )
 
@@ -38,16 +47,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures/unified_dspark_nemotron_h",
+        "//max/python/max/pipelines/architectures/dspark_qwen3",
         requirement("numpy"),
-    ],
-)
-
-modular_py_test(
-    name = "test_speculative_config",
-    size = "small",
-    srcs = ["test_speculative_config.py"],
-    deps = [
-        "//max/python/max/pipelines/architectures/unified_dspark_nemotron_h",
     ],
 )

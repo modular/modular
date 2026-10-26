@@ -501,14 +501,6 @@ class TestSpeculativeArchitectureOverride:
             self._resolved_arch(cfg) == "Gemma4UnifiedForConditionalGeneration"
         )
 
-    def test_nemotron_h_dspark(self) -> None:
-        cfg = self._make_config(
-            "NemotronHForCausalLM",
-            is_dspark=True,
-            draft_arch="Qwen3DSparkModel",
-        )
-        assert self._resolved_arch(cfg) == "UnifiedDSparkNemotronHForCausalLM"
-
     def test_nemotron_h_dspark_rejects_other_methods(self) -> None:
         """The fused graph only runs a DSpark draft step."""
         for kwargs in ({}, {"is_dflash": True}, {"is_dflash2": True}):

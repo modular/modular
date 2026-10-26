@@ -87,7 +87,6 @@ __all__ = [
     "DSparkQwen3",
     "DSparkQwen3DraftConfig",
     "draft_nvfp4_modules",
-    "markov_bias",
     "parse_dspark_draft_config",
 ]
 
@@ -530,27 +529,27 @@ class MarkovHead(Module[..., Tensor]):
             num_devices,
         )
 
+    def bias(self, previous: Tensor) -> Tensor:
+        """Returns the bias of each row's next-token logits, on device 0.
 
-def markov_bias(head: MarkovHead, previous: Tensor) -> Tensor:
-    """Returns the bias of each row's next-token logits, on device 0.
+        The head is replicated and runs once, on the first device's copy,
+        because the sampler that picks each position's token runs there and
+        the positions depend on one another.
 
-    The head is replicated and runs once, on the first device's copy, because
-    the sampler that picks each position's token runs there and the
-    positions depend on one another.
+        Args:
+            previous: The ``[batch]`` previous token ids on device 0.
 
-    Args:
-        head: The Markov head.
-        previous: The ``[batch]`` previous token ids on device 0.
-
-    Returns:
-        The ``[batch, vocab]`` bias, as the weights' dtype.
-    """
-    embed_weight = head.markov_w1.weight.local_shards[0]
-    embedded = F.gather(embed_weight, previous, axis=0)
-    w2 = head.markov_w2
-    if isinstance(w2, NVFP4Linear):
-        return Tensor.from_graph_value(w2.matmul_on(TensorValue(embedded), 0))
-    return embedded @ w2.weight.local_shards[0].T
+        Returns:
+            The ``[batch, vocab]`` bias, as the weights' dtype.
+        """
+        embed_weight = self.markov_w1.weight.local_shards[0]
+        embedded = F.gather(embed_weight, previous, axis=0)
+        w2 = self.markov_w2
+        if isinstance(w2, NVFP4Linear):
+            return Tensor.from_graph_value(
+                w2.matmul_on(TensorValue(embedded), 0)
+            )
+        return embedded @ w2.weight.local_shards[0].T
 
 
 class DSparkQwen3(Module[..., Tensor]):

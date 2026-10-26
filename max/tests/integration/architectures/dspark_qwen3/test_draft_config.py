@@ -17,10 +17,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from max.pipelines.architectures.unified_dspark_nemotron_h.dspark_qwen3 import (
+from max.pipelines.architectures.dspark_qwen3.dspark_qwen3 import (
     parse_dspark_draft_config,
 )
-from max.pipelines.architectures.unified_dspark_nemotron_h.model_config import (
+from max.pipelines.architectures.dspark_qwen3.model_config import (
     check_draft_runs_on,
 )
 

@@ -20,10 +20,10 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
-from max.pipelines.architectures.unified_dspark_nemotron_h.dspark_qwen3 import (
+from max.pipelines.architectures.dspark_qwen3.dspark_qwen3 import (
     DSparkQwen3DraftConfig,
 )
-from max.pipelines.architectures.unified_dspark_nemotron_h.weight_adapters import (
+from max.pipelines.architectures.dspark_qwen3.weight_adapters import (
     MASK_EMBEDDING,
     classify_draft_weight,
     convert_draft_state_dict,

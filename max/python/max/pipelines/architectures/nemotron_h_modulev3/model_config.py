@@ -19,7 +19,7 @@ import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
@@ -52,9 +52,6 @@ from .quantization import (
     linear_parallelism,
     parse_quant_scheme,
 )
-
-if TYPE_CHECKING:
-    from max.pipelines.speculative.config import SpeculativeMethod
 
 logger = logging.getLogger("max.pipelines")
 
@@ -393,20 +390,14 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-        speculative_method: SpeculativeMethod | None = None,
-        num_draft_tokens: int = 0,
     ) -> MultiKVCacheParams:
         """Returns the attention leaf beside the Mamba state.
 
         The attention layers index the KV cache 0, 1, 2, ... in layer order;
-        the Mamba layers do the same in the state leaves.
-
-        Args:
-            speculative_method: The speculative method, which sizes the
-                attention cache's dispatch for the verify width.
-            num_draft_tokens: How many drafts a step verifies, which the
-                cache reserves pages for.
+        the Mamba layers do the same in the state leaves. Under speculative
+        decoding the attention cache reserves the drafts' pages.
         """
+        speculative = pipeline_config.speculative
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         if data_parallel_degree > 1:
             raise ValueError("Nemotron-H does not support data parallelism")
@@ -421,8 +412,10 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             num_layers=kinds.count(LayerKind.ATTENTION),
             devices=devices,
             data_parallel_degree=data_parallel_degree,
-            speculative_method=speculative_method,
-            num_draft_tokens=num_draft_tokens,
+            speculative_method=speculative.speculative_method
+            if speculative
+            else None,
+            num_draft_tokens=speculative.draft_width if speculative else 0,
         )
         hf = huggingface_config
         num_mamba_layers = kinds.count(LayerKind.MAMBA)

@@ -56,6 +56,7 @@ __all__ = [
     "export_contract",
     "extra",
     "primary_kv",
+    "relaxed_thinking_acceptance",
     "sequential_proposer",
     "speculates_on_last_stage",
     "tail_buffers",
@@ -80,6 +81,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "KimiK3ForConditionalGeneration": "kimi_k3_spec",
     "LlamaForCausalLM": ".llama3.spec_adapters",
     "MiMoV2ForCausalLM": ".mimo_v2.spec_adapters",
+    "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
     "Qwen3_5ForCausalLM": ".qwen3_5.spec_adapters",
     "Qwen3_5ForConditionalGeneration": ".qwen3_5.spec_adapters",
     "Qwen4ExpForConditionalGeneration": "qwen4_exp_spec",
@@ -203,6 +205,12 @@ def check(
 ) -> None:
     """Raises if the target can't verify under the speculative config."""
     _adapter(target_arch).check(speculative, structured_output)
+
+
+def relaxed_thinking_acceptance(target_arch: str) -> bool:
+    """Returns whether a reasoning model's drafts may be accepted under the
+    relaxed in-thinking rule."""
+    return _adapter(target_arch).relaxed_thinking_acceptance
 
 
 def trailing_input_types(

@@ -10,25 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unified DSpark speculative decoding for Nemotron-H."""
+"""The DSpark draft of Nemotron-H, a Qwen3-style block drafter."""
 
-from .arch import qwen3_dspark_draft_arch, unified_dspark_nemotron_h_arch
+from .arch import qwen3_dspark_draft_arch
 from .dspark_qwen3 import DSparkQwen3, DSparkQwen3DraftConfig
-from .model import UnifiedDSparkNemotronHInputs, UnifiedDSparkNemotronHModel
-from .model_config import UnifiedDSparkNemotronHConfig
-from .unified_dspark_nemotron_h import (
-    UnifiedDSparkNemotronH,
-    UnifiedDSparkNemotronHModule,
-)
 
 __all__ = [
     "DSparkQwen3",
     "DSparkQwen3DraftConfig",
-    "UnifiedDSparkNemotronH",
-    "UnifiedDSparkNemotronHConfig",
-    "UnifiedDSparkNemotronHInputs",
-    "UnifiedDSparkNemotronHModel",
-    "UnifiedDSparkNemotronHModule",
     "qwen3_dspark_draft_arch",
-    "unified_dspark_nemotron_h_arch",
 ]

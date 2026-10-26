@@ -26,17 +26,20 @@ live state. Each step therefore runs
    captured inputs, with the verify's arithmetic. A step with no drafts has
    nothing to reject, so its verify sets the flag and advances the live rows
    itself, and there is nothing to replay (see
-   :mod:`..nemotron_h_modulev3.state_rollback`).
+   :mod:`.state_rollback`).
 
 Step 3 belongs to the proposer's ``materialize``: the first phase after the
 accepted count settles, and the last before anything reads the live state.
+
+The DSpark draft (``dspark_qwen3``) embeds and projects through the target's
+embedding and head, so its proposer lives here, beside the target it reads.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from max.dtype import DType
 from max.experimental import functional as F
@@ -46,6 +49,7 @@ from max.experimental.tensor import Tensor
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.nn.kernels import argmax_with_bias
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
+from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import as_graph_values
 from max.pipelines.speculative.block_driver import (
     Accepted,
@@ -54,35 +58,37 @@ from max.pipelines.speculative.block_driver import (
     DraftSampler,
     block_kv_with_dispatch,
 )
+from max.pipelines.speculative.driver import SequentialBatch
+from max.pipelines.speculative.spec_adapters.target_adapter import (
+    TargetAdapter,
+)
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import broadcast_per_device
 
-from ..nemotron_h_modulev3.layers.mamba2 import (
+from .layers.mamba2 import (
     MambaReplayCapture,
     MambaReplayInputs,
     NemotronHMamba2Mixer,
 )
-from ..nemotron_h_modulev3.model_config import LayerKind
-from ..nemotron_h_modulev3.nemotron_h import NemotronH, _distributed_state
-from ..nemotron_h_modulev3.state_rollback import (
+from .model_config import ATTN_CACHE_KEY, STATE_CACHE_KEY, LayerKind
+from .nemotron_h import NemotronH, _distributed_state
+from .state_rollback import (
     replay_plan,
     replay_state_pools,
     verify_update_state,
     verify_window,
 )
-from .dspark_qwen3 import DSparkQwen3, markov_bias
+
+if TYPE_CHECKING:
+    from max.pipelines.speculative.block_driver import BlockProposer
+    from max.pipelines.speculative.config import SpeculativeConfig
+    from max.pipelines.speculative.spec_adapters import VerifyFn
 
 __all__ = [
-    "STATE_EXTRA",
+    "ADAPTER",
     "DSparkNemotronHProposer",
     "NemotronHBlockTarget",
 ]
-
-STATE_EXTRA = "nemotron_state"
-"""Key the per-device Mamba state leaves ride under in ``BlockBatch.extra``.
-
-Each device's leaves are the live conv and SSM pools, in the order
-``NemotronHConfig.construct_kv_params`` declares them."""
 
 
 def _replicate(value: Tensor, mesh: DeviceMesh) -> Tensor:
@@ -114,7 +120,13 @@ class _Verified:
 
 
 class NemotronHBlockTarget:
-    """Nemotron-H verifies on read-only live state, then replays the accepted prefix."""
+    """Nemotron-H verifies on read-only live state, then replays the accepted
+    prefix.
+
+    The state leaves ride in the batch's ``passthrough_kv``: per device, the
+    live conv and SSM pools, in the order ``NemotronHConfig.construct_kv_params``
+    declares them.
+    """
 
     def __init__(self, target: NemotronH) -> None:
         self.target = target
@@ -128,8 +140,14 @@ class NemotronHBlockTarget:
             if kind is LayerKind.MAMBA
         ]
 
-    def verify(self, batch: BlockBatch) -> Verified[list[TensorValue]]:
-        state = batch.extra[STATE_EXTRA]
+    def __call__(
+        self, batch: SequentialBatch | BlockBatch
+    ) -> Verified[list[TensorValue]]:
+        assert isinstance(batch, BlockBatch)
+        state: list[RecurrentStateInputsPerDevice[TensorValue, Any]] = []
+        for leaves in batch.passthrough_kv[STATE_CACHE_KEY]:
+            assert isinstance(leaves, RecurrentStateInputsPerDevice)
+            state.append(leaves)
         assert len(state) == batch.n_devs
         for device_state in state:
             if len(device_state.leaves) != 2:
@@ -249,6 +267,8 @@ class DSparkNemotronHProposer:
     The block is ``[anchor, mask x (block_size - 1)]`` and its first slot
     predicts nothing: ``samples_from_anchor`` is ``False``, as the draft's
     ``sample_from_anchor: false`` says, and a block of 8 carries 7 drafts.
+    The draft is ``dspark_qwen3``'s ``DSparkQwen3``, which builds on this
+    package's layers and so is not imported here.
     """
 
     samples_from_anchor = False
@@ -256,7 +276,7 @@ class DSparkNemotronHProposer:
 
     def __init__(
         self,
-        draft: DSparkQwen3,
+        draft: Any,
         target: NemotronHBlockTarget,
         *,
         block_size: int,
@@ -362,9 +382,7 @@ class DSparkNemotronHProposer:
         previous = accepted.next_tokens
         sampled: list[TensorValue] = []
         for step in range(drafts):
-            bias = TensorValue(
-                markov_bias(head, Tensor.from_graph_value(previous))
-            )
+            bias = TensorValue(head.bias(Tensor.from_graph_value(previous)))
             if fused_argmax:
                 previous = argmax_with_bias(base, bias, position=step)
             else:
@@ -373,3 +391,57 @@ class DSparkNemotronHProposer:
                 )
             sampled.append(ops.unsqueeze(previous, axis=1))
         return ops.concat(sampled, axis=1)
+
+
+def verify(
+    target: Any,
+    target_config: Any,
+    hidden_states: ReturnHiddenStates,
+    draft_config: Any,
+) -> VerifyFn:
+    """Returns the verify on read-only live state, replayed as it proposes."""
+    del target_config, hidden_states, draft_config
+    assert isinstance(target, NemotronH)
+    return NemotronHBlockTarget(target)
+
+
+def block_proposer(
+    verify: VerifyFn,
+    draft: Any,
+    draft_config: Any,
+    speculative: SpeculativeConfig,
+) -> BlockProposer[list[TensorValue], list[TensorValue]]:
+    """Returns the DSpark proposer, which replays the verify's state."""
+    del speculative
+    assert isinstance(verify, NemotronHBlockTarget)
+    return DSparkNemotronHProposer(
+        draft,
+        verify,
+        block_size=draft_config.block_size,
+        mask_token_id=draft_config.mask_token_id,
+        hidden_size=draft_config.hidden_size,
+    )
+
+
+def check(speculative: SpeculativeConfig, structured_output: bool) -> None:
+    """Rejects synthetic acceptance.
+
+    Raises:
+        ValueError: If synthetic acceptance is set.
+    """
+    del structured_output
+    if speculative.synthetic_acceptance_rate is not None:
+        raise ValueError(
+            "Synthetic acceptance would bypass the Mamba state rollback's"
+            " accepted-length plan; it is not supported on Nemotron-H."
+        )
+
+
+ADAPTER = TargetAdapter(
+    primary_kv=ATTN_CACHE_KEY,
+    verify=verify,
+    check=check,
+    # Mach's Nemotron-H DSpark graph takes no ``in_thinking_phase``.
+    relaxed_thinking_acceptance=False,
+    block_proposer=block_proposer,
+)

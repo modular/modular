@@ -198,6 +198,10 @@ class TargetAdapter:
     check: Callable[[SpeculativeConfig, bool], None] = _default_check
     """Raises if the target can't verify under the speculative config."""
 
+    relaxed_thinking_acceptance: bool = True
+    """Whether a reasoning model's drafts may be accepted under the relaxed
+    in-thinking rule, which adds the ``in_thinking_phase`` input."""
+
     trailing_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
         _default_trailing_input_types
     )

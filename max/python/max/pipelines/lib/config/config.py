@@ -729,6 +729,26 @@ def _is_gemma4_assistant_pair(models: Mapping[str, MAXModelConfig]) -> bool:
     )
 
 
+def _is_nemotron_h_dspark_pair(models: Mapping[str, MAXModelConfig]) -> bool:
+    """Whether the target is Nemotron-H and the draft its DSpark drafter.
+
+    The drafter declares ``architectures: ["Qwen3DSparkModel"]``.
+    """
+    target_archs = models["main"].huggingface_config.architectures
+    draft_model = models.get("draft")
+    draft_archs = (
+        draft_model.huggingface_config.architectures
+        if draft_model is not None
+        else None
+    )
+    return bool(
+        target_archs
+        and target_archs[0] == "NemotronHForCausalLM"
+        and draft_archs
+        and draft_archs[0] == "Qwen3DSparkModel"
+    )
+
+
 def _require_dspark(speculative: SpeculativeConfig, draft_arch: str) -> None:
     """Refuses a DSpark draft under any method but ``dspark``.
 
@@ -768,6 +788,9 @@ def _apply_speculative_target_architecture(
             "UnifiedMTPGemma4ForCausalLM"
         )
         return None
+    if _is_nemotron_h_dspark_pair(models):
+        # The unified model would also pair this draft under a DFlash method.
+        _require_dspark(speculative, "Qwen3DSparkModel")
     spec_arch = _select_spec_decode_architecture(
         speculative, models, prefer_module_v3=prefer_module_v3
     )
@@ -779,17 +802,6 @@ def _apply_speculative_target_architecture(
     if not target_archs:
         # Nothing to rewrite; the lookup below reports the real problem.
         return None
-    # Nemotron-H's DSpark block drafter declares architectures:
-    # ["Qwen3DSparkModel"], the dense Qwen3-style DSpark draft.
-    if target_archs[0] == "NemotronHForCausalLM":
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if draft_archs and draft_archs[0] == "Qwen3DSparkModel":
-            _require_dspark(speculative, draft_archs[0])
-            target_archs[0] = "UnifiedDSparkNemotronHForCausalLM"
     if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
         draft_archs = (
             draft_model.huggingface_config.architectures
