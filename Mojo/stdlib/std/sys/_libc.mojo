@@ -63,9 +63,15 @@ def free(ptr: OptionalPointer[mut=True, NoneType, MutAnyOrigin]):
 
 @inline(.always)
 def exit(status: c_int) -> Never:
-    external_call["exit", NoneType](status)
+    # manually construct the call to exit so it can be marked noreturn
+    __mlir_op.`pop.external_call`[
+        func=__mlir_attr[`"exit" : !kgen.string`],
+        _type=None,
+        funcAttrs=__mlir_attr.`["noreturn"]`,
+    ](status)
 
-    # We need to satisfy the noreturn checker.
+    # Unreachable since the call above is noreturn, but we need to satisfy
+    # the noreturn checker.
     while True:
         pass
 
