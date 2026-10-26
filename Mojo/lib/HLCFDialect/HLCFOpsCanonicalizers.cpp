@@ -146,7 +146,8 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
     SmallVector<Region *, 4> bodies;
     getIfBodyRegions(op, bodies);
 
-    // See if all the "then" blocks only contain a yield without other logic.
+    // Check that each branch body contains only a yield. The elif condition
+    // regions are checked separately before the if is erased.
     SmallVector<YieldOp, 4> yields;
     yields.reserve(bodies.size());
     for (Region *body : bodies) {

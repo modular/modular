@@ -759,14 +759,24 @@ kgen.generator export @tail_call_error_fn(%cond: !kgen.scalar<bool>, %arg0: inde
 }
 
 
-// CHECK-LABEL: @preserve_elif_side_effects
-// CHECK: hlcf.if
-// CHECK: hlcf.if.elifcond.yield
-// CHECK: } else {
-// CHECK-NEXT: [[LATER:%.*]] = "test.condition"() : () -> !kgen.scalar<bool>
-// CHECK-NEXT: hlcf.if.elifcond.yield [[LATER]]
-// CHECK: } then {
-// CHECK: hlcf.return
+// CHECK-LABEL: kgen.func @preserve_elif_side_effects(
+// CHECK-SAME: [[C0:%.*]]: !kgen.scalar<bool>, [[C1:%.*]]: !kgen.scalar<bool>) {
+// CHECK-NEXT: hlcf.if [[C0]] {
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   hlcf.if.elifcond.yield [[C1]]
+// CHECK-NEXT: } then {
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   [[C2:%.*]] = "test.condition"() : () -> !kgen.scalar<bool>
+// CHECK-NEXT:   hlcf.if.elifcond.yield [[C2]]
+// CHECK-NEXT: } then {
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT: }
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: }
 kgen.func @preserve_elif_side_effects(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>) {
   hlcf.if %c0 {
     hlcf.yield
@@ -786,14 +796,20 @@ kgen.func @preserve_elif_side_effects(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar
 }
 
 
-// CHECK-LABEL: @preserve_elif_side_effects_with_results(
-// CHECK-SAME: %{{.*}}: !kgen.scalar<bool>, [[VALUE:%.*]]: index)
-// CHECK-NEXT: hlcf.if %{{.*}} {
-// CHECK: } else {
-// CHECK-NEXT: [[COND:%.*]] = "test.condition"() : () -> !kgen.scalar<bool>
-// CHECK-NEXT: hlcf.if.elifcond.yield [[COND]]
-// CHECK: } then {
-// CHECK: hlcf.return [[VALUE]] : index
+// CHECK-LABEL: kgen.func @preserve_elif_side_effects_with_results(
+// CHECK-SAME: [[COND:%.*]]: !kgen.scalar<bool>, [[VALUE:%.*]]: index) -> index {
+// CHECK-NEXT: hlcf.if [[COND]] {
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   [[ELIF_COND:%.*]] = "test.condition"() : () -> !kgen.scalar<bool>
+// CHECK-NEXT:   hlcf.if.elifcond.yield [[ELIF_COND]]
+// CHECK-NEXT: } then {
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   hlcf.yield
+// CHECK-NEXT: }
+// CHECK-NEXT: hlcf.return [[VALUE]] : index
+// CHECK-NEXT: }
 kgen.func @preserve_elif_side_effects_with_results(%c0: !kgen.scalar<bool>, %value: index) -> index {
   %result = hlcf.if %c0 -> index {
     hlcf.yield %value : index
