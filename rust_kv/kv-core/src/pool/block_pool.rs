@@ -332,6 +332,17 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
     /// # Panics
     /// If the pool does not serve `cache`.
     pub fn alloc_block(&mut self, cache: usize) -> Result<usize, JengaError> {
+        self.alloc_block_with_retype(cache).map(|(bid, _)| bid)
+    }
+
+    /// Allocates a block and reports whether its huge block changed cache type.
+    ///
+    /// The device owner can clear reinterpreted bytes before exposing the block.
+    ///
+    /// # Panics
+    /// If the pool does not serve `cache`.
+    pub fn alloc_block_with_retype(&mut self, cache: usize) -> Result<(usize, bool), JengaError> {
+        let mut retyped = false;
         let ratio = self.cache_ratios[cache];
         let bid = match self.alloc_source(cache) {
             None => return Err(JengaError::InsufficientBlocks(cache)),
@@ -355,6 +366,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
                 // `cache`'s parked list, so we would have taken one of those
                 // rather than reaching for a huge block at all.
                 assert_ne!(self.huge_blocks[huge_bid].little_block_type, Some(cache));
+                retyped = self.huge_blocks[huge_bid].little_block_type.is_some();
                 self.claim_huge_block(huge_bid, cache);
                 self.free_little_blocks[cache]
                     .pop_front(&mut self.little_blocks[cache])
@@ -368,7 +380,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
 
         self.little_blocks[cache][bid].ref_cnt += 1;
         self.huge_blocks[bid / ratio].num_referenced += 1;
-        Ok(bid)
+        Ok((bid, retyped))
     }
 
     /// Drops a block from its cache's prefix cache, if it is committed.

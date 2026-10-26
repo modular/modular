@@ -368,6 +368,15 @@ class JengaBlockPool:
                 this cache.
         """
 
+    def alloc_block_with_retype(
+        self, cache_id: str
+    ) -> tuple[LittleKVCacheBlock, bool]:
+        """Returns an allocation and whether its huge block changed cache type.
+
+        The Python memory owner clears retyped bytes before exposing the block
+        to writes. Pristine and same-leaf allocations report ``False``.
+        """
+
     def free_block(self, block: LittleKVCacheBlock) -> None:
         """Drops one reference, parking the huge block once it holds none.
 

@@ -295,11 +295,24 @@ impl PyJengaBlockPool {
     }
 
     fn alloc_block(&self, py: Python<'_>, cache_id: &str) -> PyResult<Py<PyLittleBlock>> {
+        self.alloc_block_with_retype(py, cache_id)
+            .map(|(block, _)| block)
+    }
+
+    fn alloc_block_with_retype(
+        &self,
+        py: Python<'_>,
+        cache_id: &str,
+    ) -> PyResult<(Py<PyLittleBlock>, bool)> {
         let cache = self.cache(cache_id)?;
-        let bid = self.shared.lock(py).alloc_block(cache).map_err(|_| {
-            InsufficientBlocksError::new_err(format!("No free blocks available for {cache_id}"))
-        })?;
-        self.shared.handle(py, cache, bid)
+        let (bid, retyped) = self
+            .shared
+            .lock(py)
+            .alloc_block_with_retype(cache)
+            .map_err(|_| {
+                InsufficientBlocksError::new_err(format!("No free blocks available for {cache_id}"))
+            })?;
+        Ok((self.shared.handle(py, cache, bid)?, retyped))
     }
 
     fn free_block(&self, py: Python<'_>, block: &Bound<'_, PyLittleBlock>) -> PyResult<()> {

@@ -601,6 +601,16 @@ class _PoolOccupancy:
 class JengaBlockManager:
     """Assigns blocks to requests and manages prefix cache hits."""
 
+    def allocate_block(
+        self, replica_idx: int, leaf_id: str
+    ) -> LittleKVCacheBlock:
+        """Allocates bookkeeping-only blocks when there is no slab owner.
+
+        The device cache manager overrides this to initialize its memory.
+        All request mutations and allocations run on the scheduler thread.
+        """
+        return self.pools[replica_idx].alloc_block(leaf_id)
+
     def __init__(
         self,
         pools: Sequence[JengaBlockPool],
@@ -831,7 +841,12 @@ class JengaBlockManager:
             )
 
         for group in self._groups.values():
-            group.grow(ctx.request_id, num_required_blocks, replica_idx)
+            group.grow(
+                ctx.request_id,
+                num_required_blocks,
+                replica_idx,
+                allocation_owner=self,
+            )
 
         return transfer
 
@@ -1428,7 +1443,10 @@ class JengaBlockManager:
             return miss
 
         rows = {
-            leaf_id: [pool.alloc_block(leaf_id) for _ in range(num_blocks)]
+            leaf_id: [
+                self.allocate_block(replica_idx, leaf_id)
+                for _ in range(num_blocks)
+            ]
             for leaf_id, num_blocks in held.items()
         }
         row_bids = {
@@ -1877,7 +1895,7 @@ class JengaBlockManager:
                             pool.touch(local)
                             held.append(local)
                         else:
-                            dst = pool.alloc_block(leaf_id)
+                            dst = self.allocate_block(replica_idx, leaf_id)
                             held.append(dst)
                             copies.append(
                                 _PageCopy(

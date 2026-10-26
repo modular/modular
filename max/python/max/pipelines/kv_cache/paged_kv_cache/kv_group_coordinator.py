@@ -17,7 +17,7 @@ from __future__ import annotations
 from array import array
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from max._kv_core import blocks_held_of_hit
 from max.nn.kv_cache import KVCacheGroupId
@@ -26,6 +26,9 @@ from max.pipelines.modeling.types import RequestID
 
 from .block_utils import LittleKVCacheBlock
 from .jenga_block_pool import JengaBlockPool
+
+if TYPE_CHECKING:
+    from .jenga_block_manager import JengaBlockManager
 
 __all__ = [
     "FullKVGroupCoordinator",
@@ -285,16 +288,22 @@ class KVGroupCoordinatorInterface:
         }
 
     def grow(
-        self, req_id: RequestID, num_required_blocks: int, replica_idx: int
+        self,
+        req_id: RequestID,
+        num_required_blocks: int,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> None:
         """Allocates the blocks every row still needs."""
-        pool = self.pools[replica_idx]
         leaf_id = self.leaf_id
         req_blocks = self.rows[req_id][leaf_id]
         for _ in range(
             self._num_blocks_to_allocate(req_blocks, num_required_blocks)
         ):
-            req_blocks.append(pool.alloc_block(leaf_id))
+            req_blocks.append(
+                allocation_owner.allocate_block(replica_idx, leaf_id)
+            )
 
     def _is_committable(
         self,

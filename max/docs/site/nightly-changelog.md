@@ -127,6 +127,9 @@ This version is still a work in progress.
 - Added `max.driver.Buffer.memset(value)` to fill a contiguous buffer or
   slice in place with a byte value, without allocating a source buffer.
 
+- Added `max.driver.Buffer.memset(value)` to fill a contiguous buffer or
+  slice in place with a byte value, without allocating a source buffer.
+
 - Added the `ops.CoordinateTransformMode` and `ops.RoundMode` enums.
   `ops.resize_linear`, `ops.resize_nearest`, and their `max.experimental`
   functional counterparts take them for `coordinate_transform_mode` and

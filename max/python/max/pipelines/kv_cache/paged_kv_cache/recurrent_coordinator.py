@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
@@ -23,6 +24,9 @@ from max.profiler import traced
 
 from .block_utils import InsufficientBlocksError, LittleKVCacheBlock
 from .kv_group_coordinator import KVGroupCoordinatorInterface
+
+if TYPE_CHECKING:
+    from .jenga_block_manager import JengaBlockManager
 
 __all__ = ["RecurrentKVGroupCoordinator"]
 
@@ -191,7 +195,12 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         return {self.leaf_id: demand}
 
     def grow(
-        self, req_id: RequestID, num_required_blocks: int, replica_idx: int
+        self,
+        req_id: RequestID,
+        num_required_blocks: int,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> None:
         """Draws the live block and successor the request lacks.
 
@@ -208,11 +217,17 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
             raise InsufficientBlocksError(
                 f"No blocks left for the recurrent state of {req_id}"
             )
-        live = pool.alloc_block(leaf_id) if draws_live else row.pop()
+        live = (
+            allocation_owner.allocate_block(replica_idx, leaf_id)
+            if draws_live
+            else row.pop()
+        )
         if draws_live:
             self.unfilled.add(req_id)
         if draws_successor:
-            self.successors[req_id] = pool.alloc_block(leaf_id)
+            self.successors[req_id] = allocation_owner.allocate_block(
+                replica_idx, leaf_id
+            )
 
         null_block = pool.null_little_blocks[leaf_id]
         while len(row) < max(num_required_blocks - 1, 0):

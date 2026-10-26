@@ -30,6 +30,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from max._kv_core import JengaBlockPool
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheGroupId, MHAKVCacheParams
@@ -303,6 +304,14 @@ def create_manager(
         max_batch_size=4,
         max_seq_len=5 * PAGE,
     )
+
+
+@pytest.fixture(autouse=True)
+def require_memory_owner_allocations(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raw_allocation(pool: JengaBlockPool, leaf_id: str) -> None:
+        raise AssertionError("connector allocation bypassed its memory owner")
+
+    monkeypatch.setattr(JengaBlockPool, "alloc_block", raw_allocation)
 
 
 def make_manager(

@@ -15,12 +15,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from max._kv_core import longest_joint_prefix_hit
 from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import LittleKVCacheBlock
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
+    JengaBlockManager,
     create_kv_group_coordinator,
 )
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
@@ -48,6 +51,18 @@ WINDOW_BLOCKS = 4
 
 def make_pool(num_huge_blocks: int = 64) -> JengaBlockPool:
     return JengaBlockPool(num_huge_blocks, RATIOS)
+
+
+def pool_owner(pool: JengaBlockPool) -> JengaBlockManager:
+    """Stands in for the manager, which hands blocks out of the pool."""
+    return cast(
+        JengaBlockManager,
+        SimpleNamespace(
+            allocate_block=lambda replica_idx, leaf_id: pool.alloc_block(
+                leaf_id
+            )
+        ),
+    )
 
 
 def block_keys(count: int) -> list[bytes]:
@@ -139,7 +154,7 @@ def test_trimmed_swa_never_publishes_holes_and_advances_cursor() -> None:
     assert isinstance(group, SlidingWindowKVGroupCoordinator)
     req_id = RequestID()
     group.claim(req_id)
-    group.grow(req_id, 6, 0)
+    group.grow(req_id, 6, 0, allocation_owner=pool_owner(pool))
     keys = block_keys(6)
 
     group.record_write_range(req_id, 9, 23)
@@ -159,7 +174,7 @@ def test_trimmed_swa_short_chunks_join_but_a_gap_does_not() -> None:
     assert isinstance(group, SlidingWindowKVGroupCoordinator)
     req_id = RequestID()
     group.claim(req_id)
-    group.grow(req_id, 5, 0)
+    group.grow(req_id, 5, 0, allocation_owner=pool_owner(pool))
     keys = block_keys(5)
 
     group.record_write_range(req_id, 2, 7)
@@ -183,14 +198,14 @@ def test_trimmed_swa_release_and_request_id_reuse_drop_coverage() -> None:
     req_id = RequestID()
     keys = block_keys(3)
     group.claim(req_id)
-    group.grow(req_id, 3, 0)
+    group.grow(req_id, 3, 0, allocation_owner=pool_owner(pool))
     group.record_write_range(req_id, 9, 12)
     group.commit(req_id, keys, 3, 0)
     assert not pool.prefix_caches[VALUES]
     group.release(req_id, 0)
 
     group.claim(req_id)
-    group.grow(req_id, 3, 0)
+    group.grow(req_id, 3, 0, allocation_owner=pool_owner(pool))
     group.commit(req_id, keys, 3, 0)
     assert set(pool.prefix_caches[VALUES]) == set(keys)
 
@@ -202,7 +217,7 @@ def test_first_trim_preserves_a_previous_full_write_partial_page() -> None:
     req_id = RequestID()
     keys = block_keys(2)
     group.claim(req_id)
-    group.grow(req_id, 2, 0)
+    group.grow(req_id, 2, 0, allocation_owner=pool_owner(pool))
     group.record_full_write(req_id, 3)
     group.commit(req_id, keys, 0, 0)
     group.record_write_range(req_id, 3, 5)
@@ -224,7 +239,7 @@ def test_trimmed_swa_recovers_only_published_prefix_hit_window() -> None:
     group.claim(req_id)
     hit = group.claim_hit_blocks(keys[:4], 0)
     group.extend(req_id, hit, {}, 0)
-    group.grow(req_id, 5, 0)
+    group.grow(req_id, 5, 0, allocation_owner=pool_owner(pool))
     group.record_write_range(req_id, 16, 19)
     group.commit(req_id, keys, 4, 0)
     assert set(pool.prefix_caches[VALUES]) == {keys[3]}
@@ -240,7 +255,7 @@ def test_untrimmed_leaves_keep_publishing_full_pages(is_sliding: bool) -> None:
     req_id = RequestID()
     keys = block_keys(4)
     group.claim(req_id)
-    group.grow(req_id, 4, 0)
+    group.grow(req_id, 4, 0, allocation_owner=pool_owner(pool))
     group.commit(req_id, keys, 4, 0)
     assert set(pool.prefix_caches[VALUES]) == set(keys)
 

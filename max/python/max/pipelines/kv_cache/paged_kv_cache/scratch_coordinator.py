@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
@@ -23,6 +24,9 @@ from max.profiler import traced
 
 from .block_utils import InsufficientBlocksError, LittleKVCacheBlock
 from .kv_group_coordinator import KVGroupCoordinatorInterface
+
+if TYPE_CHECKING:
+    from .jenga_block_manager import JengaBlockManager
 
 __all__ = ["ScratchKVGroupCoordinator"]
 
@@ -61,7 +65,12 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         return 0 if row else 1
 
     def grow(
-        self, req_id: RequestID, num_required_blocks: int, replica_idx: int
+        self,
+        req_id: RequestID,
+        num_required_blocks: int,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> None:
         """Draws the request's one block, if it does not hold it yet."""
         pool = self.pools[replica_idx]
@@ -71,7 +80,9 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
             if self._num_blocks_to_allocate(
                 self.rows[req_id][leaf_id], num_required_blocks
             ):
-                drawn[leaf_id] = pool.alloc_block(leaf_id)
+                drawn[leaf_id] = allocation_owner.allocate_block(
+                    replica_idx, leaf_id
+                )
         except InsufficientBlocksError:
             for block in drawn.values():
                 pool.free_block(block)

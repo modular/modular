@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """The fungible page pool that every flat KV cache draws from.
 
-The pool itself, :class:`JengaBlockPool`, lives in Rust (``kv-core``) and is
-re-exported here; this module plans the geometry it is built with.
+The allocation bookkeeping lives in Rust (``kv-core``). Allocation results
+report retypes to the Python memory owner, which clears its device slabs.
 """
 
 from __future__ import annotations
