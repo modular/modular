@@ -334,6 +334,15 @@ int main(int argc, char *argv[]) {
         if (!output)
           return {};
 
+        context->loadDialect<KGENDialect>();
+        ErrorOr<EnvAttr> env =
+            options.parseDefinesWithDefaults(context, clOptions.defines);
+        if (env.isError()) {
+          llvm::errs() << "error: " << env.getError() << "\n";
+          return {};
+        }
+        (*output)->setAttr(EnvAttr::getEnvAttrName(), *env);
+
         // To make sure the parser did a good thing, we run the
         // verify-parameters pass. We skip this in LSP mode: parseFileForLSP
         // intentionally leaves empty-body FnOp stubs for imported bytecode and

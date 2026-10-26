@@ -13,7 +13,7 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s | FileCheck %s
 
-# CHECK: module {
+# CHECK: module attributes {kgen.env
 
 def noop(): pass
 
