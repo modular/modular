@@ -288,7 +288,8 @@ def spec_decode_architecture(
     checkpoints a recurrent state serves with prefix caching off: the state
     checkpoints only at a page boundary, which a step's accepted drafts move
     past. A target that builds a ModuleV3 module pairs with a ModuleV3 draft
-    in one compiled module, and takes text only.
+    in one compiled module, and takes text only. A batch's resident context is
+    capped where either architecture requires it.
     """
     if (
         method is None
@@ -341,6 +342,10 @@ def spec_decode_architecture(
             else SpecDecodeArchConfig
         ),
         memory_planner=_MemoryPlanner,
+        requires_max_batch_context_length=(
+            base.requires_max_batch_context_length
+            or draft.requires_max_batch_context_length
+        ),
         context_type=base.context_type if vision else TextContext,
         input_modalities=(
             base.input_modalities if vision else {InputModality.TEXT}

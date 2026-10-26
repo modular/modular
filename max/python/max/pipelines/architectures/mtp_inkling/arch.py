@@ -47,5 +47,7 @@ mtp_inkling_draft_arch = SupportedArchitecture(
     },
     config=MTPInklingDraftArchConfig,
     checkpoint_draft_width=inkling_mtp_draft_width,
+    # Its pairing caps the context a batch keeps resident.
+    requires_max_batch_context_length=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
 )

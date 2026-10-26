@@ -20,6 +20,7 @@ either serves the wrong graph or refuses a pairing that should work.
 
 from __future__ import annotations
 
+import pytest
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodeArchConfig,
     SpecDecodePipelineModel,
@@ -87,3 +88,27 @@ def test_a_draft_only_architecture_is_never_the_target() -> None:
     assert (
         spec_decode_architecture(DFLASH_DRAFT, "dflash", DFLASH_DRAFT) is None
     )
+
+
+@pytest.mark.parametrize(
+    ("target", "draft"),
+    [
+        ("Gemma4ForConditionalGeneration", "Gemma4AssistantForCausalLM"),
+        # The MTP depths ship in the target's checkpoint.
+        ("InklingForConditionalGeneration", None),
+    ],
+)
+def test_an_mtp_draft_caps_the_context_its_batch_keeps_resident(
+    target: str, draft: str | None
+) -> None:
+    """Neither target caps it alone, so an uncapped pairing lets the
+    scheduler admit more resident context than the cache holds."""
+    arch = spec_decode_architecture(target, "mtp", draft)
+    assert arch is not None
+    assert arch.requires_max_batch_context_length
+
+
+def test_a_pairing_neither_side_caps_stays_uncapped() -> None:
+    arch = spec_decode_architecture(TARGET, "eagle", EAGLE_DRAFT)
+    assert arch is not None
+    assert not arch.requires_max_batch_context_length
