@@ -160,7 +160,6 @@ from nn.attention.mha_utils import (
 )
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -3111,11 +3110,11 @@ def mha_single_batch[
         if (
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row,
+                    Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -3260,9 +3259,9 @@ def mha_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=.uint32](
-                                    block_idx.z,
-                                    block_idx.y,
+                                (
+                                    Int(block_idx.z),
+                                    Int(block_idx.y),
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
                                 ),
@@ -3288,11 +3287,11 @@ def mha_single_batch[
         unswitch(
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row,
+                    Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK,
             _apply_mask,
@@ -3765,11 +3764,11 @@ def mha_single_batch_pipelined[
         if (
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row,
+                    Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -3935,9 +3934,9 @@ def mha_single_batch_pipelined[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=.uint32](
-                                    block_idx.z,
-                                    block_idx.y,
+                                (
+                                    Int(block_idx.z),
+                                    Int(block_idx.y),
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
                                 ),
@@ -3964,11 +3963,11 @@ def mha_single_batch_pipelined[
         unswitch(
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row,
+                    Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK,
             _apply_mask,
@@ -4581,11 +4580,11 @@ def scale_and_mask_helper[
                 )
 
                 p_reg_tile[n_mma, i + i_group * simd_width] = mask.mask(
-                    Index(
-                        block_idx.z,
-                        q_head_idx,
-                        score_row,
-                        score_col,
+                    (
+                        Int(block_idx.z),
+                        Int(q_head_idx),
+                        Int(score_row),
+                        Int(score_col),
                     ),
                     p_reg_tile[n_mma, i + i_group * simd_width]
                     * scale_log2e.cast[p_type](),
@@ -6268,12 +6267,7 @@ def _bmm0_bs[
     var score_row = y + cur_cache_len - cur_query_len
     var score_col = x
     p[y * padded_num_keys + x] = mask_functor.mask(
-        Index(
-            batch,
-            head,
-            score_row,
-            score_col,
-        ),
+        (Int(batch), Int(head), Int(score_row), Int(score_col)),
         accum * scale.cast[p_type](),
     )
 

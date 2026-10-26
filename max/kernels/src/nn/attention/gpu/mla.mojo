@@ -118,7 +118,7 @@ from nn.attention.mha_utils import (
 )
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import Index, IndexList
+from std.utils import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -2528,11 +2528,11 @@ def mla_decoding_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=.uint32](
-                                    block_idx.z,
-                                    score_head_idx,
-                                    score_row_with_start_pos,
-                                    score_col,
+                                (
+                                    Int(block_idx.z),
+                                    Int(score_head_idx),
+                                    Int(score_row_with_start_pos),
+                                    Int(score_col),
                                 ),
                                 p_reg_vec2[mma_id, i] * scale_log2e,
                             )
@@ -2556,11 +2556,8 @@ def mla_decoding_single_batch[
         unswitch(
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
-                    num_keys,
-                    kv_tile_start_row,
-                ),
-                Index[dtype=DType.uint32](1, BN),
+                (Int(num_keys), Int(kv_tile_start_row)),
+                (Int(1), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK,
             _apply_mask,
@@ -4062,11 +4059,11 @@ def mla_prefill_single_batch[
         if (
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     Int(UInt32(kv_tile_start_row) + cache_start_pos),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -4256,9 +4253,9 @@ def mla_prefill_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=.uint32](
-                                    block_idx.z,
-                                    block_idx.y,
+                                (
+                                    Int(block_idx.z),
+                                    Int(block_idx.y),
                                     Int(score_row_with_start_pos),
                                     Int(score_col_with_cache_start_pos),
                                 ),
@@ -4284,11 +4281,11 @@ def mla_prefill_single_batch[
         unswitch(
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    UInt32(kv_tile_start_row) + cache_start_pos,
+                    Int(UInt32(kv_tile_start_row) + cache_start_pos),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK,
             _apply_mask,

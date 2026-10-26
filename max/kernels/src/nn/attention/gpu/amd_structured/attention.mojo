@@ -45,7 +45,6 @@ from layout.tensor_core import num_matrix_reg
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
-from std.utils import Index
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .softmax import Softmax
@@ -786,20 +785,17 @@ struct Attention[
             ) if Self._fold_active else 1
             return self.mask.status(
                 UInt32(self.batch_idx),
-                Index[dtype=DType.uint32](
-                    self.num_keys - fold_seq_len,
-                    Int(kv_tile_start_row),
-                ),
-                Index[dtype=DType.uint32](fold_seq_len, Self.BN),
+                (Int(self.num_keys - fold_seq_len), Int(kv_tile_start_row)),
+                (Int(fold_seq_len), Int(Self.BN)),
             )
         else:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype=DType.uint32](Self.BM, Self.BN),
+                (Int(Self.BM), Int(Self.BN)),
             )
 
     @inline(.always)

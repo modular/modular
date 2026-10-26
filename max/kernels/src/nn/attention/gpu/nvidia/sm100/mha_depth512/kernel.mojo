@@ -73,7 +73,6 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from .barriers import Depth512MBars
 from .config import Depth512SM100Config
@@ -559,9 +558,6 @@ struct SM100MHADepth512[
     ) -> TileMaskStatus:
         return mask.status(
             seq_id,
-            Index[dtype=.int32](
-                Int(score_row),
-                Int(kv_row),
-            ),
-            Index[dtype=.int32](Self.PairBM_mask, Self.BN),
+            (Int(score_row), Int(kv_row)),
+            (Int(Self.PairBM_mask), Int(Self.BN)),
         )

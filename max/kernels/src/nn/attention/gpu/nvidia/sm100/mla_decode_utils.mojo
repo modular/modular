@@ -65,9 +65,9 @@ from nn.attention.gpu.nvidia.common import (
 from nn.attention.mha_mask import MHAMask, MASK_VALUE
 from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
+from layout import Coord
 from linalg.arch.sm100.mma import smem_descriptor
 
 from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
@@ -3567,7 +3567,7 @@ def clamped_index_coordinate(
     var tile_key_base: UInt32,
     var num_keys: Int,
     var cache_start_pos: UInt32,
-) -> IndexList[4, element_type=.uint32]:
+) -> Coord[Int, Int, Int, Int]:
     """Builds a four-component index coordinate with the key index clamped to the last valid key.
 
     Args:
@@ -3588,7 +3588,7 @@ def clamped_index_coordinate(
     # Clamp k to last valid key so MaterializedMask never reads OOB.
     var last_k_abs: UInt32 = cache_start_pos + UInt32(max(num_keys - 1, 0))
     var k_idx_abs_safe: UInt32 = min(k_idx_abs, last_k_abs)
-    return IndexList[4, element_type=.uint32](
+    return (
         Int(prompt_idx),
         Int(q_head_idx),
         Int(q_idx_abs),

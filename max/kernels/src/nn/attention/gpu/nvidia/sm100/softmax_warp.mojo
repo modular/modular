@@ -87,7 +87,6 @@ from nn.attention.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import SeqInfo
 from nn.attention.mha_utils import OptionallyStaticInt, _is_decoding
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from .smem import SM100AttentionSMem
 
@@ -4215,8 +4214,8 @@ def fa4_softmax[
                 break
             var cur_mask_status = mask.status(
                 seq_info.prompt_idx,
-                Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                Index[dtype=DType.int32](BM_mask, BN),
+                (Int(score_row), Int(kv_row)),
+                (Int(BM_mask), Int(BN)),
             )
             if cur_mask_status == TileMaskStatus.FULL_MASK:
                 continue

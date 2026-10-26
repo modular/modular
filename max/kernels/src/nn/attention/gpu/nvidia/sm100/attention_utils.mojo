@@ -71,7 +71,6 @@ from nn.attention.mha_operand import (
     kv_num_sub_tiles,
     kv_tma_fold_chunks,
 )
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
@@ -3740,7 +3739,7 @@ def apply_mask[
             # `visibility_mask` is `mask` for every mask without a row bias.
             comptime if MaskStrategy.COMPUTED in mask_strategy:
                 s = mask.visibility_mask(
-                    IndexList[4, element_type=.uint32](
+                    (
                         Int(prompt_idx),
                         Int(q_head_idx),
                         Int(score_row),

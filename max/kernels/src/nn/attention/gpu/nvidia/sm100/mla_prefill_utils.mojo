@@ -59,8 +59,6 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 import max.gpu.primitives.warp as warp
 from max.gpu.sync import named_barrier
 
-from std.utils.index import Index
-
 
 # rope_dtype is the dtype of the MMA!
 struct MLAConfig[
@@ -934,11 +932,8 @@ struct SM100MLA[
     ) -> TileMaskStatus:
         return mask.status(
             seq_id,
-            Index[dtype=DType.int32](
-                Int(score_row),
-                Int(kv_row),
-            ),
-            Index[dtype=DType.int32](Self.BM, Self.BN),
+            (Int(score_row), Int(kv_row)),
+            (Int(Self.BM), Int(Self.BN)),
         )
 
     @staticmethod

@@ -66,7 +66,6 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 from .smem import SM100AttentionSMem
@@ -899,11 +898,8 @@ struct SM100MHA2Q[
     ) -> TileMaskStatus:
         return mask.status(
             seq_id,
-            Index[dtype=DType.int32](
-                Int(score_row),
-                Int(kv_row),
-            ),
-            Index[dtype=DType.int32](Self.BM_mask, Self.BN),
+            (Int(score_row), Int(kv_row)),
+            (Int(Self.BM_mask), Int(Self.BN)),
         )
 
     @staticmethod

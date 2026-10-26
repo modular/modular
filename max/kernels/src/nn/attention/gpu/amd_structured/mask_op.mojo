@@ -335,9 +335,9 @@ struct MaskTileOp[
                                 Self.FragmentLayoutT()(Idx[j])
                             )
                             frag[j] = mask.mask(
-                                IndexList[4, element_type=.uint32](
-                                    block_idx.z,
-                                    q_head_idx,
+                                (
+                                    Int(block_idx.z),
+                                    Int(q_head_idx),
                                     Int(score_row_with_start_pos),
                                     Int(
                                         score_col_with_cache_start_pos

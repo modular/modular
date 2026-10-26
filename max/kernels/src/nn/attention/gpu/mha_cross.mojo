@@ -34,7 +34,6 @@ from nn.attention.gpu.mha import MHAConfig, _kernel_mask
 from nn.attention.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
 
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
@@ -146,7 +145,7 @@ def _bmm0_bs[
     var score_row = y
     var score_col = x
     p[y * padded_num_keys + x] = mask_functor.mask(
-        Index(batch, head, Int(score_row), score_col),
+        (Int(batch), Int(head), Int(score_row), Int(score_col)),
         accum * scale.cast[p_type](),
     )
     p[y * padded_num_keys + x] = _kernel_mask(
