@@ -23,16 +23,25 @@ from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_gpu
 from std.memory.unsafe_pointer import pointer_to_int
 from layout.tile_tensor import row_major
-from layout import Coord
+from layout import Coord, coord_to_index_list
 
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.math import align_up
 from std.sys.info import size_of
 from extensibility import (
+    Fused,
+    Input,
     InputTensor,
     InputVariadicTensors,
+    MutableInput,
+    Output,
     OutputTensor,
     OutputVariadicTensors,
+    Storable,
+    StoreAccess,
+    Tensor,
+    TensorTuple,
+    TileTensorable,
 )
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
@@ -43,11 +52,8 @@ from extensibility import (
 from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
-from extensibility import (
-    _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
-)
 
-from .kernels import _launch_device_collective
+from .kernels import _check_tensor_tuple, _launch_device_collective
 
 from shmem import (
     shmem_init_thread_mpi,
@@ -2267,8 +2273,14 @@ struct DistributedEPCombine:
 
     @staticmethod
     def execute[
-        combine_dtype: DType,
-        router_weights_dtype: DType,
+        Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
+        Tokens: TypeList[Trait=Input & Tensor, ...],
+        SrcInfos: TypeList[Trait=Input & Tensor, ...],
+        SendPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvCountPtrs: TypeList[Trait=Input & Tensor, ...],
+        RouterWeights: TypeList[Trait=Input & Tensor, ...],
+        Counters: TypeList[Trait=MutableInput & Tensor, ...],
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -2280,27 +2292,27 @@ struct DistributedEPCombine:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output_tokens: FusedOutputVariadicTensors[
-            dtype=combine_dtype, rank=2, ...
-        ],
-        input_tokens: InputVariadicTensors[dtype=combine_dtype, rank=2, ...],
-        src_info: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        router_weights: InputVariadicTensors[
-            dtype=router_weights_dtype, rank=2, ...
-        ],
-        atomic_counters: MutableInputVariadicTensors[
-            dtype=DType.int32, rank=1, ...
-        ],
+        output_tokens: TensorTuple[*Outs],
+        input_tokens: TensorTuple[*Tokens],
+        src_info: TensorTuple[*SrcInfos],
+        send_ptrs: TensorTuple[*SendPtrs],
+        recv_ptrs: TensorTuple[*RecvPtrs],
+        recv_count_ptrs: TensorTuple[*RecvCountPtrs],
+        router_weights: TensorTuple[*RouterWeights],
+        atomic_counters: TensorTuple[*Counters],
         dev_ctxs: DeviceContextArray,
     ) raises:
         """Multi-device fused Expert Parallelism combine with output fusion.
 
         Parameters:
-            combine_dtype: `DType` of the combined expert output tokens.
-            router_weights_dtype: `DType` of the router weights.
+            Outs: The element types of `output_tokens` (inferred).
+            Tokens: The element types of `input_tokens` (inferred).
+            SrcInfos: The element types of `src_info` (inferred).
+            SendPtrs: The element types of `send_ptrs` (inferred).
+            RecvPtrs: The element types of `recv_ptrs` (inferred).
+            RecvCountPtrs: The element types of `recv_count_ptrs` (inferred).
+            RouterWeights: The element types of `router_weights` (inferred).
+            Counters: The element types of `atomic_counters` (inferred).
             hidden_size: Size of the model's hidden dimension.
             top_k: Number of experts each token is routed to.
             n_experts: Total number of experts across all GPUs.
@@ -2331,15 +2343,29 @@ struct DistributedEPCombine:
                 blocks, one per device.
             dev_ctxs: List of GPU device contexts, one per device.
         """
-        comptime num_devices = input_tokens.size
+        comptime num_devices = len(Tokens)
+        comptime combine_dtype = Tokens[0].dtype
+        comptime router_weights_dtype = RouterWeights[0].dtype
+        _check_tensor_tuple[num_devices, combine_dtype, 2, *Outs]()
+        _check_tensor_tuple[num_devices, combine_dtype, 2, *Tokens]()
+        _check_tensor_tuple[num_devices, .int32, 2, *SrcInfos]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *SendPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvCountPtrs]()
+        _check_tensor_tuple[
+            num_devices, router_weights_dtype, 2, *RouterWeights
+        ]()
+        _check_tensor_tuple[num_devices, .int32, 1, *Counters]()
 
         var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
+        var output_views = TensorTuple._fused_view(output_tokens)
 
         @inline(.always)
         def launch_combine[
             index: Int
         ]() raises {
             imm output_tokens,
+            imm output_views,
             imm input_tokens,
             imm src_info,
             imm send_ptrs,
@@ -2350,10 +2376,30 @@ struct DistributedEPCombine:
             imm gpu_ctxs,
         }:
             comptime assert (
-                Int(type_of(output_tokens).static_specs[index].shape_tuple[1])
-                == hidden_size
+                Outs[index]._shape_types[1].static_value == hidden_size
             ), "EP combine: output tokens shape doesn't match hidden size."
-            var rw_tensor = router_weights[index].to_tile_tensor[.int64]()
+            comptime assert conforms_to(
+                type_of(router_weights[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(atomic_counters[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(input_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(src_info[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(send_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_count_ptrs[index]), TileTensorable
+            )
+            var rw_tensor = router_weights[index].to_tile_tensor()
 
             @inline(.always)
             def router_weights_fn[
@@ -2366,21 +2412,24 @@ struct DistributedEPCombine:
                 ]()
 
             # Stores into this device's fused output. It runs on the device, so
-            # it copies the tensor.
-            var out_tensor = output_tokens[index]
-
+            # it copies the views.
             @inline(.always)
             def output_fn[
                 dtype: DType,
                 width: SIMDLength,
                 *,
                 alignment: Int = 1,
-            ](coords: Coord, val: SIMD[dtype, width]) {var out_tensor}:
-                out_tensor._fused_store[
+            ](coords: Coord, val: SIMD[dtype, width]) {var output_views}:
+                comptime assert conforms_to(
+                    type_of(output_views[index]), Storable
+                )
+                output_views[index].store[
                     width=width, element_alignment=alignment
                 ](
                     coords,
-                    rebind[SIMD[combine_dtype, width]](val),
+                    rebind[SIMD[type_of(output_views[index]).dtype, width]](
+                        val
+                    ),
                 )
 
             ep_fused_combine_kernel_api[
@@ -2393,13 +2442,13 @@ struct DistributedEPCombine:
                 target,
                 fused_shared_expert=fused_shared_expert,
             ](
-                output_tokens[index].dim_size[0](),
-                atomic_counters[index].to_tile_tensor[.int64](),
-                input_tokens[index].to_tile_tensor[.int64](),
-                src_info[index].to_tile_tensor[.int64](),
-                send_ptrs[index].to_tile_tensor[.int64](),
-                recv_ptrs[index].to_tile_tensor[.int64](),
-                recv_count_ptrs[index].to_tile_tensor[.int64](),
+                coord_to_index_list(output_tokens[index].shape())[0],
+                atomic_counters[index].to_tile_tensor[.int32](),
+                input_tokens[index].to_tile_tensor[combine_dtype](),
+                src_info[index].to_tile_tensor[.int32](),
+                send_ptrs[index].to_tile_tensor[.uint64](),
+                recv_ptrs[index].to_tile_tensor[.uint64](),
+                recv_count_ptrs[index].to_tile_tensor[.uint64](),
                 gpu_ctxs[index],
                 output_fn,
                 router_weights_fn,

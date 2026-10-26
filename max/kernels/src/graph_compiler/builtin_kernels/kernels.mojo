@@ -3391,6 +3391,15 @@ struct Struct_sampler_update_frequency_data:
 # ===-----------------------------------------------------------------------===#
 
 
+def _check_tensor_tuple[size: Int, dtype: DType, rank: Int, *Ts: Tensor]():
+    """Checks that a collective's tensor tuple has one element per device, each
+    of the given dtype and rank."""
+    comptime assert len(Ts) == size, "expected one tensor per device"
+    comptime for i in range(len(Ts)):
+        comptime assert Ts[i].dtype == dtype, "unexpected tensor dtype"
+        comptime assert Ts[i].rank == rank, "unexpected tensor rank"
+
+
 @inline(.always)
 def _check_signal_buffer_size(
     signal_buffer_size: Int, input_size_bytes: Int

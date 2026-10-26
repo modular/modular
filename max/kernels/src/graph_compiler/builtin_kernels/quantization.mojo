@@ -95,8 +95,14 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from extensibility import InputTensor, OutputTensor, Tensor
-from extensibility import TileTensorable
+from extensibility import (
+    Input,
+    InputTensor,
+    Output,
+    OutputTensor,
+    Tensor,
+    TileTensorable,
+)
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -471,16 +477,22 @@ struct VroomQ40Matmul:
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=.float32, rank=2, ...],
-        a: InputTensor[dtype=.float32, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_qint4[32](
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            c.to_tile_tensor[.int64](),
+            a.to_tile_tensor[.float32](),
+            b.to_tile_tensor[.uint8](),
+            c.to_tile_tensor[.float32](),
             Optional(ctx.assert_cpu_target()),
         )
 
@@ -507,13 +519,14 @@ struct VroomQ40RepackWeights:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
+    ](b_packed: Some[Output & Tensor], b: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_qint4_pack_b[32](
-            b.to_tile_tensor[.int64](),
-            b_packed.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
         )
 
 
@@ -536,13 +549,14 @@ struct GGMLQ4KDequantize:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        input: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
+    ](output: Some[Output & Tensor], input: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
         q4_k_dequantize_impl(
-            input.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.uint8](),
+            output.to_tile_tensor[.float32](),
         )
 
 
@@ -574,16 +588,22 @@ struct VroomQ4KMatmul:
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=.float32, rank=2, ...],
-        a: InputTensor[dtype=.float32, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_Q4_K(
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            c.to_tile_tensor[.int64](),
+            a.to_tile_tensor[.float32](),
+            b.to_tile_tensor[.uint8](),
+            c.to_tile_tensor[.float32](),
             Optional(ctx.assert_cpu_target()),
         )
 
@@ -610,13 +630,14 @@ struct VroomQ4KRepackWeights:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
+    ](b_packed: Some[Output & Tensor], b: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_Q4_K_pack_b(
-            b.to_tile_tensor[.int64](),
-            b_packed.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
         )
 
 
@@ -682,16 +703,22 @@ struct VroomQ6KMatmul:
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=.float32, rank=2, ...],
-        a: InputTensor[dtype=.float32, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_cpu[target](), "only valid on CPUs"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_Q6_K(
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            c.to_tile_tensor[.int64](),
+            a.to_tile_tensor[.float32](),
+            b.to_tile_tensor[.uint8](),
+            c.to_tile_tensor[.float32](),
             Optional(ctx.assert_cpu_target()),
         )
 
@@ -718,13 +745,14 @@ struct VroomQ6KRepackWeights:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
+    ](b_packed: Some[Output & Tensor], b: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
         matmul_Q6_K_pack_b(
-            b.to_tile_tensor[.int64](),
-            b_packed.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
         )
 
 
@@ -785,17 +813,23 @@ struct QMatmulGPU_b4_g128:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
 
         matmul_gpu_qint4[128, target](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
+            c.to_tile_tensor[.bfloat16](),
+            a.to_tile_tensor[.bfloat16](),
+            b.to_tile_tensor[.uint8](),
             ctx,
         )
 
@@ -853,14 +887,20 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
+        b_packed: Some[Output & Tensor],
+        b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
 
         gpu_qint4_repack_GPTQ[128, target](
-            b.to_tile_tensor(), b_packed.to_tile_tensor(), ctx=ctx
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
+            ctx=ctx,
         )
 
 
@@ -1561,16 +1601,20 @@ struct Struct_block_scaled_preshuffle_b_5d:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.uint8, rank=3, ...],
-        input: InputTensor[dtype=.uint8, rank=3, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert is_gpu[
             target
         ](), "mo.block.scaled.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
 
-        var raw_tt = input.to_tile_tensor[.int64]()
-        var dst_tt = output.to_tile_tensor[.int64]()
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(input).rank == 3
+        var raw_tt = input.to_tile_tensor[.uint8]()
+        var dst_tt = output.to_tile_tensor[.uint8]()
         comptime E = type_of(raw_tt).static_shape[0]
         comptime N = type_of(raw_tt).static_shape[1]
         comptime K_BYTES = type_of(raw_tt).static_shape[2]

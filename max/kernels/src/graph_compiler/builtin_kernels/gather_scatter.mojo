@@ -79,17 +79,24 @@ from nn.split import split
 from nn.tile import tile, tile_shape
 from extensibility import (
     ElementwiseUnaryOp,
+    Fused,
     Input,
     InputTensor,
     InputVariadicTensors,
+    LoadAccess,
+    Loadable,
     ManagedTensorSlice,
     MutableInput,
     Output,
     OutputTensor,
     OutputVariadicTensors,
+    Storable,
+    StoreAccess,
     Tensor,
     TensorTuple,
     TileTensorable,
+    UnsafeFusedView,
+    unsafe_fused_view,
 )
 from builtin_primitives.primitives import (
     _dense_row_major_anchor_stride,
@@ -97,9 +104,6 @@ from builtin_primitives.primitives import (
 )
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
-)
-from extensibility import (
-    _FusedInputVariadicTensors as FusedInputVariadicTensors,
 )
 from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
@@ -2262,56 +2266,64 @@ struct Concat:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
+        Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
+        //,
         target: StaticString,
         axis: Int,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        var input_shapes = StaticTuple[DynamicCoord[.int, rank], inputs.size]()
+        comptime dtype = type_of(output).dtype
+        comptime rank = type_of(output).rank
+        var input_shapes = StaticTuple[DynamicCoord[.int, rank], len(Ins)]()
 
-        check_axis_in_range[axis, output.rank]()
+        check_axis_in_range[axis, rank]()
 
-        comptime for i in range(inputs.size):
+        comptime for i in range(len(Ins)):
+            comptime assert Ins[i].dtype == dtype, "inputs must share a dtype"
+            comptime assert Ins[i].rank == rank, "inputs must share a rank"
             # `fused_concat` threads the input shapes as dynamic `Coord`s. One
-            # is built explicitly per input because the tensors' `shape_coord`
-            # types can differ in their static-vs-dynamic split, while the
-            # tuple's element type must be uniform.
+            # is built explicitly per input because the tensors' shape types
+            # can differ in their static-vs-dynamic split, while the tuple's
+            # element type must be uniform.
             var input_shape = DynamicCoord[.int, rank]()
             comptime for d in range(rank):
-                input_shape.replace_dynamic[d](inputs[i].dim_size[d]())
+                input_shape.replace_dynamic[d](Int(inputs[i].shape()[d]))
             input_shapes[i] = input_shape
 
-        # Copy-capture `inputs` into the device-kernel closure. A by-reference
-        # capture leaves the GPU kernel holding a host-side pointer to the
-        # capture on Metal, so it reads garbage (concat with >=3 inputs
-        # silently returned all-zeros). `inputs` (`FusedInputVariadicTensors`)
-        # stores its tensors by value, so the copy brings their device pointers
-        # into the kernel.
+        # Copy-capture the views into the device-kernel closures. A
+        # by-reference capture leaves the GPU kernel holding a host-side
+        # pointer to the capture on Metal, so it reads garbage (concat with >=3
+        # inputs silently returned all-zeros). The view tuple stores its views
+        # by value, so the copy brings their device pointers into the kernel.
+        var input_views = TensorTuple._fused_view(inputs)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
+
         @inline(.always)
         def inputs_lambda[
             input_index: Int, width: Int, alignment: Int = 1
-        ](coords: Coord) {var inputs} -> SIMD[dtype, width]:
-            comptime assert (
-                input_index < inputs.size
-            ), "tensor index out of bounds"
-            return inputs[input_index]._lambda_load[
-                width=width, element_alignment=alignment
-            ](coords)
+        ](coords: Coord) {var input_views} -> SIMD[dtype, width]:
+            comptime assert input_index < len(Ins), "tensor index out of bounds"
+            comptime assert conforms_to(
+                type_of(input_views[input_index]), Loadable
+            )
+            return rebind[SIMD[dtype, width]](
+                input_views[input_index].load[
+                    width=width, element_alignment=alignment
+                ](coords)
+            )
 
-        # Copy-capture `output` for the same reason as `inputs` above: a
-        # by-reference capture leaves the device kernel holding a host pointer
-        # to the output tensor on Metal.
         @inline(.always)
         def epilogue_wrapper[
             _dtype: DType, width: SIMDLength, *, alignment: Int
-        ](coords: Coord, value: SIMD[_dtype, width]) {var output}:
-            output._lambda_store[width=width, element_alignment=alignment](
+        ](coords: Coord, value: SIMD[_dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[output.dtype, width]](value),
+                rebind[SIMD[type_of(out_view).dtype, width]](value),
             )
 
         fused_concat[
@@ -2321,7 +2333,7 @@ struct Concat:
             target=target,
         ](
             input_shapes,
-            output.runtime_layout(),
+            row_major(output.shape()),
             inputs_lambda,
             epilogue_wrapper,
             ctx,
