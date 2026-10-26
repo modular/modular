@@ -113,4 +113,5 @@ Mesh axes
    :template: autosummary/data.rst
 
    ~max.experimental.nn.common_layers.mesh_axis.DP
+   ~max.experimental.nn.common_layers.mesh_axis.EP
    ~max.experimental.nn.common_layers.mesh_axis.TP
